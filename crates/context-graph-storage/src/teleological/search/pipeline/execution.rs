@@ -207,8 +207,7 @@ impl RetrievalPipeline {
         }
 
         // Stage 3.5: Graph Expansion (optional)
-        if stage_set.contains(&PipelineStage::GraphExpansion)
-            && self.config.graph_expansion.enabled
+        if stage_set.contains(&PipelineStage::GraphExpansion) && self.config.graph_expansion.enabled
         {
             if let Some(ref edge_repo) = self.edge_repository {
                 let result = executor.stage_graph_expansion(
@@ -234,9 +233,7 @@ impl RetrievalPipeline {
 
                 debug!(
                     candidates_in,
-                    candidates_out,
-                    latency_us,
-                    "Graph expansion stage completed"
+                    candidates_out, latency_us, "Graph expansion stage completed"
                 );
             } else {
                 debug!("Graph expansion enabled but no edge_repository configured, skipping");

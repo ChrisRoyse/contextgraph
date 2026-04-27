@@ -44,7 +44,8 @@ async fn store_memory(
     let result = response.result.ok_or("No result")?;
     let data = extract_mcp_tool_data(&result);
 
-    let fingerprint_id = data.get("fingerprintId")
+    let fingerprint_id = data
+        .get("fingerprintId")
         .and_then(|id| id.as_str())
         .map(|s| s.to_string())
         .ok_or("Failed to extract fingerprintId")?;
@@ -122,15 +123,33 @@ async fn test_search_periodic_basic_structure() {
             info!("search_periodic response: {:?}", json);
 
             // Verify response structure
-            assert!(json.get("query").is_some(), "Response should have 'query' field");
-            assert!(json.get("results").is_some(), "Response should have 'results' field");
-            assert!(json.get("count").is_some(), "Response should have 'count' field");
-            assert!(json.get("periodicConfig").is_some(), "Response should have 'periodicConfig' field");
+            assert!(
+                json.get("query").is_some(),
+                "Response should have 'query' field"
+            );
+            assert!(
+                json.get("results").is_some(),
+                "Response should have 'results' field"
+            );
+            assert!(
+                json.get("count").is_some(),
+                "Response should have 'count' field"
+            );
+            assert!(
+                json.get("periodicConfig").is_some(),
+                "Response should have 'periodicConfig' field"
+            );
 
             // Verify periodicConfig structure
             let config = json.get("periodicConfig").unwrap();
-            assert!(config.get("periodicWeight").is_some(), "Config should have 'periodicWeight'");
-            assert!(config.get("autoDetected").is_some(), "Config should have 'autoDetected'");
+            assert!(
+                config.get("periodicWeight").is_some(),
+                "Config should have 'periodicWeight'"
+            );
+            assert!(
+                config.get("autoDetected").is_some(),
+                "Config should have 'autoDetected'"
+            );
 
             println!("✓ search_periodic returns correct structure");
         }
@@ -179,8 +198,11 @@ async fn test_search_periodic_hour_validation() {
 
                 // Should contain error about hour validation
                 assert!(
-                    text.contains("targetHour must be 0-23") || text.contains("targetHour") || text.contains("validation"),
-                    "Expected hour validation error, got: {}", text
+                    text.contains("targetHour must be 0-23")
+                        || text.contains("targetHour")
+                        || text.contains("validation"),
+                    "Expected hour validation error, got: {}",
+                    text
                 );
                 info!("Hour validation correctly returned error: {}", text);
                 println!("✓ Hour validation error returned correctly");
@@ -189,7 +211,10 @@ async fn test_search_periodic_hour_validation() {
         }
 
         // If we got a result without isError, that's also a failure
-        panic!("Expected error for invalid hour, but got result: {:?}", result);
+        panic!(
+            "Expected error for invalid hour, but got result: {:?}",
+            result
+        );
     }
 
     // JsonRpc error is also acceptable
@@ -240,8 +265,11 @@ async fn test_search_periodic_dow_validation() {
 
                 // Should contain error about day validation
                 assert!(
-                    text.contains("targetDayOfWeek must be 0-6") || text.contains("targetDayOfWeek") || text.contains("validation"),
-                    "Expected day validation error, got: {}", text
+                    text.contains("targetDayOfWeek must be 0-6")
+                        || text.contains("targetDayOfWeek")
+                        || text.contains("validation"),
+                    "Expected day validation error, got: {}",
+                    text
                 );
                 info!("Day of week validation correctly returned error: {}", text);
                 println!("✓ Day of week validation error returned correctly");
@@ -249,7 +277,10 @@ async fn test_search_periodic_dow_validation() {
             }
         }
 
-        panic!("Expected error for invalid day of week, but got result: {:?}", result);
+        panic!(
+            "Expected error for invalid day of week, but got result: {:?}",
+            result
+        );
     }
 
     if let Some(error) = response.error {
@@ -297,8 +328,11 @@ async fn test_search_periodic_empty_query() {
 
                 // Should contain error about empty query
                 assert!(
-                    text.contains("cannot be empty") || text.contains("query") || text.contains("required"),
-                    "Expected empty query error, got: {}", text
+                    text.contains("cannot be empty")
+                        || text.contains("query")
+                        || text.contains("required"),
+                    "Expected empty query error, got: {}",
+                    text
                 );
                 info!("Empty query validation correctly returned error: {}", text);
                 println!("✓ Empty query validation error returned correctly");
@@ -306,7 +340,10 @@ async fn test_search_periodic_empty_query() {
             }
         }
 
-        panic!("Expected error for empty query, but got result: {:?}", result);
+        panic!(
+            "Expected error for empty query, but got result: {:?}",
+            result
+        );
     }
 
     if let Some(error) = response.error {
@@ -331,8 +368,9 @@ async fn test_search_periodic_auto_detect() {
     let _ = store_memory(
         &handlers,
         "Automated deployment process completed successfully",
-        "Test memory for auto-detect"
-    ).await;
+        "Test memory for auto-detect",
+    )
+    .await;
 
     // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
@@ -380,8 +418,9 @@ async fn test_search_periodic_result_fields() {
     let _ = store_memory(
         &handlers,
         "Friday code review session completed",
-        "Test for result fields"
-    ).await;
+        "Test for result fields",
+    )
+    .await;
 
     // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
@@ -393,29 +432,61 @@ async fn test_search_periodic_result_fields() {
             let results = json.get("results").unwrap().as_array().unwrap();
 
             // TEST-12 FIX: The test stores a memory then searches for it — results must not be empty.
-            assert!(!results.is_empty(), "Search should return results after storing a matching memory");
+            assert!(
+                !results.is_empty(),
+                "Search should return results after storing a matching memory"
+            );
             let first = &results[0];
 
             // Verify all expected fields are present
             assert!(first.get("id").is_some(), "Result should have 'id'");
-            assert!(first.get("semanticScore").is_some(), "Result should have 'semanticScore'");
-            assert!(first.get("periodicScore").is_some(), "Result should have 'periodicScore'");
-            assert!(first.get("finalScore").is_some(), "Result should have 'finalScore'");
-            assert!(first.get("memoryHour").is_some(), "Result should have 'memoryHour'");
-            assert!(first.get("memoryDayOfWeek").is_some(), "Result should have 'memoryDayOfWeek'");
-            assert!(first.get("dayName").is_some(), "Result should have 'dayName'");
-            assert!(first.get("createdAt").is_some(), "Result should have 'createdAt'");
+            assert!(
+                first.get("semanticScore").is_some(),
+                "Result should have 'semanticScore'"
+            );
+            assert!(
+                first.get("periodicScore").is_some(),
+                "Result should have 'periodicScore'"
+            );
+            assert!(
+                first.get("finalScore").is_some(),
+                "Result should have 'finalScore'"
+            );
+            assert!(
+                first.get("memoryHour").is_some(),
+                "Result should have 'memoryHour'"
+            );
+            assert!(
+                first.get("memoryDayOfWeek").is_some(),
+                "Result should have 'memoryDayOfWeek'"
+            );
+            assert!(
+                first.get("dayName").is_some(),
+                "Result should have 'dayName'"
+            );
+            assert!(
+                first.get("createdAt").is_some(),
+                "Result should have 'createdAt'"
+            );
 
             let semantic_score = first.get("semanticScore").unwrap().as_f64().unwrap();
             let periodic_score = first.get("periodicScore").unwrap().as_f64().unwrap();
             let final_score = first.get("finalScore").unwrap().as_f64().unwrap();
 
-            info!("Result scores - semantic: {}, periodic: {}, final: {}",
-                  semantic_score, periodic_score, final_score);
+            info!(
+                "Result scores - semantic: {}, periodic: {}, final: {}",
+                semantic_score, periodic_score, final_score
+            );
 
             // Verify scores are in valid ranges
-            assert!((0.0..=1.0).contains(&semantic_score), "Semantic score out of range");
-            assert!((0.0..=1.0).contains(&periodic_score), "Periodic score out of range");
+            assert!(
+                (0.0..=1.0).contains(&semantic_score),
+                "Semantic score out of range"
+            );
+            assert!(
+                (0.0..=1.0).contains(&periodic_score),
+                "Periodic score out of range"
+            );
             assert!(final_score >= 0.0, "Final score should be non-negative");
         }
         Err(e) => {
@@ -437,8 +508,9 @@ async fn test_search_periodic_day_names() {
     let _ = store_memory(
         &handlers,
         "Weekend project planning session",
-        "Test for day names"
-    ).await;
+        "Test for day names",
+    )
+    .await;
 
     // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
@@ -449,7 +521,10 @@ async fn test_search_periodic_day_names() {
             let results = json.get("results").unwrap().as_array().unwrap();
 
             // TEST-12 FIX: The test stores a memory then searches for it — results must not be empty.
-            assert!(!results.is_empty(), "Search should return results after storing a matching memory");
+            assert!(
+                !results.is_empty(),
+                "Search should return results after storing a matching memory"
+            );
             let first = &results[0];
             let day_name = first.get("dayName").unwrap().as_str().unwrap();
             let dow = first.get("memoryDayOfWeek").unwrap().as_u64().unwrap();
@@ -466,8 +541,11 @@ async fn test_search_periodic_day_names() {
                 _ => "Unknown",
             };
 
-            assert_eq!(day_name, expected_name,
-                "Day name '{}' should match dow {} (expected '{}')", day_name, dow, expected_name);
+            assert_eq!(
+                day_name, expected_name,
+                "Day name '{}' should match dow {} (expected '{}')",
+                day_name, dow, expected_name
+            );
             info!("Day name verification passed: dow={} -> {}", dow, day_name);
         }
         Err(e) => {

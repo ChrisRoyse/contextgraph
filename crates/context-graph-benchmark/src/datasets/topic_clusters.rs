@@ -48,11 +48,7 @@ impl TopicCluster {
     }
 
     /// Generate a complete point within this cluster (all embeddings).
-    pub fn sample_all(
-        &self,
-        rng: &mut ChaCha8Rng,
-        noise_std: f32,
-    ) -> AllEmbeddings {
+    pub fn sample_all(&self, rng: &mut ChaCha8Rng, noise_std: f32) -> AllEmbeddings {
         AllEmbeddings {
             e1: sample_from_centroid(&self.e1_centroid, noise_std, rng),
             e2: random_embedding(E2_DIM, rng), // Temporal - not topic-specific
@@ -360,13 +356,7 @@ mod tests {
             for j in (i + 1)..topics.len() {
                 let sim = cosine_similarity(&topics[i].e1_centroid, &topics[j].e1_centroid);
                 // Allow some tolerance since we may not always achieve perfect separation
-                assert!(
-                    sim < 0.5,
-                    "Topics {} and {} too similar: {}",
-                    i,
-                    j,
-                    sim
-                );
+                assert!(sim < 0.5, "Topics {} and {} too similar: {}", i, j, sim);
             }
         }
     }
@@ -390,11 +380,15 @@ mod tests {
 
         assert!(
             sim00 > sim01,
-            "Sample0 should be more similar to own centroid (sim00={}, sim01={})", sim00, sim01,
+            "Sample0 should be more similar to own centroid (sim00={}, sim01={})",
+            sim00,
+            sim01,
         );
         assert!(
             sim11 > sim10,
-            "Sample1 should be more similar to own centroid (sim11={}, sim10={})", sim11, sim10,
+            "Sample1 should be more similar to own centroid (sim11={}, sim10={})",
+            sim11,
+            sim10,
         );
     }
 }

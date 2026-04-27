@@ -50,4 +50,3 @@ pub use options::{
     DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection, SequenceOptions,
     TemporalScale, TemporalSearchOptions, TimeWindow,
 };
-

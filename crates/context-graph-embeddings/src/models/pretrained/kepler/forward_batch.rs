@@ -54,10 +54,12 @@ impl KeplerModel {
         let encodings: Vec<_> = texts
             .iter()
             .map(|text| {
-                tokenizer.encode(*text, true).map_err(|e| EmbeddingError::TokenizationError {
-                    model_id: ModelId::Kepler,
-                    message: format!("KeplerModel batch tokenization failed: {}", e),
-                })
+                tokenizer
+                    .encode(*text, true)
+                    .map_err(|e| EmbeddingError::TokenizationError {
+                        model_id: ModelId::Kepler,
+                        message: format!("KeplerModel batch tokenization failed: {}", e),
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -108,22 +110,25 @@ impl KeplerModel {
             })?;
 
         let attention_mask_tensor =
-            Tensor::from_slice(&all_attention_mask, (batch_size, actual_max_len), device)
-                .map_err(|e| EmbeddingError::GpuError {
+            Tensor::from_slice(&all_attention_mask, (batch_size, actual_max_len), device).map_err(
+                |e| EmbeddingError::GpuError {
                     message: format!("KeplerModel batch attention_mask tensor failed: {}", e),
-                })?;
+                },
+            )?;
 
         let position_tensor =
-            Tensor::from_slice(&all_position_ids, (batch_size, actual_max_len), device)
-                .map_err(|e| EmbeddingError::GpuError {
+            Tensor::from_slice(&all_position_ids, (batch_size, actual_max_len), device).map_err(
+                |e| EmbeddingError::GpuError {
                     message: format!("KeplerModel batch position_ids tensor failed: {}", e),
-                })?;
+                },
+            )?;
 
         let token_type_tensor =
-            Tensor::from_slice(&all_token_type_ids, (batch_size, actual_max_len), device)
-                .map_err(|e| EmbeddingError::GpuError {
+            Tensor::from_slice(&all_token_type_ids, (batch_size, actual_max_len), device).map_err(
+                |e| EmbeddingError::GpuError {
                     message: format!("KeplerModel batch token_type tensor failed: {}", e),
-                })?;
+                },
+            )?;
 
         // Step 4: Compute embeddings (batch)
         let embeddings = Self::compute_embeddings_batch(
@@ -203,11 +208,12 @@ impl KeplerModel {
                 message: format!("KeplerModel batch word embedding reshape failed: {}", e),
             })?;
 
-        let position_flat = position_tensor
-            .flatten_all()
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel batch flatten position_ids failed: {}", e),
-            })?;
+        let position_flat =
+            position_tensor
+                .flatten_all()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel batch flatten position_ids failed: {}", e),
+                })?;
 
         let position_embeds = weights
             .embeddings
@@ -221,22 +227,29 @@ impl KeplerModel {
                 message: format!("KeplerModel batch position embedding reshape failed: {}", e),
             })?;
 
-        let token_type_flat = token_type_tensor
-            .flatten_all()
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel batch flatten token_type_ids failed: {}", e),
-            })?;
+        let token_type_flat =
+            token_type_tensor
+                .flatten_all()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel batch flatten token_type_ids failed: {}", e),
+                })?;
 
         let token_type_embeds = weights
             .embeddings
             .token_type_embeddings
             .index_select(&token_type_flat, 0)
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel batch token_type embedding lookup failed: {}", e),
+                message: format!(
+                    "KeplerModel batch token_type embedding lookup failed: {}",
+                    e
+                ),
             })?
             .reshape((batch_size, seq_len, config.hidden_size))
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel batch token_type embedding reshape failed: {}", e),
+                message: format!(
+                    "KeplerModel batch token_type embedding reshape failed: {}",
+                    e
+                ),
             })?;
 
         // Sum embeddings

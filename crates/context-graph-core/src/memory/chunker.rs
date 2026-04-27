@@ -405,7 +405,10 @@ impl TextChunker {
             let chunk_content = chunk_words.join(" ");
 
             // Calculate line numbers for this chunk
-            let start_byte = word_byte_offsets.get(current_word_idx).copied().unwrap_or(0);
+            let start_byte = word_byte_offsets
+                .get(current_word_idx)
+                .copied()
+                .unwrap_or(0);
             let end_byte = if adjusted_end > 0 {
                 word_byte_offsets
                     .get(adjusted_end - 1)
@@ -1429,7 +1432,10 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].metadata.start_line, 1);
         assert_eq!(chunks[0].metadata.end_line, 1);
-        println!("Single line: start={}, end={}", chunks[0].metadata.start_line, chunks[0].metadata.end_line);
+        println!(
+            "Single line: start={}, end={}",
+            chunks[0].metadata.start_line, chunks[0].metadata.end_line
+        );
     }
 
     #[test]
@@ -1442,7 +1448,10 @@ mod tests {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].metadata.start_line, 1);
         assert_eq!(chunks[0].metadata.end_line, 5, "Should span 5 lines");
-        println!("Multi-line: start={}, end={}", chunks[0].metadata.start_line, chunks[0].metadata.end_line);
+        println!(
+            "Multi-line: start={}, end={}",
+            chunks[0].metadata.start_line, chunks[0].metadata.end_line
+        );
     }
 
     #[test]
@@ -1468,10 +1477,7 @@ mod tests {
         for (i, chunk) in chunks.iter().enumerate() {
             println!(
                 "Chunk[{}]: lines {}-{}, words={}",
-                i,
-                chunk.metadata.start_line,
-                chunk.metadata.end_line,
-                chunk.word_count
+                i, chunk.metadata.start_line, chunk.metadata.end_line, chunk.word_count
             );
         }
 

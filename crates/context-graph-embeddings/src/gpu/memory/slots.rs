@@ -577,13 +577,13 @@ mod tests {
             (Embedder::Causal, 150_000_000),             // E5: 150MB
             (Embedder::Sparse, 50_000_000),              // E6: 50MB
             (Embedder::Code, 300_000_000),               // E7: 300MB
-            (Embedder::Graph, 75_000_000),           // E8: 75MB (was Graph, renamed)
+            (Embedder::Graph, 75_000_000),               // E8: 75MB (was Graph, renamed)
             (Embedder::Hdc, 50_000_000),                 // E9: 50MB
             (Embedder::Contextual, 150_000_000),         // E10: 150MB
             (Embedder::Entity, 75_000_000),              // E11: 75MB
             (Embedder::LateInteraction, 200_000_000),    // E12: 200MB
             (Embedder::KeywordSplade, 50_000_000),       // E13: 50MB
-            (Embedder::BgeM3Dense, 600_000_000),         // E14: 600MB (BGE-M3 568M params × 4 bytes × bf16→f32)
+            (Embedder::BgeM3Dense, 600_000_000), // E14: 600MB (BGE-M3 568M params × 4 bytes × bf16→f32)
         ];
         // Total: ~2.2GB
 

@@ -185,7 +185,10 @@ impl CodeEmbeddingProvider for E7CodeEmbeddingProvider {
 
         debug!(
             batch_size = outputs.len(),
-            e7_dim = outputs.first().map(|o| o.fingerprint.e7_code.len()).unwrap_or(0),
+            e7_dim = outputs
+                .first()
+                .map(|o| o.fingerprint.e7_code.len())
+                .unwrap_or(0),
             "Batch 13-embedding fingerprints generated for code"
         );
 

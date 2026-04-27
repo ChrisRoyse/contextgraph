@@ -174,9 +174,7 @@ impl SingleEmbedder for StubSingleEmbedder {
 
     async fn embed(&self, content: &str) -> CoreResult<Vec<f32>> {
         let hash = content_hash(content);
-        let embedding: Vec<f32> = (0..self.dimension)
-            .map(|i| hash_to_f32(hash, i))
-            .collect();
+        let embedding: Vec<f32> = (0..self.dimension).map(|i| hash_to_f32(hash, i)).collect();
         Ok(embedding)
     }
 
@@ -270,8 +268,8 @@ impl SparseEmbedder for StubSparseEmbedder {
 
         for i in 0..num_active {
             // Use prime multiplier for better distribution
-            let idx = ((hash.wrapping_add(i as u64 * HASH_PRIME) as usize) % self.vocab_size)
-                as u16;
+            let idx =
+                ((hash.wrapping_add(i as u64 * HASH_PRIME) as usize) % self.vocab_size) as u16;
             let val = (hash_to_f32(hash, i) + 0.5).abs(); // Positive activation [0, 1]
             indices.push(idx);
             values.push(val);
@@ -442,7 +440,10 @@ mod tests {
         let result1 = embedder.embed(content).await.expect("first embed");
         let result2 = embedder.embed(content).await.expect("second embed");
 
-        assert_eq!(result1, result2, "Same content should produce same embedding");
+        assert_eq!(
+            result1, result2,
+            "Same content should produce same embedding"
+        );
     }
 
     #[tokio::test]
@@ -522,11 +523,7 @@ mod tests {
         assert!(sparse.nnz() > 0);
         // Indices should be within vocab bounds
         for &idx in &sparse.indices {
-            assert!(
-                (idx as usize) < 30_522,
-                "Index {} out of bounds",
-                idx
-            );
+            assert!((idx as usize) < 30_522, "Index {} out of bounds", idx);
         }
     }
 
@@ -537,7 +534,11 @@ mod tests {
 
         assert!(result.is_ok());
         let sparse = result.expect("should succeed");
-        assert_eq!(sparse.nnz(), 0, "Empty content should produce empty sparse vector");
+        assert_eq!(
+            sparse.nnz(),
+            0,
+            "Empty content should produce empty sparse vector"
+        );
     }
 
     #[tokio::test]
@@ -627,7 +628,10 @@ mod tests {
         let embedder = StubTokenEmbedder::with_settings(128, 5);
         // Many words, but limited to 5 tokens
         let content = "one two three four five six seven eight nine ten";
-        let result = embedder.embed_tokens(content).await.expect("should succeed");
+        let result = embedder
+            .embed_tokens(content)
+            .await
+            .expect("should succeed");
 
         assert_eq!(result.len(), 5, "Should be limited to max_tokens");
     }

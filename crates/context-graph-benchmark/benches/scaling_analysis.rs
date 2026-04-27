@@ -118,16 +118,15 @@ fn bench_memory_scaling(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(
-            BenchmarkId::new("multi_space", size),
-            &size,
-            |b, &size| {
-                b.iter(|| {
-                    let estimate = context_graph_benchmark::scaling::memory_profiler::estimate_multispace_memory(size);
-                    black_box(estimate.total())
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("multi_space", size), &size, |b, &size| {
+            b.iter(|| {
+                let estimate =
+                    context_graph_benchmark::scaling::memory_profiler::estimate_multispace_memory(
+                        size,
+                    );
+                black_box(estimate.total())
+            })
+        });
     }
 
     group.finish();
@@ -165,9 +164,7 @@ fn bench_clustering_scaling(c: &mut Criterion) {
             BenchmarkId::new("kmeans", size),
             &(&baseline, config.topic_count),
             |b, (baseline, n_clusters)| {
-                b.iter(|| {
-                    black_box(baseline.detect_topics_kmeans(*n_clusters, 50))
-                })
+                b.iter(|| black_box(baseline.detect_topics_kmeans(*n_clusters, 50)))
             },
         );
     }

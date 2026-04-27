@@ -167,7 +167,9 @@ fn test_scanner_deduplication_across_scans() {
     let id_b = mem_b.id;
 
     // First scan should find candidates
-    let first_scan = scanner.find_candidates(&[mem_a.clone(), mem_b.clone()]).unwrap();
+    let first_scan = scanner
+        .find_candidates(&[mem_a.clone(), mem_b.clone()])
+        .unwrap();
     assert!(!first_scan.is_empty(), "First scan should find candidates");
 
     // Mark the pair as analyzed
@@ -265,7 +267,9 @@ fn test_scanner_file_path_scoring() {
         "tests/integration/test_helper.rs",
     );
 
-    let candidates = scanner.find_candidates(&[mem_a.clone(), mem_b.clone(), mem_c]).unwrap();
+    let candidates = scanner
+        .find_candidates(&[mem_a.clone(), mem_b.clone(), mem_c])
+        .unwrap();
 
     // Find the A-B pair and check it has higher score than pairs with C
     let ab_score = candidates
@@ -276,10 +280,7 @@ fn test_scanner_file_path_scoring() {
         })
         .map(|c| c.initial_score);
 
-    assert!(
-        ab_score.is_some(),
-        "Should find A-B pair as candidates"
-    );
+    assert!(ab_score.is_some(), "Should find A-B pair as candidates");
 }
 
 // =============================================================================
@@ -329,14 +330,12 @@ fn test_domain_filtered_marker_detection() {
     let mixed = "use crate::module; the court cites Brown v. Board";
 
     // Code filter should include Imports but exclude Cites
-    let code_types =
-        GraphMarkers::detect_suspected_types_for_domain(mixed, ContentDomain::Code);
+    let code_types = GraphMarkers::detect_suspected_types_for_domain(mixed, ContentDomain::Code);
     assert!(code_types.contains(&RelationshipType::Imports));
     assert!(!code_types.contains(&RelationshipType::Cites));
 
     // Legal filter should include Cites but exclude Imports
-    let legal_types =
-        GraphMarkers::detect_suspected_types_for_domain(mixed, ContentDomain::Legal);
+    let legal_types = GraphMarkers::detect_suspected_types_for_domain(mixed, ContentDomain::Legal);
     assert!(legal_types.contains(&RelationshipType::Cites));
     assert!(!legal_types.contains(&RelationshipType::Imports));
 
@@ -470,9 +469,21 @@ fn test_all_relationship_types_have_categories() {
         .count();
 
     assert_eq!(containment_count, 2, "Containment: Contains, ScopedBy");
-    assert_eq!(dependency_count, 3, "Dependency: DependsOn, Imports, Requires");
-    assert_eq!(reference_count, 4, "Reference: References, Cites, Interprets, Distinguishes");
-    assert_eq!(impl_count, 3, "Implementation: Implements, CompliesWith, Fulfills");
-    assert_eq!(extension_count, 4, "Extension: Extends, Modifies, Supersedes, Overrules");
+    assert_eq!(
+        dependency_count, 3,
+        "Dependency: DependsOn, Imports, Requires"
+    );
+    assert_eq!(
+        reference_count, 4,
+        "Reference: References, Cites, Interprets, Distinguishes"
+    );
+    assert_eq!(
+        impl_count, 3,
+        "Implementation: Implements, CompliesWith, Fulfills"
+    );
+    assert_eq!(
+        extension_count, 4,
+        "Extension: Extends, Modifies, Supersedes, Overrules"
+    );
     assert_eq!(invocation_count, 3, "Invocation: Calls, Applies, UsedBy");
 }

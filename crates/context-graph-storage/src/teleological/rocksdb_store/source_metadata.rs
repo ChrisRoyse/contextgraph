@@ -31,12 +31,16 @@ impl RocksDbTeleologicalStore {
                 "METADATA ERROR: Failed to deserialize source metadata for fingerprint {}: {}. \
                  Bytes length: {}. Data is not valid JSON - may be legacy bincode format that \
                  requires migration.",
-                id, e, bytes.len()
+                id,
+                e,
+                bytes.len()
             );
             CoreError::Internal(format!(
                 "Failed to deserialize source metadata for {}: {} ({}B, JSON only - \
                  bincode fallback removed)",
-                id, e, bytes.len()
+                id,
+                e,
+                bytes.len()
             ))
         })
     }
@@ -70,7 +74,12 @@ impl RocksDbTeleologicalStore {
                 "ROCKSDB ERROR: Failed to store source metadata for fingerprint {}: {}",
                 id, e
             );
-            TeleologicalStoreError::rocksdb_op("put_source_metadata", CF_SOURCE_METADATA, Some(id), e)
+            TeleologicalStoreError::rocksdb_op(
+                "put_source_metadata",
+                CF_SOURCE_METADATA,
+                Some(id),
+                e,
+            )
         })?;
 
         info!(
@@ -180,8 +189,7 @@ impl RocksDbTeleologicalStore {
         let found_count = metadata_vec.iter().filter(|m| m.is_some()).count();
         debug!(
             "Batch source metadata retrieval complete: {} requested, {} found",
-            batch_size,
-            found_count
+            batch_size, found_count
         );
         Ok(metadata_vec)
     }

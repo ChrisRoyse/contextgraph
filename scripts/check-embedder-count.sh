@@ -133,6 +133,30 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
+echo "Check 3c: ModelId::production() slot order..."
+if [ -n "$PROD_FN_START" ]; then
+    PROD_ORDER=$(awk -v start="$PROD_FN_START" '
+        NR < start { next }
+        /&\[/ { in_array = 1 }
+        in_array { print }
+        in_array && /^[[:space:]]*\]/ { exit }
+    ' "$MODEL_ID_FILE" \
+        | grep -oE 'Self::[A-Za-z0-9]+' \
+        | sed 's/Self:://' \
+        | paste -sd ',' -)
+else
+    PROD_ORDER=""
+fi
+EXPECTED_PROD_ORDER="Semantic,TemporalRecent,TemporalPeriodic,TemporalPositional,Causal,Sparse,Code,Graph,Hdc,Contextual,Kepler,LateInteraction,Splade,BgeM3Dense"
+if [ "$PROD_ORDER" = "$EXPECTED_PROD_ORDER" ]; then
+    echo -e "${GREEN}  PASS: production() order matches E1-E14 slots${NC}"
+else
+    echo -e "${RED}  FAIL: production() order mismatch${NC}"
+    echo "        expected: $EXPECTED_PROD_ORDER"
+    echo "        actual:   $PROD_ORDER"
+    ERRORS=$((ERRORS + 1))
+fi
+
 # =============================================================================
 # Check 4: Verify dimension() match has all variants
 # =============================================================================

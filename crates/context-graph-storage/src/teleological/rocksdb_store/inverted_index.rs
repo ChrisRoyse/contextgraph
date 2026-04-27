@@ -22,7 +22,9 @@ use super::types::{TeleologicalStoreError, TeleologicalStoreResult};
 /// Deserialize a posting list, ensuring it is sorted for binary search.
 /// Handles legacy unsorted lists by sorting them in-place. Returns whether
 /// the list needed sorting (for write-back to fix the stored order).
-fn deserialize_sorted_posting_list(data: &[u8]) -> Result<(Vec<Uuid>, bool), context_graph_core::error::CoreError> {
+fn deserialize_sorted_posting_list(
+    data: &[u8],
+) -> Result<(Vec<Uuid>, bool), context_graph_core::error::CoreError> {
     let mut ids = deserialize_memory_id_list(data)?;
     let was_unsorted = !ids.windows(2).all(|w| w[0] <= w[1]);
     if was_unsorted {
@@ -47,14 +49,11 @@ fn update_inverted_index(
     term_keys: &[[u8; 2]],
     cf_name: &'static str,
 ) -> TeleologicalStoreResult<()> {
-    let results = db.multi_get_cf(
-        term_keys.iter().map(|k| (cf, k.as_slice()))
-    );
+    let results = db.multi_get_cf(term_keys.iter().map(|k| (cf, k.as_slice())));
     for (i, result) in results.into_iter().enumerate() {
         let term_key = &term_keys[i];
-        let existing = result.map_err(|e| {
-            TeleologicalStoreError::rocksdb_op("multi_get", cf_name, None, e)
-        })?;
+        let existing = result
+            .map_err(|e| TeleologicalStoreError::rocksdb_op("multi_get", cf_name, None, e))?;
         let (mut ids, was_unsorted) = match existing {
             Some(data) => deserialize_sorted_posting_list(&data)?,
             None => (Vec::new(), false),
@@ -85,14 +84,12 @@ fn remove_from_inverted_index(
     term_keys: &[[u8; 2]],
     cf_name: &'static str,
 ) -> TeleologicalStoreResult<()> {
-    let results = db.multi_get_cf(
-        term_keys.iter().map(|k| (cf, k.as_slice()))
-    );
+    let results = db.multi_get_cf(term_keys.iter().map(|k| (cf, k.as_slice())));
     for (i, result) in results.into_iter().enumerate() {
         let term_key = &term_keys[i];
-        if let Some(data) = result.map_err(|e| {
-            TeleologicalStoreError::rocksdb_op("multi_get", cf_name, None, e)
-        })? {
+        if let Some(data) =
+            result.map_err(|e| TeleologicalStoreError::rocksdb_op("multi_get", cf_name, None, e))?
+        {
             let (mut ids, _was_unsorted) = deserialize_sorted_posting_list(&data)?;
             if let Ok(pos) = ids.binary_search(id) {
                 ids.remove(pos);
@@ -119,7 +116,9 @@ impl RocksDbTeleologicalStore {
         sparse: &SparseVector,
     ) -> TeleologicalStoreResult<()> {
         let cf = self.get_cf(CF_E13_SPLADE_INVERTED)?;
-        let term_keys: Vec<[u8; 2]> = sparse.indices.iter()
+        let term_keys: Vec<[u8; 2]> = sparse
+            .indices
+            .iter()
             .map(|&term_id| e13_splade_inverted_key(term_id))
             .collect();
         update_inverted_index(&self.db, cf, batch, id, &term_keys, CF_E13_SPLADE_INVERTED)
@@ -133,7 +132,9 @@ impl RocksDbTeleologicalStore {
         sparse: &SparseVector,
     ) -> TeleologicalStoreResult<()> {
         let cf = self.get_cf(CF_E13_SPLADE_INVERTED)?;
-        let term_keys: Vec<[u8; 2]> = sparse.indices.iter()
+        let term_keys: Vec<[u8; 2]> = sparse
+            .indices
+            .iter()
             .map(|&term_id| e13_splade_inverted_key(term_id))
             .collect();
         remove_from_inverted_index(&self.db, cf, batch, id, &term_keys, CF_E13_SPLADE_INVERTED)
@@ -151,7 +152,9 @@ impl RocksDbTeleologicalStore {
         sparse: &SparseVector,
     ) -> TeleologicalStoreResult<()> {
         let cf = self.get_cf(CF_E6_SPARSE_INVERTED)?;
-        let term_keys: Vec<[u8; 2]> = sparse.indices.iter()
+        let term_keys: Vec<[u8; 2]> = sparse
+            .indices
+            .iter()
             .map(|&term_id| e6_sparse_inverted_key(term_id))
             .collect();
         update_inverted_index(&self.db, cf, batch, id, &term_keys, CF_E6_SPARSE_INVERTED)
@@ -165,7 +168,9 @@ impl RocksDbTeleologicalStore {
         sparse: &SparseVector,
     ) -> TeleologicalStoreResult<()> {
         let cf = self.get_cf(CF_E6_SPARSE_INVERTED)?;
-        let term_keys: Vec<[u8; 2]> = sparse.indices.iter()
+        let term_keys: Vec<[u8; 2]> = sparse
+            .indices
+            .iter()
             .map(|&term_id| e6_sparse_inverted_key(term_id))
             .collect();
         remove_from_inverted_index(&self.db, cf, batch, id, &term_keys, CF_E6_SPARSE_INVERTED)
@@ -194,13 +199,15 @@ impl RocksDbTeleologicalStore {
 
         // Audit-10 STOR-M3 FIX: Batch-read all posting lists via multi_get_cf
         // (was: per-term sequential db.get_cf). Matches E13 SPLADE pattern.
-        let term_keys: Vec<[u8; 2]> = query_sparse.indices.iter()
+        let term_keys: Vec<[u8; 2]> = query_sparse
+            .indices
+            .iter()
             .map(|&term_id| e6_sparse_inverted_key(term_id))
             .collect();
 
-        let results = self.db.multi_get_cf(
-            term_keys.iter().map(|k| (cf_inverted, k.as_slice()))
-        );
+        let results = self
+            .db
+            .multi_get_cf(term_keys.iter().map(|k| (cf_inverted, k.as_slice())));
 
         for result in results {
             let existing = result.map_err(|e| {
@@ -226,5 +233,4 @@ impl RocksDbTeleologicalStore {
 
         Ok(candidates)
     }
-
 }

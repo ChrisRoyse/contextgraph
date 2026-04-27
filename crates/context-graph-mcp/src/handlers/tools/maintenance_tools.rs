@@ -20,7 +20,9 @@ impl Handlers {
         debug!("Handling repair_causal_relationships tool call");
 
         let store_any = self.teleological_store.as_any();
-        let Some(rocksdb_store) = store_any.downcast_ref::<context_graph_storage::teleological::RocksDbTeleologicalStore>() else {
+        let Some(rocksdb_store) = store_any
+            .downcast_ref::<context_graph_storage::teleological::RocksDbTeleologicalStore>(
+        ) else {
             error!("Store does not support repair operation");
             return self.tool_error(id, "Store does not support repair. Only RocksDbTeleologicalStore supports this operation.");
         };
@@ -28,7 +30,12 @@ impl Handlers {
         match rocksdb_store.repair_corrupted_causal_relationships().await {
             Ok((deleted_count, total_scanned)) => {
                 let retained_count = total_scanned.saturating_sub(deleted_count);
-                info!(deleted = deleted_count, scanned = total_scanned, retained = retained_count, "Repair complete");
+                info!(
+                    deleted = deleted_count,
+                    scanned = total_scanned,
+                    retained = retained_count,
+                    "Repair complete"
+                );
 
                 // Emit CausalRelationshipRepaired audit record
                 let audit_record = AuditRecord::new(
@@ -51,7 +58,11 @@ impl Handlers {
                     "retained_count": retained_count,
                 }));
 
-                if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                if let Err(e) = self
+                    .teleological_store
+                    .append_audit_record(&audit_record)
+                    .await
+                {
                     error!(error = %e, "repair_causal_relationships: Failed to write audit record (non-fatal)");
                 }
 

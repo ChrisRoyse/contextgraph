@@ -53,8 +53,8 @@ use context_graph_embeddings::models::KeplerModel;
 use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
 
 use crate::datasets::e11_entity::{
-    E11EntityBenchmarkDataset, E11EntityDatasetConfig, E11EntityDatasetLoader,
-    extract_entity_mentions,
+    extract_entity_mentions, E11EntityBenchmarkDataset, E11EntityDatasetConfig,
+    E11EntityDatasetLoader,
 };
 
 #[cfg(feature = "real-embeddings")]
@@ -436,8 +436,8 @@ impl E11EntityBenchmarkRunner {
             .await
             .map_err(|e| format!("Failed to initialize warm provider: {}", e))?;
 
-        let provider = get_warm_provider()
-            .map_err(|e| format!("Failed to get warm provider: {}", e))?;
+        let provider =
+            get_warm_provider().map_err(|e| format!("Failed to get warm provider: {}", e))?;
 
         self.provider = Some(provider);
         Ok(())
@@ -679,7 +679,8 @@ impl E11EntityBenchmarkRunner {
                     (i, hybrid)
                 })
                 .collect();
-            hybrid_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            hybrid_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             latencies.push(query_start.elapsed().as_secs_f64() * 1000.0);
 
@@ -714,9 +715,21 @@ impl E11EntityBenchmarkRunner {
             e11_ranks.push(e11_rank);
             hybrid_ranks.push(hybrid_rank);
 
-            let e1_mrr = if e1_rank > 0 { 1.0 / e1_rank as f64 } else { 0.0 };
-            let e11_mrr = if e11_rank > 0 { 1.0 / e11_rank as f64 } else { 0.0 };
-            let hybrid_mrr = if hybrid_rank > 0 { 1.0 / hybrid_rank as f64 } else { 0.0 };
+            let e1_mrr = if e1_rank > 0 {
+                1.0 / e1_rank as f64
+            } else {
+                0.0
+            };
+            let e11_mrr = if e11_rank > 0 {
+                1.0 / e11_rank as f64
+            } else {
+                0.0
+            };
+            let hybrid_mrr = if hybrid_rank > 0 {
+                1.0 / hybrid_rank as f64
+            } else {
+                0.0
+            };
 
             query_results.push(QueryResult {
                 query_id: query_doc.id,
@@ -725,7 +738,11 @@ impl E11EntityBenchmarkRunner {
                 } else {
                     query_doc.text.clone()
                 },
-                query_entities: query_doc.entities.iter().map(|e| e.canonical_id.clone()).collect(),
+                query_entities: query_doc
+                    .entities
+                    .iter()
+                    .map(|e| e.canonical_id.clone())
+                    .collect(),
                 e1_mrr,
                 e11_mrr,
                 hybrid_mrr,
@@ -784,8 +801,14 @@ impl E11EntityBenchmarkRunner {
 
         // Known relations for inference
         let known_relations = vec![
-            "depends_on", "uses", "extends", "part_of", "created_by",
-            "alternative_to", "implements", "is_type",
+            "depends_on",
+            "uses",
+            "extends",
+            "part_of",
+            "created_by",
+            "alternative_to",
+            "implements",
+            "is_type",
         ];
 
         // Score valid triples
@@ -852,7 +875,8 @@ impl E11EntityBenchmarkRunner {
                 relation_scores.push((relation, score));
             }
 
-            relation_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            relation_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             if let Some((predicted_relation, score)) = relation_scores.first() {
                 let rank = if let Some(expected) = &pair.expected_relation {
@@ -879,7 +903,8 @@ impl E11EntityBenchmarkRunner {
         }
 
         let mut metrics = TransEMetrics::compute(&valid_scores, &invalid_scores);
-        metrics.relationship_inference_mrr = crate::metrics::e11_entity::compute_mrr(&inference_ranks);
+        metrics.relationship_inference_mrr =
+            crate::metrics::e11_entity::compute_mrr(&inference_ranks);
 
         info!(
             valid_avg = metrics.valid_triple_avg_score,
@@ -899,10 +924,7 @@ impl E11EntityBenchmarkRunner {
 
     /// Score a single triple using TransE.
     #[cfg(feature = "real-embeddings")]
-    async fn score_triple(
-        &self,
-        triple: &KnowledgeTriple,
-    ) -> Result<f32, String> {
+    async fn score_triple(&self, triple: &KnowledgeTriple) -> Result<f32, String> {
         let h = self.embed_text(&triple.subject).await?;
         let r = self.embed_text(&triple.predicate).await?;
         let t = self.embed_text(&triple.object).await?;
@@ -939,14 +961,24 @@ impl E11EntityBenchmarkRunner {
         }
 
         // Find optimal threshold adaptively based on score distributions
-        let (best_threshold, best_accuracy) = find_optimal_threshold(&valid_scores, &invalid_scores);
+        let (best_threshold, best_accuracy) =
+            find_optimal_threshold(&valid_scores, &invalid_scores);
 
         // Compute confusion matrix at optimal threshold
         let confusion_matrix = ConfusionMatrix {
             true_positives: valid_scores.iter().filter(|&&s| s > best_threshold).count(),
-            false_negatives: valid_scores.iter().filter(|&&s| s <= best_threshold).count(),
-            true_negatives: invalid_scores.iter().filter(|&&s| s <= best_threshold).count(),
-            false_positives: invalid_scores.iter().filter(|&&s| s > best_threshold).count(),
+            false_negatives: valid_scores
+                .iter()
+                .filter(|&&s| s <= best_threshold)
+                .count(),
+            true_negatives: invalid_scores
+                .iter()
+                .filter(|&&s| s <= best_threshold)
+                .count(),
+            false_positives: invalid_scores
+                .iter()
+                .filter(|&&s| s > best_threshold)
+                .count(),
         };
 
         info!(
@@ -983,11 +1015,17 @@ impl E11EntityBenchmarkRunner {
 
         for doc in &dataset.documents {
             for entity in &doc.entities {
-                *entity_counts.entry(entity.canonical_id.clone()).or_insert(0) += 1;
+                *entity_counts
+                    .entry(entity.canonical_id.clone())
+                    .or_insert(0) += 1;
             }
 
             // Record co-occurrences
-            let entities: Vec<_> = doc.entities.iter().map(|e| e.canonical_id.clone()).collect();
+            let entities: Vec<_> = doc
+                .entities
+                .iter()
+                .map(|e| e.canonical_id.clone())
+                .collect();
             for i in 0..entities.len() {
                 for j in (i + 1)..entities.len() {
                     let key = if entities[i] < entities[j] {
@@ -1005,7 +1043,8 @@ impl E11EntityBenchmarkRunner {
         entity_list.sort_by(|a, b| b.1.cmp(&a.1));
 
         let top_entities: Vec<(String, usize)> = entity_list.iter().take(50).cloned().collect();
-        let top_entity_set: std::collections::HashSet<_> = top_entities.iter().map(|(e, _)| e.clone()).collect();
+        let top_entity_set: std::collections::HashSet<_> =
+            top_entities.iter().map(|(e, _)| e.clone()).collect();
 
         // Build edges (co-occurrences between top entities)
         let mut edges: Vec<(String, String, String, f32)> = Vec::new();
@@ -1028,7 +1067,10 @@ impl E11EntityBenchmarkRunner {
             .iter()
             .map(|(id, _)| {
                 // Find entity type from dataset
-                let entity_type = dataset.ground_truth.entity_types.get(id)
+                let entity_type = dataset
+                    .ground_truth
+                    .entity_types
+                    .get(id)
                     .cloned()
                     .unwrap_or_else(|| "Unknown".to_string());
                 (id.clone(), entity_type)
@@ -1060,7 +1102,11 @@ impl E11EntityBenchmarkRunner {
 #[cfg(feature = "real-embeddings")]
 fn find_optimal_threshold(valid_scores: &[f32], invalid_scores: &[f32]) -> (f32, f64) {
     let avg = |scores: &[f32]| -> f32 {
-        if scores.is_empty() { 0.0 } else { scores.iter().sum::<f32>() / scores.len() as f32 }
+        if scores.is_empty() {
+            0.0
+        } else {
+            scores.iter().sum::<f32>() / scores.len() as f32
+        }
     };
 
     let valid_avg = avg(valid_scores);
@@ -1071,7 +1117,8 @@ fn find_optimal_threshold(valid_scores: &[f32], invalid_scores: &[f32]) -> (f32,
     (-10..=10)
         .map(|i| {
             let threshold = midpoint + (i as f32) * step;
-            let accuracy = TransEMetrics::compute_validation_accuracy(valid_scores, invalid_scores, threshold);
+            let accuracy =
+                TransEMetrics::compute_validation_accuracy(valid_scores, invalid_scores, threshold);
             (threshold, accuracy)
         })
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))

@@ -169,14 +169,15 @@ fn run_benchmark(args: &Args) -> Result<()> {
     info!("");
 
     // Configure which benchmarks to run
-    let (run_extraction, run_retrieval, run_transe, run_validation, run_graph) = match args.benchmark {
-        BenchmarkPhase::Extraction => (true, false, false, false, false),
-        BenchmarkPhase::Retrieval => (false, true, false, false, false),
-        BenchmarkPhase::TransE => (false, false, true, false, false),
-        BenchmarkPhase::Validation => (false, false, false, true, false),
-        BenchmarkPhase::Graph => (false, false, false, false, true),
-        BenchmarkPhase::All => (true, true, true, true, true),
-    };
+    let (run_extraction, run_retrieval, run_transe, run_validation, run_graph) =
+        match args.benchmark {
+            BenchmarkPhase::Extraction => (true, false, false, false, false),
+            BenchmarkPhase::Retrieval => (false, true, false, false, false),
+            BenchmarkPhase::TransE => (false, false, true, false, false),
+            BenchmarkPhase::Validation => (false, false, false, true, false),
+            BenchmarkPhase::Graph => (false, false, false, false, true),
+            BenchmarkPhase::All => (true, true, true, true, true),
+        };
 
     // Build benchmark config
     let config = E11EntityBenchmarkConfig {
@@ -211,22 +212,40 @@ fn run_benchmark(args: &Args) -> Result<()> {
     println!("=======================================================================");
     println!("  TIMING SUMMARY");
     println!("=======================================================================");
-    println!("  Dataset loading:      {}ms", results.timings.dataset_load_ms);
+    println!(
+        "  Dataset loading:      {}ms",
+        results.timings.dataset_load_ms
+    );
     println!("  Provider init:        {}ms", results.timings.embedding_ms);
     if results.timings.extraction_benchmark_ms > 0 {
-        println!("  Extraction benchmark: {}ms", results.timings.extraction_benchmark_ms);
+        println!(
+            "  Extraction benchmark: {}ms",
+            results.timings.extraction_benchmark_ms
+        );
     }
     if results.timings.retrieval_benchmark_ms > 0 {
-        println!("  Retrieval benchmark:  {}ms", results.timings.retrieval_benchmark_ms);
+        println!(
+            "  Retrieval benchmark:  {}ms",
+            results.timings.retrieval_benchmark_ms
+        );
     }
     if results.timings.transe_benchmark_ms > 0 {
-        println!("  TransE benchmark:     {}ms", results.timings.transe_benchmark_ms);
+        println!(
+            "  TransE benchmark:     {}ms",
+            results.timings.transe_benchmark_ms
+        );
     }
     if results.timings.validation_benchmark_ms > 0 {
-        println!("  Validation benchmark: {}ms", results.timings.validation_benchmark_ms);
+        println!(
+            "  Validation benchmark: {}ms",
+            results.timings.validation_benchmark_ms
+        );
     }
     if results.timings.graph_benchmark_ms > 0 {
-        println!("  Graph benchmark:      {}ms", results.timings.graph_benchmark_ms);
+        println!(
+            "  Graph benchmark:      {}ms",
+            results.timings.graph_benchmark_ms
+        );
     }
     println!("  Total:                {:?}", total_time);
     println!();
@@ -245,7 +264,9 @@ fn run_benchmark(args: &Args) -> Result<()> {
 
 /// Print benchmark results to console.
 #[cfg(feature = "real-embeddings")]
-fn print_results(results: &context_graph_benchmark::runners::e11_entity::E11EntityBenchmarkResults) {
+fn print_results(
+    results: &context_graph_benchmark::runners::e11_entity::E11EntityBenchmarkResults,
+) {
     use context_graph_benchmark::metrics::e11_entity::thresholds;
 
     println!();
@@ -256,25 +277,72 @@ fn print_results(results: &context_graph_benchmark::runners::e11_entity::E11Enti
 
     // Dataset stats
     println!("DATASET STATISTICS:");
-    println!("  Documents:          {}", results.dataset_stats.num_documents);
-    println!("  Docs with entities: {}", results.dataset_stats.docs_with_entities);
-    println!("  Total entities:     {}", results.dataset_stats.total_entities);
-    println!("  Unique entities:    {}", results.dataset_stats.unique_entities);
-    println!("  Avg entities/doc:   {:.2}", results.dataset_stats.avg_entities_per_doc);
-    println!("  Valid triples:      {}", results.dataset_stats.num_valid_triples);
-    println!("  Invalid triples:    {}", results.dataset_stats.num_invalid_triples);
-    println!("  Entity pairs:       {}", results.dataset_stats.num_entity_pairs);
+    println!(
+        "  Documents:          {}",
+        results.dataset_stats.num_documents
+    );
+    println!(
+        "  Docs with entities: {}",
+        results.dataset_stats.docs_with_entities
+    );
+    println!(
+        "  Total entities:     {}",
+        results.dataset_stats.total_entities
+    );
+    println!(
+        "  Unique entities:    {}",
+        results.dataset_stats.unique_entities
+    );
+    println!(
+        "  Avg entities/doc:   {:.2}",
+        results.dataset_stats.avg_entities_per_doc
+    );
+    println!(
+        "  Valid triples:      {}",
+        results.dataset_stats.num_valid_triples
+    );
+    println!(
+        "  Invalid triples:    {}",
+        results.dataset_stats.num_invalid_triples
+    );
+    println!(
+        "  Entity pairs:       {}",
+        results.dataset_stats.num_entity_pairs
+    );
     println!();
 
     // Extraction metrics
     if let Some(ref extraction) = results.extraction_results {
         println!("ENTITY EXTRACTION:");
-        let f1_status = if extraction.metrics.f1_score >= thresholds::EXTRACTION_F1_MIN { "PASS" } else { "FAIL" };
-        println!("  [{}] F1 Score:          {:.3} (target: >= {:.2})", f1_status, extraction.metrics.f1_score, thresholds::EXTRACTION_F1_MIN);
-        println!("       Precision:         {:.3}", extraction.metrics.precision);
+        let f1_status = if extraction.metrics.f1_score >= thresholds::EXTRACTION_F1_MIN {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        println!(
+            "  [{}] F1 Score:          {:.3} (target: >= {:.2})",
+            f1_status,
+            extraction.metrics.f1_score,
+            thresholds::EXTRACTION_F1_MIN
+        );
+        println!(
+            "       Precision:         {:.3}",
+            extraction.metrics.precision
+        );
         println!("       Recall:            {:.3}", extraction.metrics.recall);
-        let canon_status = if extraction.metrics.canonicalization_accuracy >= thresholds::CANONICALIZATION_ACCURACY_MIN { "PASS" } else { "FAIL" };
-        println!("  [{}] Canonicalization:  {:.3} (target: >= {:.2})", canon_status, extraction.metrics.canonicalization_accuracy, thresholds::CANONICALIZATION_ACCURACY_MIN);
+        let canon_status = if extraction.metrics.canonicalization_accuracy
+            >= thresholds::CANONICALIZATION_ACCURACY_MIN
+        {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        println!(
+            "  [{}] Canonicalization:  {:.3} (target: >= {:.2})",
+            canon_status,
+            extraction.metrics.canonicalization_accuracy,
+            thresholds::CANONICALIZATION_ACCURACY_MIN
+        );
         println!();
 
         if !extraction.sample_extractions.is_empty() {
@@ -291,34 +359,96 @@ fn print_results(results: &context_graph_benchmark::runners::e11_entity::E11Enti
     // Retrieval metrics
     if let Some(ref retrieval) = results.retrieval_results {
         println!("ENTITY-BASED RETRIEVAL:");
-        println!("       MRR (E1-only):     {:.3}", retrieval.metrics.mrr_e1_only);
-        println!("       MRR (E11-only):    {:.3}", retrieval.metrics.mrr_e11_only);
-        println!("       MRR (E1+E11):      {:.3}", retrieval.metrics.mrr_e1_e11_hybrid);
-        let contrib_status = if retrieval.metrics.e11_contribution_pct >= thresholds::E11_CONTRIBUTION_PCT_MIN { "PASS" } else { "FAIL" };
-        println!("  [{}] E11 Contribution:  {:.1}% (target: >= {:.0}%)", contrib_status, retrieval.metrics.e11_contribution_pct, thresholds::E11_CONTRIBUTION_PCT_MIN);
-        println!("       Queries evaluated: {}", retrieval.metrics.queries_evaluated);
+        println!(
+            "       MRR (E1-only):     {:.3}",
+            retrieval.metrics.mrr_e1_only
+        );
+        println!(
+            "       MRR (E11-only):    {:.3}",
+            retrieval.metrics.mrr_e11_only
+        );
+        println!(
+            "       MRR (E1+E11):      {:.3}",
+            retrieval.metrics.mrr_e1_e11_hybrid
+        );
+        let contrib_status =
+            if retrieval.metrics.e11_contribution_pct >= thresholds::E11_CONTRIBUTION_PCT_MIN {
+                "PASS"
+            } else {
+                "FAIL"
+            };
+        println!(
+            "  [{}] E11 Contribution:  {:.1}% (target: >= {:.0}%)",
+            contrib_status,
+            retrieval.metrics.e11_contribution_pct,
+            thresholds::E11_CONTRIBUTION_PCT_MIN
+        );
+        println!(
+            "       Queries evaluated: {}",
+            retrieval.metrics.queries_evaluated
+        );
         println!();
     }
 
     // TransE metrics
     if let Some(ref transe) = results.transe_results {
         println!("TransE RELATIONSHIP INFERENCE:");
-        let valid_status = if transe.metrics.valid_triple_avg_score > thresholds::TRANSE_VALID_SCORE_MIN { "PASS" } else { "FAIL" };
-        println!("  [{}] Valid triple avg:    {:.3} (target: > {:.1})", valid_status, transe.metrics.valid_triple_avg_score, thresholds::TRANSE_VALID_SCORE_MIN);
-        let invalid_status = if transe.metrics.invalid_triple_avg_score < thresholds::TRANSE_INVALID_SCORE_MAX { "PASS" } else { "FAIL" };
-        println!("  [{}] Invalid triple avg:  {:.3} (target: < {:.1})", invalid_status, transe.metrics.invalid_triple_avg_score, thresholds::TRANSE_INVALID_SCORE_MAX);
-        println!("       Separation score:    {:.3}", transe.metrics.separation_score);
-        let mrr_status = if transe.metrics.relationship_inference_mrr >= thresholds::RELATION_INFERENCE_MRR_MIN { "PASS" } else { "FAIL" };
-        println!("  [{}] Inference MRR:       {:.3} (target: >= {:.2})", mrr_status, transe.metrics.relationship_inference_mrr, thresholds::RELATION_INFERENCE_MRR_MIN);
+        let valid_status =
+            if transe.metrics.valid_triple_avg_score > thresholds::TRANSE_VALID_SCORE_MIN {
+                "PASS"
+            } else {
+                "FAIL"
+            };
+        println!(
+            "  [{}] Valid triple avg:    {:.3} (target: > {:.1})",
+            valid_status,
+            transe.metrics.valid_triple_avg_score,
+            thresholds::TRANSE_VALID_SCORE_MIN
+        );
+        let invalid_status =
+            if transe.metrics.invalid_triple_avg_score < thresholds::TRANSE_INVALID_SCORE_MAX {
+                "PASS"
+            } else {
+                "FAIL"
+            };
+        println!(
+            "  [{}] Invalid triple avg:  {:.3} (target: < {:.1})",
+            invalid_status,
+            transe.metrics.invalid_triple_avg_score,
+            thresholds::TRANSE_INVALID_SCORE_MAX
+        );
+        println!(
+            "       Separation score:    {:.3}",
+            transe.metrics.separation_score
+        );
+        let mrr_status = if transe.metrics.relationship_inference_mrr
+            >= thresholds::RELATION_INFERENCE_MRR_MIN
+        {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        println!(
+            "  [{}] Inference MRR:       {:.3} (target: >= {:.2})",
+            mrr_status,
+            transe.metrics.relationship_inference_mrr,
+            thresholds::RELATION_INFERENCE_MRR_MIN
+        );
         println!();
 
         if !transe.relationship_inferences.is_empty() {
             println!("  Sample Relationship Inferences:");
             for inf in transe.relationship_inferences.iter().take(5) {
                 let expected = inf.expected_relation.as_deref().unwrap_or("unknown");
-                let match_str = if inf.expected_relation.as_ref() == Some(&inf.predicted_relation) { "MATCH" } else { "MISMATCH" };
-                println!("    {} -> {}: predicted='{}', expected='{}' [{}]",
-                    inf.head, inf.tail, inf.predicted_relation, expected, match_str);
+                let match_str = if inf.expected_relation.as_ref() == Some(&inf.predicted_relation) {
+                    "MATCH"
+                } else {
+                    "MISMATCH"
+                };
+                println!(
+                    "    {} -> {}: predicted='{}', expected='{}' [{}]",
+                    inf.head, inf.tail, inf.predicted_relation, expected, match_str
+                );
             }
             println!();
         }
@@ -328,22 +458,49 @@ fn print_results(results: &context_graph_benchmark::runners::e11_entity::E11Enti
     if let Some(ref validation) = results.validation_results {
         println!("KNOWLEDGE VALIDATION:");
         println!("       Accuracy:          {:.3}", validation.accuracy);
-        println!("       Optimal threshold: {:.2}", validation.optimal_threshold);
-        println!("       True positives:    {}", validation.confusion_matrix.true_positives);
-        println!("       True negatives:    {}", validation.confusion_matrix.true_negatives);
-        println!("       False positives:   {}", validation.confusion_matrix.false_positives);
-        println!("       False negatives:   {}", validation.confusion_matrix.false_negatives);
+        println!(
+            "       Optimal threshold: {:.2}",
+            validation.optimal_threshold
+        );
+        println!(
+            "       True positives:    {}",
+            validation.confusion_matrix.true_positives
+        );
+        println!(
+            "       True negatives:    {}",
+            validation.confusion_matrix.true_negatives
+        );
+        println!(
+            "       False positives:   {}",
+            validation.confusion_matrix.false_positives
+        );
+        println!(
+            "       False negatives:   {}",
+            validation.confusion_matrix.false_negatives
+        );
         println!();
     }
 
     // Graph metrics
     if let Some(ref graph) = results.graph_results {
         println!("ENTITY GRAPH CONSTRUCTION:");
-        println!("       Nodes discovered:  {}", graph.metrics.nodes_discovered);
+        println!(
+            "       Nodes discovered:  {}",
+            graph.metrics.nodes_discovered
+        );
         println!("       Edges inferred:    {}", graph.metrics.edges_inferred);
-        println!("       Graph density:     {:.4}", graph.metrics.graph_density);
-        println!("       Edge score mean:   {:.3}", graph.metrics.avg_edge_score);
-        println!("       Edge score std:    {:.3}", graph.metrics.edge_score_std_dev);
+        println!(
+            "       Graph density:     {:.4}",
+            graph.metrics.graph_density
+        );
+        println!(
+            "       Edge score mean:   {:.3}",
+            graph.metrics.avg_edge_score
+        );
+        println!(
+            "       Edge score std:    {:.3}",
+            graph.metrics.edge_score_std_dev
+        );
         println!();
 
         if !graph.top_entities.is_empty() {
@@ -367,9 +524,19 @@ fn print_results(results: &context_graph_benchmark::runners::e11_entity::E11Enti
     println!("=======================================================================");
     println!("  OVERALL QUALITY");
     println!("=======================================================================");
-    println!("  Quality score:      {:.3}", results.metrics.overall_quality_score());
-    let status = if results.all_targets_met { "PASS" } else { "FAIL" };
-    println!("  All targets met:    {} [{}]", results.all_targets_met, status);
+    println!(
+        "  Quality score:      {:.3}",
+        results.metrics.overall_quality_score()
+    );
+    let status = if results.all_targets_met {
+        "PASS"
+    } else {
+        "FAIL"
+    };
+    println!(
+        "  All targets met:    {} [{}]",
+        results.all_targets_met, status
+    );
     println!();
 }
 

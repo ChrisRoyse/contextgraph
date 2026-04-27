@@ -111,20 +111,34 @@ mod tests {
         assert!(names.contains(&"delete_file_content"));
         assert!(names.contains(&"reconcile_files"));
         // delete_file_content: soft_delete defaults to true per SEC-06
-        let delete = tools.iter().find(|t| t.name == "delete_file_content").unwrap();
-        assert!(delete.input_schema["properties"]["soft_delete"]["default"].as_bool().unwrap());
+        let delete = tools
+            .iter()
+            .find(|t| t.name == "delete_file_content")
+            .unwrap();
+        assert!(delete.input_schema["properties"]["soft_delete"]["default"]
+            .as_bool()
+            .unwrap());
         // reconcile_files: dry_run defaults to true
         let reconcile = tools.iter().find(|t| t.name == "reconcile_files").unwrap();
-        assert!(reconcile.input_schema["properties"]["dry_run"]["default"].as_bool().unwrap());
+        assert!(reconcile.input_schema["properties"]["dry_run"]["default"]
+            .as_bool()
+            .unwrap());
     }
 
     #[test]
     fn test_synthetic_valid_input() {
         let tools = definitions();
         // delete_file_content requires file_path
-        let delete = tools.iter().find(|t| t.name == "delete_file_content").unwrap();
-        let required: Vec<&str> = delete.input_schema["required"].as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap()).collect();
+        let delete = tools
+            .iter()
+            .find(|t| t.name == "delete_file_content")
+            .unwrap();
+        let required: Vec<&str> = delete.input_schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert!(required.contains(&"file_path"));
         // All tools have type: object
         for tool in &tools {

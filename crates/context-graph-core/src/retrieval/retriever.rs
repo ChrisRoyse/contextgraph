@@ -708,7 +708,9 @@ mod tests {
         // VERIFICATION STEP 3: Retrieve similar and verify flow
         println!("\n[FSV-5] Testing retrieve_similar flow...");
         let query = SemanticFingerprint::zeroed();
-        let results = retriever.retrieve_similar(&query, session_id, 10).expect("retrieve");
+        let results = retriever
+            .retrieve_similar(&query, session_id, 10)
+            .expect("retrieve");
         println!("  retrieve_similar returned {} results", results.len());
 
         // VERIFICATION STEP 4: Test get_recent_memories
@@ -725,7 +727,9 @@ mod tests {
 
         // VERIFICATION STEP 5: Test check_divergence
         println!("\n[FSV-7] Testing check_divergence...");
-        let report = retriever.check_divergence(&query, session_id).expect("divergence");
+        let report = retriever
+            .check_divergence(&query, session_id)
+            .expect("divergence");
         println!("  check_divergence returned {} alerts", report.len());
 
         // VERIFICATION STEP 6: Verify total_memory_count

@@ -33,8 +33,8 @@ use super::causal_dtos::{
     SourceInfo, ABDUCTIVE_DAMPENING,
 };
 
-use super::helpers::ToolErrorKind;
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// search_causes tool implementation.
@@ -62,10 +62,11 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let request: SearchCausesRequest = match self.parse_request(id.clone(), args, "search_causes") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchCausesRequest =
+            match self.parse_request(id.clone(), args, "search_causes") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let query = &request.query;
         let top_k = request.top_k;
@@ -144,11 +145,7 @@ impl Handlers {
                 .with_rerank(enable_rerank)
                 .with_rerank_weight(request.rerank_weight);
 
-            let candidates = match self
-                .teleological_store
-                .search_semantic(fp, options)
-                .await
-            {
+            let candidates = match self.teleological_store.search_semantic(fp, options).await {
                 Ok(results) => results,
                 Err(e) => {
                     error!(error = %e, "search_causes: Candidate search FAILED");
@@ -173,15 +170,18 @@ impl Handlers {
             // query_is_cause=false because the query IS the effect, not the cause.
             // This matches chain.rs rank_causes_by_abduction which also uses false.
             for result in abduction_results.iter_mut() {
-                if let Some((_, stored_fp)) = candidate_pairs.iter().find(|(id, _)| *id == result.cause_id) {
-                    let e5_sim = compute_e5_asymmetric_fingerprint_similarity(
-                        fp, stored_fp, false,
-                    );
+                if let Some((_, stored_fp)) = candidate_pairs
+                    .iter()
+                    .find(|(id, _)| *id == result.cause_id)
+                {
+                    let e5_sim = compute_e5_asymmetric_fingerprint_similarity(fp, stored_fp, false);
                     result.score = apply_causal_gate(result.score, e5_sim, true);
                 }
             }
             abduction_results.sort_by(|a, b| {
-                b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
             let memory_causes: Vec<CauseSearchResult> = abduction_results
@@ -214,7 +214,11 @@ impl Handlers {
         // ---- Path B: Search CF_CAUSAL_RELATIONSHIPS (relationships) ----
         if search_relationships {
             let effect_vec = e5_effect_vec.as_ref().unwrap();
-            let rel_top_k = if search_memories { top_k * 2 } else { top_k * 5 };
+            let rel_top_k = if search_memories {
+                top_k * 2
+            } else {
+                top_k * 5
+            };
 
             let rel_results = match self
                 .teleological_store
@@ -239,7 +243,11 @@ impl Handlers {
                 }
 
                 // Retrieve the relationship to get source_fingerprint_id
-                let rel = match self.teleological_store.get_causal_relationship(*rel_id).await {
+                let rel = match self
+                    .teleological_store
+                    .get_causal_relationship(*rel_id)
+                    .await
+                {
                     Ok(Some(rel)) => rel,
                     Ok(None) => {
                         warn!(rel_id = %rel_id, "search_causes: Causal relationship not found, skipping");
@@ -247,7 +255,11 @@ impl Handlers {
                     }
                     Err(e) => {
                         error!(rel_id = %rel_id, error = %e, "search_causes: Failed to retrieve causal relationship");
-                        return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Failed to retrieve causal relationship {}: {}", rel_id, e));
+                        return self.tool_error_typed(
+                            id,
+                            ToolErrorKind::Storage,
+                            &format!("Failed to retrieve causal relationship {}: {}", rel_id, e),
+                        );
                     }
                 };
                 all_causes.push(CauseSearchResult {
@@ -268,7 +280,11 @@ impl Handlers {
 
         // ---- Merge and deduplicate ----
         // Sort by score descending
-        all_causes.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_causes.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Deduplicate by source_memory_id (keep highest scoring)
         let mut seen_ids = HashSet::new();
@@ -397,7 +413,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_causes: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -433,10 +453,11 @@ impl Handlers {
         use context_graph_core::causal::chain::rank_effects_by_prediction;
 
         // Parse and validate request
-        let request: SearchEffectsRequest = match self.parse_request(id.clone(), args, "search_effects") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchEffectsRequest =
+            match self.parse_request(id.clone(), args, "search_effects") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let query = &request.query;
         let top_k = request.top_k;
@@ -509,11 +530,7 @@ impl Handlers {
                 .with_rerank(enable_rerank)
                 .with_rerank_weight(request.rerank_weight);
 
-            let candidates = match self
-                .teleological_store
-                .search_semantic(fp, options)
-                .await
-            {
+            let candidates = match self.teleological_store.search_semantic(fp, options).await {
                 Ok(results) => results,
                 Err(e) => {
                     error!(error = %e, "search_effects: Candidate search FAILED");
@@ -535,15 +552,18 @@ impl Handlers {
             // so the gate must be applied to the prediction scores, not the
             // pre-ranking similarity (which would be discarded).
             for result in prediction_results.iter_mut() {
-                if let Some((_, stored_fp)) = candidate_pairs.iter().find(|(id, _)| *id == result.effect_id) {
-                    let e5_sim = compute_e5_asymmetric_fingerprint_similarity(
-                        fp, stored_fp, true,
-                    );
+                if let Some((_, stored_fp)) = candidate_pairs
+                    .iter()
+                    .find(|(id, _)| *id == result.effect_id)
+                {
+                    let e5_sim = compute_e5_asymmetric_fingerprint_similarity(fp, stored_fp, true);
                     result.score = apply_causal_gate(result.score, e5_sim, true);
                 }
             }
             prediction_results.sort_by(|a, b| {
-                b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal)
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
             let memory_effects: Vec<EffectSearchResult> = prediction_results
@@ -576,7 +596,11 @@ impl Handlers {
         // ---- Path B: Search CF_CAUSAL_RELATIONSHIPS (relationships) ----
         if search_relationships {
             let cause_vec = e5_cause_vec.as_ref().unwrap();
-            let rel_top_k = if search_memories { top_k * 2 } else { top_k * 5 };
+            let rel_top_k = if search_memories {
+                top_k * 2
+            } else {
+                top_k * 5
+            };
 
             let rel_results = match self
                 .teleological_store
@@ -599,7 +623,11 @@ impl Handlers {
                     continue;
                 }
 
-                let rel = match self.teleological_store.get_causal_relationship(*rel_id).await {
+                let rel = match self
+                    .teleological_store
+                    .get_causal_relationship(*rel_id)
+                    .await
+                {
                     Ok(Some(rel)) => rel,
                     Ok(None) => {
                         warn!(rel_id = %rel_id, "search_effects: Causal relationship not found, skipping");
@@ -607,7 +635,11 @@ impl Handlers {
                     }
                     Err(e) => {
                         error!(rel_id = %rel_id, error = %e, "search_effects: Failed to retrieve causal relationship");
-                        return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Failed to retrieve causal relationship {}: {}", rel_id, e));
+                        return self.tool_error_typed(
+                            id,
+                            ToolErrorKind::Storage,
+                            &format!("Failed to retrieve causal relationship {}: {}", rel_id, e),
+                        );
                     }
                 };
                 all_effects.push(EffectSearchResult {
@@ -627,7 +659,11 @@ impl Handlers {
         }
 
         // ---- Merge and deduplicate ----
-        all_effects.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_effects.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut seen_ids = HashSet::new();
         let effects: Vec<EffectSearchResult> = all_effects
@@ -746,7 +782,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_effects: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -776,7 +816,11 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let (request, anchor_uuid) = match self.parse_request_validated::<GetCausalChainRequest>(id.clone(), args, "get_causal_chain") {
+        let (request, anchor_uuid) = match self.parse_request_validated::<GetCausalChainRequest>(
+            id.clone(),
+            args,
+            "get_causal_chain",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -795,18 +839,11 @@ impl Handlers {
         );
 
         // Step 1: Verify anchor exists and get its fingerprint
-        let anchor_fingerprint = match self
-            .teleological_store
-            .retrieve(anchor_uuid)
-            .await
-        {
+        let anchor_fingerprint = match self.teleological_store.retrieve(anchor_uuid).await {
             Ok(Some(fp)) => fp,
             Ok(None) => {
                 error!(anchor_id = %anchor_uuid, "get_causal_chain: Anchor not found");
-                return self.tool_error(
-                    id,
-                    &format!("Anchor memory not found: {}", anchor_uuid),
-                );
+                return self.tool_error(id, &format!("Anchor memory not found: {}", anchor_uuid));
             }
             Err(e) => {
                 error!(error = %e, "get_causal_chain: Failed to get anchor");
@@ -848,8 +885,7 @@ impl Handlers {
                         id,
                         &format!(
                             "Failed to search for hop {} candidates: {}. Chain traversal aborted.",
-                            hop_index,
-                            e
+                            hop_index, e
                         ),
                     );
                 }
@@ -890,9 +926,7 @@ impl Handlers {
                 let adjusted_sim = asymmetric_sim * direction_mod;
 
                 // Track best candidate
-                if best_candidate.is_none()
-                    || adjusted_sim > best_candidate.as_ref().unwrap().2
-                {
+                if best_candidate.is_none() || adjusted_sim > best_candidate.as_ref().unwrap().2 {
                     // M6 FIX: Move instead of clone — `for candidate in candidates` gives
                     // ownership, so the SemanticFingerprint can be moved without copying
                     // all 14 embedding vectors (~50KB).
@@ -909,7 +943,10 @@ impl Handlers {
             let (next_id, base_sim, asymmetric_sim, next_fingerprint) = match best_candidate {
                 Some(c) => c,
                 None => {
-                    debug!(hop = hop_index, "get_causal_chain: No more candidates found");
+                    debug!(
+                        hop = hop_index,
+                        "get_causal_chain: No more candidates found"
+                    );
                     break;
                 }
             };
@@ -1003,7 +1040,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_causal_chain: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1059,7 +1100,10 @@ mod tests {
         fp.e5_causal_as_cause = vec![0.5, 0.5, 0.5, 0.5];
         fp.e5_causal_as_effect = vec![2.0, -1.0, 0.5, -0.3];
         assert_eq!(infer_causal_direction(&fp), CausalDirection::Effect);
-        assert_eq!(infer_causal_direction(&SemanticFingerprint::zeroed()), CausalDirection::Unknown);
+        assert_eq!(
+            infer_causal_direction(&SemanticFingerprint::zeroed()),
+            CausalDirection::Unknown
+        );
     }
 
     #[test]

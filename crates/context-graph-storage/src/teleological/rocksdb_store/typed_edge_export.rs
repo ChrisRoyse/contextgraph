@@ -20,9 +20,7 @@
 //! operation name, CF name, and key context. No silent fallbacks.
 
 use context_graph_core::error::{CoreError, CoreResult};
-use context_graph_core::typed_edge_export::{
-    TypedEdgeTrainingRecord, TYPED_EDGE_RECORD_VERSION,
-};
+use context_graph_core::typed_edge_export::{TypedEdgeTrainingRecord, TYPED_EDGE_RECORD_VERSION};
 use rocksdb::{ColumnFamily, IteratorMode, WriteBatch};
 use tracing::{debug, error};
 use uuid::Uuid;
@@ -127,9 +125,7 @@ impl RocksDbTeleologicalStore {
     /// Returns keys only (no payloads). Iteration mirrors RocksDB's natural
     /// key order. Malformed keys (length ≠ 33) trigger a structured
     /// `CoreError::SerializationError` to fail fast.
-    pub async fn list_typed_edge_record_keys(
-        &self,
-    ) -> CoreResult<Vec<(Uuid, Uuid, u8)>> {
+    pub async fn list_typed_edge_record_keys(&self) -> CoreResult<Vec<(Uuid, Uuid, u8)>> {
         let cf = self.cf_typed_edge_records();
         let iter = self.db.iterator_cf(cf, IteratorMode::Start);
         let mut out = Vec::new();
@@ -199,17 +195,13 @@ impl RocksDbTeleologicalStore {
 
 /// Encode a `TypedEdgeTrainingRecord` with the canonical
 /// `[TYPED_EDGE_RECORD_VERSION][bincode]` layout.
-pub fn encode_typed_edge_record(
-    record: &TypedEdgeTrainingRecord,
-) -> CoreResult<Vec<u8>> {
+pub fn encode_typed_edge_record(record: &TypedEdgeTrainingRecord) -> CoreResult<Vec<u8>> {
     encode_versioned(record, TYPED_EDGE_RECORD_VERSION, "TypedEdgeTrainingRecord")
 }
 
 /// Decode a `TypedEdgeTrainingRecord`, rejecting empty payloads and version
 /// mismatches.
-pub fn decode_typed_edge_record(
-    bytes: &[u8],
-) -> CoreResult<TypedEdgeTrainingRecord> {
+pub fn decode_typed_edge_record(bytes: &[u8]) -> CoreResult<TypedEdgeTrainingRecord> {
     decode_versioned(
         bytes,
         TYPED_EDGE_RECORD_VERSION,

@@ -210,7 +210,10 @@ impl Handlers {
         if !(0.0..=1.0).contains(&min_consensus) {
             return self.tool_error(
                 id,
-                &format!("minConsensus must be between 0.0 and 1.0, got {}", min_consensus),
+                &format!(
+                    "minConsensus must be between 0.0 and 1.0, got {}",
+                    min_consensus
+                ),
             );
         }
 

@@ -111,7 +111,10 @@ fn main() {
     println!("Edge Case 1: Single line content");
     let single_line = "This is a single line of content with several words.";
     let chunks1 = chunker.chunk_text(single_line, "single.md").expect("chunk");
-    println!("  Input: {} words on 1 line", single_line.split_whitespace().count());
+    println!(
+        "  Input: {} words on 1 line",
+        single_line.split_whitespace().count()
+    );
     println!(
         "  Output: start_line={}, end_line={}",
         chunks1[0].metadata.start_line, chunks1[0].metadata.end_line
@@ -135,7 +138,10 @@ fn main() {
     if chunks2[0].metadata.end_line >= 4 {
         println!("  PASS: End line includes line 4");
     } else {
-        println!("  WARN: End line is {}, expected >= 4", chunks2[0].metadata.end_line);
+        println!(
+            "  WARN: End line is {}, expected >= 4",
+            chunks2[0].metadata.end_line
+        );
     }
 
     // Edge 3: Very long single line
@@ -143,7 +149,10 @@ fn main() {
     let long_words: Vec<String> = (0..100).map(|i| format!("word{}", i)).collect();
     let long_line = long_words.join(" ");
     let chunks3 = chunker.chunk_text(&long_line, "long.md").expect("chunk");
-    println!("  Input: {} words on 1 line", long_line.split_whitespace().count());
+    println!(
+        "  Input: {} words on 1 line",
+        long_line.split_whitespace().count()
+    );
     println!("  Output: {} chunks", chunks3.len());
     for (i, c) in chunks3.iter().enumerate() {
         println!(

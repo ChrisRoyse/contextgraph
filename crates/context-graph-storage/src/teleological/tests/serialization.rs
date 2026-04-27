@@ -75,8 +75,8 @@ fn test_topic_profile_roundtrip() {
     assert_eq!(serialized.len(), 56);
     println!("SERIALIZED: {} bytes", serialized.len());
 
-    let deserialized = deserialize_topic_profile(&serialized)
-        .expect("deserialize should succeed for valid data");
+    let deserialized =
+        deserialize_topic_profile(&serialized).expect("deserialize should succeed for valid data");
     println!("AFTER: {:?}", deserialized);
 
     for i in 0..14 {
@@ -139,8 +139,8 @@ fn test_memory_id_list_roundtrip() {
     );
     assert_eq!(serialized.len(), 4 + 10 * 16);
 
-    let deserialized = deserialize_memory_id_list(&serialized)
-        .expect("deserialize should succeed for valid data");
+    let deserialized =
+        deserialize_memory_id_list(&serialized).expect("deserialize should succeed for valid data");
     println!("AFTER: {} UUIDs", deserialized.len());
     for (i, id) in deserialized.iter().enumerate() {
         println!("  [{}]: {}", i, id);
@@ -169,8 +169,8 @@ fn edge_case_empty_memory_id_list() {
     assert_eq!(serialized.len(), 4);
     assert_eq!(&serialized[..4], &[0, 0, 0, 0]); // count = 0
 
-    let deserialized = deserialize_memory_id_list(&serialized)
-        .expect("deserialize should succeed for empty list");
+    let deserialized =
+        deserialize_memory_id_list(&serialized).expect("deserialize should succeed for empty list");
     println!("AFTER: {} UUIDs", deserialized.len());
 
     assert!(deserialized.is_empty());
@@ -195,8 +195,8 @@ fn edge_case_large_memory_id_list() {
     );
     assert_eq!(serialized.len(), expected_size);
 
-    let deserialized = deserialize_memory_id_list(&serialized)
-        .expect("deserialize should succeed for large list");
+    let deserialized =
+        deserialize_memory_id_list(&serialized).expect("deserialize should succeed for large list");
     println!("AFTER: {} UUIDs", deserialized.len());
     println!("  First: {}", deserialized[0]);
     println!("  Last: {}", deserialized[999]);

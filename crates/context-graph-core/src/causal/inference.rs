@@ -14,7 +14,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-
 /// Direction for omni_infer.
 ///
 /// Per constitution (line 539), the `omni_infer` tool supports 5 inference directions.

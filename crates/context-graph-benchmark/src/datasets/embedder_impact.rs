@@ -259,7 +259,10 @@ impl EmbedderImpactDataset {
         };
 
         let avg_relevant_per_query = if !self.queries.is_empty() {
-            self.queries.iter().map(|q| q.relevant_docs.len()).sum::<usize>() as f64
+            self.queries
+                .iter()
+                .map(|q| q.relevant_docs.len())
+                .sum::<usize>() as f64
                 / self.queries.len() as f64
         } else {
             0.0
@@ -316,7 +319,8 @@ impl EmbedderImpactDatasetGenerator {
         let topic_clusters = topic_gen.generate(num_topics, self.config.noise_std);
 
         // Generate fingerprints
-        let (fingerprints, topic_assignments) = self.generate_fingerprints(num_memories, &topic_clusters);
+        let (fingerprints, topic_assignments) =
+            self.generate_fingerprints(num_memories, &topic_clusters);
 
         // Generate queries
         let queries = self.generate_queries(&topic_clusters, &topic_assignments, &fingerprints);
@@ -462,7 +466,8 @@ impl EmbedderImpactDatasetGenerator {
                         e5_causal_as_cause: embeddings.e5_cause,
                         e5_causal_as_effect: embeddings.e5_effect,
                         e5_causal: Vec::new(),
-                        e6_sparse: self.generate_sparse(E6_SPARSE_VOCAB, self.config.sparse_entries_e6),
+                        e6_sparse: self
+                            .generate_sparse(E6_SPARSE_VOCAB, self.config.sparse_entries_e6),
                         e7_code: embeddings.e7,
                         e8_graph_as_source: embeddings.e8.clone(),
                         e8_graph_as_target: embeddings.e8,
@@ -471,8 +476,10 @@ impl EmbedderImpactDatasetGenerator {
                         e10_multimodal_paraphrase: embeddings.e10.clone(),
                         e10_multimodal_as_context: embeddings.e10,
                         e11_entity: embeddings.e11,
-                        e12_late_interaction: self.generate_late_interaction(self.config.tokens_e12),
-                        e13_splade: self.generate_sparse(E13_SPLADE_VOCAB, self.config.sparse_entries_e13),
+                        e12_late_interaction: self
+                            .generate_late_interaction(self.config.tokens_e12),
+                        e13_splade: self
+                            .generate_sparse(E13_SPLADE_VOCAB, self.config.sparse_entries_e13),
                         e14_bge_m3_dense: Vec::new(),
                     }
                 };
@@ -480,9 +487,9 @@ impl EmbedderImpactDatasetGenerator {
                 // Assign causal direction per ARCH-18, AP-77
                 // Distribution: 40% Cause, 40% Effect, 20% Unknown
                 let causal_direction = match query_num % 5 {
-                    0 | 1 => CausalDirection::Cause,   // 40%
-                    2 | 3 => CausalDirection::Effect,  // 40%
-                    _ => CausalDirection::Unknown,     // 20%
+                    0 | 1 => CausalDirection::Cause,  // 40%
+                    2 | 3 => CausalDirection::Effect, // 40%
+                    _ => CausalDirection::Unknown,    // 20%
                 };
                 query_num += 1;
 
@@ -528,7 +535,10 @@ impl EmbedderImpactDatasetGenerator {
         queries
     }
 
-    fn build_knn_graphs(&mut self, fingerprints: &[(Uuid, SemanticFingerprint)]) -> HashMap<EmbedderIndex, KnnGraph> {
+    fn build_knn_graphs(
+        &mut self,
+        fingerprints: &[(Uuid, SemanticFingerprint)],
+    ) -> HashMap<EmbedderIndex, KnnGraph> {
         // Only build for key embedders to save time
         let embedders = [
             EmbedderIndex::E1Semantic,
@@ -560,7 +570,8 @@ impl EmbedderImpactDatasetGenerator {
                     .collect();
 
                 // Sort and take top K
-                similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                similarities
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
                 similarities.truncate(k);
 
                 graph.add_neighbors(*id, similarities);
@@ -584,9 +595,9 @@ impl EmbedderImpactDatasetGenerator {
             EmbedderIndex::E7Code => &fp.e7_code,
             EmbedderIndex::E8Graph => &fp.e8_graph_as_source,
             EmbedderIndex::E9HDC => &fp.e9_hdc,
-            EmbedderIndex::E10Multimodal | EmbedderIndex::E10MultimodalParaphrase | EmbedderIndex::E10MultimodalContext => {
-                &fp.e10_multimodal_paraphrase
-            }
+            EmbedderIndex::E10Multimodal
+            | EmbedderIndex::E10MultimodalParaphrase
+            | EmbedderIndex::E10MultimodalContext => &fp.e10_multimodal_paraphrase,
             EmbedderIndex::E11Entity => &fp.e11_entity,
             // E6, E12, E13 are sparse/late-interaction, return empty.
             // E14 BGE-M3 Dense lives in sibling CF, not in SemanticFingerprint.
@@ -825,7 +836,10 @@ mod tests {
             min_distance,
             MIN_DISTANCE_THRESHOLD,
             violations.len(),
-            violations.first().map(|(id, _)| id.to_string()).unwrap_or_default(),
+            violations
+                .first()
+                .map(|(id, _)| id.to_string())
+                .unwrap_or_default(),
             violations.first().map(|(_, d)| *d).unwrap_or(0.0)
         );
 
@@ -843,15 +857,21 @@ mod tests {
         // Per the benchmark plan: Query causal directions should be 40% Cause, 40% Effect, 20% Unknown
         const TOLERANCE_PCT: f64 = 5.0;
 
-        let dataset = EmbedderImpactDataset::for_tier(ScaleTier::Tier2_1K);  // Use larger dataset for better distribution
+        let dataset = EmbedderImpactDataset::for_tier(ScaleTier::Tier2_1K); // Use larger dataset for better distribution
 
-        let cause_count = dataset.queries.iter()
+        let cause_count = dataset
+            .queries
+            .iter()
             .filter(|q| q.causal_direction == CausalDirection::Cause)
             .count();
-        let effect_count = dataset.queries.iter()
+        let effect_count = dataset
+            .queries
+            .iter()
             .filter(|q| q.causal_direction == CausalDirection::Effect)
             .count();
-        let unknown_count = dataset.queries.iter()
+        let unknown_count = dataset
+            .queries
+            .iter()
             .filter(|q| q.causal_direction == CausalDirection::Unknown)
             .count();
 
@@ -869,17 +889,20 @@ mod tests {
         assert!(
             (cause_pct - 40.0).abs() <= TOLERANCE_PCT,
             "Cause percentage {:.1}% not within {}% of target 40%",
-            cause_pct, TOLERANCE_PCT
+            cause_pct,
+            TOLERANCE_PCT
         );
         assert!(
             (effect_pct - 40.0).abs() <= TOLERANCE_PCT,
             "Effect percentage {:.1}% not within {}% of target 40%",
-            effect_pct, TOLERANCE_PCT
+            effect_pct,
+            TOLERANCE_PCT
         );
         assert!(
             (unknown_pct - 20.0).abs() <= TOLERANCE_PCT,
             "Unknown percentage {:.1}% not within {}% of target 20%",
-            unknown_pct, TOLERANCE_PCT
+            unknown_pct,
+            TOLERANCE_PCT
         );
     }
 
@@ -896,9 +919,11 @@ mod tests {
                 id
             );
             assert_eq!(
-                fp.e5_causal_as_cause.len(), 768,
+                fp.e5_causal_as_cause.len(),
+                768,
                 "E5 cause vector dimension {} != 768 for document {}",
-                fp.e5_causal_as_cause.len(), id
+                fp.e5_causal_as_cause.len(),
+                id
             );
 
             // Check effect vector is present and has correct dimension
@@ -908,24 +933,38 @@ mod tests {
                 id
             );
             assert_eq!(
-                fp.e5_causal_as_effect.len(), 768,
+                fp.e5_causal_as_effect.len(),
+                768,
                 "E5 effect vector dimension {} != 768 for document {}",
-                fp.e5_causal_as_effect.len(), id
+                fp.e5_causal_as_effect.len(),
+                id
             );
 
             // Check both vectors are normalized (unit length, approximately)
-            let cause_norm: f32 = fp.e5_causal_as_cause.iter().map(|x| x * x).sum::<f32>().sqrt();
-            let effect_norm: f32 = fp.e5_causal_as_effect.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let cause_norm: f32 = fp
+                .e5_causal_as_cause
+                .iter()
+                .map(|x| x * x)
+                .sum::<f32>()
+                .sqrt();
+            let effect_norm: f32 = fp
+                .e5_causal_as_effect
+                .iter()
+                .map(|x| x * x)
+                .sum::<f32>()
+                .sqrt();
 
             assert!(
                 (cause_norm - 1.0).abs() < 0.1,
                 "E5 cause vector not normalized (norm={:.3}) for document {}",
-                cause_norm, id
+                cause_norm,
+                id
             );
             assert!(
                 (effect_norm - 1.0).abs() < 0.1,
                 "E5 effect vector not normalized (norm={:.3}) for document {}",
-                effect_norm, id
+                effect_norm,
+                id
             );
         }
     }
@@ -941,11 +980,7 @@ mod tests {
                 query.causal_direction,
                 CausalDirection::Cause | CausalDirection::Effect | CausalDirection::Unknown
             );
-            assert!(
-                is_valid,
-                "Query {} has invalid causal direction",
-                query.id
-            );
+            assert!(is_valid, "Query {} has invalid causal direction", query.id);
         }
     }
 }

@@ -88,7 +88,8 @@ impl DatasetGenerator {
     pub fn generate_dataset(&mut self, tier_config: &TierConfig) -> BenchmarkDataset {
         // Generate topics
         let mut topic_generator = TopicGenerator::new(self.config.seed);
-        let topic_centroids = topic_generator.generate(tier_config.topic_count, self.config.noise_std);
+        let topic_centroids =
+            topic_generator.generate(tier_config.topic_count, self.config.noise_std);
 
         // Generate fingerprints
         let (fingerprints, topic_assignments) = self.generate_fingerprints(
@@ -171,7 +172,11 @@ impl DatasetGenerator {
     }
 
     /// Generate a single fingerprint within a topic cluster with custom noise level.
-    fn generate_fingerprint_with_noise(&mut self, topic: &TopicCluster, noise_std: f32) -> SemanticFingerprint {
+    fn generate_fingerprint_with_noise(
+        &mut self,
+        topic: &TopicCluster,
+        noise_std: f32,
+    ) -> SemanticFingerprint {
         let embeddings = topic.sample_all(&mut self.rng, noise_std);
 
         SemanticFingerprint {
@@ -258,7 +263,8 @@ impl DatasetGenerator {
             let topic = &topics[topic_idx];
 
             // Generate full query fingerprint (sample from topic with reduced noise for queries)
-            let query_fingerprint = self.generate_fingerprint_with_noise(topic, self.config.noise_std * 0.5);
+            let query_fingerprint =
+                self.generate_fingerprint_with_noise(topic, self.config.noise_std * 0.5);
             let embedding = query_fingerprint.e1_semantic.clone();
 
             // Find relevant documents (same topic)
@@ -292,14 +298,15 @@ impl DatasetGenerator {
             let divergent_topic = topic_generator.generate_divergent_topic(topics);
 
             // Generate full fingerprint from divergent topic
-            let query_fingerprint = self.generate_fingerprint_with_noise(&divergent_topic, self.config.noise_std * 0.5);
+            let query_fingerprint =
+                self.generate_fingerprint_with_noise(&divergent_topic, self.config.noise_std * 0.5);
             let embedding = query_fingerprint.e1_semantic.clone();
 
             queries.push(QueryData {
                 id: self.generate_deterministic_uuid(),
                 embedding,
                 fingerprint: query_fingerprint,
-                topic: topics.len(), // Indicates divergent
+                topic: topics.len(),           // Indicates divergent
                 relevant_docs: HashSet::new(), // No relevant docs for divergent queries
                 is_divergent: true,
             });

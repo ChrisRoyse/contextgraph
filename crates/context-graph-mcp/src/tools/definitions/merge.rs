@@ -70,8 +70,12 @@ mod tests {
         assert_eq!(tools[0].name, "merge_concepts");
         assert!(tools[0].description.contains("reversal"));
         assert!(tools[0].description.contains("30-day"));
-        let required: Vec<&str> = tools[0].input_schema["required"].as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap()).collect();
+        let required: Vec<&str> = tools[0].input_schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert!(required.contains(&"source_ids"));
         assert!(required.contains(&"target_name"));
         assert!(required.contains(&"rationale"));
@@ -92,8 +96,12 @@ mod tests {
         });
         let tools = definitions();
         let props = tools[0].input_schema.get("properties").unwrap();
-        let strategies: Vec<&str> = props["merge_strategy"]["enum"].as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap()).collect();
+        let strategies: Vec<&str> = props["merge_strategy"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert!(strategies.contains(&input["merge_strategy"].as_str().unwrap()));
         assert_eq!(strategies.len(), 3);
     }

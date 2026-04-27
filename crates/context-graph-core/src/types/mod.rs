@@ -10,6 +10,10 @@ mod graph_edge;
 mod memory_node;
 mod source_metadata;
 
+pub use audit::{
+    AuditOperation, AuditRecord, AuditResult, ConsolidationCandidate, ConsolidationRecommendation,
+    EmbeddingVersionRecord, ImportanceChangeRecord, MergeRecord, RecommendationStatus,
+};
 pub use causal_relationship::{
     CausalRelationship, CausalSearchResult, CausalSourceSpan, LLMProvenance, MultiEmbedderConfig,
 };
@@ -17,6 +21,7 @@ pub use code_entity::{
     CodeEntity, CodeEntityType, CodeFileIndexEntry, CodeGitMetadata, CodeLanguage, CodeStats,
     Visibility,
 };
+pub use discovery::{DiscoveryCycleResult, ServiceStatus};
 pub use file_index::{FileIndexEntry, FileWatcherStats};
 pub use fingerprint::{
     // SemanticFingerprint and embedding types
@@ -41,12 +46,6 @@ pub use fingerprint::{
     SPARSE_VOCAB_SIZE,
     TOTAL_DENSE_DIMS,
 };
-pub use audit::{
-    AuditOperation, AuditRecord, AuditResult, ConsolidationCandidate, ConsolidationRecommendation,
-    EmbeddingVersionRecord, ImportanceChangeRecord, MergeRecord,
-    RecommendationStatus,
-};
-pub use discovery::{DiscoveryCycleResult, ServiceStatus};
 pub use graph_edge::*;
 pub use memory_node::*;
 pub use source_metadata::{SourceMetadata, SourceType};

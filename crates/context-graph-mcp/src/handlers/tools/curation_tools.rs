@@ -15,10 +15,10 @@ use tracing::{debug, error, info, warn};
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
-use super::helpers::ToolErrorKind;
 use super::curation_dtos::{
     BoostImportanceRequest, BoostImportanceResponse, ForgetConceptRequest, ForgetConceptResponse,
 };
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// Handle forget_concept tool call.
@@ -43,7 +43,11 @@ impl Handlers {
         debug!("Handling forget_concept");
 
         // Parse and validate request
-        let (request, node_id) = match self.parse_request_validated::<ForgetConceptRequest>(id.clone(), arguments, "forget_concept") {
+        let (request, node_id) = match self.parse_request_validated::<ForgetConceptRequest>(
+            id.clone(),
+            arguments,
+            "forget_concept",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -63,10 +67,8 @@ impl Handlers {
             }
             Err(e) => {
                 error!(error = %e, node_id = %node_id, "forget_concept: Failed to check memory existence");
-                return self.tool_error(
-                    id,
-                    &format!("Storage error: Failed to check memory: {}", e),
-                );
+                return self
+                    .tool_error(id, &format!("Storage error: Failed to check memory: {}", e));
             }
         };
 
@@ -90,7 +92,11 @@ impl Handlers {
                         audit_record = audit_record.with_operator(op_id.clone());
                     }
 
-                    if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_audit_record(&audit_record)
+                        .await
+                    {
                         error!(
                             node_id = %node_id,
                             error = %e,
@@ -162,7 +168,11 @@ impl Handlers {
         debug!("Handling boost_importance");
 
         // Parse and validate request
-        let (request, node_id) = match self.parse_request_validated::<BoostImportanceRequest>(id.clone(), arguments, "boost_importance") {
+        let (request, node_id) = match self.parse_request_validated::<BoostImportanceRequest>(
+            id.clone(),
+            arguments,
+            "boost_importance",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -241,7 +251,11 @@ impl Handlers {
                         "clamped": clamped,
                     }));
 
-                    if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_audit_record(&audit_record)
+                        .await
+                    {
                         error!(
                             node_id = %node_id,
                             error = %e,
@@ -269,7 +283,11 @@ impl Handlers {
                         reason: None,
                     };
 
-                    if let Err(e) = self.teleological_store.append_importance_change(&change_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_importance_change(&change_record)
+                        .await
+                    {
                         warn!(
                             node_id = %node_id,
                             error = %e,
@@ -286,7 +304,12 @@ impl Handlers {
                 }
 
                 // MCP-L1: Use handler's actual computed values, not recomputed from delta
-                let response = BoostImportanceResponse::from_result(node_id, old_importance, new_importance, clamped);
+                let response = BoostImportanceResponse::from_result(
+                    node_id,
+                    old_importance,
+                    new_importance,
+                    clamped,
+                );
 
                 match serde_json::to_value(response) {
                     Ok(v) => self.tool_result(id, v),

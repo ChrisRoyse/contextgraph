@@ -39,11 +39,7 @@ impl RocksDbTeleologicalStore {
     ///
     /// Encoding: `[TRAINING_RECORD_VERSION: u8][bincode]`.
     /// This is idempotent — re-exports overwrite prior records for the same UUID.
-    pub async fn store_training_record(
-        &self,
-        id: Uuid,
-        record: &TrainingRecord,
-    ) -> CoreResult<()> {
+    pub async fn store_training_record(&self, id: Uuid, record: &TrainingRecord) -> CoreResult<()> {
         let payload = encode_training_record(record)?;
         let cf = self.cf_training_records();
         let key = id.as_bytes();
@@ -79,15 +75,13 @@ impl RocksDbTeleologicalStore {
             Ok(None) => Ok(None),
             Err(e) => {
                 error!(id = %id, error = %e, "ROCKSDB ERROR: Failed to read training record");
-                Err(
-                    TeleologicalStoreError::rocksdb_op(
-                        "get_training_record",
-                        CF_TRAINING_RECORDS,
-                        Some(id),
-                        e,
-                    )
-                    .into(),
+                Err(TeleologicalStoreError::rocksdb_op(
+                    "get_training_record",
+                    CF_TRAINING_RECORDS,
+                    Some(id),
+                    e,
                 )
+                .into())
             }
         }
     }
@@ -118,15 +112,13 @@ impl RocksDbTeleologicalStore {
                 }
                 Err(e) => {
                     error!(error = %e, "ROCKSDB ERROR: iteration failed in list_training_record_ids");
-                    return Err(
-                        TeleologicalStoreError::rocksdb_op(
-                            "iterate_training_records",
-                            CF_TRAINING_RECORDS,
-                            None,
-                            e,
-                        )
-                        .into(),
-                    );
+                    return Err(TeleologicalStoreError::rocksdb_op(
+                        "iterate_training_records",
+                        CF_TRAINING_RECORDS,
+                        None,
+                        e,
+                    )
+                    .into());
                 }
             }
         }
@@ -237,10 +229,7 @@ impl RocksDbTeleologicalStore {
     /// Returns `Ok(None)` when no row exists for this memory (use the fallback
     /// path in `topic_profile_or_fallback`). Rejects malformed rows (neither
     /// 52 nor a multiple of 4 bytes) with a `CoreError::SerializationError`.
-    pub async fn get_topic_profile(
-        &self,
-        id: Uuid,
-    ) -> CoreResult<Option<[f32; 14]>> {
+    pub async fn get_topic_profile(&self, id: Uuid) -> CoreResult<Option<[f32; 14]>> {
         let cf = self
             .db
             .cf_handle(CF_TOPIC_PROFILES)

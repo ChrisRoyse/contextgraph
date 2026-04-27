@@ -2,18 +2,23 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::teleological::profile::{
-        FusionStrategy, TeleologicalProfile,
-    };
+    use crate::teleological::profile::{FusionStrategy, TeleologicalProfile};
     use crate::teleological::types::NUM_EMBEDDERS;
 
     #[test]
     fn test_profile_new() {
-        let profile = TeleologicalProfile::new("test", "Test Profile", crate::teleological::profile::TaskType::General);
+        let profile = TeleologicalProfile::new(
+            "test",
+            "Test Profile",
+            crate::teleological::profile::TaskType::General,
+        );
 
         assert_eq!(profile.id.as_str(), "test");
         assert_eq!(profile.name, "Test Profile");
-        assert_eq!(profile.task_type, crate::teleological::profile::TaskType::General);
+        assert_eq!(
+            profile.task_type,
+            crate::teleological::profile::TaskType::General
+        );
         assert_eq!(profile.sample_count, 0);
         assert!(!profile.is_system);
 
@@ -26,7 +31,8 @@ mod tests {
 
     #[test]
     fn test_profile_system() {
-        let profile = TeleologicalProfile::system(crate::teleological::profile::TaskType::CodeSearch);
+        let profile =
+            TeleologicalProfile::system(crate::teleological::profile::TaskType::CodeSearch);
 
         assert!(profile.is_system);
         assert!(profile.id.as_str().contains("system"));
@@ -44,7 +50,11 @@ mod tests {
 
     #[test]
     fn test_profile_normalize_weights() {
-        let mut profile = TeleologicalProfile::new("test", "Test", crate::teleological::profile::TaskType::General);
+        let mut profile = TeleologicalProfile::new(
+            "test",
+            "Test",
+            crate::teleological::profile::TaskType::General,
+        );
 
         // Set non-normalized weights
         profile.embedding_weights = [1.0; NUM_EMBEDDERS];

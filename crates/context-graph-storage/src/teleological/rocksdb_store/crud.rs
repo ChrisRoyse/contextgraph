@@ -455,14 +455,14 @@ impl RocksDbTeleologicalStore {
                         |c| if c > 0 { Some(c - 1) } else { None },
                     )
                     .is_err()
-                {
-                    error!(
-                        id = %id,
-                        "E_STOR_DOC_COUNT_001: total_doc_count underflow prevented \
-                         (was already 0) during hard-delete for fingerprint {}",
-                        id
-                    );
-                }
+            {
+                error!(
+                    id = %id,
+                    "E_STOR_DOC_COUNT_001: total_doc_count underflow prevented \
+                     (was already 0) during hard-delete for fingerprint {}",
+                    id
+                );
+            }
         }
 
         info!("Deleted fingerprint {} (soft={})", id, soft);
@@ -589,8 +589,11 @@ impl RocksDbTeleologicalStore {
                         }
                     }
                 }
-                info!("GC: compacted {} primary + {} quantized CFs after {deleted} deletions",
-                    primary_cfs.len(), QUANTIZED_EMBEDDER_CFS.len());
+                info!(
+                    "GC: compacted {} primary + {} quantized CFs after {deleted} deletions",
+                    primary_cfs.len(),
+                    QUANTIZED_EMBEDDER_CFS.len()
+                );
             } else {
                 debug!(
                     deleted = deleted,
@@ -600,18 +603,17 @@ impl RocksDbTeleologicalStore {
             }
         }
 
-        info!("GC: completed, {deleted}/{} entries hard-deleted", expired_ids.len());
+        info!(
+            "GC: completed, {deleted}/{} entries hard-deleted",
+            expired_ids.len()
+        );
         Ok(deleted)
     }
 
     // ==================== Processing Cursor Storage ====================
 
     /// Store a processing cursor in CF_SYSTEM under a "cursor::" prefixed key.
-    pub(crate) fn store_processing_cursor_sync(
-        &self,
-        key: &str,
-        data: &[u8],
-    ) -> CoreResult<()> {
+    pub(crate) fn store_processing_cursor_sync(&self, key: &str, data: &[u8]) -> CoreResult<()> {
         let cf = self
             .get_cf(crate::column_families::cf_names::SYSTEM)
             .map_err(|e| CoreError::StorageError(format!("CF_SYSTEM not found: {e}")))?;
@@ -619,19 +621,14 @@ impl RocksDbTeleologicalStore {
         self.db
             .put_cf(cf, prefixed_key.as_bytes(), data)
             .map_err(|e| {
-                CoreError::StorageError(format!(
-                    "Failed to store processing cursor '{key}': {e}"
-                ))
+                CoreError::StorageError(format!("Failed to store processing cursor '{key}': {e}"))
             })?;
         debug!(key = key, bytes = data.len(), "Stored processing cursor");
         Ok(())
     }
 
     /// Retrieve a processing cursor from CF_SYSTEM.
-    pub(crate) fn get_processing_cursor_sync(
-        &self,
-        key: &str,
-    ) -> CoreResult<Option<Vec<u8>>> {
+    pub(crate) fn get_processing_cursor_sync(&self, key: &str) -> CoreResult<Option<Vec<u8>>> {
         let cf = self
             .get_cf(crate::column_families::cf_names::SYSTEM)
             .map_err(|e| CoreError::StorageError(format!("CF_SYSTEM not found: {e}")))?;

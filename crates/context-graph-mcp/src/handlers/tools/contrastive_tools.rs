@@ -118,19 +118,13 @@ impl Handlers {
                     let s = match entry.as_str() {
                         Some(s) => s,
                         None => {
-                            return self.tool_error(
-                                id,
-                                "kinds entries must be strings",
-                            );
+                            return self.tool_error(id, "kinds entries must be strings");
                         }
                     };
                     match AnomalyKind::parse(s) {
                         Some(k) => out.push(k),
                         None => {
-                            return self.tool_error(
-                                id,
-                                &format!("Unknown kind '{}'", s),
-                            );
+                            return self.tool_error(id, &format!("Unknown kind '{}'", s));
                         }
                     }
                 }
@@ -181,10 +175,7 @@ impl Handlers {
             Ok(v) => v,
             Err(e) => {
                 error!(error = %e, "list_fingerprints_unbiased failed during mine");
-                return self.tool_error(
-                    id,
-                    &format!("Failed to list fingerprints: {}", e),
-                );
+                return self.tool_error(id, &format!("Failed to list fingerprints: {}", e));
             }
         };
 
@@ -195,11 +186,14 @@ impl Handlers {
                 duration_ms: started.elapsed().as_millis() as u64,
                 ..Default::default()
             };
-            return self.tool_result(id, json!({
-                "status": "no-op",
-                "reason": "candidate pool has fewer than 2 fingerprints",
-                "summary": summary_to_json(&summary),
-            }));
+            return self.tool_result(
+                id,
+                json!({
+                    "status": "no-op",
+                    "reason": "candidate pool has fewer than 2 fingerprints",
+                    "summary": summary_to_json(&summary),
+                }),
+            );
         }
 
         // ---- Optionally load per-anchor session filter table ----
@@ -214,11 +208,7 @@ impl Handlers {
         // Cache anchor texts so we don't re-read the same row as both anchor
         // and negative. O(pool_len) up-front read.
         let pool_ids: Vec<Uuid> = pool.iter().map(|fp| fp.id).collect();
-        let contents = match self
-            .teleological_store
-            .get_content_batch(&pool_ids)
-            .await
-        {
+        let contents = match self.teleological_store.get_content_batch(&pool_ids).await {
             Ok(v) => v,
             Err(e) => {
                 warn!(error = %e, "get_content_batch failed; falling back to empty strings");
@@ -284,11 +274,8 @@ impl Handlers {
                 );
                 // Cheap pre-filter using the raw profile; we recompute thresholds
                 // properly inside mine_pair_from_candidate.
-                let (max_high, min_low) = high_low_bounds(
-                    &profile,
-                    cfg.high_threshold,
-                    cfg.low_threshold,
-                );
+                let (max_high, min_low) =
+                    high_low_bounds(&profile, cfg.high_threshold, cfg.low_threshold);
                 let disagreement = max_high - min_low;
                 if !disagreement.is_finite() || disagreement <= 0.0 {
                     continue;
@@ -312,10 +299,7 @@ impl Handlers {
                     .get(&anchor_fp.id)
                     .cloned()
                     .unwrap_or_default();
-                let negative_text = content_by_id
-                    .get(&neg_fp.id)
-                    .cloned()
-                    .unwrap_or_default();
+                let negative_text = content_by_id.get(&neg_fp.id).cloned().unwrap_or_default();
 
                 let Some(pair) = mine_pair_from_candidate(
                     anchor_fp.id,
@@ -331,11 +315,8 @@ impl Handlers {
                         &anchor_fp.semantic,
                         &neg_fp.semantic,
                     );
-                    let (max_high, min_low) = high_low_bounds(
-                        &profile,
-                        cfg.high_threshold,
-                        cfg.low_threshold,
-                    );
+                    let (max_high, min_low) =
+                        high_low_bounds(&profile, cfg.high_threshold, cfg.low_threshold);
                     if !(max_high - min_low).is_finite()
                         || (max_high - min_low) < cfg.min_disagreement
                     {
@@ -407,10 +388,7 @@ impl Handlers {
             .and_then(|v| v.as_u64())
             .unwrap_or(100)
             .clamp(1, 10_000) as usize;
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let include_full = args
             .get("includeFull")
             .and_then(|v| v.as_bool())
@@ -450,8 +428,7 @@ impl Handlers {
                 let negatives = match rocksdb_store.pairs_for_anchor(anchor).await {
                     Ok(v) => v,
                     Err(e) => {
-                        return self
-                            .tool_error(id, &format!("pairs_for_anchor failed: {}", e));
+                        return self.tool_error(id, &format!("pairs_for_anchor failed: {}", e));
                     }
                 };
                 let mut out = Vec::new();
@@ -473,8 +450,7 @@ impl Handlers {
                 match rocksdb_store.list_pairs_by_kind(kind, over).await {
                     Ok(v) => v,
                     Err(e) => {
-                        return self
-                            .tool_error(id, &format!("list_pairs_by_kind failed: {}", e));
+                        return self.tool_error(id, &format!("list_pairs_by_kind failed: {}", e));
                     }
                 }
             }
@@ -482,8 +458,7 @@ impl Handlers {
                 let negatives = match rocksdb_store.pairs_for_anchor(anchor).await {
                     Ok(v) => v,
                     Err(e) => {
-                        return self
-                            .tool_error(id, &format!("pairs_for_anchor failed: {}", e));
+                        return self.tool_error(id, &format!("pairs_for_anchor failed: {}", e));
                     }
                 };
                 negatives.into_iter().map(|n| (anchor, n)).collect()
@@ -498,8 +473,7 @@ impl Handlers {
         };
 
         let total = keys.len();
-        let slice: Vec<(Uuid, Uuid)> =
-            keys.into_iter().skip(offset).take(limit).collect();
+        let slice: Vec<(Uuid, Uuid)> = keys.into_iter().skip(offset).take(limit).collect();
         let returned = slice.len();
 
         let mut out = Vec::with_capacity(returned);
@@ -574,10 +548,7 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(
-                id,
-                "get_contrastive_pair requires RocksDbTeleologicalStore",
-            );
+            return self.tool_error(id, "get_contrastive_pair requires RocksDbTeleologicalStore");
         };
 
         match rocksdb_store.get_contrastive_pair(anchor, negative).await {
@@ -635,9 +606,7 @@ impl Handlers {
             },
             None => match rocksdb_store.count_contrastive_pairs().await {
                 Ok(n) => self.tool_result(id, json!({"count": n})),
-                Err(e) => {
-                    self.tool_error(id, &format!("count_contrastive_pairs failed: {}", e))
-                }
+                Err(e) => self.tool_error(id, &format!("count_contrastive_pairs failed: {}", e)),
             },
         }
     }
@@ -679,11 +648,7 @@ fn summary_to_json(s: &MiningSummary) -> JsonValue {
 /// Cheap helper: compute `max(profile[i] for i in high)` and `min(profile[i]
 /// for i in low)` given thresholds. Used to sort candidates before the full
 /// classification step.
-fn high_low_bounds(
-    profile: &[f32; NUM_EMBEDDERS],
-    high: f32,
-    low: f32,
-) -> (f32, f32) {
+fn high_low_bounds(profile: &[f32; NUM_EMBEDDERS], high: f32, low: f32) -> (f32, f32) {
     let mut max_high = f32::NEG_INFINITY;
     let mut min_low = f32::INFINITY;
     for &v in profile.iter() {

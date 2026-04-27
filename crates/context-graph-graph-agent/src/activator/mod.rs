@@ -311,12 +311,7 @@ impl E8Activator {
             }
 
             // Add edges based on direction
-            self.add_edges_for_direction(
-                &mut graph,
-                source_id,
-                target_id,
-                analysis,
-            )
+            self.add_edges_for_direction(&mut graph, source_id, target_id, analysis)
         }; // Release graph lock
 
         // Update edges_created stat
@@ -327,10 +322,8 @@ impl E8Activator {
         // Previously, both were concatenated into one string, destroying directional
         // differentiation. Causal-agent correctly embeds cause/effect separately;
         // graph-agent must do the same for E8 source/target.
-        let (source_embedding, _) =
-            self.generate_e8_embeddings(source_content).await?;
-        let (_, target_embedding) =
-            self.generate_e8_embeddings(target_content).await?;
+        let (source_embedding, _) = self.generate_e8_embeddings(source_content).await?;
+        let (_, target_embedding) = self.generate_e8_embeddings(target_content).await?;
 
         // Phase 3: Update final stats
         self.stats.write().embeddings_generated += 2;
@@ -516,7 +509,13 @@ mod tests {
         };
 
         let result = activator
-            .activate_relationship(Uuid::new_v4(), Uuid::new_v4(), "source", "target", &analysis)
+            .activate_relationship(
+                Uuid::new_v4(),
+                Uuid::new_v4(),
+                "source",
+                "target",
+                &analysis,
+            )
             .await;
 
         // Should fail because GraphModel is required

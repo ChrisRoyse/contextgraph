@@ -30,9 +30,7 @@
 
 use std::collections::HashSet;
 
-use context_graph_core::contrastive::{
-    AnomalyKind, ContrastivePair, CONTRASTIVE_PAIR_VERSION,
-};
+use context_graph_core::contrastive::{AnomalyKind, ContrastivePair, CONTRASTIVE_PAIR_VERSION};
 use context_graph_core::error::{CoreError, CoreResult};
 use rocksdb::{ColumnFamily, IteratorMode, ReadOptions, WriteBatch};
 use tracing::{debug, error, warn};
@@ -173,11 +171,7 @@ impl RocksDbTeleologicalStore {
 
     /// Delete a contrastive pair and its secondary index entries. Returns
     /// `true` when a primary record existed.
-    pub async fn delete_contrastive_pair(
-        &self,
-        anchor: Uuid,
-        negative: Uuid,
-    ) -> CoreResult<bool> {
+    pub async fn delete_contrastive_pair(&self, anchor: Uuid, negative: Uuid) -> CoreResult<bool> {
         // Fetch first so we know which kind to drop from the by-kind index
         // (the kind is stored on the record itself).
         let Some(record) = self.get_contrastive_pair(anchor, negative).await? else {
@@ -518,19 +512,13 @@ pub(crate) fn by_kind_key(
 
 fn encode_anchor_negatives(list: &[Uuid]) -> CoreResult<Vec<u8>> {
     bincode::serialize(list).map_err(|e| {
-        CoreError::SerializationError(format!(
-            "bincode serialize anchor negatives: {}",
-            e
-        ))
+        CoreError::SerializationError(format!("bincode serialize anchor negatives: {}", e))
     })
 }
 
 fn decode_anchor_negatives(bytes: &[u8]) -> CoreResult<Vec<Uuid>> {
     bincode::deserialize(bytes).map_err(|e| {
-        CoreError::SerializationError(format!(
-            "bincode deserialize anchor negatives: {}",
-            e
-        ))
+        CoreError::SerializationError(format!("bincode deserialize anchor negatives: {}", e))
     })
 }
 
@@ -579,7 +567,11 @@ mod tests {
 
     #[test]
     fn encode_decode_roundtrip() {
-        let p = mock_pair(Uuid::new_v4(), Uuid::new_v4(), AnomalyKind::SemanticButNotCausal);
+        let p = mock_pair(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            AnomalyKind::SemanticButNotCausal,
+        );
         let bytes = encode_pair(&p).unwrap();
         assert_eq!(bytes[0], CONTRASTIVE_PAIR_VERSION);
         let back = decode_pair(&bytes).unwrap();

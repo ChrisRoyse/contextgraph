@@ -13,8 +13,8 @@
 //!     cargo run -p context-graph-benchmark --release --bin e7_realdata_bench
 
 use context_graph_benchmark::metrics::e7_code::{
-    E7BenchmarkMetrics, E7GroundTruth, E7QueryResult, E7QueryType,
-    precision_at_k, recall_at_k, mrr, ndcg_at_k, e7_unique_finds,
+    e7_unique_finds, mrr, ndcg_at_k, precision_at_k, recall_at_k, E7BenchmarkMetrics,
+    E7GroundTruth, E7QueryResult, E7QueryType,
 };
 use context_graph_embeddings::{
     models::CodeModel,
@@ -103,7 +103,11 @@ fn scan_codebase(crates_dir: &Path) -> Vec<CodeEntity> {
     }
 
     visit_dir(crates_dir, &mut entities, &mut file_count);
-    println!("  Scanned {} files, extracted {} entities", file_count, entities.len());
+    println!(
+        "  Scanned {} files, extracted {} entities",
+        file_count,
+        entities.len()
+    );
     entities
 }
 
@@ -140,9 +144,23 @@ fn extract_entities(content: &str, file_path: &Path, entities: &mut Vec<CodeEnti
         }
 
         // Look for entity definitions
-        for keyword in &["pub fn", "fn ", "pub struct", "struct ", "pub enum",
-                        "enum ", "pub trait", "trait ", "impl ", "pub const",
-                        "const ", "pub static", "static ", "pub type", "type "] {
+        for keyword in &[
+            "pub fn",
+            "fn ",
+            "pub struct",
+            "struct ",
+            "pub enum",
+            "enum ",
+            "pub trait",
+            "trait ",
+            "impl ",
+            "pub const",
+            "const ",
+            "pub static",
+            "static ",
+            "pub type",
+            "type ",
+        ] {
             if line.contains(keyword) {
                 if let Some(entity) = extract_entity(
                     &lines,
@@ -359,7 +377,11 @@ fn generate_queries_for_entity(entity: &CodeEntity) -> Vec<(&'static str, String
             let nl_query = format!(
                 "function that {} {}",
                 humanize_name(&entity.name),
-                entity.parent_type.as_ref().map(|t| format!("in {}", t)).unwrap_or_default()
+                entity
+                    .parent_type
+                    .as_ref()
+                    .map(|t| format!("in {}", t))
+                    .unwrap_or_default()
             );
             queries.push(("nl", nl_query));
 
@@ -435,7 +457,10 @@ async fn run_benchmark(
     let max_entities = 500;
     let entities_to_embed: Vec<_> = entities.iter().take(max_entities).collect();
 
-    println!("  Embedding {} code entities with REAL E7 model...", entities_to_embed.len());
+    println!(
+        "  Embedding {} code entities with REAL E7 model...",
+        entities_to_embed.len()
+    );
     let start = Instant::now();
 
     // Embed all entities using REAL GPU inference
@@ -443,9 +468,12 @@ async fn run_benchmark(
 
     for (i, entity) in entities_to_embed.iter().enumerate() {
         if i % 50 == 0 {
-            eprint!("\r    Embedding entities: {}/{} ({:.1}%)",
-                i, entities_to_embed.len(),
-                i as f64 / entities_to_embed.len() as f64 * 100.0);
+            eprint!(
+                "\r    Embedding entities: {}/{} ({:.1}%)",
+                i,
+                entities_to_embed.len(),
+                i as f64 / entities_to_embed.len() as f64 * 100.0
+            );
         }
 
         // Create ModelInput for code
@@ -460,20 +488,33 @@ async fn run_benchmark(
                 entity_embeddings.push((entity, embedding.vector));
             }
             Err(e) => {
-                eprintln!("\n    Warning: Failed to embed entity {}: {}", entity.name, e);
+                eprintln!(
+                    "\n    Warning: Failed to embed entity {}: {}",
+                    entity.name, e
+                );
             }
         }
     }
 
-    eprintln!("\r    Embedding entities: {}/{} (100.0%)", entities_to_embed.len(), entities_to_embed.len());
+    eprintln!(
+        "\r    Embedding entities: {}/{} (100.0%)",
+        entities_to_embed.len(),
+        entities_to_embed.len()
+    );
     println!("  Embedding took {:?}", start.elapsed());
-    println!("  Running {} queries with REAL E7 model...", ground_truth.len());
+    println!(
+        "  Running {} queries with REAL E7 model...",
+        ground_truth.len()
+    );
 
     for (qi, gt) in ground_truth.iter().enumerate() {
         if qi % 20 == 0 {
-            eprint!("\r    Running queries: {}/{} ({:.1}%)",
-                qi, ground_truth.len(),
-                qi as f64 / ground_truth.len() as f64 * 100.0);
+            eprint!(
+                "\r    Running queries: {}/{} ({:.1}%)",
+                qi,
+                ground_truth.len(),
+                qi as f64 / ground_truth.len() as f64 * 100.0
+            );
         }
 
         let query_start = Instant::now();
@@ -543,7 +584,11 @@ async fn run_benchmark(
         results.push(result);
     }
 
-    eprintln!("\r    Running queries: {}/{} (100.0%)", ground_truth.len(), ground_truth.len());
+    eprintln!(
+        "\r    Running queries: {}/{} (100.0%)",
+        ground_truth.len(),
+        ground_truth.len()
+    );
 
     E7BenchmarkMetrics::from_results(&results)
 }
@@ -629,14 +674,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  │ Metric              │ Value    │");
     println!("  ├─────────────────────┼──────────┤");
     println!("  │ Mean MRR            │  {:<6.4}  │", metrics.mean_mrr);
-    println!("  │ Mean P@1            │  {:<6.4}  │", metrics.mean_precision_at.get(&1).unwrap_or(&0.0));
-    println!("  │ Mean P@5            │  {:<6.4}  │", metrics.mean_precision_at.get(&5).unwrap_or(&0.0));
-    println!("  │ Mean P@10           │  {:<6.4}  │", metrics.mean_precision_at.get(&10).unwrap_or(&0.0));
-    println!("  │ Mean NDCG@10        │  {:<6.4}  │", metrics.mean_ndcg_at.get(&10).unwrap_or(&0.0));
-    println!("  │ E7 Unique Find Rate │  {:<6.4}  │", metrics.e7_unique_find_rate);
-    println!("  │ Latency P50         │  {:>5}µs │", metrics.latency_p50.as_micros());
-    println!("  │ Latency P95         │  {:>5}µs │", metrics.latency_p95.as_micros());
-    println!("  │ Overall Score       │  {:<6.4}  │", metrics.overall_score());
+    println!(
+        "  │ Mean P@1            │  {:<6.4}  │",
+        metrics.mean_precision_at.get(&1).unwrap_or(&0.0)
+    );
+    println!(
+        "  │ Mean P@5            │  {:<6.4}  │",
+        metrics.mean_precision_at.get(&5).unwrap_or(&0.0)
+    );
+    println!(
+        "  │ Mean P@10           │  {:<6.4}  │",
+        metrics.mean_precision_at.get(&10).unwrap_or(&0.0)
+    );
+    println!(
+        "  │ Mean NDCG@10        │  {:<6.4}  │",
+        metrics.mean_ndcg_at.get(&10).unwrap_or(&0.0)
+    );
+    println!(
+        "  │ E7 Unique Find Rate │  {:<6.4}  │",
+        metrics.e7_unique_find_rate
+    );
+    println!(
+        "  │ Latency P50         │  {:>5}µs │",
+        metrics.latency_p50.as_micros()
+    );
+    println!(
+        "  │ Latency P95         │  {:>5}µs │",
+        metrics.latency_p95.as_micros()
+    );
+    println!(
+        "  │ Overall Score       │  {:<6.4}  │",
+        metrics.overall_score()
+    );
     println!("  └─────────────────────┴──────────┘");
 
     // Per query type breakdown
@@ -645,9 +714,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  │ Query Type           │   MRR    │   P@10   │ E7 Unique %  │");
     println!("  ├──────────────────────┼──────────┼──────────┼──────────────┤");
     for (qt, qt_metrics) in &metrics.by_query_type {
-        println!("  │ {:20} │  {:<6.4}  │  {:<6.4}  │    {:<6.2}%   │",
-            qt.name(), qt_metrics.mean_mrr, qt_metrics.mean_precision_at_10,
-            qt_metrics.e7_unique_find_rate * 100.0);
+        println!(
+            "  │ {:20} │  {:<6.4}  │  {:<6.4}  │    {:<6.2}%   │",
+            qt.name(),
+            qt_metrics.mean_mrr,
+            qt_metrics.mean_precision_at_10,
+            qt_metrics.e7_unique_find_rate * 100.0
+        );
     }
     println!("  └──────────────────────┴──────────┴──────────┴──────────────┘");
 
@@ -678,18 +751,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  ├─────────────────┼──────────┼──────────┼─────────────┤");
     let mrr_target = 0.55;
     let mrr_actual = metrics.mean_mrr;
-    let mrr_status = if mrr_actual >= mrr_target { "✓ Pass" } else { "✗ Below" };
-    println!("  │ MRR             │  {:<6.2}  │  {:<6.4}  │ {:^11} │", mrr_target, mrr_actual, mrr_status);
+    let mrr_status = if mrr_actual >= mrr_target {
+        "✓ Pass"
+    } else {
+        "✗ Below"
+    };
+    println!(
+        "  │ MRR             │  {:<6.2}  │  {:<6.4}  │ {:^11} │",
+        mrr_target, mrr_actual, mrr_status
+    );
 
     let p5_target = 0.50;
     let p5_actual = *metrics.mean_precision_at.get(&5).unwrap_or(&0.0);
-    let p5_status = if p5_actual >= p5_target { "✓ Pass" } else { "✗ Below" };
-    println!("  │ P@5             │  {:<6.2}  │  {:<6.4}  │ {:^11} │", p5_target, p5_actual, p5_status);
+    let p5_status = if p5_actual >= p5_target {
+        "✓ Pass"
+    } else {
+        "✗ Below"
+    };
+    println!(
+        "  │ P@5             │  {:<6.2}  │  {:<6.4}  │ {:^11} │",
+        p5_target, p5_actual, p5_status
+    );
 
     let e7_unique_target = 0.15;
     let e7_unique_actual = metrics.e7_unique_find_rate;
-    let e7_status = if e7_unique_actual >= e7_unique_target { "✓ Pass" } else { "✗ Below" };
-    println!("  │ E7 Unique Rate  │  {:<6.2}  │  {:<6.4}  │ {:^11} │", e7_unique_target, e7_unique_actual, e7_status);
+    let e7_status = if e7_unique_actual >= e7_unique_target {
+        "✓ Pass"
+    } else {
+        "✗ Below"
+    };
+    println!(
+        "  │ E7 Unique Rate  │  {:<6.2}  │  {:<6.4}  │ {:^11} │",
+        e7_unique_target, e7_unique_actual, e7_status
+    );
     println!("  └─────────────────┴──────────┴──────────┴─────────────┘");
 
     Ok(())

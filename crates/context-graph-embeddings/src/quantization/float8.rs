@@ -293,7 +293,11 @@ impl Float8E4M3Encoder {
     /// simply masked out since negative values are impossible in valid data.
     #[inline]
     fn e4m3_to_f32(&self, byte: u8) -> f32 {
-        debug_assert!(byte & 0x80 == 0, "unexpected sign bit in E4M3 byte: {:#04x}", byte);
+        debug_assert!(
+            byte & 0x80 == 0,
+            "unexpected sign bit in E4M3 byte: {:#04x}",
+            byte
+        );
         // Mask to 7 bits — sign bit is always 0 for valid data (f32_to_e4m3 never sets it).
         let byte = byte & 0x7F;
         let exp = (byte >> 3) & 0x0F;

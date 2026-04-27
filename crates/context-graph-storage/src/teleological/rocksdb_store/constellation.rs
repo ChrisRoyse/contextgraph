@@ -50,9 +50,9 @@ impl RocksDbTeleologicalStore {
 
     #[inline]
     fn cf_constellation_by_selector(&self) -> &ColumnFamily {
-        self.db.cf_handle(CF_CONSTELLATION_BY_SELECTOR).expect(
-            "CF_CONSTELLATION_BY_SELECTOR must exist — database initialization failed",
-        )
+        self.db
+            .cf_handle(CF_CONSTELLATION_BY_SELECTOR)
+            .expect("CF_CONSTELLATION_BY_SELECTOR must exist — database initialization failed")
     }
 
     /// Persist a constellation and its selector-index entry atomically.
@@ -169,7 +169,10 @@ impl RocksDbTeleologicalStore {
             match item {
                 Ok((key, _)) => {
                     if key.len() != 16 {
-                        warn!(len = key.len(), "Skipping non-UUID key in CF_CONSTELLATIONS");
+                        warn!(
+                            len = key.len(),
+                            "Skipping non-UUID key in CF_CONSTELLATIONS"
+                        );
                         continue;
                     }
                     let mut buf = [0u8; 16];

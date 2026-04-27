@@ -110,10 +110,7 @@ impl ExtractionMetrics {
     }
 
     /// Compute from predictions and ground truth.
-    pub fn compute(
-        predicted: &[String],
-        ground_truth: &[String],
-    ) -> Self {
+    pub fn compute(predicted: &[String], ground_truth: &[String]) -> Self {
         use std::collections::HashSet;
 
         let pred_set: HashSet<_> = predicted.iter().collect();
@@ -340,13 +337,16 @@ impl TransEMetrics {
         let has_positive_separation = self.separation_score > thresholds::TRANSE_SEPARATION_MIN;
 
         // Statistical significance: separation should exceed noise
-        let has_significant_separation = self.separation_ratio >= thresholds::TRANSE_SEPARATION_RATIO_MIN;
+        let has_significant_separation =
+            self.separation_ratio >= thresholds::TRANSE_SEPARATION_RATIO_MIN;
 
         // Relation inference should work reasonably well
-        let has_good_inference = self.relationship_inference_mrr >= thresholds::RELATION_INFERENCE_MRR_MIN;
+        let has_good_inference =
+            self.relationship_inference_mrr >= thresholds::RELATION_INFERENCE_MRR_MIN;
 
         // Validation accuracy using adaptive threshold
-        let has_good_validation = self.knowledge_validation_accuracy >= thresholds::KNOWLEDGE_VALIDATION_ACCURACY_MIN;
+        let has_good_validation =
+            self.knowledge_validation_accuracy >= thresholds::KNOWLEDGE_VALIDATION_ACCURACY_MIN;
 
         // Pass if we have meaningful separation OR good validation accuracy
         (has_positive_separation && has_significant_separation)
@@ -375,7 +375,10 @@ impl TransEMetrics {
 
         // Compute separation ratio: separation / max(std_devs)
         // This measures statistical significance of the separation
-        let max_std = valid_distribution.std_dev.max(invalid_distribution.std_dev).max(0.001);
+        let max_std = valid_distribution
+            .std_dev
+            .max(invalid_distribution.std_dev)
+            .max(0.001);
         let separation_ratio = separation_score / max_std;
 
         Self {
@@ -383,7 +386,7 @@ impl TransEMetrics {
             invalid_triple_avg_score,
             separation_score,
             separation_ratio,
-            relationship_inference_mrr: 0.0, // Computed separately
+            relationship_inference_mrr: 0.0,    // Computed separately
             knowledge_validation_accuracy: 0.0, // Computed separately
             valid_triples_evaluated: valid_scores.len(),
             invalid_triples_evaluated: invalid_scores.len(),
@@ -475,7 +478,7 @@ pub struct EntityGraphMetrics {
 impl EntityGraphMetrics {
     /// Compute graph metrics from nodes and edges.
     pub fn compute(
-        nodes: &[(String, String)], // (id, entity_type)
+        nodes: &[(String, String)],              // (id, entity_type)
         edges: &[(String, String, String, f32)], // (source, target, relation, weight)
     ) -> Self {
         let nodes_discovered = nodes.len();
@@ -487,20 +490,25 @@ impl EntityGraphMetrics {
             (0.0, 0.0)
         } else {
             let mean = edge_scores.iter().sum::<f32>() / edge_scores.len() as f32;
-            let variance = edge_scores.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / edge_scores.len() as f32;
+            let variance = edge_scores.iter().map(|x| (x - mean).powi(2)).sum::<f32>()
+                / edge_scores.len() as f32;
             (mean, variance.sqrt())
         };
 
         // Entity type distribution
         let mut entity_type_distribution: HashMap<String, usize> = HashMap::new();
         for (_, entity_type) in nodes {
-            *entity_type_distribution.entry(entity_type.clone()).or_insert(0) += 1;
+            *entity_type_distribution
+                .entry(entity_type.clone())
+                .or_insert(0) += 1;
         }
 
         // Relationship type distribution
         let mut relationship_type_distribution: HashMap<String, usize> = HashMap::new();
         for (_, _, relation, _) in edges {
-            *relationship_type_distribution.entry(relation.clone()).or_insert(0) += 1;
+            *relationship_type_distribution
+                .entry(relation.clone())
+                .or_insert(0) += 1;
         }
 
         // Graph density
@@ -635,10 +643,26 @@ impl E11EntityMetrics {
 
     /// Generate summary report.
     pub fn summary_report(&self) -> String {
-        let extraction_status = if self.extraction.meets_targets() { "PASS" } else { "FAIL" };
-        let retrieval_status = if self.retrieval.meets_targets() { "PASS" } else { "FAIL" };
-        let transe_status = if self.transe.meets_targets() { "PASS" } else { "FAIL" };
-        let performance_status = if self.performance.meets_targets() { "PASS" } else { "FAIL" };
+        let extraction_status = if self.extraction.meets_targets() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        let retrieval_status = if self.retrieval.meets_targets() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        let transe_status = if self.transe.meets_targets() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+        let performance_status = if self.performance.meets_targets() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
 
         format!(
             r#"
@@ -673,22 +697,31 @@ Performance [{performance_status}]
   Entity Search P95: {:.1}ms (target < {:.0}ms)
 "#,
             self.overall_quality_score(),
-            self.extraction.f1_score, thresholds::EXTRACTION_F1_MIN,
-            self.extraction.canonicalization_accuracy, thresholds::CANONICALIZATION_ACCURACY_MIN,
-            self.extraction.true_positives, self.extraction.false_positives, self.extraction.false_negatives,
+            self.extraction.f1_score,
+            thresholds::EXTRACTION_F1_MIN,
+            self.extraction.canonicalization_accuracy,
+            thresholds::CANONICALIZATION_ACCURACY_MIN,
+            self.extraction.true_positives,
+            self.extraction.false_positives,
+            self.extraction.false_negatives,
             self.retrieval.mrr_e1_only,
             self.retrieval.mrr_e11_only,
             self.retrieval.mrr_e1_e11_hybrid,
-            self.retrieval.e11_contribution_pct, thresholds::E11_CONTRIBUTION_PCT_MIN,
-            self.transe.valid_triple_avg_score, thresholds::TRANSE_VALID_SCORE_MIN,
-            self.transe.invalid_triple_avg_score, thresholds::TRANSE_INVALID_SCORE_MAX,
+            self.retrieval.e11_contribution_pct,
+            thresholds::E11_CONTRIBUTION_PCT_MIN,
+            self.transe.valid_triple_avg_score,
+            thresholds::TRANSE_VALID_SCORE_MIN,
+            self.transe.invalid_triple_avg_score,
+            thresholds::TRANSE_INVALID_SCORE_MAX,
             self.transe.separation_score,
-            self.transe.relationship_inference_mrr, thresholds::RELATION_INFERENCE_MRR_MIN,
+            self.transe.relationship_inference_mrr,
+            thresholds::RELATION_INFERENCE_MRR_MIN,
             self.transe.knowledge_validation_accuracy * 100.0,
             self.graph.nodes_discovered,
             self.graph.edges_inferred,
             self.graph.graph_density,
-            self.performance.search_by_entities_latency_ms.p95, thresholds::ENTITY_SEARCH_LATENCY_MS_MAX,
+            self.performance.search_by_entities_latency_ms.p95,
+            thresholds::ENTITY_SEARCH_LATENCY_MS_MAX,
         )
     }
 }
@@ -754,7 +787,11 @@ mod tests {
 
     #[test]
     fn test_extraction_metrics_compute() {
-        let predicted = vec!["rust".to_string(), "python".to_string(), "unknown".to_string()];
+        let predicted = vec![
+            "rust".to_string(),
+            "python".to_string(),
+            "unknown".to_string(),
+        ];
         let ground_truth = vec!["rust".to_string(), "python".to_string(), "java".to_string()];
 
         let metrics = ExtractionMetrics::compute(&predicted, &ground_truth);
@@ -846,8 +883,18 @@ mod tests {
             ("postgresql".to_string(), "Database".to_string()),
         ];
         let edges = vec![
-            ("tokio".to_string(), "rust".to_string(), "depends_on".to_string(), 0.9),
-            ("tokio".to_string(), "postgresql".to_string(), "uses".to_string(), 0.7),
+            (
+                "tokio".to_string(),
+                "rust".to_string(),
+                "depends_on".to_string(),
+                0.9,
+            ),
+            (
+                "tokio".to_string(),
+                "postgresql".to_string(),
+                "uses".to_string(),
+                0.7,
+            ),
         ];
 
         let metrics = EntityGraphMetrics::compute(&nodes, &edges);

@@ -26,7 +26,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use context_graph_benchmark::realdata::embedder::{EmbedderConfig, EmbeddedDataset, RealDataEmbedder};
+use context_graph_benchmark::realdata::embedder::{
+    EmbeddedDataset, EmbedderConfig, RealDataEmbedder,
+};
 use context_graph_benchmark::realdata::loader::{ChunkRecord, DatasetLoader, RealDataset};
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 
@@ -97,8 +99,9 @@ fn parse_args() -> Args {
                     .expect("--seed must be a number");
             }
             "--checkpoint-dir" => {
-                args.checkpoint_dir =
-                    Some(PathBuf::from(argv.next().expect("--checkpoint-dir requires a value")));
+                args.checkpoint_dir = Some(PathBuf::from(
+                    argv.next().expect("--checkpoint-dir requires a value"),
+                ));
             }
             "--no-checkpoint" => {
                 args.checkpoint_dir = None;
@@ -114,8 +117,9 @@ fn parse_args() -> Args {
                 args.generate_report = true;
             }
             "--input" | "-i" => {
-                args.input_results =
-                    Some(PathBuf::from(argv.next().expect("--input requires a value")));
+                args.input_results = Some(PathBuf::from(
+                    argv.next().expect("--input requires a value"),
+                ));
             }
             "--help" | "-h" => {
                 print_usage();
@@ -298,7 +302,11 @@ fn load_dataset(args: &Args) -> Result<RealDataset, Box<dyn std::error::Error>> 
     let dataset = loader.load_from_dir(&args.data_dir)?;
     let elapsed = start.elapsed();
 
-    println!("  Loaded {} chunks in {:.2}s", dataset.chunks.len(), elapsed.as_secs_f64());
+    println!(
+        "  Loaded {} chunks in {:.2}s",
+        dataset.chunks.len(),
+        elapsed.as_secs_f64()
+    );
     println!("  Topics: {}", dataset.topic_count());
     println!("  Source datasets: {:?}", dataset.source_names());
 
@@ -349,10 +357,12 @@ async fn embed_dataset(
     let rate = dataset.chunks.len() as f64 / elapsed.as_secs_f64();
 
     println!();
-    println!("  Embedded {} chunks in {:.1}s ({:.1} chunks/s)",
-             embedded.fingerprints.len(),
-             elapsed.as_secs_f64(),
-             rate);
+    println!(
+        "  Embedded {} chunks in {:.1}s ({:.1} chunks/s)",
+        embedded.fingerprints.len(),
+        elapsed.as_secs_f64(),
+        rate
+    );
 
     Ok(embedded)
 }
@@ -430,7 +440,10 @@ fn collect_dataset_info(dataset: &RealDataset) -> DatasetInfo {
         }
     }
 
-    let mut topic_counts: Vec<_> = dataset.metadata.topic_counts.iter()
+    let mut topic_counts: Vec<_> = dataset
+        .metadata
+        .topic_counts
+        .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect();
     topic_counts.sort_by(|a, b| b.1.cmp(&a.1));
@@ -439,7 +452,11 @@ fn collect_dataset_info(dataset: &RealDataset) -> DatasetInfo {
     DatasetInfo {
         total_chunks: dataset.chunks.len(),
         total_documents: dataset.metadata.total_documents,
-        source_datasets: dataset.source_names().iter().map(|s| s.to_string()).collect(),
+        source_datasets: dataset
+            .source_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         dataset_breakdown,
         topic_count: dataset.topic_count(),
         top_topics: topic_counts,
@@ -488,11 +505,15 @@ fn run_retrieval_benchmarks(
         let query_doc_id = &query_chunk.doc_id;
 
         // Get query embedding
-        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+            continue;
+        };
 
         // Build set of UUIDs from same document (to exclude for fair evaluation)
         // This prevents "easy" retrieval where a chunk finds its sibling chunks
-        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+            .chunk_info
+            .iter()
             .filter(|(_, info)| &info.doc_id == query_doc_id)
             .map(|(id, _)| *id)
             .collect();
@@ -535,8 +556,16 @@ fn run_retrieval_benchmarks(
         }
 
         // P@1, P@5, P@10
-        let hits_1 = scores.iter().take(1).filter(|(id, _)| relevant.contains(id)).count() as f64;
-        let hits_5 = scores.iter().take(5).filter(|(id, _)| relevant.contains(id)).count() as f64;
+        let hits_1 = scores
+            .iter()
+            .take(1)
+            .filter(|(id, _)| relevant.contains(id))
+            .count() as f64;
+        let hits_5 = scores
+            .iter()
+            .take(5)
+            .filter(|(id, _)| relevant.contains(id))
+            .count() as f64;
         let hits_10 = top10.iter().filter(|id| relevant.contains(id)).count() as f64;
 
         p1_sum += hits_1;
@@ -597,12 +626,17 @@ fn run_clustering_benchmarks(
 
     // Extract embeddings and IDs
     let ids: Vec<Uuid> = embedded.fingerprints.keys().copied().collect();
-    let embeddings: Vec<&Vec<f32>> = ids.iter()
+    let embeddings: Vec<&Vec<f32>> = ids
+        .iter()
         .filter_map(|id| embedded.fingerprints.get(id).map(|fp| &fp.e1_semantic))
         .collect();
 
     if embeddings.len() != ids.len() {
-        eprintln!("[ERROR] Embedding count mismatch: {} ids, {} embeddings", ids.len(), embeddings.len());
+        eprintln!(
+            "[ERROR] Embedding count mismatch: {} ids, {} embeddings",
+            ids.len(),
+            embeddings.len()
+        );
         return ClusteringMetrics {
             purity: 0.0,
             normalized_mutual_info: 0.0,
@@ -615,7 +649,8 @@ fn run_clustering_benchmarks(
     let max_iters = 100;
 
     // Initialize centroids with first n_clusters points
-    let mut centroids: Vec<Vec<f32>> = embeddings.iter()
+    let mut centroids: Vec<Vec<f32>> = embeddings
+        .iter()
         .take(n_clusters)
         .map(|e| (*e).clone())
         .collect();
@@ -637,7 +672,8 @@ fn run_clustering_benchmarks(
             let mut best_dist = f32::MAX;
 
             for (j, centroid) in centroids.iter().enumerate() {
-                let dist: f32 = emb.iter()
+                let dist: f32 = emb
+                    .iter()
                     .zip(centroid.iter())
                     .map(|(a, b)| (a - b).powi(2))
                     .sum();
@@ -661,7 +697,8 @@ fn run_clustering_benchmarks(
 
         // Update centroids
         for (j, centroid) in centroids.iter_mut().enumerate() {
-            let cluster_points: Vec<&&Vec<f32>> = embeddings.iter()
+            let cluster_points: Vec<&&Vec<f32>> = embeddings
+                .iter()
                 .zip(predicted_labels.iter())
                 .filter(|(_, &label)| label == j)
                 .map(|(emb, _)| emb)
@@ -672,15 +709,15 @@ fn run_clustering_benchmarks(
             }
 
             for d in 0..dim {
-                centroid[d] = cluster_points.iter()
-                    .map(|e| e[d])
-                    .sum::<f32>() / cluster_points.len() as f32;
+                centroid[d] =
+                    cluster_points.iter().map(|e| e[d]).sum::<f32>() / cluster_points.len() as f32;
             }
         }
     }
 
     // Get ground truth labels
-    let true_labels: Vec<usize> = ids.iter()
+    let true_labels: Vec<usize> = ids
+        .iter()
         .map(|id| embedded.topic_assignments.get(id).copied().unwrap_or(0))
         .collect();
 
@@ -698,8 +735,10 @@ fn run_clustering_benchmarks(
         0.0 // Skip for performance
     };
 
-    eprintln!("  Clustering results: purity={:.4}, NMI={:.4}, ARI={:.4}, silhouette={:.4}",
-              purity, nmi, ari, silhouette);
+    eprintln!(
+        "  Clustering results: purity={:.4}, NMI={:.4}, ARI={:.4}, silhouette={:.4}",
+        purity, nmi, ari, silhouette
+    );
 
     ClusteringMetrics {
         purity,
@@ -724,9 +763,11 @@ fn compute_purity(predicted: &[usize], true_labels: &[usize]) -> f64 {
 
     let clusters: std::collections::HashSet<usize> = predicted.iter().copied().collect();
 
-    let purity_sum: usize = clusters.iter()
+    let purity_sum: usize = clusters
+        .iter()
         .map(|&cluster| {
-            counts.iter()
+            counts
+                .iter()
                 .filter(|((c, _), _)| *c == cluster)
                 .map(|(_, &count)| count)
                 .max()
@@ -754,21 +795,32 @@ fn compute_nmi(predicted: &[usize], true_labels: &[usize]) -> f64 {
         *joint_counts.entry((cluster, class)).or_insert(0.0) += 1.0;
     }
 
-    let h_cluster: f64 = cluster_counts.values()
+    let h_cluster: f64 = cluster_counts
+        .values()
         .map(|&count| {
             let p = count / n;
-            if p > 0.0 { -p * p.ln() } else { 0.0 }
+            if p > 0.0 {
+                -p * p.ln()
+            } else {
+                0.0
+            }
         })
         .sum();
 
-    let h_class: f64 = class_counts.values()
+    let h_class: f64 = class_counts
+        .values()
         .map(|&count| {
             let p = count / n;
-            if p > 0.0 { -p * p.ln() } else { 0.0 }
+            if p > 0.0 {
+                -p * p.ln()
+            } else {
+                0.0
+            }
         })
         .sum();
 
-    let mi: f64 = joint_counts.iter()
+    let mi: f64 = joint_counts
+        .iter()
         .map(|((cluster, class), &count)| {
             let p_joint = count / n;
             let p_cluster = cluster_counts[cluster] / n;
@@ -782,7 +834,11 @@ fn compute_nmi(predicted: &[usize], true_labels: &[usize]) -> f64 {
         .sum();
 
     let denom = h_cluster + h_class;
-    if denom < f64::EPSILON { 0.0 } else { 2.0 * mi / denom }
+    if denom < f64::EPSILON {
+        0.0
+    } else {
+        2.0 * mi / denom
+    }
 }
 
 // Compute Adjusted Rand Index
@@ -809,7 +865,11 @@ fn compute_ari(predicted: &[usize], true_labels: &[usize]) -> f64 {
     }
 
     let comb2 = |x: usize| -> f64 {
-        if x < 2 { 0.0 } else { (x * (x - 1)) as f64 / 2.0 }
+        if x < 2 {
+            0.0
+        } else {
+            (x * (x - 1)) as f64 / 2.0
+        }
     };
 
     let sum_comb_ij: f64 = contingency.values().map(|&x| comb2(x)).sum();
@@ -825,7 +885,11 @@ fn compute_ari(predicted: &[usize], true_labels: &[usize]) -> f64 {
     let max_index = 0.5 * (sum_comb_a + sum_comb_b);
     let denom = max_index - expected;
 
-    if denom.abs() < f64::EPSILON { 0.0 } else { (sum_comb_ij - expected) / denom }
+    if denom.abs() < f64::EPSILON {
+        0.0
+    } else {
+        (sum_comb_ij - expected) / denom
+    }
 }
 
 // Compute distance matrix for silhouette
@@ -860,7 +924,9 @@ fn compute_silhouette(labels: &[usize], distance_matrix: &[Vec<f64>]) -> f64 {
         let mut other_cluster_dists: HashMap<usize, Vec<f64>> = HashMap::new();
 
         for j in 0..n {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let dist = distance_matrix[i][j];
             if labels[j] == cluster {
                 same_cluster_dists.push(dist);
@@ -875,7 +941,8 @@ fn compute_silhouette(labels: &[usize], distance_matrix: &[Vec<f64>]) -> f64 {
             same_cluster_dists.iter().sum::<f64>() / same_cluster_dists.len() as f64
         };
 
-        let b = other_cluster_dists.values()
+        let b = other_cluster_dists
+            .values()
             .map(|dists| dists.iter().sum::<f64>() / dists.len() as f64)
             .min_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
@@ -910,14 +977,24 @@ fn run_ablation_studies(
     #[allow(clippy::type_complexity)]
     let dense_embedder_configs: Vec<(&str, fn(&SemanticFingerprint) -> &Vec<f32>)> = vec![
         ("E1_semantic", |fp: &SemanticFingerprint| &fp.e1_semantic),
-        ("E2_temporal", |fp: &SemanticFingerprint| &fp.e2_temporal_recent),
-        ("E3_periodic", |fp: &SemanticFingerprint| &fp.e3_temporal_periodic),
-        ("E4_positional", |fp: &SemanticFingerprint| &fp.e4_temporal_positional),
-        ("E5_causal", |fp: &SemanticFingerprint| &fp.e5_causal_as_cause),
+        ("E2_temporal", |fp: &SemanticFingerprint| {
+            &fp.e2_temporal_recent
+        }),
+        ("E3_periodic", |fp: &SemanticFingerprint| {
+            &fp.e3_temporal_periodic
+        }),
+        ("E4_positional", |fp: &SemanticFingerprint| {
+            &fp.e4_temporal_positional
+        }),
+        ("E5_causal", |fp: &SemanticFingerprint| {
+            &fp.e5_causal_as_cause
+        }),
         ("E7_code", |fp: &SemanticFingerprint| &fp.e7_code),
         ("E8_graph", |fp: &SemanticFingerprint| &fp.e8_graph),
         ("E9_hdc", |fp: &SemanticFingerprint| &fp.e9_hdc),
-        ("E10_multimodal", |fp: &SemanticFingerprint| &fp.e10_multimodal_paraphrase),
+        ("E10_multimodal", |fp: &SemanticFingerprint| {
+            &fp.e10_multimodal_paraphrase
+        }),
         ("E11_entity", |fp: &SemanticFingerprint| &fp.e11_entity),
     ];
 
@@ -938,7 +1015,10 @@ fn run_ablation_studies(
         }
 
         if emb_ids.is_empty() {
-            eprintln!("[ERROR] {} - No embeddings available, aborting ablation for this embedder", name);
+            eprintln!(
+                "[ERROR] {} - No embeddings available, aborting ablation for this embedder",
+                name
+            );
             mrr_scores.insert(name.to_string(), 0.0);
             continue;
         }
@@ -947,23 +1027,31 @@ fn run_ablation_studies(
         let mut mrr_sum = 0.0;
         let mut count = 0;
 
-        for query_chunk in queries.iter().take(50) { // Sample 50 queries for speed
+        for query_chunk in queries.iter().take(50) {
+            // Sample 50 queries for speed
             let query_uuid = query_chunk.uuid();
             let query_topic = dataset.get_topic_idx(query_chunk);
             let query_doc_id = &query_chunk.doc_id;
 
-            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+                continue;
+            };
             let query_vec = extractor(query_fp);
-            if query_vec.is_empty() { continue; }
+            if query_vec.is_empty() {
+                continue;
+            }
 
             // Exclude same-document chunks for fair evaluation
-            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+                .chunk_info
+                .iter()
                 .filter(|(_, info)| &info.doc_id == query_doc_id)
                 .map(|(id, _)| *id)
                 .collect();
 
             // Compute similarities
-            let mut scores: Vec<(Uuid, f32)> = emb_ids.iter()
+            let mut scores: Vec<(Uuid, f32)> = emb_ids
+                .iter()
                 .zip(emb_vecs.iter())
                 .filter(|(id, _)| !same_doc_uuids.contains(id))
                 .map(|(id, vec)| {
@@ -975,20 +1063,30 @@ fn run_ablation_studies(
             scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             // Find first relevant in top 10 (same topic, different document)
-            let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+            let relevant: Vec<Uuid> = embedded
+                .topic_assignments
+                .iter()
                 .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
                 .map(|(id, _)| *id)
                 .collect();
 
             if !relevant.is_empty() {
-                if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                if let Some(pos) = scores
+                    .iter()
+                    .take(10)
+                    .position(|(id, _)| relevant.contains(id))
+                {
                     mrr_sum += 1.0 / (pos as f64 + 1.0);
                 }
                 count += 1;
             }
         }
 
-        let mrr = if count > 0 { mrr_sum / count as f64 } else { 0.0 };
+        let mrr = if count > 0 {
+            mrr_sum / count as f64
+        } else {
+            0.0
+        };
         mrr_scores.insert(name.to_string(), mrr);
         eprintln!("    {} MRR@10: {:.4} (from {} queries)", name, mrr, count);
     }
@@ -1006,15 +1104,23 @@ fn run_ablation_studies(
             let query_topic = dataset.get_topic_idx(query_chunk);
             let query_doc_id = &query_chunk.doc_id;
 
-            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
-            if query_fp.e6_sparse.indices.is_empty() { continue; }
+            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+                continue;
+            };
+            if query_fp.e6_sparse.indices.is_empty() {
+                continue;
+            }
 
-            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+                .chunk_info
+                .iter()
                 .filter(|(_, info)| &info.doc_id == query_doc_id)
                 .map(|(id, _)| *id)
                 .collect();
 
-            let mut scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+            let mut scores: Vec<(Uuid, f32)> = embedded
+                .fingerprints
+                .iter()
                 .filter(|(id, _)| !same_doc_uuids.contains(id))
                 .map(|(id, fp)| {
                     let sim = query_fp.e6_sparse.dot(&fp.e6_sparse);
@@ -1024,20 +1130,30 @@ fn run_ablation_studies(
 
             scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+            let relevant: Vec<Uuid> = embedded
+                .topic_assignments
+                .iter()
                 .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
                 .map(|(id, _)| *id)
                 .collect();
 
             if !relevant.is_empty() {
-                if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                if let Some(pos) = scores
+                    .iter()
+                    .take(10)
+                    .position(|(id, _)| relevant.contains(id))
+                {
                     mrr_sum += 1.0 / (pos as f64 + 1.0);
                 }
                 count += 1;
             }
         }
 
-        let mrr = if count > 0 { mrr_sum / count as f64 } else { 0.0 };
+        let mrr = if count > 0 {
+            mrr_sum / count as f64
+        } else {
+            0.0
+        };
         mrr_scores.insert("E6_sparse".to_string(), mrr);
         eprintln!("    E6_sparse MRR@10: {:.4} (from {} queries)", mrr, count);
     }
@@ -1052,15 +1168,23 @@ fn run_ablation_studies(
             let query_topic = dataset.get_topic_idx(query_chunk);
             let query_doc_id = &query_chunk.doc_id;
 
-            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
-            if query_fp.e13_splade.indices.is_empty() { continue; }
+            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+                continue;
+            };
+            if query_fp.e13_splade.indices.is_empty() {
+                continue;
+            }
 
-            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+                .chunk_info
+                .iter()
                 .filter(|(_, info)| &info.doc_id == query_doc_id)
                 .map(|(id, _)| *id)
                 .collect();
 
-            let mut scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+            let mut scores: Vec<(Uuid, f32)> = embedded
+                .fingerprints
+                .iter()
                 .filter(|(id, _)| !same_doc_uuids.contains(id))
                 .map(|(id, fp)| {
                     let sim = query_fp.e13_splade.dot(&fp.e13_splade);
@@ -1070,20 +1194,30 @@ fn run_ablation_studies(
 
             scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+            let relevant: Vec<Uuid> = embedded
+                .topic_assignments
+                .iter()
                 .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
                 .map(|(id, _)| *id)
                 .collect();
 
             if !relevant.is_empty() {
-                if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                if let Some(pos) = scores
+                    .iter()
+                    .take(10)
+                    .position(|(id, _)| relevant.contains(id))
+                {
                     mrr_sum += 1.0 / (pos as f64 + 1.0);
                 }
                 count += 1;
             }
         }
 
-        let mrr = if count > 0 { mrr_sum / count as f64 } else { 0.0 };
+        let mrr = if count > 0 {
+            mrr_sum / count as f64
+        } else {
+            0.0
+        };
         mrr_scores.insert("E13_splade".to_string(), mrr);
         eprintln!("    E13_splade MRR@10: {:.4} (from {} queries)", mrr, count);
     }
@@ -1099,17 +1233,25 @@ fn run_ablation_studies(
             let query_topic = dataset.get_topic_idx(query_chunk);
             let query_doc_id = &query_chunk.doc_id;
 
-            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
-            if query_fp.e12_late_interaction.is_empty() { continue; }
+            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+                continue;
+            };
+            if query_fp.e12_late_interaction.is_empty() {
+                continue;
+            }
 
             // Exclude same-document chunks
-            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+                .chunk_info
+                .iter()
                 .filter(|(_, info)| &info.doc_id == query_doc_id)
                 .map(|(id, _)| *id)
                 .collect();
 
             // Compute MaxSim scores (ColBERT-style)
-            let mut scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+            let mut scores: Vec<(Uuid, f32)> = embedded
+                .fingerprints
+                .iter()
                 .filter(|(id, _)| !same_doc_uuids.contains(id))
                 .map(|(id, fp)| {
                     let sim = maxsim(&query_fp.e12_late_interaction, &fp.e12_late_interaction);
@@ -1119,20 +1261,30 @@ fn run_ablation_studies(
 
             scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-            let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+            let relevant: Vec<Uuid> = embedded
+                .topic_assignments
+                .iter()
                 .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
                 .map(|(id, _)| *id)
                 .collect();
 
             if !relevant.is_empty() {
-                if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                if let Some(pos) = scores
+                    .iter()
+                    .take(10)
+                    .position(|(id, _)| relevant.contains(id))
+                {
                     mrr_sum += 1.0 / (pos as f64 + 1.0);
                 }
                 count += 1;
             }
         }
 
-        let mrr = if count > 0 { mrr_sum / count as f64 } else { 0.0 };
+        let mrr = if count > 0 {
+            mrr_sum / count as f64
+        } else {
+            0.0
+        };
         mrr_scores.insert("E12_late".to_string(), mrr);
         eprintln!("    E12_late MRR@10: {:.4} (from {} queries)", mrr, count);
     }
@@ -1150,10 +1302,17 @@ fn run_ablation_studies(
     }
 
     // Compute category importance from measured contributions
-    let semantic_total: f64 = ["E1_semantic", "E5_causal", "E7_code", "E10_multimodal", "E12_late", "E13_splade"]
-        .iter()
-        .filter_map(|n| contributions.get(*n))
-        .sum();
+    let semantic_total: f64 = [
+        "E1_semantic",
+        "E5_causal",
+        "E7_code",
+        "E10_multimodal",
+        "E12_late",
+        "E13_splade",
+    ]
+    .iter()
+    .filter_map(|n| contributions.get(*n))
+    .sum();
 
     let temporal_total: f64 = ["E2_temporal", "E3_periodic", "E4_positional"]
         .iter()
@@ -1176,8 +1335,10 @@ fn run_ablation_studies(
     .into_iter()
     .collect();
 
-    eprintln!("  Ablation complete. SEMANTIC={:.2}, TEMPORAL={:.2}, RELATIONAL={:.2}, STRUCTURAL={:.2}",
-              semantic_total, temporal_total, relational_total, structural_total);
+    eprintln!(
+        "  Ablation complete. SEMANTIC={:.2}, TEMPORAL={:.2}, RELATIONAL={:.2}, STRUCTURAL={:.2}",
+        semantic_total, temporal_total, relational_total, structural_total
+    );
 
     AblationResults {
         embedder_contributions: contributions,
@@ -1222,7 +1383,8 @@ fn compare_strategies(
 
             // Combine: use E1 as primary, add E7 weighted average
             // This is a simplified multi-space representation
-            let combined: Vec<f32> = e1_norm.iter()
+            let combined: Vec<f32> = e1_norm
+                .iter()
                 .zip(e7_norm.iter().cycle())
                 .map(|(a, b)| a * 0.6 + b * 0.4)
                 .collect();
@@ -1233,34 +1395,64 @@ fn compare_strategies(
     if e1_ids.is_empty() {
         eprintln!("[ERROR] No E1 embeddings available, cannot run strategy comparison");
         return StrategyComparison {
-            e1_only: StrategyMetrics { strategy: "e1_only".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
-            multi_space: StrategyMetrics { strategy: "multi_space".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
-            pipeline: StrategyMetrics { strategy: "pipeline".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
+            e1_only: StrategyMetrics {
+                strategy: "e1_only".into(),
+                mrr_at_10: 0.0,
+                precision_at_10: 0.0,
+                avg_query_time_ms: 0.0,
+            },
+            multi_space: StrategyMetrics {
+                strategy: "multi_space".into(),
+                mrr_at_10: 0.0,
+                precision_at_10: 0.0,
+                avg_query_time_ms: 0.0,
+            },
+            pipeline: StrategyMetrics {
+                strategy: "pipeline".into(),
+                mrr_at_10: 0.0,
+                precision_at_10: 0.0,
+                avg_query_time_ms: 0.0,
+            },
         };
     }
 
     // Run E1-only evaluation
     let (e1_mrr, e1_prec, e1_time) = evaluate_strategy(
-        queries, dataset, embedded,
-        &e1_ids, &e1_vecs, |fp: &SemanticFingerprint| &fp.e1_semantic,
-        "e1_only"
+        queries,
+        dataset,
+        embedded,
+        &e1_ids,
+        &e1_vecs,
+        |fp: &SemanticFingerprint| &fp.e1_semantic,
+        "e1_only",
     );
 
     // Run multi-space evaluation
     let (ms_mrr, ms_prec, ms_time) = evaluate_strategy(
-        queries, dataset, embedded,
-        &ms_ids, &ms_vecs, |fp: &SemanticFingerprint| &fp.e1_semantic, // Query uses E1, but corpus uses combined
-        "multi_space"
+        queries,
+        dataset,
+        embedded,
+        &ms_ids,
+        &ms_vecs,
+        |fp: &SemanticFingerprint| &fp.e1_semantic, // Query uses E1, but corpus uses combined
+        "multi_space",
     );
 
     // Pipeline: E6 sparse recall -> E1 scoring -> E12 rerank (simplified to E1 -> E7 rerank)
-    let (pipe_mrr, pipe_prec, pipe_time) = evaluate_pipeline_strategy(
-        queries, dataset, embedded
-    );
+    let (pipe_mrr, pipe_prec, pipe_time) = evaluate_pipeline_strategy(queries, dataset, embedded);
 
-    eprintln!("    e1_only: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", e1_mrr, e1_prec, e1_time);
-    eprintln!("    multi_space: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", ms_mrr, ms_prec, ms_time);
-    eprintln!("    pipeline: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", pipe_mrr, pipe_prec, pipe_time);
+    eprintln!(
+        "    e1_only: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query",
+        e1_mrr, e1_prec, e1_time
+    );
+    eprintln!(
+        "    multi_space: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query",
+        ms_mrr, ms_prec, ms_time
+    );
+    eprintln!(
+        "    pipeline: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query",
+        pipe_mrr, pipe_prec, pipe_time
+    );
 
     StrategyComparison {
         e1_only: StrategyMetrics {
@@ -1309,17 +1501,24 @@ fn evaluate_strategy(
     let mut total_time_ms = 0.0;
     let mut count = 0;
 
-    for query_chunk in queries.iter().take(100) { // Sample 100 queries
+    for query_chunk in queries.iter().take(100) {
+        // Sample 100 queries
         let query_uuid = query_chunk.uuid();
         let query_topic = dataset.get_topic_idx(query_chunk);
         let query_doc_id = &query_chunk.doc_id;
 
-        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+            continue;
+        };
         let query_vec = query_extractor(query_fp);
-        if query_vec.is_empty() { continue; }
+        if query_vec.is_empty() {
+            continue;
+        }
 
         // Exclude same-document chunks for fair evaluation
-        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+            .chunk_info
+            .iter()
             .filter(|(_, info)| &info.doc_id == query_doc_id)
             .map(|(id, _)| *id)
             .collect();
@@ -1327,7 +1526,8 @@ fn evaluate_strategy(
         let start = Instant::now();
 
         // Compute similarities (exclude same-document)
-        let mut scores: Vec<(Uuid, f32)> = corpus_ids.iter()
+        let mut scores: Vec<(Uuid, f32)> = corpus_ids
+            .iter()
             .zip(corpus_vecs.iter())
             .filter(|(id, _)| !same_doc_uuids.contains(id))
             .map(|(id, vec)| {
@@ -1341,19 +1541,29 @@ fn evaluate_strategy(
         total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
 
         // Find relevant documents (same topic, different document)
-        let relevant: std::collections::HashSet<Uuid> = embedded.topic_assignments.iter()
+        let relevant: std::collections::HashSet<Uuid> = embedded
+            .topic_assignments
+            .iter()
             .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
             .map(|(id, _)| *id)
             .collect();
 
         if !relevant.is_empty() {
             // MRR: reciprocal rank of first relevant
-            if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+            if let Some(pos) = scores
+                .iter()
+                .take(10)
+                .position(|(id, _)| relevant.contains(id))
+            {
                 mrr_sum += 1.0 / (pos as f64 + 1.0);
             }
 
             // Precision@10: how many of top 10 are relevant
-            let hits = scores.iter().take(10).filter(|(id, _)| relevant.contains(id)).count();
+            let hits = scores
+                .iter()
+                .take(10)
+                .filter(|(id, _)| relevant.contains(id))
+                .count();
             prec_sum += hits as f64 / 10.0;
 
             count += 1;
@@ -1361,11 +1571,18 @@ fn evaluate_strategy(
     }
 
     if count == 0 {
-        eprintln!("[WARN] {} strategy: no valid queries evaluated", strategy_name);
+        eprintln!(
+            "[WARN] {} strategy: no valid queries evaluated",
+            strategy_name
+        );
         return (0.0, 0.0, 0.0);
     }
 
-    (mrr_sum / count as f64, prec_sum / count as f64, total_time_ms / count as f64)
+    (
+        mrr_sum / count as f64,
+        prec_sum / count as f64,
+        total_time_ms / count as f64,
+    )
 }
 
 fn evaluate_pipeline_strategy(
@@ -1407,11 +1624,17 @@ fn evaluate_pipeline_strategy(
         let query_topic = dataset.get_topic_idx(query_chunk);
         let query_doc_id = &query_chunk.doc_id;
 
-        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
-        if query_fp.e1_semantic.is_empty() { continue; }
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+            continue;
+        };
+        if query_fp.e1_semantic.is_empty() {
+            continue;
+        }
 
         // Exclude same-document chunks for fair evaluation
-        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded
+            .chunk_info
+            .iter()
             .filter(|(_, info)| &info.doc_id == query_doc_id)
             .map(|(id, _)| *id)
             .collect();
@@ -1419,7 +1642,8 @@ fn evaluate_pipeline_strategy(
         let start = Instant::now();
 
         // Stage 1: E1 recall (top 100, excluding same-document)
-        let mut stage1_scores: Vec<(Uuid, f32)> = e1_ids.iter()
+        let mut stage1_scores: Vec<(Uuid, f32)> = e1_ids
+            .iter()
             .zip(e1_vecs.iter())
             .filter(|(id, _)| !same_doc_uuids.contains(id))
             .map(|(id, vec)| {
@@ -1433,7 +1657,8 @@ fn evaluate_pipeline_strategy(
 
         // Stage 2: E7 rerank (if query has E7)
         let final_scores: Vec<(Uuid, f32)> = if !query_fp.e7_code.is_empty() {
-            let mut rerank_scores: Vec<(Uuid, f32)> = candidates.iter()
+            let mut rerank_scores: Vec<(Uuid, f32)> = candidates
+                .iter()
                 .filter_map(|id| {
                     e7_vecs.get(id).map(|vec| {
                         let sim = cosine_similarity(&query_fp.e7_code, vec);
@@ -1441,7 +1666,8 @@ fn evaluate_pipeline_strategy(
                     })
                 })
                 .collect();
-            rerank_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            rerank_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             rerank_scores
         } else {
             // Fallback to E1 scores if no E7
@@ -1451,17 +1677,27 @@ fn evaluate_pipeline_strategy(
         total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
 
         // Evaluate (same topic, different document)
-        let relevant: std::collections::HashSet<Uuid> = embedded.topic_assignments.iter()
+        let relevant: std::collections::HashSet<Uuid> = embedded
+            .topic_assignments
+            .iter()
             .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
             .map(|(id, _)| *id)
             .collect();
 
         if !relevant.is_empty() {
-            if let Some(pos) = final_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+            if let Some(pos) = final_scores
+                .iter()
+                .take(10)
+                .position(|(id, _)| relevant.contains(id))
+            {
                 mrr_sum += 1.0 / (pos as f64 + 1.0);
             }
 
-            let hits = final_scores.iter().take(10).filter(|(id, _)| relevant.contains(id)).count();
+            let hits = final_scores
+                .iter()
+                .take(10)
+                .filter(|(id, _)| relevant.contains(id))
+                .count();
             prec_sum += hits as f64 / 10.0;
 
             count += 1;
@@ -1473,7 +1709,11 @@ fn evaluate_pipeline_strategy(
         return (0.0, 0.0, 0.0);
     }
 
-    (mrr_sum / count as f64, prec_sum / count as f64, total_time_ms / count as f64)
+    (
+        mrr_sum / count as f64,
+        prec_sum / count as f64,
+        total_time_ms / count as f64,
+    )
 }
 
 fn generate_recommendations(
@@ -1588,7 +1828,8 @@ fn maxsim(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
 
     let mut total = 0.0;
     for q_token in query_tokens {
-        let max_sim = doc_tokens.iter()
+        let max_sim = doc_tokens
+            .iter()
             .map(|d_token| cosine_similarity(q_token, d_token))
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
@@ -1642,10 +1883,22 @@ fn generate_markdown_report(
     writeln!(f)?;
     writeln!(f, "| Metric | Value |")?;
     writeln!(f, "|--------|-------|")?;
-    writeln!(f, "| Total Chunks | {} |", results.dataset_info.total_chunks)?;
-    writeln!(f, "| Total Documents | {} |", results.dataset_info.total_documents)?;
+    writeln!(
+        f,
+        "| Total Chunks | {} |",
+        results.dataset_info.total_chunks
+    )?;
+    writeln!(
+        f,
+        "| Total Documents | {} |",
+        results.dataset_info.total_documents
+    )?;
     writeln!(f, "| Topic Count | {} |", results.dataset_info.topic_count)?;
-    writeln!(f, "| Source Datasets | {} |", results.dataset_info.source_datasets.join(", "))?;
+    writeln!(
+        f,
+        "| Source Datasets | {} |",
+        results.dataset_info.source_datasets.join(", ")
+    )?;
     writeln!(f)?;
 
     // Retrieval Metrics
@@ -1654,12 +1907,36 @@ fn generate_markdown_report(
     writeln!(f, "| Metric | Value |")?;
     writeln!(f, "|--------|-------|")?;
     writeln!(f, "| MRR@10 | {:.4} |", results.retrieval_metrics.mrr_at_10)?;
-    writeln!(f, "| P@1 | {:.4} |", results.retrieval_metrics.precision_at_1)?;
-    writeln!(f, "| P@5 | {:.4} |", results.retrieval_metrics.precision_at_5)?;
-    writeln!(f, "| P@10 | {:.4} |", results.retrieval_metrics.precision_at_10)?;
-    writeln!(f, "| R@10 | {:.4} |", results.retrieval_metrics.recall_at_10)?;
-    writeln!(f, "| R@50 | {:.4} |", results.retrieval_metrics.recall_at_50)?;
-    writeln!(f, "| NDCG@10 | {:.4} |", results.retrieval_metrics.ndcg_at_10)?;
+    writeln!(
+        f,
+        "| P@1 | {:.4} |",
+        results.retrieval_metrics.precision_at_1
+    )?;
+    writeln!(
+        f,
+        "| P@5 | {:.4} |",
+        results.retrieval_metrics.precision_at_5
+    )?;
+    writeln!(
+        f,
+        "| P@10 | {:.4} |",
+        results.retrieval_metrics.precision_at_10
+    )?;
+    writeln!(
+        f,
+        "| R@10 | {:.4} |",
+        results.retrieval_metrics.recall_at_10
+    )?;
+    writeln!(
+        f,
+        "| R@50 | {:.4} |",
+        results.retrieval_metrics.recall_at_50
+    )?;
+    writeln!(
+        f,
+        "| NDCG@10 | {:.4} |",
+        results.retrieval_metrics.ndcg_at_10
+    )?;
     writeln!(f)?;
 
     // Strategy Comparison
@@ -1729,19 +2006,25 @@ fn print_summary(results: &BenchmarkResults) {
     println!("  Benchmark Summary");
     println!("=======================================================================");
     println!();
-    println!("Dataset: {} chunks across {} topics",
-             results.dataset_info.total_chunks,
-             results.dataset_info.topic_count);
+    println!(
+        "Dataset: {} chunks across {} topics",
+        results.dataset_info.total_chunks, results.dataset_info.topic_count
+    );
     println!();
     println!("Retrieval Performance:");
     println!("  MRR@10:    {:.4}", results.retrieval_metrics.mrr_at_10);
-    println!("  P@10:      {:.4}", results.retrieval_metrics.precision_at_10);
+    println!(
+        "  P@10:      {:.4}",
+        results.retrieval_metrics.precision_at_10
+    );
     println!("  R@10:      {:.4}", results.retrieval_metrics.recall_at_10);
     println!("  NDCG@10:   {:.4}", results.retrieval_metrics.ndcg_at_10);
     println!();
-    println!("Best Strategy: {} (MRR@10: {:.4})",
-             results.strategy_comparison.pipeline.strategy,
-             results.strategy_comparison.pipeline.mrr_at_10);
+    println!(
+        "Best Strategy: {} (MRR@10: {:.4})",
+        results.strategy_comparison.pipeline.strategy,
+        results.strategy_comparison.pipeline.mrr_at_10
+    );
     println!();
     println!("Recommendations:");
     for rec in &results.recommendations {

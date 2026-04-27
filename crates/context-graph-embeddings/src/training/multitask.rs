@@ -120,8 +120,7 @@ impl ClassificationHead {
             .map(|i| ((i as f32 * 0.618_034 + 0.5) % 1.0 * 2.0 - 1.0) * std1)
             .collect();
         let w1 = Var::from_tensor(
-            &Tensor::from_slice(&w1_data, (input_dim, hidden_dim), device)
-                .map_err(map_candle)?,
+            &Tensor::from_slice(&w1_data, (input_dim, hidden_dim), device).map_err(map_candle)?,
         )
         .map_err(map_candle)?;
 
@@ -134,8 +133,7 @@ impl ClassificationHead {
             .map(|i| ((i as f32 * 0.414_213_57 + 0.7) % 1.0 * 2.0 - 1.0) * std2)
             .collect();
         let w2 = Var::from_tensor(
-            &Tensor::from_slice(&w2_data, (hidden_dim, num_classes), device)
-                .map_err(map_candle)?,
+            &Tensor::from_slice(&w2_data, (hidden_dim, num_classes), device).map_err(map_candle)?,
         )
         .map_err(map_candle)?;
 
@@ -261,10 +259,7 @@ impl MultiTaskHeads {
 }
 
 /// Cross-entropy loss for classification.
-fn classification_cross_entropy(
-    logits: &Tensor,
-    labels: &Tensor,
-) -> EmbeddingResult<Tensor> {
+fn classification_cross_entropy(logits: &Tensor, labels: &Tensor) -> EmbeddingResult<Tensor> {
     let n = logits.dim(0).map_err(map_candle)?;
     let device = logits.device();
 
@@ -319,8 +314,14 @@ mod tests {
 
     #[test]
     fn test_mechanism_label_parsing() {
-        assert_eq!(MechanismLabel::from_str("biological"), MechanismLabel::Biological);
-        assert_eq!(MechanismLabel::from_str("economic"), MechanismLabel::Economic);
+        assert_eq!(
+            MechanismLabel::from_str("biological"),
+            MechanismLabel::Biological
+        );
+        assert_eq!(
+            MechanismLabel::from_str("economic"),
+            MechanismLabel::Economic
+        );
         assert_eq!(MechanismLabel::from_str("unknown"), MechanismLabel::Other);
     }
 

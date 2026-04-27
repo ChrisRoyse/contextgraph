@@ -8,8 +8,8 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 // P5: DashMap replaces RwLock<HashMap> for lock-free concurrent soft-delete checks.
 // Eliminates RwLock contention on the read-heavy search path (5,000+ lock acquisitions
 // under concurrent search load). DashMap uses sharded locks internally for O(1)
@@ -30,8 +30,8 @@ use context_graph_core::weights::E11_ENTITY_ENABLED;
 
 use crate::column_families::{cf_names, get_all_column_family_descriptors};
 use crate::teleological::column_families::{
-    CF_CONTENT, CF_E12_LATE_INTERACTION, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS, CF_SOURCE_METADATA,
-    QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS, CODE_CFS, CAUSAL_CFS,
+    CAUSAL_CFS, CF_CONTENT, CF_E12_LATE_INTERACTION, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS,
+    CF_SOURCE_METADATA, CODE_CFS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
 use crate::teleological::indexes::EmbedderIndexRegistry;
 
@@ -247,7 +247,8 @@ impl RocksDbTeleologicalStore {
                                         warn!(
                                             "Legacy soft-delete marker for {} ({}B value), \
                                              treating as timestamp 0 (immediate GC eligible)",
-                                            id, value.len()
+                                            id,
+                                            value.len()
                                         );
                                         0
                                     };
@@ -266,7 +267,10 @@ impl RocksDbTeleologicalStore {
                 }
             }
             if !map.is_empty() {
-                info!("Loaded {} persisted soft-delete markers from CF_SYSTEM", map.len());
+                info!(
+                    "Loaded {} persisted soft-delete markers from CF_SYSTEM",
+                    map.len()
+                );
             }
             Arc::new(map)
         };
@@ -280,7 +284,9 @@ impl RocksDbTeleologicalStore {
                     name: CF_FINGERPRINTS.to_string(),
                 }
             })?;
-            let raw_count = db_arc.iterator_cf(cf_fp, rocksdb::IteratorMode::Start).count();
+            let raw_count = db_arc
+                .iterator_cf(cf_fp, rocksdb::IteratorMode::Start)
+                .count();
             // DAT-1: Subtract soft-deleted entries so total_doc_count reflects
             // only live documents. IDF calculations use this count as denominator,
             // and inflating it with soft-deleted entries biases term weights downward.
@@ -379,7 +385,10 @@ impl RocksDbTeleologicalStore {
 
         // 2. Count entries in CF_CONTENT
         let content_count = match self.get_cf(CF_CONTENT) {
-            Ok(cf) => self.db.iterator_cf(cf, rocksdb::IteratorMode::Start).count(),
+            Ok(cf) => self
+                .db
+                .iterator_cf(cf, rocksdb::IteratorMode::Start)
+                .count(),
             Err(_) => 0,
         };
 
@@ -619,7 +628,6 @@ impl RocksDbTeleologicalStore {
             manifest_file,
         }
     }
-
 }
 
 // ============================================================================
@@ -690,7 +698,10 @@ impl RocksDbTeleologicalStore {
 
         for item in iter {
             let (key, value) = item.map_err(|e| {
-                error!("FAIL FAST: RocksDB iteration failed during index rebuild: {}", e);
+                error!(
+                    "FAIL FAST: RocksDB iteration failed during index rebuild: {}",
+                    e
+                );
                 TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
             })?;
 
@@ -720,8 +731,7 @@ impl RocksDbTeleologicalStore {
             // computed with delta≈0 decay). Recomputing ensures the E2 HNSW index contains
             // distinct vectors that reflect actual creation timestamps.
             // This is a fast CPU computation (~1μs per fingerprint).
-            let recomputed_e2 =
-                compute_decay_embedding(fp.created_at, None, &DEFAULT_DECAY_RATES);
+            let recomputed_e2 = compute_decay_embedding(fp.created_at, None, &DEFAULT_DECAY_RATES);
             fp.semantic.e2_temporal_recent = recomputed_e2;
             e2_recomputed += 1;
 
@@ -746,7 +756,9 @@ impl RocksDbTeleologicalStore {
         if error_count > 0 {
             error!(
                 "FAIL FAST: Index rebuild failed with {} errors out of {} fingerprints in {:?}",
-                error_count, success_count + error_count, elapsed
+                error_count,
+                success_count + error_count,
+                elapsed
             );
             return Err(TeleologicalStoreError::Internal(format!(
                 "Index rebuild failed: {} fingerprints could not be added to indexes",
@@ -788,12 +800,11 @@ impl RocksDbTeleologicalStore {
 
         let start = std::time::Instant::now();
 
-        let cf = self
-            .db
-            .cf_handle(CF_CAUSAL_RELATIONSHIPS)
-            .ok_or_else(|| TeleologicalStoreError::ColumnFamilyNotFound {
+        let cf = self.db.cf_handle(CF_CAUSAL_RELATIONSHIPS).ok_or_else(|| {
+            TeleologicalStoreError::ColumnFamilyNotFound {
                 name: CF_CAUSAL_RELATIONSHIPS.to_string(),
-            })?;
+            }
+        })?;
 
         let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
 
@@ -871,7 +882,10 @@ impl RocksDbTeleologicalStore {
                 success_count, skip_count, elapsed
             );
         } else {
-            debug!("No causal relationships with E11 embeddings to rebuild (indexed: 0, skipped: {})", skip_count);
+            debug!(
+                "No causal relationships with E11 embeddings to rebuild (indexed: 0, skipped: {})",
+                skip_count
+            );
         }
 
         Ok(())
@@ -1031,7 +1045,9 @@ impl RocksDbTeleologicalStore {
             // triggers the has_empty detection path). Once all deployments have run
             // the sinusoidal rebuild at least once, this skip can be removed.
             if *embedder == crate::teleological::indexes::EmbedderIndex::E2TemporalRecent {
-                debug!("Skipping persisted E2 HNSW — will recompute from timestamps during rebuild");
+                debug!(
+                    "Skipping persisted E2 HNSW — will recompute from timestamps during rebuild"
+                );
                 continue;
             }
 
@@ -1297,5 +1313,4 @@ impl RocksDbTeleologicalStore {
         }
         Ok(())
     }
-
 }

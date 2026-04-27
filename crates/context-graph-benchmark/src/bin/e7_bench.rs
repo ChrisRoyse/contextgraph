@@ -6,8 +6,8 @@
 //! Usage:
 //!     cargo run -p context-graph-benchmark --release --bin e7_bench
 
-use std::collections::HashSet;
 use context_graph_benchmark::metrics::e7_iou::tokenize_code;
+use std::collections::HashSet;
 
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -69,20 +69,21 @@ fn run_iou_benchmark() {
         let tokens_b = tokenize_code(code_b);
 
         // Compute IoU manually
-        let set_a: HashSet<_> = tokens_a.iter()
-            .map(|t| t.text.as_str())
-            .collect();
-        let set_b: HashSet<_> = tokens_b.iter()
-            .map(|t| t.text.as_str())
-            .collect();
+        let set_a: HashSet<_> = tokens_a.iter().map(|t| t.text.as_str()).collect();
+        let set_b: HashSet<_> = tokens_b.iter().map(|t| t.text.as_str()).collect();
 
         let intersection = set_a.intersection(&set_b).count();
         let union = set_a.union(&set_b).count();
-        let iou = if union > 0 { intersection as f32 / union as f32 } else { 0.0 };
+        let iou = if union > 0 {
+            intersection as f32 / union as f32
+        } else {
+            0.0
+        };
 
         total_iou += iou;
 
-        println!("  │ {:<26} │  {:<6.4}  │    {:>3}   │    {:>3}   │",
+        println!(
+            "  │ {:<26} │  {:<6.4}  │    {:>3}   │    {:>3}   │",
             &name[..name.len().min(26)],
             iou,
             tokens_a.len(),
@@ -91,7 +92,10 @@ fn run_iou_benchmark() {
     }
 
     println!("  └────────────────────────────┴──────────┴──────────┴──────────┘");
-    println!("\n  Average IoU: {:.4}", total_iou / test_cases.len() as f32);
+    println!(
+        "\n  Average IoU: {:.4}",
+        total_iou / test_cases.len() as f32
+    );
 
     // IoU@K benchmark
     println!("\n  IoU@K Performance (simulated retrieval):");
@@ -119,7 +123,11 @@ fn run_iou_benchmark() {
 
         let intersection = set_gt.intersection(&set_ret).count();
         let union = set_gt.union(&set_ret).count();
-        let iou = if union > 0 { intersection as f32 / union as f32 } else { 0.0 };
+        let iou = if union > 0 {
+            intersection as f32 / union as f32
+        } else {
+            0.0
+        };
         iou_scores.push(iou);
 
         println!("  │  {:>2}   │  {:<6.4}  │ {:<42} │", i + 1, iou, desc);
@@ -128,7 +136,10 @@ fn run_iou_benchmark() {
 
     let avg_iou: f32 = iou_scores.iter().sum::<f32>() / iou_scores.len() as f32;
     let max_iou: f32 = iou_scores.iter().cloned().fold(0.0, f32::max);
-    println!("\n  Summary: Avg IoU@5 = {:.4}, Max IoU = {:.4}", avg_iou, max_iou);
+    println!(
+        "\n  Summary: Avg IoU@5 = {:.4}, Max IoU = {:.4}",
+        avg_iou, max_iou
+    );
 
     // Interpretation
     println!("\n  IoU Interpretation:");
@@ -158,8 +169,10 @@ fn run_blend_comparison() {
 
     for (weight, mrr, p5, ndcg, interp) in &simulated_results {
         let marker = if *weight == 0.4 { " < Best" } else { "" };
-        println!("  │    {:<6.1}  │  {:<6.2}  │  {:<6.2}  │  {:<6.2}  │ {:<16} │{}",
-            weight, mrr, p5, ndcg, interp, marker);
+        println!(
+            "  │    {:<6.1}  │  {:<6.2}  │  {:<6.2}  │  {:<6.2}  │ {:<16} │{}",
+            weight, mrr, p5, ndcg, interp, marker
+        );
     }
 
     println!("  └────────────┴──────────┴──────────┴──────────┴──────────────────┘");
@@ -174,7 +187,10 @@ fn run_blend_comparison() {
     println!("  * Pure E7 underperforms because it lacks semantic understanding");
     println!("  * Pure E1 misses code patterns that E7 captures");
     println!("  * Optimal: 60% E1 + 40% E7 (constitution default)");
-    println!("  * Improvement: +{:.1}% MRR over pure E1 baseline", improvement);
+    println!(
+        "  * Improvement: +{:.1}% MRR over pure E1 baseline",
+        improvement
+    );
 
     // E7 unique finds simulation
     println!("\n  E7 Unique Finds (what E7 catches that E1 misses):");

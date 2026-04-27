@@ -110,35 +110,31 @@ pub use executor::{IndexType, MultiEmbeddingQueryExecutor, SpaceInfo};
 pub use in_memory_executor::InMemoryMultiEmbeddingExecutor;
 pub use query::{EmbeddingSpaceMask, MultiEmbeddingQuery, PipelineStageConfig};
 pub use result::{
-    AggregatedMatch, MultiEmbeddingResult, PipelineStageTiming, ScoredMatch, SpaceContribution,
-    SpaceSearchResult,
-    SearchResultProvenance, QueryClassification, EmbedderContribution,
+    AggregatedMatch, EmbedderContribution, MultiEmbeddingResult, PipelineStageTiming,
+    QueryClassification, ScoredMatch, SearchResultProvenance, SpaceContribution, SpaceSearchResult,
 };
 pub use teleological_query::TeleologicalQuery;
-pub use teleological_result::{
-    PipelineBreakdown, ScoredMemory, TeleologicalRetrievalResult,
-};
+pub use teleological_result::{PipelineBreakdown, ScoredMemory, TeleologicalRetrievalResult};
 
 // Similarity types for retrieval
 pub use similarity::{PerSpaceScores, SimilarityResult, NUM_SPACES};
 
 // Divergence types for topic drift detection
 pub use divergence::{
-    DivergenceAlert, DivergenceReport, DivergenceSeverity,
-    DIVERGENCE_SPACES, MAX_SUMMARY_LEN, truncate_summary,
+    truncate_summary, DivergenceAlert, DivergenceReport, DivergenceSeverity, DIVERGENCE_SPACES,
+    MAX_SUMMARY_LEN,
 };
 
 // Threshold and weight configuration types
 pub use config::{
-    high_thresholds, low_thresholds, default_weights,
-    PerSpaceThresholds, SimilarityThresholds, SpaceWeights,
-    RECENT_LOOKBACK_SECS, MAX_RECENT_MEMORIES, SPACE_WEIGHTS, TOTAL_WEIGHT,
+    default_weights, high_thresholds, low_thresholds, PerSpaceThresholds, SimilarityThresholds,
+    SpaceWeights, MAX_RECENT_MEMORIES, RECENT_LOOKBACK_SECS, SPACE_WEIGHTS, TOTAL_WEIGHT,
 };
 
 // Distance and similarity computation functions
 pub use distance::{
-    compute_similarity_for_space, compute_similarity_for_space_with_direction,
-    cosine_similarity, cosine_similarity_raw, jaccard_similarity, max_sim,
+    compute_similarity_for_space, compute_similarity_for_space_with_direction, cosine_similarity,
+    cosine_similarity_raw, jaccard_similarity, max_sim,
 };
 
 // Multi-space similarity service
@@ -147,25 +143,19 @@ pub use multi_space::{
 };
 
 // Divergence detection service
-pub use detector::{
-    DivergenceDetector, RecentMemory, is_divergence_space,
-};
+pub use detector::{is_divergence_space, DivergenceDetector, RecentMemory};
 
 // High-level retrieval orchestrator
-pub use retriever::{
-    memory_to_recent, RetrieverError, SimilarityRetriever,
-};
+pub use retriever::{memory_to_recent, RetrieverError, SimilarityRetriever};
 
 // Sparse inverted index for E6/E13 Stage 1 recall
 pub use sparse_index::{
-    RecallCandidate, RecallStats, SparseIndexError, SparseInvertedIndex,
-    DEFAULT_RECALL_LIMIT,
+    RecallCandidate, RecallStats, SparseIndexError, SparseInvertedIndex, DEFAULT_RECALL_LIMIT,
 };
-
 
 // Insight annotations and perspective coverage
 pub use insight_annotation::{
-    annotate_results, compute_perspective_coverage, generate_insight_annotation,
-    get_embedder_info, embedder_names_for_indices,
-    CategoryBreakdown, EmbedderCategory, MissingPerspective, PerspectiveCoverage,
+    annotate_results, compute_perspective_coverage, embedder_names_for_indices,
+    generate_insight_annotation, get_embedder_info, CategoryBreakdown, EmbedderCategory,
+    MissingPerspective, PerspectiveCoverage,
 };

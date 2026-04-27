@@ -27,8 +27,11 @@ mod tests {
         let mut map = HashMap::new();
         for i in 0..14u8 {
             let (method, dim, data_len) = match i {
-                0 | 4 | 6 | 9 | 13 => (QuantizationMethod::PQ8, 1024, 8),
-                1 | 2 | 3 | 7 | 10 => (QuantizationMethod::Float8E4M3, 512, 512),
+                0 | 13 => (QuantizationMethod::PQ8, 1024, 8),
+                4 | 9 | 10 => (QuantizationMethod::PQ8, 768, 8),
+                6 => (QuantizationMethod::PQ8, 1536, 8),
+                1 | 2 | 3 => (QuantizationMethod::Float8E4M3, 512, 512),
+                7 => (QuantizationMethod::Float8E4M3, 1024, 1024),
                 8 => (QuantizationMethod::Binary, 10000, 1250),
                 5 | 12 => (QuantizationMethod::SparseNative, 30522, 100),
                 11 => (QuantizationMethod::TokenPruning, 128, 64),

@@ -17,14 +17,14 @@ use chrono::Utc;
 use tracing::{debug, error, info, warn};
 
 use context_graph_core::clustering::Topic;
-use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::retrieval::config::low_thresholds;
 use context_graph_core::retrieval::divergence::DIVERGENCE_SPACES;
 use context_graph_core::teleological::Embedder;
 use context_graph_core::traits::{TeleologicalSearchOptions, TeleologicalSearchResult};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
-use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use super::helpers::ToolErrorKind;
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
 use super::topic_dtos::{
@@ -102,7 +102,6 @@ fn topic_to_summary(topic: &Topic) -> TopicSummary {
     }
 }
 
-
 /// Compute Shannon entropy from topic member counts.
 ///
 /// Shannon entropy = -sum(p_i * log2(p_i)) where p_i is the normalized weight
@@ -110,9 +109,7 @@ fn topic_to_summary(topic: &Topic) -> TopicSummary {
 /// by dividing by log2(N) where N is the number of topics.
 ///
 /// Returns None if there are fewer than 2 topics (entropy is undefined/trivial).
-fn compute_topic_entropy(
-    topics: &std::collections::HashMap<uuid::Uuid, Topic>,
-) -> Option<f32> {
+fn compute_topic_entropy(topics: &std::collections::HashMap<uuid::Uuid, Topic>) -> Option<f32> {
     if topics.len() < 2 {
         return None;
     }
@@ -200,10 +197,11 @@ impl Handlers {
         debug!("Handling get_topic_portfolio");
 
         // Parse and validate request
-        let request: GetTopicPortfolioRequest = match self.parse_request(id.clone(), arguments, "get_topic_portfolio") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetTopicPortfolioRequest =
+            match self.parse_request(id.clone(), arguments, "get_topic_portfolio") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         // Get memory count to determine tier
         let memory_count = match self.teleological_store.count().await {
@@ -256,8 +254,9 @@ impl Handlers {
         let format = request.format.as_str();
 
         let topics_json: Vec<serde_json::Value> = match format {
-            "brief" => {
-                topics.iter().map(|t| {
+            "brief" => topics
+                .iter()
+                .map(|t| {
                     serde_json::json!({
                         "id": t.id.to_string(),
                         "name": t.name,
@@ -266,58 +265,64 @@ impl Handlers {
                         "parentTopicId": t.parent_topic_id,
                         "depth": t.depth
                     })
-                }).collect()
-            }
+                })
+                .collect(),
             "verbose" => {
                 // Verbose: standard fields + full embedder strengths from topic profile
-                topics.iter().map(|t| {
-                    let topic_core = topics_map.values().find(|core_t| core_t.id == t.id);
-                    let mut entry = serde_json::json!({
-                        "id": t.id.to_string(),
-                        "name": t.name,
-                        "confidence": t.confidence,
-                        "weighted_agreement": t.weighted_agreement,
-                        "member_count": t.member_count,
-                        "contributing_spaces": t.contributing_spaces,
-                        "phase": t.phase,
-                        "parentTopicId": t.parent_topic_id,
-                        "depth": t.depth
-                    });
-                    if let Some(core_t) = topic_core {
-                        let strengths = core_t.profile.strengths;
-                        let embedder_breakdown: serde_json::Value = serde_json::json!({
-                            "E1_Semantic": strengths[0],
-                            "E2_TemporalRecent": strengths[1],
-                            "E3_TemporalPeriodic": strengths[2],
-                            "E4_TemporalPositional": strengths[3],
-                            "E5_Causal": strengths[4],
-                            "E6_Sparse": strengths[5],
-                            "E7_Code": strengths[6],
-                            "E8_Graph": strengths[7],
-                            "E9_HDC": strengths[8],
-                            "E10_Multimodal": strengths[9],
-                            "E11_Entity": strengths[10],
-                            "E12_LateInteraction": strengths[11],
-                            "E13_SPLADE": strengths[12]
+                topics
+                    .iter()
+                    .map(|t| {
+                        let topic_core = topics_map.values().find(|core_t| core_t.id == t.id);
+                        let mut entry = serde_json::json!({
+                            "id": t.id.to_string(),
+                            "name": t.name,
+                            "confidence": t.confidence,
+                            "weighted_agreement": t.weighted_agreement,
+                            "member_count": t.member_count,
+                            "contributing_spaces": t.contributing_spaces,
+                            "phase": t.phase,
+                            "parentTopicId": t.parent_topic_id,
+                            "depth": t.depth
                         });
-                        entry["embedder_strengths"] = embedder_breakdown;
-                    }
-                    entry
-                }).collect()
+                        if let Some(core_t) = topic_core {
+                            let strengths = core_t.profile.strengths;
+                            let embedder_breakdown: serde_json::Value = serde_json::json!({
+                                "E1_Semantic": strengths[0],
+                                "E2_TemporalRecent": strengths[1],
+                                "E3_TemporalPeriodic": strengths[2],
+                                "E4_TemporalPositional": strengths[3],
+                                "E5_Causal": strengths[4],
+                                "E6_Sparse": strengths[5],
+                                "E7_Code": strengths[6],
+                                "E8_Graph": strengths[7],
+                                "E9_HDC": strengths[8],
+                                "E10_Multimodal": strengths[9],
+                                "E11_Entity": strengths[10],
+                                "E12_LateInteraction": strengths[11],
+                                "E13_SPLADE": strengths[12]
+                            });
+                            entry["embedder_strengths"] = embedder_breakdown;
+                        }
+                        entry
+                    })
+                    .collect()
             }
             _ => {
                 // "standard" (default): full TopicSummary serialization
-                topics.iter().map(|t| {
-                    serde_json::json!({
-                        "id": t.id.to_string(),
-                        "name": t.name,
-                        "confidence": t.confidence,
-                        "weighted_agreement": t.weighted_agreement,
-                        "member_count": t.member_count,
-                        "contributing_spaces": t.contributing_spaces,
-                        "phase": t.phase
+                topics
+                    .iter()
+                    .map(|t| {
+                        serde_json::json!({
+                            "id": t.id.to_string(),
+                            "name": t.name,
+                            "confidence": t.confidence,
+                            "weighted_agreement": t.weighted_agreement,
+                            "member_count": t.member_count,
+                            "contributing_spaces": t.contributing_spaces,
+                            "phase": t.phase
+                        })
                     })
-                }).collect()
+                    .collect()
             }
         };
 
@@ -367,10 +372,11 @@ impl Handlers {
         debug!("Handling get_topic_stability");
 
         // Parse and validate request
-        let request: GetTopicStabilityRequest = match self.parse_request(id.clone(), arguments, "get_topic_stability") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetTopicStabilityRequest =
+            match self.parse_request(id.clone(), arguments, "get_topic_stability") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         debug!(
             hours = request.hours,
@@ -460,7 +466,11 @@ impl Handlers {
         }
         let max_memories = request.max_memories;
 
-        debug!(force = request.force, max_memories = max_memories, "detect_topics: Processing request");
+        debug!(
+            force = request.force,
+            max_memories = max_memories,
+            "detect_topics: Processing request"
+        );
 
         // Check minimum memory count
         let memory_count = match self.teleological_store.count().await {
@@ -501,7 +511,11 @@ impl Handlers {
         // via inject_context/store_memory, missing all existing fingerprints in storage.
         info!("detect_topics: Loading all fingerprints from storage for clustering...");
 
-        let fingerprints = match self.teleological_store.scan_fingerprints_for_clustering(Some(max_memories)).await {
+        let fingerprints = match self
+            .teleological_store
+            .scan_fingerprints_for_clustering(Some(max_memories))
+            .await
+        {
             Ok(fps) => fps,
             Err(e) => {
                 error!(error = %e, "detect_topics: Failed to scan fingerprints from storage");
@@ -563,7 +577,10 @@ impl Handlers {
                     // recluster() already calls take_stability_snapshot() internally,
                     // but track_churn() was never called — this is the fix.
                     let churn = cluster_manager.track_churn();
-                    info!(churn = churn, "detect_topics: Computed churn after reclustering");
+                    info!(
+                        churn = churn,
+                        "detect_topics: Computed churn after reclustering"
+                    );
 
                     let topics_after = cluster_manager.get_topics();
                     let total_after = topics_after.len();
@@ -616,7 +633,11 @@ impl Handlers {
                         "memory_count": memory_count,
                     }));
 
-                    if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_audit_record(&audit_record)
+                        .await
+                    {
                         error!(error = %e, topic_id = %topic_id, "detect_topics: Failed to write TopicDetected audit (non-fatal)");
                     }
                 }
@@ -638,9 +659,7 @@ impl Handlers {
                     Err(e) => self.tool_error(id, &format!("Response serialization failed: {}", e)),
                 }
             }
-            Err(e) => {
-                self.tool_error(id, &format!("Clustering error: {}", e))
-            }
+            Err(e) => self.tool_error(id, &format!("Clustering error: {}", e)),
         }
     }
 
@@ -670,10 +689,11 @@ impl Handlers {
         debug!("Handling get_divergence_alerts");
 
         // Parse and validate request
-        let request: GetDivergenceAlertsRequest = match self.parse_request(id.clone(), arguments, "get_divergence_alerts") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetDivergenceAlertsRequest =
+            match self.parse_request(id.clone(), arguments, "get_divergence_alerts") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let lookback_hours = request.lookback_hours as i64;
         debug!(
@@ -841,7 +861,9 @@ mod tests {
         // AP-62/AP-77: SEMANTIC embedders for divergence (E5 excluded per AP-77)
         // Audit-12 TST-H1 FIX: 6 spaces (E5 Causal excluded), must match DIVERGENCE_SPACES
         assert_eq!(DivergenceAlert::VALID_SEMANTIC_SPACES.len(), 6);
-        assert!(!DivergenceAlert::is_valid_semantic_space("E2_TemporalRecent"));
+        assert!(!DivergenceAlert::is_valid_semantic_space(
+            "E2_TemporalRecent"
+        ));
         // Embedder mapping
         assert_eq!(embedder_to_dto_space(Embedder::Semantic), "E1_Semantic");
         assert_eq!(embedder_to_dto_space(Embedder::Code), "E7_Code");
@@ -863,7 +885,12 @@ mod tests {
         let low = low_thresholds();
         for embedder in Embedder::all() {
             let t = low.get_threshold(embedder);
-            assert!((0.0..=1.0).contains(&t), "{:?} threshold {} out of range", embedder, t);
+            assert!(
+                (0.0..=1.0).contains(&t),
+                "{:?} threshold {} out of range",
+                embedder,
+                t
+            );
         }
         assert!((low.get_threshold(Embedder::Semantic) - 0.30).abs() < 0.01);
         assert!((low.get_threshold(Embedder::Code) - 0.35).abs() < 0.01);

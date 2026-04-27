@@ -14,7 +14,8 @@ fn test_json_roundtrip_fingerprint() {
     let topic_profile = create_topic_profile(99);
     let content_hash = create_content_hash(99);
 
-    let original = StoredQuantizedFingerprint::new(id, embeddings.clone(), topic_profile, content_hash);
+    let original =
+        StoredQuantizedFingerprint::new(id, embeddings.clone(), topic_profile, content_hash);
 
     // Serialize to JSON
     let json = serde_json::to_string(&original).expect("JSON serialization failed");

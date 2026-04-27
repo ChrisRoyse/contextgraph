@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 /// Quantization methods aligned with Constitution `embeddings.quantization`.
 ///
 /// # Constitution Alignment
-/// - PQ_8: E1, E5, E7, E10 (32x compression, <5% recall impact)
-/// - Float8: E2, E3, E4, E8, E11 (4x compression, <0.3% recall impact)
+/// - PQ_8: E1, E5, E7, E10, E11 Kepler, E14 (32x compression, <5% recall impact)
+/// - Float8: E2, E3, E4, E8, legacy E11 Entity (4x compression, <0.3% recall impact)
 /// - Binary: E9 (32x compression, 5-10% recall impact)
 /// - Sparse: E6, E13 (native format, 0% recall impact)
 /// - TokenPruning: E12 (~50% compression, <2% recall impact)
@@ -22,13 +22,14 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum QuantizationMethod {
     /// Product Quantization with 8 subvectors, 256 centroids each.
-    /// Used for: E1_Semantic, E5_Causal, E7_Code, E10_Multimodal
+    /// Used for: E1_Semantic, E5_Causal, E7_Code, E10_Multimodal,
+    /// E11_Kepler, E14_BgeM3Dense
     /// Compression: 32x (e.g., 1024D f32 -> 8 bytes)
     PQ8,
 
     /// 8-bit floating point in E4M3 format (4-bit exponent, 3-bit mantissa).
     /// Used for: E2_TemporalRecent, E3_TemporalPeriodic, E4_TemporalPositional,
-    ///           E8_Graph, E11_Entity
+    ///           E8_Graph, legacy E11_Entity
     /// Compression: 4x
     Float8E4M3,
 

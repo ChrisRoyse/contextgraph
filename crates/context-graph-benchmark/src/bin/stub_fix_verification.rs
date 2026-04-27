@@ -74,7 +74,9 @@ fn test_include_all_scores() -> VerificationResult {
     // from TeleologicalSearchResult.embedder_scores[13]
     //
     // This test verifies the pattern is correct
-    let mock_scores: [f32; 14] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.85, 0.75, 0.65, 0.55, 0.5];
+    let mock_scores: [f32; 14] = [
+        0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.85, 0.75, 0.65, 0.55, 0.5,
+    ];
 
     // Verify we can access all 13 scores
     for (i, &score) in mock_scores.iter().enumerate() {
@@ -158,8 +160,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -180,7 +181,11 @@ async fn main() -> anyhow::Result<()> {
     let mut all_passed = true;
     for result in &results {
         let status = if result.passed { "PASS" } else { "FAIL" };
-        let emoji = if result.passed { "\u{2713}" } else { "\u{2717}" };
+        let emoji = if result.passed {
+            "\u{2713}"
+        } else {
+            "\u{2717}"
+        };
         println!("{} [{}] {}", emoji, status, result.name);
         println!("   {}\n", result.message);
         if !result.passed {

@@ -15,13 +15,15 @@
 //! 3. Verify E12 tokens and E13 vectors exist
 //! 4. Verify inverted index contains expected terms
 
-use context_graph_core::traits::TeleologicalMemoryStore;
-use context_graph_core::types::fingerprint::{SemanticFingerprint, SparseVector, TeleologicalFingerprint};
-use context_graph_storage::teleological::{
-    CF_E12_LATE_INTERACTION, CF_E13_SPLADE_INVERTED, CF_FINGERPRINTS,
-    RocksDbTeleologicalStore, deserialize_teleological_fingerprint,
-};
 use chrono::Utc;
+use context_graph_core::traits::TeleologicalMemoryStore;
+use context_graph_core::types::fingerprint::{
+    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+};
+use context_graph_storage::teleological::{
+    deserialize_teleological_fingerprint, RocksDbTeleologicalStore, CF_E12_LATE_INTERACTION,
+    CF_E13_SPLADE_INVERTED, CF_FINGERPRINTS,
+};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -30,7 +32,11 @@ use uuid::Uuid;
 // ============================================================================
 
 /// Create a test fingerprint with known E12 tokens and E13 SPLADE values.
-fn create_test_fingerprint_with_e12_e13(id: Uuid, token_count: usize, splade_nnz: usize) -> TeleologicalFingerprint {
+fn create_test_fingerprint_with_e12_e13(
+    id: Uuid,
+    token_count: usize,
+    splade_nnz: usize,
+) -> TeleologicalFingerprint {
     // Create E12 tokens (128D per token)
     let e12_tokens: Vec<Vec<f32>> = (0..token_count)
         .map(|i| {
@@ -54,11 +60,9 @@ fn create_test_fingerprint_with_e12_e13(id: Uuid, token_count: usize, splade_nnz
     let e13_indices: Vec<u16> = (0..splade_nnz)
         .map(|i| ((i * 100) % 30522) as u16)
         .collect();
-    let e13_values: Vec<f32> = (0..splade_nnz)
-        .map(|i| 0.5 + (i as f32 * 0.1))
-        .collect();
-    let e13_splade = SparseVector::new(e13_indices, e13_values)
-        .unwrap_or_else(|_| SparseVector::empty());
+    let e13_values: Vec<f32> = (0..splade_nnz).map(|i| 0.5 + (i as f32 * 0.1)).collect();
+    let e13_splade =
+        SparseVector::new(e13_indices, e13_values).unwrap_or_else(|_| SparseVector::empty());
 
     // Create a minimal but valid SemanticFingerprint using zeroed()
     let mut semantic = SemanticFingerprint::zeroed();
@@ -66,7 +70,12 @@ fn create_test_fingerprint_with_e12_e13(id: Uuid, token_count: usize, splade_nnz
     // Set E1 semantic (1024D) - required foundation
     semantic.e1_semantic = vec![0.1f32; 1024];
     // Normalize E1
-    let e1_norm: f32 = semantic.e1_semantic.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let e1_norm: f32 = semantic
+        .e1_semantic
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
     for v in &mut semantic.e1_semantic {
         *v /= e1_norm;
     }
@@ -118,17 +127,22 @@ async fn test_e12_tokens_stored_in_column_family() {
     let db_path = temp_dir.path().join("test_e12_db");
 
     // Initialize the store with default config
-    let store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to create store");
+    let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to create store");
 
     // Create test fingerprint with 25 E12 tokens
     let memory_id = Uuid::new_v4();
     let token_count = 25;
     let fp = create_test_fingerprint_with_e12_e13(memory_id, token_count, 10);
 
-    println!("[BEFORE] Storing fingerprint with {} E12 tokens", token_count);
+    println!(
+        "[BEFORE] Storing fingerprint with {} E12 tokens",
+        token_count
+    );
     println!("  Memory ID: {}", memory_id);
-    println!("  E12 token shape: {} x 128D", fp.semantic.e12_late_interaction.len());
+    println!(
+        "  E12 token shape: {} x 128D",
+        fp.semantic.e12_late_interaction.len()
+    );
 
     // Store the fingerprint (consumes ownership)
     store.store(fp).await.expect("Failed to store fingerprint");
@@ -142,12 +156,14 @@ async fn test_e12_tokens_stored_in_column_family() {
     let db = store.db();
 
     // Get E12 column family
-    let cf_e12 = db.cf_handle(CF_E12_LATE_INTERACTION)
+    let cf_e12 = db
+        .cf_handle(CF_E12_LATE_INTERACTION)
         .expect("CF_E12_LATE_INTERACTION must exist");
 
     // Read E12 tokens for our memory
     let e12_key = memory_id.as_bytes().to_vec();
-    let e12_bytes = db.get_cf(&cf_e12, &e12_key)
+    let e12_bytes = db
+        .get_cf(&cf_e12, &e12_key)
         .expect("Failed to read from E12 CF");
 
     println!("\n[SOURCE OF TRUTH] Reading from CF_E12_LATE_INTERACTION:");
@@ -157,27 +173,44 @@ async fn test_e12_tokens_stored_in_column_family() {
             println!("  Raw bytes: {} bytes", bytes.len());
 
             // Deserialize to verify structure
-            let tokens: Vec<Vec<f32>> = bincode::deserialize(&bytes)
-                .expect("Failed to deserialize E12 tokens");
+            let tokens: Vec<Vec<f32>> =
+                bincode::deserialize(&bytes).expect("Failed to deserialize E12 tokens");
 
             println!("  Deserialized: {} tokens", tokens.len());
-            println!("  First token dimension: {}", tokens.first().map(|t| t.len()).unwrap_or(0));
+            println!(
+                "  First token dimension: {}",
+                tokens.first().map(|t| t.len()).unwrap_or(0)
+            );
 
             // VERIFICATION: Token count matches
-            assert_eq!(tokens.len(), token_count,
-                "E12 token count mismatch: expected {}, got {}", token_count, tokens.len());
+            assert_eq!(
+                tokens.len(),
+                token_count,
+                "E12 token count mismatch: expected {}, got {}",
+                token_count,
+                tokens.len()
+            );
 
             // VERIFICATION: Each token is 128D
             for (i, token) in tokens.iter().enumerate() {
-                assert_eq!(token.len(), 128,
-                    "E12 token {} dimension mismatch: expected 128, got {}", i, token.len());
+                assert_eq!(
+                    token.len(),
+                    128,
+                    "E12 token {} dimension mismatch: expected 128, got {}",
+                    i,
+                    token.len()
+                );
             }
 
             // VERIFICATION: Tokens are L2 normalized
             for (i, token) in tokens.iter().enumerate() {
                 let norm: f32 = token.iter().map(|x| x * x).sum::<f32>().sqrt();
-                assert!((norm - 1.0).abs() < 0.01,
-                    "E12 token {} not L2 normalized: norm={}", i, norm);
+                assert!(
+                    (norm - 1.0).abs() < 0.01,
+                    "E12 token {} not L2 normalized: norm={}",
+                    i,
+                    norm
+                );
             }
 
             println!("\n[VERIFIED] E12 tokens exist in CF_E12_LATE_INTERACTION");
@@ -186,7 +219,10 @@ async fn test_e12_tokens_stored_in_column_family() {
             println!("[VERIFIED] Tokens are L2 normalized");
         }
         None => {
-            panic!("FAIL: E12 tokens NOT FOUND in CF_E12_LATE_INTERACTION for memory {}", memory_id);
+            panic!(
+                "FAIL: E12 tokens NOT FOUND in CF_E12_LATE_INTERACTION for memory {}",
+                memory_id
+            );
         }
     }
 
@@ -206,15 +242,17 @@ async fn test_e13_splade_stored_in_fingerprint() {
     let db_path = temp_dir.path().join("test_e13_db");
 
     // Initialize the store
-    let store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to create store");
+    let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to create store");
 
     // Create test fingerprint with 15 E13 SPLADE terms
     let memory_id = Uuid::new_v4();
     let splade_nnz = 15;
     let fp = create_test_fingerprint_with_e12_e13(memory_id, 10, splade_nnz);
 
-    println!("[BEFORE] Storing fingerprint with {} E13 SPLADE terms", splade_nnz);
+    println!(
+        "[BEFORE] Storing fingerprint with {} E13 SPLADE terms",
+        splade_nnz
+    );
     println!("  Memory ID: {}", memory_id);
     println!("  E13 SPLADE NNZ: {}", fp.semantic.e13_splade.nnz());
 
@@ -229,12 +267,14 @@ async fn test_e13_splade_stored_in_fingerprint() {
     let db = store.db();
 
     // Get fingerprints column family
-    let cf_fp = db.cf_handle(CF_FINGERPRINTS)
+    let cf_fp = db
+        .cf_handle(CF_FINGERPRINTS)
         .expect("CF_FINGERPRINTS must exist");
 
     // Read fingerprint for our memory
     let fp_key = memory_id.as_bytes().to_vec();
-    let fp_bytes = db.get_cf(&cf_fp, &fp_key)
+    let fp_bytes = db
+        .get_cf(&cf_fp, &fp_key)
         .expect("Failed to read from fingerprints CF");
 
     println!("\n[SOURCE OF TRUTH] Reading from CF_FINGERPRINTS:");
@@ -251,19 +291,27 @@ async fn test_e13_splade_stored_in_fingerprint() {
             println!("  E13 SPLADE NNZ: {}", stored_nnz);
 
             // VERIFICATION: SPLADE term count matches
-            assert_eq!(stored_nnz, splade_nnz,
+            assert_eq!(
+                stored_nnz, splade_nnz,
                 "E13 SPLADE NNZ mismatch: expected {}, got {}",
-                splade_nnz, stored_nnz);
+                splade_nnz, stored_nnz
+            );
 
             // VERIFICATION: Term IDs are within BERT vocabulary
             // Access the public indices and values fields directly
             let indices = &stored_fp.semantic.e13_splade.indices;
             let values = &stored_fp.semantic.e13_splade.values;
             for (idx, &term_id) in indices.iter().enumerate() {
-                assert!((term_id as usize) < 30522,
-                    "E13 term_id {} exceeds BERT vocab size 30522", term_id);
-                assert!(values[idx] > 0.0,
-                    "E13 weight must be positive, got {}", values[idx]);
+                assert!(
+                    (term_id as usize) < 30522,
+                    "E13 term_id {} exceeds BERT vocab size 30522",
+                    term_id
+                );
+                assert!(
+                    values[idx] > 0.0,
+                    "E13 weight must be positive, got {}",
+                    values[idx]
+                );
             }
 
             println!("\n[VERIFIED] E13 SPLADE exists in fingerprint");
@@ -277,7 +325,10 @@ async fn test_e13_splade_stored_in_fingerprint() {
             }
         }
         None => {
-            panic!("FAIL: Fingerprint NOT FOUND in CF_FINGERPRINTS for memory {}", memory_id);
+            panic!(
+                "FAIL: Fingerprint NOT FOUND in CF_FINGERPRINTS for memory {}",
+                memory_id
+            );
         }
     }
 
@@ -293,8 +344,7 @@ async fn test_e13_inverted_index_populated() {
     let db_path = temp_dir.path().join("test_e13_inverted_db");
 
     // Initialize the store
-    let store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to create store");
+    let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to create store");
 
     // Create test fingerprint with known term IDs
     let memory_id = Uuid::new_v4();
@@ -330,7 +380,11 @@ async fn test_e13_inverted_index_populated() {
 
             match db.get_cf(&cf_inverted, &term_key) {
                 Ok(Some(bytes)) => {
-                    println!("  term_id {}: {} bytes in inverted index", term_id, bytes.len());
+                    println!(
+                        "  term_id {}: {} bytes in inverted index",
+                        term_id,
+                        bytes.len()
+                    );
 
                     // Try to deserialize as Vec<Uuid>
                     if let Ok(memory_ids) = bincode::deserialize::<Vec<Uuid>>(&bytes) {
@@ -338,12 +392,18 @@ async fn test_e13_inverted_index_populated() {
                         println!("    Contains our memory: {}", contains_our_memory);
 
                         if contains_our_memory {
-                            println!("[VERIFIED] term_id {} correctly maps to our memory", term_id);
+                            println!(
+                                "[VERIFIED] term_id {} correctly maps to our memory",
+                                term_id
+                            );
                         }
                     }
                 }
                 Ok(None) => {
-                    println!("  term_id {}: NOT in inverted index (may be intentional)", term_id);
+                    println!(
+                        "  term_id {}: NOT in inverted index (may be intentional)",
+                        term_id
+                    );
                 }
                 Err(e) => {
                     println!("  term_id {}: Error reading: {}", term_id, e);
@@ -351,7 +411,9 @@ async fn test_e13_inverted_index_populated() {
             }
         }
     } else {
-        println!("\n[INFO] CF_E13_SPLADE_INVERTED not found (inverted index may be built separately)");
+        println!(
+            "\n[INFO] CF_E13_SPLADE_INVERTED not found (inverted index may be built separately)"
+        );
     }
 
     println!("\n=== E13 INVERTED INDEX VERIFICATION COMPLETE ===\n");
@@ -374,24 +436,37 @@ async fn test_edge_case_empty_e12_tokens() {
     let mut fp = create_test_fingerprint_with_e12_e13(memory_id, 0, 10);
     fp.semantic.e12_late_interaction = vec![]; // Explicitly empty
 
-    println!("[BEFORE] E12 token count: {}", fp.semantic.e12_late_interaction.len());
+    println!(
+        "[BEFORE] E12 token count: {}",
+        fp.semantic.e12_late_interaction.len()
+    );
 
     // Store should succeed even with empty E12 tokens
     let result = store.store(fp).await;
 
     println!("[AFTER] Store result: {:?}", result.is_ok());
 
-    assert!(result.is_ok(), "Storing fingerprint with empty E12 tokens should succeed");
+    assert!(
+        result.is_ok(),
+        "Storing fingerprint with empty E12 tokens should succeed"
+    );
 
     // Verify E12 CF either has empty entry or no entry
     let db = store.db();
-    let cf_e12 = db.cf_handle(CF_E12_LATE_INTERACTION).expect("CF must exist");
-    let e12_bytes = db.get_cf(&cf_e12, memory_id.as_bytes()).expect("Read failed");
+    let cf_e12 = db
+        .cf_handle(CF_E12_LATE_INTERACTION)
+        .expect("CF must exist");
+    let e12_bytes = db
+        .get_cf(&cf_e12, memory_id.as_bytes())
+        .expect("Read failed");
 
     match e12_bytes {
         Some(bytes) => {
             let tokens: Vec<Vec<f32>> = bincode::deserialize(&bytes).unwrap_or_default();
-            println!("[VERIFIED] Empty E12 tokens stored as {} tokens", tokens.len());
+            println!(
+                "[VERIFIED] Empty E12 tokens stored as {} tokens",
+                tokens.len()
+            );
             assert!(tokens.is_empty(), "Should be empty");
         }
         None => {
@@ -418,27 +493,49 @@ async fn test_edge_case_max_e12_tokens() {
     let max_tokens = 100;
     let fp = create_test_fingerprint_with_e12_e13(memory_id, max_tokens, 10);
 
-    println!("[BEFORE] E12 token count: {}", fp.semantic.e12_late_interaction.len());
-    println!("  Expected storage: {} tokens x 128D x 4 bytes = {} bytes",
-        max_tokens, max_tokens * 128 * 4);
+    println!(
+        "[BEFORE] E12 token count: {}",
+        fp.semantic.e12_late_interaction.len()
+    );
+    println!(
+        "  Expected storage: {} tokens x 128D x 4 bytes = {} bytes",
+        max_tokens,
+        max_tokens * 128 * 4
+    );
 
     // Store
     let result = store.store(fp).await;
 
     println!("[AFTER] Store result: {:?}", result.is_ok());
 
-    assert!(result.is_ok(), "Storing fingerprint with max E12 tokens should succeed");
+    assert!(
+        result.is_ok(),
+        "Storing fingerprint with max E12 tokens should succeed"
+    );
 
     // Verify all tokens stored
     let db = store.db();
-    let cf_e12 = db.cf_handle(CF_E12_LATE_INTERACTION).expect("CF must exist");
-    let e12_bytes = db.get_cf(&cf_e12, memory_id.as_bytes()).expect("Read failed");
+    let cf_e12 = db
+        .cf_handle(CF_E12_LATE_INTERACTION)
+        .expect("CF must exist");
+    let e12_bytes = db
+        .get_cf(&cf_e12, memory_id.as_bytes())
+        .expect("Read failed");
 
     match e12_bytes {
         Some(bytes) => {
             let tokens: Vec<Vec<f32>> = bincode::deserialize(&bytes).expect("Deserialize failed");
-            println!("[VERIFIED] {} E12 tokens stored ({} bytes)", tokens.len(), bytes.len());
-            assert_eq!(tokens.len(), max_tokens, "All {} tokens should be stored", max_tokens);
+            println!(
+                "[VERIFIED] {} E12 tokens stored ({} bytes)",
+                tokens.len(),
+                bytes.len()
+            );
+            assert_eq!(
+                tokens.len(),
+                max_tokens,
+                "All {} tokens should be stored",
+                max_tokens
+            );
         }
         None => {
             panic!("FAIL: Max E12 tokens not stored");
@@ -468,20 +565,27 @@ async fn test_edge_case_empty_e13_splade() {
 
     println!("[AFTER] Store result: {:?}", result.is_ok());
 
-    assert!(result.is_ok(), "Storing fingerprint with empty E13 SPLADE should succeed");
+    assert!(
+        result.is_ok(),
+        "Storing fingerprint with empty E13 SPLADE should succeed"
+    );
 
     // Verify fingerprint stored with empty SPLADE
     let db = store.db();
     let cf_fp = db.cf_handle(CF_FINGERPRINTS).expect("CF must exist");
-    let fp_bytes = db.get_cf(&cf_fp, memory_id.as_bytes()).expect("Read failed");
+    let fp_bytes = db
+        .get_cf(&cf_fp, memory_id.as_bytes())
+        .expect("Read failed");
 
     match fp_bytes {
         Some(bytes) => {
             // Use proper storage deserialization format
             let stored_fp = deserialize_teleological_fingerprint(&bytes)
                 .expect("Failed to deserialize fingerprint");
-            println!("[VERIFIED] Fingerprint stored with {} E13 SPLADE terms",
-                stored_fp.semantic.e13_splade.nnz());
+            println!(
+                "[VERIFIED] Fingerprint stored with {} E13 SPLADE terms",
+                stored_fp.semantic.e13_splade.nnz()
+            );
             assert!(stored_fp.semantic.e13_splade.is_empty(), "Should be empty");
         }
         None => {

@@ -636,8 +636,10 @@ impl SessionGenerator {
         used_indices.insert(seed_idx);
 
         // Build lookup for embeddings
-        let idx_to_emb: HashMap<usize, &Vec<f32>> =
-            chunks_with_emb.iter().map(|(idx, emb)| (*idx, emb)).collect();
+        let idx_to_emb: HashMap<usize, &Vec<f32>> = chunks_with_emb
+            .iter()
+            .map(|(idx, emb)| (*idx, emb))
+            .collect();
 
         // Verify seed has embedding (required for coherent session)
         idx_to_emb.get(&seed_idx)?;
@@ -732,8 +734,10 @@ impl SessionGenerator {
             return 1.0;
         }
 
-        let idx_to_emb: HashMap<usize, &Vec<f32>> =
-            chunks_with_emb.iter().map(|(idx, emb)| (*idx, emb)).collect();
+        let idx_to_emb: HashMap<usize, &Vec<f32>> = chunks_with_emb
+            .iter()
+            .map(|(idx, emb)| (*idx, emb))
+            .collect();
 
         let mut total_sim = 0.0;
         let mut count = 0;
@@ -953,7 +957,11 @@ impl SessionGenerator {
     }
 
     /// Compute generation statistics.
-    fn compute_stats(&self, sessions: &[TemporalSession], _dataset: &RealDataset) -> SessionGenerationStats {
+    fn compute_stats(
+        &self,
+        sessions: &[TemporalSession],
+        _dataset: &RealDataset,
+    ) -> SessionGenerationStats {
         let total_sessions = sessions.len();
         let total_chunks: usize = sessions.iter().map(|s| s.len()).sum();
 

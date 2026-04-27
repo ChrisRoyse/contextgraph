@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use context_graph_benchmark::datasets::{
-    SessionGenerator, SessionGeneratorConfig, TemporalSession, SessionChunk,
+    SessionChunk, SessionGenerator, SessionGeneratorConfig, TemporalSession,
 };
 use context_graph_benchmark::realdata::embedder::RealDataEmbedder;
 use context_graph_benchmark::realdata::loader::DatasetLoader;
@@ -146,8 +146,9 @@ fn parse_args() -> Args {
                     .expect("--seed must be a number");
             }
             "--checkpoint-dir" => {
-                args.checkpoint_dir =
-                    Some(PathBuf::from(argv.next().expect("--checkpoint-dir requires a value")));
+                args.checkpoint_dir = Some(PathBuf::from(
+                    argv.next().expect("--checkpoint-dir requires a value"),
+                ));
             }
             "--no-checkpoint" => {
                 args.checkpoint_dir = None;
@@ -393,7 +394,8 @@ async fn main() {
     let sessions = ground_truth.sessions;
 
     let total_session_chunks: usize = sessions.iter().map(|s| s.chunks.len()).sum();
-    let topics_covered: usize = sessions.iter()
+    let topics_covered: usize = sessions
+        .iter()
         .map(|s| &s.topic)
         .collect::<std::collections::HashSet<_>>()
         .len();
@@ -434,7 +436,8 @@ async fn main() {
     };
 
     let embed_time = embed_start.elapsed().as_secs_f64();
-    let e4_populated = embedded.values()
+    let e4_populated = embedded
+        .values()
         .filter(|fp| !fp.e4_temporal_positional.is_empty())
         .count();
 
@@ -457,7 +460,8 @@ async fn main() {
 
     // 4.1 Direction Filtering
     println!("  4.1 Direction Filtering (before/after queries)...");
-    let direction_results = run_direction_filtering(&sessions, &embedded, args.num_direction_queries, args.seed);
+    let direction_results =
+        run_direction_filtering(&sessions, &embedded, args.num_direction_queries, args.seed);
     println!(
         "    Before accuracy: {:.1}%, After accuracy: {:.1}%",
         direction_results.before_accuracy * 100.0,
@@ -476,8 +480,7 @@ async fn main() {
     let ordering_results = run_sequence_ordering(&sessions, &embedded);
     println!(
         "    Avg Kendall's tau: {:.4} (variance: {:.4})",
-        ordering_results.avg_kendalls_tau,
-        ordering_results.tau_variance
+        ordering_results.avg_kendalls_tau, ordering_results.tau_variance
     );
     if ordering_results.is_constant_tau {
         println!("    [WARNING] Constant tau=1.0 detected (timestamp-based)");
@@ -485,7 +488,8 @@ async fn main() {
 
     // 4.3 Chain Traversal
     println!("  4.3 Chain Traversal...");
-    let chain_results = run_chain_traversal(&sessions, &embedded, args.num_chain_queries, args.seed);
+    let chain_results =
+        run_chain_traversal(&sessions, &embedded, args.num_chain_queries, args.seed);
     println!(
         "    MRR next: {:.4}, MRR prev: {:.4}, Completion: {:.1}%",
         chain_results.mrr_next,
@@ -495,7 +499,8 @@ async fn main() {
 
     // 4.4 Boundary Detection
     println!("  4.4 Boundary Detection...");
-    let boundary_results = run_boundary_detection(&sessions, &embedded, args.num_boundary_queries, args.seed);
+    let boundary_results =
+        run_boundary_detection(&sessions, &embedded, args.num_boundary_queries, args.seed);
     println!(
         "    Precision: {:.1}%, Recall: {:.1}%, F1: {:.2}",
         boundary_results.precision * 100.0,
@@ -505,7 +510,8 @@ async fn main() {
 
     // 4.5 Timestamp Baseline (to show improvement)
     println!("  4.5 Timestamp Baseline Comparison...");
-    let baseline_results = run_timestamp_baseline(&sessions, &embedded, args.num_direction_queries, args.seed);
+    let baseline_results =
+        run_timestamp_baseline(&sessions, &embedded, args.num_direction_queries, args.seed);
     println!(
         "    Timestamp symmetry: {:.2} (broken baseline)",
         baseline_results.timestamp_symmetry
@@ -524,7 +530,9 @@ async fn main() {
     );
 
     // Phase 5: Compile results
-    let source_datasets: Vec<String> = dataset.chunks.iter()
+    let source_datasets: Vec<String> = dataset
+        .chunks
+        .iter()
         .filter_map(|c| c.source_dataset.clone())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
@@ -651,22 +659,31 @@ fn run_direction_filtering(
             let anchor_idx = rng.gen_range(1..session.chunks.len().saturating_sub(1));
             let anchor = &session.chunks[anchor_idx];
 
-            let Some(anchor_fp) = embedded.get(&anchor.id) else { continue };
+            let Some(anchor_fp) = embedded.get(&anchor.id) else {
+                continue;
+            };
             if anchor_fp.e4_temporal_positional.is_empty() {
                 continue;
             }
 
             // Test "before" query: should find items with sequence < anchor
-            let before_candidates: Vec<&SessionChunk> = session.chunks[..anchor_idx].iter().collect();
+            let before_candidates: Vec<&SessionChunk> =
+                session.chunks[..anchor_idx].iter().collect();
             if !before_candidates.is_empty() {
                 let target = before_candidates.choose(&mut rng).unwrap();
                 if let Some(target_fp) = embedded.get(&target.id) {
                     // E4 similarity should be higher for items actually before
-                    let sim = cosine_similarity(&anchor_fp.e4_temporal_positional, &target_fp.e4_temporal_positional);
+                    let sim = cosine_similarity(
+                        &anchor_fp.e4_temporal_positional,
+                        &target_fp.e4_temporal_positional,
+                    );
                     // Check against a random "after" item
                     if let Some(wrong) = session.chunks[anchor_idx + 1..].choose(&mut rng) {
                         if let Some(wrong_fp) = embedded.get(&wrong.id) {
-                            let wrong_sim = cosine_similarity(&anchor_fp.e4_temporal_positional, &wrong_fp.e4_temporal_positional);
+                            let wrong_sim = cosine_similarity(
+                                &anchor_fp.e4_temporal_positional,
+                                &wrong_fp.e4_temporal_positional,
+                            );
                             // For "before" query, the before item should have different E4 signature
                             // that can be distinguished from after items
                             if sim != wrong_sim {
@@ -681,14 +698,21 @@ fn run_direction_filtering(
             }
 
             // Test "after" query: should find items with sequence > anchor
-            let after_candidates: Vec<&SessionChunk> = session.chunks[anchor_idx + 1..].iter().collect();
+            let after_candidates: Vec<&SessionChunk> =
+                session.chunks[anchor_idx + 1..].iter().collect();
             if !after_candidates.is_empty() {
                 let target = after_candidates.choose(&mut rng).unwrap();
                 if let Some(target_fp) = embedded.get(&target.id) {
-                    let sim = cosine_similarity(&anchor_fp.e4_temporal_positional, &target_fp.e4_temporal_positional);
+                    let sim = cosine_similarity(
+                        &anchor_fp.e4_temporal_positional,
+                        &target_fp.e4_temporal_positional,
+                    );
                     if let Some(wrong) = session.chunks[..anchor_idx].choose(&mut rng) {
                         if let Some(wrong_fp) = embedded.get(&wrong.id) {
-                            let wrong_sim = cosine_similarity(&anchor_fp.e4_temporal_positional, &wrong_fp.e4_temporal_positional);
+                            let wrong_sim = cosine_similarity(
+                                &anchor_fp.e4_temporal_positional,
+                                &wrong_fp.e4_temporal_positional,
+                            );
                             if sim != wrong_sim {
                                 after_correct += 1;
                                 session_correct += 1;
@@ -706,8 +730,16 @@ fn run_direction_filtering(
         }
     }
 
-    let before_acc = if before_total > 0 { before_correct as f64 / before_total as f64 } else { 0.0 };
-    let after_acc = if after_total > 0 { after_correct as f64 / after_total as f64 } else { 0.0 };
+    let before_acc = if before_total > 0 {
+        before_correct as f64 / before_total as f64
+    } else {
+        0.0
+    };
+    let after_acc = if after_total > 0 {
+        after_correct as f64 / after_total as f64
+    } else {
+        0.0
+    };
 
     // Symmetry: 1.0 means perfectly symmetric, 0.0 means completely asymmetric
     let symmetry = 1.0 - (before_acc - after_acc).abs();
@@ -737,11 +769,13 @@ fn run_sequence_ordering(
         }
 
         // Get E4 embeddings in session order
-        let e4_vectors: Vec<(usize, &[f32])> = session.chunks
+        let e4_vectors: Vec<(usize, &[f32])> = session
+            .chunks
             .iter()
             .enumerate()
             .filter_map(|(idx, chunk)| {
-                embedded.get(&chunk.id)
+                embedded
+                    .get(&chunk.id)
                     .filter(|fp| !fp.e4_temporal_positional.is_empty())
                     .map(|fp| (idx, fp.e4_temporal_positional.as_slice()))
             })
@@ -771,9 +805,11 @@ fn run_sequence_ordering(
     let min_tau = tau_values.iter().copied().fold(f64::INFINITY, f64::min);
     let max_tau = tau_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
-    let variance: f64 = tau_values.iter()
+    let variance: f64 = tau_values
+        .iter()
         .map(|&t| (t - avg_tau).powi(2))
-        .sum::<f64>() / tau_values.len() as f64;
+        .sum::<f64>()
+        / tau_values.len() as f64;
 
     // Detect constant tau (broken behavior)
     let is_constant = variance < 0.001 && (avg_tau - 1.0).abs() < 0.01;
@@ -820,20 +856,32 @@ fn run_chain_traversal(
 
         for _step in 0..chain_length - 1 {
             let current = &session.chunks[current_idx];
-            let Some(current_fp) = embedded.get(&current.id) else { break };
+            let Some(current_fp) = embedded.get(&current.id) else {
+                break;
+            };
             if current_fp.e4_temporal_positional.is_empty() {
                 break;
             }
 
             // Rank all session chunks by E4 similarity
-            let mut scores: Vec<(usize, f32)> = session.chunks
+            let mut scores: Vec<(usize, f32)> = session
+                .chunks
                 .iter()
                 .enumerate()
                 .filter(|(idx, _)| *idx != current_idx)
                 .filter_map(|(idx, chunk)| {
-                    embedded.get(&chunk.id)
+                    embedded
+                        .get(&chunk.id)
                         .filter(|fp| !fp.e4_temporal_positional.is_empty())
-                        .map(|fp| (idx, cosine_similarity(&current_fp.e4_temporal_positional, &fp.e4_temporal_positional)))
+                        .map(|fp| {
+                            (
+                                idx,
+                                cosine_similarity(
+                                    &current_fp.e4_temporal_positional,
+                                    &fp.e4_temporal_positional,
+                                ),
+                            )
+                        })
                 })
                 .collect();
 
@@ -918,7 +966,8 @@ fn run_boundary_detection(
     pairs.shuffle(&mut rng);
 
     // Compute similarity threshold from within-session pairs
-    let within_session_sims: Vec<f32> = pairs.iter()
+    let within_session_sims: Vec<f32> = pairs
+        .iter()
         .filter(|(_, _, is_boundary)| !is_boundary)
         .take(100)
         .filter_map(|(id1, id2, _)| {
@@ -927,7 +976,10 @@ fn run_boundary_detection(
             if fp1.e4_temporal_positional.is_empty() || fp2.e4_temporal_positional.is_empty() {
                 return None;
             }
-            Some(cosine_similarity(&fp1.e4_temporal_positional, &fp2.e4_temporal_positional))
+            Some(cosine_similarity(
+                &fp1.e4_temporal_positional,
+                &fp2.e4_temporal_positional,
+            ))
         })
         .collect();
 
@@ -936,15 +988,21 @@ fn run_boundary_detection(
     } else {
         // Use mean - 2*std as threshold
         let mean: f32 = within_session_sims.iter().sum::<f32>() / within_session_sims.len() as f32;
-        let variance: f32 = within_session_sims.iter()
+        let variance: f32 = within_session_sims
+            .iter()
             .map(|s| (s - mean).powi(2))
-            .sum::<f32>() / within_session_sims.len() as f32;
+            .sum::<f32>()
+            / within_session_sims.len() as f32;
         mean - 2.0 * variance.sqrt()
     };
 
     for (id1, id2, is_boundary) in pairs.iter().take(num_queries) {
-        let Some(fp1) = embedded.get(id1) else { continue };
-        let Some(fp2) = embedded.get(id2) else { continue };
+        let Some(fp1) = embedded.get(id1) else {
+            continue;
+        };
+        let Some(fp2) = embedded.get(id2) else {
+            continue;
+        };
 
         if fp1.e4_temporal_positional.is_empty() || fp2.e4_temporal_positional.is_empty() {
             continue;
@@ -981,7 +1039,10 @@ fn run_boundary_detection(
         0.0
     };
 
-    let fpr = if false_positives + (total_queries - true_positives - false_positives - false_negatives) > 0 {
+    let fpr = if false_positives
+        + (total_queries - true_positives - false_positives - false_negatives)
+        > 0
+    {
         false_positives as f64 / total_queries as f64
     } else {
         0.0
@@ -1016,7 +1077,7 @@ fn run_timestamp_baseline(
     //
     // We simulate this expected broken behavior:
     let timestamp_before: f64 = 0.95; // Nearly perfect (sequential processing)
-    let timestamp_after: f64 = 0.05;  // Nearly zero (no future timestamps)
+    let timestamp_after: f64 = 0.05; // Nearly zero (no future timestamps)
     let timestamp_symmetry: f64 = 1.0 - (timestamp_before - timestamp_after).abs();
 
     // Get actual sequence-based results for comparison
@@ -1057,33 +1118,54 @@ fn run_e4_contribution_analysis(
             let current = &window[0];
             let next = &window[1];
 
-            let Some(current_fp) = embedded.get(&current.id) else { continue };
-            let Some(_next_fp) = embedded.get(&next.id) else { continue };
+            let Some(current_fp) = embedded.get(&current.id) else {
+                continue;
+            };
+            let Some(_next_fp) = embedded.get(&next.id) else {
+                continue;
+            };
 
             if current_fp.e4_temporal_positional.is_empty() || current_fp.e1_semantic.is_empty() {
                 continue;
             }
 
             // Rank by E4
-            let mut e4_scores: Vec<(Uuid, f32)> = session.chunks
+            let mut e4_scores: Vec<(Uuid, f32)> = session
+                .chunks
                 .iter()
                 .filter(|c| c.id != current.id)
                 .filter_map(|c| {
-                    embedded.get(&c.id)
+                    embedded
+                        .get(&c.id)
                         .filter(|fp| !fp.e4_temporal_positional.is_empty())
-                        .map(|fp| (c.id, cosine_similarity(&current_fp.e4_temporal_positional, &fp.e4_temporal_positional)))
+                        .map(|fp| {
+                            (
+                                c.id,
+                                cosine_similarity(
+                                    &current_fp.e4_temporal_positional,
+                                    &fp.e4_temporal_positional,
+                                ),
+                            )
+                        })
                 })
                 .collect();
             e4_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             // Rank by E1
-            let mut e1_scores: Vec<(Uuid, f32)> = session.chunks
+            let mut e1_scores: Vec<(Uuid, f32)> = session
+                .chunks
                 .iter()
                 .filter(|c| c.id != current.id)
                 .filter_map(|c| {
-                    embedded.get(&c.id)
+                    embedded
+                        .get(&c.id)
                         .filter(|fp| !fp.e1_semantic.is_empty())
-                        .map(|fp| (c.id, cosine_similarity(&current_fp.e1_semantic, &fp.e1_semantic)))
+                        .map(|fp| {
+                            (
+                                c.id,
+                                cosine_similarity(&current_fp.e1_semantic, &fp.e1_semantic),
+                            )
+                        })
                 })
                 .collect();
             e1_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -1106,7 +1188,11 @@ fn run_e4_contribution_analysis(
     E4ContributionAnalysis {
         mrr_with_e4: mrr_e4,
         mrr_e1_only: mrr_e1,
-        e4_contribution_pct: if mrr_e1 > 0.0 { (mrr_e4 - mrr_e1) / mrr_e1 } else { 0.0 },
+        e4_contribution_pct: if mrr_e1 > 0.0 {
+            (mrr_e4 - mrr_e1) / mrr_e1
+        } else {
+            0.0
+        },
         sequence_vs_timestamp: mrr_e4 / mrr_e1.max(0.001),
     }
 }
@@ -1168,12 +1254,18 @@ fn generate_recommendations(
 
     // Critical: timestamp-based behavior detected
     if direction.is_timestamp_based {
-        recs.push("[CRITICAL] E4 appears to be using timestamps instead of sequence positions. \
-                   The before/after asymmetry (1.0/0.0) indicates broken behavior.".to_string());
+        recs.push(
+            "[CRITICAL] E4 appears to be using timestamps instead of sequence positions. \
+                   The before/after asymmetry (1.0/0.0) indicates broken behavior."
+                .to_string(),
+        );
     }
 
     if ordering.is_constant_tau {
-        recs.push("[CRITICAL] Kendall's tau is constantly 1.0, indicating timestamp-based ordering.".to_string());
+        recs.push(
+            "[CRITICAL] Kendall's tau is constantly 1.0, indicating timestamp-based ordering."
+                .to_string(),
+        );
     }
 
     // Symmetry check
@@ -1225,12 +1317,18 @@ fn generate_recommendations(
 
     // Improvement check
     if baseline.sequence_improvement_pct <= 0.0 {
-        recs.push("Sequence-based approach shows no improvement over timestamp baseline. \
-                   E4 fix may not be working correctly.".to_string());
+        recs.push(
+            "Sequence-based approach shows no improvement over timestamp baseline. \
+                   E4 fix may not be working correctly."
+                .to_string(),
+        );
     }
 
     if recs.is_empty() {
-        recs.push("All targets met! E4 sequence embedder is working correctly with real data.".to_string());
+        recs.push(
+            "All targets met! E4 sequence embedder is working correctly with real data."
+                .to_string(),
+        );
     }
 
     recs
@@ -1249,56 +1347,135 @@ fn save_results(results: &TemporalRealDataResults, path: &Path) -> std::io::Resu
 fn save_markdown_report(results: &TemporalRealDataResults, path: &Path) -> std::io::Result<()> {
     let mut f = File::create(path)?;
 
-    writeln!(f, "# E4 Temporal Sequence Benchmark with Real HuggingFace Data")?;
+    writeln!(
+        f,
+        "# E4 Temporal Sequence Benchmark with Real HuggingFace Data"
+    )?;
     writeln!(f)?;
     writeln!(f, "**Generated:** {}", results.timestamp)?;
     writeln!(f)?;
 
     writeln!(f, "## Executive Summary")?;
     writeln!(f)?;
-    let symmetry_status = if results.direction_filtering.symmetry_score >= 0.7 { "PASS" } else { "FAIL" };
-    let timestamp_warning = if results.direction_filtering.is_timestamp_based { " (TIMESTAMP-BASED!)" } else { "" };
-    writeln!(f, "- **Direction Symmetry:** {:.2} [{}]{}",
-        results.direction_filtering.symmetry_score, symmetry_status, timestamp_warning)?;
-    writeln!(f, "- **Before/After Accuracy:** {:.1}% / {:.1}%",
+    let symmetry_status = if results.direction_filtering.symmetry_score >= 0.7 {
+        "PASS"
+    } else {
+        "FAIL"
+    };
+    let timestamp_warning = if results.direction_filtering.is_timestamp_based {
+        " (TIMESTAMP-BASED!)"
+    } else {
+        ""
+    };
+    writeln!(
+        f,
+        "- **Direction Symmetry:** {:.2} [{}]{}",
+        results.direction_filtering.symmetry_score, symmetry_status, timestamp_warning
+    )?;
+    writeln!(
+        f,
+        "- **Before/After Accuracy:** {:.1}% / {:.1}%",
         results.direction_filtering.before_accuracy * 100.0,
-        results.direction_filtering.after_accuracy * 100.0)?;
-    writeln!(f, "- **Kendall's Tau:** {:.3}", results.sequence_ordering.avg_kendalls_tau)?;
-    writeln!(f, "- **Chain MRR:** {:.3}", results.chain_traversal.mrr_next)?;
+        results.direction_filtering.after_accuracy * 100.0
+    )?;
+    writeln!(
+        f,
+        "- **Kendall's Tau:** {:.3}",
+        results.sequence_ordering.avg_kendalls_tau
+    )?;
+    writeln!(
+        f,
+        "- **Chain MRR:** {:.3}",
+        results.chain_traversal.mrr_next
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Configuration")?;
     writeln!(f)?;
     writeln!(f, "| Parameter | Value |")?;
     writeln!(f, "|-----------|-------|")?;
-    writeln!(f, "| Total Chunks | {} |", results.dataset_info.total_chunks)?;
-    writeln!(f, "| Documents | {} |", results.dataset_info.total_documents)?;
-    writeln!(f, "| Sessions Generated | {} |", results.session_info.total_sessions)?;
-    writeln!(f, "| Chunks per Session | {:.1} |", results.session_info.avg_chunks_per_session)?;
-    writeln!(f, "| E4 Coverage | {:.1}% |", results.embedding_stats.e4_coverage * 100.0)?;
+    writeln!(
+        f,
+        "| Total Chunks | {} |",
+        results.dataset_info.total_chunks
+    )?;
+    writeln!(
+        f,
+        "| Documents | {} |",
+        results.dataset_info.total_documents
+    )?;
+    writeln!(
+        f,
+        "| Sessions Generated | {} |",
+        results.session_info.total_sessions
+    )?;
+    writeln!(
+        f,
+        "| Chunks per Session | {:.1} |",
+        results.session_info.avg_chunks_per_session
+    )?;
+    writeln!(
+        f,
+        "| E4 Coverage | {:.1}% |",
+        results.embedding_stats.e4_coverage * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Direction Filtering (Critical for E4 Fix Validation)")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target | Status |")?;
     writeln!(f, "|--------|-------|--------|--------|")?;
-    writeln!(f, "| Before Accuracy | {:.1}% | >=65% | {} |",
+    writeln!(
+        f,
+        "| Before Accuracy | {:.1}% | >=65% | {} |",
         results.direction_filtering.before_accuracy * 100.0,
-        if results.direction_filtering.before_accuracy >= 0.65 { "PASS" } else { "FAIL" })?;
-    writeln!(f, "| After Accuracy | {:.1}% | >=65% | {} |",
+        if results.direction_filtering.before_accuracy >= 0.65 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        f,
+        "| After Accuracy | {:.1}% | >=65% | {} |",
         results.direction_filtering.after_accuracy * 100.0,
-        if results.direction_filtering.after_accuracy >= 0.65 { "PASS" } else { "FAIL" })?;
-    writeln!(f, "| **Symmetry Score** | **{:.2}** | >=0.7 | **{}** |",
+        if results.direction_filtering.after_accuracy >= 0.65 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        f,
+        "| **Symmetry Score** | **{:.2}** | >=0.7 | **{}** |",
         results.direction_filtering.symmetry_score,
-        if results.direction_filtering.symmetry_score >= 0.7 { "PASS" } else { "FAIL" })?;
-    writeln!(f, "| Timestamp-Based | {} | No | {} |",
+        if results.direction_filtering.symmetry_score >= 0.7 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        f,
+        "| Timestamp-Based | {} | No | {} |",
         results.direction_filtering.is_timestamp_based,
-        if !results.direction_filtering.is_timestamp_based { "PASS" } else { "FAIL" })?;
+        if !results.direction_filtering.is_timestamp_based {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
     writeln!(f)?;
 
     if results.direction_filtering.is_timestamp_based {
-        writeln!(f, "> **WARNING:** Before=1.0 and After=0.0 indicates E4 is using Unix timestamps")?;
-        writeln!(f, "> instead of session sequence positions. The E4 fix is NOT working.")?;
+        writeln!(
+            f,
+            "> **WARNING:** Before=1.0 and After=0.0 indicates E4 is using Unix timestamps"
+        )?;
+        writeln!(
+            f,
+            "> instead of session sequence positions. The E4 fix is NOT working."
+        )?;
         writeln!(f)?;
     }
 
@@ -1306,63 +1483,143 @@ fn save_markdown_report(results: &TemporalRealDataResults, path: &Path) -> std::
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target | Status |")?;
     writeln!(f, "|--------|-------|--------|--------|")?;
-    writeln!(f, "| **Avg Kendall's Tau** | **{:.4}** | >=0.5 | **{}** |",
+    writeln!(
+        f,
+        "| **Avg Kendall's Tau** | **{:.4}** | >=0.5 | **{}** |",
         results.sequence_ordering.avg_kendalls_tau,
-        if results.sequence_ordering.avg_kendalls_tau >= 0.5 { "PASS" } else { "FAIL" })?;
-    writeln!(f, "| Min Tau | {:.4} | - | - |", results.sequence_ordering.min_kendalls_tau)?;
-    writeln!(f, "| Max Tau | {:.4} | - | - |", results.sequence_ordering.max_kendalls_tau)?;
-    writeln!(f, "| Tau Variance | {:.4} | >0.001 | {} |",
+        if results.sequence_ordering.avg_kendalls_tau >= 0.5 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        f,
+        "| Min Tau | {:.4} | - | - |",
+        results.sequence_ordering.min_kendalls_tau
+    )?;
+    writeln!(
+        f,
+        "| Max Tau | {:.4} | - | - |",
+        results.sequence_ordering.max_kendalls_tau
+    )?;
+    writeln!(
+        f,
+        "| Tau Variance | {:.4} | >0.001 | {} |",
         results.sequence_ordering.tau_variance,
-        if results.sequence_ordering.tau_variance > 0.001 { "PASS" } else { "FAIL" })?;
+        if results.sequence_ordering.tau_variance > 0.001 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Chain Traversal")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target | Status |")?;
     writeln!(f, "|--------|-------|--------|--------|")?;
-    writeln!(f, "| **MRR Next** | **{:.4}** | >=0.4 | **{}** |",
+    writeln!(
+        f,
+        "| **MRR Next** | **{:.4}** | >=0.4 | **{}** |",
         results.chain_traversal.mrr_next,
-        if results.chain_traversal.mrr_next >= 0.4 { "PASS" } else { "FAIL" })?;
-    writeln!(f, "| MRR Prev | {:.4} | - | - |", results.chain_traversal.mrr_prev)?;
-    writeln!(f, "| Completion Rate | {:.1}% | - | - |", results.chain_traversal.completion_rate * 100.0)?;
-    writeln!(f, "| Avg Depth | {:.2} | - | - |", results.chain_traversal.avg_traversal_depth)?;
+        if results.chain_traversal.mrr_next >= 0.4 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        f,
+        "| MRR Prev | {:.4} | - | - |",
+        results.chain_traversal.mrr_prev
+    )?;
+    writeln!(
+        f,
+        "| Completion Rate | {:.1}% | - | - |",
+        results.chain_traversal.completion_rate * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Avg Depth | {:.2} | - | - |",
+        results.chain_traversal.avg_traversal_depth
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Boundary Detection")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target | Status |")?;
     writeln!(f, "|--------|-------|--------|--------|")?;
-    writeln!(f, "| Precision | {:.1}% | - | - |", results.boundary_detection.precision * 100.0)?;
-    writeln!(f, "| Recall | {:.1}% | - | - |", results.boundary_detection.recall * 100.0)?;
-    writeln!(f, "| **F1 Score** | **{:.2}** | >=0.6 | **{}** |",
+    writeln!(
+        f,
+        "| Precision | {:.1}% | - | - |",
+        results.boundary_detection.precision * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Recall | {:.1}% | - | - |",
+        results.boundary_detection.recall * 100.0
+    )?;
+    writeln!(
+        f,
+        "| **F1 Score** | **{:.2}** | >=0.6 | **{}** |",
         results.boundary_detection.f1_score,
-        if results.boundary_detection.f1_score >= 0.6 { "PASS" } else { "FAIL" })?;
+        if results.boundary_detection.f1_score >= 0.6 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Timestamp Baseline Comparison")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Timestamp (Broken) | Sequence (Fixed) |")?;
     writeln!(f, "|--------|-------------------|------------------|")?;
-    writeln!(f, "| Before Accuracy | {:.1}% | {:.1}% |",
+    writeln!(
+        f,
+        "| Before Accuracy | {:.1}% | {:.1}% |",
         results.timestamp_baseline.timestamp_before_accuracy * 100.0,
-        results.direction_filtering.before_accuracy * 100.0)?;
-    writeln!(f, "| After Accuracy | {:.1}% | {:.1}% |",
+        results.direction_filtering.before_accuracy * 100.0
+    )?;
+    writeln!(
+        f,
+        "| After Accuracy | {:.1}% | {:.1}% |",
         results.timestamp_baseline.timestamp_after_accuracy * 100.0,
-        results.direction_filtering.after_accuracy * 100.0)?;
-    writeln!(f, "| Symmetry | {:.2} | {:.2} |",
-        results.timestamp_baseline.timestamp_symmetry,
-        results.direction_filtering.symmetry_score)?;
+        results.direction_filtering.after_accuracy * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Symmetry | {:.2} | {:.2} |",
+        results.timestamp_baseline.timestamp_symmetry, results.direction_filtering.symmetry_score
+    )?;
     writeln!(f)?;
-    writeln!(f, "**Improvement:** {:.1}%", results.timestamp_baseline.sequence_improvement_pct * 100.0)?;
+    writeln!(
+        f,
+        "**Improvement:** {:.1}%",
+        results.timestamp_baseline.sequence_improvement_pct * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## E4 Contribution Analysis")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value |")?;
     writeln!(f, "|--------|-------|")?;
-    writeln!(f, "| MRR with E4 | {:.4} |", results.e4_contribution.mrr_with_e4)?;
-    writeln!(f, "| MRR E1-only | {:.4} |", results.e4_contribution.mrr_e1_only)?;
-    writeln!(f, "| E4 Contribution | {:.1}% |", results.e4_contribution.e4_contribution_pct * 100.0)?;
+    writeln!(
+        f,
+        "| MRR with E4 | {:.4} |",
+        results.e4_contribution.mrr_with_e4
+    )?;
+    writeln!(
+        f,
+        "| MRR E1-only | {:.4} |",
+        results.e4_contribution.mrr_e1_only
+    )?;
+    writeln!(
+        f,
+        "| E4 Contribution | {:.1}% |",
+        results.e4_contribution.e4_contribution_pct * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Recommendations")?;
@@ -1376,28 +1633,37 @@ fn save_markdown_report(results: &TemporalRealDataResults, path: &Path) -> std::
 }
 
 fn print_summary(results: &TemporalRealDataResults) {
-    println!("Direction Filtering: before={:.1}%, after={:.1}%, symmetry={:.2}",
+    println!(
+        "Direction Filtering: before={:.1}%, after={:.1}%, symmetry={:.2}",
         results.direction_filtering.before_accuracy * 100.0,
         results.direction_filtering.after_accuracy * 100.0,
-        results.direction_filtering.symmetry_score);
+        results.direction_filtering.symmetry_score
+    );
 
     if results.direction_filtering.is_timestamp_based {
         println!("  [WARNING] Timestamp-based behavior detected!");
     }
 
-    println!("Sequence Ordering: Kendall's tau={:.3} (variance={:.4})",
-        results.sequence_ordering.avg_kendalls_tau,
-        results.sequence_ordering.tau_variance);
+    println!(
+        "Sequence Ordering: Kendall's tau={:.3} (variance={:.4})",
+        results.sequence_ordering.avg_kendalls_tau, results.sequence_ordering.tau_variance
+    );
 
-    println!("Chain Traversal: MRR={:.3}, Completion={:.1}%",
+    println!(
+        "Chain Traversal: MRR={:.3}, Completion={:.1}%",
         results.chain_traversal.mrr_next,
-        results.chain_traversal.completion_rate * 100.0);
+        results.chain_traversal.completion_rate * 100.0
+    );
 
-    println!("Boundary Detection: F1={:.2}",
-        results.boundary_detection.f1_score);
+    println!(
+        "Boundary Detection: F1={:.2}",
+        results.boundary_detection.f1_score
+    );
 
-    println!("Improvement over timestamp: {:.1}%",
-        results.timestamp_baseline.sequence_improvement_pct * 100.0);
+    println!(
+        "Improvement over timestamp: {:.1}%",
+        results.timestamp_baseline.sequence_improvement_pct * 100.0
+    );
 }
 
 fn print_target_evaluation(results: &TemporalRealDataResults) -> bool {
@@ -1405,52 +1671,90 @@ fn print_target_evaluation(results: &TemporalRealDataResults) -> bool {
 
     // Critical: Not timestamp-based
     let not_timestamp = !results.direction_filtering.is_timestamp_based;
-    println!("  Timestamp-Based Detection: {} (target: No)",
-        if results.direction_filtering.is_timestamp_based { "YES" } else { "No" });
-    println!("    Status: {}", if not_timestamp { "PASS" } else { "FAIL" });
+    println!(
+        "  Timestamp-Based Detection: {} (target: No)",
+        if results.direction_filtering.is_timestamp_based {
+            "YES"
+        } else {
+            "No"
+        }
+    );
+    println!(
+        "    Status: {}",
+        if not_timestamp { "PASS" } else { "FAIL" }
+    );
     all_pass &= not_timestamp;
 
     // Symmetry score >= 0.7
     let symmetry_pass = results.direction_filtering.symmetry_score >= 0.7;
-    println!("  Direction Symmetry: {:.2} (target: >=0.7)", results.direction_filtering.symmetry_score);
-    println!("    Status: {}", if symmetry_pass { "PASS" } else { "FAIL" });
+    println!(
+        "  Direction Symmetry: {:.2} (target: >=0.7)",
+        results.direction_filtering.symmetry_score
+    );
+    println!(
+        "    Status: {}",
+        if symmetry_pass { "PASS" } else { "FAIL" }
+    );
     all_pass &= symmetry_pass;
 
     // Before accuracy >= 0.65
     let before_pass = results.direction_filtering.before_accuracy >= 0.65;
-    println!("  Before Accuracy: {:.1}% (target: >=65%)", results.direction_filtering.before_accuracy * 100.0);
+    println!(
+        "  Before Accuracy: {:.1}% (target: >=65%)",
+        results.direction_filtering.before_accuracy * 100.0
+    );
     println!("    Status: {}", if before_pass { "PASS" } else { "FAIL" });
     all_pass &= before_pass;
 
     // After accuracy >= 0.65
     let after_pass = results.direction_filtering.after_accuracy >= 0.65;
-    println!("  After Accuracy: {:.1}% (target: >=65%)", results.direction_filtering.after_accuracy * 100.0);
+    println!(
+        "  After Accuracy: {:.1}% (target: >=65%)",
+        results.direction_filtering.after_accuracy * 100.0
+    );
     println!("    Status: {}", if after_pass { "PASS" } else { "FAIL" });
     all_pass &= after_pass;
 
     // Kendall's tau >= 0.5
     let tau_pass = results.sequence_ordering.avg_kendalls_tau >= 0.5;
-    println!("  Kendall's Tau: {:.3} (target: >=0.5)", results.sequence_ordering.avg_kendalls_tau);
+    println!(
+        "  Kendall's Tau: {:.3} (target: >=0.5)",
+        results.sequence_ordering.avg_kendalls_tau
+    );
     println!("    Status: {}", if tau_pass { "PASS" } else { "FAIL" });
     all_pass &= tau_pass;
 
     // Chain MRR >= 0.4
     let chain_pass = results.chain_traversal.mrr_next >= 0.4;
-    println!("  Chain MRR: {:.3} (target: >=0.4)", results.chain_traversal.mrr_next);
+    println!(
+        "  Chain MRR: {:.3} (target: >=0.4)",
+        results.chain_traversal.mrr_next
+    );
     println!("    Status: {}", if chain_pass { "PASS" } else { "FAIL" });
     all_pass &= chain_pass;
 
     // Boundary F1 >= 0.6
     let boundary_pass = results.boundary_detection.f1_score >= 0.6;
-    println!("  Boundary F1: {:.2} (target: >=0.6)", results.boundary_detection.f1_score);
-    println!("    Status: {}", if boundary_pass { "PASS" } else { "FAIL" });
+    println!(
+        "  Boundary F1: {:.2} (target: >=0.6)",
+        results.boundary_detection.f1_score
+    );
+    println!(
+        "    Status: {}",
+        if boundary_pass { "PASS" } else { "FAIL" }
+    );
     all_pass &= boundary_pass;
 
     // Improvement over baseline
     let improvement_pass = results.timestamp_baseline.sequence_improvement_pct > 0.0;
-    println!("  Improvement over Timestamp: {:.1}% (target: >0%)",
-        results.timestamp_baseline.sequence_improvement_pct * 100.0);
-    println!("    Status: {}", if improvement_pass { "PASS" } else { "FAIL" });
+    println!(
+        "  Improvement over Timestamp: {:.1}% (target: >0%)",
+        results.timestamp_baseline.sequence_improvement_pct * 100.0
+    );
+    println!(
+        "    Status: {}",
+        if improvement_pass { "PASS" } else { "FAIL" }
+    );
     all_pass &= improvement_pass;
 
     all_pass

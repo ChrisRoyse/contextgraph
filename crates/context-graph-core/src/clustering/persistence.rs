@@ -570,7 +570,11 @@ mod tests {
 
     /// Create a test topic with specified profile strengths.
     fn create_test_topic(strengths: [f32; 14]) -> Topic {
-        Topic::new(TopicProfile::new(strengths), HashMap::new(), vec![Uuid::new_v4()])
+        Topic::new(
+            TopicProfile::new(strengths),
+            HashMap::new(),
+            vec![Uuid::new_v4()],
+        )
     }
 
     /// Create a valid topic (meets weighted_agreement >= 2.5).
@@ -632,7 +636,8 @@ mod tests {
         let portfolio = PersistedTopicPortfolio::default();
 
         let bytes = portfolio.to_bytes().expect("serialize empty portfolio");
-        let restored = PersistedTopicPortfolio::from_bytes(&bytes).expect("deserialize empty portfolio");
+        let restored =
+            PersistedTopicPortfolio::from_bytes(&bytes).expect("deserialize empty portfolio");
 
         assert!(restored.is_empty());
         assert_eq!(restored.churn_rate, 0.0);
@@ -648,7 +653,10 @@ mod tests {
         let result = PersistedTopicPortfolio::from_bytes(invalid_bytes);
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), PersistenceError::Serialization(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            PersistenceError::Serialization(_)
+        ));
 
         println!("[PASS] test_deserialization_invalid_json");
     }
@@ -699,5 +707,4 @@ mod tests {
 
         println!("[PASS] test_constitution_churn_thresholds");
     }
-
 }

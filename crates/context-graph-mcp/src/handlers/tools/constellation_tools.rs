@@ -17,8 +17,7 @@
 use chrono::{DateTime, Utc};
 use context_graph_core::constellation::{
     score_memory_against_constellation, Constellation, ConstellationAccumulator,
-    ConstellationError, ConstellationScoringResult, ConstellationSelector,
-    DEFAULT_MAX_MEMBERS,
+    ConstellationError, ConstellationScoringResult, ConstellationSelector, DEFAULT_MAX_MEMBERS,
 };
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
@@ -75,7 +74,10 @@ impl Handlers {
 
         // Existence check.
         if !rebuild_if_exists {
-            match rocksdb_store.find_constellation_by_selector(&selector).await {
+            match rocksdb_store
+                .find_constellation_by_selector(&selector)
+                .await
+            {
                 Ok(Some(existing_id)) => {
                     return self.tool_result(
                         id,
@@ -88,10 +90,8 @@ impl Handlers {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    return self.tool_error(
-                        id,
-                        &format!("find_constellation_by_selector failed: {}", e),
-                    );
+                    return self
+                        .tool_error(id, &format!("find_constellation_by_selector failed: {}", e));
                 }
             }
         }
@@ -103,10 +103,7 @@ impl Handlers {
             Err(e) => return self.tool_error(id, &e),
         };
         if members.is_empty() {
-            return self.tool_error(
-                id,
-                "Selector resolved zero members — nothing to compile.",
-            );
+            return self.tool_error(id, "Selector resolved zero members — nothing to compile.");
         }
 
         // Compile.
@@ -132,10 +129,7 @@ impl Handlers {
                     error!(id = %fp.id, error = %e, "get_topic_profile failed");
                     return self.tool_error(
                         id,
-                        &format!(
-                            "Failed to read CF_TOPIC_PROFILES for {}: {}",
-                            fp.id, e
-                        ),
+                        &format!("Failed to read CF_TOPIC_PROFILES for {}: {}", fp.id, e),
                     );
                 }
             };
@@ -212,10 +206,7 @@ impl Handlers {
             .and_then(|v| v.as_u64())
             .unwrap_or(50)
             .clamp(1, 1000) as usize;
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let include_centroids = args
             .get("includeCentroids")
             .and_then(|v| v.as_bool())
@@ -226,17 +217,13 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(
-                id,
-                "list_constellations requires RocksDbTeleologicalStore",
-            );
+            return self.tool_error(id, "list_constellations requires RocksDbTeleologicalStore");
         };
 
         let ids = match rocksdb_store.list_constellation_ids().await {
             Ok(v) => v,
             Err(e) => {
-                return self
-                    .tool_error(id, &format!("list_constellation_ids failed: {}", e));
+                return self.tool_error(id, &format!("list_constellation_ids failed: {}", e));
             }
         };
         let total = ids.len();
@@ -245,10 +232,7 @@ impl Handlers {
         let records = match rocksdb_store.multi_get_constellations(&page).await {
             Ok(v) => v,
             Err(e) => {
-                return self.tool_error(
-                    id,
-                    &format!("multi_get_constellations failed: {}", e),
-                );
+                return self.tool_error(id, &format!("multi_get_constellations failed: {}", e));
             }
         };
 
@@ -303,18 +287,12 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(
-                id,
-                "get_constellation requires RocksDbTeleologicalStore",
-            );
+            return self.tool_error(id, "get_constellation requires RocksDbTeleologicalStore");
         };
 
         match rocksdb_store.get_constellation(cid).await {
             Ok(Some(c)) => self.tool_result(id, render_constellation(&c, include_centroids)),
-            Ok(None) => self.tool_result(
-                id,
-                json!({"constellation_id": raw, "found": false}),
-            ),
+            Ok(None) => self.tool_result(id, json!({"constellation_id": raw, "found": false})),
             Err(e) => self.tool_error(id, &format!("get_constellation failed: {}", e)),
         }
     }
@@ -356,14 +334,10 @@ impl Handlers {
         let constellation = match rocksdb_store.get_constellation(cid).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                return self.tool_error(
-                    id,
-                    &format!("Constellation {} not found", cid_raw),
-                );
+                return self.tool_error(id, &format!("Constellation {} not found", cid_raw));
             }
             Err(e) => {
-                return self
-                    .tool_error(id, &format!("get_constellation failed: {}", e));
+                return self.tool_error(id, &format!("get_constellation failed: {}", e));
             }
         };
 
@@ -381,8 +355,7 @@ impl Handlers {
             }
         };
 
-        let result =
-            score_memory_against_constellation(&constellation, mid, &fp.semantic);
+        let result = score_memory_against_constellation(&constellation, mid, &fp.semantic);
         self.tool_result(id, render_scoring(&result))
     }
 
@@ -406,17 +379,13 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(
-                id,
-                "delete_constellation requires RocksDbTeleologicalStore",
-            );
+            return self.tool_error(id, "delete_constellation requires RocksDbTeleologicalStore");
         };
 
         match rocksdb_store.delete_constellation(cid).await {
-            Ok(deleted) => self.tool_result(
-                id,
-                json!({"constellation_id": raw, "deleted": deleted}),
-            ),
+            Ok(deleted) => {
+                self.tool_result(id, json!({"constellation_id": raw, "deleted": deleted}))
+            }
             Err(e) => self.tool_error(id, &format!("delete_constellation failed: {}", e)),
         }
     }
@@ -559,16 +528,14 @@ fn parse_selector(args: &JsonValue) -> Result<ConstellationSelector, String> {
             let ids_val = args
                 .get("memoryIds")
                 .and_then(|v| v.as_array())
-                .ok_or_else(|| {
-                    "selector='explicit_ids' requires 'memoryIds' array".to_string()
-                })?;
+                .ok_or_else(|| "selector='explicit_ids' requires 'memoryIds' array".to_string())?;
             let mut ids = Vec::with_capacity(ids_val.len());
             for entry in ids_val {
                 let s = entry
                     .as_str()
                     .ok_or_else(|| "memoryIds must contain UUID strings".to_string())?;
-                let u = Uuid::parse_str(s)
-                    .map_err(|e| format!("invalid memoryId '{}': {}", s, e))?;
+                let u =
+                    Uuid::parse_str(s).map_err(|e| format!("invalid memoryId '{}': {}", s, e))?;
                 ids.push(u);
             }
             if ids.is_empty() {
@@ -643,11 +610,7 @@ fn render_constellation(c: &Constellation, include_centroids: bool) -> JsonValue
         out["topic_profile_centroid"] = json!(c.topic_profile_centroid.to_vec());
         out["group_alignment_centroid"] = json!(c.group_alignment_centroid.to_vec());
         out["cross_correlation_centroid"] = json!(c.cross_correlation_centroid);
-        out["member_ids"] = json!(c
-            .member_ids
-            .iter()
-            .map(Uuid::to_string)
-            .collect::<Vec<_>>());
+        out["member_ids"] = json!(c.member_ids.iter().map(Uuid::to_string).collect::<Vec<_>>());
     } else {
         out["topic_profile_centroid_len"] = json!(c.topic_profile_centroid.len());
         out["group_alignment_centroid_len"] = json!(c.group_alignment_centroid.len());

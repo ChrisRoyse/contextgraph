@@ -453,8 +453,12 @@ impl GetCausalChainRequest {
     /// - minSimilarity is outside [0, 1] or NaN/infinite
     pub fn validate(&self) -> Result<Uuid, String> {
         // Validate anchor UUID
-        let anchor_uuid = Uuid::parse_str(&self.anchor_id)
-            .map_err(|e| format!("Invalid UUID format for anchorId '{}': {}", self.anchor_id, e))?;
+        let anchor_uuid = Uuid::parse_str(&self.anchor_id).map_err(|e| {
+            format!(
+                "Invalid UUID format for anchorId '{}': {}",
+                self.anchor_id, e
+            )
+        })?;
 
         // Validate direction
         let valid_directions = ["forward", "backward"];
@@ -819,7 +823,10 @@ impl GetCausalChainResponse {
         if self.chain.is_empty() {
             return 0.0;
         }
-        self.chain.last().map(|h| h.cumulative_strength).unwrap_or(0.0)
+        self.chain
+            .last()
+            .map(|h| h.cumulative_strength)
+            .unwrap_or(0.0)
     }
 }
 
@@ -1143,19 +1150,15 @@ mod tests {
         // Second hop: cumulative = 0.85 * 0.8 * 0.9^1 = 0.85 * 0.72 = 0.612
         let expected = 0.85 * 0.8 * 0.9;
         assert!((hop.cumulative_strength - expected).abs() < 0.01);
-        println!("[PASS] Hop attenuation applied correctly: {}", hop.cumulative_strength);
+        println!(
+            "[PASS] Hop attenuation applied correctly: {}",
+            hop.cumulative_strength
+        );
     }
 
     #[test]
     fn test_causal_chain_hop_with_content() {
-        let hop = CausalChainHop::new(
-            Uuid::nil(),
-            0,
-            0.8,
-            0.85,
-            1.0,
-            CausalDirection::Unknown,
-        );
+        let hop = CausalChainHop::new(Uuid::nil(), 0, 0.8, 0.85, 1.0, CausalDirection::Unknown);
 
         let hop_with_content = hop.with_content("Test content".to_string());
         assert_eq!(hop_with_content.content, Some("Test content".to_string()));

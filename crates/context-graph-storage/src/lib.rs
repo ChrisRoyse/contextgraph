@@ -46,14 +46,15 @@ pub use error::{StorageError, StorageResult};
 
 // Re-export teleological storage types (TASK-F004)
 pub use teleological::{
-    // MaxSim for E12 ColBERT reranking (TASK-STORAGE-P2-001)
-    compute_maxsim_direct,
     // HNSW index configuration types (TASK-F005)
     all_hnsw_configs,
+    // MaxSim for E12 ColBERT reranking (TASK-STORAGE-P2-001)
+    compute_maxsim_direct,
+    custom_weight_profiles_cf_options,
     deserialize_e1_matryoshka_128,
     deserialize_memory_id_list,
-    deserialize_topic_profile,
     deserialize_teleological_fingerprint,
+    deserialize_topic_profile,
     e13_splade_inverted_cf_options,
     // Key format functions
     e13_splade_inverted_key,
@@ -66,20 +67,21 @@ pub use teleological::{
     get_inverted_index_config,
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
+    importance_history_cf_options,
+    merge_history_cf_options,
     parse_e13_splade_key,
     parse_e1_matryoshka_key,
     parse_fingerprint_key,
     parse_topic_profile_key,
-    topic_profile_cf_options,
-    topic_profile_key,
     // Quantized embedder column families (TASK-EMB-022)
     quantized_embedder_cf_options,
     serialize_e1_matryoshka_128,
     serialize_memory_id_list,
-    serialize_topic_profile,
     // Serialization functions
     serialize_teleological_fingerprint,
-    custom_weight_profiles_cf_options,
+    serialize_topic_profile,
+    topic_profile_cf_options,
+    topic_profile_key,
     DistanceMetric,
     EmbedderIndex,
     HnswConfig,
@@ -111,6 +113,9 @@ pub use teleological::{
     CF_EMB_8,
     CF_EMB_9,
     CF_FINGERPRINTS,
+    CF_IMPORTANCE_HISTORY,
+    // Phase 4 Lifecycle Provenance: Merge + importance history
+    CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,
     E10_DIM,
     E11_DIM,
@@ -127,17 +132,12 @@ pub use teleological::{
     E8_DIM,
     E9_DIM,
     NUM_EMBEDDERS,
-    TOPIC_PROFILE_DIM,
     QUANTIZED_EMBEDDER_CFS,
     QUANTIZED_EMBEDDER_CF_COUNT,
     TELEOLOGICAL_CFS,
     TELEOLOGICAL_CF_COUNT,
     TELEOLOGICAL_VERSION,
-    // Phase 4 Lifecycle Provenance: Merge + importance history
-    CF_MERGE_HISTORY,
-    CF_IMPORTANCE_HISTORY,
-    merge_history_cf_options,
-    importance_history_cf_options,
+    TOPIC_PROFILE_DIM,
 };
 
 // Re-export code storage types (CODE-001)
@@ -145,7 +145,7 @@ pub use code::{CodeStorageError, CodeStorageResult, CodeStore, E7_CODE_DIM};
 
 // Re-export code column family constants
 pub use teleological::column_families::{
-    get_code_cf_descriptors, CF_CODE_ENTITIES, CF_CODE_E7_EMBEDDINGS, CF_CODE_FILE_INDEX,
+    get_code_cf_descriptors, CF_CODE_E7_EMBEDDINGS, CF_CODE_ENTITIES, CF_CODE_FILE_INDEX,
     CF_CODE_NAME_INDEX, CF_CODE_SIGNATURE_INDEX, CODE_CFS, CODE_CF_COUNT,
 };
 

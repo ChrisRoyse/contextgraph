@@ -51,25 +51,25 @@ fn create_test_fingerprint_with_seed(seed: u64) -> TeleologicalFingerprint {
     // Create SemanticFingerprint with correct fields (per semantic/fingerprint.rs)
     let e5_vec = generate_vec(768, seed + 4);
     let semantic = SemanticFingerprint {
-        e1_semantic: generate_vec(1024, seed),               // 1024D
-        e2_temporal_recent: generate_vec(512, seed + 1),     // 512D
-        e3_temporal_periodic: generate_vec(512, seed + 2),   // 512D
-        e4_temporal_positional: generate_vec(512, seed + 3), // 512D
-        e5_causal_as_cause: e5_vec.clone(),                  // 768D (as cause)
-        e5_causal_as_effect: e5_vec,                         // 768D (as effect)
-        e5_causal: Vec::new(),                               // Empty - using new dual format
-        e6_sparse: generate_sparse(seed + 5),                // Sparse
-        e7_code: generate_vec(1536, seed + 6),               // 1536D
+        e1_semantic: generate_vec(1024, seed),                  // 1024D
+        e2_temporal_recent: generate_vec(512, seed + 1),        // 512D
+        e3_temporal_periodic: generate_vec(512, seed + 2),      // 512D
+        e4_temporal_positional: generate_vec(512, seed + 3),    // 512D
+        e5_causal_as_cause: e5_vec.clone(),                     // 768D (as cause)
+        e5_causal_as_effect: e5_vec,                            // 768D (as effect)
+        e5_causal: Vec::new(),                                  // Empty - using new dual format
+        e6_sparse: generate_sparse(seed + 5),                   // Sparse
+        e7_code: generate_vec(1536, seed + 6),                  // 1536D
         e8_graph_as_source: generate_vec(1024, seed + 7),       // 1024D (as source)
         e8_graph_as_target: generate_vec(1024, seed + 8),       // 1024D (as target)
-        e8_graph: Vec::new(),                                  // Legacy field, empty
-        e9_hdc: generate_vec(1024, seed + 8),                  // 1024D HDC (projected)
+        e8_graph: Vec::new(),                                   // Legacy field, empty
+        e9_hdc: generate_vec(1024, seed + 8),                   // 1024D HDC (projected)
         e10_multimodal_paraphrase: generate_vec(768, seed + 9), // 768D (paraphrase side)
         e10_multimodal_as_context: generate_vec(768, seed + 13), // 768D (as context)
-        e11_entity: generate_vec(768, seed + 10),              // 768D (KEPLER)
+        e11_entity: generate_vec(768, seed + 10),               // 768D (KEPLER)
         e12_late_interaction: generate_late_interaction(seed + 11), // Vec<Vec<f32>>
-        e13_splade: generate_sparse(seed + 12),              // Sparse
-        e14_bge_m3_dense: generate_vec(1024, seed + 13),     // 1024D BGE-M3
+        e13_splade: generate_sparse(seed + 12),                 // Sparse
+        e14_bge_m3_dense: generate_vec(1024, seed + 13),        // 1024D BGE-M3
     };
 
     // Create unique hash
@@ -594,18 +594,34 @@ async fn test_file_index_crud_operations() {
     assert_eq!(stats.min_chunks, 1, "Min chunks should be 1");
     assert_eq!(stats.max_chunks, 2, "Max chunks should be 2");
 
-    println!("  ✓ Stats: {} files, {} chunks", stats.total_files, stats.total_chunks);
+    println!(
+        "  ✓ Stats: {} files, {} chunks",
+        stats.total_files, stats.total_chunks
+    );
 
     println!("\nPHASE 5: Unindex a fingerprint");
 
-    let removed = store.unindex_file_fingerprint(file_path1, id1).await.unwrap();
+    let removed = store
+        .unindex_file_fingerprint(file_path1, id1)
+        .await
+        .unwrap();
     assert!(removed, "Should have removed id1 from file1");
 
     let file1_ids_after = store.get_fingerprints_for_file(file_path1).await.unwrap();
-    assert_eq!(file1_ids_after.len(), 1, "File1 should now have 1 fingerprint");
-    assert!(file1_ids_after.contains(&id2), "File1 should still contain id2");
+    assert_eq!(
+        file1_ids_after.len(),
+        1,
+        "File1 should now have 1 fingerprint"
+    );
+    assert!(
+        file1_ids_after.contains(&id2),
+        "File1 should still contain id2"
+    );
 
-    println!("  ✓ Unindexed id1 from file1, now has {} fingerprints", file1_ids_after.len());
+    println!(
+        "  ✓ Unindexed id1 from file1, now has {} fingerprints",
+        file1_ids_after.len()
+    );
 
     println!("\nPHASE 6: Clear file index");
 
@@ -613,15 +629,30 @@ async fn test_file_index_crud_operations() {
     assert_eq!(cleared, 1, "Should have cleared 1 fingerprint from file1");
 
     let file1_ids_cleared = store.get_fingerprints_for_file(file_path1).await.unwrap();
-    assert!(file1_ids_cleared.is_empty(), "File1 should have no fingerprints");
+    assert!(
+        file1_ids_cleared.is_empty(),
+        "File1 should have no fingerprints"
+    );
 
     // File1 should no longer appear in list
     let indexed_files_after = store.list_indexed_files().await.unwrap();
-    let paths_after: Vec<&str> = indexed_files_after.iter().map(|e| e.file_path.as_str()).collect();
-    assert!(!paths_after.contains(&file_path1), "File1 should not be in index");
-    assert!(paths_after.contains(&file_path2), "File2 should still be in index");
+    let paths_after: Vec<&str> = indexed_files_after
+        .iter()
+        .map(|e| e.file_path.as_str())
+        .collect();
+    assert!(
+        !paths_after.contains(&file_path1),
+        "File1 should not be in index"
+    );
+    assert!(
+        paths_after.contains(&file_path2),
+        "File2 should still be in index"
+    );
 
-    println!("  ✓ Cleared file1 index, {} files remain", indexed_files_after.len());
+    println!(
+        "  ✓ Cleared file1 index, {} files remain",
+        indexed_files_after.len()
+    );
 
     println!("\n=== FSV: PASSED - File index CRUD operations work correctly ===\n");
 }
@@ -657,7 +688,10 @@ async fn test_file_index_persistence() {
 
         let indexed_files = store.list_indexed_files().await.unwrap();
         assert_eq!(indexed_files.len(), 1, "Should have 1 indexed file");
-        assert_eq!(indexed_files[0].file_path, file_path, "File path should match");
+        assert_eq!(
+            indexed_files[0].file_path, file_path,
+            "File path should match"
+        );
 
         println!("  ✓ File index persisted across store reopen");
     }
@@ -679,7 +713,10 @@ async fn test_file_index_empty_cases() {
     println!("  ✓ list_indexed_files returns empty for new store");
 
     // Get fingerprints for non-existent file
-    let ids = store.get_fingerprints_for_file("/nonexistent.md").await.unwrap();
+    let ids = store
+        .get_fingerprints_for_file("/nonexistent.md")
+        .await
+        .unwrap();
     assert!(ids.is_empty(), "Non-existent file should return empty list");
     println!("  ✓ get_fingerprints_for_file returns empty for non-existent file");
 
@@ -695,8 +732,14 @@ async fn test_file_index_empty_cases() {
     println!("  ✓ clear_file_index returns 0 for non-existent file");
 
     // Unindex from non-existent file
-    let removed = store.unindex_file_fingerprint("/nonexistent.md", Uuid::new_v4()).await.unwrap();
-    assert!(!removed, "Unindexing from non-existent file should return false");
+    let removed = store
+        .unindex_file_fingerprint("/nonexistent.md", Uuid::new_v4())
+        .await
+        .unwrap();
+    assert!(
+        !removed,
+        "Unindexing from non-existent file should return false"
+    );
     println!("  ✓ unindex_file_fingerprint returns false for non-existent file");
 
     println!("\n=== FSV: PASSED - Empty index edge cases handled correctly ===\n");
@@ -707,7 +750,10 @@ async fn test_file_index_empty_cases() {
 // =============================================================================
 
 /// Create a valid test causal relationship for repair testing.
-fn create_test_causal_relationship(id: Uuid, source_id: Uuid) -> context_graph_core::types::CausalRelationship {
+fn create_test_causal_relationship(
+    id: Uuid,
+    source_id: Uuid,
+) -> context_graph_core::types::CausalRelationship {
     context_graph_core::types::CausalRelationship {
         id,
         source_fingerprint_id: source_id,
@@ -798,7 +844,10 @@ async fn test_repair_causal_empty_database() {
         .await
         .expect("Repair should succeed on empty database");
 
-    println!("AFTER REPAIR: Deleted: {}, Scanned: {}", deleted_count, total_scanned);
+    println!(
+        "AFTER REPAIR: Deleted: {}, Scanned: {}",
+        deleted_count, total_scanned
+    );
 
     assert_eq!(deleted_count, 0, "Should delete 0 entries");
     assert_eq!(total_scanned, 0, "Should scan 0 entries");
@@ -829,8 +878,18 @@ async fn test_repair_causal_with_corruption() {
     let cf = store.cf_causal_relationships();
 
     // Write truncated binary data (simulating crash during write)
-    store.db.put_cf(cf, causal_relationship_key(&corrupted_id1), [0x01, 0x02, 0x03]).unwrap();
-    store.db.put_cf(cf, causal_relationship_key(&corrupted_id2), [0xff; 50]).unwrap();
+    store
+        .db
+        .put_cf(
+            cf,
+            causal_relationship_key(&corrupted_id1),
+            [0x01, 0x02, 0x03],
+        )
+        .unwrap();
+    store
+        .db
+        .put_cf(cf, causal_relationship_key(&corrupted_id2), [0xff; 50])
+        .unwrap();
 
     println!("BEFORE REPAIR:");
     println!("  Valid relationships: {}, {}", id1, id2);
@@ -839,15 +898,26 @@ async fn test_repair_causal_with_corruption() {
     // Count entries in CF before repair
     let count_before = store.db.iterator_cf(cf, IteratorMode::Start).count();
     println!("  Total entries in CF: {}", count_before);
-    assert_eq!(count_before, 4, "Should have 4 entries (2 valid + 2 corrupted)");
+    assert_eq!(
+        count_before, 4,
+        "Should have 4 entries (2 valid + 2 corrupted)"
+    );
 
     // Verify valid entries exist
     assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
     assert!(store.get_causal_relationship(id2).await.unwrap().is_some());
 
     // Verify corrupted entries exist as raw bytes
-    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id1)).unwrap().is_some());
-    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id2)).unwrap().is_some());
+    assert!(store
+        .db
+        .get_cf(cf, causal_relationship_key(&corrupted_id1))
+        .unwrap()
+        .is_some());
+    assert!(store
+        .db
+        .get_cf(cf, causal_relationship_key(&corrupted_id2))
+        .unwrap()
+        .is_some());
     println!("  Corrupted raw data verified to exist");
 
     // RUN REPAIR
@@ -874,8 +944,16 @@ async fn test_repair_causal_with_corruption() {
     println!("  Valid relationships verified to still exist");
 
     // VERIFY: Corrupted entries removed from database
-    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id1)).unwrap().is_none());
-    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id2)).unwrap().is_none());
+    assert!(store
+        .db
+        .get_cf(cf, causal_relationship_key(&corrupted_id1))
+        .unwrap()
+        .is_none());
+    assert!(store
+        .db
+        .get_cf(cf, causal_relationship_key(&corrupted_id2))
+        .unwrap()
+        .is_none());
     println!("  Corrupted entries verified to be deleted");
 
     println!("\n=== FSV: PASSED - Corrupted entries removed, valid preserved ===\n");
@@ -898,7 +976,14 @@ async fn test_repair_causal_idempotency() {
     // Inject 1 corrupted entry
     let corrupted_id = Uuid::new_v4();
     let cf = store.cf_causal_relationships();
-    store.db.put_cf(cf, causal_relationship_key(&corrupted_id), [0xde, 0xad, 0xbe, 0xef]).unwrap();
+    store
+        .db
+        .put_cf(
+            cf,
+            causal_relationship_key(&corrupted_id),
+            [0xde, 0xad, 0xbe, 0xef],
+        )
+        .unwrap();
 
     println!("RUN 1:");
     let (deleted1, scanned1) = store.repair_corrupted_causal_relationships().await.unwrap();
@@ -948,20 +1033,35 @@ async fn test_repair_causal_various_corruption_patterns() {
         ("truncated_header", vec![0x01, 0x02, 0x03, 0x04, 0x05]),
         ("all_zeros", vec![0x00; 100]),
         ("all_ones", vec![0xff; 100]),
-        ("random_garbage", vec![0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]),
+        (
+            "random_garbage",
+            vec![0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe],
+        ),
     ];
 
     let mut corrupted_ids = Vec::new();
     for (name, data) in &patterns {
         let id = Uuid::new_v4();
-        store.db.put_cf(cf, causal_relationship_key(&id), data).unwrap();
+        store
+            .db
+            .put_cf(cf, causal_relationship_key(&id), data)
+            .unwrap();
         corrupted_ids.push((name, id));
-        println!("  Injected {} corruption: {} ({} bytes)", name, id, data.len());
+        println!(
+            "  Injected {} corruption: {} ({} bytes)",
+            name,
+            id,
+            data.len()
+        );
     }
 
     println!("\nBEFORE REPAIR:");
     let count_before = store.db.iterator_cf(cf, IteratorMode::Start).count();
-    println!("  Total entries: {} (1 valid + {} corrupted)", count_before, patterns.len());
+    println!(
+        "  Total entries: {} (1 valid + {} corrupted)",
+        count_before,
+        patterns.len()
+    );
 
     // RUN REPAIR
     let (deleted_count, total_scanned) = store
@@ -973,7 +1073,11 @@ async fn test_repair_causal_various_corruption_patterns() {
     println!("  Deleted: {}, Scanned: {}", deleted_count, total_scanned);
 
     // VERIFY
-    assert_eq!(deleted_count, patterns.len(), "Should delete all corrupted entries");
+    assert_eq!(
+        deleted_count,
+        patterns.len(),
+        "Should delete all corrupted entries"
+    );
     assert_eq!(total_scanned, patterns.len() + 1, "Should scan all entries");
 
     // PHYSICAL VERIFICATION: Count entries in CF
@@ -983,8 +1087,15 @@ async fn test_repair_causal_various_corruption_patterns() {
 
     // VERIFY: Each corrupted entry is gone
     for (name, id) in &corrupted_ids {
-        assert!(store.db.get_cf(cf, causal_relationship_key(id)).unwrap().is_none(),
-            "{} corruption should be deleted", name);
+        assert!(
+            store
+                .db
+                .get_cf(cf, causal_relationship_key(id))
+                .unwrap()
+                .is_none(),
+            "{} corruption should be deleted",
+            name
+        );
         println!("  ✓ {} corruption deleted: {}", name, id);
     }
 
@@ -1077,12 +1188,20 @@ async fn test_provenance_audit_log_roundtrip() {
 
     // VERIFY: Count
     let count = store.count_audit_records().unwrap();
-    assert!(count >= 3, "Expected at least 3 audit records, got {}", count);
+    assert!(
+        count >= 3,
+        "Expected at least 3 audit records, got {}",
+        count
+    );
 
     // EDGE CASE: Query non-existent target
     let empty_target = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let empty = store.get_audit_by_target(empty_target, 100).unwrap();
-    assert_eq!(empty.len(), 0, "Non-existent target should return 0 records");
+    assert_eq!(
+        empty.len(),
+        0,
+        "Non-existent target should return 0 records"
+    );
 
     println!("  ✓ Audit log roundtrip: 3 records written and verified");
     println!("  ✓ Edge case: empty target returns 0 records");
@@ -1153,10 +1272,12 @@ async fn test_provenance_merge_history_roundtrip() {
     assert_eq!(limited.len(), 1, "Limit=1 should return 1 record");
 
     // EDGE CASE: Non-existent merged_id
-    let no_records = store
-        .get_merge_history(Uuid::new_v4(), 100)
-        .unwrap();
-    assert_eq!(no_records.len(), 0, "Non-existent ID should return 0 records");
+    let no_records = store.get_merge_history(Uuid::new_v4(), 100).unwrap();
+    assert_eq!(
+        no_records.len(),
+        0,
+        "Non-existent ID should return 0 records"
+    );
 
     println!("  ✓ Merge history roundtrip: 2 records written and verified");
     println!("  ✓ Edge case: limit=1 returns 1, non-existent returns 0");
@@ -1196,7 +1317,10 @@ async fn test_provenance_importance_history_roundtrip() {
         store.append_importance_change(&rec).unwrap();
     }
 
-    println!("  Wrote 3 importance change records for memory {}", memory_id);
+    println!(
+        "  Wrote 3 importance change records for memory {}",
+        memory_id
+    );
 
     // VERIFY: Read back
     let retrieved = store.get_importance_history(memory_id, 100).unwrap();
@@ -1289,7 +1413,10 @@ async fn test_provenance_embedding_version_roundtrip() {
 
     // EDGE CASE: Non-existent fingerprint
     let none = store.get_embedding_version(Uuid::new_v4()).unwrap();
-    assert!(none.is_none(), "Non-existent fingerprint should return None");
+    assert!(
+        none.is_none(),
+        "Non-existent fingerprint should return None"
+    );
 
     println!("  ✓ Embedding version roundtrip: write, read, overwrite all verified");
     println!("  ✓ Edge case: non-existent fingerprint returns None");
@@ -1350,12 +1477,18 @@ async fn test_total_doc_count_underflow_prevention() {
     let fp = create_test_fingerprint();
     let id = fp.id;
     store.store(fp).await.unwrap();
-    assert_eq!(store.total_doc_count.load(Ordering::Relaxed), 1,
-        "total_doc_count should be 1 after storing one fingerprint");
+    assert_eq!(
+        store.total_doc_count.load(Ordering::Relaxed),
+        1,
+        "total_doc_count should be 1 after storing one fingerprint"
+    );
 
     store.delete(id, true).await.unwrap();
-    assert_eq!(store.total_doc_count.load(Ordering::Relaxed), 0,
-        "total_doc_count should be 0 after soft-deleting the only fingerprint");
+    assert_eq!(
+        store.total_doc_count.load(Ordering::Relaxed),
+        0,
+        "total_doc_count should be 0 after soft-deleting the only fingerprint"
+    );
 
     // Now try to hard-delete the same fingerprint (GC path).
     // The soft-delete already decremented, and the was_soft_deleted guard
@@ -1384,8 +1517,11 @@ async fn test_total_doc_count_underflow_prevention() {
     // Double hard-delete on an already-gone fingerprint should be safe
     let _ = store2.delete(id2, false).await;
     let count_after_double_delete = store2.total_doc_count.load(Ordering::Relaxed);
-    assert_eq!(count_after_double_delete, 0,
-        "Double hard-delete must not cause underflow. Got: {}", count_after_double_delete);
+    assert_eq!(
+        count_after_double_delete, 0,
+        "Double hard-delete must not cause underflow. Got: {}",
+        count_after_double_delete
+    );
 }
 
 // =========================================================================
@@ -1402,12 +1538,21 @@ async fn test_temporal_hnsw_populated_after_store() {
     let store = create_initialized_store(tmp.path());
 
     // Verify BEFORE: all temporal HNSW indexes should be empty
-    let e2_before = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e3_before = store.index_registry.get(EmbedderIndex::E3TemporalPeriodic)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e4_before = store.index_registry.get(EmbedderIndex::E4TemporalPositional)
-        .map(|idx| idx.len()).unwrap_or(0);
+    let e2_before = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e3_before = store
+        .index_registry
+        .get(EmbedderIndex::E3TemporalPeriodic)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e4_before = store
+        .index_registry
+        .get(EmbedderIndex::E4TemporalPositional)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
     assert_eq!(e2_before, 0, "E2 HNSW should be empty before store");
     assert_eq!(e3_before, 0, "E3 HNSW should be empty before store");
     assert_eq!(e4_before, 0, "E4 HNSW should be empty before store");
@@ -1418,53 +1563,121 @@ async fn test_temporal_hnsw_populated_after_store() {
     store.store(fp).await.unwrap();
 
     // Verify AFTER: temporal HNSW indexes should each have 1 entry
-    let e2_after = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e3_after = store.index_registry.get(EmbedderIndex::E3TemporalPeriodic)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e4_after = store.index_registry.get(EmbedderIndex::E4TemporalPositional)
-        .map(|idx| idx.len()).unwrap_or(0);
-    assert_eq!(e2_after, 1, "E2 HNSW should have 1 entry after store, got {}", e2_after);
-    assert_eq!(e3_after, 1, "E3 HNSW should have 1 entry after store, got {}", e3_after);
-    assert_eq!(e4_after, 1, "E4 HNSW should have 1 entry after store, got {}", e4_after);
+    let e2_after = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e3_after = store
+        .index_registry
+        .get(EmbedderIndex::E3TemporalPeriodic)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e4_after = store
+        .index_registry
+        .get(EmbedderIndex::E4TemporalPositional)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    assert_eq!(
+        e2_after, 1,
+        "E2 HNSW should have 1 entry after store, got {}",
+        e2_after
+    );
+    assert_eq!(
+        e3_after, 1,
+        "E3 HNSW should have 1 entry after store, got {}",
+        e3_after
+    );
+    assert_eq!(
+        e4_after, 1,
+        "E4 HNSW should have 1 entry after store, got {}",
+        e4_after
+    );
 
     // Also verify non-temporal indexes still work (E1 should have 1 entry)
-    let e1_after = store.index_registry.get(EmbedderIndex::E1Semantic)
-        .map(|idx| idx.len()).unwrap_or(0);
-    assert_eq!(e1_after, 1, "E1 HNSW should have 1 entry after store, got {}", e1_after);
+    let e1_after = store
+        .index_registry
+        .get(EmbedderIndex::E1Semantic)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    assert_eq!(
+        e1_after, 1,
+        "E1 HNSW should have 1 entry after store, got {}",
+        e1_after
+    );
 
     // Store a second fingerprint
     let fp2 = create_test_fingerprint_with_seed(200);
     store.store(fp2).await.unwrap();
 
-    let e2_final = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e3_final = store.index_registry.get(EmbedderIndex::E3TemporalPeriodic)
-        .map(|idx| idx.len()).unwrap_or(0);
-    let e4_final = store.index_registry.get(EmbedderIndex::E4TemporalPositional)
-        .map(|idx| idx.len()).unwrap_or(0);
-    assert_eq!(e2_final, 2, "E2 HNSW should have 2 entries after 2 stores, got {}", e2_final);
-    assert_eq!(e3_final, 2, "E3 HNSW should have 2 entries after 2 stores, got {}", e3_final);
-    assert_eq!(e4_final, 2, "E4 HNSW should have 2 entries after 2 stores, got {}", e4_final);
+    let e2_final = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e3_final = store
+        .index_registry
+        .get(EmbedderIndex::E3TemporalPeriodic)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let e4_final = store
+        .index_registry
+        .get(EmbedderIndex::E4TemporalPositional)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    assert_eq!(
+        e2_final, 2,
+        "E2 HNSW should have 2 entries after 2 stores, got {}",
+        e2_final
+    );
+    assert_eq!(
+        e3_final, 2,
+        "E3 HNSW should have 2 entries after 2 stores, got {}",
+        e3_final
+    );
+    assert_eq!(
+        e4_final, 2,
+        "E4 HNSW should have 2 entries after 2 stores, got {}",
+        e4_final
+    );
 
-    println!("[VERIFIED] E2/E3/E4 HNSW indexes populated: E2={}, E3={}, E4={}", e2_final, e3_final, e4_final);
+    println!(
+        "[VERIFIED] E2/E3/E4 HNSW indexes populated: E2={}, E3={}, E4={}",
+        e2_final, e3_final, e4_final
+    );
 
     // Verify search_by_embedder for E2 returns results (not empty)
-    let e2_index = store.index_registry.get(EmbedderIndex::E2TemporalRecent).unwrap();
+    let e2_index = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .unwrap();
     let e2_fp = create_test_fingerprint_with_seed(100);
-    let e2_results = e2_index.search(&e2_fp.semantic.e2_temporal_recent, 10, None).unwrap();
-    assert!(!e2_results.is_empty(), "E2 HNSW search should return results, got empty");
-    assert!(e2_results.iter().any(|(rid, _)| *rid == id),
-        "E2 HNSW search should find the stored fingerprint");
-    println!("[VERIFIED] search_by_embedder E2 returns {} results (found id={})", e2_results.len(), id);
+    let e2_results = e2_index
+        .search(&e2_fp.semantic.e2_temporal_recent, 10, None)
+        .unwrap();
+    assert!(
+        !e2_results.is_empty(),
+        "E2 HNSW search should return results, got empty"
+    );
+    assert!(
+        e2_results.iter().any(|(rid, _)| *rid == id),
+        "E2 HNSW search should find the stored fingerprint"
+    );
+    println!(
+        "[VERIFIED] search_by_embedder E2 returns {} results (found id={})",
+        e2_results.len(),
+        id
+    );
 }
 
 /// Phase 6a: Test that multi-space search with temporal_navigation profile includes E2/E3/E4.
 /// Source of Truth: returned search results + embedder_scores array.
 #[tokio::test]
 async fn test_multi_space_search_with_temporal_navigation_profile() {
-    use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalMemoryStore};
     use crate::teleological::indexes::{EmbedderIndex, EmbedderIndexOps};
+    use context_graph_core::traits::{
+        SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+    };
 
     let tmp = TempDir::new().unwrap();
     let store = create_initialized_store(tmp.path());
@@ -1479,9 +1692,16 @@ async fn test_multi_space_search_with_temporal_navigation_profile() {
     store.store(fp3.clone()).await.unwrap();
 
     // Verify all 3 in E2 HNSW
-    let e2_count = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-        .map(|idx| idx.len()).unwrap_or(0);
-    assert_eq!(e2_count, 3, "E2 HNSW should have 3 entries, got {}", e2_count);
+    let e2_count = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    assert_eq!(
+        e2_count, 3,
+        "E2 HNSW should have 3 entries, got {}",
+        e2_count
+    );
 
     // Search with temporal_navigation profile (E2=0.23, E3=0.23, E4=0.23)
     let mut options = TeleologicalSearchOptions::default();
@@ -1491,35 +1711,54 @@ async fn test_multi_space_search_with_temporal_navigation_profile() {
     options.min_similarity = 0.0;
 
     let results = store.search_semantic(&fp1.semantic, options).await.unwrap();
-    assert!(!results.is_empty(),
-        "Multi-space search with temporal_navigation should return results");
+    assert!(
+        !results.is_empty(),
+        "Multi-space search with temporal_navigation should return results"
+    );
 
     // The query fingerprint fp1 should be the top result (identical to itself)
-    assert_eq!(results[0].fingerprint.id, id1,
-        "Top result should be the query fingerprint itself (self-match)");
+    assert_eq!(
+        results[0].fingerprint.id, id1,
+        "Top result should be the query fingerprint itself (self-match)"
+    );
 
     // Verify E2/E3/E4 embedder_scores are populated (non-zero for self-match)
     let scores = &results[0].embedder_scores;
-    println!("[SCORES] E1={:.4}, E2={:.4}, E3={:.4}, E4={:.4}, E5={:.4}",
-        scores[0], scores[1], scores[2], scores[3], scores[4]);
+    println!(
+        "[SCORES] E1={:.4}, E2={:.4}, E3={:.4}, E4={:.4}, E5={:.4}",
+        scores[0], scores[1], scores[2], scores[3], scores[4]
+    );
 
     // Self-match cosine should be 1.0 (normalized to [0,1] via (raw+1)/2 = 1.0)
-    assert!(scores[1] > 0.9,
-        "E2 embedder_score for self-match should be ~1.0, got {:.4}", scores[1]);
-    assert!(scores[2] > 0.9,
-        "E3 embedder_score for self-match should be ~1.0, got {:.4}", scores[2]);
-    assert!(scores[3] > 0.9,
-        "E4 embedder_score for self-match should be ~1.0, got {:.4}", scores[3]);
+    assert!(
+        scores[1] > 0.9,
+        "E2 embedder_score for self-match should be ~1.0, got {:.4}",
+        scores[1]
+    );
+    assert!(
+        scores[2] > 0.9,
+        "E3 embedder_score for self-match should be ~1.0, got {:.4}",
+        scores[2]
+    );
+    assert!(
+        scores[3] > 0.9,
+        "E4 embedder_score for self-match should be ~1.0, got {:.4}",
+        scores[3]
+    );
 
-    println!("[VERIFIED] temporal_navigation multi-space search: {} results, E2/E3/E4 scores active",
-        results.len());
+    println!(
+        "[VERIFIED] temporal_navigation multi-space search: {} results, E2/E3/E4 scores active",
+        results.len()
+    );
 }
 
 /// Phase 6a: Test that multi-space search with semantic_search profile EXCLUDES E2/E3/E4.
 /// Source of Truth: E2/E3/E4 weight = 0.0 means they should not affect ranking.
 #[tokio::test]
 async fn test_multi_space_search_semantic_profile_excludes_temporal() {
-    use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalMemoryStore};
+    use context_graph_core::traits::{
+        SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+    };
 
     let tmp = TempDir::new().unwrap();
     let store = create_initialized_store(tmp.path());
@@ -1536,32 +1775,45 @@ async fn test_multi_space_search_semantic_profile_excludes_temporal() {
     options.min_similarity = 0.0;
 
     let results = store.search_semantic(&fp.semantic, options).await.unwrap();
-    assert!(!results.is_empty(),
-        "Multi-space search with semantic_search should return results");
+    assert!(
+        !results.is_empty(),
+        "Multi-space search with semantic_search should return results"
+    );
 
     // Verify results are still returned correctly (no regression)
-    assert_eq!(results[0].fingerprint.id, fp.id,
-        "Top result should be the self-match");
+    assert_eq!(
+        results[0].fingerprint.id, fp.id,
+        "Top result should be the self-match"
+    );
 
     // Even though E2/E3/E4 aren't weighted, the scores array still has values
     // (embedder_scores are always computed for all 13 embedders for observability)
     let scores = &results[0].embedder_scores;
-    println!("[SCORES] semantic_search: E1={:.4}, E2={:.4}, E3={:.4}, E4={:.4}",
-        scores[0], scores[1], scores[2], scores[3]);
+    println!(
+        "[SCORES] semantic_search: E1={:.4}, E2={:.4}, E3={:.4}, E4={:.4}",
+        scores[0], scores[1], scores[2], scores[3]
+    );
 
     // E1 self-match should be ~1.0
-    assert!(scores[0] > 0.9,
-        "E1 embedder_score for self-match should be ~1.0, got {:.4}", scores[0]);
+    assert!(
+        scores[0] > 0.9,
+        "E1 embedder_score for self-match should be ~1.0, got {:.4}",
+        scores[0]
+    );
 
-    println!("[VERIFIED] semantic_search multi-space: {} results, E2/E3/E4 weight=0.0 (no regression)",
-        results.len());
+    println!(
+        "[VERIFIED] semantic_search multi-space: {} results, E2/E3/E4 weight=0.0 (no regression)",
+        results.len()
+    );
 }
 
 /// Phase 6a: Test that compute_embedder_scores_sync E2 slot returns cosine (not timestamp decay).
 /// Source of Truth: E2 score for identical vectors should be 1.0 (normalized).
 #[tokio::test]
 async fn test_e2_slot_uses_cosine_not_timestamp_decay() {
-    use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalMemoryStore};
+    use context_graph_core::traits::{
+        SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+    };
 
     let tmp = TempDir::new().unwrap();
     let store = create_initialized_store(tmp.path());
@@ -1583,11 +1835,17 @@ async fn test_e2_slot_uses_cosine_not_timestamp_decay() {
     // E2 cosine of identical vectors: (raw_cosine + 1) / 2 = (1.0 + 1.0) / 2 = 1.0
     // If it were still using timestamp decay, the score would be <= 1.0 but NOT exactly 1.0
     // because compute_e2_recency_decay uses Utc::now() and the memory was just created.
-    assert!(scores[1] > 0.99,
+    assert!(
+        scores[1] > 0.99,
         "E2 score should be ~1.0 (cosine self-match), got {:.6}. \
-         If this is ~0.99 instead of 1.0, E2 is still using timestamp decay!", scores[1]);
+         If this is ~0.99 instead of 1.0, E2 is still using timestamp decay!",
+        scores[1]
+    );
 
-    println!("[VERIFIED] E2 slot uses cosine similarity: score={:.6} for self-match", scores[1]);
+    println!(
+        "[VERIFIED] E2 slot uses cosine similarity: score={:.6} for self-match",
+        scores[1]
+    );
 }
 
 /// Phase 6d: End-to-end test that degenerate weight suppression auto-handles
@@ -1596,7 +1854,9 @@ async fn test_e2_slot_uses_cosine_not_timestamp_decay() {
 /// Source of Truth: the similarity scores in search results.
 #[tokio::test]
 async fn test_degenerate_weight_suppression_for_identical_temporal() {
-    use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalMemoryStore};
+    use context_graph_core::traits::{
+        SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+    };
 
     let tmp = TempDir::new().unwrap();
     let store = create_initialized_store(tmp.path());
@@ -1638,7 +1898,10 @@ async fn test_degenerate_weight_suppression_for_identical_temporal() {
     options.top_k = 10;
     options.min_similarity = 0.0;
 
-    let results = store.search_semantic(&query_fp.semantic, options).await.unwrap();
+    let results = store
+        .search_semantic(&query_fp.semantic, options)
+        .await
+        .unwrap();
     assert!(!results.is_empty(), "Should return results");
 
     // All candidates have identical E2/E3/E4 scores → suppress_degenerate_weights
@@ -1664,8 +1927,11 @@ async fn test_temporal_hnsw_rebuilt_on_reopen() {
         store.flush().await.unwrap();
 
         // Verify in first instance
-        let e2_count = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-            .map(|idx| idx.len()).unwrap_or(0);
+        let e2_count = store
+            .index_registry
+            .get(EmbedderIndex::E2TemporalRecent)
+            .map(|idx| idx.len())
+            .unwrap_or(0);
         assert_eq!(e2_count, 1, "E2 should have 1 entry in first instance");
     }
 
@@ -1673,19 +1939,42 @@ async fn test_temporal_hnsw_rebuilt_on_reopen() {
     {
         let store = create_initialized_store(&path);
 
-        let e2_count = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-            .map(|idx| idx.len()).unwrap_or(0);
-        let e3_count = store.index_registry.get(EmbedderIndex::E3TemporalPeriodic)
-            .map(|idx| idx.len()).unwrap_or(0);
-        let e4_count = store.index_registry.get(EmbedderIndex::E4TemporalPositional)
-            .map(|idx| idx.len()).unwrap_or(0);
+        let e2_count = store
+            .index_registry
+            .get(EmbedderIndex::E2TemporalRecent)
+            .map(|idx| idx.len())
+            .unwrap_or(0);
+        let e3_count = store
+            .index_registry
+            .get(EmbedderIndex::E3TemporalPeriodic)
+            .map(|idx| idx.len())
+            .unwrap_or(0);
+        let e4_count = store
+            .index_registry
+            .get(EmbedderIndex::E4TemporalPositional)
+            .map(|idx| idx.len())
+            .unwrap_or(0);
 
-        assert_eq!(e2_count, 1, "E2 HNSW should rebuild with 1 entry after reopen, got {}", e2_count);
-        assert_eq!(e3_count, 1, "E3 HNSW should rebuild with 1 entry after reopen, got {}", e3_count);
-        assert_eq!(e4_count, 1, "E4 HNSW should rebuild with 1 entry after reopen, got {}", e4_count);
+        assert_eq!(
+            e2_count, 1,
+            "E2 HNSW should rebuild with 1 entry after reopen, got {}",
+            e2_count
+        );
+        assert_eq!(
+            e3_count, 1,
+            "E3 HNSW should rebuild with 1 entry after reopen, got {}",
+            e3_count
+        );
+        assert_eq!(
+            e4_count, 1,
+            "E4 HNSW should rebuild with 1 entry after reopen, got {}",
+            e4_count
+        );
 
-        println!("[VERIFIED] E2/E3/E4 HNSW rebuilt on reopen: E2={}, E3={}, E4={}",
-            e2_count, e3_count, e4_count);
+        println!(
+            "[VERIFIED] E2/E3/E4 HNSW rebuilt on reopen: E2={}, E3={}, E4={}",
+            e2_count, e3_count, e4_count
+        );
     }
 }
 
@@ -1693,7 +1982,9 @@ async fn test_temporal_hnsw_rebuilt_on_reopen() {
 /// returns temporally-similar results higher than topically-dissimilar ones.
 #[tokio::test]
 async fn test_temporal_fusion_ranks_similar_temporal_vectors_higher() {
-    use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalMemoryStore};
+    use context_graph_core::traits::{
+        SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+    };
 
     let tmp = TempDir::new().unwrap();
     let store = create_initialized_store(tmp.path());
@@ -1705,7 +1996,8 @@ async fn test_temporal_fusion_ranks_similar_temporal_vectors_higher() {
     let mut similar_temporal = create_test_fingerprint_with_seed(600);
     similar_temporal.semantic.e2_temporal_recent = query_fp.semantic.e2_temporal_recent.clone();
     similar_temporal.semantic.e3_temporal_periodic = query_fp.semantic.e3_temporal_periodic.clone();
-    similar_temporal.semantic.e4_temporal_positional = query_fp.semantic.e4_temporal_positional.clone();
+    similar_temporal.semantic.e4_temporal_positional =
+        query_fp.semantic.e4_temporal_positional.clone();
     let similar_id = similar_temporal.id;
 
     // Create "temporally dissimilar" fingerprint: very different temporal vectors
@@ -1724,24 +2016,44 @@ async fn test_temporal_fusion_ranks_similar_temporal_vectors_higher() {
     options.top_k = 10;
     options.min_similarity = 0.0;
 
-    let results = store.search_semantic(&query_fp.semantic, options).await.unwrap();
-    assert!(results.len() >= 2, "Should return at least 2 results, got {}", results.len());
+    let results = store
+        .search_semantic(&query_fp.semantic, options)
+        .await
+        .unwrap();
+    assert!(
+        results.len() >= 2,
+        "Should return at least 2 results, got {}",
+        results.len()
+    );
 
     // Find positions of similar_id and dissimilar_id
     let similar_pos = results.iter().position(|r| r.fingerprint.id == similar_id);
-    let dissimilar_pos = results.iter().position(|r| r.fingerprint.id == dissimilar_id);
+    let dissimilar_pos = results
+        .iter()
+        .position(|r| r.fingerprint.id == dissimilar_id);
 
-    println!("[RANKING] similar_temporal at position {:?}, dissimilar at {:?}",
-        similar_pos, dissimilar_pos);
+    println!(
+        "[RANKING] similar_temporal at position {:?}, dissimilar at {:?}",
+        similar_pos, dissimilar_pos
+    );
 
     // The temporally-similar memory should rank higher than the temporally-dissimilar one
     // because 69% of the weight is on temporal dimensions
-    assert!(similar_pos.is_some(), "Temporally-similar memory should appear in results");
-    assert!(dissimilar_pos.is_some(), "Temporally-dissimilar memory should appear in results");
-    assert!(similar_pos.unwrap() < dissimilar_pos.unwrap(),
+    assert!(
+        similar_pos.is_some(),
+        "Temporally-similar memory should appear in results"
+    );
+    assert!(
+        dissimilar_pos.is_some(),
+        "Temporally-dissimilar memory should appear in results"
+    );
+    assert!(
+        similar_pos.unwrap() < dissimilar_pos.unwrap(),
         "Temporally-similar memory (pos={}) should rank higher than dissimilar (pos={}) \
          when using temporal_navigation profile",
-        similar_pos.unwrap(), dissimilar_pos.unwrap());
+        similar_pos.unwrap(),
+        dissimilar_pos.unwrap()
+    );
 
     println!("[VERIFIED] Temporal fusion correctly ranks temporally-similar memory higher");
 }
@@ -1768,13 +2080,29 @@ async fn test_temporal_zero_vectors_skipped_gracefully() {
     store.store(fp.clone()).await.unwrap();
 
     // E1 should have an entry (non-zero E1 vector)
-    let e1_count = store.index_registry.get(EmbedderIndex::E1Semantic).unwrap().len();
+    let e1_count = store
+        .index_registry
+        .get(EmbedderIndex::E1Semantic)
+        .unwrap()
+        .len();
     assert_eq!(e1_count, 1, "E1 should have 1 entry");
 
     // E2/E3/E4 should NOT have entries (zero-norm skipped)
-    let e2_count = store.index_registry.get(EmbedderIndex::E2TemporalRecent).unwrap().len();
-    let e3_count = store.index_registry.get(EmbedderIndex::E3TemporalPeriodic).unwrap().len();
-    let e4_count = store.index_registry.get(EmbedderIndex::E4TemporalPositional).unwrap().len();
+    let e2_count = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .unwrap()
+        .len();
+    let e3_count = store
+        .index_registry
+        .get(EmbedderIndex::E3TemporalPeriodic)
+        .unwrap()
+        .len();
+    let e4_count = store
+        .index_registry
+        .get(EmbedderIndex::E4TemporalPositional)
+        .unwrap()
+        .len();
     assert_eq!(e2_count, 0, "E2 should be empty (zero-norm skipped)");
     assert_eq!(e3_count, 0, "E3 should be empty (zero-norm skipped)");
     assert_eq!(e4_count, 0, "E4 should be empty (zero-norm skipped)");
@@ -1792,9 +2120,8 @@ async fn test_temporal_near_zero_vectors_accepted() {
 
     // Create a fingerprint with very small but non-zero temporal vectors
     let mut fp = create_test_fingerprint_with_seed(801);
-    let small_vec = |dim: usize| -> Vec<f32> {
-        (0..dim).map(|i| 0.001 * (i as f32 + 1.0)).collect()
-    };
+    let small_vec =
+        |dim: usize| -> Vec<f32> { (0..dim).map(|i| 0.001 * (i as f32 + 1.0)).collect() };
     fp.semantic.e2_temporal_recent = small_vec(512);
     fp.semantic.e3_temporal_periodic = small_vec(512);
     fp.semantic.e4_temporal_positional = small_vec(512);
@@ -1802,9 +2129,15 @@ async fn test_temporal_near_zero_vectors_accepted() {
     // Store should succeed — vectors have non-zero norm
     store.store(fp.clone()).await.unwrap();
 
-    let e2_count = store.index_registry.get(EmbedderIndex::E2TemporalRecent)
-        .map(|idx| idx.len()).unwrap_or(0);
-    assert_eq!(e2_count, 1, "E2 HNSW should accept near-zero (non-zero-norm) vectors");
+    let e2_count = store
+        .index_registry
+        .get(EmbedderIndex::E2TemporalRecent)
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    assert_eq!(
+        e2_count, 1,
+        "E2 HNSW should accept near-zero (non-zero-norm) vectors"
+    );
 
     println!("[VERIFIED] Near-zero temporal vectors accepted by HNSW");
 }

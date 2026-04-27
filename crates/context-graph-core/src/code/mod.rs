@@ -139,8 +139,8 @@ const PYTHON_INDICATORS: &[&str] = &[
     "import requests",
     "import flask",
     "import django",
-    " as np",      // Common numpy alias pattern
-    " as pd",      // Common pandas alias pattern
+    " as np", // Common numpy alias pattern
+    " as pd", // Common pandas alias pattern
     "from typing",
     "from os",
     "from collections",
@@ -188,8 +188,8 @@ const JS_TS_INDICATORS: &[&str] = &[
     "export class",
     "import {",
     "import *",
-    "interface {",     // TypeScript interface declaration
-    "type {",          // TypeScript type alias
+    "interface {", // TypeScript interface declaration
+    "type {",      // TypeScript type alias
     "extends ",
     "implements ",
     "constructor(",
@@ -751,7 +751,7 @@ mod tests {
 
         // TypeScript-specific
         assert_eq!(
-            detect_code_query_type("interface User { name: string; }"),  // Contains "{ " which is a general code indicator
+            detect_code_query_type("interface User { name: string; }"), // Contains "{ " which is a general code indicator
             CodeQueryType::Code2Code
         );
         assert_eq!(
@@ -797,10 +797,7 @@ mod tests {
             detect_code_query_type("type User struct {"),
             CodeQueryType::Code2Code
         );
-        assert_eq!(
-            detect_code_query_type("chan int"),
-            CodeQueryType::Code2Code
-        );
+        assert_eq!(detect_code_query_type("chan int"), CodeQueryType::Code2Code);
         assert_eq!(
             detect_code_query_type("go func() { }()"),
             CodeQueryType::Code2Code
@@ -1037,7 +1034,8 @@ mod tests {
         let doc = vec![0.7; 1536];
 
         let base = cosine_similarity(&query, &doc);
-        let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
+        let adjusted =
+            compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
 
         // Base should be 1.0 (identical vectors)
         assert!((base - 1.0).abs() < 0.001);
@@ -1059,7 +1057,8 @@ mod tests {
 
         let raw_cos = cosine_similarity(&query, &doc);
         let normalized = (raw_cos + 1.0) / 2.0;
-        let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
+        let adjusted =
+            compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
 
         // If normalized > 0.75, adjusted should be higher than normalized (boosted)
         if normalized > 0.75 {
@@ -1089,7 +1088,8 @@ mod tests {
 
         let raw_cos = cosine_similarity(&query, &doc);
         let normalized = (raw_cos + 1.0) / 2.0;
-        let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
+        let adjusted =
+            compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
 
         // If normalized < 0.75, adjusted should be lower than normalized (mild reduction * 0.9)
         if normalized < 0.75 && normalized > 0.0 {
@@ -1114,13 +1114,15 @@ mod tests {
 
         let raw_cos = cosine_similarity(&query, &doc);
         let normalized = (raw_cos + 1.0) / 2.0;
-        let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Text2Code);
+        let adjusted =
+            compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Text2Code);
 
         // Text2Code returns the normalized base_similarity unchanged
         assert!(
             (normalized - adjusted).abs() < f32::EPSILON,
             "Text2Code should return normalized similarity: expected {}, got {}",
-            normalized, adjusted
+            normalized,
+            adjusted
         );
 
         println!("[PASS] Text2Code similarity unchanged (normalized)");

@@ -105,12 +105,10 @@ pub async fn run(args: ExportTrainingArgs) -> Result<ExportSummary> {
         return Err(anyhow!("--batch-size must be > 0"));
     }
 
-    let parent = args.out.parent().ok_or_else(|| {
-        anyhow!(
-            "--out path has no parent directory: {}",
-            args.out.display()
-        )
-    })?;
+    let parent = args
+        .out
+        .parent()
+        .ok_or_else(|| anyhow!("--out path has no parent directory: {}", args.out.display()))?;
     if !parent.as_os_str().is_empty() && !parent.exists() {
         return Err(anyhow!(
             "parent directory does not exist: {} (create it before running export)",
@@ -171,17 +169,11 @@ pub async fn run(args: ExportTrainingArgs) -> Result<ExportSummary> {
         .set_compression(Compression::ZSTD(ZstdLevel::default()))
         .build();
 
-    let file = File::create(&args.out).with_context(|| {
-        format!("failed to create output file: {}", args.out.display())
-    })?;
+    let file = File::create(&args.out)
+        .with_context(|| format!("failed to create output file: {}", args.out.display()))?;
 
-    let mut writer =
-        ArrowWriter::try_new(file, Arc::clone(&schema), Some(props)).with_context(|| {
-            format!(
-                "failed to construct ArrowWriter for {}",
-                args.out.display()
-            )
-        })?;
+    let mut writer = ArrowWriter::try_new(file, Arc::clone(&schema), Some(props))
+        .with_context(|| format!("failed to construct ArrowWriter for {}", args.out.display()))?;
 
     // --- Stream batches ---
     let mut total_records: usize = 0;
@@ -206,9 +198,8 @@ pub async fn run(args: ExportTrainingArgs) -> Result<ExportSummary> {
                 let id = chunk[idx];
                 match slot {
                     Some(record) => {
-                        let bytes = encode_training_record(record).with_context(|| {
-                            format!("encode_training_record failed for {}", id)
-                        })?;
+                        let bytes = encode_training_record(record)
+                            .with_context(|| format!("encode_training_record failed for {}", id))?;
                         id_strings.push(id.to_string());
                         payloads.push(bytes);
                     }
@@ -223,20 +214,14 @@ pub async fn run(args: ExportTrainingArgs) -> Result<ExportSummary> {
             }
 
             let id_array: ArrayRef = Arc::new(StringArray::from(id_strings));
-            let payload_refs: Vec<&[u8]> =
-                payloads.iter().map(|v| v.as_slice()).collect();
+            let payload_refs: Vec<&[u8]> = payloads.iter().map(|v| v.as_slice()).collect();
             let payload_array: ArrayRef = Arc::new(BinaryArray::from_vec(payload_refs));
 
-            let batch = RecordBatch::try_new(
-                Arc::clone(&schema),
-                vec![id_array, payload_array],
-            )
-            .context("RecordBatch::try_new failed")?;
+            let batch = RecordBatch::try_new(Arc::clone(&schema), vec![id_array, payload_array])
+                .context("RecordBatch::try_new failed")?;
 
             total_records += batch.num_rows();
-            writer
-                .write(&batch)
-                .context("ArrowWriter::write failed")?;
+            writer.write(&batch).context("ArrowWriter::write failed")?;
 
             // Force one row group per batch so FSV can assert the
             // batch_size => row_groups contract.
@@ -270,10 +255,7 @@ pub async fn run(args: ExportTrainingArgs) -> Result<ExportSummary> {
     let elapsed_ms = start.elapsed().as_millis() as u64;
     info!(
         total_records,
-        row_groups,
-        bytes_written,
-        elapsed_ms,
-        "Parquet export finished"
+        row_groups, bytes_written, elapsed_ms, "Parquet export finished"
     );
 
     Ok(ExportSummary {

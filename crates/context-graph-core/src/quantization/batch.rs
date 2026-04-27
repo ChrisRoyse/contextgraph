@@ -61,11 +61,14 @@ mod tests {
 
         assert_eq!(results.len(), 5);
         for (i, result) in results.iter().enumerate() {
-            let quantized = result.as_ref().unwrap_or_else(|e| {
-                panic!("batch_quantize[{}] failed: {}", i, e)
-            });
+            let quantized = result
+                .as_ref()
+                .unwrap_or_else(|e| panic!("batch_quantize[{}] failed: {}", i, e));
             assert_eq!(quantized.precision, Precision::Int8);
-            assert!(!quantized.data.is_empty(), "quantized data should not be empty");
+            assert!(
+                !quantized.data.is_empty(),
+                "quantized data should not be empty"
+            );
         }
     }
 
@@ -81,18 +84,34 @@ mod tests {
 
         assert_eq!(results.len(), 5);
         for (i, result) in results.iter().enumerate() {
-            let reconstructed = result.as_ref().unwrap_or_else(|e| {
-                panic!("batch_dequantize[{}] failed: {}", i, e)
-            });
+            let reconstructed = result
+                .as_ref()
+                .unwrap_or_else(|e| panic!("batch_dequantize[{}] failed: {}", i, e));
             // Verify round-trip preserves structure
-            assert_eq!(reconstructed.num_tokens, embeddings[i].num_tokens,
-                "round-trip should preserve token count");
-            assert_eq!(reconstructed.values.len(), embeddings[i].values.len(),
-                "round-trip should preserve value count");
+            assert_eq!(
+                reconstructed.num_tokens, embeddings[i].num_tokens,
+                "round-trip should preserve token count"
+            );
+            assert_eq!(
+                reconstructed.values.len(),
+                embeddings[i].values.len(),
+                "round-trip should preserve value count"
+            );
             // Int8 quantization introduces error; verify values are close
-            for (j, (orig, recon)) in embeddings[i].values.iter().zip(reconstructed.values.iter()).enumerate() {
-                assert!((orig - recon).abs() < 0.01,
-                    "round-trip error too large at [{}][{}]: orig={}, reconstructed={}", i, j, orig, recon);
+            for (j, (orig, recon)) in embeddings[i]
+                .values
+                .iter()
+                .zip(reconstructed.values.iter())
+                .enumerate()
+            {
+                assert!(
+                    (orig - recon).abs() < 0.01,
+                    "round-trip error too large at [{}][{}]: orig={}, reconstructed={}",
+                    i,
+                    j,
+                    orig,
+                    recon
+                );
             }
         }
     }

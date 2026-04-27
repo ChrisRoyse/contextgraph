@@ -29,7 +29,10 @@ pub enum FailFastTrigger {
     /// Invalid weight profile JSON
     InvalidWeightProfile(String),
     /// Invalid parameter value
-    InvalidParameter { name: String, value: serde_json::Value },
+    InvalidParameter {
+        name: String,
+        value: serde_json::Value,
+    },
     /// Missing required parameter
     MissingParameter(String),
 }
@@ -102,7 +105,9 @@ pub fn build_sequence_tool_scenarios() -> Vec<FailFastScenario> {
         name: "anchor_invalid_uuid".to_string(),
         description: "Invalid UUID format should fail immediately without DB query".to_string(),
         trigger: FailFastTrigger::InvalidUuidFormat("not-a-valid-uuid".to_string()),
-        expected_behavior: ExpectedBehavior::ErrorContaining("Invalid anchorId UUID format".to_string()),
+        expected_behavior: ExpectedBehavior::ErrorContaining(
+            "Invalid anchorId UUID format".to_string(),
+        ),
     });
 
     scenarios.push(FailFastScenario {
@@ -120,7 +125,9 @@ pub fn build_sequence_tool_scenarios() -> Vec<FailFastScenario> {
             name: "windowSize".to_string(),
             value: serde_json::json!(0),
         },
-        expected_behavior: ExpectedBehavior::ErrorContaining("windowSize 0 below minimum".to_string()),
+        expected_behavior: ExpectedBehavior::ErrorContaining(
+            "windowSize 0 below minimum".to_string(),
+        ),
     });
 
     scenarios.push(FailFastScenario {
@@ -130,7 +137,9 @@ pub fn build_sequence_tool_scenarios() -> Vec<FailFastScenario> {
             name: "windowSize".to_string(),
             value: serde_json::json!(51),
         },
-        expected_behavior: ExpectedBehavior::ErrorContaining("windowSize 51 exceeds maximum".to_string()),
+        expected_behavior: ExpectedBehavior::ErrorContaining(
+            "windowSize 51 exceeds maximum".to_string(),
+        ),
     });
 
     scenarios.push(FailFastScenario {
@@ -150,7 +159,9 @@ pub fn build_sequence_tool_scenarios() -> Vec<FailFastScenario> {
             name: "limit".to_string(),
             value: serde_json::json!(201),
         },
-        expected_behavior: ExpectedBehavior::ErrorContaining("limit 201 exceeds maximum".to_string()),
+        expected_behavior: ExpectedBehavior::ErrorContaining(
+            "limit 201 exceeds maximum".to_string(),
+        ),
     });
 
     scenarios.push(FailFastScenario {
@@ -178,7 +189,9 @@ pub fn build_sequence_tool_scenarios() -> Vec<FailFastScenario> {
         name: "missing_anchorId".to_string(),
         description: "traverse_memory_chain without anchorId should fail".to_string(),
         trigger: FailFastTrigger::MissingParameter("anchorId".to_string()),
-        expected_behavior: ExpectedBehavior::ErrorContaining("Missing required 'anchorId'".to_string()),
+        expected_behavior: ExpectedBehavior::ErrorContaining(
+            "Missing required 'anchorId'".to_string(),
+        ),
     });
 
     scenarios
@@ -212,8 +225,11 @@ pub fn analyze_error_message_quality(results: &[FailFastResult]) -> ErrorMessage
             }
 
             // Check for range info (minimum, maximum, exceeds, below)
-            if msg.contains("minimum") || msg.contains("maximum")
-                || msg.contains("exceeds") || msg.contains("below") {
+            if msg.contains("minimum")
+                || msg.contains("maximum")
+                || msg.contains("exceeds")
+                || msg.contains("below")
+            {
                 with_range_info += 1;
             }
         }
@@ -239,9 +255,7 @@ pub fn verify_failfast_behavior(
     };
 
     let passed = match (&scenario.expected_behavior, error) {
-        (ExpectedBehavior::ErrorContaining(expected), Some(actual)) => {
-            actual.contains(expected)
-        }
+        (ExpectedBehavior::ErrorContaining(expected), Some(actual)) => actual.contains(expected),
         (ExpectedBehavior::ErrorContaining(_), None) => false,
         (ExpectedBehavior::ErrorCode(_), _) => {
             // Error code checking would need additional response info
@@ -269,7 +283,11 @@ mod tests {
 
         // Verify all scenarios have descriptions
         for s in &scenarios {
-            assert!(!s.description.is_empty(), "Scenario {} missing description", s.name);
+            assert!(
+                !s.description.is_empty(),
+                "Scenario {} missing description",
+                s.name
+            );
         }
     }
 

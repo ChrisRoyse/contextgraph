@@ -72,10 +72,7 @@ impl LearnedWeightProjection {
 
         let safetensors =
             SafeTensors::deserialize(&data).map_err(|e| EmbeddingError::ConfigError {
-                message: format!(
-                    "Failed to parse SafeTensors from {:?}: {}",
-                    weights_path, e
-                ),
+                message: format!("Failed to parse SafeTensors from {:?}: {}", weights_path, e),
             })?;
 
         // Load tensors
@@ -153,9 +150,11 @@ impl LearnedWeightProjection {
                 message: format!("Failed to create layer2_bias: {}", e),
             }
         })?;
-        let layer3_weight = Tensor::zeros((OUTPUT_DIM, HIDDEN_DIM_2), DType::F32, device)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("Failed to create layer3_weight: {}", e),
+        let layer3_weight =
+            Tensor::zeros((OUTPUT_DIM, HIDDEN_DIM_2), DType::F32, device).map_err(|e| {
+                EmbeddingError::GpuError {
+                    message: format!("Failed to create layer3_weight: {}", e),
+                }
             })?;
         let layer3_bias = Tensor::zeros(OUTPUT_DIM, DType::F32, device).map_err(|e| {
             EmbeddingError::GpuError {
@@ -202,12 +201,12 @@ impl LearnedWeightProjection {
             })?;
 
         // Apply learned category weights
-        let category_weights = self
-            .category_weights
-            .unsqueeze(0)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("Failed to unsqueeze category weights: {}", e),
-            })?;
+        let category_weights =
+            self.category_weights
+                .unsqueeze(0)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("Failed to unsqueeze category weights: {}", e),
+                })?;
         let weighted_input = (input * category_weights).map_err(|e| EmbeddingError::GpuError {
             message: format!("Failed to apply category weights: {}", e),
         })?;
@@ -267,15 +266,16 @@ impl LearnedWeightProjection {
         let batch_size = batch_scores.len();
 
         // Flatten to [batch * 13]
-        let flat_scores: Vec<f32> = batch_scores.iter().flat_map(|s| s.iter().copied()).collect();
+        let flat_scores: Vec<f32> = batch_scores
+            .iter()
+            .flat_map(|s| s.iter().copied())
+            .collect();
 
         // Create input tensor [batch, 13]
-        let input =
-            Tensor::from_slice(&flat_scores, (batch_size, NUM_EMBEDDERS), &self.device).map_err(
-                |e| EmbeddingError::GpuError {
-                    message: format!("Failed to create batch input tensor: {}", e),
-                },
-            )?;
+        let input = Tensor::from_slice(&flat_scores, (batch_size, NUM_EMBEDDERS), &self.device)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Failed to create batch input tensor: {}", e),
+            })?;
 
         // Apply learned category weights (broadcast)
         let category_weights = self
@@ -320,12 +320,12 @@ impl LearnedWeightProjection {
 
     /// Get the learned category weights.
     pub fn category_weights(&self) -> EmbeddingResult<[f32; NUM_EMBEDDERS]> {
-        let weights: Vec<f32> = self
-            .category_weights
-            .to_vec1()
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("Failed to get category weights: {}", e),
-            })?;
+        let weights: Vec<f32> =
+            self.category_weights
+                .to_vec1()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("Failed to get category weights: {}", e),
+                })?;
 
         Ok(weights.try_into().unwrap_or(DEFAULT_CATEGORY_WEIGHTS))
     }
@@ -342,9 +342,11 @@ impl LearnedWeightProjection {
         name: &str,
         device: &Device,
     ) -> EmbeddingResult<Tensor> {
-        let view = safetensors.tensor(name).map_err(|e| EmbeddingError::ConfigError {
-            message: format!("Tensor '{}' not found in weights file: {}", name, e),
-        })?;
+        let view = safetensors
+            .tensor(name)
+            .map_err(|e| EmbeddingError::ConfigError {
+                message: format!("Tensor '{}' not found in weights file: {}", name, e),
+            })?;
 
         let shape: Vec<usize> = view.shape().to_vec();
         let data: Vec<f32> = view
@@ -358,20 +360,17 @@ impl LearnedWeightProjection {
         })
     }
 
-    fn linear(
-        &self,
-        input: &Tensor,
-        weight: &Tensor,
-        bias: &Tensor,
-    ) -> EmbeddingResult<Tensor> {
+    fn linear(&self, input: &Tensor, weight: &Tensor, bias: &Tensor) -> EmbeddingResult<Tensor> {
         // y = x @ W^T + b
         let weight_t = weight.t().map_err(|e| EmbeddingError::GpuError {
             message: format!("Failed to transpose weight: {}", e),
         })?;
 
-        let matmul = input.matmul(&weight_t).map_err(|e| EmbeddingError::GpuError {
-            message: format!("Failed matmul: {}", e),
-        })?;
+        let matmul = input
+            .matmul(&weight_t)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Failed matmul: {}", e),
+            })?;
 
         let bias_broadcast = bias
             .unsqueeze(0)
@@ -392,11 +391,12 @@ impl LearnedWeightProjection {
         let eps = 1e-5;
 
         // Compute mean and variance over last dim
-        let mean = input
-            .mean_keepdim(candle_core::D::Minus1)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("LayerNorm mean failed: {}", e),
-            })?;
+        let mean =
+            input
+                .mean_keepdim(candle_core::D::Minus1)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("LayerNorm mean failed: {}", e),
+                })?;
 
         let centered = (input - mean).map_err(|e| EmbeddingError::GpuError {
             message: format!("LayerNorm center failed: {}", e),
@@ -532,7 +532,9 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         // Test with scores above threshold
-        let scores = [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7];
+        let scores = [
+            0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7,
+        ];
         let weight = proj.project(&scores).unwrap();
 
         assert!((0.0..=1.0).contains(&weight));
@@ -545,7 +547,9 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         // Test with scores below threshold
-        let scores = [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1];
+        let scores = [
+            0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1,
+        ];
         let weight = proj.project(&scores).unwrap();
 
         assert!((0.0..=1.0).contains(&weight));
@@ -558,8 +562,12 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         let batch = vec![
-            [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7],
-            [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1],
+            [
+                0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7,
+            ],
+            [
+                0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1,
+            ],
         ];
 
         let weights = proj.project_batch(&batch).unwrap();

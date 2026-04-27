@@ -111,8 +111,8 @@ impl LoraAdapter {
             })
             .collect();
 
-        let a_tensor = Tensor::from_slice(&a_data, (hidden_size, rank), device)
-            .map_err(map_candle)?;
+        let a_tensor =
+            Tensor::from_slice(&a_data, (hidden_size, rank), device).map_err(map_candle)?;
         let a = Var::from_tensor(&a_tensor).map_err(map_candle)?;
 
         // B: initialized to zero (LoRA starts as identity)
@@ -120,7 +120,12 @@ impl LoraAdapter {
             Tensor::zeros((rank, hidden_size), DType::F32, device).map_err(map_candle)?;
         let b = Var::from_tensor(&b_tensor).map_err(map_candle)?;
 
-        Ok(Self { a, b, scale, dropout })
+        Ok(Self {
+            a,
+            b,
+            scale,
+            dropout,
+        })
     }
 
     /// Apply LoRA (inference): output = scale * (x @ A @ B)
@@ -133,9 +138,7 @@ impl LoraAdapter {
             .matmul(self.b.as_tensor())
             .map_err(map_candle)?;
 
-        low_rank
-            .affine(self.scale as f64, 0.0)
-            .map_err(map_candle)
+        low_rank.affine(self.scale as f64, 0.0).map_err(map_candle)
     }
 
     /// Apply LoRA (training): output = scale * dropout(x @ A @ B)
@@ -155,9 +158,7 @@ impl LoraAdapter {
             low_rank
         };
 
-        low_rank
-            .affine(self.scale as f64, 0.0)
-            .map_err(map_candle)
+        low_rank.affine(self.scale as f64, 0.0).map_err(map_candle)
     }
 
     /// Get trainable variables for optimizer registration.
@@ -262,7 +263,12 @@ impl LoraLayers {
     }
 
     /// Apply LoRA adapter at a given layer (training/inference mode aware).
-    fn apply_adapter(&self, adapters: &[LoraAdapter], layer: usize, x: &Tensor) -> EmbeddingResult<Tensor> {
+    fn apply_adapter(
+        &self,
+        adapters: &[LoraAdapter],
+        layer: usize,
+        x: &Tensor,
+    ) -> EmbeddingResult<Tensor> {
         if layer < adapters.len() {
             if self.training.get() {
                 adapters[layer].forward_train(x)
@@ -313,25 +319,24 @@ impl LoraLayers {
             message: format!("Failed to read LoRA checkpoint: {}", e),
         })?;
 
-        let safetensors = safetensors::SafeTensors::deserialize(&data)
-            .map_err(|e| EmbeddingError::InternalError {
+        let safetensors = safetensors::SafeTensors::deserialize(&data).map_err(|e| {
+            EmbeddingError::InternalError {
                 message: format!("Failed to deserialize LoRA checkpoint: {}", e),
-            })?;
+            }
+        })?;
 
         let scale = config.scale();
 
         let load_tensor = |name: &str| -> EmbeddingResult<Tensor> {
-            let view = safetensors.tensor(name).map_err(|e| {
-                EmbeddingError::InternalError {
+            let view = safetensors
+                .tensor(name)
+                .map_err(|e| EmbeddingError::InternalError {
                     message: format!("Missing LoRA tensor '{}': {}", name, e),
-                }
-            })?;
+                })?;
             let shape: Vec<usize> = view.shape().to_vec();
             let float_data: &[f32] = bytemuck::cast_slice(view.data());
-            Tensor::from_slice(float_data, shape, device).map_err(|e| {
-                EmbeddingError::GpuError {
-                    message: format!("Failed to create LoRA tensor '{}': {}", name, e),
-                }
+            Tensor::from_slice(float_data, shape, device).map_err(|e| EmbeddingError::GpuError {
+                message: format!("Failed to create LoRA tensor '{}': {}", name, e),
             })
         };
 
@@ -345,21 +350,36 @@ impl LoraLayers {
                 let b_tensor = load_tensor(&format!("lora.query.{}.b", i))?;
                 let a = Var::from_tensor(&a_tensor).map_err(map_candle)?;
                 let b = Var::from_tensor(&b_tensor).map_err(map_candle)?;
-                query_adapters.push(LoraAdapter { a, b, scale, dropout: config.dropout });
+                query_adapters.push(LoraAdapter {
+                    a,
+                    b,
+                    scale,
+                    dropout: config.dropout,
+                });
             }
             if config.apply_value {
                 let a_tensor = load_tensor(&format!("lora.value.{}.a", i))?;
                 let b_tensor = load_tensor(&format!("lora.value.{}.b", i))?;
                 let a = Var::from_tensor(&a_tensor).map_err(map_candle)?;
                 let b = Var::from_tensor(&b_tensor).map_err(map_candle)?;
-                value_adapters.push(LoraAdapter { a, b, scale, dropout: config.dropout });
+                value_adapters.push(LoraAdapter {
+                    a,
+                    b,
+                    scale,
+                    dropout: config.dropout,
+                });
             }
             if config.apply_key {
                 let a_tensor = load_tensor(&format!("lora.key.{}.a", i))?;
                 let b_tensor = load_tensor(&format!("lora.key.{}.b", i))?;
                 let a = Var::from_tensor(&a_tensor).map_err(map_candle)?;
                 let b = Var::from_tensor(&b_tensor).map_err(map_candle)?;
-                key_adapters.push(LoraAdapter { a, b, scale, dropout: config.dropout });
+                key_adapters.push(LoraAdapter {
+                    a,
+                    b,
+                    scale,
+                    dropout: config.dropout,
+                });
             }
         }
 
@@ -369,7 +389,12 @@ impl LoraLayers {
             query_adapters.len(),
             value_adapters.len(),
             key_adapters.len(),
-            query_adapters.iter().chain(value_adapters.iter()).chain(key_adapters.iter()).map(|a| a.num_params()).sum::<usize>(),
+            query_adapters
+                .iter()
+                .chain(value_adapters.iter())
+                .chain(key_adapters.iter())
+                .map(|a| a.num_params())
+                .sum::<usize>(),
         );
 
         Ok(Self {
@@ -391,8 +416,7 @@ fn apply_dropout(x: &Tensor, p: f32) -> EmbeddingResult<Tensor> {
     let keep_prob = (1.0 - p) as f64;
     // Create Bernoulli mask: floor(uniform[0,1) + keep_prob)
     // This yields 1.0 with probability keep_prob, 0.0 with probability p
-    let rand_t = Tensor::rand(0.0f32, 1.0f32, x.shape(), x.device())
-        .map_err(map_candle)?;
+    let rand_t = Tensor::rand(0.0f32, 1.0f32, x.shape(), x.device()).map_err(map_candle)?;
     let mask = rand_t
         .affine(1.0, keep_prob)
         .map_err(map_candle)?

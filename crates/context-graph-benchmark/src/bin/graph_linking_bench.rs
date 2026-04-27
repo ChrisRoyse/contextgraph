@@ -262,7 +262,10 @@ fn main() -> Result<()> {
         println!();
         for check in &results.validation.checks {
             if !check.passed {
-                println!("  [FAIL] {}: {} (expected {})", check.description, check.actual, check.expected);
+                println!(
+                    "  [FAIL] {}: {} (expected {})",
+                    check.description, check.actual, check.expected
+                );
             }
         }
     }
@@ -286,21 +289,48 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
         println!("  Nodes:               {}", report.nn_descent.num_nodes);
         println!("  K (neighbors):       {}", report.nn_descent.k);
         println!("  Iterations:          {}", report.nn_descent.iterations);
-        println!("  Convergence rate:    {:.4}", report.nn_descent.convergence_rate);
-        println!("  Mean latency:        {:.2}ms", report.nn_descent.latency.mean_ms());
-        println!("  P99 latency:         {:.2}ms", report.nn_descent.latency.p99_ms());
-        println!("  Throughput:          {:.0} edges/sec", report.nn_descent.edges_per_sec);
+        println!(
+            "  Convergence rate:    {:.4}",
+            report.nn_descent.convergence_rate
+        );
+        println!(
+            "  Mean latency:        {:.2}ms",
+            report.nn_descent.latency.mean_ms()
+        );
+        println!(
+            "  P99 latency:         {:.2}ms",
+            report.nn_descent.latency.p99_ms()
+        );
+        println!(
+            "  Throughput:          {:.0} edges/sec",
+            report.nn_descent.edges_per_sec
+        );
         println!();
     }
 
     // EdgeBuilder
     if report.edge_builder.pairs_processed > 0 {
         println!("EDGE BUILDER:");
-        println!("  Pairs processed:     {}", report.edge_builder.pairs_processed);
-        println!("  Edges created:       {}", report.edge_builder.edges_created);
-        println!("  Mean latency/pair:   {:.3}ms", report.edge_builder.latency_per_pair.mean_ms());
-        println!("  P99 latency/pair:    {:.3}ms", report.edge_builder.latency_per_pair.p99_ms());
-        println!("  Throughput:          {:.0} pairs/sec", report.edge_builder.pairs_per_sec);
+        println!(
+            "  Pairs processed:     {}",
+            report.edge_builder.pairs_processed
+        );
+        println!(
+            "  Edges created:       {}",
+            report.edge_builder.edges_created
+        );
+        println!(
+            "  Mean latency/pair:   {:.3}ms",
+            report.edge_builder.latency_per_pair.mean_ms()
+        );
+        println!(
+            "  P99 latency/pair:    {:.3}ms",
+            report.edge_builder.latency_per_pair.p99_ms()
+        );
+        println!(
+            "  Throughput:          {:.0} pairs/sec",
+            report.edge_builder.pairs_per_sec
+        );
 
         // Edge type distribution
         if !report.edge_builder.edge_type_distribution.is_empty() {
@@ -315,9 +345,18 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
     // Background Builder
     if report.background_builder.batches_processed > 0 {
         println!("BACKGROUND BUILDER:");
-        println!("  Batches processed:   {}", report.background_builder.batches_processed);
-        println!("  Total fingerprints:  {}", report.background_builder.total_fingerprints);
-        println!("  Total edges:         {}", report.background_builder.total_edges);
+        println!(
+            "  Batches processed:   {}",
+            report.background_builder.batches_processed
+        );
+        println!(
+            "  Total fingerprints:  {}",
+            report.background_builder.total_fingerprints
+        );
+        println!(
+            "  Total edges:         {}",
+            report.background_builder.total_edges
+        );
         println!(
             "  Batch latency (mean): {:.2}ms",
             report.background_builder.batch_processing_latency.mean_ms()
@@ -328,29 +367,53 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
     // Graph Expansion
     if report.graph_expansion.candidates_in > 0 {
         println!("GRAPH EXPANSION:");
-        println!("  Candidates in:       {}", report.graph_expansion.candidates_in);
-        println!("  Candidates out:      {}", report.graph_expansion.candidates_out);
-        println!("  Expansion ratio:     {:.2}x", report.graph_expansion.expansion_ratio);
-        println!("  Edges/candidate:     {:.1}", report.graph_expansion.edges_per_candidate);
-        println!("  Mean latency:        {:.3}ms", report.graph_expansion.latency.mean_ms());
+        println!(
+            "  Candidates in:       {}",
+            report.graph_expansion.candidates_in
+        );
+        println!(
+            "  Candidates out:      {}",
+            report.graph_expansion.candidates_out
+        );
+        println!(
+            "  Expansion ratio:     {:.2}x",
+            report.graph_expansion.expansion_ratio
+        );
+        println!(
+            "  Edges/candidate:     {:.1}",
+            report.graph_expansion.edges_per_candidate
+        );
+        println!(
+            "  Mean latency:        {:.3}ms",
+            report.graph_expansion.latency.mean_ms()
+        );
         println!();
     }
 
     // Weight Projection
     if report.weight_projection.inferences > 0 {
         println!("WEIGHT PROJECTION:");
-        println!("  Inferences:          {}", report.weight_projection.inferences);
+        println!(
+            "  Inferences:          {}",
+            report.weight_projection.inferences
+        );
         println!(
             "  Mean latency:        {:.3}ms",
             report.weight_projection.latency_per_inference.mean_ms()
         );
-        println!("  Throughput:          {:.0} inf/sec", report.weight_projection.throughput_per_sec);
+        println!(
+            "  Throughput:          {:.0} inf/sec",
+            report.weight_projection.throughput_per_sec
+        );
 
         if let Some(ref cmp) = report.weight_projection.heuristic_comparison {
             println!("  vs Heuristic:");
             println!("    Mean abs diff:     {:.3}", cmp.mean_abs_diff);
             println!("    Correlation:       {:.3}", cmp.correlation);
-            println!("    Learned higher:    {:.1}%", cmp.learned_higher_pct * 100.0);
+            println!(
+                "    Learned higher:    {:.1}%",
+                cmp.learned_higher_pct * 100.0
+            );
         }
         println!();
     }
@@ -360,8 +423,14 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
         println!("R-GCN (GNN):");
         println!("  Avg nodes:           {}", report.rgcn.nodes);
         println!("  Avg edges:           {}", report.rgcn.edges);
-        println!("  Mean latency:        {:.3}ms", report.rgcn.total_latency.mean_ms());
-        println!("  P99 latency:         {:.3}ms", report.rgcn.total_latency.p99_ms());
+        println!(
+            "  Mean latency:        {:.3}ms",
+            report.rgcn.total_latency.mean_ms()
+        );
+        println!(
+            "  P99 latency:         {:.3}ms",
+            report.rgcn.total_latency.p99_ms()
+        );
         println!("  Nodes/sec:           {:.0}", report.rgcn.nodes_per_sec);
         println!("  Edges/sec:           {:.0}", report.rgcn.edges_per_sec);
         println!();
@@ -372,7 +441,10 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
     for check in &results.validation.checks {
         let status = if check.passed { "PASS" } else { "FAIL" };
         println!("  [{}] {}", status, check.description);
-        println!("        Actual: {}, Expected: {}", check.actual, check.expected);
+        println!(
+            "        Actual: {}, Expected: {}",
+            check.actual, check.expected
+        );
     }
     println!();
     println!(
@@ -386,7 +458,10 @@ fn print_table(results: &GraphLinkingBenchmarkResults) {
 }
 
 /// Compare results with a baseline file.
-fn compare_with_baseline(baseline_path: &PathBuf, current: &GraphLinkingBenchmarkResults) -> Result<()> {
+fn compare_with_baseline(
+    baseline_path: &PathBuf,
+    current: &GraphLinkingBenchmarkResults,
+) -> Result<()> {
     let baseline_json = std::fs::read_to_string(baseline_path)?;
     let baseline: GraphLinkingBenchmarkResults = serde_json::from_str(&baseline_json)?;
 
@@ -401,7 +476,13 @@ fn compare_with_baseline(baseline_path: &PathBuf, current: &GraphLinkingBenchmar
         let baseline_latency = baseline.report.nn_descent.latency.mean_ms();
         let current_latency = current.report.nn_descent.latency.mean_ms();
         let diff_pct = ((current_latency - baseline_latency) / baseline_latency) * 100.0;
-        let status = if diff_pct <= 0.0 { "IMPROVED" } else if diff_pct <= 10.0 { "SIMILAR" } else { "REGRESSED" };
+        let status = if diff_pct <= 0.0 {
+            "IMPROVED"
+        } else if diff_pct <= 10.0 {
+            "SIMILAR"
+        } else {
+            "REGRESSED"
+        };
         println!(
             "NN-Descent latency: {:.2}ms -> {:.2}ms ({:+.1}%) [{}]",
             baseline_latency, current_latency, diff_pct, status
@@ -409,11 +490,19 @@ fn compare_with_baseline(baseline_path: &PathBuf, current: &GraphLinkingBenchmar
     }
 
     // EdgeBuilder comparison
-    if baseline.report.edge_builder.pairs_processed > 0 && current.report.edge_builder.pairs_processed > 0 {
+    if baseline.report.edge_builder.pairs_processed > 0
+        && current.report.edge_builder.pairs_processed > 0
+    {
         let baseline_throughput = baseline.report.edge_builder.pairs_per_sec;
         let current_throughput = current.report.edge_builder.pairs_per_sec;
         let diff_pct = ((current_throughput - baseline_throughput) / baseline_throughput) * 100.0;
-        let status = if diff_pct >= 0.0 { "IMPROVED" } else if diff_pct >= -10.0 { "SIMILAR" } else { "REGRESSED" };
+        let status = if diff_pct >= 0.0 {
+            "IMPROVED"
+        } else if diff_pct >= -10.0 {
+            "SIMILAR"
+        } else {
+            "REGRESSED"
+        };
         println!(
             "EdgeBuilder throughput: {:.0} -> {:.0} pairs/sec ({:+.1}%) [{}]",
             baseline_throughput, current_throughput, diff_pct, status
@@ -421,7 +510,9 @@ fn compare_with_baseline(baseline_path: &PathBuf, current: &GraphLinkingBenchmar
     }
 
     // Graph Expansion comparison
-    if baseline.report.graph_expansion.candidates_in > 0 && current.report.graph_expansion.candidates_in > 0 {
+    if baseline.report.graph_expansion.candidates_in > 0
+        && current.report.graph_expansion.candidates_in > 0
+    {
         let baseline_ratio = baseline.report.graph_expansion.expansion_ratio;
         let current_ratio = current.report.graph_expansion.expansion_ratio;
         println!(

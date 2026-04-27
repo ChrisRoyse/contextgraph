@@ -13,9 +13,7 @@ use uuid::Uuid;
 use super::*;
 use crate::teleological::synergy_matrix::SynergyMatrix;
 use crate::teleological::types::NUM_EMBEDDERS;
-use crate::types::fingerprint::{
-    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
-};
+use crate::types::fingerprint::{SemanticFingerprint, SparseVector, TeleologicalFingerprint};
 
 // =============================================================================
 // Cross-correlation tests
@@ -220,7 +218,10 @@ fn training_record_bincode_roundtrip_full() {
     assert!(back.tucker_core.is_none());
     assert_eq!(back.edge_type_distribution, record.edge_type_distribution);
     // CausalLabel fields
-    assert_eq!(back.causal_effects[0].rel_id, record.causal_effects[0].rel_id);
+    assert_eq!(
+        back.causal_effects[0].rel_id,
+        record.causal_effects[0].rel_id
+    );
     assert_eq!(
         back.causal_effects[0].mechanism_type,
         record.causal_effects[0].mechanism_type

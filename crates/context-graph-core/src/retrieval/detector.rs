@@ -10,17 +10,17 @@
 //! - AP-62: Divergence alerts MUST only use SEMANTIC embedders
 //! - AP-63: NEVER trigger divergence from temporal proximity differences
 
+use chrono::{DateTime, Utc};
 use std::time::Duration;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use crate::embeddings::category::category_for;
-use crate::types::fingerprint::SemanticFingerprint;
 use crate::teleological::Embedder;
+use crate::types::fingerprint::SemanticFingerprint;
 
-use super::multi_space::MultiSpaceSimilarity;
+use super::config::{MAX_RECENT_MEMORIES, RECENT_LOOKBACK_SECS};
 use super::divergence::{DivergenceAlert, DivergenceReport, DivergenceSeverity, DIVERGENCE_SPACES};
-use super::config::{RECENT_LOOKBACK_SECS, MAX_RECENT_MEMORIES};
+use super::multi_space::MultiSpaceSimilarity;
 
 /// Check if an embedder is used for divergence detection.
 ///
@@ -56,7 +56,12 @@ impl RecentMemory {
         embedding: SemanticFingerprint,
         created_at: DateTime<Utc>,
     ) -> Self {
-        Self { id, content, embedding, created_at }
+        Self {
+            id,
+            content,
+            embedding,
+            created_at,
+        }
     }
 }
 
@@ -136,8 +141,9 @@ impl DivergenceDetector {
         let mut report = DivergenceReport::new();
 
         // Calculate cutoff time for lookback window
-        let cutoff = Utc::now() - chrono::Duration::from_std(self.lookback_duration)
-            .unwrap_or(chrono::Duration::hours(2));
+        let cutoff = Utc::now()
+            - chrono::Duration::from_std(self.lookback_duration)
+                .unwrap_or(chrono::Duration::hours(2));
 
         // Filter to recent memories within lookback window, limit to max_recent
         let filtered: Vec<&RecentMemory> = recent_memories
@@ -158,12 +164,7 @@ impl DivergenceDetector {
 
                 // Check if score is below low threshold for this space
                 if self.similarity.is_below_low_threshold(embedder, score) {
-                    let alert = DivergenceAlert::new(
-                        memory.id,
-                        embedder,
-                        score,
-                        &memory.content,
-                    );
+                    let alert = DivergenceAlert::new(memory.id, embedder, score, &memory.content);
                     report.add(alert);
                 }
             }
@@ -235,7 +236,9 @@ mod tests {
     fn test_divergence_spaces_count() {
         // DIVERGENCE_SPACES contains 7 semantic embedders (E5 excluded per AP-77; E14 added)
         assert_eq!(DIVERGENCE_SPACES.len(), 7);
-        println!("[PASS] DIVERGENCE_SPACES has exactly 7 semantic embedders (E5 excluded per AP-77)");
+        println!(
+            "[PASS] DIVERGENCE_SPACES has exactly 7 semantic embedders (E5 excluded per AP-77)"
+        );
     }
 
     #[test]
@@ -313,7 +316,7 @@ mod tests {
         let similarity = MultiSpaceSimilarity::with_defaults();
         let detector = DivergenceDetector::with_config(
             similarity,
-            Duration::from_secs(3600),  // 1 hour
+            Duration::from_secs(3600), // 1 hour
             25,
         );
 
@@ -340,7 +343,7 @@ mod tests {
         let similarity = MultiSpaceSimilarity::with_defaults();
         let detector = DivergenceDetector::with_config(
             similarity,
-            Duration::from_secs(60),  // 1 minute lookback
+            Duration::from_secs(60), // 1 minute lookback
             10,
         );
 
@@ -366,17 +369,19 @@ mod tests {
         let detector = DivergenceDetector::with_config(
             similarity,
             Duration::from_secs(7200),
-            2,  // Only check 2 memories
+            2, // Only check 2 memories
         );
 
         // Create 5 recent memories
         let memories: Vec<RecentMemory> = (0..5)
-            .map(|i| RecentMemory::new(
-                Uuid::new_v4(),
-                format!("Memory {}", i),
-                SemanticFingerprint::zeroed(),
-                Utc::now(),
-            ))
+            .map(|i| {
+                RecentMemory::new(
+                    Uuid::new_v4(),
+                    format!("Memory {}", i),
+                    SemanticFingerprint::zeroed(),
+                    Utc::now(),
+                )
+            })
             .collect();
 
         let query = SemanticFingerprint::zeroed();
@@ -386,9 +391,12 @@ mod tests {
         // With zeroed embeddings, similarity calculations may produce 0.0 or NaN
         // depending on how the distance calculator handles zero vectors.
         // The key assertion is that report is valid and the function completes.
-        assert!(report.len() <= 2 * DIVERGENCE_SPACES.len(),
+        assert!(
+            report.len() <= 2 * DIVERGENCE_SPACES.len(),
             "Max {} alerts possible (2 memories x 7 semantic spaces), got {}",
-            2 * DIVERGENCE_SPACES.len(), report.len());
+            2 * DIVERGENCE_SPACES.len(),
+            report.len()
+        );
         println!("[PASS] Max recent limit respected (processed up to 2 memories)");
     }
 
@@ -401,7 +409,7 @@ mod tests {
         report.add(DivergenceAlert::new(
             Uuid::new_v4(),
             Embedder::Semantic,
-            0.05,  // High severity (score < 0.10)
+            0.05, // High severity (score < 0.10)
             "Test content",
         ));
 
@@ -418,7 +426,7 @@ mod tests {
         report.add(DivergenceAlert::new(
             Uuid::new_v4(),
             Embedder::Semantic,
-            0.15,  // Medium severity (0.10 <= score < 0.20)
+            0.15, // Medium severity (0.10 <= score < 0.20)
             "Test content",
         ));
 
@@ -435,7 +443,7 @@ mod tests {
         report.add(DivergenceAlert::new(
             Uuid::new_v4(),
             Embedder::Semantic,
-            0.25,  // Low severity (score >= 0.20)
+            0.25, // Low severity (score >= 0.20)
             "Test content",
         ));
 

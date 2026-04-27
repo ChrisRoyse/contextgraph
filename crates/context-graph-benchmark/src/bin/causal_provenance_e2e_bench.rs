@@ -534,7 +534,9 @@ async fn main() {
                     println!("    → No causal content (legitimate)");
                 }
             } else {
-                doc_result.errors.push("Extraction failed - no relationships found".to_string());
+                doc_result
+                    .errors
+                    .push("Extraction failed - no relationships found".to_string());
             }
         } else {
             docs_with_relationships += 1;
@@ -544,7 +546,9 @@ async fn main() {
                 total_confidence += rel.confidence as f64;
 
                 // Track mechanism types
-                *mechanism_types.entry(rel.mechanism_type.clone()).or_insert(0) += 1;
+                *mechanism_types
+                    .entry(rel.mechanism_type.clone())
+                    .or_insert(0) += 1;
 
                 // Validate source spans
                 if !rel.source_spans.is_empty() {
@@ -565,7 +569,9 @@ async fn main() {
                             // Validate text match
                             let actual_text = &content[span.start_char..span.end_char];
                             if span.text_excerpt.trim() == actual_text.trim()
-                               || actual_text.starts_with(span.text_excerpt.trim_end_matches("...")) {
+                                || actual_text
+                                    .starts_with(span.text_excerpt.trim_end_matches("..."))
+                            {
                                 text_match_spans += 1;
                                 doc_result.spans_text_match += 1;
                             }
@@ -574,7 +580,8 @@ async fn main() {
                 }
             }
 
-            doc_result.avg_confidence = total_confidence / extraction_result.relationships.len() as f64;
+            doc_result.avg_confidence =
+                total_confidence / extraction_result.relationships.len() as f64;
         }
 
         all_results.push(doc_result);
@@ -590,20 +597,29 @@ async fn main() {
     let llm_metrics = LlmExtractionMetrics {
         extraction_success_rate: if num_docs > 0 {
             (docs_with_relationships as f64 / (num_docs - no_causal_content) as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         avg_relationships_per_doc: if docs_with_relationships > 0 {
             total_relationships as f64 / docs_with_relationships as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         total_relationships,
         avg_confidence: if total_relationships > 0 {
             total_confidence / total_relationships as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         mechanism_type_distribution: mechanism_types.clone(),
         no_causal_content_count: no_causal_content,
     };
 
     println!("  Documents processed: {}", num_docs);
-    println!("  Documents with relationships: {}", docs_with_relationships);
+    println!(
+        "  Documents with relationships: {}",
+        docs_with_relationships
+    );
     println!("  Non-causal documents (controls): {}", no_causal_content);
     println!("  Total relationships extracted: {}", total_relationships);
     println!("  Average confidence: {:.2}", llm_metrics.avg_confidence);
@@ -614,28 +630,49 @@ async fn main() {
     let span_metrics = SourceSpanMetrics {
         span_populated_rate: if total_relationships > 0 {
             (all_results.iter().map(|r| r.spans_populated).sum::<usize>() as f64
-             / total_relationships as f64) * 100.0
-        } else { 0.0 },
+                / total_relationships as f64)
+                * 100.0
+        } else {
+            0.0
+        },
         span_offset_valid_rate: if total_spans > 0 {
             (valid_offset_spans as f64 / total_spans as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         span_text_match_rate: if total_spans > 0 {
             (text_match_spans as f64 / total_spans as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         total_spans,
         valid_offset_count: valid_offset_spans,
         text_match_count: text_match_spans,
         span_type_distribution: span_types,
         avg_span_length: if total_spans > 0 {
             total_span_length as f64 / total_spans as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
     };
 
     println!("  Total spans: {}", span_metrics.total_spans);
-    println!("  Span populated rate: {:.1}%", span_metrics.span_populated_rate);
-    println!("  Offset valid rate: {:.1}%", span_metrics.span_offset_valid_rate);
-    println!("  Text match rate: {:.1}%", span_metrics.span_text_match_rate);
-    println!("  Average span length: {:.0} chars", span_metrics.avg_span_length);
+    println!(
+        "  Span populated rate: {:.1}%",
+        span_metrics.span_populated_rate
+    );
+    println!(
+        "  Offset valid rate: {:.1}%",
+        span_metrics.span_offset_valid_rate
+    );
+    println!(
+        "  Text match rate: {:.1}%",
+        span_metrics.span_text_match_rate
+    );
+    println!(
+        "  Average span length: {:.0} chars",
+        span_metrics.avg_span_length
+    );
     println!();
 
     println!("═══ Phase 3: Storage Verification ═════════════════════════════════════════════");
@@ -645,14 +682,23 @@ async fn main() {
         storage_success_rate: 100.0, // Simulated
         provenance_chain_complete_rate: span_metrics.span_populated_rate,
         e5_dual_embedding_rate: 100.0, // Simulated - E5 dual embeddings generated
-        e1_embedding_rate: 100.0, // Simulated - E1 semantic embedding generated
+        e1_embedding_rate: 100.0,      // Simulated - E1 semantic embedding generated
         stored_count: total_relationships,
     };
 
     println!("  Stored successfully: {}", storage_metrics.stored_count);
-    println!("  Storage success rate: {:.1}%", storage_metrics.storage_success_rate);
-    println!("  Provenance chain complete: {:.1}%", storage_metrics.provenance_chain_complete_rate);
-    println!("  E5 dual embedding rate: {:.1}%", storage_metrics.e5_dual_embedding_rate);
+    println!(
+        "  Storage success rate: {:.1}%",
+        storage_metrics.storage_success_rate
+    );
+    println!(
+        "  Provenance chain complete: {:.1}%",
+        storage_metrics.provenance_chain_complete_rate
+    );
+    println!(
+        "  E5 dual embedding rate: {:.1}%",
+        storage_metrics.e5_dual_embedding_rate
+    );
     println!();
 
     println!("═══ Phase 4: MCP Search Quality ═══════════════════════════════════════════════");
@@ -668,8 +714,14 @@ async fn main() {
     };
 
     println!("  Queries tested: {}", search_metrics.queries_tested);
-    println!("  Precision@5: {:.1}%", search_metrics.precision_at_5 * 100.0);
-    println!("  Provenance display rate: {:.1}%", search_metrics.provenance_display_rate);
+    println!(
+        "  Precision@5: {:.1}%",
+        search_metrics.precision_at_5 * 100.0
+    );
+    println!(
+        "  Provenance display rate: {:.1}%",
+        search_metrics.provenance_display_rate
+    );
     println!("  File path rate: {:.1}%", search_metrics.file_path_rate);
     println!();
 
@@ -681,10 +733,16 @@ async fn main() {
     };
 
     let latency_metrics = LatencyMetrics {
-        extraction_avg_ms: if extraction_times.is_empty() { 0.0 }
-                          else { extraction_times.iter().sum::<f64>() / extraction_times.len() as f64 },
-        extraction_p95_ms: if extraction_sorted.is_empty() { 0.0 }
-                          else { extraction_sorted[(extraction_sorted.len() as f64 * 0.95) as usize] },
+        extraction_avg_ms: if extraction_times.is_empty() {
+            0.0
+        } else {
+            extraction_times.iter().sum::<f64>() / extraction_times.len() as f64
+        },
+        extraction_p95_ms: if extraction_sorted.is_empty() {
+            0.0
+        } else {
+            extraction_sorted[(extraction_sorted.len() as f64 * 0.95) as usize]
+        },
         storage_avg_ms: 5.0, // Simulated
         search_avg_ms: 15.0, // Simulated
         total_time_sec: benchmark_start.elapsed().as_secs_f64(),
@@ -716,52 +774,108 @@ async fn main() {
     // Generate recommendations
     let mut recommendations = Vec::new();
     if !targets.span_populated_met {
-        recommendations.push("CRITICAL: Improve LLM prompt to ensure source_spans are always populated".to_string());
+        recommendations.push(
+            "CRITICAL: Improve LLM prompt to ensure source_spans are always populated".to_string(),
+        );
     }
     if !targets.span_text_match_met {
-        recommendations.push("CRITICAL: Verify GBNF grammar produces accurate text excerpts".to_string());
+        recommendations
+            .push("CRITICAL: Verify GBNF grammar produces accurate text excerpts".to_string());
     }
     if !targets.span_offset_valid_met {
-        recommendations.push("CRITICAL: Fix character offset calculation in LLM output parsing".to_string());
+        recommendations
+            .push("CRITICAL: Fix character offset calculation in LLM output parsing".to_string());
     }
     if recommendations.is_empty() && all_passed {
-        recommendations.push("All performance targets met - provenance system working correctly".to_string());
+        recommendations
+            .push("All performance targets met - provenance system working correctly".to_string());
     }
 
     // Print results summary
     println!("═══ Performance Targets ═════════════════════════════════════════════════════════");
-    println!("  Span populated (>95%):      {} ({:.1}%)",
-             if targets.span_populated_met { "✓ PASS" } else { "✗ FAIL" },
-             span_metrics.span_populated_rate);
-    println!("  Span text match (>85%):     {} ({:.1}%)",
-             if targets.span_text_match_met { "✓ PASS" } else { "✗ FAIL" },
-             span_metrics.span_text_match_rate);
-    println!("  Offset validity (>95%):     {} ({:.1}%)",
-             if targets.span_offset_valid_met { "✓ PASS" } else { "✗ FAIL" },
-             span_metrics.span_offset_valid_rate);
-    println!("  Storage success (100%):     {} ({:.1}%)",
-             if targets.storage_success_met { "✓ PASS" } else { "✗ FAIL" },
-             storage_metrics.storage_success_rate);
-    println!("  Provenance chain (>95%):    {} ({:.1}%)",
-             if targets.provenance_chain_met { "✓ PASS" } else { "✗ FAIL" },
-             storage_metrics.provenance_chain_complete_rate);
-    println!("  Provenance display (>95%):  {} ({:.1}%)",
-             if targets.provenance_display_met { "✓ PASS" } else { "✗ FAIL" },
-             search_metrics.provenance_display_rate);
+    println!(
+        "  Span populated (>95%):      {} ({:.1}%)",
+        if targets.span_populated_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_metrics.span_populated_rate
+    );
+    println!(
+        "  Span text match (>85%):     {} ({:.1}%)",
+        if targets.span_text_match_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_metrics.span_text_match_rate
+    );
+    println!(
+        "  Offset validity (>95%):     {} ({:.1}%)",
+        if targets.span_offset_valid_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_metrics.span_offset_valid_rate
+    );
+    println!(
+        "  Storage success (100%):     {} ({:.1}%)",
+        if targets.storage_success_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        storage_metrics.storage_success_rate
+    );
+    println!(
+        "  Provenance chain (>95%):    {} ({:.1}%)",
+        if targets.provenance_chain_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        storage_metrics.provenance_chain_complete_rate
+    );
+    println!(
+        "  Provenance display (>95%):  {} ({:.1}%)",
+        if targets.provenance_display_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        search_metrics.provenance_display_rate
+    );
     println!();
 
     if targets.all_critical_passed {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✓ ALL CRITICAL TARGETS PASSED                              ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✓ ALL CRITICAL TARGETS PASSED                              ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     } else {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✗ SOME CRITICAL TARGETS FAILED                             ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✗ SOME CRITICAL TARGETS FAILED                             ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     println!();
-    println!("Benchmark completed in {:.2}s", latency_metrics.total_time_sec);
+    println!(
+        "Benchmark completed in {:.2}s",
+        latency_metrics.total_time_sec
+    );
 
     // Build results
     let results = E2EProvenanceBenchResults {
@@ -790,7 +904,8 @@ async fn main() {
     // Write results
     let json = serde_json::to_string_pretty(&results).expect("Failed to serialize results");
     let mut file = File::create(&args.output_path).expect("Failed to create output file");
-    file.write_all(json.as_bytes()).expect("Failed to write results");
+    file.write_all(json.as_bytes())
+        .expect("Failed to write results");
     println!("\nResults written to: {}", args.output_path.display());
 }
 
@@ -853,19 +968,23 @@ fn simulate_llm_extraction(content: &str, doc_idx: usize) -> ExtractionResult {
             let rel = ExtractedRelationship {
                 cause: sentence.chars().take(80).collect(),
                 effect: sentences[i + 1].chars().take(80).collect(),
-                explanation: format!("The causal mechanism: {} This subsequently {}.",
-                    sentence, sentences[i + 1]),
+                explanation: format!(
+                    "The causal mechanism: {} This subsequently {}.",
+                    sentence,
+                    sentences[i + 1]
+                ),
                 confidence: 0.75 + (doc_idx as f32 * 0.01).min(0.2),
-                mechanism_type: if sentence.contains("triggers") { "direct".to_string() }
-                               else { "mediated".to_string() },
-                source_spans: vec![
-                    SourceSpanResult {
-                        start_char: cause_start,
-                        end_char: cause_end.min(content.len()),
-                        text_excerpt: sentence.chars().take(200).collect(),
-                        span_type: "full".to_string(),
-                    }
-                ],
+                mechanism_type: if sentence.contains("triggers") {
+                    "direct".to_string()
+                } else {
+                    "mediated".to_string()
+                },
+                source_spans: vec![SourceSpanResult {
+                    start_char: cause_start,
+                    end_char: cause_end.min(content.len()),
+                    text_excerpt: sentence.chars().take(200).collect(),
+                    span_type: "full".to_string(),
+                }],
             };
             relationships.push(rel);
 
@@ -885,17 +1004,18 @@ fn simulate_llm_extraction(content: &str, doc_idx: usize) -> ExtractionResult {
         relationships.push(ExtractedRelationship {
             cause: first_sentence.chars().take(80).collect(),
             effect: sentences.get(1).unwrap_or(&"").chars().take(80).collect(),
-            explanation: format!("Sequential relationship: {} leads to subsequent events.", first_sentence),
+            explanation: format!(
+                "Sequential relationship: {} leads to subsequent events.",
+                first_sentence
+            ),
             confidence: 0.65,
             mechanism_type: "temporal".to_string(),
-            source_spans: vec![
-                SourceSpanResult {
-                    start_char,
-                    end_char,
-                    text_excerpt: first_sentence.chars().take(200).collect(),
-                    span_type: "cause".to_string(),
-                }
-            ],
+            source_spans: vec![SourceSpanResult {
+                start_char,
+                end_char,
+                text_excerpt: first_sentence.chars().take(200).collect(),
+                span_type: "cause".to_string(),
+            }],
         });
     }
 

@@ -151,7 +151,10 @@ impl GpuProvider {
         // FAIL FAST: no silent fallback to base model.
         let trained_dir = model_path.join("trained");
         model.load_trained_weights(&trained_dir).map_err(|e| {
-            eprintln!("GpuProvider: E5 trained weights REQUIRED but failed to load: {}", e);
+            eprintln!(
+                "GpuProvider: E5 trained weights REQUIRED but failed to load: {}",
+                e
+            );
             e
         })?;
 
@@ -211,15 +214,32 @@ impl EmbeddingProvider for GpuProvider {
         let cause_emb = match self.runtime.block_on(self.model.embed_as_cause(cause_text)) {
             Ok(v) => v,
             Err(e) => {
-                tracing::error!("GPU cause embedding failed for '{}...': {}", &cause_text[..cause_text.len().min(50)], e);
-                panic!("E5 GPU embedding failed — cannot produce valid benchmark scores: {}", e);
+                tracing::error!(
+                    "GPU cause embedding failed for '{}...': {}",
+                    &cause_text[..cause_text.len().min(50)],
+                    e
+                );
+                panic!(
+                    "E5 GPU embedding failed — cannot produce valid benchmark scores: {}",
+                    e
+                );
             }
         };
-        let effect_emb = match self.runtime.block_on(self.model.embed_as_effect(effect_text)) {
+        let effect_emb = match self
+            .runtime
+            .block_on(self.model.embed_as_effect(effect_text))
+        {
             Ok(v) => v,
             Err(e) => {
-                tracing::error!("GPU effect embedding failed for '{}...': {}", &effect_text[..effect_text.len().min(50)], e);
-                panic!("E5 GPU embedding failed — cannot produce valid benchmark scores: {}", e);
+                tracing::error!(
+                    "GPU effect embedding failed for '{}...': {}",
+                    &effect_text[..effect_text.len().min(50)],
+                    e
+                );
+                panic!(
+                    "E5 GPU embedding failed — cannot produce valid benchmark scores: {}",
+                    e
+                );
             }
         };
         cosine_similarity(&cause_emb, &effect_emb).max(0.0)
@@ -229,8 +249,15 @@ impl EmbeddingProvider for GpuProvider {
         match self.runtime.block_on(self.model.embed_as_cause(text)) {
             Ok(emb) => emb,
             Err(e) => {
-                tracing::error!("GPU embedding failed for '{}...': {}", &text[..text.len().min(50)], e);
-                panic!("E5 GPU embedding failed — cannot produce valid benchmark data: {}", e);
+                tracing::error!(
+                    "GPU embedding failed for '{}...': {}",
+                    &text[..text.len().min(50)],
+                    e
+                );
+                panic!(
+                    "E5 GPU embedding failed — cannot produce valid benchmark data: {}",
+                    e
+                );
             }
         }
     }
@@ -239,8 +266,15 @@ impl EmbeddingProvider for GpuProvider {
         match self.runtime.block_on(self.model.embed_dual(text)) {
             Ok((cause, effect)) => (cause, effect),
             Err(e) => {
-                tracing::error!("GPU dual embedding failed for '{}...': {}", &text[..text.len().min(50)], e);
-                panic!("E5 GPU dual embedding failed — cannot produce valid benchmark data: {}", e);
+                tracing::error!(
+                    "GPU dual embedding failed for '{}...': {}",
+                    &text[..text.len().min(50)],
+                    e
+                );
+                panic!(
+                    "E5 GPU dual embedding failed — cannot produce valid benchmark data: {}",
+                    e
+                );
             }
         }
     }
@@ -270,13 +304,22 @@ impl EmbeddingProvider for GpuProvider {
         let q_vec = match self.runtime.block_on(semantic.embed_batch(&[query_input])) {
             Ok(mut results) => results.remove(0).vector,
             Err(e) => {
-                panic!("E1 GPU query embedding failed -- cannot produce valid benchmark scores: {}", e);
+                panic!(
+                    "E1 GPU query embedding failed -- cannot produce valid benchmark scores: {}",
+                    e
+                );
             }
         };
-        let p_vec = match self.runtime.block_on(semantic.embed_batch(&[passage_input])) {
+        let p_vec = match self
+            .runtime
+            .block_on(semantic.embed_batch(&[passage_input]))
+        {
             Ok(mut results) => results.remove(0).vector,
             Err(e) => {
-                panic!("E1 GPU passage embedding failed -- cannot produce valid benchmark scores: {}", e);
+                panic!(
+                    "E1 GPU passage embedding failed -- cannot produce valid benchmark scores: {}",
+                    e
+                );
             }
         };
         cosine_similarity(&q_vec, &p_vec).max(0.0)
@@ -326,7 +369,11 @@ mod tests {
         let provider = SyntheticProvider::new();
         let emb = provider.e5_embedding("test text");
         let norm: f32 = emb.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 0.01, "Embedding should be L2-normalized, got norm={}", norm);
+        assert!(
+            (norm - 1.0).abs() < 0.01,
+            "Embedding should be L2-normalized, got norm={}",
+            norm
+        );
     }
 
     #[test]

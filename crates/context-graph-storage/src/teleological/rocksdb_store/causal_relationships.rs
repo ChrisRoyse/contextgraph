@@ -270,7 +270,6 @@ impl RocksDbTeleologicalStore {
         Ok(relationship.id)
     }
 
-
     // ========================================================================
     // Retrieve Operations
     // ========================================================================
@@ -558,15 +557,18 @@ impl RocksDbTeleologicalStore {
                     return None;
                 }
 
-                let explanation_sim = compute_cosine_similarity(&query_embedding, explanation_embedding);
+                let explanation_sim =
+                    compute_cosine_similarity(&query_embedding, explanation_embedding);
 
-                let source_sim = if source_embedding.is_empty() || source_embedding.iter().all(|&v| v == 0.0) {
-                    explanation_sim
-                } else {
-                    compute_cosine_similarity(&query_embedding, source_embedding)
-                };
+                let source_sim =
+                    if source_embedding.is_empty() || source_embedding.iter().all(|&v| v == 0.0) {
+                        explanation_sim
+                    } else {
+                        compute_cosine_similarity(&query_embedding, source_embedding)
+                    };
 
-                let hybrid_score = source_weight * source_sim + explanation_weight * explanation_sim;
+                let hybrid_score =
+                    source_weight * source_sim + explanation_weight * explanation_sim;
                 Some((rel.id, hybrid_score))
             })
         })
@@ -682,9 +684,9 @@ impl RocksDbTeleologicalStore {
 
             // Audit-10 STOR-M7 FIX: Filter ghost entries that exist in HNSW but
             // were deleted from primary CF_CAUSAL_RELATIONSHIPS (soft-delete residue).
-            let cf = db
-                .cf_handle(CF_CAUSAL_RELATIONSHIPS)
-                .ok_or_else(|| CoreError::Internal("CF_CAUSAL_RELATIONSHIPS not found".to_string()))?;
+            let cf = db.cf_handle(CF_CAUSAL_RELATIONSHIPS).ok_or_else(|| {
+                CoreError::Internal("CF_CAUSAL_RELATIONSHIPS not found".to_string())
+            })?;
             let filtered: Vec<(Uuid, f32)> = results
                 .into_iter()
                 .filter(|(id, _)| {
@@ -834,9 +836,9 @@ impl RocksDbTeleologicalStore {
         let db = Arc::clone(&self.db);
 
         let count = tokio::task::spawn_blocking(move || -> CoreResult<usize> {
-            let cf = db
-                .cf_handle(CF_CAUSAL_RELATIONSHIPS)
-                .ok_or_else(|| CoreError::Internal("CF_CAUSAL_RELATIONSHIPS not found".to_string()))?;
+            let cf = db.cf_handle(CF_CAUSAL_RELATIONSHIPS).ok_or_else(|| {
+                CoreError::Internal("CF_CAUSAL_RELATIONSHIPS not found".to_string())
+            })?;
             let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
             Ok(iter.count())
         })
@@ -980,10 +982,18 @@ impl RocksDbTeleologicalStore {
         .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
 
         if orphan_count > 0 {
-            info!(orphan_count, "Removed orphaned secondary index entries from CF_CAUSAL_BY_SOURCE");
+            info!(
+                orphan_count,
+                "Removed orphaned secondary index entries from CF_CAUSAL_BY_SOURCE"
+            );
         }
 
-        info!(deleted = deleted_count, scanned = total_scanned, orphans_removed = orphan_count, "Causal relationship repair complete");
+        info!(
+            deleted = deleted_count,
+            scanned = total_scanned,
+            orphans_removed = orphan_count,
+            "Causal relationship repair complete"
+        );
         Ok((deleted_count, total_scanned))
     }
 
@@ -1034,7 +1044,8 @@ impl RocksDbTeleologicalStore {
                          Cannot safely delete causal relationship with corrupted index."
                     );
                     TeleologicalStoreError::Internal(format!(
-                        "Corrupted causal_by_source index for {}: {}", relationship.source_fingerprint_id, e
+                        "Corrupted causal_by_source index for {}: {}",
+                        relationship.source_fingerprint_id, e
                     ))
                 })?;
 
@@ -1044,7 +1055,10 @@ impl RocksDbTeleologicalStore {
                     batch.delete_cf(cf_idx, idx_key);
                 } else {
                     let serialized = serde_json::to_vec(&causal_ids).map_err(|e| {
-                        CoreError::Internal(format!("Failed to serialize causal_by_source list: {}", e))
+                        CoreError::Internal(format!(
+                            "Failed to serialize causal_by_source list: {}",
+                            e
+                        ))
                     })?;
                     batch.put_cf(cf_idx, idx_key, &serialized);
                 }
@@ -1067,12 +1081,7 @@ impl RocksDbTeleologicalStore {
                 "ROCKSDB ERROR: Failed to atomically delete causal relationship {}: {}",
                 id, e
             );
-            TeleologicalStoreError::rocksdb_op(
-                "delete_batch",
-                CF_CAUSAL_RELATIONSHIPS,
-                Some(id),
-                e,
-            )
+            TeleologicalStoreError::rocksdb_op("delete_batch", CF_CAUSAL_RELATIONSHIPS, Some(id), e)
         })?;
 
         // Release lock before HNSW operations (which don't need it)
@@ -1090,7 +1099,6 @@ impl RocksDbTeleologicalStore {
 
         Ok(true)
     }
-
 }
 
 // ============================================================================
@@ -1119,24 +1127,28 @@ mod tests {
             let store =
                 RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
             let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-            Self { store, rt, _temp_dir: temp_dir }
+            Self {
+                store,
+                rt,
+                _temp_dir: temp_dir,
+            }
         }
     }
 
     /// Create a test relationship with realistic data.
     fn create_test_relationship(source_id: Uuid, mechanism_type: &str) -> CausalRelationship {
         CausalRelationship::new(
-            "Chronic stress elevates cortisol levels".to_string(),     // cause_statement
-            "Memory impairment and cognitive decline".to_string(),     // effect_statement
+            "Chronic stress elevates cortisol levels".to_string(), // cause_statement
+            "Memory impairment and cognitive decline".to_string(), // effect_statement
             format!(
                 "This causal relationship describes how chronic stress leads to elevated \
                  cortisol levels. The mechanism involves sustained activation of the HPA axis. \
                  Mechanism type: {}",
                 mechanism_type
-            ),                                                          // explanation
-            vec![0.1f32; CausalRelationship::E5_DIM],                  // e5_as_cause (768D)
-            vec![0.2f32; CausalRelationship::E5_DIM],                  // e5_as_effect (768D)
-            vec![0.3f32; CausalRelationship::E1_DIM],                  // e1_semantic (1024D)
+            ), // explanation
+            vec![0.1f32; CausalRelationship::E5_DIM],              // e5_as_cause (768D)
+            vec![0.2f32; CausalRelationship::E5_DIM],              // e5_as_effect (768D)
+            vec![0.3f32; CausalRelationship::E1_DIM],              // e1_semantic (1024D)
             "Studies show stress hormones damage hippocampal neurons over time.".to_string(),
             source_id,
             0.85,
@@ -1153,32 +1165,53 @@ mod tests {
         let expected_id = rel.id;
 
         // Store
-        let stored_id = h
-            .rt
-            .block_on(h.store.store_causal_relationship(&rel))
-            .expect("Store failed");
-        assert_eq!(stored_id, expected_id, "Store should return the relationship ID");
+        let stored_id =
+            h.rt.block_on(h.store.store_causal_relationship(&rel))
+                .expect("Store failed");
+        assert_eq!(
+            stored_id, expected_id,
+            "Store should return the relationship ID"
+        );
 
         // Get and verify
-        let retrieved = h
-            .rt
-            .block_on(h.store.get_causal_relationship(stored_id))
-            .expect("Get failed")
-            .expect("Relationship not found");
+        let retrieved =
+            h.rt.block_on(h.store.get_causal_relationship(stored_id))
+                .expect("Get failed")
+                .expect("Relationship not found");
 
         assert_eq!(retrieved.id, expected_id, "ID mismatch");
-        assert_eq!(retrieved.source_fingerprint_id, source_id, "Source ID mismatch");
-        assert_eq!(retrieved.mechanism_type, "direct", "Mechanism type mismatch");
-        assert!((retrieved.confidence - 0.85).abs() < 0.001, "Confidence mismatch");
-        assert_eq!(retrieved.e5_as_cause.len(), CausalRelationship::E5_DIM, "E5 cause dim mismatch");
-        assert_eq!(retrieved.e5_as_effect.len(), CausalRelationship::E5_DIM, "E5 effect dim mismatch");
-        assert_eq!(retrieved.e1_semantic.len(), CausalRelationship::E1_DIM, "E1 dim mismatch");
+        assert_eq!(
+            retrieved.source_fingerprint_id, source_id,
+            "Source ID mismatch"
+        );
+        assert_eq!(
+            retrieved.mechanism_type, "direct",
+            "Mechanism type mismatch"
+        );
+        assert!(
+            (retrieved.confidence - 0.85).abs() < 0.001,
+            "Confidence mismatch"
+        );
+        assert_eq!(
+            retrieved.e5_as_cause.len(),
+            CausalRelationship::E5_DIM,
+            "E5 cause dim mismatch"
+        );
+        assert_eq!(
+            retrieved.e5_as_effect.len(),
+            CausalRelationship::E5_DIM,
+            "E5 effect dim mismatch"
+        );
+        assert_eq!(
+            retrieved.e1_semantic.len(),
+            CausalRelationship::E1_DIM,
+            "E1 dim mismatch"
+        );
 
         // Count
-        let count = h
-            .rt
-            .block_on(h.store.count_causal_relationships())
-            .expect("Count failed");
+        let count =
+            h.rt.block_on(h.store.count_causal_relationships())
+                .expect("Count failed");
         assert_eq!(count, 1, "Count should be 1");
     }
 
@@ -1202,10 +1235,9 @@ mod tests {
         });
 
         // Verify secondary index
-        let by_source = h
-            .rt
-            .block_on(h.store.get_causal_relationships_by_source(source_id))
-            .expect("Get by source failed");
+        let by_source =
+            h.rt.block_on(h.store.get_causal_relationships_by_source(source_id))
+                .expect("Get by source failed");
 
         assert_eq!(by_source.len(), 4, "Should find 4 relationships");
 
@@ -1233,21 +1265,28 @@ mod tests {
         let query_embedding = vec![0.3f32; CausalRelationship::E1_DIM];
 
         // Search without filter
-        let results = h
-            .rt
-            .block_on(h.store.search_causal_relationships(&query_embedding, 5, None))
+        let results =
+            h.rt.block_on(
+                h.store
+                    .search_causal_relationships(&query_embedding, 5, None),
+            )
             .expect("Search failed");
 
         assert!(!results.is_empty(), "Search should return results");
         assert!(results.len() <= 5, "Should return at most top_k results");
 
         // Search with mechanism type filter
-        let direct_results = h
-            .rt
-            .block_on(h.store.search_causal_relationships(&query_embedding, 5, Some("direct")))
+        let direct_results =
+            h.rt.block_on(
+                h.store
+                    .search_causal_relationships(&query_embedding, 5, Some("direct")),
+            )
             .expect("Search failed");
 
-        assert!(!direct_results.is_empty(), "Filtered search should return results");
+        assert!(
+            !direct_results.is_empty(),
+            "Filtered search should return results"
+        );
     }
 
     #[test]
@@ -1259,16 +1298,16 @@ mod tests {
         let rel_id = rel.id;
 
         // Store
-        h.rt.block_on(h.store.store_causal_relationship(&rel)).unwrap();
+        h.rt.block_on(h.store.store_causal_relationship(&rel))
+            .unwrap();
 
         let count_before = h.rt.block_on(h.store.count_causal_relationships()).unwrap();
         assert_eq!(count_before, 1, "Should have 1 relationship");
 
         // Delete
-        let deleted = h
-            .rt
-            .block_on(h.store.delete_causal_relationship(rel_id))
-            .expect("Delete failed");
+        let deleted =
+            h.rt.block_on(h.store.delete_causal_relationship(rel_id))
+                .expect("Delete failed");
         assert!(deleted, "Delete should return true");
 
         // Verify count is zero
@@ -1276,17 +1315,15 @@ mod tests {
         assert_eq!(count_after, 0, "Should have 0 relationships");
 
         // Verify not retrievable
-        let retrieved = h
-            .rt
-            .block_on(h.store.get_causal_relationship(rel_id))
-            .expect("Get failed");
+        let retrieved =
+            h.rt.block_on(h.store.get_causal_relationship(rel_id))
+                .expect("Get failed");
         assert!(retrieved.is_none(), "Should not find deleted relationship");
 
         // Verify secondary index cleared
-        let by_source = h
-            .rt
-            .block_on(h.store.get_causal_relationships_by_source(source_id))
-            .expect("Get by source failed");
+        let by_source =
+            h.rt.block_on(h.store.get_causal_relationships_by_source(source_id))
+                .expect("Get by source failed");
         assert!(by_source.is_empty(), "Secondary index should be cleared");
     }
 
@@ -1295,29 +1332,34 @@ mod tests {
         let h = TestHarness::new();
 
         // Get non-existent
-        let result = h
-            .rt
-            .block_on(h.store.get_causal_relationship(Uuid::new_v4()))
-            .expect("Get failed");
+        let result =
+            h.rt.block_on(h.store.get_causal_relationship(Uuid::new_v4()))
+                .expect("Get failed");
         assert!(result.is_none(), "Should return None for non-existent ID");
 
         // Get by source non-existent
-        let by_source = h
-            .rt
-            .block_on(h.store.get_causal_relationships_by_source(Uuid::new_v4()))
-            .expect("Get by source failed");
-        assert!(by_source.is_empty(), "Should return empty vec for non-existent source");
+        let by_source =
+            h.rt.block_on(h.store.get_causal_relationships_by_source(Uuid::new_v4()))
+                .expect("Get by source failed");
+        assert!(
+            by_source.is_empty(),
+            "Should return empty vec for non-existent source"
+        );
 
         // Search empty
         let query = vec![0.1f32; 1024];
-        let results = h
-            .rt
-            .block_on(h.store.search_causal_relationships(&query, 10, None))
-            .expect("Search failed");
-        assert!(results.is_empty(), "Search should return empty on empty database");
+        let results =
+            h.rt.block_on(h.store.search_causal_relationships(&query, 10, None))
+                .expect("Search failed");
+        assert!(
+            results.is_empty(),
+            "Search should return empty on empty database"
+        );
 
         // Count empty
-        let count = h.rt.block_on(h.store.count_causal_relationships()).expect("Count failed");
+        let count =
+            h.rt.block_on(h.store.count_causal_relationships())
+                .expect("Count failed");
         assert_eq!(count, 0, "Count should be 0 on empty database");
     }
 
@@ -1336,7 +1378,9 @@ mod tests {
             }
         });
 
-        let count = h.rt.block_on(h.store.count_causal_relationships()).expect("Count failed");
+        let count =
+            h.rt.block_on(h.store.count_causal_relationships())
+                .expect("Count failed");
         assert_eq!(count, BATCH_SIZE, "Count should match batch size");
     }
 }

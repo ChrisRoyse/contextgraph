@@ -47,7 +47,11 @@ struct BenchmarkResult<M: Serialize> {
     actual: HashMap<String, f64>,
 }
 
-fn write_json_result<M: Serialize>(dir: &str, filename: &str, result: &BenchmarkResult<M>) -> Result<()> {
+fn write_json_result<M: Serialize>(
+    dir: &str,
+    filename: &str,
+    result: &BenchmarkResult<M>,
+) -> Result<()> {
     fs::create_dir_all(dir)?;
     let path = format!("{}/{}", dir, filename);
     let json = serde_json::to_string_pretty(result)?;
@@ -134,12 +138,20 @@ struct PureCodeLatencySummary {
 }
 
 fn percentile(sorted: &[f64], p: f64) -> f64 {
-    if sorted.is_empty() { return 0.0; }
+    if sorted.is_empty() {
+        return 0.0;
+    }
     let idx = (p / 100.0 * (sorted.len() - 1) as f64).round() as usize;
     sorted[idx.min(sorted.len() - 1)]
 }
 
-fn measure_operation<F: FnMut()>(name: &str, iterations: usize, mut f: F, target_us: f64, hard_limit_us: f64) -> OperationLatency {
+fn measure_operation<F: FnMut()>(
+    name: &str,
+    iterations: usize,
+    mut f: F,
+    target_us: f64,
+    hard_limit_us: f64,
+) -> OperationLatency {
     let mut timings = Vec::with_capacity(iterations);
 
     // Warmup
@@ -162,8 +174,15 @@ fn measure_operation<F: FnMut()>(name: &str, iterations: usize, mut f: F, target
 
     let pass = p95 <= hard_limit_us;
 
-    info!("  {}: mean={:.1}us, median={:.1}us, p95={:.1}us, p99={:.1}us [{}]",
-        name, mean, median, p95, p99, if pass { "PASS" } else { "FAIL" });
+    info!(
+        "  {}: mean={:.1}us, median={:.1}us, p95={:.1}us, p99={:.1}us [{}]",
+        name,
+        mean,
+        median,
+        p95,
+        p99,
+        if pass { "PASS" } else { "FAIL" }
+    );
 
     OperationLatency {
         operation: name.to_string(),
@@ -213,7 +232,11 @@ fn run_phase_7_1() -> Result<BenchmarkResult<LatencyMetrics>> {
 
     // 2. compute_asymmetric_similarity: target < 1us, hard limit < 5us
     let base_cosine: f32 = 0.85;
-    let directions = [CausalDirection::Cause, CausalDirection::Effect, CausalDirection::Unknown];
+    let directions = [
+        CausalDirection::Cause,
+        CausalDirection::Effect,
+        CausalDirection::Unknown,
+    ];
     let mut dir_idx = 0usize;
     let asym_op = measure_operation(
         "compute_asymmetric_similarity",
@@ -268,7 +291,13 @@ fn run_phase_7_1() -> Result<BenchmarkResult<LatencyMetrics>> {
         || {
             let t = pipeline_texts[p_idx % pipeline_texts.len()];
             let dir = detect_causal_query_intent(t);
-            black_box(compute_asymmetric_similarity(0.85, dir, CausalDirection::Effect, None, None));
+            black_box(compute_asymmetric_similarity(
+                0.85,
+                dir,
+                CausalDirection::Effect,
+                None,
+                None,
+            ));
             p_idx += 1;
         },
         15.0,
@@ -279,8 +308,12 @@ fn run_phase_7_1() -> Result<BenchmarkResult<LatencyMetrics>> {
     let all_pass = operations.iter().all(|op| op.pass);
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 7.1 complete in {:.2?}: {} operations measured, all_pass={}",
-        elapsed, operations.len(), all_pass);
+    info!(
+        "Phase 7.1 complete in {:.2?}: {} operations measured, all_pass={}",
+        elapsed,
+        operations.len(),
+        all_pass
+    );
 
     let mut targets = HashMap::new();
     targets.insert("all_within_hard_limit".to_string(), 1.0);
@@ -350,8 +383,11 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
         let elapsed = start.elapsed();
         let throughput = batch_size as f64 / elapsed.as_secs_f64();
         let pass = throughput > 100_000.0;
-        info!("  intent_detection: {:.0}/sec (target: 100K/sec) [{}]",
-            throughput, if pass { "PASS" } else { "FAIL" });
+        info!(
+            "  intent_detection: {:.0}/sec (target: 100K/sec) [{}]",
+            throughput,
+            if pass { "PASS" } else { "FAIL" }
+        );
         measurements.push(ThroughputMeasurement {
             operation: "detect_causal_query_intent".to_string(),
             batch_size,
@@ -365,7 +401,11 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
     // 2. Asymmetric similarity throughput: target > 1M/sec
     {
         let batch_size = 1_000_000usize;
-        let directions = [CausalDirection::Cause, CausalDirection::Effect, CausalDirection::Unknown];
+        let directions = [
+            CausalDirection::Cause,
+            CausalDirection::Effect,
+            CausalDirection::Unknown,
+        ];
         let start = Instant::now();
         for i in 0..batch_size {
             let q = directions[i % 3];
@@ -375,8 +415,11 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
         let elapsed = start.elapsed();
         let throughput = batch_size as f64 / elapsed.as_secs_f64();
         let pass = throughput > 1_000_000.0;
-        info!("  asymmetric_similarity: {:.0}/sec (target: 1M/sec) [{}]",
-            throughput, if pass { "PASS" } else { "FAIL" });
+        info!(
+            "  asymmetric_similarity: {:.0}/sec (target: 1M/sec) [{}]",
+            throughput,
+            if pass { "PASS" } else { "FAIL" }
+        );
         measurements.push(ThroughputMeasurement {
             operation: "compute_asymmetric_similarity".to_string(),
             batch_size,
@@ -399,8 +442,11 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
         let elapsed = start.elapsed();
         let throughput = batch_size as f64 / elapsed.as_secs_f64();
         let pass = throughput > 500_000.0;
-        info!("  cosine_768d: {:.0}/sec (target: 500K/sec) [{}]",
-            throughput, if pass { "PASS" } else { "FAIL" });
+        info!(
+            "  cosine_768d: {:.0}/sec (target: 500K/sec) [{}]",
+            throughput,
+            if pass { "PASS" } else { "FAIL" }
+        );
         measurements.push(ThroughputMeasurement {
             operation: "cosine_similarity_768d".to_string(),
             batch_size,
@@ -418,13 +464,22 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
         for i in 0..batch_size {
             let t = all_texts[i % all_texts.len()];
             let dir = detect_causal_query_intent(t);
-            black_box(compute_asymmetric_similarity(0.85, dir, CausalDirection::Effect, None, None));
+            black_box(compute_asymmetric_similarity(
+                0.85,
+                dir,
+                CausalDirection::Effect,
+                None,
+                None,
+            ));
         }
         let elapsed = start.elapsed();
         let throughput = batch_size as f64 / elapsed.as_secs_f64();
         let pass = throughput > 50_000.0;
-        info!("  full_pipeline_pure: {:.0}/sec (target: 50K/sec) [{}]",
-            throughput, if pass { "PASS" } else { "FAIL" });
+        info!(
+            "  full_pipeline_pure: {:.0}/sec (target: 50K/sec) [{}]",
+            throughput,
+            if pass { "PASS" } else { "FAIL" }
+        );
         measurements.push(ThroughputMeasurement {
             operation: "intent_plus_asymmetric_pipeline".to_string(),
             batch_size,
@@ -438,7 +493,10 @@ fn run_phase_7_2() -> Result<BenchmarkResult<ThroughputMetrics>> {
     let overall_pass = measurements.iter().all(|m| m.pass);
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 7.2 complete in {:.2?}: all_pass={}", elapsed, overall_pass);
+    info!(
+        "Phase 7.2 complete in {:.2?}: all_pass={}",
+        elapsed, overall_pass
+    );
 
     let mut targets = HashMap::new();
     targets.insert("all_targets_met".to_string(), 1.0);
@@ -521,8 +579,12 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
             latency_us,
             throughput_per_sec: throughput,
         });
-        info!("  Intent only: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
-            accuracy * 100.0, latency_us, throughput);
+        info!(
+            "  Intent only: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
+            accuracy * 100.0,
+            latency_us,
+            throughput
+        );
     }
 
     // Point 2: Intent + asymmetric scoring (moderate cost, better accuracy)
@@ -535,7 +597,11 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
             let t = test_texts[i % test_texts.len()];
             let dir = detect_causal_query_intent(t);
             let score = compute_asymmetric_similarity(
-                base_cosine, dir, CausalDirection::Effect, None, None,
+                base_cosine,
+                dir,
+                CausalDirection::Effect,
+                None,
+                None,
             );
             if score > 0.5 {
                 significant += 1;
@@ -552,8 +618,12 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
             latency_us,
             throughput_per_sec: throughput,
         });
-        info!("  Intent+asymmetric: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
-            accuracy * 100.0, latency_us, throughput);
+        info!(
+            "  Intent+asymmetric: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
+            accuracy * 100.0,
+            latency_us,
+            throughput
+        );
     }
 
     // Point 3: Full cosine + intent + asymmetric (highest cost, best accuracy)
@@ -567,9 +637,8 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
             let t = test_texts[i % test_texts.len()];
             let dir = detect_causal_query_intent(t);
             let base = cosine_similarity(&vec_a, &vec_b);
-            let score = compute_asymmetric_similarity(
-                base, dir, CausalDirection::Effect, None, None,
-            );
+            let score =
+                compute_asymmetric_similarity(base, dir, CausalDirection::Effect, None, None);
             if score > 0.5 {
                 significant += 1;
             }
@@ -585,8 +654,12 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
             latency_us,
             throughput_per_sec: throughput,
         });
-        info!("  Full pipeline: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
-            accuracy * 100.0, latency_us, throughput);
+        info!(
+            "  Full pipeline: accuracy={:.1}%, latency={:.1}us, throughput={:.0}/sec",
+            accuracy * 100.0,
+            latency_us,
+            throughput
+        );
     }
 
     // Modifier impact analysis: sweep different modifier values and measure
@@ -604,7 +677,11 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
         let start = Instant::now();
         for _ in 0..iterations {
             black_box(compute_asymmetric_similarity(
-                black_box(base_cosine), CausalDirection::Cause, CausalDirection::Effect, None, None,
+                black_box(base_cosine),
+                CausalDirection::Cause,
+                CausalDirection::Effect,
+                None,
+                None,
             ));
         }
         let elapsed_ns = start.elapsed().as_nanos() as f64 / iterations as f64;
@@ -614,7 +691,11 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
         // backward = base_cosine * e2c (effect query → cause result, dampened)
         let forward_sim = base_cosine as f64 * c2e;
         let backward_sim = base_cosine as f64 * e2c;
-        let ratio = if backward_sim > 0.0 { forward_sim / backward_sim } else { 0.0 };
+        let ratio = if backward_sim > 0.0 {
+            forward_sim / backward_sim
+        } else {
+            0.0
+        };
 
         modifier_impact.push(ModifierImpactPoint {
             cause_to_effect_mod: c2e,
@@ -627,7 +708,8 @@ fn run_phase_7_3() -> Result<BenchmarkResult<ParetoMetrics>> {
     // Determine optimal operating point
     let optimal = if tradeoff_points.len() >= 2 {
         // Pick the point with best accuracy/latency ratio
-        tradeoff_points.iter()
+        tradeoff_points
+            .iter()
             .max_by(|a, b| {
                 let ra = a.accuracy / a.latency_us.max(0.001);
                 let rb = b.accuracy / b.latency_us.max(0.001);
@@ -708,8 +790,10 @@ async fn run_phase_7_1_gpu() -> Result<BenchmarkResult<GpuLatencyMetrics>> {
     let e5_mean = e5_times.iter().sum::<f64>() / e5_times.len() as f64;
     let e5_p95 = percentile(&e5_times, 95.0);
 
-    info!("  E5 embed_dual: mean={:.1}ms, p95={:.1}ms (target: <20ms, hard: <50ms)",
-        e5_mean, e5_p95);
+    info!(
+        "  E5 embed_dual: mean={:.1}ms, p95={:.1}ms (target: <20ms, hard: <50ms)",
+        e5_mean, e5_p95
+    );
 
     // Measure LLM single pair latency
     let llm = CausalDiscoveryLLM::new()?;
@@ -717,9 +801,15 @@ async fn run_phase_7_1_gpu() -> Result<BenchmarkResult<GpuLatencyMetrics>> {
 
     let mut llm_times = Vec::new();
     let pairs: Vec<(&str, &str)> = vec![
-        ("Smoking damages lung tissue", "Lung cancer develops in smokers"),
+        (
+            "Smoking damages lung tissue",
+            "Lung cancer develops in smokers",
+        ),
         ("Deforestation removes carbon sinks", "CO2 levels increase"),
-        ("Heavy rainfall saturated the soil", "A landslide destroyed the village"),
+        (
+            "Heavy rainfall saturated the soil",
+            "A landslide destroyed the village",
+        ),
     ];
 
     for (a, b) in &pairs {
@@ -732,8 +822,10 @@ async fn run_phase_7_1_gpu() -> Result<BenchmarkResult<GpuLatencyMetrics>> {
     let llm_mean = llm_times.iter().sum::<f64>() / llm_times.len() as f64;
     let llm_p95 = percentile(&llm_times, 95.0);
 
-    info!("  LLM single pair: mean={:.1}ms, p95={:.1}ms (target: <500ms, hard: <2000ms)",
-        llm_mean, llm_p95);
+    info!(
+        "  LLM single pair: mean={:.1}ms, p95={:.1}ms (target: <500ms, hard: <2000ms)",
+        llm_mean, llm_p95
+    );
 
     let e5_pass = e5_p95 <= 50.0;
     let llm_pass = llm_p95 <= 2000.0;
@@ -743,7 +835,10 @@ async fn run_phase_7_1_gpu() -> Result<BenchmarkResult<GpuLatencyMetrics>> {
     llm.unload().await?;
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 7.1 GPU complete in {:.2?}: e5_pass={}, llm_pass={}", elapsed, e5_pass, llm_pass);
+    info!(
+        "Phase 7.1 GPU complete in {:.2?}: e5_pass={}, llm_pass={}",
+        elapsed, e5_pass, llm_pass
+    );
 
     let mut targets = HashMap::new();
     targets.insert("e5_hard_limit_ms".to_string(), 50.0);
@@ -789,8 +884,7 @@ async fn main() -> Result<()> {
     let mut all_passed = true;
 
     // Phase 7.1: Latency Budget (pure code)
-    let result_7_1 = run_phase_7_1()
-        .context("Phase 7.1 (Latency Budget) failed")?;
+    let result_7_1 = run_phase_7_1().context("Phase 7.1 (Latency Budget) failed")?;
     if !result_7_1.pass {
         warn!("Phase 7.1 FAILED targets");
         all_passed = false;
@@ -805,7 +899,8 @@ async fn main() -> Result<()> {
     #[cfg(feature = "real-embeddings")]
     {
         info!("Phase 7.1 GPU enabled (real-embeddings feature active)");
-        let result = run_phase_7_1_gpu().await
+        let result = run_phase_7_1_gpu()
+            .await
             .context("Phase 7.1 GPU (E5+LLM Latency) failed")?;
         if !result.pass {
             warn!("Phase 7.1 GPU FAILED targets");
@@ -824,8 +919,7 @@ async fn main() -> Result<()> {
     }
 
     // Phase 7.2: Throughput Under Load (pure code)
-    let result_7_2 = run_phase_7_2()
-        .context("Phase 7.2 (Throughput) failed")?;
+    let result_7_2 = run_phase_7_2().context("Phase 7.2 (Throughput) failed")?;
     if !result_7_2.pass {
         warn!("Phase 7.2 FAILED targets");
         all_passed = false;
@@ -837,8 +931,7 @@ async fn main() -> Result<()> {
     )?;
 
     // Phase 7.3: Accuracy vs Latency Tradeoff (pure code)
-    let result_7_3 = run_phase_7_3()
-        .context("Phase 7.3 (Pareto Frontier) failed")?;
+    let result_7_3 = run_phase_7_3().context("Phase 7.3 (Pareto Frontier) failed")?;
     if !result_7_3.pass {
         warn!("Phase 7.3 FAILED targets");
         all_passed = false;
@@ -850,7 +943,10 @@ async fn main() -> Result<()> {
     )?;
 
     let total_elapsed = overall_start.elapsed();
-    info!("All Phase 7 benchmarks complete in {:.2?}. Overall pass: {}", total_elapsed, all_passed);
+    info!(
+        "All Phase 7 benchmarks complete in {:.2?}. Overall pass: {}",
+        total_elapsed, all_passed
+    );
 
     if !all_passed {
         warn!("One or more Phase 7 benchmarks did not meet target thresholds.");

@@ -40,8 +40,8 @@ pub mod error;
 pub mod fusion;
 pub mod graph;
 pub mod graph_linking;
-pub mod injection;
 pub mod index;
+pub mod injection;
 pub mod llm_edge_validation;
 pub mod memory;
 pub mod monitoring;
@@ -50,8 +50,8 @@ pub mod retrieval;
 pub mod similarity;
 pub mod stubs;
 pub mod teleological;
-pub mod traits;
 pub mod training;
+pub mod traits;
 pub mod typed_edge_export;
 pub mod types;
 pub mod weights;
@@ -95,47 +95,44 @@ pub use memory::{
 
 // Clustering types (Phase 4) - TASK-P4-001, TASK-P4-002, TASK-P4-003, TASK-P4-004, TASK-P4-005
 pub use clustering::{
-    birch_defaults, BIRCHParams, Cluster, ClusterError, ClusteringFeature, ClusterMembership,
-    ClusterSelectionMethod, HDBSCANClusterer, HDBSCANParams, Topic, TopicPhase, TopicProfile,
-    TopicStability, hdbscan_defaults,
+    birch_defaults, hdbscan_defaults, BIRCHParams, Cluster, ClusterError, ClusterMembership,
+    ClusterSelectionMethod, ClusteringFeature, HDBSCANClusterer, HDBSCANParams, Topic, TopicPhase,
+    TopicProfile, TopicStability,
 };
 
 // Injection pipeline types (Phase 5) - TASK-P5-001, TASK-P5-002, TASK-P5-003, TASK-P5-003b
 pub use injection::{
-    InjectionCandidate, InjectionCategory, InjectionResult, TokenBudget,
-    DEFAULT_TOKEN_BUDGET, BRIEF_BUDGET,
-    TemporalBadge, TemporalBadgeType, TemporalEnrichmentProvider,
+    InjectionCandidate, InjectionCategory, InjectionResult, TemporalBadge, TemporalBadgeType,
+    TemporalEnrichmentProvider, TokenBudget, BRIEF_BUDGET, DEFAULT_TOKEN_BUDGET,
 };
 
 // Code query detection (ARCH-16) - query-type-aware E7 similarity
-pub use code::{
-    CodeQueryType, detect_code_query_type, compute_e7_similarity_with_query_type,
-};
+pub use code::{compute_e7_similarity_with_query_type, detect_code_query_type, CodeQueryType};
 
 // Fusion strategies (ARCH-18) - Weighted RRF for multi-embedder fusion
 pub use fusion::{
-    FusionStrategy, EmbedderRanking, FusedResult, RRF_K,
-    fuse_rankings, weighted_rrf, weighted_sum, score_weighted_rrf, normalize_minmax,
+    fuse_rankings, normalize_minmax, score_weighted_rrf, weighted_rrf, weighted_sum,
+    EmbedderRanking, FusedResult, FusionStrategy, RRF_K,
 };
 
 // Graph asymmetric similarity (E8) - directional graph embeddings
 pub use graph::{
-    GraphDirection, ConnectivityContext, compute_graph_asymmetric_similarity,
-    compute_graph_asymmetric_similarity_simple, compute_e8_asymmetric_fingerprint_similarity,
-    compute_e8_asymmetric_full, detect_graph_query_intent, adjust_batch_graph_similarities,
+    adjust_batch_graph_similarities, compute_e8_asymmetric_fingerprint_similarity,
+    compute_e8_asymmetric_full, compute_graph_asymmetric_similarity,
+    compute_graph_asymmetric_similarity_simple, detect_graph_query_intent, ConnectivityContext,
+    GraphDirection,
 };
 
 // Graph linking types - K-NN graph construction and multi-relation edges
 // ARCH-18: E5/E8 asymmetric similarity, AP-77: fail fast on symmetric cosine violation
 pub use graph_linking::{
-    DirectedRelation, EdgeError, EdgeResult, EdgeStorageKey, EdgeThresholds,
-    EmbedderEdge, GraphLinkEdgeType, KnnGraph, TypedEdge, TypedEdgeStorageKey,
-    DEFAULT_THRESHOLDS, KNN_K, MIN_KNN_SIMILARITY, NN_DESCENT_ITERATIONS, NN_DESCENT_SAMPLE_RATE,
+    DirectedRelation, EdgeError, EdgeResult, EdgeStorageKey, EdgeThresholds, EmbedderEdge,
+    GraphLinkEdgeType, KnnGraph, TypedEdge, TypedEdgeStorageKey, DEFAULT_THRESHOLDS, KNN_K,
+    MIN_KNN_SIMILARITY, NN_DESCENT_ITERATIONS, NN_DESCENT_SAMPLE_RATE,
 };
-
 
 // Weight profiles - for multi-embedder search weight configuration
 pub use weights::{
-    get_weight_profile, get_profile_names, validate_weights, space_name,
-    WeightProfileError, WEIGHT_PROFILES,
+    get_profile_names, get_weight_profile, space_name, validate_weights, WeightProfileError,
+    WEIGHT_PROFILES,
 };

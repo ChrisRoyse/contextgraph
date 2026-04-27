@@ -142,11 +142,8 @@ impl GraphModel {
         let device = init_gpu().map_err(|e| EmbeddingError::GpuError {
             message: format!("GraphModel GPU init for projections failed: {}", e),
         })?;
-        let projection = GraphProjectionWeights::initialize(
-            GRAPH_DIMENSION,
-            device,
-            GRAPH_PROJECTION_SEED,
-        )?;
+        let projection =
+            GraphProjectionWeights::initialize(GRAPH_DIMENSION, device, GRAPH_PROJECTION_SEED)?;
 
         tracing::info!(
             "GraphModel loaded: {} params, {:.2} MB VRAM, hidden_size={}, with graph projections",
@@ -338,28 +335,20 @@ impl GraphModel {
 
 /// L2-normalize a tensor.
 fn l2_normalize_tensor(tensor: &Tensor) -> EmbeddingResult<Tensor> {
-    let squared = tensor
-        .sqr()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("L2 norm squared failed: {}", e),
-        })?;
-    let sum = squared
-        .sum_all()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("L2 norm sum failed: {}", e),
-        })?;
-    let norm = sum
-        .sqrt()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("L2 norm sqrt failed: {}", e),
-        })?;
+    let squared = tensor.sqr().map_err(|e| EmbeddingError::GpuError {
+        message: format!("L2 norm squared failed: {}", e),
+    })?;
+    let sum = squared.sum_all().map_err(|e| EmbeddingError::GpuError {
+        message: format!("L2 norm sum failed: {}", e),
+    })?;
+    let norm = sum.sqrt().map_err(|e| EmbeddingError::GpuError {
+        message: format!("L2 norm sqrt failed: {}", e),
+    })?;
 
     // Avoid division by zero
-    let norm_val: f32 = norm
-        .to_scalar()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("L2 norm to_scalar failed: {}", e),
-        })?;
+    let norm_val: f32 = norm.to_scalar().map_err(|e| EmbeddingError::GpuError {
+        message: format!("L2 norm to_scalar failed: {}", e),
+    })?;
 
     if norm_val < f32::EPSILON {
         // Return the original tensor if norm is essentially zero
@@ -375,16 +364,12 @@ fn l2_normalize_tensor(tensor: &Tensor) -> EmbeddingResult<Tensor> {
 
 /// Convert tensor to Vec<f32>.
 fn tensor_to_vec(tensor: &Tensor) -> EmbeddingResult<Vec<f32>> {
-    let flattened = tensor
-        .flatten_all()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("Tensor flatten failed: {}", e),
-        })?;
-    flattened
-        .to_vec1()
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("Tensor to_vec1 failed: {}", e),
-        })
+    let flattened = tensor.flatten_all().map_err(|e| EmbeddingError::GpuError {
+        message: format!("Tensor flatten failed: {}", e),
+    })?;
+    flattened.to_vec1().map_err(|e| EmbeddingError::GpuError {
+        message: format!("Tensor to_vec1 failed: {}", e),
+    })
 }
 
 #[async_trait]
@@ -423,7 +408,9 @@ impl EmbeddingModel for GraphModel {
             })?;
 
         let (weights, tokenizer) = match &*state {
-            ModelState::Loaded { weights, tokenizer, .. } => (weights, tokenizer),
+            ModelState::Loaded {
+                weights, tokenizer, ..
+            } => (weights, tokenizer),
             _ => {
                 return Err(EmbeddingError::NotInitialized {
                     model_id: ModelId::Graph,

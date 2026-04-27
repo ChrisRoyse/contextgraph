@@ -13,14 +13,14 @@ use context_graph_core::teleological::matrix_search::embedder_names;
 use context_graph_core::traits::{
     SequenceDirection, SequenceOptions, TeleologicalSearchOptions, TeleologicalSearchResult,
 };
-use context_graph_core::types::SourceMetadata;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
+use context_graph_core::types::SourceMetadata;
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
-use super::helpers::compute_position_label;
 use super::super::Handlers;
+use super::helpers::compute_position_label;
 
 /// Input validation constants for sequence tools
 mod validation {
@@ -44,12 +44,14 @@ use validation::*;
 /// Returns Ok(value) or Err(error_message).
 fn validate_window_size(value: Option<&serde_json::Value>) -> Result<u64, String> {
     match value.and_then(|v| v.as_u64()) {
-        Some(v) if v < MIN_WINDOW_SIZE => Err(
-            format!("windowSize {} below minimum {}", v, MIN_WINDOW_SIZE)
-        ),
-        Some(v) if v > MAX_WINDOW_SIZE => Err(
-            format!("windowSize {} exceeds maximum {}", v, MAX_WINDOW_SIZE)
-        ),
+        Some(v) if v < MIN_WINDOW_SIZE => Err(format!(
+            "windowSize {} below minimum {}",
+            v, MIN_WINDOW_SIZE
+        )),
+        Some(v) if v > MAX_WINDOW_SIZE => Err(format!(
+            "windowSize {} exceeds maximum {}",
+            v, MAX_WINDOW_SIZE
+        )),
         Some(v) => Ok(v),
         None => Ok(DEFAULT_WINDOW_SIZE),
     }
@@ -59,12 +61,8 @@ fn validate_window_size(value: Option<&serde_json::Value>) -> Result<u64, String
 /// Returns Ok(value) or Err(error_message).
 fn validate_limit(value: Option<&serde_json::Value>) -> Result<u64, String> {
     match value.and_then(|v| v.as_u64()) {
-        Some(v) if v < MIN_LIMIT => Err(
-            format!("limit {} below minimum {}", v, MIN_LIMIT)
-        ),
-        Some(v) if v > MAX_LIMIT => Err(
-            format!("limit {} exceeds maximum {}", v, MAX_LIMIT)
-        ),
+        Some(v) if v < MIN_LIMIT => Err(format!("limit {} below minimum {}", v, MIN_LIMIT)),
+        Some(v) if v > MAX_LIMIT => Err(format!("limit {} exceeds maximum {}", v, MAX_LIMIT)),
         Some(v) => Ok(v),
         None => Ok(DEFAULT_LIMIT),
     }
@@ -74,12 +72,8 @@ fn validate_limit(value: Option<&serde_json::Value>) -> Result<u64, String> {
 /// Returns Ok(value) or Err(error_message).
 fn validate_hops(value: Option<&serde_json::Value>) -> Result<u64, String> {
     match value.and_then(|v| v.as_u64()) {
-        Some(v) if v < MIN_HOPS => Err(
-            format!("hops {} below minimum {}", v, MIN_HOPS)
-        ),
-        Some(v) if v > MAX_HOPS => Err(
-            format!("hops {} exceeds maximum {}", v, MAX_HOPS)
-        ),
+        Some(v) if v < MIN_HOPS => Err(format!("hops {} below minimum {}", v, MIN_HOPS)),
+        Some(v) if v > MAX_HOPS => Err(format!("hops {} exceeds maximum {}", v, MAX_HOPS)),
         Some(v) => Ok(v),
         None => Ok(DEFAULT_HOPS),
     }
@@ -106,9 +100,13 @@ impl Handlers {
             "both" => SequenceDirection::Both,
             other => {
                 error!(direction = %other, "get_conversation_context: Invalid direction parameter");
-                return self.tool_error(id, &format!(
-                    "Invalid direction '{}'. Must be one of: before, after, both", other
-                ));
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "Invalid direction '{}'. Must be one of: before, after, both",
+                        other
+                    ),
+                );
             }
         };
 
@@ -176,7 +174,10 @@ impl Handlers {
         // string would bias retrieval toward memories that happen to match that phrase.
         let results: Vec<TeleologicalSearchResult> = if let Some(query_text) = query {
             // User provided an explicit query - use semantic search with it
-            let query_embedding = match self.embed_query(id.clone(), query_text, "get_conversation_context").await {
+            let query_embedding = match self
+                .embed_query(id.clone(), query_text, "get_conversation_context")
+                .await
+            {
                 Ok(fp) => fp,
                 Err(resp) => return resp,
             };
@@ -195,7 +196,11 @@ impl Handlers {
         } else {
             // No query provided - use unbiased fingerprint listing with sequence ordering
             // Fetch extra to account for session filtering
-            let fetch_limit = if session_only { window_size as usize * 4 } else { window_size as usize * 2 };
+            let fetch_limit = if session_only {
+                window_size as usize * 4
+            } else {
+                window_size as usize * 2
+            };
             let unbiased = match self
                 .teleological_store
                 .list_fingerprints_unbiased(fetch_limit)
@@ -226,7 +231,8 @@ impl Handlers {
         // using source_metadata to check session_id matches.
         let results = if session_only {
             if let Some(ref target_sid) = session_id {
-                let result_ids: Vec<uuid::Uuid> = results.iter().map(|r| r.fingerprint.id).collect();
+                let result_ids: Vec<uuid::Uuid> =
+                    results.iter().map(|r| r.fingerprint.id).collect();
                 let metadata_batch = match self
                     .teleological_store
                     .get_source_metadata_batch(&result_ids)
@@ -285,11 +291,16 @@ impl Handlers {
 
         // Batch retrieve source metadata (FAIL FAST)
         let source_metadata: Vec<Option<SourceMetadata>> = if !filtered.is_empty() {
-            match self.teleological_store.get_source_metadata_batch(&ids).await {
+            match self
+                .teleological_store
+                .get_source_metadata_batch(&ids)
+                .await
+            {
                 Ok(m) => m,
                 Err(e) => {
                     error!(error = %e, "get_conversation_context: Source metadata retrieval FAILED");
-                    return self.tool_error(id, &format!("Source metadata retrieval failed: {}", e));
+                    return self
+                        .tool_error(id, &format!("Source metadata retrieval failed: {}", e));
                 }
             }
         } else {
@@ -386,14 +397,14 @@ impl Handlers {
             }
         };
         const MAX_OFFSET: u64 = 10_000;
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0);
         if offset > MAX_OFFSET {
             return self.tool_error(
                 id,
-                &format!("offset must be at most {} to prevent excessive memory usage", MAX_OFFSET),
+                &format!(
+                    "offset must be at most {} to prevent excessive memory usage",
+                    MAX_OFFSET
+                ),
             );
         }
         let offset = offset as usize;
@@ -444,11 +455,16 @@ impl Handlers {
         // Get source metadata to filter by session
         let all_ids: Vec<uuid::Uuid> = all_fingerprints.iter().map(|fp| fp.id).collect();
         let all_metadata = if !all_ids.is_empty() {
-            match self.teleological_store.get_source_metadata_batch(&all_ids).await {
+            match self
+                .teleological_store
+                .get_source_metadata_batch(&all_ids)
+                .await
+            {
                 Ok(m) => m,
                 Err(e) => {
                     error!(error = %e, "get_session_timeline: Source metadata retrieval FAILED");
-                    return self.tool_error(id, &format!("Source metadata retrieval failed: {}", e));
+                    return self
+                        .tool_error(id, &format!("Source metadata retrieval failed: {}", e));
                 }
             }
         } else {
@@ -459,15 +475,18 @@ impl Handlers {
         // Previously this discarded metadata here and re-fetched it below via a
         // second get_source_metadata_batch call. Since the filtered IDs are a strict
         // subset of all_ids, we reuse the already-fetched metadata directly.
-        let session_items: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> = all_fingerprints
-            .into_iter()
-            .zip(all_metadata.into_iter())
-            .filter(|(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
-                meta.as_ref()
-                    .and_then(|m| m.session_id.as_deref())
-                    .is_some_and(|sid| sid == session_id)
-            })
-            .collect();
+        let session_items: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> =
+            all_fingerprints
+                .into_iter()
+                .zip(all_metadata.into_iter())
+                .filter(
+                    |(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
+                        meta.as_ref()
+                            .and_then(|m| m.session_id.as_deref())
+                            .is_some_and(|sid| sid == session_id)
+                    },
+                )
+                .collect();
 
         // Convert to TeleologicalSearchResult for compatibility with downstream code
         // MCP-6 FIX: Do NOT paginate here — pagination must happen AFTER sorting
@@ -506,10 +525,8 @@ impl Handlers {
         };
 
         // Reuse metadata from the first batch call (session_items already has it)
-        let source_metadata: Vec<Option<SourceMetadata>> = session_items
-            .into_iter()
-            .map(|(_, meta)| meta)
-            .collect();
+        let source_metadata: Vec<Option<SourceMetadata>> =
+            session_items.into_iter().map(|(_, meta)| meta).collect();
 
         // Build response - filter to those with sequence info and sort
         let mut results_with_seq: Vec<(u64, serde_json::Value)> = results
@@ -604,7 +621,7 @@ impl Handlers {
                 error!(anchor_id = %anchor_id, "traverse_memory_chain: Anchor not found");
                 return self.tool_error(
                     id,
-                    &format!("Anchor memory {} not found in storage", anchor_id)
+                    &format!("Anchor memory {} not found in storage", anchor_id),
                 );
             }
             Err(e) => {
@@ -624,9 +641,13 @@ impl Handlers {
             "both" => SequenceDirection::Both,
             other => {
                 error!(direction = %other, "traverse_memory_chain: Invalid direction parameter");
-                return self.tool_error(id, &format!(
-                    "Invalid direction '{}'. Must be one of: forward, backward, both", other
-                ));
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "Invalid direction '{}'. Must be one of: forward, backward, both",
+                        other
+                    ),
+                );
             }
         };
 
@@ -675,7 +696,10 @@ impl Handlers {
         // Using the anchor's E1 embedding finds semantically related memories with real similarity scores.
         let query_embedding = if let Some(filter_text) = semantic_filter {
             // User provided an explicit semantic filter - embed it
-            match self.embed_query(id.clone(), filter_text, "traverse_memory_chain").await {
+            match self
+                .embed_query(id.clone(), filter_text, "traverse_memory_chain")
+                .await
+            {
                 Ok(fp) => fp,
                 Err(resp) => return resp,
             }
@@ -687,7 +711,10 @@ impl Handlers {
                 Ok(None) => {
                     return self.tool_error(
                         id,
-                        &format!("Anchor memory {} not found for embedding retrieval", anchor_id),
+                        &format!(
+                            "Anchor memory {} not found for embedding retrieval",
+                            anchor_id
+                        ),
                     );
                 }
                 Err(e) => {
@@ -733,11 +760,16 @@ impl Handlers {
 
         // Batch retrieve source metadata (FAIL FAST)
         let source_metadata: Vec<Option<SourceMetadata>> = if !chain.is_empty() {
-            match self.teleological_store.get_source_metadata_batch(&ids).await {
+            match self
+                .teleological_store
+                .get_source_metadata_batch(&ids)
+                .await
+            {
                 Ok(m) => m,
                 Err(e) => {
                     error!(error = %e, "traverse_memory_chain: Source metadata retrieval FAILED");
-                    return self.tool_error(id, &format!("Source metadata retrieval failed: {}", e));
+                    return self
+                        .tool_error(id, &format!("Source metadata retrieval failed: {}", e));
                 }
             }
         } else {
@@ -809,7 +841,9 @@ impl Handlers {
             Some(sid) => sid,
             None => {
                 let current_seq = self.current_sequence();
-                debug!("compare_session_states: No session ID available, returning empty comparison");
+                debug!(
+                    "compare_session_states: No session ID available, returning empty comparison"
+                );
                 return self.tool_result(
                     id,
                     json!({
@@ -874,11 +908,16 @@ impl Handlers {
         // Filter by session using source metadata
         let scan_ids: Vec<uuid::Uuid> = all_fingerprints.iter().map(|fp| fp.id).collect();
         let scan_metadata = if !scan_ids.is_empty() {
-            match self.teleological_store.get_source_metadata_batch(&scan_ids).await {
+            match self
+                .teleological_store
+                .get_source_metadata_batch(&scan_ids)
+                .await
+            {
                 Ok(m) => m,
                 Err(e) => {
                     error!(error = %e, "compare_session_states: Source metadata retrieval FAILED");
-                    return self.tool_error(id, &format!("Source metadata retrieval failed: {}", e));
+                    return self
+                        .tool_error(id, &format!("Source metadata retrieval failed: {}", e));
                 }
             }
         } else {
@@ -887,23 +926,28 @@ impl Handlers {
 
         // MCP-M2 FIX: Collect session-matching metadata alongside fingerprints in a single pass.
         // Previously, metadata was discarded here and re-fetched below (redundant second RocksDB read).
-        let session_entries: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> = all_fingerprints
-            .into_iter()
-            .zip(scan_metadata.into_iter())
-            .filter(|(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
-                meta.as_ref()
-                    .and_then(|m| m.session_id.as_deref())
-                    .is_some_and(|sid| sid == session_id)
-            })
-            .take(COMPARISON_BATCH_SIZE)
-            .map(|(fp, meta): (TeleologicalFingerprint, Option<SourceMetadata>)| (fp, meta))
-            .collect();
+        let session_entries: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> =
+            all_fingerprints
+                .into_iter()
+                .zip(scan_metadata.into_iter())
+                .filter(
+                    |(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
+                        meta.as_ref()
+                            .and_then(|m| m.session_id.as_deref())
+                            .is_some_and(|sid| sid == session_id)
+                    },
+                )
+                .take(COMPARISON_BATCH_SIZE)
+                .map(|(fp, meta): (TeleologicalFingerprint, Option<SourceMetadata>)| (fp, meta))
+                .collect();
 
         // Count memories in before and after windows using the already-fetched metadata
         let mut before_count = 0usize;
         let mut after_count = 0usize;
-        let mut before_by_type: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-        let mut after_by_type: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut before_by_type: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        let mut after_by_type: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
 
         for (_fp, meta) in &session_entries {
             if let Some(ref metadata) = meta {

@@ -17,11 +17,13 @@ use tokenizers::Tokenizer;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::gpu::init_gpu;
-use crate::models::attention::{self, AttentionStrategy, resolve_attention_mode};
+use crate::models::attention::{self, resolve_attention_mode, AttentionStrategy};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::forward::{gpu_forward, gpu_forward_dual, gpu_forward_dual_trained, gpu_forward_single_trained};
+use super::forward::{
+    gpu_forward, gpu_forward_dual, gpu_forward_dual_trained, gpu_forward_single_trained,
+};
 use super::loader::load_nomic_weights;
 use super::weights::{NomicWeights, TrainableProjection};
 use crate::training::lora::{LoraConfig, LoraLayers};
@@ -249,7 +251,8 @@ impl CausalModel {
     /// Uses instruction prefix "search_query: Identify the cause in: " to
     /// produce a cause-role embedding via a single forward pass.
     pub async fn embed_as_cause(&self, content: &str) -> EmbeddingResult<Vec<f32>> {
-        self.embed_single_role(content, super::config::CAUSE_INSTRUCTION, true).await
+        self.embed_single_role(content, super::config::CAUSE_INSTRUCTION, true)
+            .await
     }
 
     /// Embed text as a potential EFFECT in causal relationships.
@@ -257,7 +260,8 @@ impl CausalModel {
     /// Uses instruction prefix "search_query: Identify the effect of: " to
     /// produce an effect-role embedding via a single forward pass.
     pub async fn embed_as_effect(&self, content: &str) -> EmbeddingResult<Vec<f32>> {
-        self.embed_single_role(content, super::config::EFFECT_INSTRUCTION, false).await
+        self.embed_single_role(content, super::config::EFFECT_INSTRUCTION, false)
+            .await
     }
 
     /// Embed text with a single instruction prefix (one forward pass).
@@ -284,7 +288,11 @@ impl CausalModel {
             })?;
 
         match &*state {
-            ModelState::Loaded { weights, tokenizer, trained } => {
+            ModelState::Loaded {
+                weights,
+                tokenizer,
+                trained,
+            } => {
                 let strategy = self.attention_strategy.as_ref();
                 let vec = if let Some(ref t) = trained {
                     // Use search_document: prefix to match training distribution.
@@ -294,7 +302,13 @@ impl CausalModel {
                     // shift that compresses all scores toward zero.
                     let text = format!("search_document: {}", content);
                     gpu_forward_single_trained(
-                        &text, weights, tokenizer, &t.lora, &t.projection, is_cause, strategy,
+                        &text,
+                        weights,
+                        tokenizer,
+                        &t.lora,
+                        &t.projection,
+                        is_cause,
+                        strategy,
                     )?
                 } else {
                     // No trained weights: use causal instruction prefix for base model
@@ -369,7 +383,12 @@ impl CausalModel {
                 let strategy = self.attention_strategy.as_ref();
                 let (cause_vec, effect_vec) = if let Some(ref t) = trained {
                     gpu_forward_dual_trained(
-                        content, weights, tokenizer, &t.lora, &t.projection, strategy,
+                        content,
+                        weights,
+                        tokenizer,
+                        &t.lora,
+                        &t.projection,
+                        strategy,
                     )?
                 } else {
                     gpu_forward_dual(content, weights, tokenizer, strategy)?
@@ -460,9 +479,12 @@ impl CausalModel {
 
         // Get device from loaded weights
         let device = {
-            let state = self.model_state.read().map_err(|e| EmbeddingError::InternalError {
-                message: format!("Failed to acquire read lock: {}", e),
-            })?;
+            let state = self
+                .model_state
+                .read()
+                .map_err(|e| EmbeddingError::InternalError {
+                    message: format!("Failed to acquire read lock: {}", e),
+                })?;
             match &*state {
                 ModelState::Loaded { weights, .. } => weights.device.clone(),
                 ModelState::Unloaded => {
@@ -489,9 +511,12 @@ impl CausalModel {
         );
 
         // Store trained weights in model state
-        let mut state = self.model_state.write().map_err(|e| EmbeddingError::InternalError {
-            message: format!("Failed to acquire write lock: {}", e),
-        })?;
+        let mut state = self
+            .model_state
+            .write()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("Failed to acquire write lock: {}", e),
+            })?;
 
         match &mut *state {
             ModelState::Loaded { trained, .. } => {
@@ -513,7 +538,13 @@ impl CausalModel {
             Ok(s) => s,
             Err(_) => return false,
         };
-        matches!(&*state, ModelState::Loaded { trained: Some(_), .. })
+        matches!(
+            &*state,
+            ModelState::Loaded {
+                trained: Some(_),
+                ..
+            }
+        )
     }
 
     /// Ensure model is initialized, returning an error if not.
@@ -525,7 +556,6 @@ impl CausalModel {
         }
         Ok(())
     }
-
 }
 
 #[async_trait]
@@ -580,14 +610,26 @@ impl EmbeddingModel for CausalModel {
             })?;
 
         match &*state {
-            ModelState::Loaded { weights, tokenizer, trained } => {
+            ModelState::Loaded {
+                weights,
+                tokenizer,
+                trained,
+            } => {
                 let strategy = self.attention_strategy.as_ref();
                 // H2+H3 FIX: nomic-embed-text-v1.5 requires "search_document: " prefix.
                 // Without prefix, embeddings are out-of-distribution and scores degrade.
                 let prefixed = format!("search_document: {}", text_content);
                 let vector = if let Some(ts) = trained {
                     // Use trained LoRA + projection (cause direction by default for single embed)
-                    gpu_forward_single_trained(&prefixed, weights, tokenizer, &ts.lora, &ts.projection, true, strategy)?
+                    gpu_forward_single_trained(
+                        &prefixed,
+                        weights,
+                        tokenizer,
+                        &ts.lora,
+                        &ts.projection,
+                        true,
+                        strategy,
+                    )?
                 } else {
                     gpu_forward(&prefixed, weights, tokenizer, strategy)?
                 };

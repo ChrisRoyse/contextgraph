@@ -14,8 +14,8 @@ use crate::error::{CoreError, CoreResult};
 
 // Re-export all sub-config types for backwards compatibility
 pub use sub_configs::{
-    CudaConfig, EmbeddingConfig, IndexConfig, LoggingConfig, McpConfig, ServerConfig, StorageConfig,
-    UtlConfig, WatcherConfig,
+    CudaConfig, EmbeddingConfig, IndexConfig, LoggingConfig, McpConfig, ServerConfig,
+    StorageConfig, UtlConfig, WatcherConfig,
 };
 
 // Re-export embedder configuration types (TASK-L04)

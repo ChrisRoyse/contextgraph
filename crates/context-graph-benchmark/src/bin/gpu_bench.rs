@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "real-embeddings")]
 async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
-    use context_graph_embeddings::{initialize_global_warm_provider, get_warm_provider};
+    use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
 
     println!("Initializing warm embedding provider (loading 13 models to GPU)...");
     println!("This may take 20-30 seconds on first run.");
@@ -124,14 +124,20 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
 
     let init_start = Instant::now();
     initialize_global_warm_provider().await?;
-    println!("Initialization complete in {:.1}s", init_start.elapsed().as_secs_f32());
+    println!(
+        "Initialization complete in {:.1}s",
+        init_start.elapsed().as_secs_f32()
+    );
     println!();
 
     // Get the warm provider
     let provider = get_warm_provider()?;
 
     // Build corpus with ground truth
-    println!("Building test corpus ({} documents, 10 topics)...", TEST_CORPUS.len());
+    println!(
+        "Building test corpus ({} documents, 10 topics)...",
+        TEST_CORPUS.len()
+    );
     let topic_map: HashMap<&str, usize> = [
         ("science_physics", 0),
         ("science_biology", 1),
@@ -143,7 +149,10 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         ("programming_web", 7),
         ("finance", 8),
         ("environment", 9),
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let mut documents: Vec<(Uuid, String, usize)> = Vec::new();
     for (i, (topic, text)) in TEST_CORPUS.iter().enumerate() {
@@ -169,9 +178,11 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         multi_fingerprints.insert(*uuid, output.fingerprint);
     }
     let multi_elapsed = multi_start.elapsed();
-    println!("\r  Complete: {:.2}s total, {:.0}ms per doc",
+    println!(
+        "\r  Complete: {:.2}s total, {:.0}ms per doc",
         multi_elapsed.as_secs_f32(),
-        multi_elapsed.as_millis() as f64 / documents.len() as f64);
+        multi_elapsed.as_millis() as f64 / documents.len() as f64
+    );
 
     // ========================================================================
     // Extract E1 (semantic) only for single-embedder baseline
@@ -183,7 +194,10 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     for (uuid, fp) in &multi_fingerprints {
         single_embeddings.insert(*uuid, fp.e1_semantic.clone());
     }
-    println!("  Complete: {} E1 embeddings extracted", single_embeddings.len());
+    println!(
+        "  Complete: {} E1 embeddings extracted",
+        single_embeddings.len()
+    );
 
     // ========================================================================
     // Run retrieval benchmarks
@@ -206,20 +220,23 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         let query_e1 = &single_embeddings[query_uuid];
 
         // Relevant docs are those with same topic (excluding query)
-        let relevant: Vec<Uuid> = documents.iter()
+        let relevant: Vec<Uuid> = documents
+            .iter()
             .filter(|(uuid, _, topic)| *topic == *query_topic && uuid != query_uuid)
             .map(|(uuid, _, _)| *uuid)
             .collect();
 
         // Single-embedder retrieval (E1 cosine similarity)
-        let mut single_results: Vec<(Uuid, f32)> = single_embeddings.iter()
+        let mut single_results: Vec<(Uuid, f32)> = single_embeddings
+            .iter()
             .filter(|(uuid, _)| **uuid != *query_uuid)
             .map(|(uuid, emb)| (*uuid, cosine_similarity(query_e1, emb)))
             .collect();
         single_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
         // Multi-space retrieval (weighted combination of key embedders)
-        let mut multi_results: Vec<(Uuid, f32)> = multi_fingerprints.iter()
+        let mut multi_results: Vec<(Uuid, f32)> = multi_fingerprints
+            .iter()
             .filter(|(uuid, _)| **uuid != *query_uuid)
             .map(|(uuid, fp)| (*uuid, multi_space_similarity(query_fp, fp)))
             .collect();
@@ -267,7 +284,8 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     let single_purity = compute_purity(&documents, &single_clusters);
 
     // Multi-space clustering (concatenated key embeddings)
-    let multi_combined: HashMap<Uuid, Vec<f32>> = multi_fingerprints.iter()
+    let multi_combined: HashMap<Uuid, Vec<f32>> = multi_fingerprints
+        .iter()
         .map(|(uuid, fp)| {
             let mut combined = Vec::with_capacity(384 * 4);
             // Take first 384 dims from E1, E5, E7, E10 (semantic embedders)
@@ -298,18 +316,25 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "-".repeat(40));
     println!("{:<25} {:>10} {:>10}", "", "Single", "Multi");
     println!("{:<25} {:>10.3} {:>10.3}", "MRR:", single_mrr, multi_mrr);
-    println!("{:<25} {:>10.3} {:>10.3}", "Precision@10:", single_precision, multi_precision);
+    println!(
+        "{:<25} {:>10.3} {:>10.3}",
+        "Precision@10:", single_precision, multi_precision
+    );
     println!();
 
     println!("CLUSTERING METRICS");
     println!("{}", "-".repeat(40));
-    println!("{:<25} {:>10.3} {:>10.3}", "Purity:", single_purity, multi_purity);
+    println!(
+        "{:<25} {:>10.3} {:>10.3}",
+        "Purity:", single_purity, multi_purity
+    );
     println!();
 
     println!("IMPROVEMENTS (Multi-space vs Single-embedder)");
     println!("{}", "-".repeat(40));
     let mrr_improvement = (multi_mrr - single_mrr) / single_mrr.max(0.001) * 100.0;
-    let precision_improvement = (multi_precision - single_precision) / single_precision.max(0.001) * 100.0;
+    let precision_improvement =
+        (multi_precision - single_precision) / single_precision.max(0.001) * 100.0;
     let purity_improvement = (multi_purity - single_purity) / single_purity.max(0.001) * 100.0;
 
     println!("{:<25} {:>+10.1}%", "MRR:", mrr_improvement);
@@ -318,16 +343,25 @@ async fn run_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     let avg_improvement = (mrr_improvement + precision_improvement + purity_improvement) / 3.0;
-    let winner = if avg_improvement > 0.0 { "MULTI-SPACE" } else { "SINGLE-EMBEDDER" };
+    let winner = if avg_improvement > 0.0 {
+        "MULTI-SPACE"
+    } else {
+        "SINGLE-EMBEDDER"
+    };
 
-    println!("WINNER: {} (avg improvement: {:+.1}%)", winner, avg_improvement);
+    println!(
+        "WINNER: {} (avg improvement: {:+.1}%)",
+        winner, avg_improvement
+    );
     println!();
 
     println!("TIMING");
     println!("{}", "-".repeat(40));
-    println!("Multi-space embedding: {:.2}s total, {:.0}ms/doc",
+    println!(
+        "Multi-space embedding: {:.2}s total, {:.0}ms/doc",
         multi_elapsed.as_secs_f32(),
-        multi_elapsed.as_millis() as f64 / documents.len() as f64);
+        multi_elapsed.as_millis() as f64 / documents.len() as f64
+    );
 
     Ok(())
 }
@@ -365,7 +399,8 @@ fn cluster_embeddings(embeddings: &HashMap<Uuid, Vec<f32>>, k: usize) -> HashMap
     let mut indices: Vec<usize> = (0..items.len()).collect();
     indices.shuffle(&mut rng);
     let centroid_indices: Vec<usize> = indices.into_iter().take(k).collect();
-    let mut centroids: Vec<Vec<f32>> = centroid_indices.iter()
+    let mut centroids: Vec<Vec<f32>> = centroid_indices
+        .iter()
         .map(|&i| items[i].1.clone())
         .collect();
 
@@ -422,7 +457,11 @@ fn compute_purity(documents: &[(Uuid, String, usize)], clusters: &HashMap<Uuid, 
 
     for (uuid, _, topic) in documents {
         if let Some(&cluster) = clusters.get(uuid) {
-            *cluster_topics.entry(cluster).or_default().entry(*topic).or_default() += 1;
+            *cluster_topics
+                .entry(cluster)
+                .or_default()
+                .entry(*topic)
+                .or_default() += 1;
         }
     }
 
@@ -436,5 +475,9 @@ fn compute_purity(documents: &[(Uuid, String, usize)], clusters: &HashMap<Uuid, 
         total += topic_counts.values().sum::<usize>();
     }
 
-    if total > 0 { correct as f64 / total as f64 } else { 0.0 }
+    if total > 0 {
+        correct as f64 / total as f64
+    } else {
+        0.0
+    }
 }

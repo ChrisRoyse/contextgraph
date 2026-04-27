@@ -174,10 +174,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    println!("╔══════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║        Multi-Domain Graph Relationship Discovery Benchmark                        ║");
-    println!("║           E8 (V_connectivity) - Testing 4 Domains × 20 Relationship Types         ║");
-    println!("╚══════════════════════════════════════════════════════════════════════════════════╝\n");
+    println!(
+        "╔══════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!(
+        "║        Multi-Domain Graph Relationship Discovery Benchmark                        ║"
+    );
+    println!(
+        "║           E8 (V_connectivity) - Testing 4 Domains × 20 Relationship Types         ║"
+    );
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════╝\n"
+    );
 
     // Find workspace root
     let mut workspace_root = std::env::current_dir()?;
@@ -209,7 +217,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if path.exists() {
             match load_pairs_from_file(&path) {
                 Ok(domain_pairs) => {
-                    println!("Loaded {} pairs from {} ({})", domain_pairs.pairs.len(), filename, domain_name);
+                    println!(
+                        "Loaded {} pairs from {} ({})",
+                        domain_pairs.pairs.len(),
+                        filename,
+                        domain_name
+                    );
                     for pair in domain_pairs.pairs {
                         all_pairs.push((domain_name.to_string(), pair));
                     }
@@ -281,7 +294,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (i, (domain, pair)) in all_pairs.iter().enumerate() {
         let start = Instant::now();
-        let analysis = llm.analyze_relationship(&pair.content_a, &pair.content_b).await;
+        let analysis = llm
+            .analyze_relationship(&pair.content_a, &pair.content_b)
+            .await;
         let elapsed = start.elapsed();
         let elapsed_ms = elapsed.as_millis() as u64;
         inference_times.push(elapsed_ms);
@@ -438,7 +453,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let avg_confidence: f32 =
             domain_results.iter().map(|r| r.confidence).sum::<f32>() / domain_results.len() as f32;
-        let avg_time: f64 = domain_results.iter().map(|r| r.inference_time_ms as f64).sum::<f64>()
+        let avg_time: f64 = domain_results
+            .iter()
+            .map(|r| r.inference_time_ms as f64)
+            .sum::<f64>()
             / domain_results.len() as f64;
 
         // Per-relationship breakdown
@@ -537,13 +555,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Print summary
-    println!("╔══════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║                        MULTI-DOMAIN BENCHMARK RESULTS                            ║");
-    println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
     println!(
-        "║ Total Pairs:                    {:>52} ║",
-        results.len()
+        "╔══════════════════════════════════════════════════════════════════════════════════╗"
     );
+    println!(
+        "║                        MULTI-DOMAIN BENCHMARK RESULTS                            ║"
+    );
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!("║ Total Pairs:                    {:>52} ║", results.len());
     println!(
         "║ Overall Accuracy:               {:>51.1}% ║",
         overall_accuracy * 100.0
@@ -556,9 +577,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "║ Cross-Domain False Positive Rate:{:>50.1}% ║",
         cross_domain_fpr * 100.0
     );
-    println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ PER-DOMAIN RESULTS                                                               ║");
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║ PER-DOMAIN RESULTS                                                               ║"
+    );
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
 
     for (domain_name, stats) in &domain_results_map {
         println!(
@@ -573,9 +600,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ LATENCY PERCENTILES                                                              ║");
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║ LATENCY PERCENTILES                                                              ║"
+    );
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
     println!(
         "║ P50: {:>4}ms | P95: {:>4}ms | P99: {:>4}ms | Min: {:>4}ms | Max: {:>4}ms | Avg: {:>5.0}ms ║",
         benchmark_results.latency.p50_ms,
@@ -586,9 +619,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         benchmark_results.latency.avg_ms
     );
 
-    println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ PER-CATEGORY ACCURACY                                                            ║");
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║ PER-CATEGORY ACCURACY                                                            ║"
+    );
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
 
     for (category, stats) in &benchmark_results.category_breakdown {
         println!(
@@ -601,9 +640,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    println!("╠══════════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ TIMING                                                                           ║");
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "╠══════════════════════════════════════════════════════════════════════════════════╣"
+    );
+    println!(
+        "║ TIMING                                                                           ║"
+    );
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
     println!(
         "║ Model Load Time:                {:>50.2}s ║",
         model_load_time.as_secs_f64()
@@ -612,12 +657,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "║ Total Benchmark Time:           {:>50.2}s ║",
         total_time.as_secs_f64()
     );
-    println!("╚══════════════════════════════════════════════════════════════════════════════════╝");
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════╝"
+    );
 
     // Check success criteria
-    println!("\n╔══════════════════════════════════════════════════════════════════════════════════╗");
-    println!("║ SUCCESS CRITERIA CHECK                                                           ║");
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "\n╔══════════════════════════════════════════════════════════════════════════════════╗"
+    );
+    println!(
+        "║ SUCCESS CRITERIA CHECK                                                           ║"
+    );
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
 
     let checks = vec![
         ("Overall Accuracy >= 65%", overall_accuracy >= 0.65),
@@ -656,13 +709,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("║ {} {:74} ║", symbol, criterion);
     }
 
-    println!("╟──────────────────────────────────────────────────────────────────────────────────╢");
+    println!(
+        "╟──────────────────────────────────────────────────────────────────────────────────╢"
+    );
     if all_passed {
-        println!("║ ✓ ALL CRITERIA PASSED                                                           ║");
+        println!(
+            "║ ✓ ALL CRITERIA PASSED                                                           ║"
+        );
     } else {
-        println!("║ ✗ SOME CRITERIA FAILED - See above for details                                  ║");
+        println!(
+            "║ ✗ SOME CRITERIA FAILED - See above for details                                  ║"
+        );
     }
-    println!("╚══════════════════════════════════════════════════════════════════════════════════╝");
+    println!(
+        "╚══════════════════════════════════════════════════════════════════════════════════╝"
+    );
 
     // Save results
     let results_dir = workspace_root.join("benchmark_results");

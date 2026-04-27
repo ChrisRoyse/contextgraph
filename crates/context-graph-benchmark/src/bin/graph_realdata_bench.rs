@@ -233,10 +233,22 @@ fn print_summary(results: &E8GraphRealdataResults) {
     // Asymmetric validation
     if let Some(ref asym) = results.asymmetric {
         println!("\nAsymmetric Validation:");
-        println!("  Forward similarity mean: {:.4}", asym.forward_similarity_mean);
-        println!("  Reverse similarity mean: {:.4}", asym.reverse_similarity_mean);
-        println!("  Asymmetric ratio: {:.2} (expected 1.5 ± 0.15)", asym.asymmetric_ratio);
-        println!("  Ratio valid: {}", if asym.ratio_valid { "YES" } else { "NO" });
+        println!(
+            "  Forward similarity mean: {:.4}",
+            asym.forward_similarity_mean
+        );
+        println!(
+            "  Reverse similarity mean: {:.4}",
+            asym.reverse_similarity_mean
+        );
+        println!(
+            "  Asymmetric ratio: {:.2} (expected 1.5 ± 0.15)",
+            asym.asymmetric_ratio
+        );
+        println!(
+            "  Ratio valid: {}",
+            if asym.ratio_valid { "YES" } else { "NO" }
+        );
         println!("  Pairs tested: {}", asym.pairs_tested);
     }
 

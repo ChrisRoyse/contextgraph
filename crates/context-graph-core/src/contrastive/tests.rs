@@ -251,7 +251,7 @@ fn mine_returns_none_when_kind_filter_excludes() {
     // Ensure baseline kind would be SemanticButNotCausal.
     let baseline_profile = similarity_profile(&a, &b);
     assert!(baseline_profile[0] > 0.9); // high E1
-                                         // E5 orthogonal dims → SRC-3 = 0.5, but we want low; push via zeroing one side.
+                                        // E5 orthogonal dims → SRC-3 = 0.5, but we want low; push via zeroing one side.
     a.e5_causal_as_cause = vec![0.0; dim5];
     b.e5_causal_as_cause = vec![0.0; dim5];
     // Zero-norm → similarity 0.0 (our contract).

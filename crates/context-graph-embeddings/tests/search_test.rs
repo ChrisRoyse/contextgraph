@@ -103,7 +103,10 @@ fn test_rrf_constant_value() {
         expected,
         contribution
     );
-    eprintln!("[VERIFIED] RRF_K = {} used correctly in formula (1-indexed)", RRF_K);
+    eprintln!(
+        "[VERIFIED] RRF_K = {} used correctly in formula (1-indexed)",
+        RRF_K
+    );
 }
 
 /// Test: RRF sum across multiple ranks
@@ -359,8 +362,7 @@ fn test_rrf_breadth_preference() {
 
     // Narrow: rank 0 in 1 embedder
     let results_narrow = vec![EmbedderQueryResult::from_similarity(id_narrow, 0, 0.99, 0)];
-    let multi_narrow =
-        MultiSpaceQueryResult::from_embedder_results(id_narrow, &results_narrow);
+    let multi_narrow = MultiSpaceQueryResult::from_embedder_results(id_narrow, &results_narrow);
 
     // Broad: rank 0 in 5 embedders
     let results_broad = vec![
@@ -470,8 +472,7 @@ fn test_rrf_k_constitution() {
     assert!((contribution - expected).abs() < f32::EPSILON);
     eprintln!(
         "[VERIFIED] RRF_K={} used correctly: 1/(K+0+1) = {:.6}",
-        RRF_K,
-        contribution
+        RRF_K, contribution
     );
 }
 

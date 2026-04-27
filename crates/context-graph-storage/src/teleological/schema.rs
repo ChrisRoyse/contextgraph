@@ -363,4 +363,3 @@ pub fn causal_relationship_key(id: &Uuid) -> [u8; 16] {
 pub fn causal_by_source_key(source_id: &Uuid) -> [u8; 16] {
     *source_id.as_bytes()
 }
-

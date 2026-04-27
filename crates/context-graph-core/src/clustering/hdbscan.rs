@@ -739,13 +739,12 @@ impl HDBSCANClusterer {
                 let sim = crate::retrieval::distance::cosine_similarity(a, b);
                 1.0 - sim
             }
-            DistanceMetric::Euclidean => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(x, y)| (x - y) * (x - y))
-                    .sum::<f32>()
-                    .sqrt()
-            }
+            DistanceMetric::Euclidean => a
+                .iter()
+                .zip(b.iter())
+                .map(|(x, y)| (x - y) * (x - y))
+                .sum::<f32>()
+                .sqrt(),
             DistanceMetric::AsymmetricCosine => {
                 // For now, same as cosine (asymmetry is at embedding time)
                 let sim = crate::retrieval::distance::cosine_similarity(a, b);
@@ -1151,18 +1150,23 @@ mod tests {
         assert!(result.is_err(), "Must fail with insufficient data");
         let err = result.unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("required 3"), "Error must mention required count");
+        assert!(
+            msg.contains("required 3"),
+            "Error must mention required count"
+        );
         assert!(msg.contains("actual 2"), "Error must mention actual count");
 
-        println!("[PASS] test_clusterer_fit_insufficient_data - error: {}", msg);
+        println!(
+            "[PASS] test_clusterer_fit_insufficient_data - error: {}",
+            msg
+        );
     }
 
     #[test]
     fn test_clusterer_fit_distinct_clusters() {
         // Use Euclidean metric for spatial separation testing
-        let clusterer = HDBSCANClusterer::new(
-            HDBSCANParams::default().with_metric(DistanceMetric::Euclidean),
-        );
+        let clusterer =
+            HDBSCANClusterer::new(HDBSCANParams::default().with_metric(DistanceMetric::Euclidean));
 
         // Two clearly separated clusters with large spatial gap
         // Cluster A: around origin (0, 0)
@@ -1225,9 +1229,8 @@ mod tests {
     #[test]
     fn test_clusterer_silhouette_two_clusters() {
         // Use Euclidean metric for spatial separation
-        let clusterer = HDBSCANClusterer::new(
-            HDBSCANParams::default().with_metric(DistanceMetric::Euclidean),
-        );
+        let clusterer =
+            HDBSCANClusterer::new(HDBSCANParams::default().with_metric(DistanceMetric::Euclidean));
 
         // Two well-separated clusters with large spatial gap
         let embeddings = vec![
@@ -1267,11 +1270,7 @@ mod tests {
         // Edge case: All points are identical
         let clusterer = HDBSCANClusterer::with_defaults();
 
-        let embeddings = vec![
-            vec![1.0, 1.0],
-            vec![1.0, 1.0],
-            vec![1.0, 1.0],
-        ];
+        let embeddings = vec![vec![1.0, 1.0], vec![1.0, 1.0], vec![1.0, 1.0]];
         let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
 
         let result = clusterer.fit(&embeddings, &ids, Embedder::Semantic);
@@ -1299,11 +1298,7 @@ mod tests {
         // Edge case: Exactly min_cluster_size points
         let clusterer = HDBSCANClusterer::with_defaults(); // min_cluster_size=3
 
-        let embeddings = vec![
-            vec![0.0, 0.0],
-            vec![0.1, 0.0],
-            vec![0.0, 0.1],
-        ];
+        let embeddings = vec![vec![0.0, 0.0], vec![0.1, 0.0], vec![0.0, 0.1]];
         let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
 
         let result = clusterer.fit(&embeddings, &ids, Embedder::Semantic);
@@ -1465,5 +1460,4 @@ mod tests {
 
         println!("[PASS] test_fit_precomputed_nan_rejection - error: {}", err);
     }
-
 }

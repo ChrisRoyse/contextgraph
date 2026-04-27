@@ -103,12 +103,19 @@ pub trait CodeEmbeddingProvider: Send + Sync {
     ///
     /// # Returns
     /// Complete SemanticFingerprint with all 13 embeddings on success.
-    async fn embed_code(&self, code: &str, context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError>;
+    async fn embed_code(
+        &self,
+        code: &str,
+        context: Option<&str>,
+    ) -> Result<SemanticFingerprint, CodeEmbedderError>;
 
     /// Embed a batch of code snippets.
     ///
     /// More efficient than calling embed_code multiple times.
-    async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError>;
+    async fn embed_batch(
+        &self,
+        codes: &[(&str, Option<&str>)],
+    ) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError>;
 
     /// Check if all 13 embedders are initialized and ready.
     fn is_ready(&self) -> bool;
@@ -131,7 +138,11 @@ pub trait CodeStorage: Send + Sync {
     /// # Arguments
     /// * `entity` - The code entity to store
     /// * `fingerprint` - Complete 13-embedding fingerprint
-    async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String>;
+    async fn store(
+        &self,
+        entity: &CodeEntity,
+        fingerprint: &SemanticFingerprint,
+    ) -> Result<(), String>;
 
     /// Get an entity by ID.
     async fn get(&self, id: Uuid) -> Result<Option<CodeEntity>, String>;
@@ -345,7 +356,8 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
 
         // Set module path from scope chain
         if chunk.metadata.scope_chain.len() > 1 {
-            let module_path = chunk.metadata.scope_chain[..chunk.metadata.scope_chain.len() - 1].join("::");
+            let module_path =
+                chunk.metadata.scope_chain[..chunk.metadata.scope_chain.len() - 1].join("::");
             entity = entity.with_module_path(module_path);
         }
 
@@ -414,13 +426,23 @@ mod tests {
 
     #[async_trait]
     impl CodeEmbeddingProvider for MockCodeEmbedder {
-        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError> {
+        async fn embed_code(
+            &self,
+            _code: &str,
+            _context: Option<&str>,
+        ) -> Result<SemanticFingerprint, CodeEmbedderError> {
             // Return a zeroed fingerprint for testing
             Ok(SemanticFingerprint::zeroed())
         }
 
-        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
-            Ok(codes.iter().map(|_| SemanticFingerprint::zeroed()).collect())
+        async fn embed_batch(
+            &self,
+            codes: &[(&str, Option<&str>)],
+        ) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
+            Ok(codes
+                .iter()
+                .map(|_| SemanticFingerprint::zeroed())
+                .collect())
         }
 
         fn is_ready(&self) -> bool {
@@ -446,7 +468,11 @@ mod tests {
 
     #[async_trait]
     impl CodeStorage for MockCodeStorage {
-        async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String> {
+        async fn store(
+            &self,
+            entity: &CodeEntity,
+            fingerprint: &SemanticFingerprint,
+        ) -> Result<(), String> {
             let mut entities = self.entities.write().await;
             let mut file_index = self.file_index.write().await;
 
@@ -535,7 +561,8 @@ mod tests {
     async fn test_capture_chunk() {
         let embedder = Arc::new(MockCodeEmbedder);
         let storage = Arc::new(MockCodeStorage::new());
-        let service = CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
+        let service =
+            CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
         let chunk = create_test_chunk("test_func", "fn test_func() { println!(\"hello\"); }");
 
@@ -548,7 +575,10 @@ mod tests {
 
         // Verify fingerprint was stored with all 13 embeddings
         let fingerprint = storage.get_fingerprint(id).await.unwrap().unwrap();
-        assert!(fingerprint.is_complete(), "Fingerprint should have all 13 embeddings");
+        assert!(
+            fingerprint.is_complete(),
+            "Fingerprint should have all 13 embeddings"
+        );
         assert_eq!(fingerprint.e7_code.len(), 1536, "E7 should be 1536D");
         assert_eq!(fingerprint.e1_semantic.len(), 1024, "E1 should be 1024D");
     }
@@ -557,7 +587,8 @@ mod tests {
     async fn test_capture_batch() {
         let embedder = Arc::new(MockCodeEmbedder);
         let storage = Arc::new(MockCodeStorage::new());
-        let service = CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
+        let service =
+            CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
         let chunks = vec![
             create_test_chunk("func1", "fn func1() {}"),
@@ -578,7 +609,8 @@ mod tests {
     async fn test_delete_by_file() {
         let embedder = Arc::new(MockCodeEmbedder);
         let storage = Arc::new(MockCodeStorage::new());
-        let service = CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
+        let service =
+            CodeCaptureService::new(embedder, storage.clone(), "test-session".to_string());
 
         let chunks = vec![
             create_test_chunk("func1", "fn func1() {}"),
@@ -613,15 +645,21 @@ mod tests {
     #[test]
     fn test_entity_type_conversion() {
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(ChunkEntityType::Function),
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+                ChunkEntityType::Function
+            ),
             CodeEntityType::Function
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(ChunkEntityType::Struct),
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+                ChunkEntityType::Struct
+            ),
             CodeEntityType::Struct
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(ChunkEntityType::Impl),
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::convert_entity_type(
+                ChunkEntityType::Impl
+            ),
             CodeEntityType::Impl
         );
     }
@@ -637,7 +675,9 @@ mod tests {
             CodeLanguage::Python
         );
         assert_eq!(
-            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string("unknown_lang"),
+            CodeCaptureService::<MockCodeEmbedder, MockCodeStorage>::language_from_string(
+                "unknown_lang"
+            ),
             CodeLanguage::Unknown
         );
     }

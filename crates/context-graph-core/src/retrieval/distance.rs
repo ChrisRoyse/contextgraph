@@ -186,27 +186,19 @@ pub fn compute_similarity_for_space(
         }
         Embedder::Graph => {
             // E8: Compare source-vs-target cross pairs and take max
-            let source_vs_target = cosine_similarity(
-                query.get_e8_as_source(),
-                memory.get_e8_as_target(),
-            );
-            let target_vs_source = cosine_similarity(
-                query.get_e8_as_target(),
-                memory.get_e8_as_source(),
-            );
+            let source_vs_target =
+                cosine_similarity(query.get_e8_as_source(), memory.get_e8_as_target());
+            let target_vs_source =
+                cosine_similarity(query.get_e8_as_target(), memory.get_e8_as_source());
             // Take max of both directions — the stronger signal wins
             source_vs_target.max(target_vs_source)
         }
         Embedder::Contextual => {
             // E10: Compare paraphrase-vs-context cross pairs and take max
-            let para_vs_context = cosine_similarity(
-                query.get_e10_as_paraphrase(),
-                memory.get_e10_as_context(),
-            );
-            let context_vs_para = cosine_similarity(
-                query.get_e10_as_context(),
-                memory.get_e10_as_paraphrase(),
-            );
+            let para_vs_context =
+                cosine_similarity(query.get_e10_as_paraphrase(), memory.get_e10_as_context());
+            let context_vs_para =
+                cosine_similarity(query.get_e10_as_context(), memory.get_e10_as_paraphrase());
             // Take max of both directions — captures paraphrase detection
             para_vs_context.max(context_vs_para)
         }
@@ -219,9 +211,7 @@ pub fn compute_similarity_for_space(
             let memory_disc = std::mem::discriminant(&memory_ref);
 
             match (query_ref, memory_ref) {
-                (EmbeddingRef::Dense(q), EmbeddingRef::Dense(m)) => {
-                    cosine_similarity(q, m)
-                }
+                (EmbeddingRef::Dense(q), EmbeddingRef::Dense(m)) => cosine_similarity(q, m),
                 (EmbeddingRef::Sparse(q), EmbeddingRef::Sparse(m)) => jaccard_similarity(q, m),
                 (EmbeddingRef::TokenLevel(q), EmbeddingRef::TokenLevel(m)) => max_sim(q, m),
                 _ => {
@@ -346,7 +336,10 @@ mod tests {
         assert!((jaccard_similarity(&a, &b) - 0.5).abs() < 1e-5);
 
         // Empty
-        assert_eq!(jaccard_similarity(&SparseVector::empty(), &SparseVector::empty()), 0.0);
+        assert_eq!(
+            jaccard_similarity(&SparseVector::empty(), &SparseVector::empty()),
+            0.0
+        );
     }
 
     #[test]
@@ -374,24 +367,33 @@ mod tests {
         // Semantic (dense cosine)
         query.e1_semantic = vec![1.0; 1024];
         memory.e1_semantic = vec![1.0; 1024];
-        assert!((compute_similarity_for_space(Embedder::Semantic, &query, &memory) - 1.0).abs() < 1e-5);
+        assert!(
+            (compute_similarity_for_space(Embedder::Semantic, &query, &memory) - 1.0).abs() < 1e-5
+        );
 
         // Sparse (jaccard)
         query.e6_sparse = SparseVector::new(vec![0, 5, 10], vec![1.0, 1.0, 1.0]).unwrap();
         memory.e6_sparse = SparseVector::new(vec![0, 5, 10], vec![1.0, 1.0, 1.0]).unwrap();
-        assert!((compute_similarity_for_space(Embedder::Sparse, &query, &memory) - 1.0).abs() < 1e-5);
+        assert!(
+            (compute_similarity_for_space(Embedder::Sparse, &query, &memory) - 1.0).abs() < 1e-5
+        );
 
         // Late interaction (MaxSim)
         query.e12_late_interaction = vec![vec![1.0; 128], vec![0.5; 128]];
         memory.e12_late_interaction = vec![vec![1.0; 128], vec![0.5; 128]];
-        assert!((compute_similarity_for_space(Embedder::LateInteraction, &query, &memory) - 1.0).abs() < 1e-5);
+        assert!(
+            (compute_similarity_for_space(Embedder::LateInteraction, &query, &memory) - 1.0).abs()
+                < 1e-5
+        );
 
         // Entity uses cosine, orthogonal = 0.5
         query.e11_entity = vec![0.0; 768];
         memory.e11_entity = vec![0.0; 768];
         query.e11_entity[0] = 1.0;
         memory.e11_entity[1] = 1.0;
-        assert!((compute_similarity_for_space(Embedder::Entity, &query, &memory) - 0.5).abs() < 1e-5);
+        assert!(
+            (compute_similarity_for_space(Embedder::Entity, &query, &memory) - 0.5).abs() < 1e-5
+        );
     }
 
     #[test]
@@ -416,10 +418,17 @@ mod tests {
             let score = compute_similarity_for_space(embedder, &zeroed, &zeroed);
             if embedder == Embedder::Causal {
                 // CORE-H1: E5 returns -1.0 sentinel without direction
-                assert_eq!(score, -1.0, "E5 should return -1.0 sentinel without direction");
+                assert_eq!(
+                    score, -1.0,
+                    "E5 should return -1.0 sentinel without direction"
+                );
             } else {
-                assert!(!score.is_nan() && !score.is_infinite() && (0.0..=1.0).contains(&score),
-                    "{} score {} out of range", embedder.name(), score);
+                assert!(
+                    !score.is_nan() && !score.is_infinite() && (0.0..=1.0).contains(&score),
+                    "{} score {} out of range",
+                    embedder.name(),
+                    score
+                );
             }
         }
     }
@@ -438,13 +447,21 @@ mod tests {
 
         // Unknown direction: E5 returns -1.0 sentinel per AP-77 + CORE-H1 fix
         assert_eq!(
-            compute_similarity_for_space_with_direction(Embedder::Causal, &query, &memory, CausalDirection::Unknown),
+            compute_similarity_for_space_with_direction(
+                Embedder::Causal,
+                &query,
+                &memory,
+                CausalDirection::Unknown
+            ),
             -1.0,
         );
 
         // Known direction: non-zero
         let cause_sim = compute_similarity_for_space_with_direction(
-            Embedder::Causal, &query, &memory, CausalDirection::Cause,
+            Embedder::Causal,
+            &query,
+            &memory,
+            CausalDirection::Cause,
         );
         assert!(cause_sim > 0.0 && cause_sim <= 1.0);
 
@@ -453,7 +470,10 @@ mod tests {
         memory.e1_semantic = vec![1.0; 1024];
         let sym = compute_similarity_for_space(Embedder::Semantic, &query, &memory);
         let with_cause = compute_similarity_for_space_with_direction(
-            Embedder::Semantic, &query, &memory, CausalDirection::Cause,
+            Embedder::Semantic,
+            &query,
+            &memory,
+            CausalDirection::Cause,
         );
         assert!((sym - with_cause).abs() < 1e-5);
     }
@@ -468,5 +488,4 @@ mod tests {
         let ratio = direction_mod::CAUSE_TO_EFFECT / direction_mod::EFFECT_TO_CAUSE;
         assert!((ratio - 1.5).abs() < 1e-5);
     }
-
 }

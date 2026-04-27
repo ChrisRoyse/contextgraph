@@ -293,7 +293,10 @@ mod tests {
     #[test]
     fn test_unified_neighbors_schema() {
         let defs = definitions();
-        let unified = defs.iter().find(|d| d.name == "get_unified_neighbors").unwrap();
+        let unified = defs
+            .iter()
+            .find(|d| d.name == "get_unified_neighbors")
+            .unwrap();
         let props = unified.input_schema.get("properties").unwrap();
         assert!(props.get("memory_id").is_some());
         assert!(props.get("weight_profile").is_some());

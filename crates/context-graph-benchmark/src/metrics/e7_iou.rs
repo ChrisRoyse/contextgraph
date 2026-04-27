@@ -123,9 +123,11 @@ impl IoUMetrics {
         let median_iou = sorted_ious[query_count / 2];
 
         // Compute standard deviation
-        let variance = results.iter()
+        let variance = results
+            .iter()
             .map(|r| (r.token_iou - mean_token_iou).powi(2))
-            .sum::<f64>() / n;
+            .sum::<f64>()
+            / n;
         let std_iou = variance.sqrt();
 
         Self {
@@ -151,13 +153,11 @@ impl IoUMetrics {
 
 /// Rust keywords for token classification.
 const RUST_KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "crate", "dyn",
-    "else", "enum", "extern", "false", "fn", "for", "if", "impl", "in",
-    "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
-    "self", "Self", "static", "struct", "super", "trait", "true", "type",
-    "unsafe", "use", "where", "while", "abstract", "become", "box", "do",
-    "final", "macro", "override", "priv", "typeof", "unsized", "virtual",
-    "yield", "try",
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
+    "unsafe", "use", "where", "while", "abstract", "become", "box", "do", "final", "macro",
+    "override", "priv", "typeof", "unsized", "virtual", "yield", "try",
 ];
 
 /// Tokenize code into code tokens.
@@ -180,7 +180,12 @@ pub fn tokenize_code(code: &str) -> Vec<CodeToken> {
             if !current.is_empty() {
                 let token_type = if keywords.contains(current.as_str()) {
                     TokenType::Keyword
-                } else if current.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                } else if current
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     TokenType::Literal
                 } else {
                     TokenType::Identifier
@@ -216,7 +221,12 @@ pub fn tokenize_code(code: &str) -> Vec<CodeToken> {
     if !current.is_empty() {
         let token_type = if keywords.contains(current.as_str()) {
             TokenType::Keyword
-        } else if current.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        } else if current
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
             TokenType::Literal
         } else {
             TokenType::Identifier
@@ -229,10 +239,7 @@ pub fn tokenize_code(code: &str) -> Vec<CodeToken> {
 
 /// Extract just the token strings (for simpler IoU computation).
 pub fn extract_token_strings(code: &str) -> HashSet<String> {
-    tokenize_code(code)
-        .into_iter()
-        .map(|t| t.text)
-        .collect()
+    tokenize_code(code).into_iter().map(|t| t.text).collect()
 }
 
 // ===========================================================================
@@ -262,9 +269,7 @@ pub fn compute_token_iou(retrieved: &str, ground_truth: &str) -> f64 {
     let intersection: HashSet<_> = retrieved_tokens
         .intersection(&ground_truth_tokens)
         .collect();
-    let union: HashSet<_> = retrieved_tokens
-        .union(&ground_truth_tokens)
-        .collect();
+    let union: HashSet<_> = retrieved_tokens.union(&ground_truth_tokens).collect();
 
     intersection.len() as f64 / union.len() as f64
 }
@@ -297,9 +302,17 @@ pub fn compute_iou_result(retrieved: &str, ground_truth: &str) -> IoUResult {
         .filter(|t| t.token_type == TokenType::Identifier)
         .map(|t| &t.text)
         .collect();
-    let id_intersection = retrieved_identifiers.intersection(&ground_truth_identifiers).count();
-    let id_union = retrieved_identifiers.union(&ground_truth_identifiers).count();
-    let identifier_iou = if id_union == 0 { 0.0 } else { id_intersection as f64 / id_union as f64 };
+    let id_intersection = retrieved_identifiers
+        .intersection(&ground_truth_identifiers)
+        .count();
+    let id_union = retrieved_identifiers
+        .union(&ground_truth_identifiers)
+        .count();
+    let identifier_iou = if id_union == 0 {
+        0.0
+    } else {
+        id_intersection as f64 / id_union as f64
+    };
 
     // Keyword-only IoU
     let retrieved_keywords: HashSet<_> = retrieved_tokens
@@ -312,9 +325,15 @@ pub fn compute_iou_result(retrieved: &str, ground_truth: &str) -> IoUResult {
         .filter(|t| t.token_type == TokenType::Keyword)
         .map(|t| &t.text)
         .collect();
-    let kw_intersection = retrieved_keywords.intersection(&ground_truth_keywords).count();
+    let kw_intersection = retrieved_keywords
+        .intersection(&ground_truth_keywords)
+        .count();
     let kw_union = retrieved_keywords.union(&ground_truth_keywords).count();
-    let keyword_iou = if kw_union == 0 { 0.0 } else { kw_intersection as f64 / kw_union as f64 };
+    let keyword_iou = if kw_union == 0 {
+        0.0
+    } else {
+        kw_intersection as f64 / kw_union as f64
+    };
 
     IoUResult {
         token_iou,
@@ -361,18 +380,31 @@ mod tests {
         println!("Tokens: {:?}", tokens);
 
         // Should have: fn, main, (, ), {, let, x, =, 42, ;, }
-        assert!(tokens.iter().any(|t| t.text == "fn" && t.token_type == TokenType::Keyword));
-        assert!(tokens.iter().any(|t| t.text == "main" && t.token_type == TokenType::Identifier));
-        assert!(tokens.iter().any(|t| t.text == "let" && t.token_type == TokenType::Keyword));
-        assert!(tokens.iter().any(|t| t.text == "x" && t.token_type == TokenType::Identifier));
-        assert!(tokens.iter().any(|t| t.text == "42" && t.token_type == TokenType::Literal));
+        assert!(tokens
+            .iter()
+            .any(|t| t.text == "fn" && t.token_type == TokenType::Keyword));
+        assert!(tokens
+            .iter()
+            .any(|t| t.text == "main" && t.token_type == TokenType::Identifier));
+        assert!(tokens
+            .iter()
+            .any(|t| t.text == "let" && t.token_type == TokenType::Keyword));
+        assert!(tokens
+            .iter()
+            .any(|t| t.text == "x" && t.token_type == TokenType::Identifier));
+        assert!(tokens
+            .iter()
+            .any(|t| t.text == "42" && t.token_type == TokenType::Literal));
     }
 
     #[test]
     fn test_token_iou_identical() {
         let code = "fn foo() { let x = 1; }";
         let iou = compute_token_iou(code, code);
-        assert!((iou - 1.0).abs() < 0.001, "Identical code should have IoU = 1.0");
+        assert!(
+            (iou - 1.0).abs() < 0.001,
+            "Identical code should have IoU = 1.0"
+        );
     }
 
     #[test]
@@ -408,16 +440,17 @@ mod tests {
         println!("IoU Result: {:?}", result);
 
         assert!(result.token_iou > 0.5, "Should have good token overlap");
-        assert!(result.keyword_iou > 0.8, "Should have high keyword overlap (fn, i32)");
+        assert!(
+            result.keyword_iou > 0.8,
+            "Should have high keyword overlap (fn, i32)"
+        );
         assert!(result.intersection_count > 0);
         assert!(result.union_count > result.intersection_count);
     }
 
     #[test]
     fn test_iou_at_k() {
-        let chunks = ["fn a() {}",
-            "fn b() {}",
-            "fn c() {}"];
+        let chunks = ["fn a() {}", "fn b() {}", "fn c() {}"];
         let ground_truth = "fn a() {} fn b() {}";
 
         let iou_1 = compute_iou_at_k(chunks.as_ref(), ground_truth, 1);
@@ -474,7 +507,8 @@ mod tests {
         let code = "pub fn async_handler() -> impl Future { async { } }";
         let tokens = tokenize_code(code);
 
-        let keywords: Vec<_> = tokens.iter()
+        let keywords: Vec<_> = tokens
+            .iter()
             .filter(|t| t.token_type == TokenType::Keyword)
             .map(|t| t.text.as_str())
             .collect();

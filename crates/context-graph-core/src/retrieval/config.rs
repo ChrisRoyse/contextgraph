@@ -461,13 +461,13 @@ mod tests {
 
     #[test]
     fn test_space_weights_constant_values() {
-        assert_eq!(SPACE_WEIGHTS[0], 1.0);  // E1 Semantic
-        assert_eq!(SPACE_WEIGHTS[1], 0.0);  // E2 Temporal Recent (excluded)
-        assert_eq!(SPACE_WEIGHTS[2], 0.0);  // E3 Temporal Periodic (excluded)
-        assert_eq!(SPACE_WEIGHTS[3], 0.0);  // E4 Temporal Positional (excluded)
-        assert_eq!(SPACE_WEIGHTS[4], 1.0);  // E5 Causal
-        assert_eq!(SPACE_WEIGHTS[7], 0.5);  // E8 Graph (Relational)
-        assert_eq!(SPACE_WEIGHTS[8], 0.5);  // E9 Hdc (Structural)
+        assert_eq!(SPACE_WEIGHTS[0], 1.0); // E1 Semantic
+        assert_eq!(SPACE_WEIGHTS[1], 0.0); // E2 Temporal Recent (excluded)
+        assert_eq!(SPACE_WEIGHTS[2], 0.0); // E3 Temporal Periodic (excluded)
+        assert_eq!(SPACE_WEIGHTS[3], 0.0); // E4 Temporal Positional (excluded)
+        assert_eq!(SPACE_WEIGHTS[4], 1.0); // E5 Causal
+        assert_eq!(SPACE_WEIGHTS[7], 0.5); // E8 Graph (Relational)
+        assert_eq!(SPACE_WEIGHTS[8], 0.5); // E9 Hdc (Structural)
         assert_eq!(SPACE_WEIGHTS[10], 0.5); // E11 Entity (Relational)
         assert!((TOTAL_WEIGHT - 9.5).abs() < f32::EPSILON);
     }

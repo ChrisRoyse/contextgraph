@@ -72,7 +72,10 @@ impl Handlers {
         );
 
         // Generate query embedding
-        let query_embedding = match self.embed_query(id.clone(), &params.query, "search_recent").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), &params.query, "search_recent")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -222,10 +225,7 @@ impl Handlers {
                     hour = hour,
                     "search_periodic: targetHour validation FAILED - must be 0-23"
                 );
-                return self.tool_error(
-                    id,
-                    &format!("targetHour must be 0-23, got {}", hour),
-                );
+                return self.tool_error(id, &format!("targetHour must be 0-23, got {}", hour));
             }
         }
 
@@ -293,7 +293,10 @@ impl Handlers {
         );
 
         // Generate query embedding
-        let query_embedding = match self.embed_query(id.clone(), &params.query, "search_periodic").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), &params.query, "search_periodic")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };

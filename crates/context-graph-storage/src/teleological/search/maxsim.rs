@@ -349,8 +349,8 @@ pub fn compute_maxsim_direct(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>])
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use parking_lot::RwLock;
+    use std::collections::HashMap;
     use std::time::Instant;
 
     // In-memory mock for testing
@@ -758,5 +758,4 @@ mod tests {
 
         println!("[VERIFIED] MaxSim performance acceptable");
     }
-
 }

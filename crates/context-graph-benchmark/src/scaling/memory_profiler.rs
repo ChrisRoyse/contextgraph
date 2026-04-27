@@ -289,7 +289,9 @@ impl MemoryComparison {
     /// Set bytes per accuracy percentage (from benchmark results).
     pub fn with_accuracy_improvement(mut self, accuracy_improvement_pct: f64) -> Self {
         if accuracy_improvement_pct > 0.0 {
-            let extra_bytes = self.multispace_bytes.saturating_sub(self.single_embedder_bytes);
+            let extra_bytes = self
+                .multispace_bytes
+                .saturating_sub(self.single_embedder_bytes);
             self.bytes_per_accuracy_pct = Some(extra_bytes as f64 / accuracy_improvement_pct);
         }
         self

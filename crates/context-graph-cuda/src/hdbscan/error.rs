@@ -13,7 +13,9 @@ pub enum GpuHdbscanError {
     ///
     /// Per constitution ARCH-GPU-05: HDBSCAN MUST run on GPU.
     /// No CPU fallback is provided.
-    #[error("GPU not available for HDBSCAN. Constitution ARCH-GPU-05 requires GPU. Error: {reason}")]
+    #[error(
+        "GPU not available for HDBSCAN. Constitution ARCH-GPU-05 requires GPU. Error: {reason}"
+    )]
     GpuNotAvailable { reason: String },
 
     /// FAISS GPU resources allocation failed.
@@ -98,7 +100,11 @@ impl GpuHdbscanError {
         let value_type = if value.is_nan() {
             "NaN"
         } else if value.is_infinite() {
-            if value > 0.0 { "+Infinity" } else { "-Infinity" }
+            if value > 0.0 {
+                "+Infinity"
+            } else {
+                "-Infinity"
+            }
         } else {
             "Unknown non-finite"
         };

@@ -143,7 +143,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loading chunks...");
     let load_start = Instant::now();
     let chunks = load_chunks(&data_path)?;
-    println!("  Loaded {} chunks in {:?}", chunks.len(), load_start.elapsed());
+    println!(
+        "  Loaded {} chunks in {:?}",
+        chunks.len(),
+        load_start.elapsed()
+    );
 
     // Get target pair count
     let target_pairs: usize = std::env::var("BENCHMARK_PAIRS")
@@ -151,15 +155,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
 
-    println!("  Target pairs: {} (set BENCHMARK_PAIRS env to change)", target_pairs);
+    println!(
+        "  Target pairs: {} (set BENCHMARK_PAIRS env to change)",
+        target_pairs
+    );
 
     // Generate pairs
     println!("\nGenerating pairs...");
     let pairs = generate_pairs(&chunks, target_pairs)?;
 
-    let adjacent_count = pairs.iter().filter(|(t, _, _)| *t == PairType::Adjacent).count();
-    let same_topic_count = pairs.iter().filter(|(t, _, _)| *t == PairType::SameTopic).count();
-    let random_count = pairs.iter().filter(|(t, _, _)| *t == PairType::Random).count();
+    let adjacent_count = pairs
+        .iter()
+        .filter(|(t, _, _)| *t == PairType::Adjacent)
+        .count();
+    let same_topic_count = pairs
+        .iter()
+        .filter(|(t, _, _)| *t == PairType::SameTopic)
+        .count();
+    let random_count = pairs
+        .iter()
+        .filter(|(t, _, _)| *t == PairType::Random)
+        .count();
 
     println!("  Generated {} pairs:", pairs.len());
     println!("    - Adjacent: {}", adjacent_count);
@@ -228,10 +244,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let elapsed = benchmark_start.elapsed();
             let rate = (i + 1) as f64 / elapsed.as_secs_f64();
             let eta = (pairs.len() - i - 1) as f64 / rate;
-            print!("\r  Progress: {}/{} ({:.1}%) | {:.1} pairs/sec | ETA: {:.0}s    ",
-                   i + 1, pairs.len(),
-                   (i + 1) as f64 / pairs.len() as f64 * 100.0,
-                   rate, eta);
+            print!(
+                "\r  Progress: {}/{} ({:.1}%) | {:.1} pairs/sec | ETA: {:.0}s    ",
+                i + 1,
+                pairs.len(),
+                (i + 1) as f64 / pairs.len() as f64 * 100.0,
+                rate,
+                eta
+            );
             std::io::stdout().flush()?;
             last_progress = i;
         }
@@ -248,8 +268,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Overall stats
     let overall_causal = results.iter().filter(|r| r.has_causal_link).count();
     let overall_causal_rate = overall_causal as f64 / results.len() as f64;
-    let overall_avg_confidence = results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
-    let overall_avg_time = results.iter().map(|r| r.inference_time_ms).sum::<u64>() as f64 / results.len() as f64;
+    let overall_avg_confidence =
+        results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
+    let overall_avg_time =
+        results.iter().map(|r| r.inference_time_ms).sum::<u64>() as f64 / results.len() as f64;
 
     // Print results
     println!("\n╔═══════════════════════════════════════════════════════════════╗");
@@ -257,7 +279,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Total Pairs: {:>48} ║", results.len());
     println!("║ Total Time: {:>46.1}s ║", total_time.as_secs_f64());
-    println!("║ Throughput: {:>42.2} pairs/sec ║", results.len() as f64 / total_time.as_secs_f64());
+    println!(
+        "║ Throughput: {:>42.2} pairs/sec ║",
+        results.len() as f64 / total_time.as_secs_f64()
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ RESULTS BY PAIR TYPE:                                         ║");
     println!("╠═══════════════════════════════════════════════════════════════╣");
@@ -315,7 +340,10 @@ fn load_chunks(path: &PathBuf) -> Result<Vec<Chunk>, Box<dyn std::error::Error>>
 }
 
 #[allow(clippy::type_complexity)]
-fn generate_pairs(chunks: &[Chunk], target_count: usize) -> Result<Vec<(PairType, Chunk, Chunk)>, Box<dyn std::error::Error>> {
+fn generate_pairs(
+    chunks: &[Chunk],
+    target_count: usize,
+) -> Result<Vec<(PairType, Chunk, Chunk)>, Box<dyn std::error::Error>> {
     let mut rng = rand::rngs::StdRng::seed_from_u64(42); // Reproducible
     let mut pairs = Vec::new();
 
@@ -333,7 +361,10 @@ fn generate_pairs(chunks: &[Chunk], target_count: usize) -> Result<Vec<(PairType
     // Group chunks by topic
     let mut by_topic: HashMap<String, Vec<&Chunk>> = HashMap::new();
     for chunk in chunks {
-        let topic = chunk.topic_hint.clone().unwrap_or_else(|| chunk.doc_id.clone());
+        let topic = chunk
+            .topic_hint
+            .clone()
+            .unwrap_or_else(|| chunk.doc_id.clone());
         by_topic.entry(topic).or_default().push(chunk);
     }
 
@@ -362,7 +393,8 @@ fn generate_pairs(chunks: &[Chunk], target_count: usize) -> Result<Vec<(PairType
             for i in 0..topic_chunks.len().min(10) {
                 for j in (i + 1)..topic_chunks.len().min(10) {
                     if topic_chunks[i].doc_id != topic_chunks[j].doc_id {
-                        same_topic_candidates.push((topic_chunks[i].clone(), topic_chunks[j].clone()));
+                        same_topic_candidates
+                            .push((topic_chunks[i].clone(), topic_chunks[j].clone()));
                     }
                 }
             }
@@ -396,7 +428,10 @@ fn generate_pairs(chunks: &[Chunk], target_count: usize) -> Result<Vec<(PairType
 }
 
 fn calculate_stats(results: &[PairResult], pair_type: PairType) -> PairTypeStats {
-    let filtered: Vec<_> = results.iter().filter(|r| r.pair_type == pair_type).collect();
+    let filtered: Vec<_> = results
+        .iter()
+        .filter(|r| r.pair_type == pair_type)
+        .collect();
 
     if filtered.is_empty() {
         return PairTypeStats {
@@ -413,7 +448,8 @@ fn calculate_stats(results: &[PairResult], pair_type: PairType) -> PairTypeStats
 
     let causal_count = filtered.iter().filter(|r| r.has_causal_link).count();
     let avg_conf = filtered.iter().map(|r| r.confidence).sum::<f32>() / filtered.len() as f32;
-    let avg_time = filtered.iter().map(|r| r.inference_time_ms).sum::<u64>() as f64 / filtered.len() as f64;
+    let avg_time =
+        filtered.iter().map(|r| r.inference_time_ms).sum::<u64>() as f64 / filtered.len() as f64;
 
     let mut direction_dist: HashMap<String, usize> = HashMap::new();
     let mut mech_type_dist: HashMap<String, usize> = HashMap::new();
@@ -438,7 +474,10 @@ fn calculate_stats(results: &[PairResult], pair_type: PairType) -> PairTypeStats
 }
 
 fn print_pair_type_stats(name: &str, stats: &PairTypeStats) {
-    println!("║ {:20} ({:>4} pairs):                         ║", name, stats.total);
+    println!(
+        "║ {:20} ({:>4} pairs):                         ║",
+        name, stats.total
+    );
     println!("║   Causal Rate: {:>45.1}% ║", stats.causal_rate * 100.0);
     println!("║   Avg Confidence: {:>42.2} ║", stats.avg_confidence);
 }

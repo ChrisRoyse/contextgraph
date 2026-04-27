@@ -29,7 +29,14 @@ fn main() {
     println!();
     println!("Configuration:");
     println!("  Dataset path: {}", config.dataset_path);
-    println!("  Max chunks: {}", if config.max_chunks == 0 { "unlimited".to_string() } else { config.max_chunks.to_string() });
+    println!(
+        "  Max chunks: {}",
+        if config.max_chunks == 0 {
+            "unlimited".to_string()
+        } else {
+            config.max_chunks.to_string()
+        }
+    );
     println!("  Num queries: {}", config.num_queries);
     println!("  Seed: {}", config.seed);
     println!("  Embeddings: real (GPU)");
@@ -43,7 +50,11 @@ fn main() {
     match runner.load_dataset() {
         Ok(dataset) => {
             println!("OK");
-            println!("  {} chunks, {} topics", dataset.chunks.len(), dataset.topic_count());
+            println!(
+                "  {} chunks, {} topics",
+                dataset.chunks.len(),
+                dataset.topic_count()
+            );
         }
         Err(e) => {
             println!("FAILED");
@@ -90,26 +101,64 @@ fn main() {
     println!("Dataset Stats:");
     println!("  Total chunks: {}", results.dataset_stats.total_chunks);
     println!("  Total topics: {}", results.dataset_stats.total_topics);
-    println!("  Chunks/topic: {:.1}", results.dataset_stats.chunks_per_topic_avg);
+    println!(
+        "  Chunks/topic: {:.1}",
+        results.dataset_stats.chunks_per_topic_avg
+    );
     println!();
 
     println!("Retrieval (P@10 | R@10 | MRR):");
-    let single_p10 = results.single_retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
-    let single_r10 = results.single_retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
-    let multi_p10 = results.multi_retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
-    let multi_r10 = results.multi_retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
-    println!("  Single-embedder: {:.3} | {:.3} | {:.3}", single_p10, single_r10, results.single_retrieval.mrr);
-    println!("  Multi-space:     {:.3} | {:.3} | {:.3}", multi_p10, multi_r10, results.multi_retrieval.mrr);
+    let single_p10 = results
+        .single_retrieval
+        .precision_at
+        .get(&10)
+        .copied()
+        .unwrap_or(0.0);
+    let single_r10 = results
+        .single_retrieval
+        .recall_at
+        .get(&10)
+        .copied()
+        .unwrap_or(0.0);
+    let multi_p10 = results
+        .multi_retrieval
+        .precision_at
+        .get(&10)
+        .copied()
+        .unwrap_or(0.0);
+    let multi_r10 = results
+        .multi_retrieval
+        .recall_at
+        .get(&10)
+        .copied()
+        .unwrap_or(0.0);
+    println!(
+        "  Single-embedder: {:.3} | {:.3} | {:.3}",
+        single_p10, single_r10, results.single_retrieval.mrr
+    );
+    println!(
+        "  Multi-space:     {:.3} | {:.3} | {:.3}",
+        multi_p10, multi_r10, results.multi_retrieval.mrr
+    );
     println!();
 
     println!("Clustering (Purity | NMI):");
-    println!("  Single-embedder: {:.3} | {:.3}", results.single_clustering.purity, results.single_clustering.nmi);
-    println!("  Multi-space:     {:.3} | {:.3}", results.multi_clustering.purity, results.multi_clustering.nmi);
+    println!(
+        "  Single-embedder: {:.3} | {:.3}",
+        results.single_clustering.purity, results.single_clustering.nmi
+    );
+    println!(
+        "  Multi-space:     {:.3} | {:.3}",
+        results.multi_clustering.purity, results.multi_clustering.nmi
+    );
     println!();
 
     println!("Improvements (multi-space vs single-embedder):");
     println!("  MRR:        {:+.1}%", results.improvements.mrr_pct);
-    println!("  P@10:       {:+.1}%", results.improvements.precision_10_pct);
+    println!(
+        "  P@10:       {:+.1}%",
+        results.improvements.precision_10_pct
+    );
     println!("  R@10:       {:+.1}%", results.improvements.recall_10_pct);
     println!("  Purity:     {:+.1}%", results.improvements.purity_pct);
     println!("  NMI:        {:+.1}%", results.improvements.nmi_pct);
@@ -120,17 +169,26 @@ fn main() {
         + results.improvements.precision_10_pct
         + results.improvements.recall_10_pct
         + results.improvements.purity_pct
-        + results.improvements.nmi_pct) / 5.0;
+        + results.improvements.nmi_pct)
+        / 5.0;
 
-    let winner = if overall_improvement > 0.0 { "Multi-space" } else { "Single-embedder" };
-    println!("Winner: {} (overall improvement: {:+.1}%)", winner, overall_improvement);
+    let winner = if overall_improvement > 0.0 {
+        "Multi-space"
+    } else {
+        "Single-embedder"
+    };
+    println!(
+        "Winner: {} (overall improvement: {:+.1}%)",
+        winner, overall_improvement
+    );
     println!();
 
     // Save results to file if output path provided
     if let Some(output) = get_output_path(&args) {
         let json = serde_json::to_string_pretty(&results).unwrap();
         let mut file = File::create(&output).expect("Failed to create output file");
-        file.write_all(json.as_bytes()).expect("Failed to write output file");
+        file.write_all(json.as_bytes())
+            .expect("Failed to write output file");
         println!("Results saved to: {}", output.display());
     }
 }
@@ -218,7 +276,9 @@ fn print_help() {
     println!("    # Prepare Wikipedia dataset first:");
     println!("    cd crates/context-graph-benchmark/scripts");
     println!("    pip install datasets");
-    println!("    python prepare_wikipedia.py --output ../benchmark_data/wikipedia --max-docs 10000");
+    println!(
+        "    python prepare_wikipedia.py --output ../benchmark_data/wikipedia --max-docs 10000"
+    );
     println!();
     println!("    # Run benchmark:");
     println!("    cargo run -p context-graph-benchmark --bin realdata-bench -- \\");

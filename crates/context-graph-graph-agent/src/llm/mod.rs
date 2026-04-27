@@ -76,7 +76,9 @@ impl GraphRelationshipLLM {
             return Err(GraphAgentError::LlmNotInitialized);
         }
 
-        let prompt = self.prompt_builder.build_analysis_prompt(memory_a, memory_b);
+        let prompt = self
+            .prompt_builder
+            .build_analysis_prompt(memory_a, memory_b);
 
         // Use the shared LLM with graph grammar for inference and capture metadata
         let (response, tokens_consumed, generation_time_ms) = self

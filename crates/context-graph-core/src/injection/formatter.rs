@@ -293,9 +293,9 @@ impl ContextFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::teleological::Embedder;
     use chrono::TimeDelta;
     use uuid::Uuid;
-    use crate::teleological::Embedder;
 
     fn make_candidate(
         content: &str,
@@ -314,12 +314,7 @@ mod tests {
     }
 
     fn make_alert(summary: &str, space: Embedder, score: f32) -> DivergenceAlert {
-        DivergenceAlert::new(
-            Uuid::new_v4(),
-            space,
-            score,
-            summary,
-        )
+        DivergenceAlert::new(Uuid::new_v4(), space, score, summary)
     }
 
     // =========================================================================
@@ -343,22 +338,38 @@ mod tests {
 
         let output = ContextFormatter::format_full_context(&candidates, &[]);
 
-        assert!(output.contains("## Relevant Context"), "Should have main header");
-        assert!(output.contains("### Recent Related Work"), "Should have cluster section");
-        assert!(output.contains("### Potentially Related"), "Should have single-match section");
+        assert!(
+            output.contains("## Relevant Context"),
+            "Should have main header"
+        );
+        assert!(
+            output.contains("### Recent Related Work"),
+            "Should have cluster section"
+        );
+        assert!(
+            output.contains("### Potentially Related"),
+            "Should have single-match section"
+        );
         assert!(output.contains("HDBSCAN"), "Should include cluster content");
-        assert!(output.contains("Rust async"), "Should include single-match content");
+        assert!(
+            output.contains("Rust async"),
+            "Should include single-match content"
+        );
         println!("[PASS] format_full_context produces correct structure");
     }
 
     #[test]
     fn test_format_full_context_with_alerts() {
-        let candidates = vec![
-            make_candidate("Test content", InjectionCategory::HighRelevanceCluster, 1),
-        ];
-        let alerts = vec![
-            make_alert("Working on unrelated feature", Embedder::Semantic, 0.15),
-        ];
+        let candidates = vec![make_candidate(
+            "Test content",
+            InjectionCategory::HighRelevanceCluster,
+            1,
+        )];
+        let alerts = vec![make_alert(
+            "Working on unrelated feature",
+            Embedder::Semantic,
+            0.15,
+        )];
 
         let output = ContextFormatter::format_full_context(&candidates, &alerts);
 
@@ -377,9 +388,7 @@ mod tests {
 
     #[test]
     fn test_format_full_context_only_alerts() {
-        let alerts = vec![
-            make_alert("Recent context here", Embedder::Code, 0.08),
-        ];
+        let alerts = vec![make_alert("Recent context here", Embedder::Code, 0.08)];
 
         let output = ContextFormatter::format_full_context(&[], &alerts);
 
@@ -413,13 +422,24 @@ mod tests {
     #[test]
     fn test_format_brief_context() {
         let candidates = vec![
-            make_candidate("HDBSCAN clustering implementation", InjectionCategory::HighRelevanceCluster, 2),
-            make_candidate("BIRCH tree incremental clustering", InjectionCategory::HighRelevanceCluster, 5),
+            make_candidate(
+                "HDBSCAN clustering implementation",
+                InjectionCategory::HighRelevanceCluster,
+                2,
+            ),
+            make_candidate(
+                "BIRCH tree incremental clustering",
+                InjectionCategory::HighRelevanceCluster,
+                5,
+            ),
         ];
 
         let output = ContextFormatter::format_brief_context(&candidates);
 
-        assert!(output.starts_with("Related:"), "Should start with 'Related:'");
+        assert!(
+            output.starts_with("Related:"),
+            "Should start with 'Related:'"
+        );
         assert!(output.contains("HDBSCAN"));
         assert!(output.contains("BIRCH"));
         println!("[PASS] format_brief_context works: {}", output);
@@ -453,7 +473,10 @@ mod tests {
             BRIEF_MAX_TOKENS,
             token_estimate
         );
-        println!("[PASS] Brief context respects token limit: ~{} tokens", token_estimate);
+        println!(
+            "[PASS] Brief context respects token limit: ~{} tokens",
+            token_estimate
+        );
     }
 
     // =========================================================================
@@ -474,17 +497,24 @@ mod tests {
         let summary = ContextFormatter::summarize_memory(content, 10);
 
         assert!(summary.len() < content.len(), "Should be shorter");
-        assert!(summary.ends_with("...") || summary.ends_with('.'), "Should end with ... or .");
+        assert!(
+            summary.ends_with("...") || summary.ends_with('.'),
+            "Should end with ... or ."
+        );
         println!("[PASS] Long content truncated: {}", summary);
     }
 
     #[test]
     fn test_summarize_memory_sentence_boundary() {
-        let content = "First sentence here. Second sentence that goes on for a while with many words.";
+        let content =
+            "First sentence here. Second sentence that goes on for a while with many words.";
         let summary = ContextFormatter::summarize_memory(content, 10);
 
         // Should prefer sentence boundary
-        assert!(summary.contains("First sentence"), "Should include first sentence");
+        assert!(
+            summary.contains("First sentence"),
+            "Should include first sentence"
+        );
         println!("[PASS] Truncates at sentence boundary: {}", summary);
     }
 
@@ -585,13 +615,23 @@ mod tests {
     #[test]
     fn test_all_categories_present() {
         let candidates = vec![
-            make_candidate("High relevance cluster content", InjectionCategory::HighRelevanceCluster, 1),
-            make_candidate("Single space match content", InjectionCategory::SingleSpaceMatch, 2),
-            make_candidate("Recent session summary", InjectionCategory::RecentSession, 24),
+            make_candidate(
+                "High relevance cluster content",
+                InjectionCategory::HighRelevanceCluster,
+                1,
+            ),
+            make_candidate(
+                "Single space match content",
+                InjectionCategory::SingleSpaceMatch,
+                2,
+            ),
+            make_candidate(
+                "Recent session summary",
+                InjectionCategory::RecentSession,
+                24,
+            ),
         ];
-        let alerts = vec![
-            make_alert("Divergent activity", Embedder::Semantic, 0.12),
-        ];
+        let alerts = vec![make_alert("Divergent activity", Embedder::Semantic, 0.12)];
 
         let output = ContextFormatter::format_full_context(&candidates, &alerts);
 
@@ -604,13 +644,11 @@ mod tests {
 
     #[test]
     fn test_markdown_special_characters_in_content() {
-        let candidates = vec![
-            make_candidate(
-                "Code: `fn main() { println!(\"Hello\"); }` with *emphasis*",
-                InjectionCategory::HighRelevanceCluster,
-                1,
-            ),
-        ];
+        let candidates = vec![make_candidate(
+            "Code: `fn main() { println!(\"Hello\"); }` with *emphasis*",
+            InjectionCategory::HighRelevanceCluster,
+            1,
+        )];
 
         let output = ContextFormatter::format_full_context(&candidates, &[]);
 
@@ -621,13 +659,11 @@ mod tests {
 
     #[test]
     fn test_unicode_content() {
-        let candidates = vec![
-            make_candidate(
-                "Unicode: 日本語テスト, émoji: 🚀, symbols: α β γ",
-                InjectionCategory::HighRelevanceCluster,
-                1,
-            ),
-        ];
+        let candidates = vec![make_candidate(
+            "Unicode: 日本語テスト, émoji: 🚀, symbols: α β γ",
+            InjectionCategory::HighRelevanceCluster,
+            1,
+        )];
 
         let output = ContextFormatter::format_full_context(&candidates, &[]);
 
@@ -671,7 +707,10 @@ mod tests {
         println!("  After: output_word_count = {}", output_word_count);
         println!("  Expected: {} (unchanged)", word_count);
 
-        assert_eq!(output_word_count, word_count, "Exactly at limit should not truncate");
+        assert_eq!(
+            output_word_count, word_count,
+            "Exactly at limit should not truncate"
+        );
         assert!(!summary.ends_with("..."), "Should not have ellipsis");
         println!("[PASS] FSV Edge Case 2: Exactly at limit -> unchanged");
     }
@@ -682,11 +721,13 @@ mod tests {
 
         // Create candidates that together approach the 200 token limit
         let candidates: Vec<_> = (0..20)
-            .map(|i| make_candidate(
-                &format!("Candidate {} with reasonable content here", i),
-                InjectionCategory::HighRelevanceCluster,
-                i,
-            ))
+            .map(|i| {
+                make_candidate(
+                    &format!("Candidate {} with reasonable content here", i),
+                    InjectionCategory::HighRelevanceCluster,
+                    i,
+                )
+            })
             .collect();
 
         println!("  Before: {} candidates available", candidates.len());
@@ -698,7 +739,11 @@ mod tests {
         println!("  After: estimated tokens = {}", tokens);
         println!("  Expected: <= {} tokens", BRIEF_MAX_TOKENS);
 
-        assert!(tokens <= BRIEF_MAX_TOKENS, "Must not exceed {} tokens", BRIEF_MAX_TOKENS);
+        assert!(
+            tokens <= BRIEF_MAX_TOKENS,
+            "Must not exceed {} tokens",
+            BRIEF_MAX_TOKENS
+        );
         println!("[PASS] FSV Edge Case 3: Brief context respects token budget");
     }
 
@@ -748,11 +793,17 @@ mod tests {
         let output_word_count = summary.split_whitespace().count();
 
         println!("  After: summary = '{}'", summary);
-        println!("  After: output_word_count = {} (including ... as word)", output_word_count);
+        println!(
+            "  After: output_word_count = {} (including ... as word)",
+            output_word_count
+        );
 
         // Should be truncated
         assert!(summary.len() < content.len(), "Should be truncated");
-        assert!(summary.ends_with("...") || summary.ends_with('.'), "Should have proper ending");
+        assert!(
+            summary.ends_with("...") || summary.ends_with('.'),
+            "Should have proper ending"
+        );
         println!("[PASS] FSV Edge Case 6: 1 word over -> truncated");
     }
 
@@ -774,7 +825,10 @@ mod tests {
 
         // Verify all alerts appear
         assert!(output.contains("First alert"), "Should contain first alert");
-        assert!(output.contains("Second alert"), "Should contain second alert");
+        assert!(
+            output.contains("Second alert"),
+            "Should contain second alert"
+        );
         assert!(output.contains("Third alert"), "Should contain third alert");
 
         // Verify order is preserved (first appears before second, second before third)
@@ -812,13 +866,18 @@ mod tests {
 
         // The 75-word content should be preserved (under 100 word limit for session)
         // Count words after "### Previous Session\n"
-        let session_start = output.find("### Previous Session").expect("Session section not found");
+        let session_start = output
+            .find("### Previous Session")
+            .expect("Session section not found");
         let session_content = &output[session_start..];
 
         println!("  After: session section = '{}'", session_content);
 
         // The content should NOT be truncated (75 < 100)
-        assert!(!session_content.contains("..."), "Session summary should not be truncated at 75 words");
+        assert!(
+            !session_content.contains("..."),
+            "Session summary should not be truncated at 75 words"
+        );
 
         println!("[PASS] FSV Edge Case 8: Session summary allows 100 words");
     }

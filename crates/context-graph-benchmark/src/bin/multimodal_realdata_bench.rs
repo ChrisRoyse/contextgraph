@@ -124,8 +124,9 @@ fn parse_args() -> Args {
                     .expect("--seed must be a number");
             }
             "--checkpoint-dir" => {
-                args.checkpoint_dir =
-                    Some(PathBuf::from(argv.next().expect("--checkpoint-dir requires a value")));
+                args.checkpoint_dir = Some(PathBuf::from(
+                    argv.next().expect("--checkpoint-dir requires a value"),
+                ));
             }
             "--no-checkpoint" => {
                 args.checkpoint_dir = None;
@@ -482,11 +483,26 @@ async fn main() {
 
     let asymmetry_verification = verify_e10_asymmetry(&embedded);
 
-    println!("    Total E10 vector pairs: {}", asymmetry_verification.total_pairs);
-    println!("    Identical vectors (sim > 0.999): {}", asymmetry_verification.identical_pairs);
-    println!("    High similarity vectors (sim > 0.95): {}", asymmetry_verification.high_similarity_pairs);
-    println!("    Vector distinctness: {:.1}% different", (1.0 - asymmetry_verification.identity_rate) * 100.0);
-    println!("    Avg intent-context similarity: {:.4}", 1.0 - asymmetry_verification.avg_distinctness);
+    println!(
+        "    Total E10 vector pairs: {}",
+        asymmetry_verification.total_pairs
+    );
+    println!(
+        "    Identical vectors (sim > 0.999): {}",
+        asymmetry_verification.identical_pairs
+    );
+    println!(
+        "    High similarity vectors (sim > 0.95): {}",
+        asymmetry_verification.high_similarity_pairs
+    );
+    println!(
+        "    Vector distinctness: {:.1}% different",
+        (1.0 - asymmetry_verification.identity_rate) * 100.0
+    );
+    println!(
+        "    Avg intent-context similarity: {:.4}",
+        1.0 - asymmetry_verification.avg_distinctness
+    );
 
     // Fail fast if asymmetry is broken
     if !asymmetry_verification.passed {
@@ -523,7 +539,8 @@ async fn main() {
 
     // 4.3 Asymmetric Comparison
     println!("  4.3 Asymmetric Comparison...");
-    let asymmetric_results = run_asymmetric_comparison(&embedded, args.num_asymmetric_queries, args.seed);
+    let asymmetric_results =
+        run_asymmetric_comparison(&embedded, args.num_asymmetric_queries, args.seed);
     println!(
         "    Raw asymmetry ratio: {:.4} (should be ~1.0)",
         asymmetric_results.raw_asymmetry_ratio
@@ -534,12 +551,17 @@ async fn main() {
     );
     println!(
         "    Formula compliant: {}",
-        if asymmetric_results.formula_compliant { "YES" } else { "NO" }
+        if asymmetric_results.formula_compliant {
+            "YES"
+        } else {
+            "NO"
+        }
     );
 
     // 4.4 E10 Contribution Analysis
     println!("  4.4 E10 Contribution Analysis...");
-    let e10_contribution = run_e10_contribution_analysis(&embedded, args.num_asymmetric_queries, args.seed);
+    let e10_contribution =
+        run_e10_contribution_analysis(&embedded, args.num_asymmetric_queries, args.seed);
     println!(
         "    E10 contribution: {:.1}% improvement over E1-only",
         e10_contribution.e10_contribution_pct * 100.0
@@ -558,7 +580,9 @@ async fn main() {
     );
 
     // Phase 5: Compile results
-    let source_datasets: Vec<String> = dataset.chunks.iter()
+    let source_datasets: Vec<String> = dataset
+        .chunks
+        .iter()
         .filter_map(|c| c.source_dataset.clone())
         .collect::<HashSet<_>>()
         .into_iter()
@@ -726,7 +750,10 @@ fn run_intent_retrieval(
     }
 
     // Select random queries
-    let query_ids: Vec<Uuid> = ids.choose_multiple(&mut rng, num_queries.min(ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = ids
+        .choose_multiple(&mut rng, num_queries.min(ids.len()))
+        .copied()
+        .collect();
 
     let mut mrr_e1_sum = 0.0;
     let mut mrr_enhanced_sum = 0.0; // E1 + E10 combined (enhancement model)
@@ -735,7 +762,9 @@ fn run_intent_retrieval(
     let mut valid_queries = 0usize;
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
 
         // Compute scores for all candidates
         let mut scores_e1: Vec<(Uuid, f32)> = Vec::new();
@@ -750,7 +779,10 @@ fn run_intent_retrieval(
             let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
 
             // E10: query_as_intent vs doc_as_context (asymmetric enhancement)
-            let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+            let sim_e10 = cosine_similarity(
+                &query_fp.e10_multimodal_paraphrase,
+                &doc_fp.e10_multimodal_as_context,
+            );
 
             // E1 + E10 enhanced: E1 foundation + E10 enhancement (per ARCH-16)
             // E10 adds specialized precision on top of E1's semantic foundation
@@ -801,7 +833,11 @@ fn run_intent_retrieval(
         num_queries: valid_queries,
         mrr_intent_to_context: mrr_enhanced, // E1 + E10 enhanced
         mrr_e1_baseline: mrr_e1,
-        improvement_over_e1: if mrr_e1 > 0.0 { (mrr_enhanced - mrr_e1) / mrr_e1 } else { 0.0 },
+        improvement_over_e1: if mrr_e1 > 0.0 {
+            (mrr_enhanced - mrr_e1) / mrr_e1
+        } else {
+            0.0
+        },
         hits_at_1: hits_at_1 as f64 / n,
         hits_at_5: hits_at_5 as f64 / n,
     }
@@ -829,7 +865,10 @@ fn run_context_retrieval(
         };
     }
 
-    let query_ids: Vec<Uuid> = ids.choose_multiple(&mut rng, num_queries.min(ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = ids
+        .choose_multiple(&mut rng, num_queries.min(ids.len()))
+        .copied()
+        .collect();
 
     let mut mrr_e1_sum = 0.0;
     let mut mrr_enhanced_sum = 0.0;
@@ -838,7 +877,9 @@ fn run_context_retrieval(
     let mut valid_queries = 0usize;
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
 
         let mut scores_e1: Vec<(Uuid, f32)> = Vec::new();
         let mut scores_enhanced: Vec<(Uuid, f32)> = Vec::new();
@@ -852,7 +893,10 @@ fn run_context_retrieval(
             let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
 
             // E10: query_as_context vs doc_as_intent (reverse direction for context retrieval)
-            let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_as_context, &doc_fp.e10_multimodal_paraphrase);
+            let sim_e10 = cosine_similarity(
+                &query_fp.e10_multimodal_as_context,
+                &doc_fp.e10_multimodal_paraphrase,
+            );
 
             // E1 + E10 enhanced
             let sim_enhanced = sim_e1 * 0.7 + sim_e10 * 0.3;
@@ -898,7 +942,11 @@ fn run_context_retrieval(
         num_queries: valid_queries,
         mrr_context_to_intent: mrr_enhanced,
         mrr_e1_baseline: mrr_e1,
-        improvement_over_e1: if mrr_e1 > 0.0 { (mrr_enhanced - mrr_e1) / mrr_e1 } else { 0.0 },
+        improvement_over_e1: if mrr_e1 > 0.0 {
+            (mrr_enhanced - mrr_e1) / mrr_e1
+        } else {
+            0.0
+        },
         hits_at_1: hits_at_1 as f64 / n,
         hits_at_5: hits_at_5 as f64 / n,
     }
@@ -936,7 +984,10 @@ fn run_asymmetric_comparison(
         };
     }
 
-    let query_ids: Vec<Uuid> = ids.choose_multiple(&mut rng, num_queries.min(ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = ids
+        .choose_multiple(&mut rng, num_queries.min(ids.len()))
+        .copied()
+        .collect();
 
     let mut intent_to_context_sum = 0.0f64;
     let mut context_to_intent_sum = 0.0f64;
@@ -945,23 +996,34 @@ fn run_asymmetric_comparison(
     let mut pair_count = 0usize;
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
 
         // Sample some documents to compare against
-        let doc_ids: Vec<Uuid> = ids.iter()
+        let doc_ids: Vec<Uuid> = ids
+            .iter()
             .filter(|id| **id != *query_id)
             .take(50)
             .copied()
             .collect();
 
         for doc_id in &doc_ids {
-            let Some(doc_fp) = embedded.fingerprints.get(doc_id) else { continue };
+            let Some(doc_fp) = embedded.fingerprints.get(doc_id) else {
+                continue;
+            };
 
             // Raw Intent -> Context similarity
-            let raw_i2c = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+            let raw_i2c = cosine_similarity(
+                &query_fp.e10_multimodal_paraphrase,
+                &doc_fp.e10_multimodal_as_context,
+            );
 
             // Raw Context -> Intent similarity
-            let raw_c2i = cosine_similarity(&query_fp.e10_multimodal_as_context, &doc_fp.e10_multimodal_paraphrase);
+            let raw_c2i = cosine_similarity(
+                &query_fp.e10_multimodal_as_context,
+                &doc_fp.e10_multimodal_paraphrase,
+            );
 
             // Apply direction modifiers per Constitution
             let modified_i2c = raw_i2c as f64 * INTENT_TO_CONTEXT_MODIFIER;
@@ -1034,7 +1096,10 @@ fn run_e10_contribution_analysis(
 
     // Select random query candidates
     let all_ids: Vec<Uuid> = embedded.fingerprints.keys().copied().collect();
-    let query_ids: Vec<Uuid> = all_ids.choose_multiple(&mut rng, num_queries.min(all_ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = all_ids
+        .choose_multiple(&mut rng, num_queries.min(all_ids.len()))
+        .copied()
+        .collect();
 
     let mut mrr_blend_sum = 0.0;
     let mut mrr_e1_sum = 0.0;
@@ -1044,8 +1109,14 @@ fn run_e10_contribution_analysis(
     let blend = 0.3; // Default blend per Constitution
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
-        let query_topic = embedded.topic_assignments.get(query_id).copied().unwrap_or(0);
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
+        let query_topic = embedded
+            .topic_assignments
+            .get(query_id)
+            .copied()
+            .unwrap_or(0);
 
         let mut scores_blend: Vec<(Uuid, f32)> = Vec::new();
         let mut scores_e1: Vec<(Uuid, f32)> = Vec::new();
@@ -1056,7 +1127,10 @@ fn run_e10_contribution_analysis(
             }
 
             let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
-            let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+            let sim_e10 = cosine_similarity(
+                &query_fp.e10_multimodal_paraphrase,
+                &doc_fp.e10_multimodal_as_context,
+            );
 
             // Blend: (1-blend)*E1 + blend*E10
             let fused = sim_e1 * (1.0 - blend as f32) + sim_e10 * blend as f32;
@@ -1094,7 +1168,11 @@ fn run_e10_contribution_analysis(
     let mrr_e1 = mrr_e1_sum / n;
 
     let contribution = mrr_blend - mrr_e1;
-    let contribution_pct = if mrr_e1 > 0.0 { contribution / mrr_e1 } else { 0.0 };
+    let contribution_pct = if mrr_e1 > 0.0 {
+        contribution / mrr_e1
+    } else {
+        0.0
+    };
 
     let per_topic_contribution: HashMap<usize, f64> = per_topic
         .into_iter()
@@ -1122,7 +1200,10 @@ fn run_ablation_study(
 
     // Select random query candidates
     let all_ids: Vec<Uuid> = embedded.fingerprints.keys().copied().collect();
-    let query_ids: Vec<Uuid> = all_ids.choose_multiple(&mut rng, num_queries.min(all_ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = all_ids
+        .choose_multiple(&mut rng, num_queries.min(all_ids.len()))
+        .copied()
+        .collect();
 
     // Compute MRR for each configuration
     let e1_only_mrr = compute_ablation_mrr(embedded, &query_ids, AblationMode::E1Only);
@@ -1136,8 +1217,13 @@ fn run_ablation_study(
         .iter()
         .map(|&blend| {
             let mrr = compute_ablation_mrr(embedded, &query_ids, AblationMode::Blend(blend));
-            let precision_at_5 = compute_ablation_precision(embedded, &query_ids, AblationMode::Blend(blend), 5);
-            BlendPoint { blend, mrr, precision_at_5 }
+            let precision_at_5 =
+                compute_ablation_precision(embedded, &query_ids, AblationMode::Blend(blend), 5);
+            BlendPoint {
+                blend,
+                mrr,
+                precision_at_5,
+            }
         })
         .collect();
 
@@ -1158,16 +1244,14 @@ enum AblationMode {
     Full13Space,
 }
 
-fn compute_ablation_mrr(
-    embedded: &EmbeddedDataset,
-    query_ids: &[Uuid],
-    mode: AblationMode,
-) -> f64 {
+fn compute_ablation_mrr(embedded: &EmbeddedDataset, query_ids: &[Uuid], mode: AblationMode) -> f64 {
     let mut mrr_sum = 0.0;
     let mut valid_queries = 0usize;
 
     for query_id in query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
 
         let mut scores: Vec<(Uuid, f32)> = Vec::new();
 
@@ -1180,18 +1264,25 @@ fn compute_ablation_mrr(
                 AblationMode::E1Only => {
                     cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic)
                 }
-                AblationMode::E10Only => {
-                    cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context)
-                }
+                AblationMode::E10Only => cosine_similarity(
+                    &query_fp.e10_multimodal_paraphrase,
+                    &doc_fp.e10_multimodal_as_context,
+                ),
                 AblationMode::Blend(blend) => {
                     let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
-                    let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+                    let sim_e10 = cosine_similarity(
+                        &query_fp.e10_multimodal_paraphrase,
+                        &doc_fp.e10_multimodal_as_context,
+                    );
                     sim_e1 * (1.0 - blend as f32) + sim_e10 * blend as f32
                 }
                 AblationMode::Full13Space => {
                     // Simulate full 13-space as weighted combination
                     let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
-                    let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+                    let sim_e10 = cosine_similarity(
+                        &query_fp.e10_multimodal_paraphrase,
+                        &doc_fp.e10_multimodal_as_context,
+                    );
                     // Full space gives more weight to E1 as foundation
                     0.6 * sim_e1 + 0.2 * sim_e10 + 0.2 * (sim_e1 + sim_e10) / 2.0
                 }
@@ -1226,7 +1317,9 @@ fn compute_ablation_precision(
     let mut valid_queries = 0usize;
 
     for query_id in query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
 
         let mut scores: Vec<(Uuid, f32)> = Vec::new();
 
@@ -1239,17 +1332,24 @@ fn compute_ablation_precision(
                 AblationMode::E1Only => {
                     cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic)
                 }
-                AblationMode::E10Only => {
-                    cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context)
-                }
+                AblationMode::E10Only => cosine_similarity(
+                    &query_fp.e10_multimodal_paraphrase,
+                    &doc_fp.e10_multimodal_as_context,
+                ),
                 AblationMode::Blend(blend) => {
                     let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
-                    let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+                    let sim_e10 = cosine_similarity(
+                        &query_fp.e10_multimodal_paraphrase,
+                        &doc_fp.e10_multimodal_as_context,
+                    );
                     sim_e1 * (1.0 - blend as f32) + sim_e10 * blend as f32
                 }
                 AblationMode::Full13Space => {
                     let sim_e1 = cosine_similarity(&query_fp.e1_semantic, &doc_fp.e1_semantic);
-                    let sim_e10 = cosine_similarity(&query_fp.e10_multimodal_paraphrase, &doc_fp.e10_multimodal_as_context);
+                    let sim_e10 = cosine_similarity(
+                        &query_fp.e10_multimodal_paraphrase,
+                        &doc_fp.e10_multimodal_as_context,
+                    );
                     0.6 * sim_e1 + 0.2 * sim_e10 + 0.2 * (sim_e1 + sim_e10) / 2.0
                 }
             };
@@ -1303,11 +1403,16 @@ fn generate_recommendations(
     let mut recs = Vec::new();
 
     if !asymmetry.passed {
-        recs.push("CRITICAL: E10 vectors are too similar. Check MultimodalModel.embed_dual().".to_string());
+        recs.push(
+            "CRITICAL: E10 vectors are too similar. Check MultimodalModel.embed_dual()."
+                .to_string(),
+        );
     }
 
     if asymmetry.avg_distinctness < 0.1 {
-        recs.push("E10 vector distinctness is low. Intent/context encodings may need tuning.".to_string());
+        recs.push(
+            "E10 vector distinctness is low. Intent/context encodings may need tuning.".to_string(),
+        );
     }
 
     if !asymmetric.formula_compliant {
@@ -1318,15 +1423,23 @@ fn generate_recommendations(
     }
 
     if intent.improvement_over_e1 < 0.0 {
-        recs.push("E10 intent->context performing worse than E1. Check E10 embedding quality.".to_string());
+        recs.push(
+            "E10 intent->context performing worse than E1. Check E10 embedding quality."
+                .to_string(),
+        );
     }
 
     if e10.e10_contribution_pct < 0.05 {
-        recs.push("E10 contribution below 5%. Consider increasing E10 weight in fusion formula.".to_string());
+        recs.push(
+            "E10 contribution below 5%. Consider increasing E10 weight in fusion formula."
+                .to_string(),
+        );
     }
 
     if recs.is_empty() {
-        recs.push("All targets met! E10 multimodal embedder performing well on real data.".to_string());
+        recs.push(
+            "All targets met! E10 multimodal embedder performing well on real data.".to_string(),
+        );
     }
 
     recs
@@ -1348,91 +1461,238 @@ fn save_markdown_report(results: &E10RealDataResults, path: &Path) -> std::io::R
     writeln!(f)?;
     writeln!(f, "## Benchmark Design (E1 Foundation + E10 Enhancement)")?;
     writeln!(f)?;
-    writeln!(f, "Per ARCH-12 and ARCH-16: E1 is THE semantic foundation, E10 enhances it.")?;
+    writeln!(
+        f,
+        "Per ARCH-12 and ARCH-16: E1 is THE semantic foundation, E10 enhances it."
+    )?;
     writeln!(f)?;
     writeln!(f, "This benchmark uses **ADJACENT CHUNK** ground truth:")?;
-    writeln!(f, "- Relevant = only chunks at **chunk_idx +/- 1** from same document")?;
-    writeln!(f, "- Creates a challenging retrieval task (0-2 relevant per query)")?;
-    writeln!(f, "- Tests E10's ability to find structurally related context")?;
+    writeln!(
+        f,
+        "- Relevant = only chunks at **chunk_idx +/- 1** from same document"
+    )?;
+    writeln!(
+        f,
+        "- Creates a challenging retrieval task (0-2 relevant per query)"
+    )?;
+    writeln!(
+        f,
+        "- Tests E10's ability to find structurally related context"
+    )?;
     writeln!(f)?;
     writeln!(f, "**Key Features:**")?;
     writeln!(f, "- Real E10 embeddings with NO ground truth leakage")?;
     writeln!(f, "- Challenging task prevents ceiling effects (MRR=1.0)")?;
-    writeln!(f, "- Ablation study validates E10 enhancement vs E1 baseline")?;
+    writeln!(
+        f,
+        "- Ablation study validates E10 enhancement vs E1 baseline"
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Configuration")?;
     writeln!(f)?;
     writeln!(f, "| Parameter | Value |")?;
     writeln!(f, "|-----------|-------|")?;
-    writeln!(f, "| Total Chunks | {} |", results.dataset_info.total_chunks)?;
-    writeln!(f, "| Documents | {} |", results.dataset_info.total_documents)?;
+    writeln!(
+        f,
+        "| Total Chunks | {} |",
+        results.dataset_info.total_chunks
+    )?;
+    writeln!(
+        f,
+        "| Documents | {} |",
+        results.dataset_info.total_documents
+    )?;
     writeln!(f, "| Topics | {} |", results.dataset_info.topic_count)?;
-    writeln!(f, "| E10 Coverage | {:.1}% |", results.dataset_info.e10_coverage * 100.0)?;
-    writeln!(f, "| Asymmetric E10 | {} |", results.dataset_info.has_asymmetric_e10)?;
+    writeln!(
+        f,
+        "| E10 Coverage | {:.1}% |",
+        results.dataset_info.e10_coverage * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Asymmetric E10 | {} |",
+        results.dataset_info.has_asymmetric_e10
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## E10 Asymmetry Verification")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| Total Vector Pairs | {} | - |", results.e10_asymmetry_verification.total_pairs)?;
-    writeln!(f, "| Identical Pairs | {} | <50% |", results.e10_asymmetry_verification.identical_pairs)?;
-    writeln!(f, "| **Identity Rate** | **{:.1}%** | <50% |", results.e10_asymmetry_verification.identity_rate * 100.0)?;
-    writeln!(f, "| Avg Distinctness | {:.4} | >0.1 |", results.e10_asymmetry_verification.avg_distinctness)?;
-    writeln!(f, "| **Verification** | **{}** | PASS |", if results.e10_asymmetry_verification.passed { "PASS" } else { "FAIL" })?;
+    writeln!(
+        f,
+        "| Total Vector Pairs | {} | - |",
+        results.e10_asymmetry_verification.total_pairs
+    )?;
+    writeln!(
+        f,
+        "| Identical Pairs | {} | <50% |",
+        results.e10_asymmetry_verification.identical_pairs
+    )?;
+    writeln!(
+        f,
+        "| **Identity Rate** | **{:.1}%** | <50% |",
+        results.e10_asymmetry_verification.identity_rate * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Avg Distinctness | {:.4} | >0.1 |",
+        results.e10_asymmetry_verification.avg_distinctness
+    )?;
+    writeln!(
+        f,
+        "| **Verification** | **{}** | PASS |",
+        if results.e10_asymmetry_verification.passed {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Intent Retrieval (query_as_intent -> doc_as_context)")?;
     writeln!(f)?;
-    writeln!(f, "**Note:** Uses adjacent chunk ground truth (chunk_idx +/- 1 from same document).")?;
-    writeln!(f, "This creates a challenging retrieval task where E10's context understanding may help.")?;
+    writeln!(
+        f,
+        "**Note:** Uses adjacent chunk ground truth (chunk_idx +/- 1 from same document)."
+    )?;
+    writeln!(
+        f,
+        "This creates a challenging retrieval task where E10's context understanding may help."
+    )?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| Queries | {} | - |", results.intent_retrieval.num_queries)?;
-    writeln!(f, "| **MRR Intent->Context** | **{:.4}** | >0.15 |", results.intent_retrieval.mrr_intent_to_context)?;
-    writeln!(f, "| MRR E1 Baseline | {:.4} | - |", results.intent_retrieval.mrr_e1_baseline)?;
-    writeln!(f, "| Improvement over E1 | {:.1}% | >0% |", results.intent_retrieval.improvement_over_e1 * 100.0)?;
-    writeln!(f, "| Hits@1 | {:.1}% | - |", results.intent_retrieval.hits_at_1 * 100.0)?;
-    writeln!(f, "| Hits@5 | {:.1}% | - |", results.intent_retrieval.hits_at_5 * 100.0)?;
+    writeln!(
+        f,
+        "| Queries | {} | - |",
+        results.intent_retrieval.num_queries
+    )?;
+    writeln!(
+        f,
+        "| **MRR Intent->Context** | **{:.4}** | >0.15 |",
+        results.intent_retrieval.mrr_intent_to_context
+    )?;
+    writeln!(
+        f,
+        "| MRR E1 Baseline | {:.4} | - |",
+        results.intent_retrieval.mrr_e1_baseline
+    )?;
+    writeln!(
+        f,
+        "| Improvement over E1 | {:.1}% | >0% |",
+        results.intent_retrieval.improvement_over_e1 * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Hits@1 | {:.1}% | - |",
+        results.intent_retrieval.hits_at_1 * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Hits@5 | {:.1}% | - |",
+        results.intent_retrieval.hits_at_5 * 100.0
+    )?;
     writeln!(f)?;
 
-    writeln!(f, "## Asymmetric Comparison (Direction Modifier Validation)")?;
+    writeln!(
+        f,
+        "## Asymmetric Comparison (Direction Modifier Validation)"
+    )?;
     writeln!(f)?;
     writeln!(f, "**Note:** Direction modifiers (intent→context=1.2x, context→intent=0.8x) are applied per Constitution.")?;
-    writeln!(f, "Raw ratio should be ~1.0, modified ratio should be ~1.5 (= 1.2/0.8).")?;
+    writeln!(
+        f,
+        "Raw ratio should be ~1.0, modified ratio should be ~1.5 (= 1.2/0.8)."
+    )?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| **Raw Asymmetry Ratio** | **{:.4}** | ~1.0 |", results.asymmetric_comparison.raw_asymmetry_ratio)?;
-    writeln!(f, "| **Modified Asymmetry Ratio** | **{:.4}** | ~1.5 |", results.asymmetric_comparison.modified_asymmetry_ratio)?;
-    writeln!(f, "| Expected Ratio | {:.2} | 1.5 |", results.asymmetric_comparison.expected_asymmetry_ratio)?;
-    writeln!(f, "| Modifiers Applied | {} | YES |", if results.asymmetric_comparison.modifiers_applied { "YES" } else { "NO" })?;
-    writeln!(f, "| Formula Compliant | {} | YES |", if results.asymmetric_comparison.formula_compliant { "YES" } else { "NO" })?;
+    writeln!(
+        f,
+        "| **Raw Asymmetry Ratio** | **{:.4}** | ~1.0 |",
+        results.asymmetric_comparison.raw_asymmetry_ratio
+    )?;
+    writeln!(
+        f,
+        "| **Modified Asymmetry Ratio** | **{:.4}** | ~1.5 |",
+        results.asymmetric_comparison.modified_asymmetry_ratio
+    )?;
+    writeln!(
+        f,
+        "| Expected Ratio | {:.2} | 1.5 |",
+        results.asymmetric_comparison.expected_asymmetry_ratio
+    )?;
+    writeln!(
+        f,
+        "| Modifiers Applied | {} | YES |",
+        if results.asymmetric_comparison.modifiers_applied {
+            "YES"
+        } else {
+            "NO"
+        }
+    )?;
+    writeln!(
+        f,
+        "| Formula Compliant | {} | YES |",
+        if results.asymmetric_comparison.formula_compliant {
+            "YES"
+        } else {
+            "NO"
+        }
+    )?;
     writeln!(f)?;
     writeln!(f, "### Raw vs Modified Similarity Averages")?;
     writeln!(f)?;
     writeln!(f, "| Direction | Raw | Modified | Modifier |")?;
     writeln!(f, "|-----------|-----|----------|----------|")?;
-    writeln!(f, "| Intent→Context | {:.4} | {:.4} | 1.2x |",
+    writeln!(
+        f,
+        "| Intent→Context | {:.4} | {:.4} | 1.2x |",
         results.asymmetric_comparison.avg_intent_to_context_sim,
-        results.asymmetric_comparison.avg_modified_intent_to_context_sim)?;
-    writeln!(f, "| Context→Intent | {:.4} | {:.4} | 0.8x |",
+        results
+            .asymmetric_comparison
+            .avg_modified_intent_to_context_sim
+    )?;
+    writeln!(
+        f,
+        "| Context→Intent | {:.4} | {:.4} | 0.8x |",
         results.asymmetric_comparison.avg_context_to_intent_sim,
-        results.asymmetric_comparison.avg_modified_context_to_intent_sim)?;
+        results
+            .asymmetric_comparison
+            .avg_modified_context_to_intent_sim
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## E10 Contribution Analysis")?;
     writeln!(f)?;
-    writeln!(f, "**Note:** E10 contribution measures improvement over E1 baseline.")?;
-    writeln!(f, "With adjacent chunk ground truth, the task is challenging enough to show E10's value.")?;
+    writeln!(
+        f,
+        "**Note:** E10 contribution measures improvement over E1 baseline."
+    )?;
+    writeln!(
+        f,
+        "With adjacent chunk ground truth, the task is challenging enough to show E10's value."
+    )?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| MRR E1+E10 Blend | {:.4} | - |", results.e10_contribution.mrr_e1_e10_blend)?;
-    writeln!(f, "| MRR E1 Only | {:.4} | - |", results.e10_contribution.mrr_e1_only)?;
-    writeln!(f, "| **E10 Contribution** | **{:.1}%** | >5% |", results.e10_contribution.e10_contribution_pct * 100.0)?;
+    writeln!(
+        f,
+        "| MRR E1+E10 Blend | {:.4} | - |",
+        results.e10_contribution.mrr_e1_e10_blend
+    )?;
+    writeln!(
+        f,
+        "| MRR E1 Only | {:.4} | - |",
+        results.e10_contribution.mrr_e1_only
+    )?;
+    writeln!(
+        f,
+        "| **E10 Contribution** | **{:.1}%** | >5% |",
+        results.e10_contribution.e10_contribution_pct * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Ablation Study")?;
@@ -1440,9 +1700,21 @@ fn save_markdown_report(results: &E10RealDataResults, path: &Path) -> std::io::R
     writeln!(f, "| Configuration | MRR |")?;
     writeln!(f, "|---------------|-----|")?;
     writeln!(f, "| E1 Only | {:.4} |", results.ablation_study.e1_only_mrr)?;
-    writeln!(f, "| E10 Only | {:.4} |", results.ablation_study.e10_only_mrr)?;
-    writeln!(f, "| E1+E10 Blend (0.3) | {:.4} |", results.ablation_study.e1_e10_blend_mrr)?;
-    writeln!(f, "| Full 13-Space | {:.4} |", results.ablation_study.full_13_space_mrr)?;
+    writeln!(
+        f,
+        "| E10 Only | {:.4} |",
+        results.ablation_study.e10_only_mrr
+    )?;
+    writeln!(
+        f,
+        "| E1+E10 Blend (0.3) | {:.4} |",
+        results.ablation_study.e1_e10_blend_mrr
+    )?;
+    writeln!(
+        f,
+        "| Full 13-Space | {:.4} |",
+        results.ablation_study.full_13_space_mrr
+    )?;
     writeln!(f)?;
 
     writeln!(f, "### Blend Parameter Sweep")?;
@@ -1450,7 +1722,11 @@ fn save_markdown_report(results: &E10RealDataResults, path: &Path) -> std::io::R
     writeln!(f, "| Blend | MRR | P@5 |")?;
     writeln!(f, "|-------|-----|-----|")?;
     for point in &results.ablation_study.blend_analysis {
-        writeln!(f, "| {:.1} | {:.4} | {:.4} |", point.blend, point.mrr, point.precision_at_5)?;
+        writeln!(
+            f,
+            "| {:.1} | {:.4} | {:.4} |",
+            point.blend, point.mrr, point.precision_at_5
+        )?;
     }
     writeln!(f)?;
 
@@ -1465,12 +1741,30 @@ fn save_markdown_report(results: &E10RealDataResults, path: &Path) -> std::io::R
 }
 
 fn print_summary(results: &E10RealDataResults) {
-    println!("E10 Vector Distinctness: {:.1}% different", (1.0 - results.e10_asymmetry_verification.identity_rate) * 100.0);
-    println!("MRR Intent->Context: {:.4}", results.intent_retrieval.mrr_intent_to_context);
-    println!("MRR Context->Intent: {:.4}", results.context_retrieval.mrr_context_to_intent);
-    println!("Raw Asymmetry Ratio: {:.4} (expected: ~1.0)", results.asymmetric_comparison.raw_asymmetry_ratio);
-    println!("Modified Asymmetry Ratio: {:.4} (expected: ~1.5)", results.asymmetric_comparison.modified_asymmetry_ratio);
-    println!("E10 Contribution: {:.1}%", results.e10_contribution.e10_contribution_pct * 100.0);
+    println!(
+        "E10 Vector Distinctness: {:.1}% different",
+        (1.0 - results.e10_asymmetry_verification.identity_rate) * 100.0
+    );
+    println!(
+        "MRR Intent->Context: {:.4}",
+        results.intent_retrieval.mrr_intent_to_context
+    );
+    println!(
+        "MRR Context->Intent: {:.4}",
+        results.context_retrieval.mrr_context_to_intent
+    );
+    println!(
+        "Raw Asymmetry Ratio: {:.4} (expected: ~1.0)",
+        results.asymmetric_comparison.raw_asymmetry_ratio
+    );
+    println!(
+        "Modified Asymmetry Ratio: {:.4} (expected: ~1.5)",
+        results.asymmetric_comparison.modified_asymmetry_ratio
+    );
+    println!(
+        "E10 Contribution: {:.1}%",
+        results.e10_contribution.e10_contribution_pct * 100.0
+    );
 }
 
 fn print_target_evaluation(results: &E10RealDataResults) -> bool {
@@ -1483,29 +1777,54 @@ fn print_target_evaluation(results: &E10RealDataResults) -> bool {
 
     // Asymmetry verification: must pass
     let asymmetry_pass = results.e10_asymmetry_verification.passed;
-    println!("  Asymmetry Verification: {}", if asymmetry_pass { "PASS" } else { "FAIL" });
-    println!("    Identity rate: {:.1}% (target: <50%)", results.e10_asymmetry_verification.identity_rate * 100.0);
+    println!(
+        "  Asymmetry Verification: {}",
+        if asymmetry_pass { "PASS" } else { "FAIL" }
+    );
+    println!(
+        "    Identity rate: {:.1}% (target: <50%)",
+        results.e10_asymmetry_verification.identity_rate * 100.0
+    );
     all_pass &= asymmetry_pass;
 
     // MRR target: >0.15 for cross-document benchmark (was >0.4 for easy within-doc)
     // Cross-document retrieval is significantly harder
     let mrr_pass = results.intent_retrieval.mrr_intent_to_context >= 0.15;
-    println!("  Intent MRR: {:.4} (target: >0.15 for cross-doc)", results.intent_retrieval.mrr_intent_to_context);
+    println!(
+        "  Intent MRR: {:.4} (target: >0.15 for cross-doc)",
+        results.intent_retrieval.mrr_intent_to_context
+    );
     println!("    Status: {}", if mrr_pass { "PASS" } else { "FAIL" });
     all_pass &= mrr_pass;
 
     // Asymmetry ratio target: Modified ratio should be ~1.5 (within tolerance)
     let ratio_pass = results.asymmetric_comparison.formula_compliant;
-    println!("  Raw Asymmetry Ratio: {:.4} (expected: ~1.0)", results.asymmetric_comparison.raw_asymmetry_ratio);
-    println!("  Modified Asymmetry Ratio: {:.4} (target: ~1.5)", results.asymmetric_comparison.modified_asymmetry_ratio);
-    println!("    Modifiers Applied: {}", if results.asymmetric_comparison.modifiers_applied { "YES" } else { "NO" });
+    println!(
+        "  Raw Asymmetry Ratio: {:.4} (expected: ~1.0)",
+        results.asymmetric_comparison.raw_asymmetry_ratio
+    );
+    println!(
+        "  Modified Asymmetry Ratio: {:.4} (target: ~1.5)",
+        results.asymmetric_comparison.modified_asymmetry_ratio
+    );
+    println!(
+        "    Modifiers Applied: {}",
+        if results.asymmetric_comparison.modifiers_applied {
+            "YES"
+        } else {
+            "NO"
+        }
+    );
     println!("    Status: {}", if ratio_pass { "PASS" } else { "FAIL" });
     all_pass &= ratio_pass;
 
     // E10 contribution target: >5% for meaningful contribution
     // With cross-document benchmark, E10's intent understanding should show value
     let contrib_pass = results.e10_contribution.e10_contribution_pct > 0.05;
-    println!("  E10 Contribution: {:.1}% (target: >5%)", results.e10_contribution.e10_contribution_pct * 100.0);
+    println!(
+        "  E10 Contribution: {:.1}% (target: >5%)",
+        results.e10_contribution.e10_contribution_pct * 100.0
+    );
     println!("    Status: {}", if contrib_pass { "PASS" } else { "FAIL" });
     all_pass &= contrib_pass;
 

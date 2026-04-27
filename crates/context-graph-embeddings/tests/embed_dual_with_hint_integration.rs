@@ -18,23 +18,47 @@ fn test_3_5_bias_factors_api() {
     let cause_hint = CausalHint::new(true, CausalDirectionHint::Cause, 0.9, vec![]);
     assert!(cause_hint.is_useful(), "Cause hint should be useful");
     let (cb, eb) = cause_hint.bias_factors();
-    assert!((cb - 1.3).abs() < 0.01, "Cause bias should be 1.3, got {}", cb);
-    assert!((eb - 0.8).abs() < 0.01, "Effect bias should be 0.8, got {}", eb);
+    assert!(
+        (cb - 1.3).abs() < 0.01,
+        "Cause bias should be 1.3, got {}",
+        cb
+    );
+    assert!(
+        (eb - 0.8).abs() < 0.01,
+        "Effect bias should be 0.8, got {}",
+        eb
+    );
     println!("  Cause hint: cause_bias={}, effect_bias={}", cb, eb);
 
     // Test Effect hint
     let effect_hint = CausalHint::new(true, CausalDirectionHint::Effect, 0.9, vec![]);
     assert!(effect_hint.is_useful(), "Effect hint should be useful");
     let (cb, eb) = effect_hint.bias_factors();
-    assert!((cb - 0.8).abs() < 0.01, "Cause bias should be 0.8, got {}", cb);
-    assert!((eb - 1.3).abs() < 0.01, "Effect bias should be 1.3, got {}", eb);
+    assert!(
+        (cb - 0.8).abs() < 0.01,
+        "Cause bias should be 0.8, got {}",
+        cb
+    );
+    assert!(
+        (eb - 1.3).abs() < 0.01,
+        "Effect bias should be 1.3, got {}",
+        eb
+    );
     println!("  Effect hint: cause_bias={}, effect_bias={}", cb, eb);
 
     // Test Neutral hint
     let neutral_hint = CausalHint::new(true, CausalDirectionHint::Neutral, 0.9, vec![]);
     let (cb, eb) = neutral_hint.bias_factors();
-    assert!((cb - 1.0).abs() < 0.01, "Cause bias should be 1.0, got {}", cb);
-    assert!((eb - 1.0).abs() < 0.01, "Effect bias should be 1.0, got {}", eb);
+    assert!(
+        (cb - 1.0).abs() < 0.01,
+        "Cause bias should be 1.0, got {}",
+        cb
+    );
+    assert!(
+        (eb - 1.0).abs() < 0.01,
+        "Effect bias should be 1.0, got {}",
+        eb
+    );
     println!("  Neutral hint: cause_bias={}, effect_bias={}", cb, eb);
 
     // Test non-useful hint (low confidence)
@@ -210,10 +234,7 @@ fn test_3_8_causal_hint_edge_cases() {
         high_conf_hint.confidence <= 1.0,
         "Confidence should be clamped to 1.0"
     );
-    println!(
-        "  Confidence=1.5 clamped to: {}",
-        high_conf_hint.confidence
-    );
+    println!("  Confidence=1.5 clamped to: {}", high_conf_hint.confidence);
 
     let negative_conf_hint = CausalHint::new(true, CausalDirectionHint::Cause, -0.5, vec![]);
     assert!(
@@ -227,7 +248,10 @@ fn test_3_8_causal_hint_edge_cases() {
 
     // Default/neutral hint
     let default_hint = CausalHint::not_causal();
-    assert!(!default_hint.is_useful(), "Default hint should not be useful");
+    assert!(
+        !default_hint.is_useful(),
+        "Default hint should not be useful"
+    );
     println!("  Default hint is_useful: {}", default_hint.is_useful());
 
     println!("[PASS] Test 3.8: All edge cases handled correctly");
@@ -255,7 +279,10 @@ fn test_6_1_causal_hint_to_guidance() {
     };
 
     let guidance = hint.to_guidance();
-    assert!(guidance.is_some(), "Useful hint with spans should produce guidance");
+    assert!(
+        guidance.is_some(),
+        "Useful hint with spans should produce guidance"
+    );
     let g = guidance.unwrap();
     assert_eq!(g.cause_spans, vec![(0, 14)]);
     assert_eq!(g.effect_spans, vec![(23, 44)]);
@@ -266,7 +293,10 @@ fn test_6_1_causal_hint_to_guidance() {
 
     // Non-causal hint → should return None
     let non_causal = CausalHint::not_causal();
-    assert!(non_causal.to_guidance().is_none(), "Non-causal hint should produce no guidance");
+    assert!(
+        non_causal.to_guidance().is_none(),
+        "Non-causal hint should produce no guidance"
+    );
     println!("  Non-causal hint: None");
 
     // Low confidence → should return None
@@ -280,7 +310,10 @@ fn test_6_1_causal_hint_to_guidance() {
         effect_spans: vec![],
         asymmetry_strength: 0.5,
     };
-    assert!(low_conf.to_guidance().is_none(), "Low confidence hint should produce no guidance");
+    assert!(
+        low_conf.to_guidance().is_none(),
+        "Low confidence hint should produce no guidance"
+    );
     println!("  Low confidence hint: None");
 
     println!("[PASS] Test 6.1: to_guidance() conversion verified");
@@ -366,10 +399,24 @@ fn test_6_4_causal_hint_new_fields() {
     println!("\n=== Test 6.4: CausalHint New Fields ===");
 
     // Constructor defaults
-    let hint = CausalHint::new(true, CausalDirectionHint::Cause, 0.9, vec!["test".to_string()]);
-    assert!(hint.cause_spans.is_empty(), "Default cause_spans should be empty");
-    assert!(hint.effect_spans.is_empty(), "Default effect_spans should be empty");
-    assert_eq!(hint.asymmetry_strength, 0.0, "Default asymmetry_strength should be 0.0");
+    let hint = CausalHint::new(
+        true,
+        CausalDirectionHint::Cause,
+        0.9,
+        vec!["test".to_string()],
+    );
+    assert!(
+        hint.cause_spans.is_empty(),
+        "Default cause_spans should be empty"
+    );
+    assert!(
+        hint.effect_spans.is_empty(),
+        "Default effect_spans should be empty"
+    );
+    assert_eq!(
+        hint.asymmetry_strength, 0.0,
+        "Default asymmetry_strength should be 0.0"
+    );
 
     // Manual construction with new fields
     let hint_with_spans = CausalHint {

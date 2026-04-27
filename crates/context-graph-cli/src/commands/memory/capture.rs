@@ -253,7 +253,13 @@ pub async fn handle_capture_memory(args: CaptureMemoryArgs) -> i32 {
     // Call MCP store_memory
     // SESSION-ID-FIX: Pass session_id for proper session-scoped storage
     match client
-        .store_memory(&content, args.importance, "text", Some(tags), Some(&session_id))
+        .store_memory(
+            &content,
+            args.importance,
+            "text",
+            Some(tags),
+            Some(&session_id),
+        )
         .await
     {
         Ok(result) => {
@@ -334,7 +340,13 @@ pub async fn handle_capture_response(args: CaptureResponseArgs) -> i32 {
     // Call MCP store_memory
     // SESSION-ID-FIX: Pass session_id for proper session-scoped storage
     match client
-        .store_memory(&content, args.importance, "text", Some(tags), Some(&session_id))
+        .store_memory(
+            &content,
+            args.importance,
+            "text",
+            Some(tags),
+            Some(&session_id),
+        )
         .await
     {
         Ok(result) => {

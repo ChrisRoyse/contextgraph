@@ -32,8 +32,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use context_graph_core::graph::asymmetric::{
-    compute_graph_asymmetric_similarity_simple,
-    GraphDirection, ConnectivityContext, direction_mod,
+    compute_graph_asymmetric_similarity_simple, direction_mod, ConnectivityContext, GraphDirection,
 };
 
 // ============================================================================
@@ -214,35 +213,108 @@ struct FormulaVerificationResults {
 fn generate_synthetic_relationships() -> Vec<(String, GraphDirection)> {
     vec![
         // Source patterns (outgoing relationships)
-        ("Module auth imports utils and config".to_string(), GraphDirection::Source),
-        ("The handler module imports database".to_string(), GraphDirection::Source),
-        ("Service layer depends on repository".to_string(), GraphDirection::Source),
-        ("Controller calls service methods".to_string(), GraphDirection::Source),
-        ("Main.rs uses lib.rs functions".to_string(), GraphDirection::Source),
-        ("API module requires validation".to_string(), GraphDirection::Source),
-        ("Router extends base handler".to_string(), GraphDirection::Source),
-        ("Client implements interface".to_string(), GraphDirection::Source),
-        ("Plugin wraps core functionality".to_string(), GraphDirection::Source),
-        ("Test module references production code".to_string(), GraphDirection::Source),
-
+        (
+            "Module auth imports utils and config".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "The handler module imports database".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Service layer depends on repository".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Controller calls service methods".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Main.rs uses lib.rs functions".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "API module requires validation".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Router extends base handler".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Client implements interface".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Plugin wraps core functionality".to_string(),
+            GraphDirection::Source,
+        ),
+        (
+            "Test module references production code".to_string(),
+            GraphDirection::Source,
+        ),
         // Target patterns (incoming relationships)
-        ("Utils is used by auth, api, and tests".to_string(), GraphDirection::Target),
-        ("Database is called by multiple handlers".to_string(), GraphDirection::Target),
-        ("Config is imported by all modules".to_string(), GraphDirection::Target),
-        ("Logger is required by every service".to_string(), GraphDirection::Target),
-        ("Types is referenced by the entire codebase".to_string(), GraphDirection::Target),
-        ("Errors is extended by custom exceptions".to_string(), GraphDirection::Target),
-        ("Interface is implemented by client".to_string(), GraphDirection::Target),
-        ("Base class is inherited by children".to_string(), GraphDirection::Target),
-        ("Shared code is included in many places".to_string(), GraphDirection::Target),
-        ("Common utils is depended on by all".to_string(), GraphDirection::Target),
-
+        (
+            "Utils is used by auth, api, and tests".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Database is called by multiple handlers".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Config is imported by all modules".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Logger is required by every service".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Types is referenced by the entire codebase".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Errors is extended by custom exceptions".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Interface is implemented by client".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Base class is inherited by children".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Shared code is included in many places".to_string(),
+            GraphDirection::Target,
+        ),
+        (
+            "Common utils is depended on by all".to_string(),
+            GraphDirection::Target,
+        ),
         // Unknown/neutral patterns
-        ("This module handles authentication".to_string(), GraphDirection::Unknown),
-        ("The code implements business logic".to_string(), GraphDirection::Unknown),
-        ("Functions process user input".to_string(), GraphDirection::Unknown),
-        ("Variables store application state".to_string(), GraphDirection::Unknown),
-        ("Constants define configuration values".to_string(), GraphDirection::Unknown),
+        (
+            "This module handles authentication".to_string(),
+            GraphDirection::Unknown,
+        ),
+        (
+            "The code implements business logic".to_string(),
+            GraphDirection::Unknown,
+        ),
+        (
+            "Functions process user input".to_string(),
+            GraphDirection::Unknown,
+        ),
+        (
+            "Variables store application state".to_string(),
+            GraphDirection::Unknown,
+        ),
+        (
+            "Constants define configuration values".to_string(),
+            GraphDirection::Unknown,
+        ),
     ]
 }
 
@@ -251,18 +323,40 @@ fn detect_graph_direction(text: &str) -> GraphDirection {
     let text_lower = text.to_lowercase();
 
     let source_patterns = [
-        "imports", "import", "depends on", "calls", "uses", "requires",
-        "extends", "implements", "wraps", "references", "inherits from",
+        "imports",
+        "import",
+        "depends on",
+        "calls",
+        "uses",
+        "requires",
+        "extends",
+        "implements",
+        "wraps",
+        "references",
+        "inherits from",
     ];
 
     let target_patterns = [
-        "is used by", "is called by", "is imported by", "is required by",
-        "is referenced by", "is extended by", "is implemented by",
-        "is inherited by", "is included in", "is depended on",
+        "is used by",
+        "is called by",
+        "is imported by",
+        "is required by",
+        "is referenced by",
+        "is extended by",
+        "is implemented by",
+        "is inherited by",
+        "is included in",
+        "is depended on",
     ];
 
-    let source_count = source_patterns.iter().filter(|p| text_lower.contains(*p)).count();
-    let target_count = target_patterns.iter().filter(|p| text_lower.contains(*p)).count();
+    let source_count = source_patterns
+        .iter()
+        .filter(|p| text_lower.contains(*p))
+        .count();
+    let target_count = target_patterns
+        .iter()
+        .filter(|p| text_lower.contains(*p))
+        .count();
 
     if target_count > source_count {
         GraphDirection::Target
@@ -277,7 +371,10 @@ fn detect_graph_direction(text: &str) -> GraphDirection {
 // Benchmark Phases
 // ============================================================================
 
-fn run_direction_detection(samples: &[(String, GraphDirection)], num_samples: usize) -> DirectionDetectionResults {
+fn run_direction_detection(
+    samples: &[(String, GraphDirection)],
+    num_samples: usize,
+) -> DirectionDetectionResults {
     println!("\n=== Phase 1: Direction Detection ===");
 
     let test_samples: Vec<_> = samples.iter().take(num_samples).collect();
@@ -443,7 +540,10 @@ fn run_formula_verification() -> FormulaVerificationResults {
     println!("  target→source modifier: {}", target_to_source);
     println!("  same direction modifier: {}", same_direction);
     println!("  asymmetry ratio: {:.2} (expected 1.5)", asymmetry_ratio);
-    println!("  Constitution compliant: {}", if compliant { "YES" } else { "NO" });
+    println!(
+        "  Constitution compliant: {}",
+        if compliant { "YES" } else { "NO" }
+    );
 
     FormulaVerificationResults {
         source_to_target_mod: source_to_target,
@@ -469,7 +569,10 @@ fn main() {
     let relationships = generate_synthetic_relationships();
 
     // Run benchmark phases
-    let direction_results = run_direction_detection(&relationships, args.num_direction_samples.min(relationships.len()));
+    let direction_results = run_direction_detection(
+        &relationships,
+        args.num_direction_samples.min(relationships.len()),
+    );
     let asymmetric_results = run_asymmetric_retrieval(args.num_asymmetric_queries);
     let centrality_results = run_centrality_detection(args.num_centrality_tests);
     let formula_results = run_formula_verification();
@@ -506,9 +609,28 @@ fn main() {
 
     // Print summary
     println!("\n=== Summary ===");
-    println!("Direction detection rate: {:.1}%", results.direction_detection.detection_rate * 100.0);
-    println!("Asymmetry ratio: {:.2}", results.asymmetric_retrieval.asymmetry_ratio);
-    println!("E8 contribution: {:.1}%", results.asymmetric_retrieval.e8_contribution_percentage);
-    println!("Hub detection rate: {:.1}%", results.centrality_detection.hub_detection_rate * 100.0);
-    println!("Constitution compliant: {}", if results.formula_verification.formula_compliant { "YES" } else { "NO" });
+    println!(
+        "Direction detection rate: {:.1}%",
+        results.direction_detection.detection_rate * 100.0
+    );
+    println!(
+        "Asymmetry ratio: {:.2}",
+        results.asymmetric_retrieval.asymmetry_ratio
+    );
+    println!(
+        "E8 contribution: {:.1}%",
+        results.asymmetric_retrieval.e8_contribution_percentage
+    );
+    println!(
+        "Hub detection rate: {:.1}%",
+        results.centrality_detection.hub_detection_rate * 100.0
+    );
+    println!(
+        "Constitution compliant: {}",
+        if results.formula_verification.formula_compliant {
+            "YES"
+        } else {
+            "NO"
+        }
+    );
 }

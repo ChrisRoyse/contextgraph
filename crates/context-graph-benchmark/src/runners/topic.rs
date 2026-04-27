@@ -70,7 +70,8 @@ impl TopicRunner {
         let distance_matrix = compute_distance_matrix(baseline, &ids);
 
         // Compute metrics
-        let metrics = clustering::compute_all_metrics(&predicted, &true_labels, Some(&distance_matrix));
+        let metrics =
+            clustering::compute_all_metrics(&predicted, &true_labels, Some(&distance_matrix));
 
         let performance = PerformanceMetrics {
             latency_us: crate::metrics::performance::LatencyStats::from_measurements(&[
@@ -116,7 +117,8 @@ impl TopicRunner {
         let distance_matrix = compute_multispace_distance_matrix(dataset, &ids);
 
         // Compute metrics
-        let metrics = clustering::compute_all_metrics(&predicted, &true_labels, Some(&distance_matrix));
+        let metrics =
+            clustering::compute_all_metrics(&predicted, &true_labels, Some(&distance_matrix));
 
         let performance = PerformanceMetrics {
             latency_us: crate::metrics::performance::LatencyStats::from_measurements(&[
@@ -187,11 +189,12 @@ fn compute_multispace_distance_matrix(dataset: &BenchmarkDataset, ids: &[Uuid]) 
     let mut matrix = vec![vec![0.0; n]; n];
 
     // Get fingerprints by ID
-    let id_to_fp: HashMap<Uuid, &context_graph_core::types::fingerprint::SemanticFingerprint> = dataset
-        .fingerprints
-        .iter()
-        .map(|(id, fp)| (*id, fp))
-        .collect();
+    let id_to_fp: HashMap<Uuid, &context_graph_core::types::fingerprint::SemanticFingerprint> =
+        dataset
+            .fingerprints
+            .iter()
+            .map(|(id, fp)| (*id, fp))
+            .collect();
 
     for i in 0..n {
         for j in 0..n {
@@ -204,7 +207,10 @@ fn compute_multispace_distance_matrix(dataset: &BenchmarkDataset, ids: &[Uuid]) 
                 let sim_e1 = cosine_similarity(&fp_a.e1_semantic, &fp_b.e1_semantic);
                 let sim_e5 = cosine_similarity(fp_a.e5_active_vector(), fp_b.e5_active_vector());
                 let sim_e7 = cosine_similarity(&fp_a.e7_code, &fp_b.e7_code);
-                let sim_e10 = cosine_similarity(&fp_a.e10_multimodal_paraphrase, &fp_b.e10_multimodal_paraphrase);
+                let sim_e10 = cosine_similarity(
+                    &fp_a.e10_multimodal_paraphrase,
+                    &fp_b.e10_multimodal_paraphrase,
+                );
 
                 // Equal weights for semantic embedders
                 let avg_sim = (sim_e1 + sim_e5 + sim_e7 + sim_e10) / 4.0;
@@ -245,11 +251,7 @@ fn multi_space_clustering(
     let dim = embeddings.first().map(|e| e.len()).unwrap_or(0);
 
     // Initialize centroids
-    let mut centroids: Vec<Vec<f32>> = embeddings
-        .iter()
-        .take(n_clusters)
-        .cloned()
-        .collect();
+    let mut centroids: Vec<Vec<f32>> = embeddings.iter().take(n_clusters).cloned().collect();
 
     while centroids.len() < n_clusters {
         centroids.push(vec![0.0; dim]);

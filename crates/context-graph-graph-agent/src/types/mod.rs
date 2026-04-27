@@ -681,32 +681,112 @@ impl DomainMarkers {
     // ========== CODE DOMAIN MARKERS ==========
     /// Markers that indicate programming code.
     pub const CODE: &'static [&'static str] = &[
-        "fn ", "pub ", "let ", "const ", "impl ", "struct ", "enum ", "trait ",
-        "use ", "mod ", "crate::", "import ", "export ", "class ", "def ",
-        "function ", "return ", "()", "{}", "->", "=>", "::", "//", "/*",
-        "async ", "await ", "match ", "if let ", "#[", "self.", "super::",
+        "fn ",
+        "pub ",
+        "let ",
+        "const ",
+        "impl ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "use ",
+        "mod ",
+        "crate::",
+        "import ",
+        "export ",
+        "class ",
+        "def ",
+        "function ",
+        "return ",
+        "()",
+        "{}",
+        "->",
+        "=>",
+        "::",
+        "//",
+        "/*",
+        "async ",
+        "await ",
+        "match ",
+        "if let ",
+        "#[",
+        "self.",
+        "super::",
     ];
 
     // ========== LEGAL DOMAIN MARKERS ==========
     /// Markers that indicate legal documents.
     pub const LEGAL: &'static [&'static str] = &[
-        "§", "U.S.C.", "F.3d", "S.Ct.", "U.S. ", " v. ", "plaintiff", "defendant",
-        "court", "statute", "regulation", "precedent", "holding", "overruled",
-        "affirmed", "reversed", "remanded", "jurisdiction", "pursuant to",
-        "hereby", "thereof", "whereas", "id.", "supra", "infra", "stare decisis",
-        "certiorari", "appellant", "appellee", "judgment", "order", "ruling",
-        "brief", "motion", "petition", "enjoin", "injunction", "habeas corpus",
+        "§",
+        "U.S.C.",
+        "F.3d",
+        "S.Ct.",
+        "U.S. ",
+        " v. ",
+        "plaintiff",
+        "defendant",
+        "court",
+        "statute",
+        "regulation",
+        "precedent",
+        "holding",
+        "overruled",
+        "affirmed",
+        "reversed",
+        "remanded",
+        "jurisdiction",
+        "pursuant to",
+        "hereby",
+        "thereof",
+        "whereas",
+        "id.",
+        "supra",
+        "infra",
+        "stare decisis",
+        "certiorari",
+        "appellant",
+        "appellee",
+        "judgment",
+        "order",
+        "ruling",
+        "brief",
+        "motion",
+        "petition",
+        "enjoin",
+        "injunction",
+        "habeas corpus",
     ];
 
     // ========== ACADEMIC DOMAIN MARKERS ==========
     /// Markers that indicate academic/research content.
     pub const ACADEMIC: &'static [&'static str] = &[
-        "et al.", "p < ", "n = ", "methodology", "hypothesis", "findings",
-        "abstract", "introduction", "conclusion", "references", "doi:",
-        "journal", "published", "peer-reviewed", "study", "research",
-        "participants", "sample size", "statistical", "significance",
-        "correlation", "regression", "experiment", "control group",
-        "systematic review", "meta-analysis", "literature review",
+        "et al.",
+        "p < ",
+        "n = ",
+        "methodology",
+        "hypothesis",
+        "findings",
+        "abstract",
+        "introduction",
+        "conclusion",
+        "references",
+        "doi:",
+        "journal",
+        "published",
+        "peer-reviewed",
+        "study",
+        "research",
+        "participants",
+        "sample size",
+        "statistical",
+        "significance",
+        "correlation",
+        "regression",
+        "experiment",
+        "control group",
+        "systematic review",
+        "meta-analysis",
+        "literature review",
     ];
 
     /// Detect content domain from text using heuristic markers.
@@ -720,18 +800,12 @@ impl DomainMarkers {
         // Count markers for each domain
         // CODE and ACADEMIC markers are already lowercase literals — no need to lowercase them.
         // LEGAL markers contain uppercase ("U.S.C.", "F.3d", "S.Ct.") and need lowercasing.
-        let code_score = Self::CODE
-            .iter()
-            .filter(|m| lower.contains(*m))
-            .count();
+        let code_score = Self::CODE.iter().filter(|m| lower.contains(*m)).count();
         let legal_score = Self::LEGAL
             .iter()
             .filter(|m| lower.contains(&m.to_lowercase()))
             .count();
-        let academic_score = Self::ACADEMIC
-            .iter()
-            .filter(|m| lower.contains(*m))
-            .count();
+        let academic_score = Self::ACADEMIC.iter().filter(|m| lower.contains(*m)).count();
 
         // Require minimum threshold and pick highest score.
         //
@@ -787,9 +861,7 @@ impl DomainMarkers {
     pub fn looks_like_code(content: &str) -> bool {
         let lower = content.to_lowercase();
         // CODE markers are already lowercase literals — no need to lowercase them.
-        Self::CODE
-            .iter()
-            .any(|m| lower.contains(*m))
+        Self::CODE.iter().any(|m| lower.contains(*m))
     }
 }
 
@@ -804,28 +876,46 @@ pub struct GraphMarkers;
 
 impl GraphMarkers {
     // ========== CONTAINMENT ==========
-    pub const CONTAIN_MARKERS: &'static [&'static str] =
-        &["contains", "includes", "has", "module", "struct", "enum", "pub mod", "section", "chapter"];
+    pub const CONTAIN_MARKERS: &'static [&'static str] = &[
+        "contains", "includes", "has", "module", "struct", "enum", "pub mod", "section", "chapter",
+    ];
     pub const SCOPED_MARKERS: &'static [&'static str] =
         &["scoped by", "within", "inside", "under", "in scope"];
 
     // ========== DEPENDENCY ==========
     pub const IMPORT_MARKERS: &'static [&'static str] = &[
-        "import", "use", "require", "include", "from", "extern crate", "mod",
+        "import",
+        "use",
+        "require",
+        "include",
+        "from",
+        "extern crate",
+        "mod",
     ];
-    pub const DEPENDENCY_MARKERS: &'static [&'static str] =
-        &["depends on", "requires", "needs", "dependency", "prerequisite"];
+    pub const DEPENDENCY_MARKERS: &'static [&'static str] = &[
+        "depends on",
+        "requires",
+        "needs",
+        "dependency",
+        "prerequisite",
+    ];
     pub const REQUIRES_MARKERS: &'static [&'static str] =
         &["requires", "prerequisite", "must have", "needed"];
 
     // ========== REFERENCE ==========
     pub const REFERENCE_MARKERS: &'static [&'static str] = &[
-        "see:", "ref:", "see also", "links to", "references", "related to",
-        "http://", "https://",
+        "see:",
+        "ref:",
+        "see also",
+        "links to",
+        "references",
+        "related to",
+        "http://",
+        "https://",
     ];
     pub const CITE_MARKERS: &'static [&'static str] = &[
-        "cites", "citing", "citation", "cited in", " v. ", "U.S.", "F.3d", "S.Ct.",
-        "et al.", "supra", "infra", "id.",
+        "cites", "citing", "citation", "cited in", " v. ", "U.S.", "F.3d", "S.Ct.", "et al.",
+        "supra", "infra", "id.",
     ];
     pub const INTERPRET_MARKERS: &'static [&'static str] =
         &["interprets", "construes", "meaning of", "interpretation"];
@@ -835,24 +925,40 @@ impl GraphMarkers {
     // ========== IMPLEMENTATION ==========
     pub const IMPL_MARKERS: &'static [&'static str] =
         &["impl", "implements", "implementation", "trait"];
-    pub const COMPLY_MARKERS: &'static [&'static str] =
-        &["complies with", "compliant", "in compliance", "meets requirements"];
+    pub const COMPLY_MARKERS: &'static [&'static str] = &[
+        "complies with",
+        "compliant",
+        "in compliance",
+        "meets requirements",
+    ];
     pub const FULFILL_MARKERS: &'static [&'static str] =
         &["fulfills", "satisfies", "meets", "achieves"];
 
     // ========== EXTENSION ==========
-    pub const EXTEND_MARKERS: &'static [&'static str] =
-        &["extends", "inherits", "derives", "subclass", "child of", "builds upon"];
+    pub const EXTEND_MARKERS: &'static [&'static str] = &[
+        "extends",
+        "inherits",
+        "derives",
+        "subclass",
+        "child of",
+        "builds upon",
+    ];
     pub const MODIFY_MARKERS: &'static [&'static str] =
         &["modifies", "amends", "changes", "alters", "updates"];
     pub const SUPERSEDE_MARKERS: &'static [&'static str] =
         &["supersedes", "replaces", "succeeds", "newer version"];
-    pub const OVERRULE_MARKERS: &'static [&'static str] =
-        &["overrules", "overruled", "invalidates", "vacates", "reverses"];
+    pub const OVERRULE_MARKERS: &'static [&'static str] = &[
+        "overrules",
+        "overruled",
+        "invalidates",
+        "vacates",
+        "reverses",
+    ];
 
     // ========== INVOCATION ==========
-    pub const CALL_MARKERS: &'static [&'static str] =
-        &["calls", "invokes", "executes", "runs", "triggers", "fn ", "()"];
+    pub const CALL_MARKERS: &'static [&'static str] = &[
+        "calls", "invokes", "executes", "runs", "triggers", "fn ", "()",
+    ];
     pub const APPLY_MARKERS: &'static [&'static str] =
         &["applies", "applying", "application of", "uses method"];
     pub const USED_BY_MARKERS: &'static [&'static str] =
@@ -1012,26 +1118,62 @@ mod tests {
     #[test]
     fn test_relationship_type_from_str() {
         // Original types
-        assert_eq!(RelationshipType::from_str("imports"), RelationshipType::Imports);
-        assert_eq!(RelationshipType::from_str("DEPENDS_ON"), RelationshipType::DependsOn);
+        assert_eq!(
+            RelationshipType::from_str("imports"),
+            RelationshipType::Imports
+        );
+        assert_eq!(
+            RelationshipType::from_str("DEPENDS_ON"),
+            RelationshipType::DependsOn
+        );
         assert_eq!(RelationshipType::from_str("calls"), RelationshipType::Calls);
-        assert_eq!(RelationshipType::from_str("invalid"), RelationshipType::None);
+        assert_eq!(
+            RelationshipType::from_str("invalid"),
+            RelationshipType::None
+        );
 
         // New legal types
         assert_eq!(RelationshipType::from_str("cites"), RelationshipType::Cites);
-        assert_eq!(RelationshipType::from_str("interprets"), RelationshipType::Interprets);
-        assert_eq!(RelationshipType::from_str("overrules"), RelationshipType::Overrules);
-        assert_eq!(RelationshipType::from_str("supersedes"), RelationshipType::Supersedes);
-        assert_eq!(RelationshipType::from_str("distinguishes"), RelationshipType::Distinguishes);
+        assert_eq!(
+            RelationshipType::from_str("interprets"),
+            RelationshipType::Interprets
+        );
+        assert_eq!(
+            RelationshipType::from_str("overrules"),
+            RelationshipType::Overrules
+        );
+        assert_eq!(
+            RelationshipType::from_str("supersedes"),
+            RelationshipType::Supersedes
+        );
+        assert_eq!(
+            RelationshipType::from_str("distinguishes"),
+            RelationshipType::Distinguishes
+        );
 
         // New implementation types
-        assert_eq!(RelationshipType::from_str("complies_with"), RelationshipType::CompliesWith);
-        assert_eq!(RelationshipType::from_str("fulfills"), RelationshipType::Fulfills);
+        assert_eq!(
+            RelationshipType::from_str("complies_with"),
+            RelationshipType::CompliesWith
+        );
+        assert_eq!(
+            RelationshipType::from_str("fulfills"),
+            RelationshipType::Fulfills
+        );
 
         // New types
-        assert_eq!(RelationshipType::from_str("scoped_by"), RelationshipType::ScopedBy);
-        assert_eq!(RelationshipType::from_str("modifies"), RelationshipType::Modifies);
-        assert_eq!(RelationshipType::from_str("applies"), RelationshipType::Applies);
+        assert_eq!(
+            RelationshipType::from_str("scoped_by"),
+            RelationshipType::ScopedBy
+        );
+        assert_eq!(
+            RelationshipType::from_str("modifies"),
+            RelationshipType::Modifies
+        );
+        assert_eq!(
+            RelationshipType::from_str("applies"),
+            RelationshipType::Applies
+        );
     }
 
     #[test]
@@ -1091,15 +1233,42 @@ mod tests {
     #[test]
     fn test_relationship_type_legacy_compatibility() {
         // Legacy types should all parse correctly
-        assert_eq!(RelationshipType::from_legacy("imports"), RelationshipType::Imports);
-        assert_eq!(RelationshipType::from_legacy("depends_on"), RelationshipType::DependsOn);
-        assert_eq!(RelationshipType::from_legacy("references"), RelationshipType::References);
-        assert_eq!(RelationshipType::from_legacy("calls"), RelationshipType::Calls);
-        assert_eq!(RelationshipType::from_legacy("implements"), RelationshipType::Implements);
-        assert_eq!(RelationshipType::from_legacy("extends"), RelationshipType::Extends);
-        assert_eq!(RelationshipType::from_legacy("contains"), RelationshipType::Contains);
-        assert_eq!(RelationshipType::from_legacy("used_by"), RelationshipType::UsedBy);
-        assert_eq!(RelationshipType::from_legacy("none"), RelationshipType::None);
+        assert_eq!(
+            RelationshipType::from_legacy("imports"),
+            RelationshipType::Imports
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("depends_on"),
+            RelationshipType::DependsOn
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("references"),
+            RelationshipType::References
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("calls"),
+            RelationshipType::Calls
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("implements"),
+            RelationshipType::Implements
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("extends"),
+            RelationshipType::Extends
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("contains"),
+            RelationshipType::Contains
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("used_by"),
+            RelationshipType::UsedBy
+        );
+        assert_eq!(
+            RelationshipType::from_legacy("none"),
+            RelationshipType::None
+        );
 
         // All legacy types should be identified as legacy
         assert!(RelationshipType::Imports.is_legacy_type());
@@ -1132,19 +1301,28 @@ mod tests {
     #[test]
     fn test_domain_detection_legal() {
         let legal_text = "The court held that pursuant to 42 U.S.C. § 1983, the plaintiff...";
-        assert_eq!(DomainMarkers::detect_domain(legal_text), ContentDomain::Legal);
+        assert_eq!(
+            DomainMarkers::detect_domain(legal_text),
+            ContentDomain::Legal
+        );
     }
 
     #[test]
     fn test_domain_detection_academic() {
         let academic_text = "The study (et al., 2023) found statistical significance (p < 0.05) with n = 150 participants.";
-        assert_eq!(DomainMarkers::detect_domain(academic_text), ContentDomain::Academic);
+        assert_eq!(
+            DomainMarkers::detect_domain(academic_text),
+            ContentDomain::Academic
+        );
     }
 
     #[test]
     fn test_domain_detection_general() {
         let general_text = "This is a general document about various topics.";
-        assert_eq!(DomainMarkers::detect_domain(general_text), ContentDomain::General);
+        assert_eq!(
+            DomainMarkers::detect_domain(general_text),
+            ContentDomain::General
+        );
     }
 
     #[test]
@@ -1190,7 +1368,8 @@ mod tests {
 
     #[test]
     fn test_marker_detection_legal() {
-        let content = "This case cites Brown v. Board of Education and distinguishes Smith v. Jones";
+        let content =
+            "This case cites Brown v. Board of Education and distinguishes Smith v. Jones";
         let types = GraphMarkers::detect_suspected_types(content);
         assert!(types.contains(&RelationshipType::Cites));
         assert!(types.contains(&RelationshipType::Distinguishes));
@@ -1206,12 +1385,14 @@ mod tests {
         assert!(all_types.contains(&RelationshipType::Cites));
 
         // With Code filter - only code-relevant
-        let code_types = GraphMarkers::detect_suspected_types_for_domain(content, ContentDomain::Code);
+        let code_types =
+            GraphMarkers::detect_suspected_types_for_domain(content, ContentDomain::Code);
         assert!(code_types.contains(&RelationshipType::Imports));
         assert!(!code_types.contains(&RelationshipType::Cites)); // Cites not relevant for Code
 
         // With Legal filter - only legal-relevant
-        let legal_types = GraphMarkers::detect_suspected_types_for_domain(content, ContentDomain::Legal);
+        let legal_types =
+            GraphMarkers::detect_suspected_types_for_domain(content, ContentDomain::Legal);
         assert!(!legal_types.contains(&RelationshipType::Imports)); // Imports not relevant for Legal
         assert!(legal_types.contains(&RelationshipType::Cites));
     }

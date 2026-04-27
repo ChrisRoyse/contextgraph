@@ -86,10 +86,7 @@ pub const RRF_K: i32 = 60;
 // Audit-14 STOR-L1 FIX: Only used by tests in this module. The production code uses
 // weighted_rrf_fusion_with_scores (which tracks per-embedder contributions).
 #[cfg(test)]
-pub fn weighted_rrf_fusion(
-    result_sets: Vec<(Vec<(Uuid, f32)>, f32)>,
-    k: i32,
-) -> Vec<(Uuid, f32)> {
+pub fn weighted_rrf_fusion(result_sets: Vec<(Vec<(Uuid, f32)>, f32)>, k: i32) -> Vec<(Uuid, f32)> {
     let mut scores: HashMap<Uuid, f32> = HashMap::new();
 
     for (results, weight) in result_sets {
@@ -195,10 +192,20 @@ pub fn apply_synergy_boost(
 ) -> Vec<(Uuid, f32, HashMap<String, f32>)> {
     let embedder_name_to_index = |name: &str| -> Option<usize> {
         match name {
-            "E1" => Some(0), "E2" => Some(1), "E3" => Some(2), "E4" => Some(3),
-            "E5" => Some(4), "E6" => Some(5), "E7" => Some(6), "E8" => Some(7),
-            "E9" => Some(8), "E10" => Some(9), "E11" => Some(10), "E12" => Some(11),
-            "E13" => Some(12), _ => None,
+            "E1" => Some(0),
+            "E2" => Some(1),
+            "E3" => Some(2),
+            "E4" => Some(3),
+            "E5" => Some(4),
+            "E6" => Some(5),
+            "E7" => Some(6),
+            "E8" => Some(7),
+            "E9" => Some(8),
+            "E10" => Some(9),
+            "E11" => Some(10),
+            "E12" => Some(11),
+            "E13" => Some(12),
+            _ => None,
         }
     };
 
@@ -215,7 +222,8 @@ pub fn apply_synergy_boost(
             for j in (i + 1)..contributing_indices.len() {
                 let idx_i = contributing_indices[i];
                 let idx_j = contributing_indices[j];
-                synergy_bonus += synergy_weights[idx_i] * synergy_weights[idx_j] * SYNERGY_BASE_BOOST;
+                synergy_bonus +=
+                    synergy_weights[idx_i] * synergy_weights[idx_j] * SYNERGY_BASE_BOOST;
             }
         }
         *score += synergy_bonus;
@@ -256,10 +264,7 @@ mod tests {
         let e1_results = make_results(vec![1, 2, 3]); // ID 1 rank 0, ID 2 rank 1
         let e5_results = make_results(vec![2, 3, 1]); // ID 2 rank 0, ID 1 rank 2
 
-        let fused = weighted_rrf_fusion(
-            vec![(e1_results, 0.5), (e5_results, 0.5)],
-            60,
-        );
+        let fused = weighted_rrf_fusion(vec![(e1_results, 0.5), (e5_results, 0.5)], 60);
 
         // ID 2 should rank higher due to appearing high in both lists
         assert_eq!(fused[0].0, Uuid::from_u128(2));
@@ -310,10 +315,10 @@ mod tests {
     fn test_consensus_partial() {
         let id = Uuid::from_u128(1);
         let result_sets = vec![
-            (vec![(id, 0.9)], 0.25),                      // Has ID
-            (vec![(Uuid::from_u128(2), 0.8)], 0.25),      // Doesn't have ID
-            (vec![(id, 0.7)], 0.25),                      // Has ID
-            (vec![(Uuid::from_u128(3), 0.6)], 0.25),      // Doesn't have ID
+            (vec![(id, 0.9)], 0.25),                 // Has ID
+            (vec![(Uuid::from_u128(2), 0.8)], 0.25), // Doesn't have ID
+            (vec![(id, 0.7)], 0.25),                 // Has ID
+            (vec![(Uuid::from_u128(3), 0.6)], 0.25), // Doesn't have ID
         ];
 
         let consensus = compute_consensus(id, &result_sets, 5);

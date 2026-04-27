@@ -78,14 +78,8 @@ fn fsv_b1_bge_m3_dense_module_contract() {
         Ok(_) => panic!("zero batch must fail"),
         Err(e) => {
             let msg = format!("{:?}", e);
-            assert!(
-                msg.contains("max_batch_size"),
-                "unexpected error: {}",
-                msg
-            );
-            println!(
-                "EDGE:   zero batch_size → ConfigError mentions 'max_batch_size' [OK]"
-            );
+            assert!(msg.contains("max_batch_size"), "unexpected error: {}", msg);
+            println!("EDGE:   zero batch_size → ConfigError mentions 'max_batch_size' [OK]");
         }
     }
 
@@ -130,9 +124,7 @@ fn fsv_b3_hnsw_registry_has_e14() {
 
     let registry = EmbedderIndexRegistry::new();
 
-    println!(
-        "BEFORE expected: registry.len() = 16 (post-E14); get(E14BgeM3Dense) = Some(..)"
-    );
+    println!("BEFORE expected: registry.len() = 16 (post-E14); get(E14BgeM3Dense) = Some(..)");
     println!("AFTER  actual:   registry.len() = {}", registry.len());
     assert_eq!(registry.len(), 16);
 
@@ -140,10 +132,7 @@ fn fsv_b3_hnsw_registry_has_e14() {
         .get(EmbedderIndex::E14BgeM3Dense)
         .expect("E14 must have an HNSW index registered");
     let dim = handle.config().dimension;
-    println!(
-        "        E14 HNSW dimension = {} (expected 1024)",
-        dim
-    );
+    println!("        E14 HNSW dimension = {} (expected 1024)", dim);
     assert_eq!(dim, 1024, "E14 HNSW must be 1024D Cosine");
 
     // EDGE: the E5/E10 asymmetric slots still exist alongside E14.
@@ -167,9 +156,7 @@ fn fsv_b3_hnsw_registry_has_e14() {
 fn fsv_b4_cf_emb_13_registered() {
     section("B4. CF_EMB_13 registered alongside CF_EMB_0..CF_EMB_12");
 
-    println!(
-        "BEFORE expected: QUANTIZED_EMBEDDER_CF_COUNT = 14; CF_EMB_13 = \"emb_13\""
-    );
+    println!("BEFORE expected: QUANTIZED_EMBEDDER_CF_COUNT = 14; CF_EMB_13 = \"emb_13\"");
     println!(
         "AFTER  actual:   QUANTIZED_EMBEDDER_CF_COUNT = {}; CF_EMB_13 = \"{}\"",
         QUANTIZED_EMBEDDER_CF_COUNT, CF_EMB_13
@@ -294,7 +281,10 @@ fn fsv_b6_migration_cli_argument_contract() {
     // EDGE: missing --storage must fail parsing.
     let err = Cli::try_parse_from(["ctx", "backfill-e14"])
         .expect_err("missing --storage must fail clap validation");
-    println!("EDGE:   missing --storage → clap error: {:.60}...", err.to_string());
+    println!(
+        "EDGE:   missing --storage → clap error: {:.60}...",
+        err.to_string()
+    );
 
     println!("Migration CLI contract [PASS]");
 }
@@ -398,9 +388,7 @@ fn fsv_b9_registry_memory_bytes_monotonic() {
     // EDGE: search returns the inserted vector. `search` has signature
     // `(query, k, ef_search: Option<usize>) -> Vec<(Uuid, f32)>` and the
     // second element is COSINE DISTANCE (0 = identical, 2 = opposite).
-    let results = e14
-        .search(&vec1024, 1, None)
-        .expect("E14 HNSW search");
+    let results = e14.search(&vec1024, 1, None).expect("E14 HNSW search");
     println!(
         "EDGE:   self-search returns {} hits (top id = {:?}, distance = {:e})",
         results.len(),

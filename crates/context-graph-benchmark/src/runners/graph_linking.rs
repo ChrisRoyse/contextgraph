@@ -29,9 +29,7 @@ use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::datasets::graph_linking::{
-    GraphLinkingDataset, GraphLinkingDatasetConfig, ScaleTier,
-};
+use crate::datasets::graph_linking::{GraphLinkingDataset, GraphLinkingDatasetConfig, ScaleTier};
 use crate::metrics::graph_linking::{
     BackgroundBuilderMetrics, EdgeBuilderMetrics, GraphExpansionMetrics, GraphLinkingReport,
     LatencyStats, LatencyTracker, MemoryStats, NNDescentMetrics, RGCNMetrics,
@@ -358,7 +356,11 @@ impl GraphLinkingBenchmarkRunner {
     }
 
     /// Simulate NN-Descent algorithm (returns iterations, updates_per_iteration).
-    fn simulate_nn_descent(&mut self, embeddings: &[(&Uuid, &[f32])], k: usize) -> (usize, Vec<usize>) {
+    fn simulate_nn_descent(
+        &mut self,
+        embeddings: &[(&Uuid, &[f32])],
+        k: usize,
+    ) -> (usize, Vec<usize>) {
         let n = embeddings.len();
         if n < 2 || k == 0 {
             return (0, vec![]);
@@ -403,10 +405,8 @@ impl GraphLinkingBenchmarkRunner {
                     .map(|(idx, _)| idx);
 
                 if let Some(widx) = worst_idx {
-                    let worst_dist = Self::cosine_distance(
-                        embeddings[i].1,
-                        embeddings[neighbors[i][widx]].1,
-                    );
+                    let worst_dist =
+                        Self::cosine_distance(embeddings[i].1, embeddings[neighbors[i][widx]].1);
                     if dist_ij < worst_dist && !neighbors[i].contains(&j) {
                         neighbors[i][widx] = j;
                         updates += 1;
@@ -554,10 +554,7 @@ impl GraphLinkingBenchmarkRunner {
         }
 
         // Pick a random topic with at least 2 memories
-        let valid_topics: Vec<_> = by_topic
-            .iter()
-            .filter(|(_, v)| v.len() >= 2)
-            .collect();
+        let valid_topics: Vec<_> = by_topic.iter().filter(|(_, v)| v.len() >= 2).collect();
 
         if valid_topics.is_empty() {
             return None;
@@ -668,7 +665,10 @@ impl GraphLinkingBenchmarkRunner {
     }
 
     /// Benchmark Graph Expansion stage.
-    fn benchmark_graph_expansion(&mut self, _dataset: &GraphLinkingDataset) -> GraphExpansionMetrics {
+    fn benchmark_graph_expansion(
+        &mut self,
+        _dataset: &GraphLinkingDataset,
+    ) -> GraphExpansionMetrics {
         let mut tracker = LatencyTracker::new();
         let mut total_candidates_in = 0;
         let mut total_candidates_out = 0;
@@ -853,8 +853,8 @@ impl GraphLinkingBenchmarkRunner {
             ScaleTier::Tier1_100 => 100.0,
             ScaleTier::Tier2_1K => 1000.0,
             ScaleTier::Tier3_10K => 10000.0,
-            ScaleTier::Tier4_100K => 120000.0, // 2 min
-            ScaleTier::Tier5_1M => 1200000.0,  // 20 min
+            ScaleTier::Tier4_100K => 120000.0,  // 2 min
+            ScaleTier::Tier5_1M => 1200000.0,   // 20 min
             ScaleTier::Tier6_10M => 14400000.0, // 4 hr
         };
         checks.push(ValidationCheck {

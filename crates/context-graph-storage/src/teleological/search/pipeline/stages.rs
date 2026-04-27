@@ -21,8 +21,8 @@ use super::super::maxsim::compute_maxsim_direct;
 use super::super::single::SingleEmbedderSearch;
 use super::traits::{SpladeIndex, TokenStorage};
 use super::types::{
-    GraphExpansionConfig, PipelineCandidate, PipelineConfig, PipelineError,
-    PipelineStage, StageConfig, StageResult,
+    GraphExpansionConfig, PipelineCandidate, PipelineConfig, PipelineError, PipelineStage,
+    StageConfig, StageResult,
 };
 use crate::graph_edges::EdgeRepository;
 
@@ -528,5 +528,4 @@ impl<'a> StageExecutor<'a> {
             stage: PipelineStage::GraphExpansion,
         })
     }
-
 }

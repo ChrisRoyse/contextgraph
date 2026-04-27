@@ -9,8 +9,8 @@
 //! Uses bincode with a version prefix for future compatibility.
 //! All serialization is deterministic for consistent hashing.
 
-use context_graph_core::graph_linking::{EmbedderEdge, TypedEdge};
 use super::types::{GraphEdgeStorageError, GraphEdgeStorageResult};
+use context_graph_core::graph_linking::{EmbedderEdge, TypedEdge};
 
 /// Current serialization version for graph edges.
 pub const GRAPH_EDGE_VERSION: u8 = 1;
@@ -77,7 +77,10 @@ pub fn deserialize_embedder_edges(
     if version != GRAPH_EDGE_VERSION {
         return Err(GraphEdgeStorageError::deserialization(
             "deserialize_embedder_edges",
-            format!("version mismatch: expected {}, got {}", GRAPH_EDGE_VERSION, version),
+            format!(
+                "version mismatch: expected {}, got {}",
+                GRAPH_EDGE_VERSION, version
+            ),
         ));
     }
 
@@ -95,7 +98,11 @@ pub fn deserialize_embedder_edges(
     if data.len() < expected_len {
         return Err(GraphEdgeStorageError::deserialization(
             "deserialize_embedder_edges",
-            format!("data too short: expected {} bytes, got {}", expected_len, data.len()),
+            format!(
+                "data too short: expected {} bytes, got {}",
+                expected_len,
+                data.len()
+            ),
         ));
     }
 
@@ -105,28 +112,33 @@ pub fn deserialize_embedder_edges(
 
     for _ in 0..count {
         // Parse target UUID
-        let uuid_bytes: [u8; 16] = data[offset..offset + 16]
-            .try_into()
-            .map_err(|_| GraphEdgeStorageError::deserialization(
+        let uuid_bytes: [u8; 16] = data[offset..offset + 16].try_into().map_err(|_| {
+            GraphEdgeStorageError::deserialization(
                 "deserialize_embedder_edges",
                 "invalid UUID bytes",
-            ))?;
+            )
+        })?;
         let target = uuid::Uuid::from_bytes(uuid_bytes);
         offset += 16;
 
         // Parse similarity
-        let sim_bytes: [u8; 4] = data[offset..offset + 4]
-            .try_into()
-            .map_err(|_| GraphEdgeStorageError::deserialization(
+        let sim_bytes: [u8; 4] = data[offset..offset + 4].try_into().map_err(|_| {
+            GraphEdgeStorageError::deserialization(
                 "deserialize_embedder_edges",
                 "invalid similarity bytes",
-            ))?;
+            )
+        })?;
         let similarity = f32::from_le_bytes(sim_bytes);
         offset += 4;
 
         // Create edge (validation happens in EmbedderEdge::new_unchecked or we bypass it)
         // Note: We use unsafe construction here since data was validated on write
-        edges.push(EmbedderEdge::from_storage(source, target, embedder_id, similarity));
+        edges.push(EmbedderEdge::from_storage(
+            source,
+            target,
+            embedder_id,
+            similarity,
+        ));
     }
 
     Ok(edges)
@@ -149,11 +161,12 @@ pub fn serialize_typed_edge(edge: &TypedEdge) -> GraphEdgeStorageResult<Vec<u8>>
     buffer.push(GRAPH_EDGE_VERSION);
 
     // Use bincode for the complex structure
-    let edge_bytes = bincode::serialize(edge)
-        .map_err(|e| GraphEdgeStorageError::serialization(
+    let edge_bytes = bincode::serialize(edge).map_err(|e| {
+        GraphEdgeStorageError::serialization(
             "serialize_typed_edge",
             format!("bincode error: {}", e),
-        ))?;
+        )
+    })?;
 
     buffer.extend_from_slice(&edge_bytes);
     Ok(buffer)
@@ -173,16 +186,20 @@ pub fn deserialize_typed_edge(data: &[u8]) -> GraphEdgeStorageResult<TypedEdge> 
     if version != GRAPH_EDGE_VERSION {
         return Err(GraphEdgeStorageError::deserialization(
             "deserialize_typed_edge",
-            format!("version mismatch: expected {}, got {}", GRAPH_EDGE_VERSION, version),
+            format!(
+                "version mismatch: expected {}, got {}",
+                GRAPH_EDGE_VERSION, version
+            ),
         ));
     }
 
     // Deserialize with bincode
-    let edge: TypedEdge = bincode::deserialize(&data[1..])
-        .map_err(|e| GraphEdgeStorageError::deserialization(
+    let edge: TypedEdge = bincode::deserialize(&data[1..]).map_err(|e| {
+        GraphEdgeStorageError::deserialization(
             "deserialize_typed_edge",
             format!("bincode error: {}", e),
-        ))?;
+        )
+    })?;
 
     Ok(edge)
 }
@@ -193,7 +210,11 @@ mod tests {
     use context_graph_core::graph_linking::{DirectedRelation, GraphLinkEdgeType};
     use uuid::Uuid;
 
-    fn create_test_embedder_edges(source: Uuid, embedder_id: u8, count: usize) -> Vec<EmbedderEdge> {
+    fn create_test_embedder_edges(
+        source: Uuid,
+        embedder_id: u8,
+        count: usize,
+    ) -> Vec<EmbedderEdge> {
         (0..count)
             .map(|i| {
                 let target = Uuid::new_v4();
@@ -252,7 +273,14 @@ mod tests {
         scores[6] = 0.75; // E7 high
 
         let thresholds = default_thresholds();
-        let edge = TypedEdge::from_scores(source, target, scores, &thresholds, DirectedRelation::Symmetric).unwrap();
+        let edge = TypedEdge::from_scores(
+            source,
+            target,
+            scores,
+            &thresholds,
+            DirectedRelation::Symmetric,
+        )
+        .unwrap();
 
         let serialized = serialize_typed_edge(&edge).unwrap();
         let deserialized = deserialize_typed_edge(&serialized).unwrap();
@@ -279,7 +307,8 @@ mod tests {
             scores,
             1,
             0b0000_0001_0000, // E5 only
-        ).unwrap();
+        )
+        .unwrap();
 
         let serialized = serialize_typed_edge(&edge).unwrap();
         let deserialized = deserialize_typed_edge(&serialized).unwrap();

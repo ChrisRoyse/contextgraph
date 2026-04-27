@@ -22,7 +22,7 @@
 
 use super::error::{CodeStorageError, CodeStorageResult};
 use crate::teleological::column_families::{
-    CF_CODE_ENTITIES, CF_CODE_E7_EMBEDDINGS, CF_CODE_FILE_INDEX, CF_CODE_NAME_INDEX,
+    CF_CODE_E7_EMBEDDINGS, CF_CODE_ENTITIES, CF_CODE_FILE_INDEX, CF_CODE_NAME_INDEX,
     CF_CODE_SIGNATURE_INDEX,
 };
 use context_graph_core::types::fingerprint::SemanticFingerprint;
@@ -357,7 +357,10 @@ impl CodeStore {
 
     /// Get the file index entry for a file.
     pub fn get_file_index(&self, file_path: &str) -> CodeStorageResult<Option<CodeFileIndexEntry>> {
-        match self.db.get_cf(&self.cf_file_index()?, file_path.as_bytes())? {
+        match self
+            .db
+            .get_cf(&self.cf_file_index()?, file_path.as_bytes())?
+        {
             Some(bytes) => {
                 let entry: CodeFileIndexEntry = serde_json::from_slice(&bytes)
                     .map_err(|e| CodeStorageError::deserialization(e.to_string()))?;
@@ -572,7 +575,10 @@ impl CodeStore {
                 continue;
             }
             let id = Uuid::from_slice(&key).map_err(|e| {
-                CodeStorageError::deserialization(format!("Invalid UUID in fingerprint index: {}", e))
+                CodeStorageError::deserialization(format!(
+                    "Invalid UUID in fingerprint index: {}",
+                    e
+                ))
             })?;
 
             // Deserialize fingerprint
@@ -629,7 +635,8 @@ impl CodeStore {
         min_similarity: f32,
         use_e7_primary: bool,
     ) -> CodeStorageResult<Vec<(CodeEntity, f32)>> {
-        let results = self.search_by_fingerprint(query_fingerprint, top_k, min_similarity, use_e7_primary)?;
+        let results =
+            self.search_by_fingerprint(query_fingerprint, top_k, min_similarity, use_e7_primary)?;
 
         let mut entities_with_scores = Vec::with_capacity(results.len());
         for (id, score) in results {
@@ -1014,7 +1021,10 @@ mod tests {
 
         // Verify fingerprint retrieval
         let retrieved_fp = store.get_fingerprint(id).unwrap().unwrap();
-        assert!(retrieved_fp.is_complete(), "Fingerprint should have all 13 embeddings");
+        assert!(
+            retrieved_fp.is_complete(),
+            "Fingerprint should have all 13 embeddings"
+        );
         assert_eq!(retrieved_fp.e7_code.len(), E7_CODE_DIM);
 
         // Also test the convenience method
@@ -1174,7 +1184,9 @@ mod tests {
         let mut query_fp = create_test_fingerprint();
         query_fp.e7_code = vec![0.9; E7_CODE_DIM];
 
-        let results = store.search_by_fingerprint(&query_fp, 10, 0.0, true).unwrap();
+        let results = store
+            .search_by_fingerprint(&query_fp, 10, 0.0, true)
+            .unwrap();
         assert!(!results.is_empty());
 
         // entity1 should be first (more similar)

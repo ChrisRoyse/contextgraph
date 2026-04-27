@@ -1,6 +1,8 @@
 //! Constants for the learned weight projection model.
 
-pub use context_graph_core::clustering::{MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD as WEIGHTED_AGREEMENT_THRESHOLD};
+pub use context_graph_core::clustering::{
+    MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD as WEIGHTED_AGREEMENT_THRESHOLD,
+};
 
 /// Number of embedders in the system.
 pub const NUM_EMBEDDERS: usize = 14;

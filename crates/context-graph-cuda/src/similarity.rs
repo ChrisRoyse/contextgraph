@@ -69,12 +69,7 @@ impl DimensionGroup {
 
     /// Get all dimension groups in order.
     pub const fn all() -> [DimensionGroup; 4] {
-        [
-            Self::Dim1024,
-            Self::Dim768,
-            Self::Dim512,
-            Self::Dim1536,
-        ]
+        [Self::Dim1024, Self::Dim768, Self::Dim512, Self::Dim1536]
     }
 
     /// Get the embedder indices (in 13-embedder array) for this group.
@@ -95,7 +90,7 @@ impl DimensionGroup {
     /// Number of embedders in this dimension group.
     pub const fn embedder_count(&self) -> usize {
         match self {
-            Self::Dim1024 => 3,  // E1, E8, E9
+            Self::Dim1024 => 3, // E1, E8, E9
             Self::Dim768 => 3,  // E5, E10, E11
             Self::Dim512 => 3,  // E2, E3, E4
             Self::Dim1536 => 1, // E7
@@ -107,11 +102,11 @@ impl DimensionGroup {
 /// Returns None for sparse (E6, E13) and token-level (E12) embedders.
 pub const fn embedder_to_group(embedder_idx: usize) -> Option<DimensionGroup> {
     match embedder_idx {
-        0 | 7 | 8 => Some(DimensionGroup::Dim1024),  // E1, E8 (upgraded to 1024D), E9
-        4 | 9 | 10 => Some(DimensionGroup::Dim768),  // E5, E10, E11
-        1..=3 => Some(DimensionGroup::Dim512),   // E2, E3, E4
-        6 => Some(DimensionGroup::Dim1536),          // E7
-        5 | 11 | 12 => None, // E6 (sparse), E12 (token), E13 (sparse)
+        0 | 7 | 8 => Some(DimensionGroup::Dim1024), // E1, E8 (upgraded to 1024D), E9
+        4 | 9 | 10 => Some(DimensionGroup::Dim768), // E5, E10, E11
+        1..=3 => Some(DimensionGroup::Dim512),      // E2, E3, E4
+        6 => Some(DimensionGroup::Dim1536),         // E7
+        5 | 11 | 12 => None,                        // E6 (sparse), E12 (token), E13 (sparse)
         _ => None,
     }
 }
@@ -403,26 +398,22 @@ mod tests {
     fn test_batch_similarity_identical_vectors() {
         // Create properly sized test vectors
         let e1 = vec![1.0f32; 1024]; // E1: 1024D
-        let e2 = vec![1.0f32; 512];  // E2: 512D
-        let e3 = vec![1.0f32; 512];  // E3: 512D
-        let e4 = vec![1.0f32; 512];  // E4: 512D
-        let e5 = vec![1.0f32; 768];  // E5: 768D
+        let e2 = vec![1.0f32; 512]; // E2: 512D
+        let e3 = vec![1.0f32; 512]; // E3: 512D
+        let e4 = vec![1.0f32; 512]; // E4: 512D
+        let e5 = vec![1.0f32; 768]; // E5: 768D
         let e7 = vec![1.0f32; 1536]; // E7: 1536D
         let e8 = vec![1.0f32; 1024]; // E8: 1024D (e5-large-v2)
         let e9 = vec![1.0f32; 1024]; // E9: 1024D
         let e10 = vec![1.0f32; 768]; // E10: 768D
         let e11 = vec![1.0f32; 768]; // E11: 768D
 
-        let query: [&[f32]; 10] = [
-            &e1, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11,
-        ];
+        let query: [&[f32]; 10] = [&e1, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11];
 
         let query_ctx = BatchedQueryContext::new(&query).unwrap();
 
         // Candidate with identical vectors
-        let candidate: [&[f32]; 10] = [
-            &e1, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11,
-        ];
+        let candidate: [&[f32]; 10] = [&e1, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11];
 
         let results = compute_batch_cosine_similarity(&query_ctx, &[candidate]).unwrap();
         assert_eq!(results.len(), 1);
@@ -458,15 +449,11 @@ mod tests {
         let e10 = vec![1.0f32; 768];
         let e11 = vec![1.0f32; 768];
 
-        let query: [&[f32]; 10] = [
-            &e1_q, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11,
-        ];
+        let query: [&[f32]; 10] = [&e1_q, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11];
 
         let query_ctx = BatchedQueryContext::new(&query).unwrap();
 
-        let candidate: [&[f32]; 10] = [
-            &e1_c, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11,
-        ];
+        let candidate: [&[f32]; 10] = [&e1_c, &e2, &e3, &e4, &e5, &e7, &e8, &e9, &e10, &e11];
 
         let results = compute_batch_cosine_similarity(&query_ctx, &[candidate]).unwrap();
         let scores = &results[0];

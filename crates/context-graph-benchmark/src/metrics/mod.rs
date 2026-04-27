@@ -14,11 +14,11 @@
 pub mod causal;
 pub mod clustering;
 pub mod divergence;
+pub mod e11_entity;
 pub mod e1_semantic;
 pub mod e4_hybrid_session;
 pub mod e7_code;
 pub mod e7_iou;
-pub mod e11_entity;
 pub mod embedder_contribution;
 pub mod graph_linking;
 pub mod graph_structure;
@@ -32,61 +32,60 @@ pub mod temporal_realdata;
 pub mod validation;
 
 pub use causal::{
-    CausalMetrics, DirectionDistributionMetrics, DirectionMRRBreakdown,
-    E5ConstitutionalCompliance, E5ImpactAnalysis, E5VectorVerificationMetrics,
-    SymmetricVsAsymmetricComparison,
+    CausalMetrics, DirectionDistributionMetrics, DirectionMRRBreakdown, E5ConstitutionalCompliance,
+    E5ImpactAnalysis, E5VectorVerificationMetrics, SymmetricVsAsymmetricComparison,
+};
+pub use clustering::ClusteringMetrics;
+pub use divergence::DivergenceMetrics;
+pub use e11_entity::{
+    compute_mrr as e11_compute_mrr, compute_ndcg_at_k as e11_compute_ndcg,
+    thresholds as e11_thresholds, E11EntityMetrics, E11PerformanceMetrics, EntityGraphMetrics,
+    EntityRetrievalMetrics, EntityTypeMetrics, ExtractionMetrics, LatencyStats,
+    RetrievalApproachComparison, ScoreDistribution, TransEMetrics,
+};
+pub use e7_code::{
+    e1_unique_finds, e7_unique_finds, mrr as e7_mrr, ndcg_at_k as e7_ndcg,
+    precision_at_k as e7_precision, recall_at_k as e7_recall, E7BenchmarkMetrics, E7GroundTruth,
+    E7QueryResult, E7QueryType, E7QueryTypeMetrics,
+};
+pub use e7_iou::{
+    compute_iou_at_k, compute_iou_result, compute_token_iou, extract_token_strings, tokenize_code,
+    CodeToken, IoUMetrics, IoUResult, TokenType,
+};
+pub use embedder_contribution::{
+    AgreementPatternAnalysis, BlindSpotAnalysis, BlindSpotExample, ContributionAttribution,
+    RRFRankContribution, ResultContribution, UniqueFinds,
+};
+pub use graph_linking::{
+    BackgroundBuilderMetrics, EdgeBuilderMetrics, GraphExpansionMetrics, GraphLinkingReport,
+    LatencyStats as GraphLatencyStats, LatencyTracker, MemoryStats, NNDescentMetrics, RGCNMetrics,
+    WeightComparisonMetrics, WeightProjectionMetrics,
+};
+pub use graph_structure::{
+    AgreementDistribution, CategoryWeights, ConnectivitySnapshot, EdgeTypeDistribution,
+    EmbedderConnectivity, GraphConnectivityMetrics, GraphStructureImpact, TopicFormationImpact,
+    WeightedAgreementAnalysis,
 };
 pub use multimodal::{
     AsymmetricRetrievalMetrics, AsymmetricRetrievalResult, BlendAnalysisPoint,
     ContextMatchingMetrics, ContextMatchingResult, E10AblationMetrics, E10MultimodalMetrics,
     ParaphraseDetectionMetrics, ParaphraseDetectionResult,
 };
-pub use clustering::ClusteringMetrics;
-pub use divergence::DivergenceMetrics;
 pub use performance::PerformanceMetrics;
+pub use resource_usage::{
+    EmbedderEfficiency, IndexStats, IndexType, LatencyStats as ResourceLatencyStats,
+    MemoryFootprint, ResourceImpact, StorageEfficiency,
+};
 pub use retrieval::RetrievalMetrics;
 pub use sparse::{
     E6AblationMetrics, E6SparseMetrics, KeywordPrecisionMetrics, KeywordQueryResult,
-    RetrievalQualityMetrics, SparsityAnalysisMetrics, SparseVectorStats,
+    RetrievalQualityMetrics, SparseVectorStats, SparsityAnalysisMetrics,
 };
 pub use temporal::TemporalMetrics;
 pub use temporal_realdata::TemporalRealdataMetrics;
 pub use validation::{
-    ValidationMetrics, ToolValidationMetrics, TestCaseResult,
-    BoundaryTestConfig, BoundaryTestValue, sequence_tool_boundary_configs,
-};
-pub use e11_entity::{
-    E11EntityMetrics, E11PerformanceMetrics, EntityGraphMetrics, EntityRetrievalMetrics,
-    EntityTypeMetrics, ExtractionMetrics, LatencyStats, RetrievalApproachComparison,
-    ScoreDistribution, TransEMetrics, thresholds as e11_thresholds,
-    compute_mrr as e11_compute_mrr, compute_ndcg_at_k as e11_compute_ndcg,
-};
-pub use e7_code::{
-    E7BenchmarkMetrics, E7GroundTruth, E7QueryResult, E7QueryType, E7QueryTypeMetrics,
-    e7_unique_finds, e1_unique_finds, mrr as e7_mrr, ndcg_at_k as e7_ndcg,
-    precision_at_k as e7_precision, recall_at_k as e7_recall,
-};
-pub use e7_iou::{
-    CodeToken, IoUMetrics, IoUResult, TokenType,
-    compute_iou_at_k, compute_iou_result, compute_token_iou, extract_token_strings, tokenize_code,
-};
-pub use graph_linking::{
-    BackgroundBuilderMetrics, EdgeBuilderMetrics, GraphExpansionMetrics,
-    GraphLinkingReport, LatencyStats as GraphLatencyStats, LatencyTracker, MemoryStats,
-    NNDescentMetrics, RGCNMetrics, WeightComparisonMetrics, WeightProjectionMetrics,
-};
-pub use embedder_contribution::{
-    AgreementPatternAnalysis, BlindSpotAnalysis, BlindSpotExample, ContributionAttribution,
-    RRFRankContribution, ResultContribution, UniqueFinds,
-};
-pub use graph_structure::{
-    AgreementDistribution, CategoryWeights, ConnectivitySnapshot, EdgeTypeDistribution,
-    EmbedderConnectivity, GraphConnectivityMetrics, GraphStructureImpact,
-    TopicFormationImpact, WeightedAgreementAnalysis,
-};
-pub use resource_usage::{
-    EmbedderEfficiency, IndexStats, IndexType, LatencyStats as ResourceLatencyStats,
-    MemoryFootprint, ResourceImpact, StorageEfficiency,
+    sequence_tool_boundary_configs, BoundaryTestConfig, BoundaryTestValue, TestCaseResult,
+    ToolValidationMetrics, ValidationMetrics,
 };
 
 /// Combined metrics for a single benchmark run.

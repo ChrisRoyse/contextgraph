@@ -185,7 +185,10 @@ impl CliArgs {
                     cli.daemon = true;
                 }
                 arg => {
-                    eprintln!("WARNING: Unknown argument '{}' — ignoring. Use --help for usage.", arg);
+                    eprintln!(
+                        "WARNING: Unknown argument '{}' — ignoring. Use --help for usage.",
+                        arg
+                    );
                 }
             }
             i += 1;
@@ -285,9 +288,7 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
             "sse" => {
-                error!(
-                    "FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'."
-                );
+                error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
                 Err(anyhow::anyhow!(
                     "SSE transport is not supported. Use 'stdio' or 'tcp'."
                 ))
@@ -312,9 +313,7 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
             "sse" => {
-                error!(
-                    "FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'."
-                );
+                error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
                 Err(anyhow::anyhow!(
                     "SSE transport is not supported. Use 'stdio' or 'tcp'."
                 ))
@@ -338,9 +337,7 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
         "stdio" => Ok(TransportMode::Stdio),
         "tcp" => Ok(TransportMode::Tcp),
         "sse" => {
-            error!(
-                "FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'."
-            );
+            error!("FATAL: SSE transport is not supported. Use 'stdio' or 'tcp'.");
             Err(anyhow::anyhow!(
                 "SSE transport is not supported. Use 'stdio' or 'tcp'."
             ))
@@ -614,7 +611,8 @@ impl PidFileGuard {
                             if is_zombie {
                                 warn!(
                                     "PID {} is zombie/dead — reclaiming stale lock on '{}'",
-                                    pid, db_path.display()
+                                    pid,
+                                    db_path.display()
                                 );
                             }
                             is_zombie
@@ -629,7 +627,13 @@ impl PidFileGuard {
                                 .read(true)
                                 .write(true)
                                 .open(&pid_path)
-                                .map_err(|e| anyhow::anyhow!("Cannot reopen PID file '{}': {}", pid_path.display(), e))?;
+                                .map_err(|e| {
+                                    anyhow::anyhow!(
+                                        "Cannot reopen PID file '{}': {}",
+                                        pid_path.display(),
+                                        e
+                                    )
+                                })?;
                             let fd = file.as_raw_fd();
                             let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
                             if result == 0 {
@@ -649,7 +653,8 @@ impl PidFileGuard {
                                 }
                                 info!(
                                     "Reclaimed stale PID lock (was process {}): new pid={}",
-                                    pid, std::process::id()
+                                    pid,
+                                    std::process::id()
                                 );
                                 return Ok(PidFileGuard {
                                     path: pid_path,
@@ -669,7 +674,8 @@ impl PidFileGuard {
                 }
                 return Err(anyhow::anyhow!(
                     "flock() on PID file '{}' failed: {}",
-                    pid_path.display(), errno
+                    pid_path.display(),
+                    errno
                 ));
             }
 
@@ -679,16 +685,28 @@ impl PidFileGuard {
             // reading the PID file get stale/partial data, breaking stale detection.
             let mut f = &file;
             if let Err(e) = f.seek(io::SeekFrom::Start(0)) {
-                warn!("PID file seek failed: {} -- stale detection may be unreliable", e);
+                warn!(
+                    "PID file seek failed: {} -- stale detection may be unreliable",
+                    e
+                );
             }
             if let Err(e) = f.set_len(0) {
-                warn!("PID file truncate failed: {} -- stale detection may be unreliable", e);
+                warn!(
+                    "PID file truncate failed: {} -- stale detection may be unreliable",
+                    e
+                );
             }
             if let Err(e) = write!(f, "{}", std::process::id()) {
-                warn!("PID file write failed: {} -- stale detection may be unreliable", e);
+                warn!(
+                    "PID file write failed: {} -- stale detection may be unreliable",
+                    e
+                );
             }
             if let Err(e) = f.flush() {
-                warn!("PID file flush failed: {} -- stale detection may be unreliable", e);
+                warn!(
+                    "PID file flush failed: {} -- stale detection may be unreliable",
+                    e
+                );
             }
 
             info!(
@@ -726,9 +744,7 @@ impl PidFileGuard {
                  Multiple instances may corrupt RocksDB. Ensure only one daemon runs at a time."
             );
 
-            Ok(PidFileGuard {
-                path: pid_path,
-            })
+            Ok(PidFileGuard { path: pid_path })
         }
     }
 }
@@ -811,7 +827,10 @@ async fn is_daemon_healthy(port: u16) -> bool {
             true
         }
         Ok(Ok(false)) => {
-            warn!("Health check: port {} responded but not valid JSON-RPC", port);
+            warn!(
+                "Health check: port {} responded but not valid JSON-RPC",
+                port
+            );
             false
         }
         Ok(Err(e)) => {
@@ -841,9 +860,12 @@ async fn kill_process_on_port(port: u16) -> Result<()> {
         .stderr(std::process::Stdio::null())
         .output()
         .await
-        .map_err(|e| anyhow::anyhow!(
-            "fuser command failed: {}. Is fuser installed? (apt install psmisc)", e
-        ))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "fuser command failed: {}. Is fuser installed? (apt install psmisc)",
+                e
+            )
+        })?;
 
     let pids_str = String::from_utf8_lossy(&output.stdout);
     let our_pid = std::process::id() as i32;
@@ -856,12 +878,16 @@ async fn kill_process_on_port(port: u16) -> Result<()> {
             }
 
             warn!("Sending SIGTERM to stuck daemon process PID {}", pid);
-            unsafe { libc::kill(pid, libc::SIGTERM); }
+            unsafe {
+                libc::kill(pid, libc::SIGTERM);
+            }
             tokio::time::sleep(Duration::from_millis(200)).await;
 
             if unsafe { libc::kill(pid, 0) } == 0 {
                 warn!("PID {} did not respond to SIGTERM, sending SIGKILL", pid);
-                unsafe { libc::kill(pid, libc::SIGKILL); }
+                unsafe {
+                    libc::kill(pid, libc::SIGKILL);
+                }
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
 
@@ -901,9 +927,16 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
     let pid: i32 = match pid_str.parse() {
         Ok(p) => p,
         Err(_) => {
-            warn!("PID file contains non-numeric value '{}' — removing stale file", pid_str);
+            warn!(
+                "PID file contains non-numeric value '{}' — removing stale file",
+                pid_str
+            );
             if let Err(e) = fs::remove_file(&pid_path) {
-                warn!("Failed to remove corrupt PID file {}: {}", pid_path.display(), e);
+                warn!(
+                    "Failed to remove corrupt PID file {}: {}",
+                    pid_path.display(),
+                    e
+                );
             }
             return true;
         }
@@ -926,7 +959,10 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
     // Process is alive — re-check health to guard against race conditions
     // (daemon might have recovered since the caller's Step 1 check).
     if is_daemon_healthy(daemon_port).await {
-        info!("PID {} is now serving on port {} — no kill needed", pid, daemon_port);
+        info!(
+            "PID {} is now serving on port {} — no kill needed",
+            pid, daemon_port
+        );
         return false;
     }
 
@@ -934,31 +970,48 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
     warn!(
         "STALE LOCK DETECTED: PID {} holds flock on '{}' but is NOT serving on port {}. \
          Sending SIGTERM for graceful shutdown.",
-        pid, pid_path.display(), daemon_port
+        pid,
+        pid_path.display(),
+        daemon_port
     );
 
     // SIGTERM first — gives RocksDB time to flush
-    unsafe { libc::kill(pid, libc::SIGTERM); }
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
 
     // Wait up to 2s for graceful shutdown
     for i in 0..20 {
         sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
-            info!("Stale PID {} terminated after SIGTERM ({}ms)", pid, (i + 1) * 100);
+            info!(
+                "Stale PID {} terminated after SIGTERM ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
             sleep(Duration::from_millis(200)).await;
             return true;
         }
     }
 
     // Still alive after 2s — force kill
-    warn!("PID {} did not exit after SIGTERM (2s), sending SIGKILL", pid);
-    unsafe { libc::kill(pid, libc::SIGKILL); }
+    warn!(
+        "PID {} did not exit after SIGTERM (2s), sending SIGKILL",
+        pid
+    );
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
 
     // Wait up to 1s for kernel to reap the process
     for i in 0..10 {
         sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
-            info!("Stale PID {} terminated after SIGKILL ({}ms)", pid, (i + 1) * 100);
+            info!(
+                "Stale PID {} terminated after SIGKILL ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
             sleep(Duration::from_millis(200)).await;
             return true;
         }
@@ -968,7 +1021,10 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
             .map(|s| s.contains("State:\tZ") || s.contains("State:\tX"))
             .unwrap_or(false);
         if is_zombie {
-            info!("PID {} is zombie after SIGKILL — flock released, lock reclaimable", pid);
+            info!(
+                "PID {} is zombie after SIGKILL — flock released, lock reclaimable",
+                pid
+            );
             return true;
         }
     }
@@ -1005,9 +1061,16 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
     let pid: i32 = match pid_str.parse() {
         Ok(p) => p,
         Err(_) => {
-            warn!("PID file contains non-numeric value '{}' — removing", pid_str);
+            warn!(
+                "PID file contains non-numeric value '{}' — removing",
+                pid_str
+            );
             if let Err(e) = fs::remove_file(&pid_path) {
-                warn!("Failed to remove corrupt PID file {}: {}", pid_path.display(), e);
+                warn!(
+                    "Failed to remove corrupt PID file {}: {}",
+                    pid_path.display(),
+                    e
+                );
             }
             return true;
         }
@@ -1070,8 +1133,8 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
                     Err(_) => return false,
                 };
                 // Read /proc/{pid}/net/tcp once for inode matching
-                let tcp_data = std::fs::read_to_string(format!("/proc/{}/net/tcp", pid))
-                    .unwrap_or_default();
+                let tcp_data =
+                    std::fs::read_to_string(format!("/proc/{}/net/tcp", pid)).unwrap_or_default();
                 for entry in entries.flatten() {
                     // Read where each fd points
                     let link = match fs::read_link(entry.path()) {
@@ -1083,9 +1146,7 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
                         continue;
                     }
                     // Extract inode number from "socket:[12345]"
-                    let inode = link
-                        .trim_start_matches("socket:[")
-                        .trim_end_matches(']');
+                    let inode = link.trim_start_matches("socket:[").trim_end_matches(']');
                     // Check if this inode is in LISTEN state in /proc/{pid}/net/tcp
                     for tcp_line in tcp_data.lines().skip(1) {
                         let cols: Vec<&str> = tcp_line.split_whitespace().collect();
@@ -1134,27 +1195,43 @@ async fn kill_stale_standalone_holder(db_path: &Path) -> bool {
     warn!(
         "STALE STANDALONE DETECTED: PID {} holds flock on '{}' with dead stdio. \
          Sending SIGTERM.",
-        pid, pid_path.display()
+        pid,
+        pid_path.display()
     );
 
-    unsafe { libc::kill(pid, libc::SIGTERM); }
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+    }
 
     for i in 0..20 {
         sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
-            info!("Stale PID {} terminated after SIGTERM ({}ms)", pid, (i + 1) * 100);
+            info!(
+                "Stale PID {} terminated after SIGTERM ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
             sleep(Duration::from_millis(200)).await;
             return true;
         }
     }
 
-    warn!("PID {} did not exit after SIGTERM (2s), sending SIGKILL", pid);
-    unsafe { libc::kill(pid, libc::SIGKILL); }
+    warn!(
+        "PID {} did not exit after SIGTERM (2s), sending SIGKILL",
+        pid
+    );
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
 
     for i in 0..10 {
         sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
-            info!("Stale PID {} terminated after SIGKILL ({}ms)", pid, (i + 1) * 100);
+            info!(
+                "Stale PID {} terminated after SIGKILL ({}ms)",
+                pid,
+                (i + 1) * 100
+            );
             sleep(Duration::from_millis(200)).await;
             return true;
         }
@@ -1339,7 +1416,8 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
                     return Err(anyhow::anyhow!(
                         "Proxy lost connection to daemon {} times. \
                          The daemon may have crashed. Check: fuser {}/tcp",
-                        max_reconnects, daemon_port
+                        max_reconnects,
+                        daemon_port
                     ));
                 }
 
@@ -1410,10 +1488,9 @@ async fn start_daemon_server(
         let shutdown_signal = async {
             #[cfg(unix)]
             {
-                let mut sigterm = tokio::signal::unix::signal(
-                    tokio::signal::unix::SignalKind::terminate(),
-                )
-                .expect("FATAL: failed to register SIGTERM handler in daemon task");
+                let mut sigterm =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("FATAL: failed to register SIGTERM handler in daemon task");
 
                 tokio::select! {
                     _ = sigterm.recv() => {
@@ -1530,10 +1607,7 @@ async fn spawn_daemon_process(
         .map_err(|e| anyhow::anyhow!("Failed to spawn daemon process: {}", e))?;
 
     let child_pid = child.id();
-    info!(
-        "Spawned daemon process PID {} (exe: {:?})",
-        child_pid, exe
-    );
+    info!("Spawned daemon process PID {} (exe: {:?})", child_pid, exe);
 
     // Wait for daemon to become healthy (up to 120s for model warmup)
     let max_wait = Duration::from_secs(120);
@@ -1833,10 +1907,9 @@ async fn async_main() -> Result<()> {
         let shutdown_signal = async {
             #[cfg(unix)]
             {
-                let mut sigterm = tokio::signal::unix::signal(
-                    tokio::signal::unix::SignalKind::terminate(),
-                )
-                .expect("FATAL: failed to register SIGTERM handler in headless daemon");
+                let mut sigterm =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("FATAL: failed to register SIGTERM handler in headless daemon");
 
                 tokio::select! {
                     _ = sigterm.recv() => {
@@ -1913,7 +1986,10 @@ async fn async_main() -> Result<()> {
                 );
                 #[cfg(unix)]
                 if let Err(e) = kill_process_on_port(daemon_port).await {
-                    warn!("Could not kill stuck process on port {}: {}", daemon_port, e);
+                    warn!(
+                        "Could not kill stuck process on port {}: {}",
+                        daemon_port, e
+                    );
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                 continue;
@@ -1952,12 +2028,8 @@ async fn async_main() -> Result<()> {
 
             #[cfg(unix)]
             {
-                match spawn_daemon_process(
-                    daemon_port,
-                    cli.config_path.as_deref(),
-                    warm_first,
-                )
-                .await
+                match spawn_daemon_process(daemon_port, cli.config_path.as_deref(), warm_first)
+                    .await
                 {
                     Ok(()) => {
                         info!(
@@ -1990,10 +2062,7 @@ async fn async_main() -> Result<()> {
                                 "Waiting for flock release (retry {}/5, {}ms)...",
                                 retry, delay_ms
                             );
-                            tokio::time::sleep(tokio::time::Duration::from_millis(
-                                delay_ms,
-                            ))
-                            .await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                             guard_result = PidFileGuard::acquire(&db_path);
                             if guard_result.is_ok() {
                                 break;
@@ -2007,8 +2076,7 @@ async fn async_main() -> Result<()> {
                                 "PID lock contention (attempt {}/{}): {}",
                                 attempt, max_attempts, e
                             );
-                            tokio::time::sleep(tokio::time::Duration::from_millis(500))
-                                .await;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                             continue;
                         }
                     }
@@ -2016,13 +2084,7 @@ async fn async_main() -> Result<()> {
                     None
                 };
 
-                match start_daemon_server(
-                    config.clone(),
-                    warm_first,
-                    daemon_port,
-                    pid_guard,
-                )
-                .await
+                match start_daemon_server(config.clone(), warm_first, daemon_port, pid_guard).await
                 {
                     Ok(()) => {
                         info!("Daemon started on port {}", daemon_port);
@@ -2048,8 +2110,12 @@ async fn async_main() -> Result<()> {
                  - Stale process holding RocksDB lock: kill $(cat {}/mcp.pid)\n\
                  - Port {} in use by another service: fuser {}/tcp\n\
                  - RocksDB corruption: rm -rf {}/LOCK",
-                max_attempts, daemon_port,
-                db_path.display(), daemon_port, daemon_port, db_path.display()
+                max_attempts,
+                daemon_port,
+                db_path.display(),
+                daemon_port,
+                daemon_port,
+                db_path.display()
             ));
         }
     } else {
@@ -2073,8 +2139,12 @@ async fn async_main() -> Result<()> {
                             let mut guard_result = Err(e);
                             for retry in 1..=5 {
                                 let delay_ms = 300 * retry;
-                                info!("Waiting for flock release (retry {}/5, {}ms)...", retry, delay_ms);
-                                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                                info!(
+                                    "Waiting for flock release (retry {}/5, {}ms)...",
+                                    retry, delay_ms
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
+                                    .await;
                                 match PidFileGuard::acquire(&db_path) {
                                     Ok(guard) => {
                                         guard_result = Ok(guard);
@@ -2122,10 +2192,9 @@ async fn async_main() -> Result<()> {
         let shutdown_signal = async {
             #[cfg(unix)]
             {
-                let mut sigterm = tokio::signal::unix::signal(
-                    tokio::signal::unix::SignalKind::terminate(),
-                )
-                .expect("FATAL: failed to register SIGTERM handler");
+                let mut sigterm =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("FATAL: failed to register SIGTERM handler");
 
                 tokio::select! {
                     _ = sigterm.recv() => {

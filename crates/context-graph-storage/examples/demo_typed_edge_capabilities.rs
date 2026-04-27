@@ -103,7 +103,10 @@ async fn main() {
     for i in 0..N_MEMORIES {
         let id = Uuid::new_v4();
         store
-            .store_content(id, &format!("Memory {}: node in the synthetic demo corpus.", i))
+            .store_content(
+                id,
+                &format!("Memory {}: node in the synthetic demo corpus.", i),
+            )
             .await
             .expect("store content");
         ids.push(id);
@@ -172,7 +175,13 @@ async fn main() {
 
         let primary = et
             .primary_embedder_index()
-            .map(|pi| extra.iter().find(|(x, _)| *x == pi).map(|(_, v)| *v).unwrap_or(0.75))
+            .map(|pi| {
+                extra
+                    .iter()
+                    .find(|(x, _)| *x == pi)
+                    .map(|(_, v)| *v)
+                    .unwrap_or(0.75)
+            })
             .unwrap_or(0.75);
 
         all_edges.push(synthetic_edge(ids[i], ids[hub_target], et, primary, &extra));
@@ -230,8 +239,16 @@ async fn main() {
             embedder_scores: *edge.embedder_scores(),
             agreement_count: edge.agreement_count(),
             agreeing_embedders: edge.agreeing_embedders(),
-            source_content: store.get_content(edge.source()).await.unwrap().unwrap_or_default(),
-            target_content: store.get_content(edge.target()).await.unwrap().unwrap_or_default(),
+            source_content: store
+                .get_content(edge.source())
+                .await
+                .unwrap()
+                .unwrap_or_default(),
+            target_content: store
+                .get_content(edge.target())
+                .await
+                .unwrap()
+                .unwrap_or_default(),
             source_session_id: Some("demo".into()),
             target_session_id: Some("demo".into()),
             source_type: Some("Manual".into()),
@@ -241,7 +258,10 @@ async fn main() {
             exported_at: Utc::now(),
             exporter_version: "typed_edge_export_v1".into(),
         };
-        store.store_typed_edge_record(&rec).await.expect("store record");
+        store
+            .store_typed_edge_record(&rec)
+            .await
+            .expect("store record");
         exported += 1;
         *per_type_counts.entry(edge.edge_type().as_u8()).or_insert(0) += 1;
     }
@@ -249,17 +269,20 @@ async fn main() {
 
     let physical_count = store.count_typed_edge_records().await.unwrap();
     println!("  rows exported:            {}", exported);
-    println!("  rows in CF physically:    {}  (must equal above)", physical_count);
+    println!(
+        "  rows in CF physically:    {}  (must equal above)",
+        physical_count
+    );
     println!("  duration:                 {} ms", elapsed_ms);
-    println!("  edges/sec:                {:.0}", exported as f64 / (elapsed_ms as f64 / 1000.0));
+    println!(
+        "  edges/sec:                {:.0}",
+        exported as f64 / (elapsed_ms as f64 / 1000.0)
+    );
     println!("\n  per edge_type:");
     let mut type_keys: Vec<u8> = per_type_counts.keys().copied().collect();
     type_keys.sort();
     for k in type_keys {
-        println!(
-            "    {:<22}  {}",
-            et_names[k as usize], per_type_counts[&k]
-        );
+        println!("    {:<22}  {}", et_names[k as usize], per_type_counts[&k]);
     }
 
     // Spot-check one row — prove it carries the 13-embedder scores.
@@ -289,10 +312,16 @@ async fn main() {
         &got.source_content[..32.min(got.source_content.len())],
         &got.target_content[..32.min(got.target_content.len())]
     );
-    println!("  sample row[0] edge_type: {} (={})", got.edge_type_name, got.edge_type);
+    println!(
+        "  sample row[0] edge_type: {} (={})",
+        got.edge_type_name, got.edge_type
+    );
     println!("  sample row[0] weight:     {:.3}", got.weight);
     assert_eq!(physical_count, exported, "CF count must match export count");
-    println!("  VERDICT: DEMO 1 PASS — {} typed-edge training rows materialized", physical_count);
+    println!(
+        "  VERDICT: DEMO 1 PASS — {} typed-edge training rows materialized",
+        physical_count
+    );
 
     // ======================================================================
     // DEMO 2 — F2 derive_anomalies_from_edges
@@ -310,9 +339,15 @@ async fn main() {
 
     println!("  edges scanned:            {}", summary.edges_scanned);
     println!("  pairs written:            {}", summary.pairs_written);
-    println!("  pairs skipped:            {}", summary.skipped_below_threshold);
+    println!(
+        "  pairs skipped:            {}",
+        summary.skipped_below_threshold
+    );
     println!("  duration:                 {} ms", derive_ms);
-    println!("  pairs/sec:                {:.0}", summary.pairs_written as f64 / (derive_ms as f64 / 1000.0).max(0.001));
+    println!(
+        "  pairs/sec:                {:.0}",
+        summary.pairs_written as f64 / (derive_ms as f64 / 1000.0).max(0.001)
+    );
     println!("\n  per AnomalyKind:");
     for kind in AnomalyKind::all() {
         let c = summary.per_kind_counts.get(&kind).copied().unwrap_or(0);
@@ -353,9 +388,7 @@ async fn main() {
     // Build per-memory distribution from the seeded edges (outgoing counts).
     let mut dist_by_memory: HashMap<Uuid, [u32; 8]> = HashMap::new();
     for edge in &all_edges {
-        let d = dist_by_memory
-            .entry(edge.source())
-            .or_insert([0u32; 8]);
+        let d = dist_by_memory.entry(edge.source()).or_insert([0u32; 8]);
         let idx = edge.edge_type().as_u8() as usize;
         d[idx] = d[idx].saturating_add(1);
     }
@@ -363,9 +396,7 @@ async fn main() {
     // Incoming too — hub detection cares about both directions.
     let mut incoming_by_memory: HashMap<Uuid, [u32; 8]> = HashMap::new();
     for edge in &all_edges {
-        let d = incoming_by_memory
-            .entry(edge.target())
-            .or_insert([0u32; 8]);
+        let d = incoming_by_memory.entry(edge.target()).or_insert([0u32; 8]);
         let idx = edge.edge_type().as_u8() as usize;
         d[idx] = d[idx].saturating_add(1);
     }
@@ -409,8 +440,18 @@ async fn main() {
     println!(
         "\n  Top hub (memory {}) dominant type: edge_type={} ({})",
         top_hub,
-        top_sig.iter().enumerate().max_by_key(|(_, c)| **c).unwrap().0,
-        et_names[top_sig.iter().enumerate().max_by_key(|(_, c)| **c).unwrap().0]
+        top_sig
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| **c)
+            .unwrap()
+            .0,
+        et_names[top_sig
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| **c)
+            .unwrap()
+            .0]
     );
     println!("  VERDICT: DEMO 3 PASS — hub detection + role clustering via 8-dim signature");
 
@@ -491,7 +532,10 @@ async fn main() {
     }
 
     let v_count = store.count_llm_edge_validations().await.unwrap();
-    println!("\n  validations persisted: {} in CF_TYPED_EDGE_VALIDATIONS", v_count);
+    println!(
+        "\n  validations persisted: {} in CF_TYPED_EDGE_VALIDATIONS",
+        v_count
+    );
     println!("    valid:       {}", valid_count);
     println!("    invalid:     {}", invalid_count);
     println!("    reclassify:  {}", reclass_count);
@@ -523,10 +567,7 @@ async fn main() {
 
     let target_kind = AnomalyKind::SemanticButNotCausal;
     let t0 = Instant::now();
-    let pairs_of_kind = store
-        .list_contrastive_pair_keys()
-        .await
-        .expect("list keys");
+    let pairs_of_kind = store.list_contrastive_pair_keys().await.expect("list keys");
     // The secondary index CF_CONTRASTIVE_BY_KIND lets us scan by-kind in O(matching),
     // but here we illustrate the end-user path: list all, then filter.
     let mut curated = Vec::new();
@@ -544,7 +585,11 @@ async fn main() {
         "  Query: anomaly_kind={} (causal-reasoning hard negatives)",
         target_kind.as_str()
     );
-    println!("  Matching pairs: {}  (duration {} ms)", curated.len(), q_ms);
+    println!(
+        "  Matching pairs: {}  (duration {} ms)",
+        curated.len(),
+        q_ms
+    );
     println!("  Top 3 by disagreement magnitude:");
     for (i, (a, n, d)) in curated.iter().take(3).enumerate() {
         let a_short = a.to_string();
@@ -561,10 +606,11 @@ async fn main() {
         "\n  What the customer gets: a JSONL of {} triples, each with a 13-dim similarity profile,",
         curated.len()
     );
+    println!("  ready to drop into trl.DPOTrainer for causal-reasoning fine-tuning.");
     println!(
-        "  ready to drop into trl.DPOTrainer for causal-reasoning fine-tuning."
+        "  VERDICT: DEMO 5 PASS — curated subset of {} pairs, filterable per training objective",
+        curated.len()
     );
-    println!("  VERDICT: DEMO 5 PASS — curated subset of {} pairs, filterable per training objective", curated.len());
 
     // ======================================================================
     // DEMO 6 — High-confidence curated export (F1 + F4 combined)
@@ -587,10 +633,7 @@ async fn main() {
         if rec.weight < 0.70 {
             continue;
         }
-        let validation = store
-            .get_llm_edge_validation(*s, *t, *et)
-            .await
-            .unwrap();
+        let validation = store.get_llm_edge_validation(*s, *t, *et).await.unwrap();
         match validation {
             Some(v) if matches!(v.verdict, LLMVerdict::Valid) => {
                 high_precision.push((rec, v));
@@ -599,18 +642,17 @@ async fn main() {
         }
     }
     let dur_ms = t0.elapsed().as_millis();
-    println!(
-        "  Query: edge.weight >= 0.7  AND  CF_TYPED_EDGE_VALIDATIONS.verdict = Valid"
-    );
+    println!("  Query: edge.weight >= 0.7  AND  CF_TYPED_EDGE_VALIDATIONS.verdict = Valid");
     println!(
         "  Total typed-edge records scanned: {}  (duration {} ms)",
         all_records.len(),
         dur_ms
     );
-    println!("  High-precision curated subset:    {}", high_precision.len());
     println!(
-        "  NOTE: with richer live LLM coverage this set is the 'double-confirmed' gold"
+        "  High-precision curated subset:    {}",
+        high_precision.len()
     );
+    println!("  NOTE: with richer live LLM coverage this set is the 'double-confirmed' gold");
     println!("  VERDICT: DEMO 6 PASS — join across F1 records + F4 validations is O(N)");
 
     // ======================================================================
@@ -723,10 +765,22 @@ async fn main() {
     banner("FINAL SUMMARY — what the 4 features unlocked");
     let grand_total_ms = start.elapsed().as_millis();
     println!("\n  Artifacts produced:");
-    println!("    CF_TYPED_EDGE_RECORDS:       {} labeled rows", physical_count);
-    println!("    CF_CONTRASTIVE_PAIRS:        {} anomaly pairs (+ 2 secondary indexes)", cf_count);
-    println!("    CF_TYPED_EDGE_VALIDATIONS:   {} dual-label verdicts", v_count);
-    println!("    distinct memories with 8-dim signature: {}", incoming_by_memory.len());
+    println!(
+        "    CF_TYPED_EDGE_RECORDS:       {} labeled rows",
+        physical_count
+    );
+    println!(
+        "    CF_CONTRASTIVE_PAIRS:        {} anomaly pairs (+ 2 secondary indexes)",
+        cf_count
+    );
+    println!(
+        "    CF_TYPED_EDGE_VALIDATIONS:   {} dual-label verdicts",
+        v_count
+    );
+    println!(
+        "    distinct memories with 8-dim signature: {}",
+        incoming_by_memory.len()
+    );
 
     println!("\n  Data-factory multiplication (100 memory corpus):");
     let total_labeled_rows = physical_count + cf_count + v_count;
@@ -736,7 +790,10 @@ async fn main() {
         total_labeled_rows as f32 / N_MEMORIES as f32
     );
 
-    println!("\n  Wall-clock:                  {} ms total", grand_total_ms);
+    println!(
+        "\n  Wall-clock:                  {} ms total",
+        grand_total_ms
+    );
     println!("\n  All 4 features physically verified. No mocks. No fallbacks.");
     println!("================================================================\n");
 }

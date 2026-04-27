@@ -293,7 +293,8 @@ impl E1SemanticBenchmarkRunner {
 
                 // Simulate retrieval by finding documents with highest similarity to relevant docs
                 // In real benchmark, we'd compute similarity using actual query embedding
-                let retrieved = self.simulate_retrieval(documents, &query.relevant_docs, embeddings);
+                let retrieved =
+                    self.simulate_retrieval(documents, &query.relevant_docs, embeddings);
 
                 Some((retrieved, relevant))
             })
@@ -436,12 +437,20 @@ impl E1SemanticBenchmarkRunner {
 
         let worst_domain = per_domain_metrics
             .iter()
-            .min_by(|a, b| a.1.mrr.partial_cmp(&b.1.mrr).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|a, b| {
+                a.1.mrr
+                    .partial_cmp(&b.1.mrr)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(name, _)| name.clone());
 
         let best_domain = per_domain_metrics
             .iter()
-            .max_by(|a, b| a.1.mrr.partial_cmp(&b.1.mrr).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.1.mrr
+                    .partial_cmp(&b.1.mrr)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(name, _)| name.clone());
 
         let all_domains_pass = per_domain_metrics.values().all(|m| m.mrr >= 0.5);
@@ -528,25 +537,19 @@ impl E1SemanticBenchmarkRunner {
         // Step 2: Simulate E1+E5 enhancement
         // In production, this would use actual E5 embeddings from CausalModel
         // Here we simulate enhancement effect based on causal queries
-        let e1_e5_mrr = self.simulate_enhanced_retrieval(
-            queries,
-            e1_only_mrr,
-            "causal",
-        );
+        let e1_e5_mrr = self.simulate_enhanced_retrieval(queries, e1_only_mrr, "causal");
 
         // Step 3: Simulate E1+E7 enhancement
         // In production, this would use actual E7 embeddings from Qodo model
         // Here we simulate enhancement effect based on code queries
-        let e1_e7_mrr = self.simulate_enhanced_retrieval(
-            queries,
-            e1_only_mrr,
-            "code",
-        );
+        let e1_e7_mrr = self.simulate_enhanced_retrieval(queries, e1_only_mrr, "code");
 
         // Step 4: Estimate full multi-space MRR
         // In production, this would use all 13 embedders via RRF fusion
         // Here we estimate based on best enhancement effect
-        let best_enhancement = e1_e5_mrr.unwrap_or(e1_only_mrr).max(e1_e7_mrr.unwrap_or(e1_only_mrr));
+        let best_enhancement = e1_e5_mrr
+            .unwrap_or(e1_only_mrr)
+            .max(e1_e7_mrr.unwrap_or(e1_only_mrr));
         let full_multispace_mrr = (e1_only_mrr + best_enhancement) / 2.0 * 1.05; // ~5% boost from fusion
 
         // Step 5: Determine if E1 is truly the best foundation
@@ -606,14 +609,20 @@ impl E1SemanticBenchmarkRunner {
                 "causal" => {
                     // E5 helps with causal/reasoning queries
                     let text = q.text.to_lowercase();
-                    text.contains("why") || text.contains("cause") || text.contains("because")
-                        || text.contains("effect") || text.contains("result")
+                    text.contains("why")
+                        || text.contains("cause")
+                        || text.contains("because")
+                        || text.contains("effect")
+                        || text.contains("result")
                 }
                 "code" => {
                     // E7 helps with code/technical queries
                     let text = q.text.to_lowercase();
-                    text.contains("code") || text.contains("function") || text.contains("implement")
-                        || text.contains("api") || text.contains("method")
+                    text.contains("code")
+                        || text.contains("function")
+                        || text.contains("implement")
+                        || text.contains("api")
+                        || text.contains("method")
                 }
                 _ => false,
             })
@@ -697,10 +706,7 @@ impl E1SemanticBenchmarkRunner {
         // E1 performance is measured by MRR/NDCG/P@K, not clustering separation
 
         // Noise robustness target
-        let mrr_at_02 = metrics
-            .noise_robustness
-            .mrr_at_noise(0.2)
-            .unwrap_or(0.0);
+        let mrr_at_02 = metrics.noise_robustness.mrr_at_noise(0.2).unwrap_or(0.0);
         checks.push(ValidationCheck {
             description: "MRR >= 0.55 at 0.2 noise".to_string(),
             expected: ">= 0.55".to_string(),
@@ -791,16 +797,14 @@ mod tests {
         let config = E1SemanticBenchmarkConfig::default();
         let runner = E1SemanticBenchmarkRunner::new(config);
 
-        let docs = vec![
-            SemanticDocument {
-                id: Uuid::new_v4(),
-                text: "Test".to_string(),
-                domain: SemanticDomain::Code,
-                topic: "test".to_string(),
-                topic_id: 0,
-                source_dataset: None,
-            },
-        ];
+        let docs = vec![SemanticDocument {
+            id: Uuid::new_v4(),
+            text: "Test".to_string(),
+            domain: SemanticDomain::Code,
+            topic: "test".to_string(),
+            topic_id: 0,
+            source_dataset: None,
+        }];
 
         let mut embeddings = HashMap::new();
         embeddings.insert(docs[0].id, vec![0.1; 1024]);

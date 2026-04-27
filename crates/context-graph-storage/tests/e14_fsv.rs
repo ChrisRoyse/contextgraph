@@ -71,7 +71,9 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
         e10_multimodal_paraphrase: dense(768, seed.wrapping_add(9)),
         e10_multimodal_as_context: Vec::new(),
         e11_entity: dense(768, seed.wrapping_add(10)),
-        e12_late_interaction: (0..3).map(|t| dense(128, seed.wrapping_add(100 + t))).collect(),
+        e12_late_interaction: (0..3)
+            .map(|t| dense(128, seed.wrapping_add(100 + t)))
+            .collect(),
         e13_splade: SparseVector {
             indices: vec![10, 20, 30],
             values: vec![0.5, 0.3, 0.2],
@@ -97,18 +99,33 @@ fn fsv_01_semantic_fingerprint_e14_field_present() {
 
     let fp = synthetic_fp(42);
 
-    println!("BEFORE: fp.e14_bge_m3_dense.len() = {}", fp.e14_bge_m3_dense.len());
+    println!(
+        "BEFORE: fp.e14_bge_m3_dense.len() = {}",
+        fp.e14_bge_m3_dense.len()
+    );
     println!("  first 5 values: {:?}", &fp.e14_bge_m3_dense[..5]);
 
     assert_eq!(fp.e14_bge_m3_dense.len(), E14_DIM, "E14 dim must be 1024");
-    let norm: f32 = fp.e14_bge_m3_dense.iter().map(|x| x * x).sum::<f32>().sqrt();
-    assert!((norm - 1.0).abs() < 1e-4, "E14 synthetic vec should be L2-normalised, got norm={}", norm);
+    let norm: f32 = fp
+        .e14_bge_m3_dense
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
+    assert!(
+        (norm - 1.0).abs() < 1e-4,
+        "E14 synthetic vec should be L2-normalised, got norm={}",
+        norm
+    );
 
     // Read back via get() / get_embedding() / embedding_name / embedding_dim.
     match fp.get(Embedder::BgeM3Dense) {
         EmbeddingRef::Dense(s) => {
             assert_eq!(s.len(), 1024, "get(BgeM3Dense) slice should be 1024");
-            assert_eq!(s[0], fp.e14_bge_m3_dense[0], "get() must point at the real field");
+            assert_eq!(
+                s[0], fp.e14_bge_m3_dense[0],
+                "get() must point at the real field"
+            );
         }
         other => panic!("get(BgeM3Dense) returned wrong variant: {:?}", other),
     }
@@ -116,7 +133,10 @@ fn fsv_01_semantic_fingerprint_e14_field_present() {
         Some(EmbeddingSlice::Dense(s)) => assert_eq!(s.len(), 1024),
         other => panic!("get_embedding(13) returned wrong variant: {:?}", other),
     }
-    assert_eq!(SemanticFingerprint::embedding_name(13), Some("E14_BgeM3Dense"));
+    assert_eq!(
+        SemanticFingerprint::embedding_name(13),
+        Some("E14_BgeM3Dense")
+    );
     assert_eq!(SemanticFingerprint::embedding_dim(13), Some(E14_DIM));
 
     println!("AFTER: E14 accessible via field / get / get_embedding / metadata helpers [PASS]");
@@ -134,8 +154,12 @@ fn fsv_02_serde_json_roundtrip_preserves_e14() {
     let fp = synthetic_fp(7);
     let original_e14 = fp.e14_bge_m3_dense.clone();
 
-    println!("BEFORE: original E14 len={}, first={}, last={}",
-        original_e14.len(), original_e14[0], original_e14[1023]);
+    println!(
+        "BEFORE: original E14 len={}, first={}, last={}",
+        original_e14.len(),
+        original_e14[0],
+        original_e14[1023]
+    );
 
     // EXECUTE: serialize + deserialize.
     let json_bytes = serde_json::to_vec(&fp).expect("serialize");
@@ -146,17 +170,32 @@ fn fsv_02_serde_json_roundtrip_preserves_e14() {
     // READ FROM SOURCE OF TRUTH: deserialize back and inspect the field directly.
     let restored: SemanticFingerprint = serde_json::from_slice(&json_bytes).expect("deserialize");
 
-    println!("AFTER:  restored E14 len={}, first={}, last={}",
+    println!(
+        "AFTER:  restored E14 len={}, first={}, last={}",
         restored.e14_bge_m3_dense.len(),
         restored.e14_bge_m3_dense[0],
-        restored.e14_bge_m3_dense[1023]);
+        restored.e14_bge_m3_dense[1023]
+    );
 
     assert_eq!(restored.e14_bge_m3_dense.len(), original_e14.len());
-    for (i, (a, b)) in restored.e14_bge_m3_dense.iter().zip(original_e14.iter()).enumerate() {
-        assert_eq!(a.to_bits(), b.to_bits(), "E14[{}] drifted across JSON roundtrip", i);
+    for (i, (a, b)) in restored
+        .e14_bge_m3_dense
+        .iter()
+        .zip(original_e14.iter())
+        .enumerate()
+    {
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "E14[{}] drifted across JSON roundtrip",
+            i
+        );
     }
 
-    println!("JSON bytes written: {} (contains e14_bge_m3_dense key [EVIDENCE])", json_bytes.len());
+    println!(
+        "JSON bytes written: {} (contains e14_bge_m3_dense key [EVIDENCE])",
+        json_bytes.len()
+    );
     println!("E14 roundtrip: bit-exact over 1024 elements [PASS]");
 }
 
@@ -176,19 +215,31 @@ fn fsv_03_edge_legacy_json_missing_e14_field_backward_compat() {
     json.as_object_mut().unwrap().remove("e14_bge_m3_dense");
     let legacy_json = serde_json::to_string(&json).expect("to_string");
 
-    println!("BEFORE: legacy JSON has e14_bge_m3_dense? = {}", legacy_json.contains("e14_bge_m3_dense"));
-    assert!(!legacy_json.contains("e14_bge_m3_dense"), "legacy JSON must NOT carry e14 key");
+    println!(
+        "BEFORE: legacy JSON has e14_bge_m3_dense? = {}",
+        legacy_json.contains("e14_bge_m3_dense")
+    );
+    assert!(
+        !legacy_json.contains("e14_bge_m3_dense"),
+        "legacy JSON must NOT carry e14 key"
+    );
 
     // EXECUTE: deserialize with #[serde(default)] expected on E14.
-    let restored: SemanticFingerprint = serde_json::from_str(&legacy_json).expect("legacy deserialize");
+    let restored: SemanticFingerprint =
+        serde_json::from_str(&legacy_json).expect("legacy deserialize");
 
-    println!("AFTER:  restored.e14_bge_m3_dense.len() = {}", restored.e14_bge_m3_dense.len());
+    println!(
+        "AFTER:  restored.e14_bge_m3_dense.len() = {}",
+        restored.e14_bge_m3_dense.len()
+    );
     assert!(
         restored.e14_bge_m3_dense.is_empty(),
         "legacy fp must deserialize E14 as empty Vec via #[serde(default)]"
     );
 
-    println!("Legacy JSON missing e14 → restored Vec::new() (no panic, no dimension mismatch) [PASS]");
+    println!(
+        "Legacy JSON missing e14 → restored Vec::new() (no panic, no dimension mismatch) [PASS]"
+    );
 }
 
 // ============================================================================
@@ -203,36 +254,59 @@ fn fsv_04_quantize_dequantize_e14_roundtrip() {
 
     let mut fp = SemanticFingerprint::stub();
     // Replace E14 with a known, non-uniform pattern.
-    fp.e14_bge_m3_dense = (0..E14_DIM).map(|i| (i as f32) / (E14_DIM as f32)).collect();
+    fp.e14_bge_m3_dense = (0..E14_DIM)
+        .map(|i| (i as f32) / (E14_DIM as f32))
+        .collect();
     let input_e14 = fp.e14_bge_m3_dense.clone();
 
-    println!("BEFORE: input E14 len={}, min={}, max={}",
-        input_e14.len(), input_e14[0], input_e14[E14_DIM - 1]);
+    println!(
+        "BEFORE: input E14 len={}, min={}, max={}",
+        input_e14.len(),
+        input_e14[0],
+        input_e14[E14_DIM - 1]
+    );
 
     let q = quantize_fingerprint(&fp).expect("quantize");
 
-    println!("AFTER quantize: q.e14_bge_m3_dense.data.len() = {}, min_val={}, max_val={}",
+    println!(
+        "AFTER quantize: q.e14_bge_m3_dense.data.len() = {}, min_val={}, max_val={}",
         q.e14_bge_m3_dense.data.len(),
         q.e14_bge_m3_dense.min_val,
-        q.e14_bge_m3_dense.max_val);
+        q.e14_bge_m3_dense.max_val
+    );
 
-    assert_eq!(q.e14_bge_m3_dense.data.len(), E14_DIM, "quantized E14 bytes = 1024");
+    assert_eq!(
+        q.e14_bge_m3_dense.data.len(),
+        E14_DIM,
+        "quantized E14 bytes = 1024"
+    );
     assert!((q.e14_bge_m3_dense.min_val - 0.0).abs() < 1e-3);
     assert!((q.e14_bge_m3_dense.max_val - (E14_DIM - 1) as f32 / E14_DIM as f32).abs() < 1e-2);
 
     let restored = dequantize_fingerprint(&q).expect("dequantize");
 
-    println!("AFTER dequantize: restored E14 len={}, first={}, last={}",
+    println!(
+        "AFTER dequantize: restored E14 len={}, first={}, last={}",
         restored.e14_bge_m3_dense.len(),
         restored.e14_bge_m3_dense[0],
-        restored.e14_bge_m3_dense[E14_DIM - 1]);
+        restored.e14_bge_m3_dense[E14_DIM - 1]
+    );
 
     // Float8 quantization is lossy; bound the error.
-    let max_err = input_e14.iter().zip(restored.e14_bge_m3_dense.iter())
+    let max_err = input_e14
+        .iter()
+        .zip(restored.e14_bge_m3_dense.iter())
         .map(|(a, b)| (a - b).abs())
         .fold(0.0_f32, f32::max);
-    println!("max dequantization error over 1024 elements = {:.6}", max_err);
-    assert!(max_err < 1e-2, "Float8 dequant error > 0.01 is too lossy, got {}", max_err);
+    println!(
+        "max dequantization error over 1024 elements = {:.6}",
+        max_err
+    );
+    assert!(
+        max_err < 1e-2,
+        "Float8 dequant error > 0.01 is too lossy, got {}",
+        max_err
+    );
 
     println!("E14 quantize/dequantize roundtrip within tolerance [PASS]");
 }
@@ -248,15 +322,23 @@ fn fsv_05_edge_quantize_empty_e14() {
     let mut fp = SemanticFingerprint::stub();
     fp.e14_bge_m3_dense = Vec::new();
 
-    println!("BEFORE: fp.e14_bge_m3_dense.is_empty() = {}", fp.e14_bge_m3_dense.is_empty());
+    println!(
+        "BEFORE: fp.e14_bge_m3_dense.is_empty() = {}",
+        fp.e14_bge_m3_dense.is_empty()
+    );
 
     let q = quantize_fingerprint(&fp).expect("quantize");
 
-    println!("AFTER quantize: q.e14_bge_m3_dense.data.len() = {}, is_empty() = {}",
+    println!(
+        "AFTER quantize: q.e14_bge_m3_dense.data.len() = {}, is_empty() = {}",
         q.e14_bge_m3_dense.data.len(),
-        q.e14_bge_m3_dense.is_empty());
+        q.e14_bge_m3_dense.is_empty()
+    );
 
-    assert!(q.e14_bge_m3_dense.is_empty(), "Empty E14 input must quantize to empty QuantizedFloat8");
+    assert!(
+        q.e14_bge_m3_dense.is_empty(),
+        "Empty E14 input must quantize to empty QuantizedFloat8"
+    );
     assert_eq!(q.e14_bge_m3_dense, QuantizedFloat8::default());
 
     // Dequantize side.
@@ -278,17 +360,44 @@ fn fsv_06_tucker_core_sizing() {
     section("6. TuckerCore sizing with NUM_EMBEDDERS=14");
 
     let core = TuckerCore::with_default_ranks();
-    println!("BEFORE expected: u1.len = {} * {} = {}", CORE_NUM_EMBEDDERS, 4, CORE_NUM_EMBEDDERS * 4);
-    println!("AFTER actual:    u1.len={}, u2.len={}, u3.len={}",
-        core.u1.len(), core.u2.len(), core.u3.len());
+    println!(
+        "BEFORE expected: u1.len = {} * {} = {}",
+        CORE_NUM_EMBEDDERS,
+        4,
+        CORE_NUM_EMBEDDERS * 4
+    );
+    println!(
+        "AFTER actual:    u1.len={}, u2.len={}, u3.len={}",
+        core.u1.len(),
+        core.u2.len(),
+        core.u3.len()
+    );
 
-    assert_eq!(core.u1.len(), CORE_NUM_EMBEDDERS * 4, "u1 = 14 * rank_1(=4) = 56");
-    assert_eq!(core.u2.len(), CORE_NUM_EMBEDDERS * 4, "u2 = 14 * rank_2(=4) = 56");
-    assert_eq!(core.u3.len(), 1024 * 128, "u3 = EMBEDDING_DIM * rank_3(=128) = 131072");
+    assert_eq!(
+        core.u1.len(),
+        CORE_NUM_EMBEDDERS * 4,
+        "u1 = 14 * rank_1(=4) = 56"
+    );
+    assert_eq!(
+        core.u2.len(),
+        CORE_NUM_EMBEDDERS * 4,
+        "u2 = 14 * rank_2(=4) = 56"
+    );
+    assert_eq!(
+        core.u3.len(),
+        1024 * 128,
+        "u3 = EMBEDDING_DIM * rank_3(=128) = 131072"
+    );
 
     // original_size reflects 14 * 14 * 1024 = 200704 (up from 13*13*1024 = 173056).
-    assert_eq!(core.original_size(), CORE_NUM_EMBEDDERS * CORE_NUM_EMBEDDERS * 1024);
-    println!("TuckerCore.original_size() = {} = 14 * 14 * 1024 [PASS]", core.original_size());
+    assert_eq!(
+        core.original_size(),
+        CORE_NUM_EMBEDDERS * CORE_NUM_EMBEDDERS * 1024
+    );
+    println!(
+        "TuckerCore.original_size() = {} = 14 * 14 * 1024 [PASS]",
+        core.original_size()
+    );
 }
 
 // ============================================================================
@@ -307,15 +416,26 @@ fn fsv_07_factual_group_averages_e14() {
     }
 
     println!("BEFORE: FACTUAL indices = {:?}", group_indices::FACTUAL);
-    println!("        profile[factual indices] = {:?}",
-        group_indices::FACTUAL.iter().map(|&i| profile[i]).collect::<Vec<_>>());
+    println!(
+        "        profile[factual indices] = {:?}",
+        group_indices::FACTUAL
+            .iter()
+            .map(|&i| profile[i])
+            .collect::<Vec<_>>()
+    );
 
-    assert_eq!(group_indices::FACTUAL, &[0, 11, 12, 13],
-        "FACTUAL must include E14 at index 13 in addition to E1/E12/E13");
+    assert_eq!(
+        group_indices::FACTUAL,
+        &[0, 11, 12, 13],
+        "FACTUAL must include E14 at index 13 in addition to E1/E12/E13"
+    );
 
     let ga = compute_group_alignments(&profile);
 
-    println!("AFTER:  factual = {}, temporal = {}, causal = {}", ga[0], ga[1], ga[2]);
+    println!(
+        "AFTER:  factual = {}, temporal = {}, causal = {}",
+        ga[0], ga[1], ga[2]
+    );
     // 4 entries all set to 1.0 → average 1.0.
     assert!((ga[0] - 1.0).abs() < 1e-6, "Factual avg should be 1.0");
     assert!((ga[1] - 0.0).abs() < 1e-6, "Temporal should be 0.0");
@@ -324,7 +444,10 @@ fn fsv_07_factual_group_averages_e14() {
     let mut profile2 = [0.0f32; NUM_EMBEDDERS];
     profile2[13] = 1.0;
     let ga2 = compute_group_alignments(&profile2);
-    println!("EDGE:   profile[13]=1.0 only → factual = {} (expected 0.25)", ga2[0]);
+    println!(
+        "EDGE:   profile[13]=1.0 only → factual = {} (expected 0.25)",
+        ga2[0]
+    );
     assert!((ga2[0] - 0.25).abs() < 1e-6);
 
     println!("FACTUAL group properly averages E14 alongside E1/E12/E13 [PASS]");
@@ -353,21 +476,38 @@ fn fsv_08_contrastive_identity_e14() {
     let mut fp_legacy = fp.clone();
     fp_legacy.e14_bge_m3_dense = Vec::new();
     let prof_legacy = similarity_profile(&fp, &fp_legacy);
-    println!("EDGE:   legacy fp (empty E14); profile[13] = {}", prof_legacy[13]);
-    assert_eq!(prof_legacy[13], 0.0,
-        "Empty E14 must be treated as inactive, not NaN/Inf");
+    println!(
+        "EDGE:   legacy fp (empty E14); profile[13] = {}",
+        prof_legacy[13]
+    );
+    assert_eq!(
+        prof_legacy[13], 0.0,
+        "Empty E14 must be treated as inactive, not NaN/Inf"
+    );
 
     // EDGE CASE: orthogonal E14 vectors → ~0.5 under [0,1]-normalised cosine.
     let mut fp_orth = fp.clone();
     fp_orth.e14_bge_m3_dense = (0..E14_DIM)
         .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
         .collect();
-    let n: f32 = fp_orth.e14_bge_m3_dense.iter().map(|x| x * x).sum::<f32>().sqrt();
-    for x in fp_orth.e14_bge_m3_dense.iter_mut() { *x /= n; }
+    let n: f32 = fp_orth
+        .e14_bge_m3_dense
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
+    for x in fp_orth.e14_bge_m3_dense.iter_mut() {
+        *x /= n;
+    }
     let prof_orth = similarity_profile(&fp, &fp_orth);
-    println!("EDGE:   orthogonal E14; profile[13] = {} (≈0.5 under [0,1] cosine)", prof_orth[13]);
-    assert!(prof_orth[13] >= 0.3 && prof_orth[13] <= 0.7,
-        "Orthogonal E14 cosine should sit around 0.5 in [0,1] space");
+    println!(
+        "EDGE:   orthogonal E14; profile[13] = {} (≈0.5 under [0,1] cosine)",
+        prof_orth[13]
+    );
+    assert!(
+        prof_orth[13] >= 0.3 && prof_orth[13] <= 0.7,
+        "Orthogonal E14 cosine should sit around 0.5 in [0,1] space"
+    );
 
     println!("E14 contributes to similarity_profile; empty slices stay inactive [PASS]");
 }
@@ -386,26 +526,39 @@ fn fsv_09_constellation_observes_e14() {
     let members: Vec<_> = (0..3).map(|_| (Uuid::new_v4(), fp.clone(), None)).collect();
 
     let c = compile_constellation(
-        ConstellationSelector::Tag { tag: "fsv-e14".into() },
+        ConstellationSelector::Tag {
+            tag: "fsv-e14".into(),
+        },
         "fsv-e14".into(),
         members,
         &SynergyMatrix::with_base_synergies(),
-    ).expect("compile_constellation");
+    )
+    .expect("compile_constellation");
 
     let e14 = &c.per_embedder[13];
     println!("BEFORE: member_count = {}", c.member_count);
-    println!("AFTER:  per_embedder[13].embedder_index = {}, coverage = {}, kind = {:?}",
-        e14.embedder_index, e14.coverage, e14.vector_kind);
+    println!(
+        "AFTER:  per_embedder[13].embedder_index = {}, coverage = {}, kind = {:?}",
+        e14.embedder_index, e14.coverage, e14.vector_kind
+    );
     println!("        centroid.len() = {}", e14.centroid.len());
 
-    assert_eq!(e14.embedder_index, 13, "per_embedder[13] must report embedder_index=13");
-    assert!((e14.coverage - 1.0).abs() < 1e-6, "3/3 members populated E14 → coverage=1.0");
+    assert_eq!(
+        e14.embedder_index, 13,
+        "per_embedder[13] must report embedder_index=13"
+    );
+    assert!(
+        (e14.coverage - 1.0).abs() < 1e-6,
+        "3/3 members populated E14 → coverage=1.0"
+    );
     assert_eq!(e14.centroid.len(), 1024, "E14 centroid must be 1024D");
     // Centroid of three copies of the same vector is that vector.
     let centroid_first = e14.centroid[0];
     let member_first = fp.e14_bge_m3_dense[0];
-    assert!((centroid_first - member_first).abs() < 1e-4,
-        "Centroid of 3 identical members should equal that member (first element)");
+    assert!(
+        (centroid_first - member_first).abs() < 1e-4,
+        "Centroid of 3 identical members should equal that member (first element)"
+    );
 
     println!("Constellation observes E14 via observe_dense; centroid matches input [PASS]");
 }
@@ -419,20 +572,35 @@ fn fsv_10_embeddings_crate_dimension_invariants() {
     section("10. Embeddings crate dimension invariants (MODEL_COUNT, TOTAL_DIMENSION, ModelId)");
 
     println!("BEFORE expected: MODEL_COUNT=15, TOTAL_DIMENSION=13056, BGE_M3_DENSE=1024");
-    println!("AFTER actual:    MODEL_COUNT={}, TOTAL_DIMENSION={}, BGE_M3_DENSE={}",
-        MODEL_COUNT, TOTAL_DIMENSION, BGE_M3_DENSE);
+    println!(
+        "AFTER actual:    MODEL_COUNT={}, TOTAL_DIMENSION={}, BGE_M3_DENSE={}",
+        MODEL_COUNT, TOTAL_DIMENSION, BGE_M3_DENSE
+    );
 
-    assert_eq!(MODEL_COUNT, 15, "MODEL_COUNT must be 15 (14 prod + legacy Entity)");
-    assert_eq!(TOTAL_DIMENSION, 13056, "TOTAL_DIMENSION must be 13056 post-E14");
+    assert_eq!(
+        MODEL_COUNT, 15,
+        "MODEL_COUNT must be 15 (14 prod + legacy Entity)"
+    );
+    assert_eq!(
+        TOTAL_DIMENSION, 13056,
+        "TOTAL_DIMENSION must be 13056 post-E14"
+    );
     assert_eq!(BGE_M3_DENSE, 1024);
 
     // Offset + dim at index 14 should equal TOTAL_DIMENSION.
     let last_offset = offset_by_index(14);
     let last_dim = projected_dimension_by_index(14);
-    println!("offset_by_index(14)={}, projected_dimension_by_index(14)={}, sum={}",
-        last_offset, last_dim, last_offset + last_dim);
-    assert_eq!(last_offset + last_dim, TOTAL_DIMENSION,
-        "BgeM3Dense must close the aggregate dimension space");
+    println!(
+        "offset_by_index(14)={}, projected_dimension_by_index(14)={}, sum={}",
+        last_offset,
+        last_dim,
+        last_offset + last_dim
+    );
+    assert_eq!(
+        last_offset + last_dim,
+        TOTAL_DIMENSION,
+        "BgeM3Dense must close the aggregate dimension space"
+    );
 
     // ModelId bidirectional conversion.
     let id = ModelId::BgeM3Dense;
@@ -458,18 +626,41 @@ fn fsv_11_weight_profiles_shape() {
     assert!(WEIGHT_PROFILES.len() >= 6);
 
     for (name, weights) in WEIGHT_PROFILES {
-        assert_eq!(weights.len(), NUM_EMBEDDERS,
-            "profile '{}' has {} weights (expected {})", name, weights.len(), NUM_EMBEDDERS);
+        assert_eq!(
+            weights.len(),
+            NUM_EMBEDDERS,
+            "profile '{}' has {} weights (expected {})",
+            name,
+            weights.len(),
+            NUM_EMBEDDERS
+        );
         let sum: f32 = weights.iter().sum();
-        assert!((sum - 1.0).abs() < 0.02,
-            "profile '{}' weights sum to {} (expected ~1.0)", name, sum);
+        assert!(
+            (sum - 1.0).abs() < 0.02,
+            "profile '{}' weights sum to {} (expected ~1.0)",
+            name,
+            sum
+        );
         // E14 slot exists and is finite.
-        assert!(weights[13].is_finite(), "profile '{}' weights[13] is not finite", name);
-        println!("  '{}': len={}, sum={:.4}, e14={}", name, weights.len(), sum, weights[13]);
+        assert!(
+            weights[13].is_finite(),
+            "profile '{}' weights[13] is not finite",
+            name
+        );
+        println!(
+            "  '{}': len={}, sum={:.4}, e14={}",
+            name,
+            weights.len(),
+            sum,
+            weights[13]
+        );
     }
 
     // MAX_WEIGHTED_AGREEMENT constant check.
-    println!("MAX_WEIGHTED_AGREEMENT = {} (expected 9.5 post-E14)", MAX_WEIGHTED_AGREEMENT);
+    println!(
+        "MAX_WEIGHTED_AGREEMENT = {} (expected 9.5 post-E14)",
+        MAX_WEIGHTED_AGREEMENT
+    );
     assert!((MAX_WEIGHTED_AGREEMENT - 9.5).abs() < f32::EPSILON);
 
     println!("All profiles have 14 slots, sums ≈ 1.0, MAX_WEIGHTED_AGREEMENT=9.5 [PASS]");
@@ -508,8 +699,11 @@ fn fsv_13_physical_rocksdb_persistence_e14() {
     let id = Uuid::parse_str("fe14f5fe-0014-dead-beef-cafebabe1014").unwrap();
 
     println!("BEFORE: db_path={:?}", db_path);
-    println!("        synthetic E14 bytes = {:?} (len={})",
-        e14_synthetic_bytes, e14_synthetic_bytes.len());
+    println!(
+        "        synthetic E14 bytes = {:?} (len={})",
+        e14_synthetic_bytes,
+        e14_synthetic_bytes.len()
+    );
     println!("        fingerprint id = {}", id);
 
     // Build a valid 14-embedder StoredQuantizedFingerprint.
@@ -519,13 +713,12 @@ fn fsv_13_physical_rocksdb_persistence_e14() {
             // Distinct, non-overlapping byte patterns for each embedder slot.
             let byte = i.wrapping_mul(17);
             let (method, dim, data) = match i {
-                0 | 4 | 6 | 9 => (QuantizationMethod::PQ8, 1024, vec![byte; 8]),
+                0 => (QuantizationMethod::PQ8, 1024, vec![byte; 8]),
+                4 | 9 | 10 => (QuantizationMethod::PQ8, 768, vec![byte; 8]),
+                6 => (QuantizationMethod::PQ8, 1536, vec![byte; 8]),
                 13 => (QuantizationMethod::PQ8, 1024, e14_payload.clone()), // <-- E14 synthetic
-                1 | 2 | 3 | 7 | 10 => (
-                    QuantizationMethod::Float8E4M3,
-                    512,
-                    vec![byte; 512],
-                ),
+                1 | 2 | 3 => (QuantizationMethod::Float8E4M3, 512, vec![byte; 512]),
+                7 => (QuantizationMethod::Float8E4M3, 1024, vec![byte; 1024]),
                 8 => (QuantizationMethod::Binary, 10000, vec![byte; 1250]),
                 5 | 12 => (QuantizationMethod::SparseNative, 30522, vec![byte; 100]),
                 11 => (QuantizationMethod::TokenPruning, 128, vec![byte; 64]),
@@ -578,7 +771,10 @@ fn fsv_13_physical_rocksdb_persistence_e14() {
         store
             .store_quantized_fingerprint(&fp)
             .expect("store_quantized_fingerprint — if CF emb_13 is missing this panics");
-        println!("WRITE: store_quantized_fingerprint OK for id={} [CF emb_13 registered]", id);
+        println!(
+            "WRITE: store_quantized_fingerprint OK for id={} [CF emb_13 registered]",
+            id
+        );
     } // store dropped → RocksDB files flushed + closed
 
     // -------- Phase 2: REOPEN (fresh process-equivalent) --------
@@ -591,26 +787,42 @@ fn fsv_13_physical_rocksdb_persistence_e14() {
         .expect("load_embedder(13) after reopen");
 
     println!("AFTER:  loaded_e14.method = {:?}", loaded_e14.method);
-    println!("        loaded_e14.original_dim = {}", loaded_e14.original_dim);
-    println!("        loaded_e14.data = {:?} (len={})", loaded_e14.data, loaded_e14.data.len());
+    println!(
+        "        loaded_e14.original_dim = {}",
+        loaded_e14.original_dim
+    );
+    println!(
+        "        loaded_e14.data = {:?} (len={})",
+        loaded_e14.data,
+        loaded_e14.data.len()
+    );
 
     // Physical bytes must match the synthetic input.
     assert_eq!(loaded_e14.method, QuantizationMethod::PQ8);
     assert_eq!(loaded_e14.original_dim, 1024);
-    assert_eq!(loaded_e14.data, e14_expected,
-        "PHYSICAL FAIL: E14 bytes did NOT persist across close/reopen");
+    assert_eq!(
+        loaded_e14.data, e14_expected,
+        "PHYSICAL FAIL: E14 bytes did NOT persist across close/reopen"
+    );
 
     // Also load full fingerprint — embeddings.len() must be 14 and contain id 13.
     let loaded_full = reopened.load_quantized_fingerprint(id).expect("load full");
-    println!("        loaded_full.embeddings.len() = {} (must be 14)", loaded_full.embeddings.len());
+    println!(
+        "        loaded_full.embeddings.len() = {} (must be 14)",
+        loaded_full.embeddings.len()
+    );
     assert_eq!(loaded_full.embeddings.len(), 14);
-    assert!(loaded_full.embeddings.contains_key(&13),
-        "E14 slot (key=13) missing from loaded fingerprint");
+    assert!(
+        loaded_full.embeddings.contains_key(&13),
+        "E14 slot (key=13) missing from loaded fingerprint"
+    );
 
     // EDGE CASE: delete + verify E14 no longer readable.
     reopened.delete_quantized_fingerprint(id).expect("delete");
-    assert!(reopened.load_embedder(id, 13).is_err(),
-        "After delete, load_embedder(13) must fail");
+    assert!(
+        reopened.load_embedder(id, 13).is_err(),
+        "After delete, load_embedder(13) must fail"
+    );
     println!("EDGE:   delete_quantized_fingerprint removed E14 from CF_EMB_13 [PASS]");
 
     println!("PHYSICAL PROOF: 8 synthetic bytes for E14 wrote to RocksDB 'emb_13' CF,");
@@ -640,8 +852,11 @@ fn fsv_14_merge_averages_e14() {
     fp_a.e14_bge_m3_dense = vec![1.0; E14_DIM];
     fp_b.e14_bge_m3_dense = vec![0.0; E14_DIM];
 
-    println!("BEFORE: fp_a.e14[0..3]={:?}, fp_b.e14[0..3]={:?}",
-        &fp_a.e14_bge_m3_dense[..3], &fp_b.e14_bge_m3_dense[..3]);
+    println!(
+        "BEFORE: fp_a.e14[0..3]={:?}, fp_b.e14[0..3]={:?}",
+        &fp_a.e14_bge_m3_dense[..3],
+        &fp_b.e14_bge_m3_dense[..3]
+    );
 
     // Compute the element-wise average directly (same math as the merge handler).
     let averaged: Vec<f32> = fp_a
@@ -651,10 +866,16 @@ fn fsv_14_merge_averages_e14() {
         .map(|(a, b)| (a + b) / 2.0)
         .collect();
 
-    println!("AFTER:  averaged.e14[0..3]={:?}, len={}", &averaged[..3], averaged.len());
+    println!(
+        "AFTER:  averaged.e14[0..3]={:?}, len={}",
+        &averaged[..3],
+        averaged.len()
+    );
     assert_eq!(averaged.len(), E14_DIM);
-    assert!(averaged.iter().all(|&x| (x - 0.5).abs() < 1e-6),
-        "All averaged E14 values must be 0.5");
+    assert!(
+        averaged.iter().all(|&x| (x - 0.5).abs() < 1e-6),
+        "All averaged E14 values must be 0.5"
+    );
 
     // EDGE: one empty, one populated → filter-then-average produces the populated one.
     let fp_empty = {
@@ -666,10 +887,17 @@ fn fsv_14_merge_averages_e14() {
     let inputs: Vec<&Vec<f32>> = [&fp_empty, &fp_a]
         .iter()
         .filter_map(|f| {
-            if f.e14_bge_m3_dense.is_empty() { None } else { Some(&f.e14_bge_m3_dense) }
+            if f.e14_bge_m3_dense.is_empty() {
+                None
+            } else {
+                Some(&f.e14_bge_m3_dense)
+            }
         })
         .collect();
-    println!("EDGE:   fp_empty + fp_a → {} non-empty source(s) after filter", inputs.len());
+    println!(
+        "EDGE:   fp_empty + fp_a → {} non-empty source(s) after filter",
+        inputs.len()
+    );
     assert_eq!(inputs.len(), 1, "filter must drop the legacy fp");
     assert_eq!(inputs[0], &populated_vec);
 

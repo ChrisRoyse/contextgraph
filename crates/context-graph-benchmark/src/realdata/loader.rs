@@ -459,10 +459,7 @@ mod tests {
 
         for i in 0..n_chunks {
             let chunk = ChunkRecord {
-                id: format!(
-                    "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-                    i, i, i, i, i
-                ),
+                id: format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}", i, i, i, i, i),
                 doc_id: format!("doc_{}", i / 2),
                 title: format!("Test Document {}", i / 2),
                 chunk_idx: i % 2,

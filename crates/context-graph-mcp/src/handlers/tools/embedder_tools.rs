@@ -38,19 +38,18 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use context_graph_core::teleological::Embedder;
 
 use super::embedder_dtos::{
-    AllEmbedderScores, AsymmetricVariant,
-    CompareEmbedderViewsRequest, CompareEmbedderViewsResponse, CreateWeightProfileRequest,
-    CreateWeightProfileResponse, EmbedderAnomaly, EmbedderCluster, EmbedderId,
-    EmbedderIndexInfo, EmbedderRanking, EmbedderSearchResult, EmbedderVectorInfo,
-    GetEmbedderClustersRequest, GetEmbedderClustersResponse,
-    GetMemoryFingerprintRequest, GetMemoryFingerprintResponse, ListEmbedderIndexesRequest,
-    ListEmbedderIndexesResponse, RankedMemory,
-    SearchByEmbedderRequest, SearchByEmbedderResponse, SearchCrossEmbedderAnomaliesRequest,
+    AllEmbedderScores, AsymmetricVariant, CompareEmbedderViewsRequest,
+    CompareEmbedderViewsResponse, CreateWeightProfileRequest, CreateWeightProfileResponse,
+    EmbedderAnomaly, EmbedderCluster, EmbedderId, EmbedderIndexInfo, EmbedderRanking,
+    EmbedderSearchResult, EmbedderVectorInfo, GetEmbedderClustersRequest,
+    GetEmbedderClustersResponse, GetMemoryFingerprintRequest, GetMemoryFingerprintResponse,
+    ListEmbedderIndexesRequest, ListEmbedderIndexesResponse, RankedMemory, SearchByEmbedderRequest,
+    SearchByEmbedderResponse, SearchCrossEmbedderAnomaliesRequest,
     SearchCrossEmbedderAnomaliesResponse, UniqueFind,
 };
 
-use super::helpers::ToolErrorKind;
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// search_by_embedder tool implementation.
@@ -77,19 +76,17 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: SearchByEmbedderRequest = match self.parse_request(id.clone(), args, "search_by_embedder") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchByEmbedderRequest =
+            match self.parse_request(id.clone(), args, "search_by_embedder") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let embedder_id = match request.embedder_id() {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.embedder, "search_by_embedder: Invalid embedder");
-                return self.tool_error(
-                    id,
-                    &format!("Invalid embedder: {}", request.embedder),
-                );
+                return self.tool_error(id, &format!("Invalid embedder: {}", request.embedder));
             }
         };
 
@@ -98,7 +95,9 @@ impl Handlers {
         // E11-DISABLE: Return empty results when E11 is disabled.
         // The HNSW index rejects zero-norm query vectors (STOR-M1), so searching
         // E11 when disabled would error. Return a clear message instead.
-        if matches!(embedder_id, EmbedderId::E11) && !context_graph_core::weights::E11_ENTITY_ENABLED {
+        if matches!(embedder_id, EmbedderId::E11)
+            && !context_graph_core::weights::E11_ENTITY_ENABLED
+        {
             info!(
                 embedder = %request.embedder,
                 "search_by_embedder: E11 is disabled (E11_ENTITY_ENABLED=false), returning empty results"
@@ -112,7 +111,11 @@ impl Handlers {
             };
             return match serde_json::to_value(&response) {
                 Ok(v) => self.tool_result(id, v),
-                Err(e) => self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Serialization: {}", e)),
+                Err(e) => self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Serialization: {}", e),
+                ),
             };
         }
 
@@ -125,7 +128,10 @@ impl Handlers {
         );
 
         // Step 1: Create query embedding (all 14 embedders)
-        let query_fingerprint = match self.embed_query(id.clone(), &request.query, "search_by_embedder").await {
+        let query_fingerprint = match self
+            .embed_query(id.clone(), &request.query, "search_by_embedder")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -156,11 +162,7 @@ impl Handlers {
                 );
                 return self.tool_error(
                     id,
-                    &format!(
-                        "Search in {} space failed: {}",
-                        embedder_id.name(),
-                        e
-                    ),
+                    &format!("Search in {} space failed: {}", embedder_id.name(), e),
                 );
             }
         };
@@ -177,7 +179,11 @@ impl Handlers {
         // Step 3: Get content if requested - FAIL FAST on error
         let candidate_ids: Vec<Uuid> = candidates.iter().map(|c| c.fingerprint.id).collect();
         let contents = if request.include_content {
-            match self.teleological_store.get_content_batch(&candidate_ids).await {
+            match self
+                .teleological_store
+                .get_content_batch(&candidate_ids)
+                .await
+            {
                 Ok(c) => c,
                 Err(e) => {
                     error!(
@@ -280,7 +286,11 @@ impl Handlers {
                 "embedder": request.embedder,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "search_by_embedder: Failed to write audit record (non-fatal)");
             }
         }
@@ -289,7 +299,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_by_embedder: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -312,26 +326,27 @@ impl Handlers {
     ) -> JsonRpcResponse {
         let start = Instant::now();
 
-        let request: GetEmbedderClustersRequest = match self.parse_request(id.clone(), args, "get_embedder_clusters") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetEmbedderClustersRequest =
+            match self.parse_request(id.clone(), args, "get_embedder_clusters") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let embedder_id = match request.embedder_id() {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.embedder, "get_embedder_clusters: Invalid embedder");
-                return self.tool_error(
-                    id,
-                    &format!("Invalid embedder: {}", request.embedder),
-                );
+                return self.tool_error(id, &format!("Invalid embedder: {}", request.embedder));
             }
         };
 
         let embedder = match Embedder::from_index(embedder_id.to_index()) {
             Some(e) => e,
             None => {
-                return self.tool_error(id, &format!("Invalid embedder index: {}", embedder_id.to_index()));
+                return self.tool_error(
+                    id,
+                    &format!("Invalid embedder index: {}", embedder_id.to_index()),
+                );
             }
         };
 
@@ -342,11 +357,19 @@ impl Handlers {
             cm.total_memories() == 0
         };
         if needs_clustering {
-            let fingerprints = match self.teleological_store.scan_fingerprints_for_clustering(None).await {
+            let fingerprints = match self
+                .teleological_store
+                .scan_fingerprints_for_clustering(None)
+                .await
+            {
                 Ok(fp) => fp,
                 Err(e) => {
                     error!(error = %e, "get_embedder_clusters: Failed to scan fingerprints");
-                    return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Failed to scan fingerprints for clustering: {}", e));
+                    return self.tool_error_typed(
+                        id,
+                        ToolErrorKind::Storage,
+                        &format!("Failed to scan fingerprints for clustering: {}", e),
+                    );
                 }
             };
             if !fingerprints.is_empty() {
@@ -377,7 +400,11 @@ impl Handlers {
                 }
                 if let Err(e) = cm.recluster() {
                     error!(error = %e, "get_embedder_clusters: Auto-recluster failed");
-                    return self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Auto-recluster failed: {}", e));
+                    return self.tool_error_typed(
+                        id,
+                        ToolErrorKind::Execution,
+                        &format!("Auto-recluster failed: {}", e),
+                    );
                 }
             }
         }
@@ -387,7 +414,8 @@ impl Handlers {
             let cluster_manager = self.cluster_manager.read();
             let clusters = cluster_manager.get_clusters(embedder);
 
-            let mut cluster_vec: Vec<_> = clusters.values()
+            let mut cluster_vec: Vec<_> = clusters
+                .values()
                 .filter(|c| c.member_count as usize >= request.min_cluster_size)
                 .collect();
             cluster_vec.sort_by(|a, b| b.member_count.cmp(&a.member_count));
@@ -397,17 +425,21 @@ impl Handlers {
             let total_mem = cluster_manager.total_memories();
 
             // Collect cluster info and member IDs while lock is held
-            let data: Vec<(i32, usize, Vec<Uuid>)> = cluster_vec.iter().map(|c| {
-                let members: Vec<Uuid> = if request.include_samples {
-                    cluster_manager.get_cluster_members(embedder, c.id)
-                        .into_iter()
-                        .take(request.samples_per_cluster)
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                (c.id, c.member_count as usize, members)
-            }).collect();
+            let data: Vec<(i32, usize, Vec<Uuid>)> = cluster_vec
+                .iter()
+                .map(|c| {
+                    let members: Vec<Uuid> = if request.include_samples {
+                        cluster_manager
+                            .get_cluster_members(embedder, c.id)
+                            .into_iter()
+                            .take(request.samples_per_cluster)
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    (c.id, c.member_count as usize, members)
+                })
+                .collect();
 
             (data, total_clusters, total_mem)
         };
@@ -424,12 +456,23 @@ impl Handlers {
                     Ok(c) => c,
                     Err(e) => {
                         error!(error = %e, "get_embedder_clusters: Failed to retrieve cluster sample content");
-                        return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Failed to retrieve cluster sample content: {}", e));
+                        return self.tool_error_typed(
+                            id,
+                            ToolErrorKind::Storage,
+                            &format!("Failed to retrieve cluster sample content: {}", e),
+                        );
                     }
                 };
-                let snippets: Vec<String> = contents.iter()
+                let snippets: Vec<String> = contents
+                    .iter()
                     .filter_map(|opt| opt.as_ref())
-                    .map(|s| if s.len() > 100 { format!("{}...", &s[..s.floor_char_boundary(100)]) } else { s.clone() })
+                    .map(|s| {
+                        if s.len() > 100 {
+                            format!("{}...", &s[..s.floor_char_boundary(100)])
+                        } else {
+                            s.clone()
+                        }
+                    })
                     .collect();
                 if !snippets.is_empty() {
                     sample_snippets = Some(snippets);
@@ -478,7 +521,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_embedder_clusters: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -501,10 +548,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: CompareEmbedderViewsRequest = match self.parse_request(id.clone(), args, "compare_embedder_views") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: CompareEmbedderViewsRequest =
+            match self.parse_request(id.clone(), args, "compare_embedder_views") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let embedder_ids = request.embedder_ids();
 
@@ -516,7 +564,10 @@ impl Handlers {
         );
 
         // Step 1: Create query embedding (all 14 embedders)
-        let query_fingerprint = match self.embed_query(id.clone(), &request.query, "compare_embedder_views").await {
+        let query_fingerprint = match self
+            .embed_query(id.clone(), &request.query, "compare_embedder_views")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -532,7 +583,9 @@ impl Handlers {
             // E11-DISABLE: When E11 is disabled, its embedding is a zero vector.
             // The HNSW index correctly rejects zero-norm queries (STOR-M1), so
             // skip E11 search entirely and return 0 results for it.
-            if matches!(embedder_id, EmbedderId::E11) && !context_graph_core::weights::E11_ENTITY_ENABLED {
+            if matches!(embedder_id, EmbedderId::E11)
+                && !context_graph_core::weights::E11_ENTITY_ENABLED
+            {
                 debug!(
                     embedder = ?embedder_id,
                     "compare_embedder_views: E11 disabled, returning empty results"
@@ -571,11 +624,7 @@ impl Handlers {
                     );
                     return self.tool_error(
                         id,
-                        &format!(
-                            "Search failed for embedder {}: {}",
-                            embedder_id.name(),
-                            e
-                        ),
+                        &format!("Search failed for embedder {}: {}", embedder_id.name(), e),
                     );
                 }
             };
@@ -586,13 +635,15 @@ impl Handlers {
 
             // HIGH-10 FIX: Batch fetch content if include_content=true
             let memory_ids: Vec<Uuid> = candidates.iter().map(|c| c.fingerprint.id).collect();
-            let content_map: HashMap<Uuid, String> = if request.include_content && !memory_ids.is_empty() {
+            let content_map: HashMap<Uuid, String> = if request.include_content
+                && !memory_ids.is_empty()
+            {
                 match self.teleological_store.get_content_batch(&memory_ids).await {
-                    Ok(contents) => {
-                        memory_ids.iter().zip(contents.into_iter())
-                            .filter_map(|(id, content)| content.map(|c| (*id, c)))
-                            .collect()
-                    }
+                    Ok(contents) => memory_ids
+                        .iter()
+                        .zip(contents.into_iter())
+                        .filter_map(|(id, content)| content.map(|c| (*id, c)))
+                        .collect(),
                     Err(e) => {
                         error!(error = %e, "compare_embedder_views: Content retrieval FAILED");
                         return self.tool_error(id, &format!("Content retrieval failed: {}", e));
@@ -725,7 +776,11 @@ impl Handlers {
                 "agreement_score": agreement_score,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "compare_embedder_views: Failed to write audit record (non-fatal)");
             }
         }
@@ -734,7 +789,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "compare_embedder_views: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -765,10 +824,8 @@ impl Handlers {
             Ok(count) => count,
             Err(e) => {
                 error!(error = %e, "list_embedder_indexes: Failed to get memory count");
-                return self.tool_error(
-                    id,
-                    &format!("Failed to get memory count from store: {}", e),
-                );
+                return self
+                    .tool_error(id, &format!("Failed to get memory count from store: {}", e));
             }
         };
 
@@ -868,7 +925,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "list_embedder_indexes: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -884,10 +945,11 @@ impl Handlers {
     ) -> JsonRpcResponse {
         let start = Instant::now();
 
-        let request: GetMemoryFingerprintRequest = match self.parse_request(id.clone(), args, "get_memory_fingerprint") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetMemoryFingerprintRequest =
+            match self.parse_request(id.clone(), args, "get_memory_fingerprint") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let memory_uuid = match Uuid::parse_str(&request.memory_id) {
             Ok(u) => u,
@@ -904,10 +966,7 @@ impl Handlers {
             Ok(Some(fp)) => fp,
             Ok(None) => {
                 warn!(memory_id = %memory_uuid, "get_memory_fingerprint: Memory not found");
-                return self.tool_error(
-                    id,
-                    &format!("Memory {} not found", memory_uuid),
-                );
+                return self.tool_error(id, &format!("Memory {} not found", memory_uuid));
             }
             Err(e) => {
                 error!(error = %e, memory_id = %memory_uuid, "get_memory_fingerprint: Retrieve FAILED");
@@ -930,9 +989,18 @@ impl Handlers {
         use super::embedder_dtos::EmbedderId;
 
         let all_embedders = [
-            EmbedderId::E1, EmbedderId::E2, EmbedderId::E3, EmbedderId::E4,
-            EmbedderId::E5, EmbedderId::E6, EmbedderId::E7, EmbedderId::E8,
-            EmbedderId::E9, EmbedderId::E10, EmbedderId::E11, EmbedderId::E12,
+            EmbedderId::E1,
+            EmbedderId::E2,
+            EmbedderId::E3,
+            EmbedderId::E4,
+            EmbedderId::E5,
+            EmbedderId::E6,
+            EmbedderId::E7,
+            EmbedderId::E8,
+            EmbedderId::E9,
+            EmbedderId::E10,
+            EmbedderId::E11,
+            EmbedderId::E12,
             EmbedderId::E13,
         ];
 
@@ -974,7 +1042,9 @@ impl Handlers {
                             dimension: cause.len(),
                             l2_norm: if request.include_vector_norms && !cause.is_empty() {
                                 Some(l2_norm(cause))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                         AsymmetricVariant {
                             variant: "effect".to_string(),
@@ -982,7 +1052,9 @@ impl Handlers {
                             dimension: effect.len(),
                             l2_norm: if request.include_vector_norms && !effect.is_empty() {
                                 Some(l2_norm(effect))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                     ]);
                     (p, active.len(), l2_norm(active), variants)
@@ -1009,7 +1081,9 @@ impl Handlers {
                             dimension: source.len(),
                             l2_norm: if request.include_vector_norms && !source.is_empty() {
                                 Some(l2_norm(source))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                         AsymmetricVariant {
                             variant: "target".to_string(),
@@ -1017,7 +1091,9 @@ impl Handlers {
                             dimension: target.len(),
                             l2_norm: if request.include_vector_norms && !target.is_empty() {
                                 Some(l2_norm(target))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                     ]);
                     (p, active.len(), l2_norm(active), variants)
@@ -1039,7 +1115,9 @@ impl Handlers {
                             dimension: paraphrase_vec.len(),
                             l2_norm: if request.include_vector_norms && !paraphrase_vec.is_empty() {
                                 Some(l2_norm(paraphrase_vec))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                         AsymmetricVariant {
                             variant: "context".to_string(),
@@ -1047,7 +1125,9 @@ impl Handlers {
                             dimension: context.len(),
                             l2_norm: if request.include_vector_norms && !context.is_empty() {
                                 Some(l2_norm(context))
-                            } else { None },
+                            } else {
+                                None
+                            },
                         },
                     ]);
                     (p, active.len(), l2_norm(active), variants)
@@ -1062,12 +1142,15 @@ impl Handlers {
                     let tokens = sem.e12_late_interaction.len();
                     // L2 norm = norm of flattened matrix
                     let norm = if p {
-                        sem.e12_late_interaction.iter()
+                        sem.e12_late_interaction
+                            .iter()
                             .flat_map(|v| v.iter())
                             .map(|x| x * x)
                             .sum::<f32>()
                             .sqrt()
-                    } else { 0.0 };
+                    } else {
+                        0.0
+                    };
                     (p, tokens, norm, None)
                 }
                 EmbedderId::E13 => {
@@ -1106,14 +1189,15 @@ impl Handlers {
 
         // Optionally get content
         let content = if request.include_content {
-            match self.teleological_store.get_content_batch(&[memory_uuid]).await {
+            match self
+                .teleological_store
+                .get_content_batch(&[memory_uuid])
+                .await
+            {
                 Ok(contents) => contents.into_iter().next().flatten(),
                 Err(e) => {
                     error!(error = %e, "get_memory_fingerprint: Content retrieval FAILED");
-                    return self.tool_error(
-                        id,
-                        &format!("Failed to retrieve content: {}", e),
-                    );
+                    return self.tool_error(id, &format!("Failed to retrieve content: {}", e));
                 }
             }
         } else {
@@ -1141,7 +1225,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_memory_fingerprint: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1155,10 +1243,11 @@ impl Handlers {
         id: Option<JsonRpcId>,
         args: serde_json::Value,
     ) -> JsonRpcResponse {
-        let request: CreateWeightProfileRequest = match self.parse_request(id.clone(), args, "create_weight_profile") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: CreateWeightProfileRequest =
+            match self.parse_request(id.clone(), args, "create_weight_profile") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         // Reject names that conflict with built-in profiles
         let built_in = context_graph_core::weights::get_profile_names();
@@ -1203,7 +1292,11 @@ impl Handlers {
         }
 
         // Persist to RocksDB (source of truth) AND update in-memory cache
-        if let Err(e) = self.teleological_store.store_custom_weight_profile(&request.name, &weights).await {
+        if let Err(e) = self
+            .teleological_store
+            .store_custom_weight_profile(&request.name, &weights)
+            .await
+        {
             error!(error = %e, name = %request.name, "create_weight_profile: Failed to persist to RocksDB");
             return self.tool_error(id, &format!("Failed to persist weight profile: {}", e));
         }
@@ -1216,10 +1309,18 @@ impl Handlers {
 
         // Build response weight map
         let weight_map: HashMap<String, f32> = [
-            ("E1", weights[0]),  ("E2", weights[1]),  ("E3", weights[2]),
-            ("E4", weights[3]),  ("E5", weights[4]),  ("E6", weights[5]),
-            ("E7", weights[6]),  ("E8", weights[7]),  ("E9", weights[8]),
-            ("E10", weights[9]), ("E11", weights[10]), ("E12", weights[11]),
+            ("E1", weights[0]),
+            ("E2", weights[1]),
+            ("E3", weights[2]),
+            ("E4", weights[3]),
+            ("E5", weights[4]),
+            ("E6", weights[5]),
+            ("E7", weights[6]),
+            ("E8", weights[7]),
+            ("E9", weights[8]),
+            ("E10", weights[9]),
+            ("E11", weights[10]),
+            ("E12", weights[11]),
             ("E13", weights[12]),
         ]
         .into_iter()
@@ -1244,7 +1345,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "create_weight_profile: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1260,24 +1365,31 @@ impl Handlers {
     ) -> JsonRpcResponse {
         let start = Instant::now();
 
-        let request: SearchCrossEmbedderAnomaliesRequest = match self.parse_request(id.clone(), args, "search_cross_embedder_anomalies") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchCrossEmbedderAnomaliesRequest =
+            match self.parse_request(id.clone(), args, "search_cross_embedder_anomalies") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         // MED-22 FIX: Use proper error handling instead of .expect() - defense in depth
         let high_eid = match EmbedderId::from_str(&request.high_embedder) {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.high_embedder, "search_cross_embedder_anomalies: Invalid high_embedder");
-                return self.tool_error(id, &format!("Invalid high_embedder '{}'", request.high_embedder));
+                return self.tool_error(
+                    id,
+                    &format!("Invalid high_embedder '{}'", request.high_embedder),
+                );
             }
         };
         let low_eid = match EmbedderId::from_str(&request.low_embedder) {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.low_embedder, "search_cross_embedder_anomalies: Invalid low_embedder");
-                return self.tool_error(id, &format!("Invalid low_embedder '{}'", request.low_embedder));
+                return self.tool_error(
+                    id,
+                    &format!("Invalid low_embedder '{}'", request.low_embedder),
+                );
             }
         };
         let high_idx = high_eid.to_index();
@@ -1291,7 +1403,14 @@ impl Handlers {
         );
 
         // Step 1: Embed the query
-        let query_fingerprint = match self.embed_query(id.clone(), &request.query, "search_cross_embedder_anomalies").await {
+        let query_fingerprint = match self
+            .embed_query(
+                id.clone(),
+                &request.query,
+                "search_cross_embedder_anomalies",
+            )
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1307,7 +1426,7 @@ impl Handlers {
             .with_strategy(SearchStrategy::E1Only)
             .with_embedders(vec![high_idx])
             .with_min_similarity(0.0); // no threshold - we filter ourselves
-        // AP-77: E5 requires causal direction for scoring
+                                       // AP-77: E5 requires causal direction for scoring
         if matches!(high_eid, EmbedderId::E5) || matches!(low_eid, EmbedderId::E5) {
             options = options.with_causal_direction(CausalDirection::Cause);
         }
@@ -1408,7 +1527,10 @@ impl Handlers {
                     tool_name: "search_cross_embedder_anomalies".to_string(),
                     results_returned: response.anomalies.len(),
                     weight_profile: None,
-                    strategy: Some(format!("anomaly:{}>{}", request.high_embedder, request.low_embedder)),
+                    strategy: Some(format!(
+                        "anomaly:{}>{}",
+                        request.high_embedder, request.low_embedder
+                    )),
                 },
                 anomaly_ids.first().copied().unwrap_or(Uuid::nil()),
             )
@@ -1422,7 +1544,11 @@ impl Handlers {
                 "low_threshold": request.low_threshold,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "search_cross_embedder_anomalies: Failed to write audit record (non-fatal)");
             }
         }
@@ -1431,7 +1557,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_cross_embedder_anomalies: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1447,7 +1577,9 @@ impl Handlers {
         id: Option<JsonRpcId>,
         arguments: serde_json::Value,
     ) -> JsonRpcResponse {
-        use super::embedder_dtos::{SearchByTokensRequest, SearchByTokensResponse, TokenSearchResult};
+        use super::embedder_dtos::{
+            SearchByTokensRequest, SearchByTokensResponse, TokenSearchResult,
+        };
 
         let req: SearchByTokensRequest = match serde_json::from_value(arguments) {
             Ok(r) => r,
@@ -1458,7 +1590,10 @@ impl Handlers {
         let start = Instant::now();
 
         // Embed query to get all 14 embeddings (including E12 token vectors)
-        let query_fp = match self.embed_query(id.clone(), &req.query, "search_by_tokens").await {
+        let query_fp = match self
+            .embed_query(id.clone(), &req.query, "search_by_tokens")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1469,7 +1604,11 @@ impl Handlers {
             .with_strategy(SearchStrategy::Pipeline)
             .with_min_similarity(req.min_similarity);
 
-        match self.teleological_store.search_semantic(&query_fp, options).await {
+        match self
+            .teleological_store
+            .search_semantic(&query_fp, options)
+            .await
+        {
             Ok(results) => {
                 let token_results: Vec<TokenSearchResult> = results
                     .iter()
@@ -1480,7 +1619,11 @@ impl Handlers {
                     })
                     .collect();
                 let count = token_results.len();
-                let resp = SearchByTokensResponse { results: token_results, count, latency_ms: start.elapsed().as_secs_f64() * 1000.0 };
+                let resp = SearchByTokensResponse {
+                    results: token_results,
+                    count,
+                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                };
                 match serde_json::to_value(&resp) {
                     Ok(v) => self.tool_result(id, v),
                     Err(e) => self.tool_error(id, &format!("Serialization failed: {}", e)),
@@ -1500,7 +1643,9 @@ impl Handlers {
         id: Option<JsonRpcId>,
         arguments: serde_json::Value,
     ) -> JsonRpcResponse {
-        use super::embedder_dtos::{SearchByExpansionRequest, SearchByExpansionResponse, ExpansionSearchResult};
+        use super::embedder_dtos::{
+            ExpansionSearchResult, SearchByExpansionRequest, SearchByExpansionResponse,
+        };
 
         let req: SearchByExpansionRequest = match serde_json::from_value(arguments) {
             Ok(r) => r,
@@ -1511,7 +1656,10 @@ impl Handlers {
         let start = Instant::now();
 
         // Embed query to get all 14 embeddings (including E13 SPLADE sparse terms)
-        let query_fp = match self.embed_query(id.clone(), &req.query, "search_by_expansion").await {
+        let query_fp = match self
+            .embed_query(id.clone(), &req.query, "search_by_expansion")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1522,7 +1670,11 @@ impl Handlers {
             .with_strategy(SearchStrategy::Pipeline)
             .with_min_similarity(req.min_score);
 
-        match self.teleological_store.search_semantic(&query_fp, options).await {
+        match self
+            .teleological_store
+            .search_semantic(&query_fp, options)
+            .await
+        {
             Ok(results) => {
                 let expansion_results: Vec<ExpansionSearchResult> = results
                     .iter()
@@ -1533,7 +1685,11 @@ impl Handlers {
                     })
                     .collect();
                 let count = expansion_results.len();
-                let resp = SearchByExpansionResponse { results: expansion_results, count, latency_ms: start.elapsed().as_secs_f64() * 1000.0 };
+                let resp = SearchByExpansionResponse {
+                    results: expansion_results,
+                    count,
+                    latency_ms: start.elapsed().as_secs_f64() * 1000.0,
+                };
                 match serde_json::to_value(&resp) {
                     Ok(v) => self.tool_result(id, v),
                     Err(e) => self.tool_error(id, &format!("Serialization failed: {}", e)),
@@ -1550,7 +1706,6 @@ mod tests {
 
     #[test]
     fn test_embedder_id_properties() {
-
         // Test E1 (foundation)
         assert_eq!(EmbedderId::E1.to_index(), 0);
         assert!(EmbedderId::E1.is_semantic());

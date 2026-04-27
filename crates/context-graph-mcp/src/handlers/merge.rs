@@ -23,15 +23,13 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::causal::asymmetric::{
-    infer_direction_from_fingerprint, CausalDirection,
-};
+use context_graph_core::causal::asymmetric::{infer_direction_from_fingerprint, CausalDirection};
 use context_graph_core::types::fingerprint::{
     SemanticFingerprint, SparseVector, TeleologicalFingerprint,
 };
 
-use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use crate::handlers::tools::helpers::ToolErrorKind;
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::Handlers;
 
@@ -327,8 +325,8 @@ impl Handlers {
         let e6_sparse = merged_semantic.e6_sparse.clone();
 
         // E6-FIX: Chain .with_e6_sparse() to propagate the merged E6 sparse vector
-        let merged_fingerprint = TeleologicalFingerprint::new(merged_semantic, content_hash)
-            .with_e6_sparse(e6_sparse);
+        let merged_fingerprint =
+            TeleologicalFingerprint::new(merged_semantic, content_hash).with_e6_sparse(e6_sparse);
         let merged_id = merged_fingerprint.id;
 
         // Step 5: Generate reversal hash and store reversal record
@@ -375,7 +373,10 @@ impl Handlers {
             .store_content(merged_id, &merged_content)
             .await
         {
-            return Err(format!("Failed to store merged content for {}: {}", merged_id, e));
+            return Err(format!(
+                "Failed to store merged content for {}: {}",
+                merged_id, e
+            ));
         }
 
         // Step 7: Mark source fingerprints as merged (soft delete per SEC-06)
@@ -418,7 +419,11 @@ impl Handlers {
                 "force_merge": input.force_merge,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 warn!(
                     merged_id = %merged_id,
                     error = %e,
@@ -448,7 +453,11 @@ impl Handlers {
                 original_fingerprints_json: reversal_record.original_fingerprints_json.clone(),
             };
 
-            if let Err(e) = self.teleological_store.append_merge_record(&merge_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_merge_record(&merge_record)
+                .await
+            {
                 warn!(
                     merged_id = %merged_id,
                     error = %e,
@@ -529,7 +538,9 @@ impl Handlers {
             .collect();
 
         let has_cause = directions.iter().any(|(_, d)| *d == CausalDirection::Cause);
-        let has_effect = directions.iter().any(|(_, d)| *d == CausalDirection::Effect);
+        let has_effect = directions
+            .iter()
+            .any(|(_, d)| *d == CausalDirection::Effect);
 
         if has_cause && has_effect {
             let cause_ids: Vec<String> = directions
@@ -644,10 +655,16 @@ impl Handlers {
             fingerprints.iter().map(|f| &f.semantic.e8_graph).collect(),
         );
         let e8_graph_as_source = Self::average_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_source)
+                .collect(),
         );
         let e8_graph_as_target = Self::average_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_target)
+                .collect(),
         );
         let e9_hdc =
             Self::average_dense_vectors(fingerprints.iter().map(|f| &f.semantic.e9_hdc).collect());
@@ -779,10 +796,16 @@ impl Handlers {
             fingerprints.iter().map(|f| &f.semantic.e8_graph).collect(),
         );
         let e8_graph_as_source = Self::intersection_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_source)
+                .collect(),
         );
         let e8_graph_as_target = Self::intersection_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_target)
+                .collect(),
         );
         let e9_hdc = Self::intersection_dense_vectors(
             fingerprints.iter().map(|f| &f.semantic.e9_hdc).collect(),
@@ -946,11 +969,17 @@ impl Handlers {
             &weights,
         );
         let e8_graph_as_source = Self::weighted_average_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_source)
+                .collect(),
             &weights,
         );
         let e8_graph_as_target = Self::weighted_average_dense_vectors(
-            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+            fingerprints
+                .iter()
+                .map(|f| &f.semantic.e8_graph_as_target)
+                .collect(),
             &weights,
         );
         let e9_hdc = Self::weighted_average_dense_vectors(
@@ -992,27 +1021,33 @@ impl Handlers {
             .clone();
 
         // E10: Compute dual vectors — filter weights in sync with slices to prevent misalignment
-        let (e10_paraphrase_slices, e10_paraphrase_weights): (Vec<&[f32]>, Vec<f32>) =
-            fingerprints
-                .iter()
-                .zip(weights.iter())
-                .filter_map(|(f, &w)| {
-                    let v = f.semantic.get_e10_as_paraphrase();
-                    if v.is_empty() { None } else { Some((v, w)) }
-                })
-                .unzip();
+        let (e10_paraphrase_slices, e10_paraphrase_weights): (Vec<&[f32]>, Vec<f32>) = fingerprints
+            .iter()
+            .zip(weights.iter())
+            .filter_map(|(f, &w)| {
+                let v = f.semantic.get_e10_as_paraphrase();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some((v, w))
+                }
+            })
+            .unzip();
         let e10_multimodal_paraphrase =
             Self::weighted_average_dense_slices(e10_paraphrase_slices, &e10_paraphrase_weights);
 
-        let (e10_context_slices, e10_context_weights): (Vec<&[f32]>, Vec<f32>) =
-            fingerprints
-                .iter()
-                .zip(weights.iter())
-                .filter_map(|(f, &w)| {
-                    let v = f.semantic.get_e10_as_context();
-                    if v.is_empty() { None } else { Some((v, w)) }
-                })
-                .unzip();
+        let (e10_context_slices, e10_context_weights): (Vec<&[f32]>, Vec<f32>) = fingerprints
+            .iter()
+            .zip(weights.iter())
+            .filter_map(|(f, &w)| {
+                let v = f.semantic.get_e10_as_context();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some((v, w))
+                }
+            })
+            .unzip();
         let e10_multimodal_as_context =
             Self::weighted_average_dense_slices(e10_context_slices, &e10_context_weights);
 

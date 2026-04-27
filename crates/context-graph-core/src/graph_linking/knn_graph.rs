@@ -155,7 +155,10 @@ impl KnnGraph {
     ///
     /// Returns an empty slice if the node is not in the graph.
     pub fn get_neighbors(&self, node: Uuid) -> &[EmbedderEdge] {
-        self.adjacency.get(&node).map(|v| v.as_slice()).unwrap_or(&[])
+        self.adjacency
+            .get(&node)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get the neighbors of a node sorted by similarity (descending).
@@ -225,7 +228,10 @@ impl KnnGraph {
             (0.0, 0.0, 0.0)
         } else {
             let min = similarities.iter().cloned().fold(f32::INFINITY, f32::min);
-            let max = similarities.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let max = similarities
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
             let avg = similarities.iter().sum::<f32>() / similarities.len() as f32;
             (min, max, avg)
         };

@@ -81,10 +81,7 @@ impl RelevanceLabels {
 
 impl GroundTruth {
     /// Create new ground truth.
-    pub fn new(
-        document_topics: HashMap<Uuid, usize>,
-        topic_names: Vec<String>,
-    ) -> Self {
+    pub fn new(document_topics: HashMap<Uuid, usize>, topic_names: Vec<String>) -> Self {
         Self {
             document_topics,
             query_relevance: HashMap::new(),
@@ -124,7 +121,10 @@ impl GroundTruth {
 
     /// Check if a query is divergent.
     pub fn is_divergent(&self, query_id: &Uuid) -> bool {
-        self.divergence_labels.get(query_id).copied().unwrap_or(false)
+        self.divergence_labels
+            .get(query_id)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Get number of documents.
@@ -147,10 +147,7 @@ impl GroundTruth {
     /// Returns (doc_ids, labels) where labels[i] is the topic for doc_ids[i].
     pub fn get_cluster_labels(&self) -> (Vec<Uuid>, Vec<usize>) {
         let doc_ids: Vec<Uuid> = self.document_topics.keys().copied().collect();
-        let labels: Vec<usize> = doc_ids
-            .iter()
-            .map(|id| self.document_topics[id])
-            .collect();
+        let labels: Vec<usize> = doc_ids.iter().map(|id| self.document_topics[id]).collect();
 
         (doc_ids, labels)
     }
@@ -201,7 +198,6 @@ impl GroundTruth {
         Ok(())
     }
 }
-
 
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {

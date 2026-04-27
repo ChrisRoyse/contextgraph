@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         graph_grammar_path: model_dir.join("graph_relationship.gbnf"),
         validation_grammar_path: model_dir.join("validation.gbnf"),
         n_gpu_layers: u32::MAX, // Full GPU offload
-        temperature: 0.0, // Deterministic
+        temperature: 0.0,       // Deterministic
         max_tokens: 256,
         ..Default::default()
     };
@@ -84,7 +84,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}\n", expected);
 
         let start = Instant::now();
-        match llm.analyze_causal_relationship(statement_a, statement_b).await {
+        match llm
+            .analyze_causal_relationship(statement_a, statement_b)
+            .await
+        {
             Ok(result) => {
                 let elapsed = start.elapsed();
                 println!("Result:");

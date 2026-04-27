@@ -25,9 +25,7 @@ fn make_test_inputs(seq_len: usize) -> (Tensor, Tensor, Tensor, Tensor, f64) {
 
     // Use deterministic values (not random — reproducible)
     let total_q = batch * heads * seq_len * head_dim;
-    let q_data: Vec<f32> = (0..total_q)
-        .map(|i| (i as f32 * 0.1).sin() * 0.5)
-        .collect();
+    let q_data: Vec<f32> = (0..total_q).map(|i| (i as f32 * 0.1).sin() * 0.5).collect();
     let k_data: Vec<f32> = (0..total_q)
         .map(|i| (i as f32 * 0.13 + 1.0).sin() * 0.5)
         .collect();
@@ -189,12 +187,7 @@ fn test_tiled_fallback_to_dense_when_tile_covers_sequence() {
     let tiled_out = tiled.forward(&q, &k, &v, &mask, scale).unwrap();
 
     // Should be bit-exact since it falls back to dense
-    assert_tensors_close(
-        &dense_out,
-        &tiled_out,
-        1e-6,
-        "tiled fallback (tile >= seq)",
-    );
+    assert_tensors_close(&dense_out, &tiled_out, 1e-6, "tiled fallback (tile >= seq)");
 }
 
 // =============================================================================
@@ -286,7 +279,12 @@ fn test_single_token_sequence() {
     ] {
         let strategy = create_strategy(mode);
         let output = strategy.forward(&q, &k, &v, &mask, scale).unwrap();
-        assert_eq!(output.dims(), q.dims(), "seq_len=1 output shape for {:?}", mode);
+        assert_eq!(
+            output.dims(),
+            q.dims(),
+            "seq_len=1 output shape for {:?}",
+            mode
+        );
     }
 }
 
@@ -311,10 +309,7 @@ fn test_tiled_non_divisible_sequence() {
 
 #[test]
 fn test_strategy_names() {
-    assert_eq!(
-        create_strategy(&AttentionMode::Dense).name(),
-        "dense"
-    );
+    assert_eq!(create_strategy(&AttentionMode::Dense).name(), "dense");
     assert_eq!(
         create_strategy(&AttentionMode::MemoryEfficient { tile_size: 128 }).name(),
         "tiled_memory_efficient"

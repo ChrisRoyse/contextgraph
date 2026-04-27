@@ -27,7 +27,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 /// Direction modifiers per Constitution specification.
 ///
 /// # Constitution Reference
@@ -605,8 +604,8 @@ pub fn detect_causal_query_intent(query: &str) -> CausalDirection {
     // For each indicator match, scan a 15-char window before it for negation tokens.
     // If a negation token is found near an indicator, skip that indicator.
     let negation_tokens: &[&str] = &[
-        "not ", "no ", "never ", "n't ", "neither ", "without ",
-        "cannot ", "can't ", "won't ", "doesn't ", "don't ", "isn't ",
+        "not ", "no ", "never ", "n't ", "neither ", "without ", "cannot ", "can't ", "won't ",
+        "doesn't ", "don't ", "isn't ",
     ];
 
     // Cause-seeking indicators: user has an effect and wants the cause
@@ -1112,7 +1111,10 @@ mod tests {
         // blended = 0.5 * 0.333 + 0.5 * 1.0 = 0.6665
         // overlap = 0.6665 * 0.7 = 0.4666 (~0.47)
         assert!(overlap > 0.4 && overlap < 0.55);
-        println!("[VERIFIED] Asymmetric sizes handled via containment: {}", overlap);
+        println!(
+            "[VERIFIED] Asymmetric sizes handled via containment: {}",
+            overlap
+        );
     }
 
     // ============================================================================
@@ -1136,10 +1138,7 @@ mod tests {
         // sim = 0.8 * 1.2 = 0.96
         let expected = base * 1.2;
         assert!((sim - expected).abs() < 0.001);
-        println!(
-            "[VERIFIED] cause→effect: {} (expected {})",
-            sim, expected
-        );
+        println!("[VERIFIED] cause→effect: {} (expected {})", sim, expected);
     }
 
     #[test]
@@ -1159,10 +1158,7 @@ mod tests {
         // sim = 0.8 * 0.8 = 0.64
         let expected = base * 0.8;
         assert!((sim - expected).abs() < 0.001);
-        println!(
-            "[VERIFIED] effect→cause: {} (expected {})",
-            sim, expected
-        );
+        println!("[VERIFIED] effect→cause: {} (expected {})", sim, expected);
     }
 
     #[test]
@@ -1182,10 +1178,7 @@ mod tests {
         // sim = 0.8 * 1.0 = 0.8
         let expected = base * 1.0;
         assert!((sim - expected).abs() < 0.001);
-        println!(
-            "[VERIFIED] same direction: {} (expected {})",
-            sim, expected
-        );
+        println!("[VERIFIED] same direction: {} (expected {})", sim, expected);
     }
 
     #[test]
@@ -1287,22 +1280,34 @@ mod tests {
         );
 
         // cause→effect should be HIGHER than effect→cause
-        assert!(cause_to_effect > effect_to_cause,
+        assert!(
+            cause_to_effect > effect_to_cause,
             "ARCH-15 violation: cause→effect ({}) must be > effect→cause ({})",
-            cause_to_effect, effect_to_cause);
+            cause_to_effect,
+            effect_to_cause
+        );
 
         // Ratio should be exactly 1.2/0.8 = 1.5 (no overlap dampening)
         let ratio = cause_to_effect / effect_to_cause;
-        assert!((ratio - 1.5).abs() < 0.001,
-            "Asymmetry ratio should be exactly 1.5, got {}", ratio);
+        assert!(
+            (ratio - 1.5).abs() < 0.001,
+            "Asymmetry ratio should be exactly 1.5, got {}",
+            ratio
+        );
 
         // Verify exact values with new formula
         // cause→effect: 0.8 * 1.2 = 0.96
         // effect→cause: 0.8 * 0.8 = 0.64
-        assert!((cause_to_effect - 0.96).abs() < 0.001,
-            "cause→effect should be 0.96, got {}", cause_to_effect);
-        assert!((effect_to_cause - 0.64).abs() < 0.001,
-            "effect→cause should be 0.64, got {}", effect_to_cause);
+        assert!(
+            (cause_to_effect - 0.96).abs() < 0.001,
+            "cause→effect should be 0.96, got {}",
+            cause_to_effect
+        );
+        assert!(
+            (effect_to_cause - 0.64).abs() < 0.001,
+            "effect→cause should be 0.64, got {}",
+            effect_to_cause
+        );
 
         println!(
             "[VERIFIED] Asymmetry per ARCH-15: cause→effect ({}) > effect→cause ({})",
@@ -1415,15 +1420,24 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let sim = cosine_similarity_f32(&a, &b);
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have sim=1.0");
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have sim=1.0"
+        );
 
         let c = vec![0.0, 1.0, 0.0];
         let sim_ortho = cosine_similarity_f32(&a, &c);
-        assert!(sim_ortho.abs() < 1e-6, "Orthogonal vectors should have sim=0.0");
+        assert!(
+            sim_ortho.abs() < 1e-6,
+            "Orthogonal vectors should have sim=0.0"
+        );
 
         let d = vec![-1.0, 0.0, 0.0];
         let sim_opp = cosine_similarity_f32(&a, &d);
-        assert!((sim_opp - (-1.0)).abs() < 1e-6, "Opposite vectors should have sim=-1.0");
+        assert!(
+            (sim_opp - (-1.0)).abs() < 1e-6,
+            "Opposite vectors should have sim=-1.0"
+        );
 
         println!("[VERIFIED] cosine_similarity_f32 works correctly");
     }

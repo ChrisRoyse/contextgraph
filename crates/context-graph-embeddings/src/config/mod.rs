@@ -274,5 +274,4 @@ impl EmbeddingConfig {
             message: format!("Failed to parse TOML: {}", e),
         })
     }
-
 }

@@ -88,9 +88,6 @@ pub fn ffn_forward(
     output
         .reshape((batch_size, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "BgeM3Dense layer {} FFN reshape failed: {}",
-                layer_idx, e
-            ),
+            message: format!("BgeM3Dense layer {} FFN reshape failed: {}", layer_idx, e),
         })
 }

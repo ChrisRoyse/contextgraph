@@ -17,7 +17,6 @@ pub mod lazy_provider;
 // LazyMultiArrayProvider allows immediate MCP startup while models load in background
 pub use lazy_provider::LazyMultiArrayProvider;
 
-
 // LlmCausalHintProvider wraps CausalDiscoveryLLM for causal hint generation
 #[cfg(feature = "llm")]
 pub use causal_hint::LlmCausalHintProvider;

@@ -132,7 +132,9 @@ pub fn serialize_teleological_fingerprint(fp: &TeleologicalFingerprint) -> Vec<u
 /// let restored = deserialize_teleological_fingerprint(&bytes)?;
 /// assert_eq!(original.id, restored.id);
 /// ```
-pub fn deserialize_teleological_fingerprint(data: &[u8]) -> Result<TeleologicalFingerprint, CoreError> {
+pub fn deserialize_teleological_fingerprint(
+    data: &[u8],
+) -> Result<TeleologicalFingerprint, CoreError> {
     if data.is_empty() {
         return Err(CoreError::SerializationError(
             "Empty data for TeleologicalFingerprint. \

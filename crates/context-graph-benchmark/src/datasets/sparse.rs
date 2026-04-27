@@ -383,7 +383,10 @@ impl E6SparseDatasetGenerator {
                         keyword
                     )),
                 });
-                keyword_docs.entry(keyword.to_string()).or_default().push(doc_id);
+                keyword_docs
+                    .entry(keyword.to_string())
+                    .or_default()
+                    .push(doc_id);
 
                 // Create anti-example document (semantically similar, missing keyword)
                 if self.rng.gen_bool(anti_example_ratio) {
@@ -409,8 +412,7 @@ impl E6SparseDatasetGenerator {
 
         // Pad with additional documents if needed
         while documents.len() < num_documents {
-            let domain = keyword_domains
-                [self.rng.gen_range(0..keyword_domains.len())];
+            let domain = keyword_domains[self.rng.gen_range(0..keyword_domains.len())];
             let templates = domain.keyword_templates();
             let (keyword, doc_template, _) = templates[self.rng.gen_range(0..templates.len())];
 
@@ -423,7 +425,10 @@ impl E6SparseDatasetGenerator {
                 is_anti_example: false,
                 e1_limitation: None,
             });
-            keyword_docs.entry(keyword.to_string()).or_default().push(doc_id);
+            keyword_docs
+                .entry(keyword.to_string())
+                .or_default()
+                .push(doc_id);
         }
 
         // Generate queries
@@ -441,10 +446,7 @@ impl E6SparseDatasetGenerator {
 
                 let query_id = self.next_uuid();
                 let expected = keyword_docs.get(keyword).cloned().unwrap_or_default();
-                let anti = keyword_anti_docs
-                    .get(keyword)
-                    .cloned()
-                    .unwrap_or_default();
+                let anti = keyword_anti_docs.get(keyword).cloned().unwrap_or_default();
 
                 queries.push(SparseQuery {
                     id: query_id,
@@ -492,7 +494,10 @@ impl E6SparseBenchmarkDataset {
 
     /// Get anti-example documents.
     pub fn anti_example_documents(&self) -> Vec<&SparseDocument> {
-        self.documents.iter().filter(|d| d.is_anti_example).collect()
+        self.documents
+            .iter()
+            .filter(|d| d.is_anti_example)
+            .collect()
     }
 
     /// Validate dataset consistency.
@@ -521,7 +526,10 @@ impl E6SparseBenchmarkDataset {
         for (query_id, doc_ids) in &self.ground_truth {
             let query = self.queries.iter().find(|q| &q.id == query_id);
             if query.is_none() {
-                return Err(format!("Ground truth references unknown query {}", query_id));
+                return Err(format!(
+                    "Ground truth references unknown query {}",
+                    query_id
+                ));
             }
             for doc_id in doc_ids {
                 if self.get_document(doc_id).is_none() {
@@ -562,8 +570,11 @@ impl E6SparseBenchmarkDataset {
             unique_keywords: keywords.len(),
             docs_by_domain,
             queries_by_domain,
-            avg_keywords_per_doc: self.documents.iter().map(|d| d.keywords.len()).sum::<usize>()
-                as f64
+            avg_keywords_per_doc: self
+                .documents
+                .iter()
+                .map(|d| d.keywords.len())
+                .sum::<usize>() as f64
                 / self.documents.len().max(1) as f64,
         }
     }

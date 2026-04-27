@@ -36,7 +36,9 @@ mod weight_projector;
 
 // Re-exports
 pub use direction::DirectedRelation;
-pub use edge_builder::{EdgeBuilder, EdgeBuilderConfig, EdgeBuilderStats, DEFAULT_EMBEDDER_THRESHOLDS};
+pub use edge_builder::{
+    EdgeBuilder, EdgeBuilderConfig, EdgeBuilderStats, DEFAULT_EMBEDDER_THRESHOLDS,
+};
 pub use edge_type::GraphLinkEdgeType;
 pub use embedder_edge::EmbedderEdge;
 pub use error::{EdgeError, EdgeResult};

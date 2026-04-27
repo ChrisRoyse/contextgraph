@@ -89,8 +89,7 @@ pub fn compare_reports(
         }
     }
 
-    let phases_unchanged =
-        phase_comparisons.len() - phases_improved - phases_regressed;
+    let phases_unchanged = phase_comparisons.len() - phases_improved - phases_regressed;
 
     ComparisonReport {
         baseline_model: baseline.model_name.clone(),
@@ -188,8 +187,7 @@ pub fn generate_comparison_markdown(comparison: &ComparisonReport) -> String {
         "- Pass count: {} → {} ({:+})\n",
         comparison.summary.baseline_pass_count,
         comparison.summary.tuned_pass_count,
-        comparison.summary.tuned_pass_count as i32
-            - comparison.summary.baseline_pass_count as i32
+        comparison.summary.tuned_pass_count as i32 - comparison.summary.baseline_pass_count as i32
     ));
     out.push_str(&format!(
         "- Phases improved: {}\n",
@@ -229,10 +227,7 @@ pub fn generate_comparison_markdown(comparison: &ComparisonReport) -> String {
         if pc.metric_deltas.is_empty() {
             continue;
         }
-        out.push_str(&format!(
-            "### Phase {}: {}\n\n",
-            pc.phase, pc.phase_name
-        ));
+        out.push_str(&format!("### Phase {}: {}\n\n", pc.phase, pc.phase_name));
         out.push_str("| Metric | Baseline | Tuned | Delta | % Change |\n");
         out.push_str("|--------|----------|-------|-------|----------|\n");
 
@@ -290,8 +285,7 @@ pub fn print_comparison(comparison: &ComparisonReport) {
         comparison.summary.total_phases,
         comparison.summary.tuned_pass_count,
         comparison.summary.total_phases,
-        comparison.summary.tuned_pass_count as i32
-            - comparison.summary.baseline_pass_count as i32
+        comparison.summary.tuned_pass_count as i32 - comparison.summary.baseline_pass_count as i32
     );
 }
 

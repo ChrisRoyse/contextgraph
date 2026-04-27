@@ -100,14 +100,14 @@ impl Default for EdgeThresholds {
 /// - Higher thresholds for broad embedders (E1 semantic)
 /// - Lower thresholds for specialized embedders (E6/E13 keyword)
 pub const DEFAULT_THRESHOLDS: EdgeThresholds = EdgeThresholds {
-    semantic_similar: 0.75,       // E1 - broad, need higher threshold
-    code_related: 0.70,           // E7 - code-specific
-    entity_shared: 0.65,          // E11 - entity matching
-    causal_chain: 0.60,           // E5 - causal chains (asymmetric)
-    graph_connected: 0.60,        // E8 - graph structure (asymmetric)
+    semantic_similar: 0.75,           // E1 - broad, need higher threshold
+    code_related: 0.70,               // E7 - code-specific
+    entity_shared: 0.65,              // E11 - entity matching
+    causal_chain: 0.60,               // E5 - causal chains (asymmetric)
+    graph_connected: 0.60,            // E8 - graph structure (asymmetric)
     paraphrase_aligned: 0.70,         // E10 - paraphrase matching
-    keyword_overlap: 0.50,        // E6/E13 - sparse similarity scores differently
-    multi_agreement: 0.60,        // Multiple agree = strong signal
+    keyword_overlap: 0.50,            // E6/E13 - sparse similarity scores differently
+    multi_agreement: 0.60,            // Multiple agree = strong signal
     multi_agreement_min_embedders: 3, // Need 3+ embedders to agree
 };
 
@@ -277,9 +277,7 @@ mod tests {
 
     #[test]
     fn test_serde_roundtrip() {
-        let thresholds = EdgeThresholds::builder()
-            .semantic_similar(0.85)
-            .build();
+        let thresholds = EdgeThresholds::builder().semantic_similar(0.85).build();
 
         let json = serde_json::to_string(&thresholds).unwrap();
         let recovered: EdgeThresholds = serde_json::from_str(&json).unwrap();

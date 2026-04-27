@@ -66,7 +66,12 @@ impl Handlers {
         let started = Instant::now();
 
         // ---- Parse args ----
-        let max_edges = parse_usize(&args, "maxEdges", DEFAULT_EXPORT_MAX_EDGES, HARD_MAX_EXPORT_EDGES);
+        let max_edges = parse_usize(
+            &args,
+            "maxEdges",
+            DEFAULT_EXPORT_MAX_EDGES,
+            HARD_MAX_EXPORT_EDGES,
+        );
         let include_content = parse_bool(&args, "includeContent", true);
         let include_source_metadata = parse_bool(&args, "includeSourceMetadata", true);
         let include_mechanism_type = parse_bool(&args, "includeMechanismType", true);
@@ -101,10 +106,8 @@ impl Handlers {
                 Ok(n) => n,
                 Err(e) => {
                     error!(error = %e, "clear_all_typed_edge_records failed");
-                    return self.tool_error(
-                        id,
-                        &format!("Failed to clear CF_TYPED_EDGE_RECORDS: {}", e),
-                    );
+                    return self
+                        .tool_error(id, &format!("Failed to clear CF_TYPED_EDGE_RECORDS: {}", e));
                 }
             }
         } else {
@@ -116,10 +119,7 @@ impl Handlers {
             Ok(v) => v,
             Err(e) => {
                 error!(error = %e, "iter_all_typed_edges failed");
-                return self.tool_error(
-                    id,
-                    &format!("Failed to iterate typed edges: {}", e),
-                );
+                return self.tool_error(id, &format!("Failed to iterate typed edges: {}", e));
             }
         };
 
@@ -208,14 +208,13 @@ impl Handlers {
                         // does not carry a separate target fingerprint id, so
                         // we cannot disambiguate by target — the first
                         // resolvable mechanism_type is the best we can do.
-                        rels.into_iter()
-                            .find_map(|r| {
-                                if r.mechanism_type.trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(r.mechanism_type)
-                                }
-                            })
+                        rels.into_iter().find_map(|r| {
+                            if r.mechanism_type.trim().is_empty() {
+                                None
+                            } else {
+                                Some(r.mechanism_type)
+                            }
+                        })
                     }
                     Err(e) => {
                         warn!(src = %edge.source(), error = %e, "get_causal_relationships_by_source failed");
@@ -345,10 +344,13 @@ impl Handlers {
         let default_cfg = AnomalyDerivationConfig::default();
         let high_threshold = parse_f32(&args, "highThreshold", default_cfg.high_threshold);
         let low_threshold = parse_f32(&args, "lowThreshold", default_cfg.low_threshold);
-        let min_disagreement =
-            parse_f32(&args, "minDisagreement", default_cfg.min_disagreement);
-        let max_pairs =
-            parse_usize(&args, "maxPairs", default_cfg.max_pairs, HARD_MAX_DERIVE_PAIRS);
+        let min_disagreement = parse_f32(&args, "minDisagreement", default_cfg.min_disagreement);
+        let max_pairs = parse_usize(
+            &args,
+            "maxPairs",
+            default_cfg.max_pairs,
+            HARD_MAX_DERIVE_PAIRS,
+        );
 
         // ---- Reject `kinds` filter (blocker: not supported by storage layer) ----
         if args.get("kinds").is_some() {
@@ -394,10 +396,7 @@ impl Handlers {
             Ok(s) => s,
             Err(e) => {
                 error!(error = %e, "derive_anomalies_from_edges failed");
-                return self.tool_error(
-                    id,
-                    &format!("derive_anomalies_from_edges failed: {}", e),
-                );
+                return self.tool_error(id, &format!("derive_anomalies_from_edges failed: {}", e));
             }
         };
 
@@ -484,9 +483,7 @@ impl Handlers {
         started: Instant,
     ) -> JsonRpcResponse {
         let duration_ms = started.elapsed().as_millis() as u64;
-        info!(
-            "validate_low_confidence_edges: llm feature disabled at compile time"
-        );
+        info!("validate_low_confidence_edges: llm feature disabled at compile time");
         self.tool_result(
             id,
             json!({
@@ -529,9 +526,7 @@ impl Handlers {
 
         let Some(service) = self.graph_discovery_service.as_ref() else {
             let duration_ms = started.elapsed().as_millis() as u64;
-            info!(
-                "validate_low_confidence_edges: graph discovery service not wired"
-            );
+            info!("validate_low_confidence_edges: graph discovery service not wired");
             return self.tool_result(
                 id,
                 json!({
@@ -546,9 +541,7 @@ impl Handlers {
         let llm = service.llm();
         if !llm.is_loaded() {
             let duration_ms = started.elapsed().as_millis() as u64;
-            info!(
-                "validate_low_confidence_edges: graph-agent LLM not loaded"
-            );
+            info!("validate_low_confidence_edges: graph-agent LLM not loaded");
             return self.tool_result(
                 id,
                 json!({
@@ -564,10 +557,7 @@ impl Handlers {
             Ok(v) => v,
             Err(e) => {
                 error!(error = %e, "iter_all_typed_edges failed");
-                return self.tool_error(
-                    id,
-                    &format!("Failed to iterate typed edges: {}", e),
-                );
+                return self.tool_error(id, &format!("Failed to iterate typed edges: {}", e));
             }
         };
 
@@ -760,10 +750,7 @@ impl Handlers {
         debug!("Handling list_typed_edge_records: {:?}", args);
 
         let limit = parse_usize(&args, "limit", DEFAULT_LIST_LIMIT, HARD_MAX_LIST_LIMIT);
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let include_full = parse_bool(&args, "includeFull", false);
 
         let Some(rocksdb_store) = self
@@ -781,16 +768,12 @@ impl Handlers {
         let keys = match rocksdb_store.list_typed_edge_record_keys().await {
             Ok(v) => v,
             Err(e) => {
-                return self.tool_error(
-                    id,
-                    &format!("list_typed_edge_record_keys failed: {}", e),
-                );
+                return self.tool_error(id, &format!("list_typed_edge_record_keys failed: {}", e));
             }
         };
 
         let total = keys.len();
-        let slice: Vec<(Uuid, Uuid, u8)> =
-            keys.into_iter().skip(offset).take(limit).collect();
+        let slice: Vec<(Uuid, Uuid, u8)> = keys.into_iter().skip(offset).take(limit).collect();
         let returned = slice.len();
 
         let mut rows = Vec::with_capacity(returned);

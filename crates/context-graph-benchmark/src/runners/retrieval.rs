@@ -88,10 +88,7 @@ impl RetrievalRunner {
     /// Run retrieval benchmark on multi-space system.
     ///
     /// Uses 4 embedding spaces (E1, E5, E7, E10) for simplified multi-space search.
-    pub fn run_multi_space(
-        &self,
-        dataset: &BenchmarkDataset,
-    ) -> RetrievalBenchmarkResults {
+    pub fn run_multi_space(&self, dataset: &BenchmarkDataset) -> RetrievalBenchmarkResults {
         let max_k = *self.k_values.iter().max().unwrap_or(&10);
         let mut latency_tracker = LatencyTracker::with_capacity(dataset.queries.len());
 
@@ -257,7 +254,11 @@ mod tests {
         let results = runner.run_single_embedder(&baseline, &dataset);
 
         // Should have computed meaningful metrics (exact match retrieval should achieve MRR > 0.1)
-        assert!(results.metrics.mrr >= 0.1, "MRR too low: {} — expected at least 0.1 for exact-match queries", results.metrics.mrr);
+        assert!(
+            results.metrics.mrr >= 0.1,
+            "MRR too low: {} — expected at least 0.1 for exact-match queries",
+            results.metrics.mrr
+        );
         assert!(results.performance.operation_count > 0);
     }
 }

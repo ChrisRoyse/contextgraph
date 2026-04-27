@@ -79,7 +79,10 @@ async fn main() -> Result<()> {
     let source_nonzero_pct = nonzero_pct(&source);
 
     println!("  E8 GraphModel (1024D):");
-    println!("    Mean:     {:.6} (should be near 0 for normalized)", source_mean);
+    println!(
+        "    Mean:     {:.6} (should be near 0 for normalized)",
+        source_mean
+    );
     println!("    Std Dev:  {:.6} (should be non-zero)", source_std);
     println!("    Min:      {:.6}", source_min);
     println!("    Max:      {:.6}", source_max);
@@ -87,7 +90,10 @@ async fn main() -> Result<()> {
 
     // Validation: Real embeddings have specific statistical properties
     let stats_pass = source_std > 0.01 && source_nonzero_pct > 95.0;
-    println!("    Result:   {}", if stats_pass { "✓ PASS" } else { "✗ FAIL" });
+    println!(
+        "    Result:   {}",
+        if stats_pass { "✓ PASS" } else { "✗ FAIL" }
+    );
     if !stats_pass {
         all_pass = false;
     }
@@ -119,8 +125,20 @@ async fn main() -> Result<()> {
     // Key validation: Similar texts (A,B) should have HIGHER similarity than different texts (A,C)
     // Also validates embeddings are producing meaningful similarities (not random or constant)
     let semantic_pass = sim_ab > 0.8 && sim_ab > sim_ac;
-    println!("  sim(A,B) > sim(A,C): {} ({:.4} > {:.4})", sim_ab > sim_ac, sim_ab, sim_ac);
-    println!("  Result:   {}", if semantic_pass { "✓ PASS" } else { "✗ FAIL" });
+    println!(
+        "  sim(A,B) > sim(A,C): {} ({:.4} > {:.4})",
+        sim_ab > sim_ac,
+        sim_ab,
+        sim_ac
+    );
+    println!(
+        "  Result:   {}",
+        if semantic_pass {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        }
+    );
     if !semantic_pass {
         println!("    NOTE: Expected sim(A,B) > 0.8 and sim(A,B) > sim(A,C)");
         all_pass = false;
@@ -139,11 +157,24 @@ async fn main() -> Result<()> {
     let l2_distance = l2_norm(&subtract(&source_vec, &target_vec));
 
     println!("  Text: \"{}\"", rel_text);
-    println!("  source↔target cosine sim: {:.4} (should be < 1.0)", source_target_sim);
-    println!("  source↔target L2 distance: {:.4} (should be > 0)", l2_distance);
+    println!(
+        "  source↔target cosine sim: {:.4} (should be < 1.0)",
+        source_target_sim
+    );
+    println!(
+        "  source↔target L2 distance: {:.4} (should be > 0)",
+        l2_distance
+    );
 
     let asymmetric_pass = source_target_sim < 0.999 && l2_distance > 0.01;
-    println!("  Result:   {}", if asymmetric_pass { "✓ PASS" } else { "✗ FAIL" });
+    println!(
+        "  Result:   {}",
+        if asymmetric_pass {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        }
+    );
     if !asymmetric_pass {
         all_pass = false;
     }
@@ -167,21 +198,57 @@ async fn main() -> Result<()> {
 
     println!("  Text: \"{}\"", truncate(causal_text, 60));
     println!();
-    println!("  Cause embedding:  {}D, std_dev={:.6}", cause_dim, cause_std);
-    println!("  Effect embedding: {}D, std_dev={:.6}", effect_dim, effect_std);
-    println!("  Cause↔Effect sim: {:.4} (should be < 1.0 - asymmetric)", cause_effect_sim);
+    println!(
+        "  Cause embedding:  {}D, std_dev={:.6}",
+        cause_dim, cause_std
+    );
+    println!(
+        "  Effect embedding: {}D, std_dev={:.6}",
+        effect_dim, effect_std
+    );
+    println!(
+        "  Cause↔Effect sim: {:.4} (should be < 1.0 - asymmetric)",
+        cause_effect_sim
+    );
 
     // Validation: 768D embeddings with non-trivial values and asymmetric behavior
     let causal_pass = cause_dim == 768
         && effect_dim == 768
         && cause_std > 0.01
         && effect_std > 0.01
-        && cause_effect_sim < 0.999;  // Not identical
+        && cause_effect_sim < 0.999; // Not identical
 
-    println!("  Dimension check:  {} (expected 768D)", if cause_dim == 768 && effect_dim == 768 { "✓" } else { "✗" });
-    println!("  Non-trivial std:  {} (cause={:.4}, effect={:.4})", if cause_std > 0.01 && effect_std > 0.01 { "✓" } else { "✗" }, cause_std, effect_std);
-    println!("  Asymmetric:       {} (sim={:.4} < 1.0)", if cause_effect_sim < 0.999 { "✓" } else { "✗" }, cause_effect_sim);
-    println!("  Result:   {}", if causal_pass { "✓ PASS" } else { "✗ FAIL" });
+    println!(
+        "  Dimension check:  {} (expected 768D)",
+        if cause_dim == 768 && effect_dim == 768 {
+            "✓"
+        } else {
+            "✗"
+        }
+    );
+    println!(
+        "  Non-trivial std:  {} (cause={:.4}, effect={:.4})",
+        if cause_std > 0.01 && effect_std > 0.01 {
+            "✓"
+        } else {
+            "✗"
+        },
+        cause_std,
+        effect_std
+    );
+    println!(
+        "  Asymmetric:       {} (sim={:.4} < 1.0)",
+        if cause_effect_sim < 0.999 {
+            "✓"
+        } else {
+            "✗"
+        },
+        cause_effect_sim
+    );
+    println!(
+        "  Result:   {}",
+        if causal_pass { "✓ PASS" } else { "✗ FAIL" }
+    );
     if !causal_pass {
         all_pass = false;
     }
@@ -209,13 +276,24 @@ async fn main() -> Result<()> {
     let max_time = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
     println!("  Iterations: {}", timing_iterations);
-    println!("  Avg time:   {:.1} µs ({:.2} ms)", avg_time, avg_time / 1000.0);
+    println!(
+        "  Avg time:   {:.1} µs ({:.2} ms)",
+        avg_time,
+        avg_time / 1000.0
+    );
     println!("  Min time:   {:.1} µs", min_time);
     println!("  Max time:   {:.1} µs", max_time);
 
     // Real GPU inference should take at least 1ms
     let timing_pass = avg_time > 1000.0; // > 1ms
-    println!("  Result:   {}", if timing_pass { "✓ PASS (real GPU inference)" } else { "✗ FAIL (too fast - may be cached/stub)" });
+    println!(
+        "  Result:   {}",
+        if timing_pass {
+            "✓ PASS (real GPU inference)"
+        } else {
+            "✗ FAIL (too fast - may be cached/stub)"
+        }
+    );
     if !timing_pass {
         all_pass = false;
     }

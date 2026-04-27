@@ -24,10 +24,10 @@
 //!     --data-dir data/e10_benchmark
 //! ```
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::fs;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use clap::Parser;
@@ -208,7 +208,8 @@ fn run_tuning(pairs: &[IntentContextPair], args: &Args) -> anyhow::Result<()> {
         .map(|(i, pair)| {
             let intent_emb = simulate_e10(&pair.intent, args.seed + i as u64);
             let relevant_emb = simulate_e10(&pair.relevant_context, args.seed + 1000 + i as u64);
-            let irrelevant_emb = simulate_e10(&pair.irrelevant_context, args.seed + 2000 + i as u64);
+            let irrelevant_emb =
+                simulate_e10(&pair.irrelevant_context, args.seed + 2000 + i as u64);
             (intent_emb, relevant_emb, irrelevant_emb)
         })
         .collect();
@@ -217,7 +218,10 @@ fn run_tuning(pairs: &[IntentContextPair], args: &Args) -> anyhow::Result<()> {
     let intent_modifiers: [f32; 6] = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
     let context_modifiers: [f32; 5] = [0.6, 0.7, 0.8, 0.9, 1.0];
 
-    println!("Testing {} modifier combinations...\n", intent_modifiers.len() * context_modifiers.len());
+    println!(
+        "Testing {} modifier combinations...\n",
+        intent_modifiers.len() * context_modifiers.len()
+    );
 
     let mut results = Vec::new();
 
@@ -355,19 +359,17 @@ fn evaluate_modifiers(
 
     for (query, relevant, irrelevant) in embeddings.iter() {
         // Query intent vs document context (intent→context direction)
-        let sim_relevant = compute_modified_similarity(
-            &query.as_intent,
-            &relevant.as_context,
-            intent_mod,
-        );
-        let sim_irrelevant = compute_modified_similarity(
-            &query.as_intent,
-            &irrelevant.as_context,
-            intent_mod,
-        );
+        let sim_relevant =
+            compute_modified_similarity(&query.as_intent, &relevant.as_context, intent_mod);
+        let sim_irrelevant =
+            compute_modified_similarity(&query.as_intent, &irrelevant.as_context, intent_mod);
 
         // Rank: 1 if relevant > irrelevant, 2 otherwise
-        let rank = if sim_relevant >= sim_irrelevant { 1.0 } else { 2.0 };
+        let rank = if sim_relevant >= sim_irrelevant {
+            1.0
+        } else {
+            2.0
+        };
         ranks.push(rank);
 
         if rank == 1.0 {
@@ -485,8 +487,14 @@ fn generate_markdown_report(results: &TuningResults) -> String {
 
     md.push_str("## Summary\n\n");
     md.push_str(&format!("- **Data pairs**: {}\n", results.num_pairs));
-    md.push_str(&format!("- **Bootstrap samples**: {}\n", results.bootstrap_samples));
-    md.push_str(&format!("- **Simulated embeddings**: {}\n\n", results.simulated));
+    md.push_str(&format!(
+        "- **Bootstrap samples**: {}\n",
+        results.bootstrap_samples
+    ));
+    md.push_str(&format!(
+        "- **Simulated embeddings**: {}\n\n",
+        results.simulated
+    ));
 
     md.push_str("## Optimal Configuration\n\n");
     md.push_str(&format!(

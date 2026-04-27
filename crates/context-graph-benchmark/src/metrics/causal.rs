@@ -236,7 +236,8 @@ impl DirectionMRRBreakdown {
             self.cause_to_effect_ratio = 0.0;
         }
         // Target range: 1.3-1.7 (around 1.5 = 1.2/0.8)
-        self.ratio_in_target_range = self.cause_to_effect_ratio >= 1.3 && self.cause_to_effect_ratio <= 1.7;
+        self.ratio_in_target_range =
+            self.cause_to_effect_ratio >= 1.3 && self.cause_to_effect_ratio <= 1.7;
     }
 }
 
@@ -308,9 +309,12 @@ impl DirectionDistributionMetrics {
             self.actual_unknown_pct = (self.unknown_query_count as f64 / total_f) * 100.0;
 
             // Check if within tolerance of 40/40/20 target
-            let cause_ok = (self.actual_cause_pct - Self::TARGET_CAUSE_PCT).abs() <= Self::TOLERANCE_PCT;
-            let effect_ok = (self.actual_effect_pct - Self::TARGET_EFFECT_PCT).abs() <= Self::TOLERANCE_PCT;
-            let unknown_ok = (self.actual_unknown_pct - Self::TARGET_UNKNOWN_PCT).abs() <= Self::TOLERANCE_PCT;
+            let cause_ok =
+                (self.actual_cause_pct - Self::TARGET_CAUSE_PCT).abs() <= Self::TOLERANCE_PCT;
+            let effect_ok =
+                (self.actual_effect_pct - Self::TARGET_EFFECT_PCT).abs() <= Self::TOLERANCE_PCT;
+            let unknown_ok =
+                (self.actual_unknown_pct - Self::TARGET_UNKNOWN_PCT).abs() <= Self::TOLERANCE_PCT;
 
             self.distribution_valid = cause_ok && effect_ok && unknown_ok;
         }
@@ -339,11 +343,13 @@ impl E5ImpactAnalysis {
     pub fn verify_compliance(&self) -> E5ConstitutionalCompliance {
         E5ConstitutionalCompliance {
             // ARCH-18: E5 uses asymmetric similarity (not just cosine)
-            arch18_asymmetric: self.asymmetric_comparison.asymmetric_mrr != self.asymmetric_comparison.symmetric_mrr,
+            arch18_asymmetric: self.asymmetric_comparison.asymmetric_mrr
+                != self.asymmetric_comparison.symmetric_mrr,
             // AP-77: E5 does NOT use symmetric cosine alone (asymmetric should be better)
             ap77_no_symmetric: self.asymmetric_comparison.mrr_improvement_pct > 0.0,
             // Direction modifiers correct: cause MRR > effect MRR (because 1.2x > 0.8x)
-            direction_modifiers_correct: self.direction_mrr.cause_mrr > self.direction_mrr.effect_mrr,
+            direction_modifiers_correct: self.direction_mrr.cause_mrr
+                > self.direction_mrr.effect_mrr,
             // Asymmetry ratio in valid range (1.3-1.7, target 1.5)
             asymmetry_ratio_valid: (self.observed_asymmetry_ratio - 1.5).abs() <= 0.2,
         }
@@ -366,7 +372,10 @@ pub struct E5ConstitutionalCompliance {
 impl E5ConstitutionalCompliance {
     /// Check if all E5 compliance rules pass.
     pub fn all_pass(&self) -> bool {
-        self.arch18_asymmetric && self.ap77_no_symmetric && self.direction_modifiers_correct && self.asymmetry_ratio_valid
+        self.arch18_asymmetric
+            && self.ap77_no_symmetric
+            && self.direction_modifiers_correct
+            && self.asymmetry_ratio_valid
     }
 }
 
@@ -462,15 +471,33 @@ pub fn compute_direction_detection_metrics(
 
     for (pred, actual) in predictions.iter().zip(ground_truth.iter()) {
         match (actual, pred) {
-            (CausalDirection::Cause, CausalDirection::Cause) => confusion.true_cause_pred_cause += 1,
-            (CausalDirection::Cause, CausalDirection::Effect) => confusion.true_cause_pred_effect += 1,
-            (CausalDirection::Cause, CausalDirection::Unknown) => confusion.true_cause_pred_unknown += 1,
-            (CausalDirection::Effect, CausalDirection::Cause) => confusion.true_effect_pred_cause += 1,
-            (CausalDirection::Effect, CausalDirection::Effect) => confusion.true_effect_pred_effect += 1,
-            (CausalDirection::Effect, CausalDirection::Unknown) => confusion.true_effect_pred_unknown += 1,
-            (CausalDirection::Unknown, CausalDirection::Cause) => confusion.true_unknown_pred_cause += 1,
-            (CausalDirection::Unknown, CausalDirection::Effect) => confusion.true_unknown_pred_effect += 1,
-            (CausalDirection::Unknown, CausalDirection::Unknown) => confusion.true_unknown_pred_unknown += 1,
+            (CausalDirection::Cause, CausalDirection::Cause) => {
+                confusion.true_cause_pred_cause += 1
+            }
+            (CausalDirection::Cause, CausalDirection::Effect) => {
+                confusion.true_cause_pred_effect += 1
+            }
+            (CausalDirection::Cause, CausalDirection::Unknown) => {
+                confusion.true_cause_pred_unknown += 1
+            }
+            (CausalDirection::Effect, CausalDirection::Cause) => {
+                confusion.true_effect_pred_cause += 1
+            }
+            (CausalDirection::Effect, CausalDirection::Effect) => {
+                confusion.true_effect_pred_effect += 1
+            }
+            (CausalDirection::Effect, CausalDirection::Unknown) => {
+                confusion.true_effect_pred_unknown += 1
+            }
+            (CausalDirection::Unknown, CausalDirection::Cause) => {
+                confusion.true_unknown_pred_cause += 1
+            }
+            (CausalDirection::Unknown, CausalDirection::Effect) => {
+                confusion.true_unknown_pred_effect += 1
+            }
+            (CausalDirection::Unknown, CausalDirection::Unknown) => {
+                confusion.true_unknown_pred_unknown += 1
+            }
         }
     }
 
@@ -738,21 +765,29 @@ fn compute_avg_rank_improvement(results: &[AsymmetricRetrievalResult]) -> f64 {
     let improvements: Vec<f64> = results
         .iter()
         .filter_map(|r| {
-            let asym_rank = r.asymmetric_ranks.iter().enumerate().find_map(|(pos, &idx)| {
-                if r.relevant_indices.contains(&idx) {
-                    Some(pos + 1)
-                } else {
-                    None
-                }
-            });
+            let asym_rank = r
+                .asymmetric_ranks
+                .iter()
+                .enumerate()
+                .find_map(|(pos, &idx)| {
+                    if r.relevant_indices.contains(&idx) {
+                        Some(pos + 1)
+                    } else {
+                        None
+                    }
+                });
 
-            let sym_rank = r.symmetric_ranks.iter().enumerate().find_map(|(pos, &idx)| {
-                if r.relevant_indices.contains(&idx) {
-                    Some(pos + 1)
-                } else {
-                    None
-                }
-            });
+            let sym_rank = r
+                .symmetric_ranks
+                .iter()
+                .enumerate()
+                .find_map(|(pos, &idx)| {
+                    if r.relevant_indices.contains(&idx) {
+                        Some(pos + 1)
+                    } else {
+                        None
+                    }
+                });
 
             match (asym_rank, sym_rank) {
                 (Some(a), Some(s)) if s > 0 => {
@@ -785,17 +820,24 @@ fn compute_overlap_correlation(results: &[AsymmetricRetrievalResult]) -> f64 {
                 return None;
             }
 
-            let avg_overlap =
-                r.intervention_overlaps.iter().map(|&x| x as f64).sum::<f64>()
-                    / r.intervention_overlaps.len() as f64;
+            let avg_overlap = r
+                .intervention_overlaps
+                .iter()
+                .map(|&x| x as f64)
+                .sum::<f64>()
+                / r.intervention_overlaps.len() as f64;
 
-            let rr = r.asymmetric_ranks.iter().enumerate().find_map(|(pos, &idx)| {
-                if r.relevant_indices.contains(&idx) {
-                    Some(1.0 / (pos + 1) as f64)
-                } else {
-                    None
-                }
-            })?;
+            let rr = r
+                .asymmetric_ranks
+                .iter()
+                .enumerate()
+                .find_map(|(pos, &idx)| {
+                    if r.relevant_indices.contains(&idx) {
+                        Some(1.0 / (pos + 1) as f64)
+                    } else {
+                        None
+                    }
+                })?;
 
             Some((avg_overlap, rr))
         })
@@ -909,7 +951,10 @@ pub fn compute_causal_reasoning_metrics(
         .filter(|r| r.question_type == "cause")
         .count();
     if cause_total > 0 {
-        accuracy_by_type.insert("cause".to_string(), cause_correct as f64 / cause_total as f64);
+        accuracy_by_type.insert(
+            "cause".to_string(),
+            cause_correct as f64 / cause_total as f64,
+        );
     }
 
     let effect_correct = copa_results
@@ -921,7 +966,10 @@ pub fn compute_causal_reasoning_metrics(
         .filter(|r| r.question_type == "effect")
         .count();
     if effect_total > 0 {
-        accuracy_by_type.insert("effect".to_string(), effect_correct as f64 / effect_total as f64);
+        accuracy_by_type.insert(
+            "effect".to_string(),
+            effect_correct as f64 / effect_total as f64,
+        );
     }
 
     // Chain traversal accuracy
@@ -1057,10 +1105,8 @@ pub fn compute_all_causal_metrics(
         &direction_data.ground_truth,
     );
 
-    let asymmetric = compute_asymmetric_retrieval_metrics(
-        &asymmetric_data.results,
-        &asymmetric_data.k_values,
-    );
+    let asymmetric =
+        compute_asymmetric_retrieval_metrics(&asymmetric_data.results, &asymmetric_data.k_values);
 
     let reasoning = compute_causal_reasoning_metrics(
         &reasoning_data.copa_results,
@@ -1323,9 +1369,6 @@ mod tests {
             improvement
         );
 
-        println!(
-            "[VERIFIED] Rank improvement = {} (rank 3 → 1)",
-            improvement
-        );
+        println!("[VERIFIED] Rank improvement = {} (rank 3 → 1)", improvement);
     }
 }

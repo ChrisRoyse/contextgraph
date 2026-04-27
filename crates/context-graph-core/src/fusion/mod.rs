@@ -68,7 +68,11 @@ pub struct EmbedderRanking {
 
 impl EmbedderRanking {
     /// Create a new embedder ranking
-    pub fn new(embedder_name: impl Into<String>, weight: f32, ranked_docs: Vec<(Uuid, f32)>) -> Self {
+    pub fn new(
+        embedder_name: impl Into<String>,
+        weight: f32,
+        ranked_docs: Vec<(Uuid, f32)>,
+    ) -> Self {
         Self {
             embedder_name: embedder_name.into(),
             weight,
@@ -171,7 +175,8 @@ pub fn score_weighted_rrf(
             continue;
         }
 
-        let use_score_weighting = score_weighted_embedders.contains(&ranking.embedder_name.as_str());
+        let use_score_weighting =
+            score_weighted_embedders.contains(&ranking.embedder_name.as_str());
 
         for (rank, (doc_id, similarity)) in ranking.ranked_docs.iter().enumerate() {
             // CORE-M5: Use canonical rrf_contribution formula from aggregation
@@ -333,10 +338,7 @@ pub fn normalize_minmax(scores: &mut [(Uuid, f32)]) -> (f32, f32) {
         return (0.0, 1.0);
     }
 
-    let min_score = scores
-        .iter()
-        .map(|(_, s)| *s)
-        .fold(f32::INFINITY, f32::min);
+    let min_score = scores.iter().map(|(_, s)| *s).fold(f32::INFINITY, f32::min);
     let max_score = scores
         .iter()
         .map(|(_, s)| *s)
@@ -472,17 +474,15 @@ mod tests {
     #[test]
     fn test_rrf_respects_ranking_order() {
         // Test that RRF respects the ranking order, not just the scores
-        let rankings = vec![
-            EmbedderRanking {
-                embedder_name: "E1".to_string(),
-                weight: 1.0,
-                ranked_docs: vec![
-                    (make_uuid(1), 0.99), // rank 1
-                    (make_uuid(2), 0.98), // rank 2
-                    (make_uuid(3), 0.97), // rank 3
-                ],
-            },
-        ];
+        let rankings = vec![EmbedderRanking {
+            embedder_name: "E1".to_string(),
+            weight: 1.0,
+            ranked_docs: vec![
+                (make_uuid(1), 0.99), // rank 1
+                (make_uuid(2), 0.98), // rank 2
+                (make_uuid(3), 0.97), // rank 3
+            ],
+        }];
 
         let results = weighted_rrf(&rankings, 10);
 
@@ -499,11 +499,7 @@ mod tests {
 
     #[test]
     fn test_fuse_rankings_default_strategy() {
-        let rankings = vec![EmbedderRanking::new(
-            "E1",
-            1.0,
-            vec![(make_uuid(1), 0.9)],
-        )];
+        let rankings = vec![EmbedderRanking::new("E1", 1.0, vec![(make_uuid(1), 0.9)])];
 
         // Default strategy should be WeightedRRF
         let results = fuse_rankings(&rankings, FusionStrategy::default(), 10);
@@ -555,10 +551,7 @@ mod tests {
 
     #[test]
     fn test_normalize_minmax_same_scores() {
-        let mut scores = vec![
-            (make_uuid(1), 0.5),
-            (make_uuid(2), 0.5),
-        ];
+        let mut scores = vec![(make_uuid(1), 0.5), (make_uuid(2), 0.5)];
 
         normalize_minmax(&mut scores);
 
@@ -584,14 +577,15 @@ mod tests {
     fn test_score_weighted_rrf_e5_uses_score() {
         // E5 with same rank but different scores should produce different contributions
         let rankings = vec![
-            EmbedderRanking::new("E1", 1.0, vec![
-                (make_uuid(1), 0.9),
-                (make_uuid(2), 0.8),
-            ]),
-            EmbedderRanking::new("E5", 1.0, vec![
-                (make_uuid(1), 0.58), // Strong causal signal
-                (make_uuid(2), 0.12), // Weak causal signal
-            ]),
+            EmbedderRanking::new("E1", 1.0, vec![(make_uuid(1), 0.9), (make_uuid(2), 0.8)]),
+            EmbedderRanking::new(
+                "E5",
+                1.0,
+                vec![
+                    (make_uuid(1), 0.58), // Strong causal signal
+                    (make_uuid(2), 0.12), // Weak causal signal
+                ],
+            ),
         ];
 
         let results = score_weighted_rrf(&rankings, &["E5"], 10);
@@ -607,17 +601,18 @@ mod tests {
         // Both should have doc 1 on top, but score gap should be larger with score-weighted
         let sw_gap = results[0].fused_score - results[1].fused_score;
         let std_gap = standard_results[0].fused_score - standard_results[1].fused_score;
-        assert!(sw_gap > std_gap, "Score-weighted gap {} should be larger than standard gap {}", sw_gap, std_gap);
+        assert!(
+            sw_gap > std_gap,
+            "Score-weighted gap {} should be larger than standard gap {}",
+            sw_gap,
+            std_gap
+        );
     }
 
     #[test]
     fn test_score_weighted_rrf_non_e5_unchanged() {
         // Non-E5 embedders should produce same results as standard RRF
-        let rankings = vec![
-            EmbedderRanking::new("E1", 1.0, vec![
-                (make_uuid(1), 0.9),
-            ]),
-        ];
+        let rankings = vec![EmbedderRanking::new("E1", 1.0, vec![(make_uuid(1), 0.9)])];
 
         let sw_results = score_weighted_rrf(&rankings, &["E5"], 10);
         let std_results = weighted_rrf(&rankings, 10);
@@ -628,9 +623,7 @@ mod tests {
 
     #[test]
     fn test_fuse_rankings_score_weighted_variant() {
-        let rankings = vec![
-            EmbedderRanking::new("E1", 1.0, vec![(make_uuid(1), 0.9)]),
-        ];
+        let rankings = vec![EmbedderRanking::new("E1", 1.0, vec![(make_uuid(1), 0.9)])];
         let results = fuse_rankings(&rankings, FusionStrategy::ScoreWeightedRRF, 10);
         assert_eq!(results.len(), 1);
         // E1 is not in score-weighted list, so should behave like standard RRF

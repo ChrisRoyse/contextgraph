@@ -8,10 +8,13 @@
 
 use std::collections::HashMap;
 
+use super::results_aggregator::AggregatedResults;
+use super::{
+    CheckPriority, PhaseResult, Recommendation, RecommendationCategory, ValidationCheck,
+    ValidationPhase,
+};
 use crate::realdata::config::EmbedderName;
 use crate::realdata::results::AblationResults;
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase, Recommendation, RecommendationCategory};
-use super::results_aggregator::AggregatedResults;
 
 /// Ablation validation results.
 #[derive(Debug, Clone)]
@@ -154,9 +157,14 @@ impl AblationValidator {
             }
 
             // Test: Enhancement embedders improve E1
-            for embedder in &[EmbedderName::E5Causal, EmbedderName::E7Code, EmbedderName::E10Multimodal] {
+            for embedder in &[
+                EmbedderName::E5Causal,
+                EmbedderName::E7Code,
+                EmbedderName::E10Multimodal,
+            ] {
                 if let Some(addition) = ablation.addition_impact.get(embedder) {
-                    let (check, recommendation) = Self::test_enhancement_contribution(*embedder, addition.mrr_change);
+                    let (check, recommendation) =
+                        Self::test_enhancement_contribution(*embedder, addition.mrr_change);
                     if !check.is_passed() {
                         result.all_passed = false;
                     }
@@ -184,19 +192,25 @@ impl AblationValidator {
         if let Some(contributions) = &result.measured_contributions {
             // Test E5 causal contribution
             if let Some(e5_contrib) = contributions.e5_contribution {
-                let check = Self::test_measured_contribution(EmbedderName::E5Causal, e5_contrib, 0.7);
+                let check =
+                    Self::test_measured_contribution(EmbedderName::E5Causal, e5_contrib, 0.7);
                 result.checks.push(check);
             }
 
             // Test E8 graph contribution
             if let Some(e8_contrib) = contributions.e8_contribution {
-                let check = Self::test_measured_contribution(EmbedderName::E8Graph, e8_contrib, 0.05);
+                let check =
+                    Self::test_measured_contribution(EmbedderName::E8Graph, e8_contrib, 0.05);
                 result.checks.push(check);
             }
 
             // Test E10 multimodal contribution
             if let Some(e10_contrib) = contributions.e10_contribution {
-                let check = Self::test_measured_contribution(EmbedderName::E10Multimodal, e10_contrib, 0.05);
+                let check = Self::test_measured_contribution(
+                    EmbedderName::E10Multimodal,
+                    e10_contrib,
+                    0.05,
+                );
                 result.checks.push(check);
             }
         }
@@ -220,7 +234,8 @@ impl AblationValidator {
         let check = ValidationCheck::new(
             "e1_is_foundation",
             "[ARCH-12] E1 is THE semantic foundation",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let semantic = EmbedderName::semantic();
         let e1_in_semantic = semantic.contains(&EmbedderName::E1Semantic);
@@ -229,7 +244,14 @@ impl AblationValidator {
         if e1_in_semantic && e1_has_max_weight {
             check.pass("E1 semantic, weight=1.0", "E1 foundation")
         } else {
-            check.fail(&format!("semantic={}, weight={}", e1_in_semantic, EmbedderName::E1Semantic.topic_weight()), "E1 foundation")
+            check.fail(
+                &format!(
+                    "semantic={}, weight={}",
+                    e1_in_semantic,
+                    EmbedderName::E1Semantic.topic_weight()
+                ),
+                "E1 foundation",
+            )
         }
     }
 
@@ -237,15 +259,19 @@ impl AblationValidator {
         let check = ValidationCheck::new(
             "temporal_excluded",
             "[AP-60] Temporal embedders (E2-E4) MUST NOT count toward topic detection",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let temporal = EmbedderName::temporal();
-        let all_zero = temporal.iter().all(|e| e.topic_weight().abs() < f64::EPSILON);
+        let all_zero = temporal
+            .iter()
+            .all(|e| e.topic_weight().abs() < f64::EPSILON);
 
         if all_zero {
             check.pass("E2-E4 weight=0", "temporal excluded")
         } else {
-            let non_zero: Vec<_> = temporal.iter()
+            let non_zero: Vec<_> = temporal
+                .iter()
                 .filter(|e| e.topic_weight().abs() >= f64::EPSILON)
                 .map(|e| format!("{}={}", e.as_str(), e.topic_weight()))
                 .collect();
@@ -257,10 +283,15 @@ impl AblationValidator {
         let check = ValidationCheck::new(
             "enhancement_embedders_defined",
             "Enhancement embedders (E5, E7, E10) defined for contribution analysis",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let semantic = EmbedderName::semantic();
-        let enhancers = [EmbedderName::E5Causal, EmbedderName::E7Code, EmbedderName::E10Multimodal];
+        let enhancers = [
+            EmbedderName::E5Causal,
+            EmbedderName::E7Code,
+            EmbedderName::E10Multimodal,
+        ];
         let all_defined = enhancers.iter().all(|e| semantic.contains(e));
 
         if all_defined {
@@ -274,7 +305,8 @@ impl AblationValidator {
         let check = ValidationCheck::new(
             "e1_removal_critical",
             "E1 removal causes >10% MRR degradation",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // MRR change should be negative (degradation) and > 10%
         let is_critical = mrr_change < -CRITICAL_DEGRADATION_THRESHOLD;
@@ -282,31 +314,46 @@ impl AblationValidator {
         if is_critical {
             check.pass(&format!("{:.1}% drop", mrr_change * 100.0), "> 10% drop")
         } else {
-            check.fail(&format!("{:.1}% change", mrr_change * 100.0), "> 10% drop")
+            check
+                .fail(&format!("{:.1}% change", mrr_change * 100.0), "> 10% drop")
                 .with_details("E1 as foundation should be critical")
         }
     }
 
-    fn test_enhancement_contribution(embedder: EmbedderName, mrr_change: f64) -> (ValidationCheck, Option<Recommendation>) {
+    fn test_enhancement_contribution(
+        embedder: EmbedderName,
+        mrr_change: f64,
+    ) -> (ValidationCheck, Option<Recommendation>) {
         let check = ValidationCheck::new(
             &format!("{}_enhancement_contribution", embedder.as_str()),
             &format!("{} improves E1 by >5%", embedder.as_str()),
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let meets_target = mrr_change >= ENHANCEMENT_TARGET;
 
         if meets_target {
-            (check.pass(&format!("{:.1}% improvement", mrr_change * 100.0), "> 5%"), None)
+            (
+                check.pass(&format!("{:.1}% improvement", mrr_change * 100.0), "> 5%"),
+                None,
+            )
         } else {
             let rec = Recommendation {
                 category: RecommendationCategory::Performance,
-                description: format!("{} contribution {:.1}% below 5% target", embedder.as_str(), mrr_change * 100.0),
+                description: format!(
+                    "{} contribution {:.1}% below 5% target",
+                    embedder.as_str(),
+                    mrr_change * 100.0
+                ),
                 component: embedder.as_str().to_string(),
                 current: Some(format!("{:.1}%", mrr_change * 100.0)),
                 recommended: Some("> 5%".to_string()),
                 reason: "Enhancement embedders should meaningfully improve E1 baseline".to_string(),
             };
-            (check.warning(&format!("{:.1}%", mrr_change * 100.0), "> 5%"), Some(rec))
+            (
+                check.warning(&format!("{:.1}%", mrr_change * 100.0), "> 5%"),
+                Some(rec),
+            )
         }
     }
 
@@ -314,7 +361,8 @@ impl AblationValidator {
         let check = ValidationCheck::new(
             &format!("{}_temporal_impact", embedder.as_str()),
             &format!("{} removal has minimal topic impact", embedder.as_str()),
-        ).with_priority(CheckPriority::Medium);
+        )
+        .with_priority(CheckPriority::Medium);
 
         // Temporal removal should have minimal impact since they don't contribute to topics
         // We expect |mrr_change| < 5% for topic-based metrics
@@ -323,13 +371,18 @@ impl AblationValidator {
         if minimal_impact {
             check.pass(&format!("{:.1}% change", mrr_change * 100.0), "< 5% change")
         } else {
-            check.warning(&format!("{:.1}% change", mrr_change * 100.0), "< 5% change")
-                .with_details("Temporal embedders shouldn't affect topic-based metrics significantly")
+            check
+                .warning(&format!("{:.1}% change", mrr_change * 100.0), "< 5% change")
+                .with_details(
+                    "Temporal embedders shouldn't affect topic-based metrics significantly",
+                )
         }
     }
 
     /// Classify embedders based on ablation impact.
-    pub fn classify_embedders(removal_impacts: &HashMap<EmbedderName, f64>) -> (Vec<EmbedderName>, Vec<EmbedderName>) {
+    pub fn classify_embedders(
+        removal_impacts: &HashMap<EmbedderName, f64>,
+    ) -> (Vec<EmbedderName>, Vec<EmbedderName>) {
         let mut critical = Vec::new();
         let mut redundant = Vec::new();
 
@@ -345,11 +398,16 @@ impl AblationValidator {
     }
 
     /// Test measured contribution from benchmark results.
-    fn test_measured_contribution(embedder: EmbedderName, contribution: f64, target: f64) -> ValidationCheck {
+    fn test_measured_contribution(
+        embedder: EmbedderName,
+        contribution: f64,
+        target: f64,
+    ) -> ValidationCheck {
         let check = ValidationCheck::new(
             &format!("{}_measured_contribution", embedder.as_str()),
             &format!("{} measured contribution (benchmark)", embedder.as_str()),
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         if contribution >= target {
             check.pass(
@@ -357,10 +415,12 @@ impl AblationValidator {
                 &format!(">= {:.0}%", target * 100.0),
             )
         } else if contribution >= target * 0.5 {
-            check.warning(
-                &format!("{:.1}%", contribution * 100.0),
-                &format!(">= {:.0}%", target * 100.0),
-            ).with_details("Below target but showing positive contribution")
+            check
+                .warning(
+                    &format!("{:.1}%", contribution * 100.0),
+                    &format!(">= {:.0}%", target * 100.0),
+                )
+                .with_details("Below target but showing positive contribution")
         } else {
             check.fail(
                 &format!("{:.1}%", contribution * 100.0),
@@ -409,7 +469,9 @@ mod tests {
 
     #[test]
     fn test_with_aggregated_results() {
-        use super::super::results_aggregator::{AggregatedResults, GraphMetrics, MultimodalMetrics};
+        use super::super::results_aggregator::{
+            AggregatedResults, GraphMetrics, MultimodalMetrics,
+        };
 
         let mut agg = AggregatedResults::default();
         agg.graph = Some(GraphMetrics {

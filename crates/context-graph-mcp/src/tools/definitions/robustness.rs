@@ -116,9 +116,19 @@ mod tests {
         assert_eq!(def.name, "search_robust");
         assert!(def.description.contains("E9"));
         assert!(def.description.contains("typo"));
-        let required = def.input_schema.get("required").unwrap().as_array().unwrap();
+        let required = def
+            .input_schema
+            .get("required")
+            .unwrap()
+            .as_array()
+            .unwrap();
         assert!(required.iter().any(|v| v.as_str() == Some("query")));
-        let props = def.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = def
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(props.contains_key("query"));
         assert!(props.contains_key("topK"));
         assert!(props.contains_key("e9DiscoveryThreshold"));
@@ -128,7 +138,12 @@ mod tests {
     #[test]
     fn test_schema_defaults_and_thresholds() {
         let def = search_robust_definition();
-        let props = def.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = def
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert_eq!(props["query"]["minLength"], 3);
         assert_eq!(props["e9DiscoveryThreshold"]["default"], 0.08);
         assert_eq!(props["e1WeaknessThreshold"]["default"], 0.5);

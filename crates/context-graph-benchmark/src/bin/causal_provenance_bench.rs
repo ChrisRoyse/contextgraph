@@ -315,39 +315,87 @@ async fn main() {
     // Phase 1: Validate source span types exist and work
     println!("═══ Phase 1: Type Validation ═══════════════════════════════════════════════════");
     let type_validation = validate_source_span_types();
-    println!("  SourceSpan type exists: {}", type_validation.span_type_exists);
-    println!("  CausalSourceSpan exists: {}", type_validation.causal_span_exists);
-    println!("  is_valid_for() works: {}", type_validation.validation_works);
-    println!("  matches_source() works: {}", type_validation.matching_works);
+    println!(
+        "  SourceSpan type exists: {}",
+        type_validation.span_type_exists
+    );
+    println!(
+        "  CausalSourceSpan exists: {}",
+        type_validation.causal_span_exists
+    );
+    println!(
+        "  is_valid_for() works: {}",
+        type_validation.validation_works
+    );
+    println!(
+        "  matches_source() works: {}",
+        type_validation.matching_works
+    );
     println!();
 
     // Phase 2: Validate provenance accuracy on test corpus
     println!("═══ Phase 2: Provenance Accuracy Validation ═══════════════════════════════════");
     let provenance_metrics = validate_provenance_accuracy();
-    println!("  Relationships analyzed: {}", provenance_metrics.relationships_analyzed);
+    println!(
+        "  Relationships analyzed: {}",
+        provenance_metrics.relationships_analyzed
+    );
     println!("  Spans found: {}", provenance_metrics.spans_found);
-    println!("  Span populated rate: {:.1}%", provenance_metrics.span_populated_pct);
-    println!("  Span accuracy rate: {:.1}%", provenance_metrics.span_accuracy_pct);
-    println!("  Offset valid rate: {:.1}%", provenance_metrics.offset_valid_pct);
-    println!("  Text excerpt match rate: {:.1}%", provenance_metrics.text_excerpt_match_pct);
+    println!(
+        "  Span populated rate: {:.1}%",
+        provenance_metrics.span_populated_pct
+    );
+    println!(
+        "  Span accuracy rate: {:.1}%",
+        provenance_metrics.span_accuracy_pct
+    );
+    println!(
+        "  Offset valid rate: {:.1}%",
+        provenance_metrics.offset_valid_pct
+    );
+    println!(
+        "  Text excerpt match rate: {:.1}%",
+        provenance_metrics.text_excerpt_match_pct
+    );
     println!();
 
     // Phase 3: Validate dual storage correctness
     println!("═══ Phase 3: Dual Storage Validation ══════════════════════════════════════════");
     let dual_storage = validate_dual_storage();
-    println!("  Source link valid: {:.1}%", dual_storage.source_link_valid_pct);
-    println!("  Causal link valid: {:.1}%", dual_storage.causal_link_valid_pct);
-    println!("  Avg embeddings per rel: {:.1}", dual_storage.avg_embeddings_per_rel);
+    println!(
+        "  Source link valid: {:.1}%",
+        dual_storage.source_link_valid_pct
+    );
+    println!(
+        "  Causal link valid: {:.1}%",
+        dual_storage.causal_link_valid_pct
+    );
+    println!(
+        "  Avg embeddings per rel: {:.1}",
+        dual_storage.avg_embeddings_per_rel
+    );
     println!();
 
     // Phase 4: Validate MCP display
     println!("═══ Phase 4: MCP Display Validation ═══════════════════════════════════════════");
     let mcp_display = validate_mcp_display();
     println!("  Results evaluated: {}", mcp_display.results_evaluated);
-    println!("  Provenance populated: {:.1}%", mcp_display.provenance_populated_pct);
-    println!("  Extraction spans populated: {:.1}%", mcp_display.extraction_spans_populated_pct);
-    println!("  File path populated: {:.1}%", mcp_display.file_path_populated_pct);
-    println!("  Line numbers populated: {:.1}%", mcp_display.line_numbers_populated_pct);
+    println!(
+        "  Provenance populated: {:.1}%",
+        mcp_display.provenance_populated_pct
+    );
+    println!(
+        "  Extraction spans populated: {:.1}%",
+        mcp_display.extraction_spans_populated_pct
+    );
+    println!(
+        "  File path populated: {:.1}%",
+        mcp_display.file_path_populated_pct
+    );
+    println!(
+        "  Line numbers populated: {:.1}%",
+        mcp_display.line_numbers_populated_pct
+    );
     println!();
 
     // Check performance targets
@@ -374,45 +422,92 @@ async fn main() {
     // Generate recommendations
     let mut recommendations = Vec::new();
     if !targets.span_populated_target_met {
-        recommendations.push("CRITICAL: Improve LLM prompt to ensure source_spans are always populated".to_string());
+        recommendations.push(
+            "CRITICAL: Improve LLM prompt to ensure source_spans are always populated".to_string(),
+        );
     }
     if !targets.span_accuracy_target_met {
-        recommendations.push("CRITICAL: Verify GBNF grammar produces valid character offsets".to_string());
+        recommendations
+            .push("CRITICAL: Verify GBNF grammar produces valid character offsets".to_string());
     }
     if !targets.offset_valid_target_met {
         recommendations.push("CRITICAL: Ensure offsets are within source text bounds".to_string());
     }
     if !targets.source_link_target_met {
-        recommendations.push("CRITICAL: Fix source_fingerprint_id linking in CausalRelationship storage".to_string());
+        recommendations.push(
+            "CRITICAL: Fix source_fingerprint_id linking in CausalRelationship storage".to_string(),
+        );
     }
 
     // Print final results
     println!("═══ Performance Targets ═════════════════════════════════════════════════════════");
-    println!("  Span populated (>95%):     {} ({}%)",
-             if targets.span_populated_target_met { "✓ PASS" } else { "✗ FAIL" },
-             provenance_metrics.span_populated_pct);
-    println!("  Span accuracy (>90%):      {} ({}%)",
-             if targets.span_accuracy_target_met { "✓ PASS" } else { "✗ FAIL" },
-             provenance_metrics.span_accuracy_pct);
-    println!("  Offset validity (100%):    {} ({}%)",
-             if targets.offset_valid_target_met { "✓ PASS" } else { "✗ FAIL" },
-             provenance_metrics.offset_valid_pct);
-    println!("  Source link (100%):        {} ({}%)",
-             if targets.source_link_target_met { "✓ PASS" } else { "✗ FAIL" },
-             dual_storage.source_link_valid_pct);
-    println!("  Provenance display (100%): {} ({}%)",
-             if targets.provenance_display_target_met { "✓ PASS" } else { "✗ FAIL" },
-             mcp_display.provenance_populated_pct);
+    println!(
+        "  Span populated (>95%):     {} ({}%)",
+        if targets.span_populated_target_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        provenance_metrics.span_populated_pct
+    );
+    println!(
+        "  Span accuracy (>90%):      {} ({}%)",
+        if targets.span_accuracy_target_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        provenance_metrics.span_accuracy_pct
+    );
+    println!(
+        "  Offset validity (100%):    {} ({}%)",
+        if targets.offset_valid_target_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        provenance_metrics.offset_valid_pct
+    );
+    println!(
+        "  Source link (100%):        {} ({}%)",
+        if targets.source_link_target_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        dual_storage.source_link_valid_pct
+    );
+    println!(
+        "  Provenance display (100%): {} ({}%)",
+        if targets.provenance_display_target_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        mcp_display.provenance_populated_pct
+    );
     println!();
 
     if targets.all_critical_passed {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✓ ALL CRITICAL TARGETS PASSED                              ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✓ ALL CRITICAL TARGETS PASSED                              ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     } else {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✗ SOME CRITICAL TARGETS FAILED                             ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✗ SOME CRITICAL TARGETS FAILED                             ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     let elapsed = start_time.elapsed();
@@ -444,7 +539,8 @@ async fn main() {
     // Write results
     let json = serde_json::to_string_pretty(&results).expect("Failed to serialize results");
     let mut file = File::create(&args.output_path).expect("Failed to create output file");
-    file.write_all(json.as_bytes()).expect("Failed to write results");
+    file.write_all(json.as_bytes())
+        .expect("Failed to write results");
     println!("\nResults written to: {}", args.output_path.display());
 }
 
@@ -463,12 +559,7 @@ fn validate_source_span_types() -> TypeValidationResult {
     use context_graph_core::types::causal_relationship::CausalSourceSpan;
 
     // Test CausalSourceSpan construction
-    let span = CausalSourceSpan::new(
-        10,
-        50,
-        "This is a test excerpt",
-        "full",
-    );
+    let span = CausalSourceSpan::new(10, 50, "This is a test excerpt", "full");
 
     // Test validation
     let valid_for_100 = span.is_valid_for(100);

@@ -225,9 +225,19 @@ fn run_simulated_evaluation(
 
     // Simulate per-embedder results
     let embedders = [
-        "E1_Semantic", "E2_Recent", "E3_Periodic", "E4_Positional",
-        "E5_Causal", "E6_Sparse", "E7_Code", "E8_Graph",
-        "E9_HDC", "E10_Multi", "E11_Entity", "E12_LateInt", "E13_SPLADE"
+        "E1_Semantic",
+        "E2_Recent",
+        "E3_Periodic",
+        "E4_Positional",
+        "E5_Causal",
+        "E6_Sparse",
+        "E7_Code",
+        "E8_Graph",
+        "E9_HDC",
+        "E10_Multi",
+        "E11_Entity",
+        "E12_LateInt",
+        "E13_SPLADE",
     ];
 
     let mut per_embedder_mrr = HashMap::new();
@@ -247,22 +257,52 @@ fn format_table(results: &RealDataBenchmarkResults) -> String {
     let mut out = String::new();
 
     out.push_str("\n=== BEIR Real Data Benchmark Results ===\n");
-    out.push_str(&format!("Dataset: {} ({} chunks, {} queries, {} qrels)\n",
-        if results.dataset_name.is_empty() { "Unknown" } else { &results.dataset_name },
-        results.chunk_count, results.query_count, results.qrel_count));
+    out.push_str(&format!(
+        "Dataset: {} ({} chunks, {} queries, {} qrels)\n",
+        if results.dataset_name.is_empty() {
+            "Unknown"
+        } else {
+            &results.dataset_name
+        },
+        results.chunk_count,
+        results.query_count,
+        results.qrel_count
+    ));
     out.push_str(&format!("Duration: {}ms\n\n", results.duration_ms));
 
     if results.expected_ndcg10 > 0.0 {
-        out.push_str(&format!("Expected NDCG@10: {:.4} (from BEIR leaderboard)\n", results.expected_ndcg10));
-        out.push_str(&format!("Expected MRR@10:  {:.4}\n\n", results.expected_mrr10));
+        out.push_str(&format!(
+            "Expected NDCG@10: {:.4} (from BEIR leaderboard)\n",
+            results.expected_ndcg10
+        ));
+        out.push_str(&format!(
+            "Expected MRR@10:  {:.4}\n\n",
+            results.expected_mrr10
+        ));
     }
 
     out.push_str("--- Baseline Metrics (Simulated) ---\n");
     out.push_str(&format!("MRR:      {:.4}\n", results.baseline_metrics.mrr));
-    out.push_str(&format!("P@10:     {:.4}\n", results.baseline_metrics.precision_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("R@10:     {:.4}\n", results.baseline_metrics.recall_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("NDCG@10:  {:.4}\n", results.baseline_metrics.ndcg_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("MAP:      {:.4}\n\n", results.baseline_metrics.map));
+    out.push_str(&format!(
+        "P@10:     {:.4}\n",
+        results
+            .baseline_metrics
+            .precision_at
+            .get(&10)
+            .unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "R@10:     {:.4}\n",
+        results.baseline_metrics.recall_at.get(&10).unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "NDCG@10:  {:.4}\n",
+        results.baseline_metrics.ndcg_at.get(&10).unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "MAP:      {:.4}\n\n",
+        results.baseline_metrics.map
+    ));
 
     out.push_str("--- Per-Embedder MRR (Simulated) ---\n");
     let mut sorted: Vec<_> = results.per_embedder_mrr.iter().collect();
@@ -281,11 +321,21 @@ fn format_markdown(results: &RealDataBenchmarkResults) -> String {
     let mut out = String::new();
 
     out.push_str("# BEIR Real Data Benchmark Report\n\n");
-    out.push_str(&format!("**Dataset:** {} | **Chunks:** {} | **Queries:** {} | **QRels:** {}\n\n",
-        if results.dataset_name.is_empty() { "Unknown" } else { &results.dataset_name },
-        results.chunk_count, results.query_count, results.qrel_count));
-    out.push_str(&format!("**Duration:** {}ms | **Started:** {}\n\n",
-        results.duration_ms, results.started_at));
+    out.push_str(&format!(
+        "**Dataset:** {} | **Chunks:** {} | **Queries:** {} | **QRels:** {}\n\n",
+        if results.dataset_name.is_empty() {
+            "Unknown"
+        } else {
+            &results.dataset_name
+        },
+        results.chunk_count,
+        results.query_count,
+        results.qrel_count
+    ));
+    out.push_str(&format!(
+        "**Duration:** {}ms | **Started:** {}\n\n",
+        results.duration_ms, results.started_at
+    ));
 
     if results.expected_ndcg10 > 0.0 {
         out.push_str("## Expected Metrics (BEIR Leaderboard)\n\n");
@@ -299,10 +349,26 @@ fn format_markdown(results: &RealDataBenchmarkResults) -> String {
     out.push_str("| Metric | Value |\n");
     out.push_str("|--------|-------|\n");
     out.push_str(&format!("| MRR | {:.4} |\n", results.baseline_metrics.mrr));
-    out.push_str(&format!("| P@10 | {:.4} |\n", results.baseline_metrics.precision_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("| R@10 | {:.4} |\n", results.baseline_metrics.recall_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("| NDCG@10 | {:.4} |\n", results.baseline_metrics.ndcg_at.get(&10).unwrap_or(&0.0)));
-    out.push_str(&format!("| MAP | {:.4} |\n\n", results.baseline_metrics.map));
+    out.push_str(&format!(
+        "| P@10 | {:.4} |\n",
+        results
+            .baseline_metrics
+            .precision_at
+            .get(&10)
+            .unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "| R@10 | {:.4} |\n",
+        results.baseline_metrics.recall_at.get(&10).unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "| NDCG@10 | {:.4} |\n",
+        results.baseline_metrics.ndcg_at.get(&10).unwrap_or(&0.0)
+    ));
+    out.push_str(&format!(
+        "| MAP | {:.4} |\n\n",
+        results.baseline_metrics.map
+    ));
 
     out.push_str("## Per-Embedder MRR (Simulated)\n\n");
     out.push_str("| Embedder | MRR |\n");

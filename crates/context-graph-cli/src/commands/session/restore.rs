@@ -172,7 +172,10 @@ fn handle_startup_source(args: &RestoreIdentityArgs) -> i32 {
 
     // Check if cache is warm
     if let Some(snapshot) = SessionCache::get() {
-        info!("restore-identity: using cached session {}", snapshot.session_id);
+        info!(
+            "restore-identity: using cached session {}",
+            snapshot.session_id
+        );
         output_result(&snapshot, "startup", args.format);
         return 0;
     }
@@ -215,7 +218,8 @@ fn output_result(snapshot: &SessionSnapshot, source: &str, format: OutputFormat)
         OutputFormat::Prd => {
             // PRD Section 15.2 format (~100 tokens)
             // Use integration as a proxy for coherence level
-            let coherence_level = (snapshot.integration + snapshot.reflection + snapshot.differentiation) / 3.0;
+            let coherence_level =
+                (snapshot.integration + snapshot.reflection + snapshot.differentiation) / 3.0;
             let state = CoherenceState::from_level(coherence_level);
             println!("## Session State");
             println!(
@@ -321,9 +325,15 @@ mod tests {
 
         // Verify JSON contains expected fields
         assert!(json.contains("\"session_id\""), "JSON must have session_id");
-        assert!(json.contains("\"integration\""), "JSON must have integration");
+        assert!(
+            json.contains("\"integration\""),
+            "JSON must have integration"
+        );
         assert!(json.contains("\"reflection\""), "JSON must have reflection");
-        assert!(json.contains("\"differentiation\""), "JSON must have differentiation");
+        assert!(
+            json.contains("\"differentiation\""),
+            "JSON must have differentiation"
+        );
 
         println!("RESULT: PASS - Output format verified");
     }

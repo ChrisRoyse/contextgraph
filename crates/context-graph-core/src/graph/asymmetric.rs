@@ -193,7 +193,8 @@ impl ConnectivityContext {
 
         // Entity overlap (primary factor)
         let self_entities: std::collections::HashSet<_> = self.connected_entities.iter().collect();
-        let other_entities: std::collections::HashSet<_> = other.connected_entities.iter().collect();
+        let other_entities: std::collections::HashSet<_> =
+            other.connected_entities.iter().collect();
 
         let entity_intersection = self_entities.intersection(&other_entities).count();
         let entity_union = self_entities.union(&other_entities).count();
@@ -561,7 +562,7 @@ pub fn detect_graph_query_intent(query: &str) -> GraphDirection {
     // Target-seeking indicators: user wants to find things that X POINTS TO
     // "What does X import?" → looking for targets of X
     let target_seeking_indicators = [
-        "what does",  // "what does X import/use/call"
+        "what does", // "what does X import/use/call"
         "dependencies of",
         "imports of",
         "what are the imports",
@@ -575,7 +576,7 @@ pub fn detect_graph_query_intent(query: &str) -> GraphDirection {
         "find imports",
         "get dependencies",
         "get imports",
-        "imports",  // standalone "imports" often means "show imports"
+        "imports", // standalone "imports" often means "show imports"
         "depends",
         "requires",
     ];
@@ -648,7 +649,8 @@ pub fn rank_by_connectivity(
                 GraphDirection::Unknown
             };
 
-            let direction_mod = GraphDirection::direction_modifier(query_direction, result_direction);
+            let direction_mod =
+                GraphDirection::direction_modifier(query_direction, result_direction);
 
             (*id, blended * direction_mod)
         })
@@ -1109,15 +1111,24 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let sim = cosine_similarity_f32(&a, &b);
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have sim=1.0");
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have sim=1.0"
+        );
 
         let c = vec![0.0, 1.0, 0.0];
         let sim_ortho = cosine_similarity_f32(&a, &c);
-        assert!(sim_ortho.abs() < 1e-6, "Orthogonal vectors should have sim=0.0");
+        assert!(
+            sim_ortho.abs() < 1e-6,
+            "Orthogonal vectors should have sim=0.0"
+        );
 
         let d = vec![-1.0, 0.0, 0.0];
         let sim_opp = cosine_similarity_f32(&a, &d);
-        assert!((sim_opp - (-1.0)).abs() < 1e-6, "Opposite vectors should have sim=-1.0");
+        assert!(
+            (sim_opp - (-1.0)).abs() < 1e-6,
+            "Opposite vectors should have sim=-1.0"
+        );
 
         println!("[VERIFIED] cosine_similarity_f32 works correctly");
     }
@@ -1179,7 +1190,9 @@ mod tests {
         let id2 = uuid::Uuid::new_v4();
         let id3 = uuid::Uuid::new_v4();
 
-        let ctx1 = ConnectivityContext::new().with_entity("utils").with_entity("config");
+        let ctx1 = ConnectivityContext::new()
+            .with_entity("utils")
+            .with_entity("config");
         let ctx2 = ConnectivityContext::new().with_entity("database");
         let ctx3 = ConnectivityContext::new().with_entity("utils");
 

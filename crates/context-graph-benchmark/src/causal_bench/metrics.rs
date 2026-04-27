@@ -379,10 +379,7 @@ pub fn causal_gate_tpr_tnr(
 /// Compute query intent detection accuracy and confusion matrix.
 ///
 /// Classes: 0=cause, 1=effect, 2=unknown
-pub fn query_intent_accuracy(
-    predicted: &[&str],
-    actual: &[&str],
-) -> (f32, ConfusionMatrix) {
+pub fn query_intent_accuracy(predicted: &[&str], actual: &[&str]) -> (f32, ConfusionMatrix) {
     let mut cm = ConfusionMatrix::new();
 
     if predicted.len() != actual.len() || predicted.is_empty() {
@@ -436,11 +433,7 @@ pub fn retrieval_mrr(ranked_results: &[Vec<String>], expected_ids: &[String]) ->
 }
 
 /// Compute NDCG@K for binary relevance.
-pub fn retrieval_ndcg_at_k(
-    ranked_results: &[String],
-    expected_ids: &[String],
-    k: usize,
-) -> f32 {
+pub fn retrieval_ndcg_at_k(ranked_results: &[String], expected_ids: &[String], k: usize) -> f32 {
     if k == 0 || ranked_results.is_empty() {
         return 0.0;
     }
@@ -465,9 +458,7 @@ pub fn retrieval_ndcg_at_k(
 
     // Ideal DCG@K
     let ideal_k = k.min(expected_ids.len());
-    let idcg: f64 = (0..ideal_k)
-        .map(|i| 1.0 / (i as f64 + 2.0).log2())
-        .sum();
+    let idcg: f64 = (0..ideal_k).map(|i| 1.0 / (i as f64 + 2.0).log2()).sum();
 
     if idcg < f64::EPSILON {
         0.0
@@ -524,7 +515,12 @@ pub fn make_phase_result(
         if let Some(&actual) = metrics.get(key) {
             // For metrics with "_max" suffix, check actual <= target
             // Otherwise check actual >= target
-            let passes = if key.ends_with("_max") || key.contains("anisotropy") || key.contains("overhead") || key.contains("gap") || key.contains("fp") {
+            let passes = if key.ends_with("_max")
+                || key.contains("anisotropy")
+                || key.contains("overhead")
+                || key.contains("gap")
+                || key.contains("fp")
+            {
                 actual <= target
             } else {
                 actual >= target
@@ -534,7 +530,12 @@ pub fn make_phase_result(
                     "{}: {:.4} (target: {}{:.4})",
                     key,
                     actual,
-                    if key.ends_with("_max") || key.contains("anisotropy") || key.contains("overhead") || key.contains("gap") || key.contains("fp") {
+                    if key.ends_with("_max")
+                        || key.contains("anisotropy")
+                        || key.contains("overhead")
+                        || key.contains("gap")
+                        || key.contains("fp")
+                    {
                         "<="
                     } else {
                         ">="
@@ -710,6 +711,10 @@ mod tests {
             vec![0.0, 0.0, 1.0],
         ];
         let aniso = anisotropy_measure(&vecs);
-        assert!(aniso.abs() < 0.1, "Orthogonal vectors should have low anisotropy: {}", aniso);
+        assert!(
+            aniso.abs() < 0.1,
+            "Orthogonal vectors should have low anisotropy: {}",
+            aniso
+        );
     }
 }

@@ -66,26 +66,26 @@ impl AttentionStrategy for SlidingWindowAttention {
             }
         }
 
-        let window_mask =
-            Tensor::from_slice(&window_mask_data, (1, 1, seq_len, seq_len), device)
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!("SlidingWindowAttention window mask create failed: {}", e),
-                })?;
+        let window_mask = Tensor::from_slice(&window_mask_data, (1, 1, seq_len, seq_len), device)
+            .map_err(|e| EmbeddingError::GpuError {
+            message: format!("SlidingWindowAttention window mask create failed: {}", e),
+        })?;
 
         // Convert window mask to match input dtype
-        let window_mask = window_mask
-            .to_dtype(mask.dtype())
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("SlidingWindowAttention window mask dtype failed: {}", e),
-            })?;
+        let window_mask =
+            window_mask
+                .to_dtype(mask.dtype())
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("SlidingWindowAttention window mask dtype failed: {}", e),
+                })?;
 
         // Combine with existing padding mask by adding both
         // (both use 0 for allowed and -10000 for blocked)
-        let combined_mask = mask
-            .broadcast_add(&window_mask)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("SlidingWindowAttention mask combine failed: {}", e),
-            })?;
+        let combined_mask =
+            mask.broadcast_add(&window_mask)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("SlidingWindowAttention mask combine failed: {}", e),
+                })?;
 
         // K^T: [batch, heads, head_dim, seq_len]
         let k_t = k
@@ -109,11 +109,12 @@ impl AttentionStrategy for SlidingWindowAttention {
         })?;
 
         // Apply combined mask (padding + window)
-        let scores = scores
-            .broadcast_add(&combined_mask)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("SlidingWindowAttention mask add failed: {}", e),
-            })?;
+        let scores =
+            scores
+                .broadcast_add(&combined_mask)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("SlidingWindowAttention mask add failed: {}", e),
+                })?;
 
         // Softmax: window-masked positions get ~0 probability
         // Need F32 for softmax stability with large negative values
@@ -123,11 +124,12 @@ impl AttentionStrategy for SlidingWindowAttention {
                 message: format!("SlidingWindowAttention scores to F32 failed: {}", e),
             })?;
 
-        let attn_probs = candle_nn::ops::softmax(&scores_f32, candle_core::D::Minus1).map_err(
-            |e| EmbeddingError::GpuError {
-                message: format!("SlidingWindowAttention softmax failed: {}", e),
-            },
-        )?;
+        let attn_probs =
+            candle_nn::ops::softmax(&scores_f32, candle_core::D::Minus1).map_err(|e| {
+                EmbeddingError::GpuError {
+                    message: format!("SlidingWindowAttention softmax failed: {}", e),
+                }
+            })?;
 
         // Convert back to original dtype for V matmul
         let attn_probs = attn_probs
@@ -137,11 +139,9 @@ impl AttentionStrategy for SlidingWindowAttention {
             })?;
 
         // Context: [batch, heads, seq_len, head_dim]
-        attn_probs
-            .matmul(v)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("SlidingWindowAttention context matmul failed: {}", e),
-            })
+        attn_probs.matmul(v).map_err(|e| EmbeddingError::GpuError {
+            message: format!("SlidingWindowAttention context matmul failed: {}", e),
+        })
     }
 
     fn name(&self) -> &str {

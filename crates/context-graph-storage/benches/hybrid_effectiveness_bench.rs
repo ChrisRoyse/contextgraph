@@ -181,10 +181,8 @@ fn score_variance(results: &[(Uuid, f32)]) -> f32 {
     }
 
     let mean: f32 = results.iter().map(|(_, s)| s).sum::<f32>() / results.len() as f32;
-    let variance: f32 = results
-        .iter()
-        .map(|(_, s)| (s - mean).powi(2))
-        .sum::<f32>() / results.len() as f32;
+    let variance: f32 =
+        results.iter().map(|(_, s)| (s - mean).powi(2)).sum::<f32>() / results.len() as f32;
 
     variance
 }
@@ -214,8 +212,8 @@ fn result_overlap(a: &[(Uuid, f32)], b: &[(Uuid, f32)]) -> f32 {
 /// then measures which search method returns more diverse results.
 fn bench_diversity_comparison(c: &mut Criterion) {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open RocksDB store");
+    let store =
+        RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open RocksDB store");
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let mut rng = StdRng::seed_from_u64(42);
@@ -230,9 +228,9 @@ fn bench_diversity_comparison(c: &mut Criterion) {
     for i in 0..100 {
         let source_id = Uuid::new_v4();
         let rel = create_clustered_relationship(&mut rng, source_id, i, &base_e5);
-        let id = rt.block_on(async {
-            store.store_causal_relationship(&rel).await
-        }).expect("Failed to store");
+        let id = rt
+            .block_on(async { store.store_causal_relationship(&rel).await })
+            .expect("Failed to store");
 
         // Store for later lookup
         let mut stored = rel.clone();
@@ -250,9 +248,9 @@ fn bench_diversity_comparison(c: &mut Criterion) {
     let mut e5_diversity_samples = Vec::new();
     group.bench_function("measure_e5_only", |b| {
         b.iter(|| {
-            let results = rt.block_on(async {
-                store.search_causal_e5(black_box(&query), true, 10).await
-            }).expect("E5 search failed");
+            let results = rt
+                .block_on(async { store.search_causal_e5(black_box(&query), true, 10).await })
+                .expect("E5 search failed");
 
             let diversity = count_unique_sources(&results, &stored_relationships);
             e5_diversity_samples.push(diversity);
@@ -264,9 +262,13 @@ fn bench_diversity_comparison(c: &mut Criterion) {
     let mut hybrid_diversity_samples = Vec::new();
     group.bench_function("measure_hybrid", |b| {
         b.iter(|| {
-            let results = rt.block_on(async {
-                store.search_causal_e5_hybrid(black_box(&query), true, 10, 0.6, 0.4).await
-            }).expect("Hybrid search failed");
+            let results = rt
+                .block_on(async {
+                    store
+                        .search_causal_e5_hybrid(black_box(&query), true, 10, 0.6, 0.4)
+                        .await
+                })
+                .expect("Hybrid search failed");
 
             let diversity = count_unique_sources(&results, &stored_relationships);
             hybrid_diversity_samples.push(diversity);
@@ -277,13 +279,17 @@ fn bench_diversity_comparison(c: &mut Criterion) {
     group.finish();
 
     // Print diversity analysis
-    let e5_results = rt.block_on(async {
-        store.search_causal_e5(&query, true, 10).await
-    }).expect("E5 search failed");
+    let e5_results = rt
+        .block_on(async { store.search_causal_e5(&query, true, 10).await })
+        .expect("E5 search failed");
 
-    let hybrid_results = rt.block_on(async {
-        store.search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4).await
-    }).expect("Hybrid search failed");
+    let hybrid_results = rt
+        .block_on(async {
+            store
+                .search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4)
+                .await
+        })
+        .expect("Hybrid search failed");
 
     let e5_unique = count_unique_sources(&e5_results, &stored_relationships);
     let hybrid_unique = count_unique_sources(&hybrid_results, &stored_relationships);
@@ -294,8 +300,10 @@ fn bench_diversity_comparison(c: &mut Criterion) {
     println!("\n========== DIVERSITY ANALYSIS ==========");
     println!("E5-only unique sources in top-10:  {}", e5_unique);
     println!("Hybrid unique sources in top-10:   {}", hybrid_unique);
-    println!("Diversity improvement:             {:+.1}%",
-        (hybrid_unique as f32 - e5_unique as f32) / e5_unique as f32 * 100.0);
+    println!(
+        "Diversity improvement:             {:+.1}%",
+        (hybrid_unique as f32 - e5_unique as f32) / e5_unique as f32 * 100.0
+    );
     println!();
     println!("E5-only score variance:  {:.6}", e5_variance);
     println!("Hybrid score variance:   {:.6}", hybrid_variance);
@@ -319,8 +327,8 @@ fn bench_clustering_severity(c: &mut Criterion) {
     for noise in noise_levels {
         // Create fresh store for each noise level
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let store = RocksDbTeleologicalStore::open(temp_dir.path())
-            .expect("Failed to open RocksDB store");
+        let store =
+            RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open RocksDB store");
 
         let mut stored_rels = Vec::new();
 
@@ -347,11 +355,12 @@ fn bench_clustering_severity(c: &mut Criterion) {
                 source_id,
                 0.85,
                 "direct".to_string(),
-            ).with_source_embeddings(e5_source_cause, e5_source_effect);
+            )
+            .with_source_embeddings(e5_source_cause, e5_source_effect);
 
-            let id = rt.block_on(async {
-                store.store_causal_relationship(&rel).await
-            }).expect("Failed to store");
+            let id = rt
+                .block_on(async { store.store_causal_relationship(&rel).await })
+                .expect("Failed to store");
 
             let mut stored = rel.clone();
             stored.id = id;
@@ -360,19 +369,28 @@ fn bench_clustering_severity(c: &mut Criterion) {
 
         let query = generate_clustered_e5_embedding(&base_e5, &mut rng, noise / 2.0);
 
-        let e5_results = rt.block_on(async {
-            store.search_causal_e5(&query, true, 10).await
-        }).expect("E5 search failed");
+        let e5_results = rt
+            .block_on(async { store.search_causal_e5(&query, true, 10).await })
+            .expect("E5 search failed");
 
-        let hybrid_results = rt.block_on(async {
-            store.search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4).await
-        }).expect("Hybrid search failed");
+        let hybrid_results = rt
+            .block_on(async {
+                store
+                    .search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4)
+                    .await
+            })
+            .expect("Hybrid search failed");
 
         let e5_unique = count_unique_sources(&e5_results, &stored_rels);
         let hybrid_unique = count_unique_sources(&hybrid_results, &stored_rels);
 
-        println!("Noise={:.2}: E5 unique={}, Hybrid unique={}, Improvement={:+}",
-            noise, e5_unique, hybrid_unique, hybrid_unique as i32 - e5_unique as i32);
+        println!(
+            "Noise={:.2}: E5 unique={}, Hybrid unique={}, Improvement={:+}",
+            noise,
+            e5_unique,
+            hybrid_unique,
+            hybrid_unique as i32 - e5_unique as i32
+        );
     }
 
     println!("==================================================\n");
@@ -380,17 +398,15 @@ fn bench_clustering_severity(c: &mut Criterion) {
     // Simple benchmark to satisfy criterion
     let mut group = c.benchmark_group("effectiveness/clustering_severity");
     group.sample_size(10);
-    group.bench_function("analysis_complete", |b| {
-        b.iter(|| black_box(42))
-    });
+    group.bench_function("analysis_complete", |b| b.iter(|| black_box(42)));
     group.finish();
 }
 
 /// Benchmark: Measure result stability across multiple queries.
 fn bench_result_stability(c: &mut Criterion) {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open RocksDB store");
+    let store =
+        RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open RocksDB store");
 
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let mut rng = StdRng::seed_from_u64(456);
@@ -402,9 +418,9 @@ fn bench_result_stability(c: &mut Criterion) {
     for i in 0..100 {
         let source_id = Uuid::new_v4();
         let rel = create_clustered_relationship(&mut rng, source_id, i, &base_e5);
-        let id = rt.block_on(async {
-            store.store_causal_relationship(&rel).await
-        }).expect("Failed to store");
+        let id = rt
+            .block_on(async { store.store_causal_relationship(&rel).await })
+            .expect("Failed to store");
 
         let mut stored = rel.clone();
         stored.id = id;
@@ -421,13 +437,17 @@ fn bench_result_stability(c: &mut Criterion) {
     for _ in 0..num_queries {
         let query = generate_clustered_e5_embedding(&base_e5, &mut rng, 0.08);
 
-        let e5_res = rt.block_on(async {
-            store.search_causal_e5(&query, true, 10).await
-        }).expect("E5 search failed");
+        let e5_res = rt
+            .block_on(async { store.search_causal_e5(&query, true, 10).await })
+            .expect("E5 search failed");
 
-        let hybrid_res = rt.block_on(async {
-            store.search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4).await
-        }).expect("Hybrid search failed");
+        let hybrid_res = rt
+            .block_on(async {
+                store
+                    .search_causal_e5_hybrid(&query, true, 10, 0.6, 0.4)
+                    .await
+            })
+            .expect("Hybrid search failed");
 
         e5_all_results.push(e5_res);
         hybrid_all_results.push(hybrid_res);
@@ -438,17 +458,27 @@ fn bench_result_stability(c: &mut Criterion) {
     let mut hybrid_overlaps = Vec::new();
 
     for i in 0..num_queries {
-        for j in (i+1)..num_queries {
+        for j in (i + 1)..num_queries {
             e5_overlaps.push(result_overlap(&e5_all_results[i], &e5_all_results[j]));
-            hybrid_overlaps.push(result_overlap(&hybrid_all_results[i], &hybrid_all_results[j]));
+            hybrid_overlaps.push(result_overlap(
+                &hybrid_all_results[i],
+                &hybrid_all_results[j],
+            ));
         }
     }
 
     let avg_e5_overlap: f32 = e5_overlaps.iter().sum::<f32>() / e5_overlaps.len() as f32;
-    let avg_hybrid_overlap: f32 = hybrid_overlaps.iter().sum::<f32>() / hybrid_overlaps.len() as f32;
+    let avg_hybrid_overlap: f32 =
+        hybrid_overlaps.iter().sum::<f32>() / hybrid_overlaps.len() as f32;
 
-    println!("E5-only avg result overlap:   {:.1}%", avg_e5_overlap * 100.0);
-    println!("Hybrid avg result overlap:    {:.1}%", avg_hybrid_overlap * 100.0);
+    println!(
+        "E5-only avg result overlap:   {:.1}%",
+        avg_e5_overlap * 100.0
+    );
+    println!(
+        "Hybrid avg result overlap:    {:.1}%",
+        avg_hybrid_overlap * 100.0
+    );
     println!();
     println!("Higher overlap = more consistent results for similar queries");
     println!("Lower overlap = more sensitive to query variations");
@@ -457,9 +487,7 @@ fn bench_result_stability(c: &mut Criterion) {
     // Simple benchmark
     let mut group = c.benchmark_group("effectiveness/stability");
     group.sample_size(10);
-    group.bench_function("analysis_complete", |b| {
-        b.iter(|| black_box(42))
-    });
+    group.bench_function("analysis_complete", |b| b.iter(|| black_box(42)));
     group.finish();
 }
 

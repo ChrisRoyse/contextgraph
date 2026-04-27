@@ -92,7 +92,9 @@ pub struct TopicProfile {
 
 impl Default for TopicProfile {
     fn default() -> Self {
-        Self { strengths: [0.0; 14] }
+        Self {
+            strengths: [0.0; 14],
+        }
     }
 }
 
@@ -642,10 +644,8 @@ pub fn build_topic_hierarchy(topics: &mut Vec<Topic>, threshold: f32) -> Vec<Top
     // Pairwise similarity -> union if above threshold
     for i in 0..n {
         for j in (i + 1)..n {
-            let sim = topic_cosine_similarity(
-                &topics[i].profile.strengths,
-                &topics[j].profile.strengths,
-            );
+            let sim =
+                topic_cosine_similarity(&topics[i].profile.strengths, &topics[j].profile.strengths);
             if sim > threshold {
                 union(&mut uf_parent, i, j);
             }
@@ -766,9 +766,7 @@ mod tests {
             weighted
         );
         assert!(!profile.is_topic(), "temporal-only should NOT be topic");
-        println!(
-            "[PASS] test_weighted_agreement_temporal_excluded - temporal contributes 0.0"
-        );
+        println!("[PASS] test_weighted_agreement_temporal_excluded - temporal contributes 0.0");
     }
 
     #[test]
@@ -891,7 +889,10 @@ mod tests {
         s2[Embedder::Causal.index()] = 1.0;
         s2[Embedder::Entity.index()] = 1.0; // relational (0.5)
         let p2 = TopicProfile::new(s2);
-        assert!(p2.is_topic(), "2 semantic + 1 relational = 2.5 should be topic");
+        assert!(
+            p2.is_topic(),
+            "2 semantic + 1 relational = 2.5 should be topic"
+        );
 
         // "2 semantic spaces only = 2.0 -> NOT TOPIC"
         let mut s3 = [0.0f32; 14];
@@ -906,19 +907,26 @@ mod tests {
         s4[Embedder::TemporalPeriodic.index()] = 1.0;
         s4[Embedder::TemporalPositional.index()] = 1.0;
         let p4 = TopicProfile::new(s4);
-        assert!(!p4.is_topic(), "temporal-only = 0.0 should NOT be topic (AP-60)");
+        assert!(
+            !p4.is_topic(),
+            "temporal-only = 0.0 should NOT be topic (AP-60)"
+        );
 
         // "1 semantic + 3 relational = 2.5 -> TOPIC"
         // Note: There are only 2 relational embedders (E8, E11), so 1 semantic + 2 relational = 2.0
         // Let's test with 1 semantic + 2 relational + 1 structural = 2.5
         let mut s5 = [0.0f32; 14];
-        s5[Embedder::Semantic.index()] = 1.0;       // semantic (1.0)
-        s5[Embedder::Graph.index()] = 1.0;      // relational (0.5)
-        s5[Embedder::Entity.index()] = 1.0;         // relational (0.5)
-        s5[Embedder::Hdc.index()] = 1.0;            // structural (0.5)
+        s5[Embedder::Semantic.index()] = 1.0; // semantic (1.0)
+        s5[Embedder::Graph.index()] = 1.0; // relational (0.5)
+        s5[Embedder::Entity.index()] = 1.0; // relational (0.5)
+        s5[Embedder::Hdc.index()] = 1.0; // structural (0.5)
         let p5 = TopicProfile::new(s5);
         let w5 = p5.weighted_agreement();
-        assert!((w5 - 2.5).abs() < 0.001, "1 semantic + 2 relational + 1 structural = 2.5, got {}", w5);
+        assert!(
+            (w5 - 2.5).abs() < 0.001,
+            "1 semantic + 2 relational + 1 structural = 2.5, got {}",
+            w5
+        );
         assert!(p5.is_topic(), "weighted 2.5 should be topic");
 
         println!("[PASS] test_constitution_examples - all verified");
@@ -938,5 +946,4 @@ mod tests {
         assert_eq!(id2, id3);
         println!("[PASS] deterministic_id: same members, different order → same ID");
     }
-
 }

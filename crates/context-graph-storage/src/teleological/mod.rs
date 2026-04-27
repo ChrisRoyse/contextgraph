@@ -54,10 +54,25 @@ mod tests;
 
 // Re-export column family types
 pub use column_families::{
+    // Phase 1.1 Provenance: Audit log column families
+    audit_by_target_cf_options,
+    audit_log_cf_options,
+    // Causal relationship column families
+    causal_by_source_cf_options,
+    causal_relationships_cf_options,
+    // Phase 2: Constellation compiler CFs
+    constellation_by_selector_cf_options,
+    constellations_cf_options,
+    // Phase 3: Contrastive pair miner CFs
+    contrastive_by_anchor_cf_options,
+    contrastive_by_kind_cf_options,
+    contrastive_pairs_cf_options,
+    custom_weight_profiles_cf_options,
     // TASK-STORAGE-P2-001: E12 Late Interaction column family
     e12_late_interaction_cf_options,
     e13_splade_inverted_cf_options,
     e1_matryoshka_128_cf_options,
+    e6_sparse_inverted_cf_options,
     fingerprint_cf_options,
     get_all_cf_descriptors,
     get_all_teleological_cf_descriptors,
@@ -65,42 +80,34 @@ pub use column_families::{
     get_code_cf_descriptors,
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
-    topic_profile_cf_options,
-    // Causal relationship column families
-    causal_by_source_cf_options,
-    causal_relationships_cf_options,
-    CF_CAUSAL_BY_SOURCE,
-    CF_CAUSAL_RELATIONSHIPS,
-    CAUSAL_CFS,
-    CAUSAL_CF_COUNT,
+    importance_history_cf_options,
+    // Phase 4 Lifecycle Provenance: Merge + importance history column families
+    merge_history_cf_options,
     // Quantized embedder column families (TASK-EMB-022)
     quantized_embedder_cf_options,
-    custom_weight_profiles_cf_options,
+    topic_profile_cf_options,
     // Training data export (export_training_corpus MCP tool)
     training_records_cf_options,
     uuid_prefixed_cf_options,
-    CF_TRAINING_RECORDS,
-    // Phase 2: Constellation compiler CFs
-    constellation_by_selector_cf_options,
-    constellations_cf_options,
+    CAUSAL_CFS,
+    CAUSAL_CF_COUNT,
+    CF_AUDIT_BY_TARGET,
+    CF_AUDIT_LOG,
+    CF_CAUSAL_BY_SOURCE,
+    CF_CAUSAL_RELATIONSHIPS,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
-    // Phase 3: Contrastive pair miner CFs
-    contrastive_by_anchor_cf_options,
-    contrastive_by_kind_cf_options,
-    contrastive_pairs_cf_options,
+    // TASK-CONTENT-001: Content column family
+    CF_CONTENT,
     CF_CONTRASTIVE_BY_ANCHOR,
     CF_CONTRASTIVE_BY_KIND,
     CF_CONTRASTIVE_PAIRS,
-    // TASK-CONTENT-001: Content column family
-    CF_CONTENT,
     // TASK-STORAGE-P2-001: E12 Late Interaction column family constant
     CF_E12_LATE_INTERACTION,
     CF_E13_SPLADE_INVERTED,
+    CF_E1_MATRYOSHKA_128,
     // E6 sparse inverted index for dual Stage 1 recall (e6upgrade.md)
     CF_E6_SPARSE_INVERTED,
-    e6_sparse_inverted_cf_options,
-    CF_E1_MATRYOSHKA_128,
     CF_EMB_0,
     CF_EMB_1,
     CF_EMB_10,
@@ -116,21 +123,14 @@ pub use column_families::{
     CF_EMB_8,
     CF_EMB_9,
     CF_FINGERPRINTS,
+    CF_IMPORTANCE_HISTORY,
+    CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,
+    CF_TRAINING_RECORDS,
     QUANTIZED_EMBEDDER_CFS,
     QUANTIZED_EMBEDDER_CF_COUNT,
     TELEOLOGICAL_CFS,
     TELEOLOGICAL_CF_COUNT,
-    // Phase 1.1 Provenance: Audit log column families
-    audit_by_target_cf_options,
-    audit_log_cf_options,
-    CF_AUDIT_BY_TARGET,
-    CF_AUDIT_LOG,
-    // Phase 4 Lifecycle Provenance: Merge + importance history column families
-    merge_history_cf_options,
-    importance_history_cf_options,
-    CF_MERGE_HISTORY,
-    CF_IMPORTANCE_HISTORY,
 };
 
 // Re-export quantized storage types (TASK-EMB-022)
@@ -139,13 +139,13 @@ pub use quantized::{QuantizedFingerprintStorage, QuantizedStorageError, Quantize
 // Re-export schema types
 pub use schema::{
     e13_splade_inverted_key,
+    e1_matryoshka_128_key,
     // E6 sparse inverted index key functions (e6upgrade.md)
     e6_sparse_inverted_key,
-    parse_e6_sparse_key,
-    e1_matryoshka_128_key,
     fingerprint_key,
     parse_e13_splade_key,
     parse_e1_matryoshka_key,
+    parse_e6_sparse_key,
     parse_fingerprint_key,
     parse_topic_profile_key,
     topic_profile_key,
@@ -153,14 +153,9 @@ pub use schema::{
 
 // Re-export serialization types
 pub use serialization::{
-    deserialize_e1_matryoshka_128,
-    deserialize_memory_id_list,
-    deserialize_teleological_fingerprint,
-    deserialize_topic_profile,
-    serialize_e1_matryoshka_128,
-    serialize_memory_id_list,
-    serialize_teleological_fingerprint,
-    serialize_topic_profile,
+    deserialize_e1_matryoshka_128, deserialize_memory_id_list,
+    deserialize_teleological_fingerprint, deserialize_topic_profile, serialize_e1_matryoshka_128,
+    serialize_memory_id_list, serialize_teleological_fingerprint, serialize_topic_profile,
     TELEOLOGICAL_VERSION,
 };
 
@@ -210,6 +205,10 @@ pub use rocksdb_store::{
 pub use search::{
     // MaxSim for E12 ColBERT reranking
     compute_maxsim_direct,
-    EmbedderSearchHit, SearchError, SearchResult, SingleEmbedderSearch, SingleEmbedderSearchConfig,
+    EmbedderSearchHit,
+    SearchError,
+    SearchResult,
+    SingleEmbedderSearch,
+    SingleEmbedderSearchConfig,
     SingleEmbedderSearchResults,
 };

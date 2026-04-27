@@ -3,8 +3,8 @@
 //! This module provides a centralized configuration structure for running
 //! comprehensive benchmarks across all 13 embedders using real HuggingFace data.
 
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Names of the 13 embedders in the fingerprint system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -219,7 +219,7 @@ impl Default for TemporalInjectionConfig {
     fn default() -> Self {
         Self {
             base_timestamp_ms: chrono::Utc::now().timestamp_millis(),
-            recency_span_days: 365, // 1 year span
+            recency_span_days: 365,        // 1 year span
             recency_half_life_secs: 86400, // 1 day half-life
             periodic_enabled: true,
             periodic_hour_clusters: 8, // 3-hour clusters
@@ -242,7 +242,6 @@ pub enum FusionStrategy {
     /// Custom embedder combination.
     Custom,
 }
-
 
 /// Unified benchmark configuration for real data benchmarks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -473,9 +472,15 @@ mod tests {
 
     #[test]
     fn test_embedder_parsing() {
-        assert_eq!(EmbedderName::parse_from("E1"), Some(EmbedderName::E1Semantic));
+        assert_eq!(
+            EmbedderName::parse_from("E1"),
+            Some(EmbedderName::E1Semantic)
+        );
         assert_eq!(EmbedderName::parse_from("e5"), Some(EmbedderName::E5Causal));
-        assert_eq!(EmbedderName::parse_from("CAUSAL"), Some(EmbedderName::E5Causal));
+        assert_eq!(
+            EmbedderName::parse_from("CAUSAL"),
+            Some(EmbedderName::E5Causal)
+        );
         assert_eq!(EmbedderName::parse_from("invalid"), None);
     }
 

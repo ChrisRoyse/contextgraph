@@ -296,7 +296,11 @@ impl NodeMetadata {
     ///
     /// * `operator_id` - Who requested the deletion (user/agent ID)
     /// * `reason` - Why the memory was deleted
-    pub fn mark_deleted_with_metadata(&mut self, operator_id: Option<String>, reason: Option<String>) {
+    pub fn mark_deleted_with_metadata(
+        &mut self,
+        operator_id: Option<String>,
+        reason: Option<String>,
+    ) {
         let now = Utc::now();
         self.deleted = true;
         self.deleted_at = Some(now);

@@ -189,12 +189,12 @@ impl SparsityAnalysisMetrics {
     /// Sparsity health score (how well it matches expectations).
     pub fn health_score(&self) -> f64 {
         // Expected: ~1500 active terms, ~0.95 sparsity
-        let active_terms_score = if self.avg_active_terms >= 500.0 && self.avg_active_terms <= 3000.0
-        {
-            1.0
-        } else {
-            0.5
-        };
+        let active_terms_score =
+            if self.avg_active_terms >= 500.0 && self.avg_active_terms <= 3000.0 {
+                1.0
+            } else {
+                0.5
+            };
 
         let sparsity_score = if self.sparsity_ratio > 0.90 { 1.0 } else { 0.5 };
 
@@ -492,7 +492,10 @@ pub fn compute_sparsity_analysis_metrics(vectors: &[SparseVectorStats]) -> Spars
     let sparsity_ratio = total_zeros as f64 / total_elements as f64;
 
     // Weight statistics
-    let all_weights: Vec<f32> = vectors.iter().flat_map(|v| v.weights.iter().copied()).collect();
+    let all_weights: Vec<f32> = vectors
+        .iter()
+        .flat_map(|v| v.weights.iter().copied())
+        .collect();
     let avg_term_weight = if all_weights.is_empty() {
         0.0
     } else {
@@ -608,7 +611,8 @@ pub fn compute_all_sparse_metrics(
     let keyword_precision = compute_keyword_precision_metrics(keyword_results, k_values);
     let retrieval_quality = compute_retrieval_quality_metrics(keyword_results, k_values);
     let sparsity_analysis = compute_sparsity_analysis_metrics(sparse_vectors);
-    let ablation = compute_e6_ablation_metrics(with_e6_scores, without_e6_scores, query_descriptions);
+    let ablation =
+        compute_e6_ablation_metrics(with_e6_scores, without_e6_scores, query_descriptions);
 
     E6SparseMetrics {
         keyword_precision,
@@ -625,17 +629,15 @@ mod tests {
 
     #[test]
     fn test_keyword_precision_perfect() {
-        let results = vec![
-            KeywordQueryResult {
-                query_id: uuid::Uuid::new_v4(),
-                keyword: "HNSW".to_string(),
-                domain: "TechnicalAcronyms".to_string(),
-                ranked_docs: vec![uuid::Uuid::new_v4()],
-                relevant_docs: vec![],
-                anti_relevant_docs: vec![],
-                scores: vec![0.95],
-            },
-        ];
+        let results = vec![KeywordQueryResult {
+            query_id: uuid::Uuid::new_v4(),
+            keyword: "HNSW".to_string(),
+            domain: "TechnicalAcronyms".to_string(),
+            ranked_docs: vec![uuid::Uuid::new_v4()],
+            relevant_docs: vec![],
+            anti_relevant_docs: vec![],
+            scores: vec![0.95],
+        }];
 
         // Set up so first doc is relevant
         let mut results = results;

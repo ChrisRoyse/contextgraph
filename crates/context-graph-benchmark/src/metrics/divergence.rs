@@ -60,7 +60,11 @@ impl DivergenceMetrics {
         let tpr = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
         let fpr = if fp + tn > 0.0 { fp / (fp + tn) } else { 0.0 };
         let tnr = if tn + fp > 0.0 { tn / (tn + fp) } else { 0.0 };
-        let fnr = if fn_ + tp > 0.0 { fn_ / (fn_ + tp) } else { 0.0 };
+        let fnr = if fn_ + tp > 0.0 {
+            fn_ / (fn_ + tp)
+        } else {
+            0.0
+        };
         let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
         let f1 = if precision + tpr > 0.0 {
             2.0 * precision * tpr / (precision + tpr)
@@ -89,8 +93,8 @@ impl DivergenceMetrics {
             return 0.0;
         }
 
-        let correct = (self.tpr * self.divergent_cases as f64)
-            + (self.tnr * self.non_divergent_cases as f64);
+        let correct =
+            (self.tpr * self.divergent_cases as f64) + (self.tnr * self.non_divergent_cases as f64);
         correct / self.total_cases as f64
     }
 

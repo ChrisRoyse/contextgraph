@@ -69,17 +69,17 @@ use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
 use super::entity_dtos::{
-    transe_score_to_confidence, validation_from_score, EntityByType,
-    EntityEdge, EntityLinkDto, EntityNode, EntitySearchResult, ExtractEntitiesRequest,
-    ExtractEntitiesResponse, FindRelatedEntitiesRequest, FindRelatedEntitiesResponse,
-    GetEntityGraphRequest, GetEntityGraphResponse, InferRelationshipRequest,
-    InferRelationshipResponse, KnowledgeTripleDto, RelatedEntity, RelationCandidate,
-    SearchByEntitiesRequest, SearchByEntitiesResponse, ValidateKnowledgeRequest,
-    ValidateKnowledgeResponse, UNCERTAIN_THRESHOLD, VALID_THRESHOLD,
+    transe_score_to_confidence, validation_from_score, EntityByType, EntityEdge, EntityLinkDto,
+    EntityNode, EntitySearchResult, ExtractEntitiesRequest, ExtractEntitiesResponse,
+    FindRelatedEntitiesRequest, FindRelatedEntitiesResponse, GetEntityGraphRequest,
+    GetEntityGraphResponse, InferRelationshipRequest, InferRelationshipResponse,
+    KnowledgeTripleDto, RelatedEntity, RelationCandidate, SearchByEntitiesRequest,
+    SearchByEntitiesResponse, ValidateKnowledgeRequest, ValidateKnowledgeResponse,
+    UNCERTAIN_THRESHOLD, VALID_THRESHOLD,
 };
 
-use super::helpers::ToolErrorKind;
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 // ============================================================================
 // SIMPLE ENTITY MENTION EXTRACTION
@@ -101,82 +101,324 @@ fn classify_entity(canonical: &str) -> (EntityType, f32) {
             let mut m = std::collections::HashMap::new();
             // Programming Languages
             for lang in [
-                "rust", "python", "javascript", "typescript", "java", "go", "golang",
-                "c", "c++", "cpp", "c#", "csharp", "ruby", "swift", "kotlin", "scala",
-                "haskell", "elixir", "erlang", "clojure", "lua", "perl", "php", "r",
-                "julia", "zig", "nim", "dart", "sql", "bash", "shell", "powershell",
-                "assembly", "wasm", "webassembly", "solidity", "move",
+                "rust",
+                "python",
+                "javascript",
+                "typescript",
+                "java",
+                "go",
+                "golang",
+                "c",
+                "c++",
+                "cpp",
+                "c#",
+                "csharp",
+                "ruby",
+                "swift",
+                "kotlin",
+                "scala",
+                "haskell",
+                "elixir",
+                "erlang",
+                "clojure",
+                "lua",
+                "perl",
+                "php",
+                "r",
+                "julia",
+                "zig",
+                "nim",
+                "dart",
+                "sql",
+                "bash",
+                "shell",
+                "powershell",
+                "assembly",
+                "wasm",
+                "webassembly",
+                "solidity",
+                "move",
             ] {
                 m.insert(lang, EntityType::ProgrammingLanguage);
             }
             // Databases
             for db in [
-                "postgresql", "postgres", "mysql", "mariadb", "sqlite", "mongodb",
-                "redis", "cassandra", "dynamodb", "couchdb", "neo4j", "elasticsearch",
-                "opensearch", "rocksdb", "leveldb", "cockroachdb", "tidb", "vitess",
-                "clickhouse", "influxdb", "timescaledb", "scylladb", "foundationdb",
-                "memcached", "etcd", "meilisearch", "pinecone", "weaviate", "qdrant",
-                "milvus", "chromadb", "supabase", "firebase", "fauna", "planetscale",
-                "neon", "turso", "surrealdb", "duckdb", "snowflake", "bigquery",
-                "redshift", "databricks", "diesel",
+                "postgresql",
+                "postgres",
+                "mysql",
+                "mariadb",
+                "sqlite",
+                "mongodb",
+                "redis",
+                "cassandra",
+                "dynamodb",
+                "couchdb",
+                "neo4j",
+                "elasticsearch",
+                "opensearch",
+                "rocksdb",
+                "leveldb",
+                "cockroachdb",
+                "tidb",
+                "vitess",
+                "clickhouse",
+                "influxdb",
+                "timescaledb",
+                "scylladb",
+                "foundationdb",
+                "memcached",
+                "etcd",
+                "meilisearch",
+                "pinecone",
+                "weaviate",
+                "qdrant",
+                "milvus",
+                "chromadb",
+                "supabase",
+                "firebase",
+                "fauna",
+                "planetscale",
+                "neon",
+                "turso",
+                "surrealdb",
+                "duckdb",
+                "snowflake",
+                "bigquery",
+                "redshift",
+                "databricks",
+                "diesel",
             ] {
                 m.insert(db, EntityType::Database);
             }
             // Cloud
             for cloud in [
-                "aws", "azure", "gcp", "google cloud", "digitalocean", "heroku",
-                "vercel", "netlify", "cloudflare", "fly.io", "railway", "render",
-                "s3", "ec2", "lambda", "ecs", "eks", "fargate", "rds", "sqs", "sns",
-                "cloudfront", "route53", "iam", "vpc", "kinesis", "dynamodb",
-                "us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1",
+                "aws",
+                "azure",
+                "gcp",
+                "google cloud",
+                "digitalocean",
+                "heroku",
+                "vercel",
+                "netlify",
+                "cloudflare",
+                "fly.io",
+                "railway",
+                "render",
+                "s3",
+                "ec2",
+                "lambda",
+                "ecs",
+                "eks",
+                "fargate",
+                "rds",
+                "sqs",
+                "sns",
+                "cloudfront",
+                "route53",
+                "iam",
+                "vpc",
+                "kinesis",
+                "dynamodb",
+                "us-east-1",
+                "us-west-2",
+                "eu-west-1",
+                "ap-southeast-1",
             ] {
                 m.insert(cloud, EntityType::Cloud);
             }
             // Frameworks
             for fw in [
-                "react", "angular", "vue", "svelte", "next.js", "nextjs", "nuxt",
-                "remix", "gatsby", "express", "fastapi", "django", "flask", "rails",
-                "spring", "spring boot", "springboot", "actix", "axum", "rocket",
-                "warp", "hyper", "tokio", "serde", "diesel", "sqlx", "sea-orm",
-                "node.js", "nodejs", "deno", "bun", "electron", "tauri",
-                "tensorflow", "pytorch", "keras", "scikit-learn", "pandas", "numpy",
-                "docker", "kubernetes", "k8s", "terraform", "ansible", "helm",
-                "prometheus", "grafana", "datadog", "jenkins", "github actions",
-                "webpack", "vite", "esbuild", "rollup", "turbopack",
-                "tailwind", "bootstrap", "material-ui", "chakra-ui",
-                "jest", "pytest", "junit", "mocha", "cypress", "playwright",
-                "graphql", "grpc", "protobuf", "openapi", "swagger",
-                "jwt", "oauth", "oauth2", "saml", "oidc",
+                "react",
+                "angular",
+                "vue",
+                "svelte",
+                "next.js",
+                "nextjs",
+                "nuxt",
+                "remix",
+                "gatsby",
+                "express",
+                "fastapi",
+                "django",
+                "flask",
+                "rails",
+                "spring",
+                "spring boot",
+                "springboot",
+                "actix",
+                "axum",
+                "rocket",
+                "warp",
+                "hyper",
+                "tokio",
+                "serde",
+                "diesel",
+                "sqlx",
+                "sea-orm",
+                "node.js",
+                "nodejs",
+                "deno",
+                "bun",
+                "electron",
+                "tauri",
+                "tensorflow",
+                "pytorch",
+                "keras",
+                "scikit-learn",
+                "pandas",
+                "numpy",
+                "docker",
+                "kubernetes",
+                "k8s",
+                "terraform",
+                "ansible",
+                "helm",
+                "prometheus",
+                "grafana",
+                "datadog",
+                "jenkins",
+                "github actions",
+                "webpack",
+                "vite",
+                "esbuild",
+                "rollup",
+                "turbopack",
+                "tailwind",
+                "bootstrap",
+                "material-ui",
+                "chakra-ui",
+                "jest",
+                "pytest",
+                "junit",
+                "mocha",
+                "cypress",
+                "playwright",
+                "graphql",
+                "grpc",
+                "protobuf",
+                "openapi",
+                "swagger",
+                "jwt",
+                "oauth",
+                "oauth2",
+                "saml",
+                "oidc",
             ] {
                 m.insert(fw, EntityType::Framework);
             }
             // Companies
             for company in [
-                "google", "microsoft", "apple", "amazon", "meta", "facebook",
-                "netflix", "uber", "airbnb", "stripe", "shopify", "github",
-                "gitlab", "bitbucket", "atlassian", "jira", "confluence",
-                "slack", "discord", "zoom", "twilio", "sendgrid",
-                "anthropic", "openai", "deepmind", "hugging face", "huggingface",
-                "nvidia", "intel", "amd", "arm", "qualcomm",
-                "hashicorp", "datadog", "elastic", "confluent", "mongodb inc",
-                "redhat", "canonical", "suse", "ibm", "oracle", "sap",
-                "cloudflare inc", "fastly", "akamai",
+                "google",
+                "microsoft",
+                "apple",
+                "amazon",
+                "meta",
+                "facebook",
+                "netflix",
+                "uber",
+                "airbnb",
+                "stripe",
+                "shopify",
+                "github",
+                "gitlab",
+                "bitbucket",
+                "atlassian",
+                "jira",
+                "confluence",
+                "slack",
+                "discord",
+                "zoom",
+                "twilio",
+                "sendgrid",
+                "anthropic",
+                "openai",
+                "deepmind",
+                "hugging face",
+                "huggingface",
+                "nvidia",
+                "intel",
+                "amd",
+                "arm",
+                "qualcomm",
+                "hashicorp",
+                "datadog",
+                "elastic",
+                "confluent",
+                "mongodb inc",
+                "redhat",
+                "canonical",
+                "suse",
+                "ibm",
+                "oracle",
+                "sap",
+                "cloudflare inc",
+                "fastly",
+                "akamai",
             ] {
                 m.insert(company, EntityType::Company);
             }
             // Technical Terms
             for term in [
-                "api", "rest", "http", "https", "tcp", "udp", "websocket",
-                "ssl", "tls", "dns", "cdn", "vpn", "ssh", "ftp",
-                "json", "xml", "yaml", "toml", "csv", "protobuf",
-                "ci/cd", "devops", "sre", "mlops", "devsecops",
-                "microservices", "monolith", "serverless", "faas",
-                "oom", "cors", "csrf", "xss", "sqli",
-                "rrf", "hnsw", "hdbscan", "lora", "rlhf",
-                "gpu", "cpu", "tpu", "fpga", "cuda", "vram",
-                "llm", "rag", "embeddings", "transformers", "attention",
-                "cnn", "rnn", "lstm", "gnn", "gan", "vae",
-                "transe", "kepler", "bert", "gpt",
+                "api",
+                "rest",
+                "http",
+                "https",
+                "tcp",
+                "udp",
+                "websocket",
+                "ssl",
+                "tls",
+                "dns",
+                "cdn",
+                "vpn",
+                "ssh",
+                "ftp",
+                "json",
+                "xml",
+                "yaml",
+                "toml",
+                "csv",
+                "protobuf",
+                "ci/cd",
+                "devops",
+                "sre",
+                "mlops",
+                "devsecops",
+                "microservices",
+                "monolith",
+                "serverless",
+                "faas",
+                "oom",
+                "cors",
+                "csrf",
+                "xss",
+                "sqli",
+                "rrf",
+                "hnsw",
+                "hdbscan",
+                "lora",
+                "rlhf",
+                "gpu",
+                "cpu",
+                "tpu",
+                "fpga",
+                "cuda",
+                "vram",
+                "llm",
+                "rag",
+                "embeddings",
+                "transformers",
+                "attention",
+                "cnn",
+                "rnn",
+                "lstm",
+                "gnn",
+                "gan",
+                "vae",
+                "transe",
+                "kepler",
+                "bert",
+                "gpt",
             ] {
                 m.insert(term, EntityType::TechnicalTerm);
             }
@@ -223,7 +465,8 @@ pub(crate) fn extract_entity_mentions(text: &str) -> EntityMetadata {
         // the capitalization heuristic would miss, fixing Jaccard overlap = 0.0.
         let first_char = clean.chars().next().unwrap_or('a');
         let is_capitalized = first_char.is_uppercase();
-        let is_all_caps = clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
+        let is_all_caps =
+            clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
         let has_special = clean.contains('_') || clean.contains('-');
         let (entity_type, confidence) = classify_entity(&canonical);
         let is_known_entity = entity_type != EntityType::Unknown;
@@ -247,17 +490,15 @@ pub(crate) fn extract_entity_mentions(text: &str) -> EntityMetadata {
 /// Check if a word is a common English word (not likely an entity).
 fn is_common_word(word: &str) -> bool {
     const COMMON: &[&str] = &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "can", "to", "of", "in", "for", "on",
-        "with", "at", "by", "from", "up", "about", "into", "over", "after",
-        "this", "that", "these", "those", "then", "than", "when", "where",
-        "why", "how", "all", "each", "every", "both", "few", "more", "most",
-        "other", "some", "such", "no", "not", "only", "same", "so", "and",
-        "but", "if", "or", "because", "as", "until", "while", "it", "its",
-        "they", "them", "their", "he", "she", "him", "her", "his", "i", "me",
-        "my", "we", "us", "our", "you", "your", "here", "there", "now", "use",
-        "using", "used", "new", "also", "just", "get", "make", "like", "time",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "can",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from", "up", "about", "into", "over",
+        "after", "this", "that", "these", "those", "then", "than", "when", "where", "why", "how",
+        "all", "each", "every", "both", "few", "more", "most", "other", "some", "such", "no",
+        "not", "only", "same", "so", "and", "but", "if", "or", "because", "as", "until", "while",
+        "it", "its", "they", "them", "their", "he", "she", "him", "her", "his", "i", "me", "my",
+        "we", "us", "our", "you", "your", "here", "there", "now", "use", "using", "used", "new",
+        "also", "just", "get", "make", "like", "time",
     ];
     COMMON.contains(&word.to_lowercase().as_str())
 }
@@ -330,8 +571,8 @@ const KNOWN_RELATIONS: &[(&str, Option<&str>)] = &[
 /// Combined score in [0.0, 1.0]
 fn combine_multi_embedder_scores(e1_sim: f32, e11_sim: f32, entity_jaccard: f32) -> f32 {
     // Base weights for each signal
-    const E1_WEIGHT: f32 = 0.30;     // Semantic relevance
-    const E11_WEIGHT: f32 = 0.35;    // Entity embedding relevance
+    const E1_WEIGHT: f32 = 0.30; // Semantic relevance
+    const E11_WEIGHT: f32 = 0.35; // Entity embedding relevance
     const JACCARD_WEIGHT: f32 = 0.35; // Direct entity overlap
 
     // Weighted sum of all signals
@@ -386,10 +627,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: ExtractEntitiesRequest = match self.parse_request(id.clone(), args, "extract_entities") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: ExtractEntitiesRequest =
+            match self.parse_request(id.clone(), args, "extract_entities") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let text = &request.text;
         let include_unknown = request.include_unknown;
@@ -469,7 +711,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "extract_entities: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -519,10 +765,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: SearchByEntitiesRequest = match self.parse_request(id.clone(), args, "search_by_entities") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchByEntitiesRequest =
+            match self.parse_request(id.clone(), args, "search_by_entities") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let entities = &request.entities;
         let match_mode = &request.match_mode;
@@ -558,7 +805,10 @@ impl Handlers {
         );
 
         // Step 2: Create query embedding (all 14 embedders)
-        let query_embedding = match self.embed_query(id.clone(), &query_entity_text, "search_by_entities").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), &query_entity_text, "search_by_entities")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -681,7 +931,11 @@ impl Handlers {
         let candidate_ids: Vec<Uuid> = candidate_map.keys().copied().collect();
 
         // Get content for entity extraction and source_metadata for persisted entity names
-        let contents = match self.teleological_store.get_content_batch(&candidate_ids).await {
+        let contents = match self
+            .teleological_store
+            .get_content_batch(&candidate_ids)
+            .await
+        {
             Ok(c) => c,
             Err(e) => {
                 error!(error = %e, "search_by_entities: Content retrieval FAILED");
@@ -692,7 +946,11 @@ impl Handlers {
         // Load persisted entity names from source_metadata (populated at store_memory time)
         // MED-6 FIX: Propagate storage errors instead of silently returning vec![None].
         // A storage failure is distinct from "no metadata exists" and must not be hidden.
-        let source_metas = match self.teleological_store.get_source_metadata_batch(&candidate_ids).await {
+        let source_metas = match self
+            .teleological_store
+            .get_source_metadata_batch(&candidate_ids)
+            .await
+        {
             Ok(m) => m,
             Err(e) => {
                 error!(error = %e, "search_by_entities: source_metadata batch load FAILED — storage error");
@@ -719,8 +977,15 @@ impl Handlers {
         // Step 7: Score each candidate using combined insights
         // Each embedder contributes what it knows
         #[allow(clippy::type_complexity)]
-        let mut scored_results: Vec<(Uuid, f32, f32, f32, f32, Vec<EntityLink>, Option<String>)> =
-            Vec::with_capacity(candidate_map.len());
+        let mut scored_results: Vec<(
+            Uuid,
+            f32,
+            f32,
+            f32,
+            f32,
+            Vec<EntityLink>,
+            Option<String>,
+        )> = Vec::with_capacity(candidate_map.len());
 
         for (cand_id, (e1_sim, e11_sim)) in candidate_map.iter() {
             let content = content_map.get(cand_id).and_then(|c| c.clone());
@@ -815,13 +1080,24 @@ impl Handlers {
         let results: Vec<EntitySearchResult> = scored_results
             .into_iter()
             .map(
-                |(memory_id, score, _e1_sim, e11_sim, entity_overlap, matched_entities, content)| {
+                |(
+                    memory_id,
+                    score,
+                    _e1_sim,
+                    e11_sim,
+                    entity_overlap,
+                    matched_entities,
+                    content,
+                )| {
                     EntitySearchResult {
                         memory_id,
                         score,
                         e11_similarity: e11_sim, // Report E11 similarity
                         entity_overlap,
-                        matched_entities: matched_entities.iter().map(EntityLinkDto::from).collect(),
+                        matched_entities: matched_entities
+                            .iter()
+                            .map(EntityLinkDto::from)
+                            .collect(),
                         content: if include_content { content } else { None },
                     }
                 },
@@ -849,7 +1125,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_by_entities: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -883,10 +1163,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: InferRelationshipRequest = match self.parse_request(id.clone(), args, "infer_relationship") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: InferRelationshipRequest =
+            match self.parse_request(id.clone(), args, "infer_relationship") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let head_entity = &request.head_entity;
         let tail_entity = &request.tail_entity;
@@ -914,12 +1195,18 @@ impl Handlers {
         };
 
         // Step 2: Embed head and tail entities using E11
-        let head_fingerprint = match self.embed_query(id.clone(), &head_text, "infer_relationship").await {
+        let head_fingerprint = match self
+            .embed_query(id.clone(), &head_text, "infer_relationship")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
 
-        let tail_fingerprint = match self.embed_query(id.clone(), &tail_text, "infer_relationship").await {
+        let tail_fingerprint = match self
+            .embed_query(id.clone(), &tail_text, "infer_relationship")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -946,7 +1233,9 @@ impl Handlers {
 
         for (relation_name, _inverse) in KNOWN_RELATIONS {
             // Embed the relation text
-            let relation_fingerprint = match self.embed_query(id.clone(), relation_name, "infer_relationship").await
+            let relation_fingerprint = match self
+                .embed_query(id.clone(), relation_name, "infer_relationship")
+                .await
             {
                 Ok(fp) => fp,
                 Err(_) => {
@@ -958,7 +1247,11 @@ impl Handlers {
             let relation_e11 = &relation_fingerprint.e11_entity;
 
             // Cosine similarity between predicted relation (r̂ = t-h) and known relation embedding
-            let dot: f32 = predicted_r.iter().zip(relation_e11.iter()).map(|(a, b)| a * b).sum();
+            let dot: f32 = predicted_r
+                .iter()
+                .zip(relation_e11.iter())
+                .map(|(a, b)| a * b)
+                .sum();
             let norm_r: f32 = relation_e11.iter().map(|x| x * x).sum::<f32>().sqrt();
             let raw_score = if predicted_r_norm > 0.0 && norm_r > 0.0 {
                 dot / (predicted_r_norm * norm_r)
@@ -1029,7 +1322,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "infer_relationship: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1058,10 +1355,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: FindRelatedEntitiesRequest = match self.parse_request(id.clone(), args, "find_related_entities") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: FindRelatedEntitiesRequest =
+            match self.parse_request(id.clone(), args, "find_related_entities") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let entity = &request.entity;
         let relation = &request.relation;
@@ -1079,12 +1377,18 @@ impl Handlers {
         );
 
         // Step 1: Embed source entity and relation
-        let entity_fingerprint = match self.embed_query(id.clone(), entity, "find_related_entities").await {
+        let entity_fingerprint = match self
+            .embed_query(id.clone(), entity, "find_related_entities")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
 
-        let relation_fingerprint = match self.embed_query(id.clone(), relation, "find_related_entities").await {
+        let relation_fingerprint = match self
+            .embed_query(id.clone(), relation, "find_related_entities")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1100,7 +1404,10 @@ impl Handlers {
         if search_memories {
             // Search E1 for semantic candidates
             let search_query = format!("{} {} ?", entity, relation);
-            let query_fingerprint = match self.embed_query(id.clone(), &search_query, "find_related_entities").await {
+            let query_fingerprint = match self
+                .embed_query(id.clone(), &search_query, "find_related_entities")
+                .await
+            {
                 Ok(fp) => fp,
                 Err(resp) => return resp,
             };
@@ -1124,18 +1431,23 @@ impl Handlers {
 
             // Get content and extract entities
             let candidate_ids: Vec<Uuid> = candidates.iter().map(|c| c.fingerprint.id).collect();
-            let contents = match self.teleological_store.get_content_batch(&candidate_ids).await {
+            let contents = match self
+                .teleological_store
+                .get_content_batch(&candidate_ids)
+                .await
+            {
                 Ok(c) => c,
                 Err(e) => {
                     error!(error = %e, "find_related_entities: Content retrieval FAILED");
-                    return self
-                        .tool_error(id, &format!("Content retrieval failed: {}", e));
+                    return self.tool_error(id, &format!("Content retrieval failed: {}", e));
                 }
             };
 
             // Track unique entities found with their scores
-            let mut entity_scores: std::collections::HashMap<String, (EntityLinkDto, f32, Vec<Uuid>)> =
-                std::collections::HashMap::new();
+            let mut entity_scores: std::collections::HashMap<
+                String,
+                (EntityLinkDto, f32, Vec<Uuid>),
+            > = std::collections::HashMap::new();
 
             for (i, candidate) in candidates.iter().enumerate() {
                 let cand_id = candidate.fingerprint.id;
@@ -1147,15 +1459,14 @@ impl Handlers {
 
                     for entity_link in detected.entities {
                         // Skip the source entity itself
-                        if entity_link.canonical_id
-                            == entity.to_lowercase().replace(' ', "_")
-                        {
+                        if entity_link.canonical_id == entity.to_lowercase().replace(' ', "_") {
                             continue;
                         }
 
                         // Filter by entity type if specified
                         if let Some(ref filter_type) = request.entity_type {
-                            let type_str = super::entity_dtos::entity_type_to_string(entity_link.entity_type);
+                            let type_str =
+                                super::entity_dtos::entity_type_to_string(entity_link.entity_type);
                             if type_str.to_lowercase() != filter_type.to_lowercase() {
                                 continue;
                             }
@@ -1243,7 +1554,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "find_related_entities: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1271,10 +1586,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: ValidateKnowledgeRequest = match self.parse_request(id.clone(), args, "validate_knowledge") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: ValidateKnowledgeRequest =
+            match self.parse_request(id.clone(), args, "validate_knowledge") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let subject = &request.subject;
         let predicate = &request.predicate;
@@ -1301,17 +1617,26 @@ impl Handlers {
         };
 
         // Step 2: Embed subject, predicate, and object using E11
-        let subject_fingerprint = match self.embed_query(id.clone(), &subject_text, "validate_knowledge").await {
+        let subject_fingerprint = match self
+            .embed_query(id.clone(), &subject_text, "validate_knowledge")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
 
-        let predicate_fingerprint = match self.embed_query(id.clone(), predicate, "validate_knowledge").await {
+        let predicate_fingerprint = match self
+            .embed_query(id.clone(), predicate, "validate_knowledge")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
 
-        let object_fingerprint = match self.embed_query(id.clone(), &object_text, "validate_knowledge").await {
+        let object_fingerprint = match self
+            .embed_query(id.clone(), &object_text, "validate_knowledge")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1340,7 +1665,10 @@ impl Handlers {
 
         // Search for memories containing both entities — fail fast on any infrastructure error
         let search_query = format!("{} {} {}", subject, predicate, object);
-        let query_fingerprint = match self.embed_query(id.clone(), &search_query, "validate_knowledge").await {
+        let query_fingerprint = match self
+            .embed_query(id.clone(), &search_query, "validate_knowledge")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1357,17 +1685,29 @@ impl Handlers {
             Ok(c) => c,
             Err(e) => {
                 error!(error = %e, "validate_knowledge: Evidence search failed");
-                return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Evidence search failed: {}", e));
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Storage,
+                    &format!("Evidence search failed: {}", e),
+                );
             }
         };
 
         let candidate_ids: Vec<Uuid> = candidates.iter().map(|c| c.fingerprint.id).collect();
 
-        let contents = match self.teleological_store.get_content_batch(&candidate_ids).await {
+        let contents = match self
+            .teleological_store
+            .get_content_batch(&candidate_ids)
+            .await
+        {
             Ok(c) => c,
             Err(e) => {
                 error!(error = %e, "validate_knowledge: Evidence content retrieval failed");
-                return self.tool_error_typed(id, ToolErrorKind::Storage, &format!("Evidence content retrieval failed: {}", e));
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Storage,
+                    &format!("Evidence content retrieval failed: {}", e),
+                );
             }
         };
 
@@ -1379,9 +1719,7 @@ impl Handlers {
                 let subject_lower = subject.to_lowercase();
                 let object_lower = object.to_lowercase();
 
-                if text_lower.contains(&subject_lower)
-                    && text_lower.contains(&object_lower)
-                {
+                if text_lower.contains(&subject_lower) && text_lower.contains(&object_lower) {
                     // Compute E11 TransE score to determine if supporting or contradicting
                     // Per KEPLER paper: valid triples score > -5.0, invalid < -10.0
                     //
@@ -1391,8 +1729,7 @@ impl Handlers {
                     // memory representing an entity/concept, its e11_entity vector IS the correct
                     // tail vector for scoring that triple.
                     let tail_entity_vec = &candidate.fingerprint.semantic.e11_entity;
-                    let cand_score =
-                        KeplerModel::transe_score(h, r, tail_entity_vec);
+                    let cand_score = KeplerModel::transe_score(h, r, tail_entity_vec);
 
                     if cand_score > VALID_THRESHOLD {
                         // Good TransE alignment (> -5.0) - supporting
@@ -1413,27 +1750,42 @@ impl Handlers {
         let contradict_count = contradicting_memories.len();
         let no_evidence = support_count == 0 && contradict_count == 0;
 
-        let (hybrid_confidence, hybrid_validation, evidence_adjusted) = if no_evidence && confidence > 0.33 {
-            // TransE says valid/uncertain but no memory support — can't verify
-            (confidence * 0.5, "unverified".to_string(), true)
-        } else if contradict_count > support_count && contradict_count >= 3 {
-            // Strong contradiction: 3+ contradictions AND more than support
-            let evidence_factor = (support_count as f32) / (support_count as f32 + contradict_count as f32);
-            (confidence * 0.6 + evidence_factor * 0.4, "contradicted_by_evidence".to_string(), true)
-        } else if contradict_count > support_count {
-            // Weak contradiction: more contradictions but not overwhelming (1-2 contradictions)
-            let evidence_factor = (support_count as f32) / (support_count as f32 + contradict_count as f32);
-            (confidence * 0.6 + evidence_factor * 0.4, "weakly_contradicted".to_string(), true)
-        } else if !no_evidence {
-            // Blend: 60% TransE + 40% evidence
-            let evidence_score = (support_count as f32 - contradict_count as f32)
-                / (support_count as f32 + contradict_count as f32);
-            let evidence_factor = (evidence_score + 1.0) / 2.0; // Map [-1,1] to [0,1]
-            (confidence * 0.6 + evidence_factor * 0.4, validation.to_string(), true)
-        } else {
-            // No evidence, low TransE — keep original
-            (confidence, validation.to_string(), false)
-        };
+        let (hybrid_confidence, hybrid_validation, evidence_adjusted) =
+            if no_evidence && confidence > 0.33 {
+                // TransE says valid/uncertain but no memory support — can't verify
+                (confidence * 0.5, "unverified".to_string(), true)
+            } else if contradict_count > support_count && contradict_count >= 3 {
+                // Strong contradiction: 3+ contradictions AND more than support
+                let evidence_factor =
+                    (support_count as f32) / (support_count as f32 + contradict_count as f32);
+                (
+                    confidence * 0.6 + evidence_factor * 0.4,
+                    "contradicted_by_evidence".to_string(),
+                    true,
+                )
+            } else if contradict_count > support_count {
+                // Weak contradiction: more contradictions but not overwhelming (1-2 contradictions)
+                let evidence_factor =
+                    (support_count as f32) / (support_count as f32 + contradict_count as f32);
+                (
+                    confidence * 0.6 + evidence_factor * 0.4,
+                    "weakly_contradicted".to_string(),
+                    true,
+                )
+            } else if !no_evidence {
+                // Blend: 60% TransE + 40% evidence
+                let evidence_score = (support_count as f32 - contradict_count as f32)
+                    / (support_count as f32 + contradict_count as f32);
+                let evidence_factor = (evidence_score + 1.0) / 2.0; // Map [-1,1] to [0,1]
+                (
+                    confidence * 0.6 + evidence_factor * 0.4,
+                    validation.to_string(),
+                    true,
+                )
+            } else {
+                // No evidence, low TransE — keep original
+                (confidence, validation.to_string(), false)
+            };
 
         // Build entity DTOs
         let subject_entities = extract_entity_mentions(subject);
@@ -1491,7 +1843,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "validate_knowledge: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1524,10 +1880,11 @@ impl Handlers {
         let start = Instant::now();
 
         // Parse and validate request
-        let request: GetEntityGraphRequest = match self.parse_request(id.clone(), args, "get_entity_graph") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: GetEntityGraphRequest =
+            match self.parse_request(id.clone(), args, "get_entity_graph") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let max_nodes = request.max_nodes;
         let min_relation_score = request.min_relation_score;
@@ -1551,7 +1908,10 @@ impl Handlers {
             }
         };
 
-        let query_fingerprint = match self.embed_query(id.clone(), &search_query, "get_entity_graph").await {
+        let query_fingerprint = match self
+            .embed_query(id.clone(), &search_query, "get_entity_graph")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1588,7 +1948,11 @@ impl Handlers {
                 Ok(v) => self.tool_result(id, v),
                 Err(e) => {
                     error!(error = %e, "get_entity_graph: Response serialization failed");
-                    self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                    self.tool_error_typed(
+                        id,
+                        ToolErrorKind::Execution,
+                        &format!("Response serialization failed: {}", e),
+                    )
                 }
             };
         }
@@ -1599,8 +1963,7 @@ impl Handlers {
             Ok(c) => c,
             Err(e) => {
                 error!(error = %e, "get_entity_graph: Content retrieval FAILED");
-                return self
-                    .tool_error(id, &format!("Content retrieval failed: {}", e));
+                return self.tool_error(id, &format!("Content retrieval failed: {}", e));
             }
         };
 
@@ -1728,7 +2091,11 @@ impl Handlers {
         }
 
         // Sort edges by weight (descending)
-        edges.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        edges.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit edges if needed (e.g., 3x nodes)
         let max_edges = max_nodes * 3;
@@ -1768,7 +2135,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_entity_graph: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }

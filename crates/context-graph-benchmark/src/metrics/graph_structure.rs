@@ -86,9 +86,15 @@ impl TopicFormationImpact {
     }
 
     /// Add ablation result for an embedder.
-    pub fn add_without(&mut self, embedder: EmbedderIndex, topic_count: usize, weighted_agreement: f32) {
+    pub fn add_without(
+        &mut self,
+        embedder: EmbedderIndex,
+        topic_count: usize,
+        weighted_agreement: f32,
+    ) {
         self.topic_count_without.insert(embedder, topic_count);
-        self.weighted_agreement_without.insert(embedder, weighted_agreement);
+        self.weighted_agreement_without
+            .insert(embedder, weighted_agreement);
 
         // Compute deltas
         let topic_delta = self.full_topic_count as i32 - topic_count as i32;
@@ -251,7 +257,8 @@ impl GraphConnectivityMetrics {
 
     /// Add embedder connectivity.
     pub fn add_embedder_connectivity(&mut self, connectivity: EmbedderConnectivity) {
-        self.embedder_connectivity.insert(connectivity.embedder, connectivity);
+        self.embedder_connectivity
+            .insert(connectivity.embedder, connectivity);
     }
 
     /// Add connectivity snapshot when embedder is removed.
@@ -261,7 +268,8 @@ impl GraphConnectivityMetrics {
 
     /// Get embedders sorted by connectivity impact.
     pub fn sorted_by_connectivity_impact(&self) -> Vec<(EmbedderIndex, f32)> {
-        let mut impacts: Vec<_> = self.connectivity_without
+        let mut impacts: Vec<_> = self
+            .connectivity_without
             .iter()
             .map(|(&e, s)| (e, self.avg_degree - s.avg_degree))
             .collect();
@@ -317,7 +325,11 @@ impl WeightedAgreementAnalysis {
         self.total_pairs += 1;
 
         let mut weighted_agreement = 0.0f32;
-        for (idx, (&agrees, &weight)) in embedder_agreements.iter().zip(embedder_weights.iter()).enumerate() {
+        for (idx, (&agrees, &weight)) in embedder_agreements
+            .iter()
+            .zip(embedder_weights.iter())
+            .enumerate()
+        {
             if agrees {
                 weighted_agreement += weight;
                 if idx < 13 {
@@ -357,7 +369,11 @@ impl WeightedAgreementAnalysis {
 
     /// Get embedders sorted by contribution to weighted agreement.
     pub fn sorted_contributions(&self) -> Vec<(EmbedderIndex, f32)> {
-        let mut sorted: Vec<_> = self.embedder_contribution.iter().map(|(&e, &c)| (e, c)).collect();
+        let mut sorted: Vec<_> = self
+            .embedder_contribution
+            .iter()
+            .map(|(&e, &c)| (e, c))
+            .collect();
         sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         sorted
     }
@@ -417,7 +433,8 @@ impl AgreementDistribution {
         }
 
         // Compute median
-        self.values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        self.values
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mid = self.values.len() / 2;
         self.median = if self.values.len() % 2 == 0 {
             (self.values[mid - 1] + self.values[mid]) / 2.0
@@ -427,8 +444,8 @@ impl AgreementDistribution {
 
         // Compute std dev
         let mean: f32 = self.values.iter().sum::<f32>() / self.values.len() as f32;
-        let variance: f32 = self.values.iter().map(|v| (v - mean).powi(2)).sum::<f32>()
-            / self.values.len() as f32;
+        let variance: f32 =
+            self.values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / self.values.len() as f32;
         self.std_dev = variance.sqrt();
 
         // Clear values to save memory
@@ -503,20 +520,20 @@ impl CategoryWeights {
     /// Get all 13 weights as array.
     pub fn as_array(&self) -> [f32; 14] {
         [
-            self.semantic,  // E1
-            self.temporal,  // E2
-            self.temporal,  // E3
-            self.temporal,  // E4
-            self.semantic,  // E5
-            self.semantic,  // E6
-            self.semantic,  // E7
+            self.semantic,   // E1
+            self.temporal,   // E2
+            self.temporal,   // E3
+            self.temporal,   // E4
+            self.semantic,   // E5
+            self.semantic,   // E6
+            self.semantic,   // E7
             self.relational, // E8
             self.structural, // E9
-            self.semantic,  // E10
+            self.semantic,   // E10
             self.relational, // E11
-            self.semantic,  // E12
-            self.semantic,  // E13
-            self.semantic,  // E14 BGE-M3 Dense
+            self.semantic,   // E12
+            self.semantic,   // E13
+            self.semantic,   // E14 BGE-M3 Dense
         ]
     }
 
@@ -560,11 +577,15 @@ mod tests {
 
         // Removing E1 causes significant loss
         impact.add_without(EmbedderIndex::E1Semantic, 12, 4.0);
-        assert!(impact.essential_for_topics.contains(&EmbedderIndex::E1Semantic));
+        assert!(impact
+            .essential_for_topics
+            .contains(&EmbedderIndex::E1Semantic));
 
         // Removing E2 (temporal) should have no effect
         impact.add_without(EmbedderIndex::E2TemporalRecent, 20, 6.5);
-        assert!(!impact.essential_for_topics.contains(&EmbedderIndex::E2TemporalRecent));
+        assert!(!impact
+            .essential_for_topics
+            .contains(&EmbedderIndex::E2TemporalRecent));
 
         let sorted = impact.sorted_by_topic_impact();
         assert_eq!(sorted[0].0, EmbedderIndex::E1Semantic);
@@ -583,7 +604,10 @@ mod tests {
         assert_eq!(dist.total_edges, 3);
         assert_eq!(dist.primary_contributor_count, 2);
         assert_eq!(dist.edge_coverage, 3.0);
-        assert_eq!(dist.dominant_type(), Some(GraphLinkEdgeType::SemanticSimilar));
+        assert_eq!(
+            dist.dominant_type(),
+            Some(GraphLinkEdgeType::SemanticSimilar)
+        );
     }
 
     #[test]
@@ -612,9 +636,15 @@ mod tests {
         impact.topic_impact.set_full(20, 6.5);
 
         // Temporal embedders should not affect topic count
-        impact.topic_impact.add_without(EmbedderIndex::E2TemporalRecent, 20, 6.5);
-        impact.topic_impact.add_without(EmbedderIndex::E3TemporalPeriodic, 20, 6.5);
-        impact.topic_impact.add_without(EmbedderIndex::E4TemporalPositional, 20, 6.5);
+        impact
+            .topic_impact
+            .add_without(EmbedderIndex::E2TemporalRecent, 20, 6.5);
+        impact
+            .topic_impact
+            .add_without(EmbedderIndex::E3TemporalPeriodic, 20, 6.5);
+        impact
+            .topic_impact
+            .add_without(EmbedderIndex::E4TemporalPositional, 20, 6.5);
 
         assert!(impact.verify_temporal_zero_impact());
     }

@@ -4,9 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::BenchmarkSummary;
 use crate::config::Tier;
 use crate::runners::BenchmarkResults;
-use super::BenchmarkSummary;
 
 /// Complete JSON report structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -158,9 +158,8 @@ pub struct BreakingPoints {
 /// Generate JSON report from benchmark results.
 pub fn generate_json(results: &BenchmarkResults) -> String {
     let report = build_report(results);
-    serde_json::to_string_pretty(&report).unwrap_or_else(|e| {
-        format!("{{\"error\": \"Failed to serialize: {}\"}}", e)
-    })
+    serde_json::to_string_pretty(&report)
+        .unwrap_or_else(|e| format!("{{\"error\": \"Failed to serialize: {}\"}}", e))
 }
 
 /// Build the JSON report structure.

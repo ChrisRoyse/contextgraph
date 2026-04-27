@@ -359,7 +359,8 @@ mod tests {
         let valid_latencies = vec![10.0, 12.0, 11.0, 13.0, 10.5];
         let invalid_latencies = vec![1.0, 1.2, 0.9, 1.1, 1.0];
 
-        let metrics = ValidationMetrics::from_measurements(10, 8, &valid_latencies, &invalid_latencies);
+        let metrics =
+            ValidationMetrics::from_measurements(10, 8, &valid_latencies, &invalid_latencies);
 
         assert_eq!(metrics.total_tests, 10);
         assert_eq!(metrics.passed, 8);
@@ -403,7 +404,10 @@ mod tests {
         assert!(config.test_values.len() >= 5);
 
         // Check specific test cases
-        let below_min = config.test_values.iter().find(|t| t.description == "below minimum");
+        let below_min = config
+            .test_values
+            .iter()
+            .find(|t| t.description == "below minimum");
         assert!(below_min.is_some());
         assert!(!below_min.unwrap().expected_valid);
     }

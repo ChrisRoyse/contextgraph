@@ -74,7 +74,10 @@ pub async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
                         break; // EOF
                     }
                     let drain_end = match rest.iter().position(|&b| b == b'\n') {
-                        Some(pos) => { reader.consume(pos + 1); break; }
+                        Some(pos) => {
+                            reader.consume(pos + 1);
+                            break;
+                        }
                         None => rest.len(),
                     };
                     reader.consume(drain_end);
@@ -210,7 +213,10 @@ impl McpServer {
                 let _permit = match semaphore.acquire().await {
                     Ok(p) => p,
                     Err(_) => {
-                        error!("[{}] Semaphore closed unexpectedly for client {}", conn_tag, peer_addr);
+                        error!(
+                            "[{}] Semaphore closed unexpectedly for client {}",
+                            conn_tag, peer_addr
+                        );
                         return;
                     }
                 };
@@ -224,7 +230,8 @@ impl McpServer {
 
                 // Handle client - permit is held until this returns
                 if let Err(e) =
-                    Self::handle_tcp_client(stream, peer_addr, handlers, request_timeout, &conn_tag).await
+                    Self::handle_tcp_client(stream, peer_addr, handlers, request_timeout, &conn_tag)
+                        .await
                 {
                     // Log at different levels based on error type
                     if e.to_string().contains("connection reset")
@@ -282,7 +289,10 @@ impl McpServer {
 
             // EOF - client closed connection
             if bytes_read == 0 {
-                debug!("[{}] Client {} closed connection (EOF)", conn_tag, peer_addr);
+                debug!(
+                    "[{}] Client {} closed connection (EOF)",
+                    conn_tag, peer_addr
+                );
                 break;
             }
 
@@ -335,7 +345,10 @@ impl McpServer {
                 if batch_values.len() > MAX_BATCH_SIZE {
                     warn!(
                         "[{}] {} sent batch with {} items (max {})",
-                        conn_tag, peer_addr, batch_values.len(), MAX_BATCH_SIZE
+                        conn_tag,
+                        peer_addr,
+                        batch_values.len(),
+                        MAX_BATCH_SIZE
                     );
                     let error_response = JsonRpcResponse::error(
                         None,
@@ -418,10 +431,7 @@ impl McpServer {
                             JsonRpcResponse::error(
                                 request_id,
                                 crate::protocol::error_codes::TCP_CLIENT_TIMEOUT,
-                                format!(
-                                    "Batch sub-request timed out after {}s",
-                                    request_timeout
-                                ),
+                                format!("Batch sub-request timed out after {}s", request_timeout),
                             )
                         }
                     };
@@ -474,7 +484,11 @@ impl McpServer {
                     writer.write_all(response_json.as_bytes()).await?;
                     writer.write_all(b"\n").await?;
                     writer.flush().await?;
-                    return Err(anyhow::anyhow!("[{}] Client sent invalid JSON-RPC: {}", conn_tag, e));
+                    return Err(anyhow::anyhow!(
+                        "[{}] Client sent invalid JSON-RPC: {}",
+                        conn_tag,
+                        e
+                    ));
                 }
             };
 
@@ -484,10 +498,7 @@ impl McpServer {
                     if let Some(tool_name) = params.get("name").and_then(|v| v.as_str()) {
                         info!(
                             "[{}] {} → {} (id={:?})",
-                            conn_tag,
-                            peer_addr,
-                            tool_name,
-                            request.id
+                            conn_tag, peer_addr, tool_name, request.id
                         );
                     }
                 }
@@ -548,7 +559,10 @@ impl McpServer {
 
             // Handle notifications (no response needed)
             if response.id.is_none() && response.result.is_none() && response.error.is_none() {
-                debug!("[{}] {} notification handled, no response", conn_tag, peer_addr);
+                debug!(
+                    "[{}] {} notification handled, no response",
+                    conn_tag, peer_addr
+                );
                 continue;
             }
 
@@ -563,5 +577,4 @@ impl McpServer {
 
         Ok(())
     }
-
 }

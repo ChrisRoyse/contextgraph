@@ -11,7 +11,9 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::models::attention::AttentionStrategy;
 
 use super::super::weights::{NomicEncoderLayerWeights, NomicFfnWeights, NomicWeights};
-use super::attention::{compute_rotary_freqs, self_attention_forward, self_attention_forward_with_lora};
+use super::attention::{
+    compute_rotary_freqs, self_attention_forward, self_attention_forward_with_lora,
+};
 use super::ops::layer_norm;
 
 /// Run all encoder layers.
@@ -287,38 +289,31 @@ fn ffn_forward(
                 message: format!("CausalModel layer {} FFN get dims failed: {}", layer_idx, e),
             })?;
 
-    let intermediate_size =
-        ffn.fc11_weight
-            .dim(0)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!(
-                    "CausalModel layer {} FFN get intermediate_size failed: {}",
-                    layer_idx, e
-                ),
-            })?;
+    let intermediate_size = ffn
+        .fc11_weight
+        .dim(0)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} FFN get intermediate_size failed: {}",
+                layer_idx, e
+            ),
+        })?;
 
     // Flatten: [batch*seq, hidden]
     let hidden_flat = hidden_states
         .reshape((batch_size * seq_len, hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} FFN flatten failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} FFN flatten failed: {}", layer_idx, e),
         })?;
 
     // Gate projection: fc11(x) — no bias
     let gate = hidden_flat
-        .matmul(
-            &ffn.fc11_weight
-                .t()
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!(
-                        "CausalModel layer {} FFN fc11 transpose failed: {}",
-                        layer_idx, e
-                    ),
-                })?,
-        )
+        .matmul(&ffn.fc11_weight.t().map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} FFN fc11 transpose failed: {}",
+                layer_idx, e
+            ),
+        })?)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} FFN fc11 matmul failed: {}",
@@ -335,16 +330,12 @@ fn ffn_forward(
 
     // Up projection: fc12(x) — no bias
     let up = hidden_flat
-        .matmul(
-            &ffn.fc12_weight
-                .t()
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!(
-                        "CausalModel layer {} FFN fc12 transpose failed: {}",
-                        layer_idx, e
-                    ),
-                })?,
-        )
+        .matmul(&ffn.fc12_weight.t().map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} FFN fc12 transpose failed: {}",
+                layer_idx, e
+            ),
+        })?)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} FFN fc12 matmul failed: {}",
@@ -361,16 +352,11 @@ fn ffn_forward(
 
     // fc11(x) * SiLU(fc12(x)) — NomicBERT SwiGLU: fc11 is value/up, fc12 is gate
     let activated = gate
-        .mul(
-            &up.silu().map_err(|e| EmbeddingError::GpuError {
-                message: format!("CausalModel layer {} SiLU failed: {}", layer_idx, e),
-            })?,
-        )
+        .mul(&up.silu().map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} SiLU failed: {}", layer_idx, e),
+        })?)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} SwiGLU mul failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} SwiGLU mul failed: {}", layer_idx, e),
         })?;
 
     // Down projection: fc2(activated) — no bias
@@ -384,16 +370,12 @@ fn ffn_forward(
         })?;
 
     activated_flat
-        .matmul(
-            &ffn.fc2_weight
-                .t()
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!(
-                        "CausalModel layer {} FFN fc2 transpose failed: {}",
-                        layer_idx, e
-                    ),
-                })?,
-        )
+        .matmul(&ffn.fc2_weight.t().map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} FFN fc2 transpose failed: {}",
+                layer_idx, e
+            ),
+        })?)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} FFN fc2 matmul failed: {}",

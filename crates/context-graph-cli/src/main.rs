@@ -161,7 +161,9 @@ async fn main() {
         Commands::Hooks { action } => commands::hooks::handle_hooks_command(action).await,
         Commands::Memory { action } => commands::memory::handle_memory_command(action).await,
         Commands::Topic { action } => commands::topic::handle_topic_command(action).await,
-        Commands::Divergence { action } => commands::divergence::handle_divergence_command(action).await,
+        Commands::Divergence { action } => {
+            commands::divergence::handle_divergence_command(action).await
+        }
         Commands::Setup(args) => commands::setup::handle_setup(args).await,
         Commands::Warmup(args) => commands::warmup::handle_warmup(args).await,
         Commands::Watch(args) => commands::watch::handle_watch(args).await,

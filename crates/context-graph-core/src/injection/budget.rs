@@ -100,7 +100,8 @@ impl TokenBudget {
         let cluster_budget = total / 3;
         let single_space_budget = total / 4;
         let session_budget = total / 6;
-        let reserved = total - divergence_budget - cluster_budget - single_space_budget - session_budget;
+        let reserved =
+            total - divergence_budget - cluster_budget - single_space_budget - session_budget;
 
         Ok(Self {
             total,
@@ -363,9 +364,15 @@ mod tests {
         let budget = TokenBudget::default();
 
         assert_eq!(budget.total, 1200, "Total should be 1200 per constitution");
-        assert_eq!(budget.divergence_budget, 200, "Divergence budget should be 200");
+        assert_eq!(
+            budget.divergence_budget, 200,
+            "Divergence budget should be 200"
+        );
         assert_eq!(budget.cluster_budget, 400, "Cluster budget should be 400");
-        assert_eq!(budget.single_space_budget, 300, "Single space budget should be 300");
+        assert_eq!(
+            budget.single_space_budget, 300,
+            "Single space budget should be 300"
+        );
         assert_eq!(budget.session_budget, 200, "Session budget should be 200");
         assert_eq!(budget.reserved, 100, "Reserved should be 100");
         println!("[PASS] Default budget values match constitution");
@@ -421,10 +428,14 @@ mod tests {
         assert!(budget.is_valid(), "Custom budget must be valid");
 
         // Verify proportions roughly maintained
-        assert!(budget.cluster_budget >= budget.divergence_budget,
-            "Cluster should be >= divergence");
-        assert!(budget.cluster_budget >= budget.single_space_budget,
-            "Cluster should be >= single_space");
+        assert!(
+            budget.cluster_budget >= budget.divergence_budget,
+            "Cluster should be >= divergence"
+        );
+        assert!(
+            budget.cluster_budget >= budget.single_space_budget,
+            "Cluster should be >= single_space"
+        );
 
         println!("[PASS] with_total(600) creates valid budget: {:?}", budget);
     }
@@ -458,14 +469,20 @@ mod tests {
 
     #[test]
     fn test_brief_budget_constant() {
-        assert_eq!(BRIEF_BUDGET, 200, "BRIEF_BUDGET should be 200 for PreToolUse");
+        assert_eq!(
+            BRIEF_BUDGET, 200,
+            "BRIEF_BUDGET should be 200 for PreToolUse"
+        );
         println!("[PASS] BRIEF_BUDGET = 200");
     }
 
     #[test]
     fn test_default_equals_constant() {
         let budget = TokenBudget::default();
-        assert_eq!(budget, DEFAULT_TOKEN_BUDGET, "Default should equal constant");
+        assert_eq!(
+            budget, DEFAULT_TOKEN_BUDGET,
+            "Default should equal constant"
+        );
         println!("[PASS] TokenBudget::default() == DEFAULT_TOKEN_BUDGET");
     }
 
@@ -493,8 +510,15 @@ mod tests {
             session_budget: 200,
             reserved: 0,
         };
-        assert!(budget.is_valid(), "Zero reserved should be valid if sums match");
-        assert_eq!(budget.usable(), 1100, "Usable should equal total when reserved is 0");
+        assert!(
+            budget.is_valid(),
+            "Zero reserved should be valid if sums match"
+        );
+        assert_eq!(
+            budget.usable(),
+            1100,
+            "Usable should equal total when reserved is 0"
+        );
         println!("[PASS] Zero reserved budget is valid");
     }
 
@@ -503,7 +527,10 @@ mod tests {
         let budget = TokenBudget::with_total(1_000_000).expect("large budget");
         assert!(budget.is_valid());
         assert_eq!(budget.total, 1_000_000);
-        println!("[PASS] Large total (1_000_000) accepted and valid: {:?}", budget);
+        println!(
+            "[PASS] Large total (1_000_000) accepted and valid: {:?}",
+            budget
+        );
     }
 
     #[test]
@@ -522,9 +549,9 @@ mod tests {
 #[cfg(test)]
 mod budget_manager_tests {
     use super::*;
+    use crate::teleological::Embedder;
     use chrono::Utc;
     use uuid::Uuid;
-    use crate::teleological::Embedder;
 
     fn make_candidate(
         tokens: u32,
@@ -564,8 +591,15 @@ mod budget_manager_tests {
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
         // Both should be selected (overflow allowed for high priority)
-        assert_eq!(selected.len(), 2, "Both divergence alerts should be selected (overflow allowed)");
-        println!("[PASS] High-priority overflow allowed: selected {} candidates", selected.len());
+        assert_eq!(
+            selected.len(),
+            2,
+            "Both divergence alerts should be selected (overflow allowed)"
+        );
+        println!(
+            "[PASS] High-priority overflow allowed: selected {} candidates",
+            selected.len()
+        );
     }
 
     #[test]
@@ -590,11 +624,22 @@ mod budget_manager_tests {
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
         // Should select first 3 (each fits in their category), 4th exceeds session_budget and low priority
-        assert_eq!(selected.len(), 3, "Should select exactly 3 candidates (4th exceeds session budget)");
+        assert_eq!(
+            selected.len(),
+            3,
+            "Should select exactly 3 candidates (4th exceeds session budget)"
+        );
 
         let total_tokens: u32 = selected.iter().map(|c| c.token_count).sum();
-        assert!(total_tokens <= 400, "Total tokens {} should not exceed 400", total_tokens);
-        println!("[PASS] Total budget respected: {} tokens used", total_tokens);
+        assert!(
+            total_tokens <= 400,
+            "Total tokens {} should not exceed 400",
+            total_tokens
+        );
+        println!(
+            "[PASS] Total budget respected: {} tokens used",
+            total_tokens
+        );
     }
 
     #[test]
@@ -609,14 +654,16 @@ mod budget_manager_tests {
         };
 
         // Large divergence alert that exceeds category budget (100) but fits in total (500)
-        let candidates = vec![
-            make_candidate(150, InjectionCategory::DivergenceAlert, 1.0),
-        ];
+        let candidates = vec![make_candidate(150, InjectionCategory::DivergenceAlert, 1.0)];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
         // Should allow overflow for high priority (priority=1)
-        assert_eq!(selected.len(), 1, "High-priority candidate should overflow into reserved");
+        assert_eq!(
+            selected.len(),
+            1,
+            "High-priority candidate should overflow into reserved"
+        );
         println!("[PASS] High-priority overflow works");
     }
 
@@ -632,14 +679,16 @@ mod budget_manager_tests {
         };
 
         // RecentSession (priority=4) exceeds category budget
-        let candidates = vec![
-            make_candidate(150, InjectionCategory::RecentSession, 1.0),
-        ];
+        let candidates = vec![make_candidate(150, InjectionCategory::RecentSession, 1.0)];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
         // Should NOT overflow for low priority (priority=4)
-        assert_eq!(selected.len(), 0, "Low-priority candidate should NOT overflow");
+        assert_eq!(
+            selected.len(),
+            0,
+            "Low-priority candidate should NOT overflow"
+        );
         println!("[PASS] Low-priority overflow blocked correctly");
     }
 
@@ -660,15 +709,33 @@ mod budget_manager_tests {
         assert_eq!(stats.rejected_count, 0);
         assert_eq!(stats.tokens_used, 400);
         assert_eq!(stats.tokens_available, 800); // 1200 - 400
-        assert_eq!(*stats.by_category.get(&InjectionCategory::DivergenceAlert).unwrap(), 100);
-        assert_eq!(*stats.by_category.get(&InjectionCategory::HighRelevanceCluster).unwrap(), 200);
-        println!("[PASS] Selection stats accurate: {} used, {} available", stats.tokens_used, stats.tokens_available);
+        assert_eq!(
+            *stats
+                .by_category
+                .get(&InjectionCategory::DivergenceAlert)
+                .unwrap(),
+            100
+        );
+        assert_eq!(
+            *stats
+                .by_category
+                .get(&InjectionCategory::HighRelevanceCluster)
+                .unwrap(),
+            200
+        );
+        println!(
+            "[PASS] Selection stats accurate: {} used, {} available",
+            stats.tokens_used, stats.tokens_available
+        );
     }
 
     #[test]
     fn test_estimate_tokens() {
         // 10 words × 1.3 = 13
-        assert_eq!(estimate_tokens("one two three four five six seven eight nine ten"), 13);
+        assert_eq!(
+            estimate_tokens("one two three four five six seven eight nine ten"),
+            13
+        );
 
         // Empty string
         assert_eq!(estimate_tokens(""), 0);
@@ -699,11 +766,18 @@ mod budget_manager_tests {
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
         // All should fit: 50+100+100+100+100+100+50 = 600 < 1200
-        assert_eq!(selected.len(), 7, "All 7 candidates should fit within budget");
+        assert_eq!(
+            selected.len(),
+            7,
+            "All 7 candidates should fit within budget"
+        );
 
         let total: u32 = selected.iter().map(|c| c.token_count).sum();
         assert_eq!(total, 600);
-        println!("[PASS] Mixed categories: all 7 selected, {} total tokens", total);
+        println!(
+            "[PASS] Mixed categories: all 7 selected, {} total tokens",
+            total
+        );
     }
 
     #[test]
@@ -720,9 +794,11 @@ mod budget_manager_tests {
     #[test]
     fn test_single_candidate_fits() {
         let budget = TokenBudget::default();
-        let candidates = vec![
-            make_candidate(100, InjectionCategory::HighRelevanceCluster, 1.0),
-        ];
+        let candidates = vec![make_candidate(
+            100,
+            InjectionCategory::HighRelevanceCluster,
+            1.0,
+        )];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
@@ -733,26 +809,33 @@ mod budget_manager_tests {
     #[test]
     fn test_single_candidate_too_large() {
         let budget = TokenBudget::with_total(100).expect("100 == MIN_BUDGET");
-        let candidates = vec![
-            make_candidate(150, InjectionCategory::HighRelevanceCluster, 1.0),
-        ];
+        let candidates = vec![make_candidate(
+            150,
+            InjectionCategory::HighRelevanceCluster,
+            1.0,
+        )];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
-        assert!(selected.is_empty(), "150-token candidate should not fit in 100-token budget");
+        assert!(
+            selected.is_empty(),
+            "150-token candidate should not fit in 100-token budget"
+        );
         println!("[PASS] Oversized candidate rejected");
     }
 
     #[test]
     fn test_edge_case_exactly_at_category_budget() {
         let budget = TokenBudget::default(); // divergence_budget = 200
-        let candidates = vec![
-            make_candidate(200, InjectionCategory::DivergenceAlert, 1.0),
-        ];
+        let candidates = vec![make_candidate(200, InjectionCategory::DivergenceAlert, 1.0)];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
-        assert_eq!(selected.len(), 1, "Candidate exactly at category budget should be selected");
+        assert_eq!(
+            selected.len(),
+            1,
+            "Candidate exactly at category budget should be selected"
+        );
     }
 
     #[test]
@@ -766,13 +849,15 @@ mod budget_manager_tests {
             reserved: 100,
         };
         // RecentSession (priority=4) is 1 token over its category budget
-        let candidates = vec![
-            make_candidate(101, InjectionCategory::RecentSession, 1.0),
-        ];
+        let candidates = vec![make_candidate(101, InjectionCategory::RecentSession, 1.0)];
 
         let selected = TokenBudgetManager::select_within_budget(&candidates, &budget);
 
-        assert_eq!(selected.len(), 0, "Low priority 1 token over should be rejected");
+        assert_eq!(
+            selected.len(),
+            0,
+            "Low priority 1 token over should be rejected"
+        );
     }
 
     #[test]
@@ -811,7 +896,11 @@ mod budget_manager_tests {
             // Create candidates that could potentially exceed budget
             let candidates = vec![
                 make_candidate(budget.total / 2, InjectionCategory::DivergenceAlert, 1.0),
-                make_candidate(budget.total / 2, InjectionCategory::HighRelevanceCluster, 0.9),
+                make_candidate(
+                    budget.total / 2,
+                    InjectionCategory::HighRelevanceCluster,
+                    0.9,
+                ),
                 make_candidate(budget.total / 2, InjectionCategory::SingleSpaceMatch, 0.8),
                 make_candidate(budget.total / 2, InjectionCategory::RecentSession, 0.7),
             ];

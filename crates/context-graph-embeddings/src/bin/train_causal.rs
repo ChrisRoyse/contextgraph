@@ -16,9 +16,7 @@ use std::path::PathBuf;
 
 use candle_core::Device;
 
-use context_graph_embeddings::models::pretrained::{
-    load_nomic_weights, CAUSAL_DIMENSION,
-};
+use context_graph_embeddings::models::pretrained::{load_nomic_weights, CAUSAL_DIMENSION};
 use context_graph_embeddings::training::data::{
     expand_seed_pairs, seed_training_pairs, CausalTrainingPair,
 };
@@ -129,7 +127,9 @@ fn parse_args() -> Args {
                 println!("Options:");
                 println!("  -m, --model-path <PATH>  Model directory (default: models/causal)");
                 println!("  -d, --data <PATH>        Additional JSONL training data");
-                println!("  -o, --output <PATH>      Output directory (default: models/causal/trained)");
+                println!(
+                    "  -o, --output <PATH>      Output directory (default: models/causal/trained)"
+                );
                 println!("  -e, --epochs <N>         Total epochs (overrides per-stage defaults)");
                 println!("  -b, --batch-size <N>     Batch size (default: 16)");
                 println!("      --lora-rank <N>      LoRA rank (default: 16)");
@@ -208,8 +208,8 @@ fn main() {
     // Load model weights
     println!("Loading nomic-embed-text-v1.5 weights...");
     let device_ref: &'static Device = Box::leak(Box::new(device.clone()));
-    let weights = load_nomic_weights(&args.model_path, device_ref)
-        .expect("Failed to load model weights");
+    let weights =
+        load_nomic_weights(&args.model_path, device_ref).expect("Failed to load model weights");
     println!(
         "Model loaded: {} layers, hidden_size={}",
         weights.encoder_layers.len(),
@@ -218,8 +218,8 @@ fn main() {
 
     // Load tokenizer
     let tokenizer_path = args.model_path.join("tokenizer.json");
-    let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
-        .expect("Failed to load tokenizer");
+    let tokenizer =
+        tokenizers::Tokenizer::from_file(&tokenizer_path).expect("Failed to load tokenizer");
     println!("Tokenizer loaded from {}", tokenizer_path.display());
 
     // Build training data
@@ -310,8 +310,8 @@ fn main() {
     println!();
 
     // Create and run pipeline
-    let pipeline = CausalTrainingPipeline::new(pipeline_config, device)
-        .expect("Failed to create pipeline");
+    let pipeline =
+        CausalTrainingPipeline::new(pipeline_config, device).expect("Failed to create pipeline");
 
     println!("Starting 3-stage training...\n");
 
@@ -327,10 +327,7 @@ fn main() {
     for stage in &result.stages {
         println!(
             "  Stage {}: {} epochs, loss={:.4}, early_stopped={}",
-            stage.stage,
-            stage.epochs_completed,
-            stage.final_loss.total,
-            stage.early_stopped
+            stage.stage, stage.epochs_completed, stage.final_loss.total, stage.early_stopped
         );
         if let Some(ref m) = stage.best_metrics {
             println!("    Best: {}", m.summary());

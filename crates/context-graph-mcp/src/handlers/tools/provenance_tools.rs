@@ -12,7 +12,9 @@ use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
-use super::provenance_dtos::{GetAuditTrailParams, GetMergeHistoryParams, GetProvenanceChainParams};
+use super::provenance_dtos::{
+    GetAuditTrailParams, GetMergeHistoryParams, GetProvenanceChainParams,
+};
 
 /// Serialize an audit record to JSON for API responses.
 fn audit_record_to_json(r: &AuditRecord) -> serde_json::Value {
@@ -57,16 +59,23 @@ impl Handlers {
                 }
             };
 
-            match self.teleological_store.get_audit_by_target(target_uuid, limit).await {
+            match self
+                .teleological_store
+                .get_audit_by_target(target_uuid, limit)
+                .await
+            {
                 Ok(records) => {
                     let records_json: Vec<serde_json::Value> =
                         records.iter().map(audit_record_to_json).collect();
 
-                    self.tool_result(id, json!({
-                        "audit_trail": records_json,
-                        "count": records_json.len(),
-                        "target_id": target_id_str,
-                    }))
+                    self.tool_result(
+                        id,
+                        json!({
+                            "audit_trail": records_json,
+                            "count": records_json.len(),
+                            "target_id": target_id_str,
+                        }),
+                    )
                 }
                 Err(e) => {
                     error!(error = %e, "get_audit_trail: Store query failed");
@@ -81,7 +90,10 @@ impl Handlers {
                     return self.tool_error(id, "end_time requires start_time");
                 }
             };
-            let end_str = params.end_time.clone().unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+            let end_str = params
+                .end_time
+                .clone()
+                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
 
             let start = match DateTime::parse_from_rfc3339(&start_str) {
                 Ok(dt) => dt.with_timezone(&chrono::Utc),
@@ -98,16 +110,23 @@ impl Handlers {
                 }
             };
 
-            match self.teleological_store.get_audit_by_time_range(start, end, limit).await {
+            match self
+                .teleological_store
+                .get_audit_by_time_range(start, end, limit)
+                .await
+            {
                 Ok(records) => {
                     let records_json: Vec<serde_json::Value> =
                         records.iter().map(audit_record_to_json).collect();
 
-                    self.tool_result(id, json!({
-                        "audit_trail": records_json,
-                        "count": records_json.len(),
-                        "time_range": { "start": start_str, "end": end_str },
-                    }))
+                    self.tool_result(
+                        id,
+                        json!({
+                            "audit_trail": records_json,
+                            "count": records_json.len(),
+                            "time_range": { "start": start_str, "end": end_str },
+                        }),
+                    )
                 }
                 Err(e) => {
                     error!(error = %e, "get_audit_trail: Time range query failed");
@@ -115,7 +134,10 @@ impl Handlers {
                 }
             }
         } else {
-            self.tool_error(id, "Provide target_id or time range (start_time + end_time)")
+            self.tool_error(
+                id,
+                "Provide target_id or time range (start_time + end_time)",
+            )
         }
     }
 
@@ -143,7 +165,11 @@ impl Handlers {
         };
 
         // Get audit records and filter to merges
-        let merge_records = match self.teleological_store.get_audit_by_target(memory_uuid, 100).await {
+        let merge_records = match self
+            .teleological_store
+            .get_audit_by_target(memory_uuid, 100)
+            .await
+        {
             Ok(records) => records
                 .into_iter()
                 .filter(|r| matches!(r.operation, AuditOperation::MemoryMerged { .. }))
@@ -155,7 +181,11 @@ impl Handlers {
         };
 
         // Get source metadata for derived_from info
-        let source_metadata = match self.teleological_store.get_source_metadata(memory_uuid).await {
+        let source_metadata = match self
+            .teleological_store
+            .get_source_metadata(memory_uuid)
+            .await
+        {
             Ok(meta) => meta,
             Err(e) => {
                 error!(error = %e, "get_merge_history: Source metadata query failed");
@@ -163,16 +193,27 @@ impl Handlers {
             }
         };
 
-        let derived_from = source_metadata.as_ref().and_then(|m| m.derived_from.as_ref());
-        let derivation_method = source_metadata.as_ref().and_then(|m| m.derivation_method.as_deref());
+        let derived_from = source_metadata
+            .as_ref()
+            .and_then(|m| m.derived_from.as_ref());
+        let derivation_method = source_metadata
+            .as_ref()
+            .and_then(|m| m.derivation_method.as_deref());
 
         let merge_records_json: Vec<serde_json::Value> = merge_records
             .iter()
             .map(|r| {
                 let (source_ids, strategy) = match &r.operation {
-                    AuditOperation::MemoryMerged { source_ids, strategy } => {
-                        (source_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(), strategy.clone())
-                    }
+                    AuditOperation::MemoryMerged {
+                        source_ids,
+                        strategy,
+                    } => (
+                        source_ids
+                            .iter()
+                            .map(|id| id.to_string())
+                            .collect::<Vec<_>>(),
+                        strategy.clone(),
+                    ),
                     _ => (vec![], String::new()),
                 };
                 json!({
@@ -190,7 +231,11 @@ impl Handlers {
         if params.include_source_metadata {
             if let Some(derived) = derived_from {
                 for source_id in derived {
-                    match self.teleological_store.get_source_metadata(*source_id).await {
+                    match self
+                        .teleological_store
+                        .get_source_metadata(*source_id)
+                        .await
+                    {
                         Ok(Some(meta)) => {
                             source_details.push(json!({
                                 "source_id": source_id.to_string(),
@@ -245,7 +290,11 @@ impl Handlers {
         };
 
         // Get source metadata
-        let source_metadata = match self.teleological_store.get_source_metadata(memory_uuid).await {
+        let source_metadata = match self
+            .teleological_store
+            .get_source_metadata(memory_uuid)
+            .await
+        {
             Ok(meta) => meta,
             Err(e) => {
                 error!(error = %e, "get_provenance_chain: Source metadata query failed");
@@ -313,7 +362,11 @@ impl Handlers {
 
         // Optionally include audit trail (CF_AUDIT_LOG)
         let audit_trail = if eff_audit {
-            match self.teleological_store.get_audit_by_target(memory_uuid, 50).await {
+            match self
+                .teleological_store
+                .get_audit_by_target(memory_uuid, 50)
+                .await
+            {
                 Ok(records) => Some(
                     records
                         .iter()
@@ -345,22 +398,22 @@ impl Handlers {
 
         // Query CF_EMBEDDING_REGISTRY for actual embedding version info
         let embedding_version = if eff_embedding {
-            match self.teleological_store.get_embedding_version(memory_uuid).await {
-                Ok(Some(record)) => {
-                    Some(json!({
-                        "fingerprint_id": record.fingerprint_id.to_string(),
-                        "computed_at": record.computed_at.to_rfc3339(),
-                        "embedder_versions": record.embedder_versions,
-                        "e7_model_version": record.e7_model_version,
-                        "computation_time_ms": record.computation_time_ms,
-                    }))
-                }
-                Ok(None) => {
-                    Some(json!({
-                        "status": "not_tracked",
-                        "note": "No embedding version record for this memory"
-                    }))
-                }
+            match self
+                .teleological_store
+                .get_embedding_version(memory_uuid)
+                .await
+            {
+                Ok(Some(record)) => Some(json!({
+                    "fingerprint_id": record.fingerprint_id.to_string(),
+                    "computed_at": record.computed_at.to_rfc3339(),
+                    "embedder_versions": record.embedder_versions,
+                    "e7_model_version": record.e7_model_version,
+                    "computation_time_ms": record.computation_time_ms,
+                })),
+                Ok(None) => Some(json!({
+                    "status": "not_tracked",
+                    "note": "No embedding version record for this memory"
+                })),
                 Err(e) => {
                     error!(error = %e, "get_provenance_chain: Embedding version query failed");
                     Some(json!({
@@ -375,21 +428,30 @@ impl Handlers {
 
         // Query CF_IMPORTANCE_HISTORY for importance change records
         let importance_history = if eff_importance {
-            match self.teleological_store.get_importance_history(memory_uuid, 50).await {
+            match self
+                .teleological_store
+                .get_importance_history(memory_uuid, 50)
+                .await
+            {
                 Ok(records) => {
                     if records.is_empty() {
                         None
                     } else {
-                        Some(records.iter().map(|r| {
-                            json!({
-                                "timestamp": r.timestamp.to_rfc3339(),
-                                "old_value": r.old_value,
-                                "new_value": r.new_value,
-                                "delta": r.delta,
-                                "operator_id": r.operator_id,
-                                "reason": r.reason,
-                            })
-                        }).collect::<Vec<_>>())
+                        Some(
+                            records
+                                .iter()
+                                .map(|r| {
+                                    json!({
+                                        "timestamp": r.timestamp.to_rfc3339(),
+                                        "old_value": r.old_value,
+                                        "new_value": r.new_value,
+                                        "delta": r.delta,
+                                        "operator_id": r.operator_id,
+                                        "reason": r.reason,
+                                    })
+                                })
+                                .collect::<Vec<_>>(),
+                        )
                     }
                 }
                 Err(e) => {
@@ -403,7 +465,11 @@ impl Handlers {
 
         // Query CF_MERGE_HISTORY for merge records
         let merge_history = if eff_merge {
-            match self.teleological_store.get_merge_history(memory_uuid, 50).await {
+            match self
+                .teleological_store
+                .get_merge_history(memory_uuid, 50)
+                .await
+            {
                 Ok(records) => {
                     if records.is_empty() {
                         None
@@ -430,12 +496,15 @@ impl Handlers {
             None
         };
 
-        self.tool_result(id, json!({
-            "provenance_chain": chain,
-            "audit_trail": audit_trail,
-            "embedding_version": embedding_version,
-            "importance_history": importance_history,
-            "merge_history": merge_history,
-        }))
+        self.tool_result(
+            id,
+            json!({
+                "provenance_chain": chain,
+                "audit_trail": audit_trail,
+                "embedding_version": embedding_version,
+                "importance_history": importance_history,
+                "merge_history": merge_history,
+            }),
+        )
     }
 }

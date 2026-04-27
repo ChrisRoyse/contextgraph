@@ -10,7 +10,9 @@
 //! 3. Handlers::with_graph_linking creates valid handlers
 //! 4. Edge data persists to RocksDB
 
-use context_graph_core::graph_linking::{DirectedRelation, EmbedderEdge, GraphLinkEdgeType, TypedEdge};
+use context_graph_core::graph_linking::{
+    DirectedRelation, EmbedderEdge, GraphLinkEdgeType, TypedEdge,
+};
 use context_graph_storage::graph_edges::EdgeRepository;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use std::sync::Arc;
@@ -28,8 +30,8 @@ fn test_edge_repository_knn_edges_roundtrip() {
     println!("Created temp DB at: {:?}", db_path);
 
     // Open RocksDB store (this creates all column families including graph edges)
-    let store = RocksDbTeleologicalStore::open(db_path)
-        .expect("Failed to open RocksDbTeleologicalStore");
+    let store =
+        RocksDbTeleologicalStore::open(db_path).expect("Failed to open RocksDbTeleologicalStore");
 
     // Extract Arc<DB> using our new db_arc() method
     let db_arc = store.db_arc();
@@ -67,7 +69,12 @@ fn test_edge_repository_knn_edges_roundtrip() {
         .expect("Failed to retrieve embedder edges");
 
     // Verify
-    assert_eq!(retrieved.len(), 3, "Expected 3 edges, got {}", retrieved.len());
+    assert_eq!(
+        retrieved.len(),
+        3,
+        "Expected 3 edges, got {}",
+        retrieved.len()
+    );
     assert_eq!(retrieved[0].target(), target1);
     assert!((retrieved[0].similarity() - 0.95).abs() < 0.001);
     assert_eq!(retrieved[1].target(), target2);
@@ -76,15 +83,33 @@ fn test_edge_repository_knn_edges_roundtrip() {
     assert!((retrieved[2].similarity() - 0.72).abs() < 0.001);
 
     println!("✓ Retrieved 3 K-NN edges with correct data");
-    println!("  - Edge 1: {} -> {} (sim={})", source_id, target1, retrieved[0].similarity());
-    println!("  - Edge 2: {} -> {} (sim={})", source_id, target2, retrieved[1].similarity());
-    println!("  - Edge 3: {} -> {} (sim={})", source_id, target3, retrieved[2].similarity());
+    println!(
+        "  - Edge 1: {} -> {} (sim={})",
+        source_id,
+        target1,
+        retrieved[0].similarity()
+    );
+    println!(
+        "  - Edge 2: {} -> {} (sim={})",
+        source_id,
+        target2,
+        retrieved[1].similarity()
+    );
+    println!(
+        "  - Edge 3: {} -> {} (sim={})",
+        source_id,
+        target3,
+        retrieved[2].similarity()
+    );
 
     // Verify empty result for non-existent source
     let empty = edge_repo
         .get_embedder_edges(0, Uuid::new_v4())
         .expect("Failed to query non-existent source");
-    assert!(empty.is_empty(), "Expected empty result for non-existent source");
+    assert!(
+        empty.is_empty(),
+        "Expected empty result for non-existent source"
+    );
     println!("✓ Non-existent source returns empty vec (not error)");
 
     println!("[PASS] K-NN edges roundtrip test completed\n");
@@ -96,8 +121,7 @@ fn test_edge_repository_typed_edges_roundtrip() {
     println!("\n========== TEST: Typed Edges Roundtrip ==========");
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
     let edge_repo = EdgeRepository::new(store.db_arc());
 
     // Create test data
@@ -106,17 +130,17 @@ fn test_edge_repository_typed_edges_roundtrip() {
 
     // Create a typed edge with specific embedder scores
     let embedder_scores: [f32; 14] = [
-        0.9, // E1 - semantic (strongly agrees)
-        0.0, // E2 - temporal (excluded)
-        0.0, // E3 - temporal (excluded)
-        0.0, // E4 - temporal (excluded)
+        0.9,  // E1 - semantic (strongly agrees)
+        0.0,  // E2 - temporal (excluded)
+        0.0,  // E3 - temporal (excluded)
+        0.0,  // E4 - temporal (excluded)
         0.85, // E5 - causal (agrees)
         0.75, // E6 - sparse
-        0.6, // E7 - code
-        0.5, // E8 - graph
-        0.4, // E9 - HDC
-        0.8, // E10 - intent
-        0.7, // E11 - entity
+        0.6,  // E7 - code
+        0.5,  // E8 - graph
+        0.4,  // E9 - HDC
+        0.8,  // E10 - intent
+        0.7,  // E11 - entity
         0.65, // E12 - ColBERT
         0.55, // E13 - SPLADE
         0.88, // E14 - BGE-M3 Dense
@@ -137,7 +161,8 @@ fn test_edge_repository_typed_edges_roundtrip() {
         embedder_scores,
         agreement_count,
         agreeing_embedders,
-    ).expect("Failed to create typed edge");
+    )
+    .expect("Failed to create typed edge");
 
     println!("Source: {}", source_id);
     println!("Target: {}", target_id);
@@ -179,7 +204,10 @@ fn test_edge_repository_typed_edges_roundtrip() {
         .get_typed_edges_by_type(source_id, GraphLinkEdgeType::CodeRelated)
         .expect("Failed to query wrong type");
 
-    assert!(wrong_type.is_empty(), "Expected empty result for wrong type");
+    assert!(
+        wrong_type.is_empty(),
+        "Expected empty result for wrong type"
+    );
     println!("✓ Wrong type filter returns empty vec");
 
     println!("[PASS] Typed edges roundtrip test completed\n");
@@ -191,8 +219,7 @@ fn test_edge_repository_multiple_embedders() {
     println!("\n========== TEST: Multiple Embedders K-NN Storage ==========");
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
     let edge_repo = EdgeRepository::new(store.db_arc());
 
     let source_id = Uuid::new_v4();
@@ -203,32 +230,44 @@ fn test_edge_repository_multiple_embedders() {
     // Store edges for different embedders (avoiding E5/E7/E8 which need direction)
     // E1 (semantic) - index 0
     edge_repo
-        .store_embedder_edges(0, source_id, &[
-            EmbedderEdge::new(source_id, target_e1, 0, 0.92).expect("E1 edge"),
-        ])
+        .store_embedder_edges(
+            0,
+            source_id,
+            &[EmbedderEdge::new(source_id, target_e1, 0, 0.92).expect("E1 edge")],
+        )
         .expect("Failed to store E1 edges");
     println!("✓ Stored E1 (semantic) edge");
 
     // E6 (sparse) - index 5
     edge_repo
-        .store_embedder_edges(5, source_id, &[
-            EmbedderEdge::new(source_id, target_e6, 5, 0.88).expect("E6 edge"),
-        ])
+        .store_embedder_edges(
+            5,
+            source_id,
+            &[EmbedderEdge::new(source_id, target_e6, 5, 0.88).expect("E6 edge")],
+        )
         .expect("Failed to store E6 edges");
     println!("✓ Stored E6 (sparse) edge");
 
     // E10 (intent) - index 9
     edge_repo
-        .store_embedder_edges(9, source_id, &[
-            EmbedderEdge::new(source_id, target_e10, 9, 0.79).expect("E10 edge"),
-        ])
+        .store_embedder_edges(
+            9,
+            source_id,
+            &[EmbedderEdge::new(source_id, target_e10, 9, 0.79).expect("E10 edge")],
+        )
         .expect("Failed to store E10 edges");
     println!("✓ Stored E10 (intent) edge");
 
     // Retrieve and verify each embedder's edges are isolated
-    let e1_edges = edge_repo.get_embedder_edges(0, source_id).expect("E1 query failed");
-    let e6_edges = edge_repo.get_embedder_edges(5, source_id).expect("E6 query failed");
-    let e10_edges = edge_repo.get_embedder_edges(9, source_id).expect("E10 query failed");
+    let e1_edges = edge_repo
+        .get_embedder_edges(0, source_id)
+        .expect("E1 query failed");
+    let e6_edges = edge_repo
+        .get_embedder_edges(5, source_id)
+        .expect("E6 query failed");
+    let e10_edges = edge_repo
+        .get_embedder_edges(9, source_id)
+        .expect("E10 query failed");
 
     assert_eq!(e1_edges.len(), 1);
     assert_eq!(e1_edges[0].target(), target_e1);
@@ -263,24 +302,29 @@ fn test_edge_persistence_survives_reopen() {
 
     // First session: store edges
     {
-        let store = RocksDbTeleologicalStore::open(&db_path)
-            .expect("Failed to open store (session 1)");
+        let store =
+            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store (session 1)");
         let edge_repo = EdgeRepository::new(store.db_arc());
 
         edge_repo
-            .store_embedder_edges(0, source_id, &[
-                EmbedderEdge::new(source_id, target_id, 0, 0.95).expect("edge"),
-            ])
+            .store_embedder_edges(
+                0,
+                source_id,
+                &[EmbedderEdge::new(source_id, target_id, 0, 0.95).expect("edge")],
+            )
             .expect("Failed to store edges");
 
-        println!("Session 1: Stored edge {} -> {} (sim=0.95)", source_id, target_id);
+        println!(
+            "Session 1: Stored edge {} -> {} (sim=0.95)",
+            source_id, target_id
+        );
     }
     // store dropped here, database closed
 
     // Second session: verify edges persist
     {
-        let store = RocksDbTeleologicalStore::open(&db_path)
-            .expect("Failed to open store (session 2)");
+        let store =
+            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store (session 2)");
         let edge_repo = EdgeRepository::new(store.db_arc());
 
         let edges = edge_repo
@@ -306,8 +350,7 @@ fn test_edge_deletion() {
     println!("\n========== TEST: Edge Deletion ==========");
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
     let edge_repo = EdgeRepository::new(store.db_arc());
 
     let source_id = Uuid::new_v4();
@@ -315,13 +358,17 @@ fn test_edge_deletion() {
 
     // Store edge
     edge_repo
-        .store_embedder_edges(0, source_id, &[
-            EmbedderEdge::new(source_id, target_id, 0, 0.9).expect("edge"),
-        ])
+        .store_embedder_edges(
+            0,
+            source_id,
+            &[EmbedderEdge::new(source_id, target_id, 0, 0.9).expect("edge")],
+        )
         .expect("Failed to store");
 
     // Verify it exists
-    let before = edge_repo.get_embedder_edges(0, source_id).expect("Query failed");
+    let before = edge_repo
+        .get_embedder_edges(0, source_id)
+        .expect("Query failed");
     assert_eq!(before.len(), 1, "Edge should exist before deletion");
     println!("✓ Edge exists before deletion");
 
@@ -332,7 +379,9 @@ fn test_edge_deletion() {
     println!("✓ Deleted edge");
 
     // Verify it's gone
-    let after = edge_repo.get_embedder_edges(0, source_id).expect("Query after delete failed");
+    let after = edge_repo
+        .get_embedder_edges(0, source_id)
+        .expect("Query after delete failed");
     assert!(after.is_empty(), "Edge should be gone after deletion");
     println!("✓ Edge no longer exists after deletion");
 
@@ -345,8 +394,7 @@ fn test_db_arc_shared_instance() {
     println!("\n========== TEST: db_arc() Returns Shared Instance ==========");
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
 
     // Get two Arc<DB> references
     let arc1 = store.db_arc();
@@ -358,7 +406,11 @@ fn test_db_arc_shared_instance() {
 
     // Strong count should be 3 (store + arc1 + arc2)
     let strong_count = Arc::strong_count(&arc1);
-    assert!(strong_count >= 3, "Expected at least 3 strong refs, got {}", strong_count);
+    assert!(
+        strong_count >= 3,
+        "Expected at least 3 strong refs, got {}",
+        strong_count
+    );
     println!("✓ Arc strong count: {}", strong_count);
 
     println!("[PASS] db_arc() shared instance test completed\n");
@@ -370,8 +422,7 @@ fn test_edge_statistics() {
     println!("\n========== TEST: Edge Statistics ==========");
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let store = RocksDbTeleologicalStore::open(temp_dir.path())
-        .expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
     let edge_repo = EdgeRepository::new(store.db_arc());
 
     // Store some edges
@@ -379,9 +430,11 @@ fn test_edge_statistics() {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
         edge_repo
-            .store_embedder_edges(0, source, &[
-                EmbedderEdge::new(source, target, 0, 0.8 + (i as f32 * 0.02)).expect("edge"),
-            ])
+            .store_embedder_edges(
+                0,
+                source,
+                &[EmbedderEdge::new(source, target, 0, 0.8 + (i as f32 * 0.02)).expect("edge")],
+            )
             .expect("Store failed");
     }
 
@@ -393,7 +446,10 @@ fn test_edge_statistics() {
     println!("  - Typed edge count: {}", stats.typed_edge_count);
     println!("  - Storage bytes: {}", stats.storage_bytes);
 
-    assert!(stats.total_embedder_edges >= 5, "Should have at least 5 total embedder edges");
+    assert!(
+        stats.total_embedder_edges >= 5,
+        "Should have at least 5 total embedder edges"
+    );
     println!("✓ Statistics reported correctly");
 
     println!("[PASS] Statistics test completed\n");

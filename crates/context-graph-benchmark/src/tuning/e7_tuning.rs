@@ -315,14 +315,8 @@ impl E7Tuner {
             "Starting E7 grid search: {} combinations",
             total_combinations
         );
-        println!(
-            "  e7_blend: {:?}",
-            self.config.e7_blend_range
-        );
-        println!(
-            "  min_score: {:?}",
-            self.config.min_score_range
-        );
+        println!("  e7_blend: {:?}", self.config.e7_blend_range);
+        println!("  min_score: {:?}", self.config.min_score_range);
         println!(
             "  fetch_multiplier: {:?}",
             self.config.fetch_multiplier_values
@@ -439,14 +433,16 @@ impl E7Tuner {
 
         // Compute metrics
         let mrr = compute_mrr(&query_results, params.min_score as f64);
-        let precision_at = compute_precision_at_k(&query_results, &[1, 5, 10], params.min_score as f64);
+        let precision_at =
+            compute_precision_at_k(&query_results, &[1, 5, 10], params.min_score as f64);
         let recall_at = compute_recall_at_k(&query_results, &[1, 5, 10], params.min_score as f64);
         let ndcg_at_10 = compute_ndcg(&query_results, 10, params.min_score as f64);
 
         // Compute composite score
         let p5 = *precision_at.get(&5).unwrap_or(&0.0);
-        let composite_score =
-            self.config.weight_mrr * mrr + self.config.weight_p5 * p5 + self.config.weight_ndcg * ndcg_at_10;
+        let composite_score = self.config.weight_mrr * mrr
+            + self.config.weight_p5 * p5
+            + self.config.weight_ndcg * ndcg_at_10;
 
         // E7 unique finds
         let e7_unique = count_e7_unique_finds(&query_results);
@@ -524,13 +520,14 @@ impl E7Tuner {
         let min_score_impact = std_dev(&score_means);
         let fetch_mult_impact = std_dev(&fetch_means);
 
-        let most_impactful = if blend_impact >= min_score_impact && blend_impact >= fetch_mult_impact {
-            "e7_blend".to_string()
-        } else if min_score_impact >= fetch_mult_impact {
-            "min_score".to_string()
-        } else {
-            "fetch_multiplier".to_string()
-        };
+        let most_impactful =
+            if blend_impact >= min_score_impact && blend_impact >= fetch_mult_impact {
+                "e7_blend".to_string()
+            } else if min_score_impact >= fetch_mult_impact {
+                "min_score".to_string()
+            } else {
+                "fetch_multiplier".to_string()
+            };
 
         ParameterSensitivity {
             e7_blend_impact: blend_impact,
@@ -571,8 +568,8 @@ impl SimulatedScoreProvider {
 
     /// Hash a string to a deterministic float in [0, 1].
     fn hash_to_score(&self, s: &str, salt: u64) -> f32 {
-        use std::hash::{Hash, Hasher};
         use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
         s.hash(&mut hasher);
@@ -618,7 +615,9 @@ impl ScoreProvider for SimulatedScoreProvider {
         scores.sort_by(|(_, (e1_a, e7_a)), (_, (e1_b, e7_b))| {
             let blend_a = blend_scores(*e1_a, *e7_a, params.e7_blend);
             let blend_b = blend_scores(*e1_b, *e7_b, params.e7_blend);
-            blend_b.partial_cmp(&blend_a).unwrap_or(std::cmp::Ordering::Equal)
+            blend_b
+                .partial_cmp(&blend_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         scores
@@ -642,7 +641,12 @@ fn compute_mrr(results: &[TuningQueryResult], min_score: f64) -> f64 {
 
     let mut sum = 0.0;
     for r in results {
-        for (rank, (doc, score)) in r.retrieved_docs.iter().zip(r.blended_scores.iter()).enumerate() {
+        for (rank, (doc, score)) in r
+            .retrieved_docs
+            .iter()
+            .zip(r.blended_scores.iter())
+            .enumerate()
+        {
             if *score >= min_score && r.relevant_docs.contains(doc) {
                 sum += 1.0 / (rank + 1) as f64;
                 break;
@@ -730,7 +734,13 @@ fn compute_ndcg(results: &[TuningQueryResult], k: usize, min_score: f64) -> f64 
     let mut sum = 0.0;
     for r in results {
         let mut dcg = 0.0;
-        for (i, (doc, score)) in r.retrieved_docs.iter().zip(r.blended_scores.iter()).take(k).enumerate() {
+        for (i, (doc, score)) in r
+            .retrieved_docs
+            .iter()
+            .zip(r.blended_scores.iter())
+            .take(k)
+            .enumerate()
+        {
             if *score >= min_score && r.relevant_docs.contains(doc) {
                 dcg += 1.0 / (i + 2) as f64; // log2(i+2) approximation
             }

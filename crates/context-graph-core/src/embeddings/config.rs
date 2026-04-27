@@ -1,4 +1,4 @@
-//! Static configuration registry for all 13 embedders.
+//! Static configuration registry for all 14 embedders.
 //!
 //! This module provides compile-time configuration for each embedder including
 //! dimension, distance metric, quantization, and category classification.
@@ -46,6 +46,12 @@ pub enum QuantizationConfig {
     /// Used for hyperdimensional computing embeddings.
     Binary,
 
+    /// Token pruning for late-interaction per-token embeddings.
+    ///
+    /// Used for ColBERT-style E12 storage where only the most important tokens
+    /// are retained.
+    TokenPruning,
+
     /// Inverted index for sparse vectors.
     ///
     /// Used for SPLADE and sparse BoW embeddings.
@@ -85,7 +91,7 @@ pub struct EmbedderConfig {
     pub is_token_level: bool,
 }
 
-/// Static configuration for all 13 embedders.
+/// Static configuration for all 14 embedders.
 ///
 /// Index matches Embedder::index() for O(1) lookup.
 pub static EMBEDDER_CONFIGS: [EmbedderConfig; 14] = [
@@ -180,16 +186,13 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 14] = [
         is_sparse: false,
         is_token_level: false,
     },
-    // E9: HDC (1024D projected, Cosine, PQ8) - Category: Structural
+    // E9: HDC (1024D projected, Cosine, Binary storage) - Category: Structural
     // NOTE: Stored as dense Vec<f32> after 10K-bit projection, so Cosine not Hamming
     EmbedderConfig {
         embedder: Embedder::Hdc,
         dimension: E9_DIM, // 1024
         distance_metric: DistanceMetric::Cosine,
-        quantization: QuantizationConfig::PQ8 {
-            num_subvectors: 32,
-            bits_per_code: 8,
-        },
+        quantization: QuantizationConfig::Binary,
         is_asymmetric: false,
         is_sparse: false,
         is_token_level: false,
@@ -213,17 +216,20 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 14] = [
         embedder: Embedder::Entity,
         dimension: E11_DIM, // 768 (KEPLER)
         distance_metric: DistanceMetric::Cosine,
-        quantization: QuantizationConfig::Float8,
+        quantization: QuantizationConfig::PQ8 {
+            num_subvectors: 24,
+            bits_per_code: 8,
+        },
         is_asymmetric: false,
         is_sparse: false,
         is_token_level: false,
     },
-    // E12: Late Interaction (128D per token, MaxSim, Float8) - Category: Semantic
+    // E12: Late Interaction (128D per token, MaxSim, token pruning) - Category: Semantic
     EmbedderConfig {
         embedder: Embedder::LateInteraction,
         dimension: E12_TOKEN_DIM, // 128 per token
         distance_metric: DistanceMetric::MaxSim,
-        quantization: QuantizationConfig::Float8,
+        quantization: QuantizationConfig::TokenPruning,
         is_asymmetric: false,
         is_sparse: false,
         is_token_level: true,
@@ -500,10 +506,7 @@ mod tests {
         );
 
         // Relational embedders (2)
-        assert_eq!(
-            get_category(Embedder::Graph),
-            EmbedderCategory::Relational
-        );
+        assert_eq!(get_category(Embedder::Graph), EmbedderCategory::Relational);
         assert_eq!(get_category(Embedder::Entity), EmbedderCategory::Relational);
 
         // Structural embedders (1)
@@ -537,7 +540,10 @@ mod tests {
     #[test]
     fn test_is_semantic_count() {
         let semantic_count = Embedder::all().filter(|e| is_semantic(*e)).count();
-        assert_eq!(semantic_count, 8, "Should have exactly 8 semantic embedders (E1, E5, E6, E7, E10, E12, E13, E14)");
+        assert_eq!(
+            semantic_count, 8,
+            "Should have exactly 8 semantic embedders (E1, E5, E6, E7, E10, E12, E13, E14)"
+        );
 
         assert!(is_semantic(Embedder::Semantic));
         assert!(is_semantic(Embedder::Causal));
@@ -546,18 +552,22 @@ mod tests {
         assert!(is_semantic(Embedder::Contextual));
         assert!(is_semantic(Embedder::LateInteraction));
         assert!(is_semantic(Embedder::KeywordSplade));
+        assert!(is_semantic(Embedder::BgeM3Dense));
 
         assert!(!is_semantic(Embedder::TemporalRecent));
         assert!(!is_semantic(Embedder::Graph));
         assert!(!is_semantic(Embedder::Hdc));
 
-        println!("[PASS] is_semantic() returns true for exactly 7 embedders");
+        println!("[PASS] is_semantic() returns true for exactly 8 embedders");
     }
 
     #[test]
     fn test_is_temporal_count() {
         let temporal_count = Embedder::all().filter(|e| is_temporal(*e)).count();
-        assert_eq!(temporal_count, 3, "Should have exactly 3 temporal embedders");
+        assert_eq!(
+            temporal_count, 3,
+            "Should have exactly 3 temporal embedders"
+        );
 
         assert!(is_temporal(Embedder::TemporalRecent));
         assert!(is_temporal(Embedder::TemporalPeriodic));
@@ -618,6 +628,26 @@ mod tests {
             get_quantization(Embedder::Graph),
             QuantizationConfig::Float8
         );
+
+        assert_eq!(get_quantization(Embedder::Hdc), QuantizationConfig::Binary);
+        assert!(matches!(
+            get_quantization(Embedder::Entity),
+            QuantizationConfig::PQ8 {
+                num_subvectors: 24,
+                bits_per_code: 8
+            }
+        ));
+        assert_eq!(
+            get_quantization(Embedder::LateInteraction),
+            QuantizationConfig::TokenPruning
+        );
+        assert!(matches!(
+            get_quantization(Embedder::BgeM3Dense),
+            QuantizationConfig::PQ8 {
+                num_subvectors: 32,
+                bits_per_code: 8
+            }
+        ));
 
         // Inverted for sparse
         assert_eq!(

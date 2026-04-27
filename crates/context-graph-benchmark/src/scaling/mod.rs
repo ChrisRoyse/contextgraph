@@ -8,7 +8,7 @@ pub mod degradation;
 pub mod memory_profiler;
 
 pub use degradation::{
-    DegradationAnalysis, DegradationComparison, DegradationPoint, DegradationRates,
-    ScalingLimits, TierImprovement,
+    DegradationAnalysis, DegradationComparison, DegradationPoint, DegradationRates, ScalingLimits,
+    TierImprovement,
 };
 pub use memory_profiler::{MemoryProfile, MemoryProfiler};

@@ -70,7 +70,6 @@ pub struct SourceMetadata {
     pub causal_direction: Option<String>,
 
     // ===== CausalExplanation-specific fields =====
-
     /// UUID of the original memory that was analyzed (for CausalExplanation).
     pub source_fingerprint_id: Option<uuid::Uuid>,
 
@@ -196,7 +195,11 @@ impl SourceMetadata {
     /// * `file_path` - Path to the source markdown file
     /// * `chunk_index` - 0-based index of this chunk
     /// * `total_chunks` - Total number of chunks from this file
-    pub fn md_file_chunk(file_path: impl Into<String>, chunk_index: u32, total_chunks: u32) -> Self {
+    pub fn md_file_chunk(
+        file_path: impl Into<String>,
+        chunk_index: u32,
+        total_chunks: u32,
+    ) -> Self {
         Self {
             source_type: SourceType::MDFileChunk,
             file_path: Some(file_path.into()),
@@ -367,7 +370,10 @@ impl SourceMetadata {
             SourceType::CausalExplanation => {
                 let mech = self.mechanism_type.as_deref().unwrap_or("unknown");
                 let conf = self.confidence.unwrap_or(0.0);
-                format!("Source: CausalExplanation[{}] (confidence: {:.2})", mech, conf)
+                format!(
+                    "Source: CausalExplanation[{}] (confidence: {:.2})",
+                    mech, conf
+                )
             }
             SourceType::Unknown => "Source: Unknown".to_string(),
         }
@@ -438,8 +444,16 @@ mod tests {
         let meta = SourceMetadata::md_file_chunk_with_lines("/docs/readme.md", 1, 3, 10, 45);
         let display = meta.display_string();
         // Should show: Source: `/docs/readme.md:10-45` (chunk 2/3)
-        assert!(display.contains("/docs/readme.md:10-45"), "Display should contain path:lines, got: {}", display);
-        assert!(display.contains("2/3"), "Display should contain chunk info, got: {}", display);
+        assert!(
+            display.contains("/docs/readme.md:10-45"),
+            "Display should contain path:lines, got: {}",
+            display
+        );
+        assert!(
+            display.contains("2/3"),
+            "Display should contain chunk info, got: {}",
+            display
+        );
     }
 
     #[test]
@@ -447,8 +461,19 @@ mod tests {
         let meta = SourceMetadata::md_file_chunk("/docs/readme.md", 1, 3);
         let display = meta.display_string();
         // Should show: Source: `/docs/readme.md` (chunk 2/3)
-        assert!(!display.contains(":10"), "Display without lines should not have line numbers");
-        assert!(display.contains("/docs/readme.md"), "Display should contain path, got: {}", display);
-        assert!(display.contains("2/3"), "Display should contain chunk info, got: {}", display);
+        assert!(
+            !display.contains(":10"),
+            "Display without lines should not have line numbers"
+        );
+        assert!(
+            display.contains("/docs/readme.md"),
+            "Display should contain path, got: {}",
+            display
+        );
+        assert!(
+            display.contains("2/3"),
+            "Display should contain chunk info, got: {}",
+            display
+        );
     }
 }

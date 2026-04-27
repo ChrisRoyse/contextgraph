@@ -202,10 +202,10 @@ impl SemanticQueryType {
     /// Expected match quality for this query type.
     pub fn expected_precision(&self) -> f64 {
         match self {
-            Self::SameTopic => 0.8,     // High precision expected
-            Self::RelatedTopic => 0.5,  // Moderate precision
-            Self::OffTopic => 0.0,      // No matches expected
-            Self::CrossDomain => 0.3,   // Lower precision across domains
+            Self::SameTopic => 0.8,    // High precision expected
+            Self::RelatedTopic => 0.5, // Moderate precision
+            Self::OffTopic => 0.0,     // No matches expected
+            Self::CrossDomain => 0.3,  // Lower precision across domains
         }
     }
 }
@@ -319,7 +319,10 @@ impl E1SemanticBenchmarkDataset {
 
     /// Get documents for a domain.
     pub fn documents_for_domain(&self, domain: SemanticDomain) -> Vec<&SemanticDocument> {
-        self.documents.iter().filter(|d| d.domain == domain).collect()
+        self.documents
+            .iter()
+            .filter(|d| d.domain == domain)
+            .collect()
     }
 
     /// Get queries by type.
@@ -397,7 +400,8 @@ impl E1SemanticDatasetGenerator {
 
                 // Generate documents for this topic
                 let num_docs = self.rng.gen_range(
-                    self.config.min_docs_per_topic..=self.config.max_docs_per_topic.min(docs_per_topic.max(5)),
+                    self.config.min_docs_per_topic
+                        ..=self.config.max_docs_per_topic.min(docs_per_topic.max(5)),
                 );
 
                 for _ in 0..num_docs {
@@ -467,37 +471,100 @@ impl E1SemanticDatasetGenerator {
         // Generate realistic-looking text for the domain
         let templates = match domain {
             SemanticDomain::Code => vec![
-                format!("Implementation of {} in Rust with proper error handling.", topic),
-                format!("The {} module provides essential functionality for the system.", topic),
-                format!("This function demonstrates best practices for {} in modern Rust.", topic),
-                format!("Key considerations when implementing {} include safety and performance.", topic),
-                format!("The {} pattern is widely used in systems programming.", topic),
+                format!(
+                    "Implementation of {} in Rust with proper error handling.",
+                    topic
+                ),
+                format!(
+                    "The {} module provides essential functionality for the system.",
+                    topic
+                ),
+                format!(
+                    "This function demonstrates best practices for {} in modern Rust.",
+                    topic
+                ),
+                format!(
+                    "Key considerations when implementing {} include safety and performance.",
+                    topic
+                ),
+                format!(
+                    "The {} pattern is widely used in systems programming.",
+                    topic
+                ),
             ],
             SemanticDomain::DataScience => vec![
-                format!("Understanding {} is crucial for machine learning applications.", topic),
-                format!("The {} algorithm provides efficient solutions for data processing.", topic),
-                format!("In this analysis of {}, we examine performance characteristics.", topic),
-                format!("Key metrics for evaluating {} include accuracy and latency.", topic),
-                format!("The {} technique has shown significant improvements in recent benchmarks.", topic),
+                format!(
+                    "Understanding {} is crucial for machine learning applications.",
+                    topic
+                ),
+                format!(
+                    "The {} algorithm provides efficient solutions for data processing.",
+                    topic
+                ),
+                format!(
+                    "In this analysis of {}, we examine performance characteristics.",
+                    topic
+                ),
+                format!(
+                    "Key metrics for evaluating {} include accuracy and latency.",
+                    topic
+                ),
+                format!(
+                    "The {} technique has shown significant improvements in recent benchmarks.",
+                    topic
+                ),
             ],
             SemanticDomain::Infrastructure => vec![
-                format!("Configuring {} for production environments requires careful planning.", topic),
-                format!("The {} service handles distributed workloads efficiently.", topic),
-                format!("Best practices for {} include monitoring and alerting.", topic),
-                format!("Scaling {} horizontally provides better reliability.", topic),
+                format!(
+                    "Configuring {} for production environments requires careful planning.",
+                    topic
+                ),
+                format!(
+                    "The {} service handles distributed workloads efficiently.",
+                    topic
+                ),
+                format!(
+                    "Best practices for {} include monitoring and alerting.",
+                    topic
+                ),
+                format!(
+                    "Scaling {} horizontally provides better reliability.",
+                    topic
+                ),
                 format!("Security considerations for {} are documented here.", topic),
             ],
             SemanticDomain::Documentation => vec![
                 format!("This guide covers the basics of {} for new users.", topic),
-                format!("The {} section explains common use cases and examples.", topic),
-                format!("Troubleshooting {} issues involves checking configuration.", topic),
-                format!("API reference for {} with detailed parameter descriptions.", topic),
-                format!("Getting started with {} is straightforward with this tutorial.", topic),
+                format!(
+                    "The {} section explains common use cases and examples.",
+                    topic
+                ),
+                format!(
+                    "Troubleshooting {} issues involves checking configuration.",
+                    topic
+                ),
+                format!(
+                    "API reference for {} with detailed parameter descriptions.",
+                    topic
+                ),
+                format!(
+                    "Getting started with {} is straightforward with this tutorial.",
+                    topic
+                ),
             ],
             SemanticDomain::General => vec![
-                format!("An overview of {} and its applications in software development.", topic),
-                format!("The importance of {} in modern engineering practices.", topic),
-                format!("Exploring {} reveals interesting patterns and solutions.", topic),
+                format!(
+                    "An overview of {} and its applications in software development.",
+                    topic
+                ),
+                format!(
+                    "The importance of {} in modern engineering practices.",
+                    topic
+                ),
+                format!(
+                    "Exploring {} reveals interesting patterns and solutions.",
+                    topic
+                ),
                 format!("Key insights about {} from industry experience.", topic),
                 format!("Understanding {} helps teams work more effectively.", topic),
             ],
@@ -660,7 +727,9 @@ impl E1SemanticDatasetGenerator {
         // Find documents that might match this concept (from any domain)
         // For synthetic data, we'll mark some random docs as relevant
         let num_relevant = self.rng.gen_range(5..20);
-        let sampled: Vec<_> = documents.choose_multiple(&mut self.rng, num_relevant).collect();
+        let sampled: Vec<_> = documents
+            .choose_multiple(&mut self.rng, num_relevant)
+            .collect();
 
         let relevant_docs: HashSet<Uuid> = sampled.iter().map(|d| d.id).collect();
         let relevance_scores: HashMap<Uuid, f64> =
@@ -786,7 +855,11 @@ impl E1SemanticDatasetGenerator {
 // ============================================================================
 
 /// Apply noise to query text for robustness testing.
-pub fn apply_query_noise(query: &SemanticQuery, noise_level: f64, rng: &mut impl Rng) -> SemanticQuery {
+pub fn apply_query_noise(
+    query: &SemanticQuery,
+    noise_level: f64,
+    rng: &mut impl Rng,
+) -> SemanticQuery {
     if noise_level <= 0.0 {
         return query.clone();
     }
@@ -874,9 +947,13 @@ mod tests {
         let dataset = generator.generate();
 
         let same_topic = dataset.queries_by_type(SemanticQueryType::SameTopic).len();
-        let related = dataset.queries_by_type(SemanticQueryType::RelatedTopic).len();
+        let related = dataset
+            .queries_by_type(SemanticQueryType::RelatedTopic)
+            .len();
         let off_topic = dataset.queries_by_type(SemanticQueryType::OffTopic).len();
-        let cross_domain = dataset.queries_by_type(SemanticQueryType::CrossDomain).len();
+        let cross_domain = dataset
+            .queries_by_type(SemanticQueryType::CrossDomain)
+            .len();
 
         assert!(same_topic > 0);
         assert!(off_topic > 0);

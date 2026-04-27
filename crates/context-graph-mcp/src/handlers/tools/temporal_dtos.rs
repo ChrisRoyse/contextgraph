@@ -45,11 +45,11 @@ impl TemporalScale {
     /// Get the time horizon in seconds for this scale.
     pub fn horizon_seconds(&self) -> i64 {
         match self {
-            TemporalScale::Micro => 3600,         // 1 hour
-            TemporalScale::Meso => 86400,         // 1 day
-            TemporalScale::Macro => 604800,       // 1 week
-            TemporalScale::Long => 2592000,       // 30 days
-            TemporalScale::Archival => 31536000,   // 1 year
+            TemporalScale::Micro => 3600,        // 1 hour
+            TemporalScale::Meso => 86400,        // 1 day
+            TemporalScale::Macro => 604800,      // 1 week
+            TemporalScale::Long => 2592000,      // 30 days
+            TemporalScale::Archival => 31536000, // 1 year
         }
     }
 }

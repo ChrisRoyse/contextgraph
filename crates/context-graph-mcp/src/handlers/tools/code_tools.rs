@@ -30,12 +30,12 @@ use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
 use super::code_dtos::{
-    CodeSearchMetadata, CodeSearchMode, CodeSearchResult, CodeSourceInfo, DetectedLanguageInfo,
-    SearchCodeRequest, SearchCodeResponse, CodeEntityResult,
+    CodeEntityResult, CodeSearchMetadata, CodeSearchMode, CodeSearchResult, CodeSourceInfo,
+    DetectedLanguageInfo, SearchCodeRequest, SearchCodeResponse,
 };
 
-use super::helpers::{ToolErrorKind, cosine_similarity};
 use super::super::Handlers;
+use super::helpers::{cosine_similarity, ToolErrorKind};
 
 impl Handlers {
     /// search_code tool implementation.
@@ -305,7 +305,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_code: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -394,14 +398,114 @@ impl Handlers {
 
 /// Language detection patterns: (language_name, indicator_patterns)
 const LANGUAGE_PATTERNS: &[(&str, &[&str])] = &[
-    ("rust", &["impl ", "fn ", "let mut", "struct ", "enum ", "pub fn", "trait ", "cargo", ".rs", "unwrap(", "match "]),
-    ("python", &["def ", "import ", "self.", "__init__", "python", ".py", "pip ", "async def", "pytest"]),
-    ("javascript", &["function ", "const ", "let ", "var ", "=>", ".js", "npm ", "node ", "react", "vue", "angular"]),
-    ("typescript", &["interface ", ": string", ": number", ": boolean", ".ts", "type ", "<T>"]),
-    ("go", &["func ", "package ", "import ", "go ", "goroutine", "chan ", "defer ", ".go", "golang"]),
-    ("java", &["public class", "private ", "protected ", "static void", "extends ", "implements ", ".java", "maven", "gradle", "@Override"]),
-    ("cpp", &["#include", "int main", "void ", "std::", "cout <<", "cin >>", ".cpp", ".hpp", ".h", "template<"]),
-    ("sql", &["select ", "from ", "where ", "join ", "insert ", "update ", "delete ", "create table", "alter ", "sql"]),
+    (
+        "rust",
+        &[
+            "impl ", "fn ", "let mut", "struct ", "enum ", "pub fn", "trait ", "cargo", ".rs",
+            "unwrap(", "match ",
+        ],
+    ),
+    (
+        "python",
+        &[
+            "def ",
+            "import ",
+            "self.",
+            "__init__",
+            "python",
+            ".py",
+            "pip ",
+            "async def",
+            "pytest",
+        ],
+    ),
+    (
+        "javascript",
+        &[
+            "function ",
+            "const ",
+            "let ",
+            "var ",
+            "=>",
+            ".js",
+            "npm ",
+            "node ",
+            "react",
+            "vue",
+            "angular",
+        ],
+    ),
+    (
+        "typescript",
+        &[
+            "interface ",
+            ": string",
+            ": number",
+            ": boolean",
+            ".ts",
+            "type ",
+            "<T>",
+        ],
+    ),
+    (
+        "go",
+        &[
+            "func ",
+            "package ",
+            "import ",
+            "go ",
+            "goroutine",
+            "chan ",
+            "defer ",
+            ".go",
+            "golang",
+        ],
+    ),
+    (
+        "java",
+        &[
+            "public class",
+            "private ",
+            "protected ",
+            "static void",
+            "extends ",
+            "implements ",
+            ".java",
+            "maven",
+            "gradle",
+            "@Override",
+        ],
+    ),
+    (
+        "cpp",
+        &[
+            "#include",
+            "int main",
+            "void ",
+            "std::",
+            "cout <<",
+            "cin >>",
+            ".cpp",
+            ".hpp",
+            ".h",
+            "template<",
+        ],
+    ),
+    (
+        "sql",
+        &[
+            "select ",
+            "from ",
+            "where ",
+            "join ",
+            "insert ",
+            "update ",
+            "delete ",
+            "create table",
+            "alter ",
+            "sql",
+        ],
+    ),
 ];
 
 /// Detect programming language indicators in query.

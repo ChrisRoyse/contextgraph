@@ -207,7 +207,12 @@ async fn main() -> anyhow::Result<()> {
     let mut metrics = SpanMetrics::default();
 
     for (i, (name, content)) in documents.iter().enumerate() {
-        info!("Processing document {}/{}: {}", i + 1, documents.len(), name);
+        info!(
+            "Processing document {}/{}: {}",
+            i + 1,
+            documents.len(),
+            name
+        );
 
         // Extract causal relationships (this now applies the fix internally)
         match llm.extract_causal_relationships(content).await {
@@ -235,7 +240,11 @@ async fn main() -> anyhow::Result<()> {
                 info!(
                     "  -> {} relationships, {} spans",
                     result.relationships.len(),
-                    result.relationships.iter().map(|r| r.source_spans.len()).sum::<usize>()
+                    result
+                        .relationships
+                        .iter()
+                        .map(|r| r.source_spans.len())
+                        .sum::<usize>()
                 );
             }
             Err(e) => {
@@ -269,7 +278,8 @@ async fn main() -> anyhow::Result<()> {
     info!("");
     info!("=== BENCHMARK RESULTS ===");
     info!("Documents processed: {}", results.documents_processed);
-    info!("JSON parse success: {}/{} ({:.1}%)",
+    info!(
+        "JSON parse success: {}/{} ({:.1}%)",
         results.json_parse_success,
         results.documents_processed,
         results.json_parse_success as f64 / results.documents_processed as f64 * 100.0
@@ -278,8 +288,14 @@ async fn main() -> anyhow::Result<()> {
     info!("");
     info!("--- Span Accuracy ---");
     info!("Total spans: {}", results.span_accuracy.total_spans);
-    info!("Offset validity: {:.1}%", results.span_accuracy.offset_validity_rate * 100.0);
-    info!("Text match rate (post-fix): {:.1}%", results.span_accuracy.text_match_rate * 100.0);
+    info!(
+        "Offset validity: {:.1}%",
+        results.span_accuracy.offset_validity_rate * 100.0
+    );
+    info!(
+        "Text match rate (post-fix): {:.1}%",
+        results.span_accuracy.text_match_rate * 100.0
+    );
     info!("");
     info!("Duration: {:.2}s", duration.as_secs_f64());
 
@@ -287,11 +303,15 @@ async fn main() -> anyhow::Result<()> {
     if results.span_accuracy.text_match_rate >= 0.99 {
         info!("✓ TARGET ACHIEVED: text_match_rate >= 99%");
     } else if results.span_accuracy.text_match_rate >= 0.90 {
-        warn!("⚠ CLOSE TO TARGET: text_match_rate = {:.1}% (target: 99%)",
-            results.span_accuracy.text_match_rate * 100.0);
+        warn!(
+            "⚠ CLOSE TO TARGET: text_match_rate = {:.1}% (target: 99%)",
+            results.span_accuracy.text_match_rate * 100.0
+        );
     } else {
-        warn!("✗ TARGET NOT MET: text_match_rate = {:.1}% (target: 99%)",
-            results.span_accuracy.text_match_rate * 100.0);
+        warn!(
+            "✗ TARGET NOT MET: text_match_rate = {:.1}% (target: 99%)",
+            results.span_accuracy.text_match_rate * 100.0
+        );
     }
 
     // Save results

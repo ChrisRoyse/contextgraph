@@ -67,9 +67,9 @@ pub struct AstChunkConfig {
 impl Default for AstChunkConfig {
     fn default() -> Self {
         Self {
-            target_size: 500,           // Qodo recommendation
-            min_size: 100,              // Avoid tiny fragments
-            max_size: 1000,             // Prevent semantic dilution
+            target_size: 500, // Qodo recommendation
+            min_size: 100,    // Avoid tiny fragments
+            max_size: 1000,   // Prevent semantic dilution
             include_parent_context: true,
             include_imports: true,
         }
@@ -227,25 +227,33 @@ impl AstCodeChunker {
     /// # Errors
     /// - `AstChunkerError::EmptySource` if source is empty
     /// - `AstChunkerError::ParseFailed` if tree-sitter fails to parse
-    pub fn chunk(&mut self, source: &str, file_path: &str) -> Result<Vec<CodeChunk>, AstChunkerError> {
+    pub fn chunk(
+        &mut self,
+        source: &str,
+        file_path: &str,
+    ) -> Result<Vec<CodeChunk>, AstChunkerError> {
         // Fail fast on empty content
         if source.is_empty() || source.trim().is_empty() {
             return Err(AstChunkerError::EmptySource);
         }
 
         // Parse the source code
-        let tree = self.parser.parse(source, None).ok_or_else(|| {
-            AstChunkerError::ParseFailed {
+        let tree = self
+            .parser
+            .parse(source, None)
+            .ok_or_else(|| AstChunkerError::ParseFailed {
                 reason: "tree-sitter returned None".to_string(),
-            }
-        })?;
+            })?;
 
         let root = tree.root_node();
 
         // Check for parse errors
         if root.has_error() {
             // Still proceed, but log that there are syntax errors
-            tracing::warn!("Source file {} has syntax errors, chunking may be imprecise", file_path);
+            tracing::warn!(
+                "Source file {} has syntax errors, chunking may be imprecise",
+                file_path
+            );
         }
 
         // Extract imports
@@ -258,8 +266,8 @@ impl AstCodeChunker {
             source,
             file_path,
             &imports,
-            &mut vec![],  // scope chain
-            None,         // parent definition
+            &mut vec![], // scope chain
+            None,        // parent definition
             &mut raw_chunks,
         );
 
@@ -267,10 +275,7 @@ impl AstCodeChunker {
         let merged = self.merge_small_chunks(raw_chunks);
 
         // Build contextualized text for each chunk
-        let chunks = merged
-            .into_iter()
-            .map(|c| self.contextualize(c))
-            .collect();
+        let chunks = merged.into_iter().map(|c| self.contextualize(c)).collect();
 
         Ok(chunks)
     }
@@ -295,10 +300,10 @@ impl AstCodeChunker {
         }
 
         // Case 1: Node fits in a single chunk
-        if size <= self.config.max_size
-            && self.is_chunkable_node(node)
-        {
-            if let Some(chunk) = self.node_to_chunk(node, source, file_path, imports, scope_chain, parent_def) {
+        if size <= self.config.max_size && self.is_chunkable_node(node) {
+            if let Some(chunk) =
+                self.node_to_chunk(node, source, file_path, imports, scope_chain, parent_def)
+            {
                 chunks.push(chunk);
                 return;
             }
@@ -417,7 +422,9 @@ impl AstCodeChunker {
 
         // Imports (abbreviated)
         if !chunk.metadata.imports.is_empty() {
-            let import_str = chunk.metadata.imports
+            let import_str = chunk
+                .metadata
+                .imports
                 .iter()
                 .take(5)
                 .cloned()
@@ -729,13 +736,15 @@ pub fn large_function(input: &str) -> Result<String, Error> {
     fn test_simple_rust_chunking() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(SIMPLE_RUST_CODE, "test.rs")
+        let chunks = chunker
+            .chunk(SIMPLE_RUST_CODE, "test.rs")
             .expect("Should chunk successfully");
 
         println!("=== SIMPLE RUST CHUNKING TEST ===");
         println!("Number of chunks: {}", chunks.len());
         for (i, chunk) in chunks.iter().enumerate() {
-            println!("Chunk {}: entity={:?}, lines={}-{}, chars={}",
+            println!(
+                "Chunk {}: entity={:?}, lines={}-{}, chars={}",
                 i,
                 chunk.metadata.entity_type,
                 chunk.metadata.start_line,
@@ -763,16 +772,16 @@ pub fn large_function(input: &str) -> Result<String, Error> {
     fn test_large_function_stays_together() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(LARGE_FUNCTION, "large.rs")
+        let chunks = chunker
+            .chunk(LARGE_FUNCTION, "large.rs")
             .expect("Should chunk successfully");
 
         println!("=== LARGE FUNCTION TEST ===");
         println!("Number of chunks: {}", chunks.len());
         for (i, chunk) in chunks.iter().enumerate() {
-            println!("Chunk {}: chars={}, type={:?}",
-                i,
-                chunk.metadata.non_whitespace_chars,
-                chunk.metadata.entity_type
+            println!(
+                "Chunk {}: chars={}, type={:?}",
+                i, chunk.metadata.non_whitespace_chars, chunk.metadata.entity_type
             );
         }
         println!("=== END TEST ===");
@@ -792,16 +801,20 @@ pub fn large_function(input: &str) -> Result<String, Error> {
         // "fn foo() { }" has 10 non-whitespace chars: f,n,f,o,o,(,),{,}
         // Actually: 'f','n','f','o','o','(',')','{',' ','}' - let's count
         // fn foo() { } -> f,n,f,o,o,(,),{,} = 9 non-WS chars (space between { } is WS)
-        assert!(chunks[0].metadata.non_whitespace_chars < 15,
+        assert!(
+            chunks[0].metadata.non_whitespace_chars < 15,
             "Should count non-whitespace correctly, got {}",
-            chunks[0].metadata.non_whitespace_chars);
+            chunks[0].metadata.non_whitespace_chars
+        );
     }
 
     #[test]
     fn test_entity_type_detection() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(SIMPLE_RUST_CODE, "test.rs").expect("Should chunk");
+        let chunks = chunker
+            .chunk(SIMPLE_RUST_CODE, "test.rs")
+            .expect("Should chunk");
 
         let types: Vec<EntityType> = chunks.iter().map(|c| c.metadata.entity_type).collect();
         println!("Detected entity types: {:?}", types);
@@ -809,9 +822,9 @@ pub fn large_function(input: &str) -> Result<String, Error> {
         // Should detect struct, impl, function, or Mixed (merged struct+impl)
         assert!(
             types.contains(&EntityType::Struct)
-            || types.contains(&EntityType::Impl)
-            || types.contains(&EntityType::Mixed)
-            || types.contains(&EntityType::Function),
+                || types.contains(&EntityType::Impl)
+                || types.contains(&EntityType::Mixed)
+                || types.contains(&EntityType::Function),
             "Should detect struct, impl, mixed, or function"
         );
     }
@@ -820,12 +833,19 @@ pub fn large_function(input: &str) -> Result<String, Error> {
     fn test_import_extraction() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(SIMPLE_RUST_CODE, "test.rs").expect("Should chunk");
+        let chunks = chunker
+            .chunk(SIMPLE_RUST_CODE, "test.rs")
+            .expect("Should chunk");
 
         // At least some chunks should have imports extracted
         let _has_imports = chunks.iter().any(|c| !c.metadata.imports.is_empty());
-        println!("Chunks with imports: {}",
-            chunks.iter().filter(|c| !c.metadata.imports.is_empty()).count());
+        println!(
+            "Chunks with imports: {}",
+            chunks
+                .iter()
+                .filter(|c| !c.metadata.imports.is_empty())
+                .count()
+        );
 
         // This test is informational - imports may or may not be relevant to each chunk
     }
@@ -862,7 +882,8 @@ impl Outer {
     fn test_contextualized_text_format() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(SIMPLE_RUST_CODE, "src/memory/test.rs")
+        let chunks = chunker
+            .chunk(SIMPLE_RUST_CODE, "src/memory/test.rs")
             .expect("Should chunk");
 
         assert!(!chunks.is_empty());
@@ -887,7 +908,10 @@ impl Outer {
         assert_eq!(hash1.len(), 64, "SHA256 should be 64 hex chars");
 
         let hash3 = AstCodeChunker::compute_hash("different content");
-        assert_ne!(hash1, hash3, "Different content should produce different hash");
+        assert_ne!(
+            hash1, hash3,
+            "Different content should produce different hash"
+        );
     }
 
     #[test]
@@ -913,12 +937,19 @@ impl Outer {
     fn test_line_numbers() {
         let mut chunker = AstCodeChunker::default_rust().unwrap();
 
-        let chunks = chunker.chunk(SIMPLE_RUST_CODE, "test.rs").expect("Should chunk");
+        let chunks = chunker
+            .chunk(SIMPLE_RUST_CODE, "test.rs")
+            .expect("Should chunk");
 
         for chunk in &chunks {
-            assert!(chunk.metadata.start_line >= 1, "Line numbers should be 1-based");
-            assert!(chunk.metadata.start_line <= chunk.metadata.end_line,
-                "Start line should be <= end line");
+            assert!(
+                chunk.metadata.start_line >= 1,
+                "Line numbers should be 1-based"
+            );
+            assert!(
+                chunk.metadata.start_line <= chunk.metadata.end_line,
+                "Start line should be <= end line"
+            );
         }
     }
 
@@ -965,13 +996,21 @@ pub fn documented_function(a: i32, b: String) -> Result<(), Error> {
 
         let chunk = &chunks[0];
         assert_eq!(chunk.metadata.entity_type, EntityType::Function);
-        assert!(chunk.metadata.entity_signature.as_ref().unwrap().contains("documented_function"));
+        assert!(chunk
+            .metadata
+            .entity_signature
+            .as_ref()
+            .unwrap()
+            .contains("documented_function"));
         assert!(chunk.contextualized_text.contains("documented_function"));
 
         println!("=== SYNTHETIC VERIFICATION ===");
         println!("Entity type: {:?}", chunk.metadata.entity_type);
         println!("Signature: {:?}", chunk.metadata.entity_signature);
-        println!("Lines: {}-{}", chunk.metadata.start_line, chunk.metadata.end_line);
+        println!(
+            "Lines: {}-{}",
+            chunk.metadata.start_line, chunk.metadata.end_line
+        );
         println!("Non-WS chars: {}", chunk.metadata.non_whitespace_chars);
         println!("=== END ===");
     }

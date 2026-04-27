@@ -75,7 +75,10 @@ mod tests {
 
     #[test]
     fn round_trips_payload() {
-        let s = Sample { a: 7, b: "hi".into() };
+        let s = Sample {
+            a: 7,
+            b: "hi".into(),
+        };
         let bytes = encode_versioned(&s, 1, "Sample").unwrap();
         assert_eq!(bytes[0], 1);
         let back: Sample = decode_versioned(&bytes, 1, "Sample", "re-run").unwrap();
@@ -84,19 +87,20 @@ mod tests {
 
     #[test]
     fn rejects_wrong_version() {
-        let s = Sample { a: 1, b: "x".into() };
+        let s = Sample {
+            a: 1,
+            b: "x".into(),
+        };
         let mut bytes = encode_versioned(&s, 1, "Sample").unwrap();
         bytes[0] = 2;
-        let err =
-            decode_versioned::<Sample>(&bytes, 1, "Sample", "re-run").unwrap_err();
+        let err = decode_versioned::<Sample>(&bytes, 1, "Sample", "re-run").unwrap_err();
         assert!(err.to_string().contains("version mismatch"));
         assert!(err.to_string().contains("Sample"));
     }
 
     #[test]
     fn rejects_empty_payload() {
-        let err =
-            decode_versioned::<Sample>(&[], 1, "Sample", "re-run").unwrap_err();
+        let err = decode_versioned::<Sample>(&[], 1, "Sample", "re-run").unwrap_err();
         assert!(err.to_string().contains("empty"));
         assert!(err.to_string().contains("Sample"));
     }

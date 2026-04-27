@@ -186,9 +186,7 @@ impl E5EmbedderActivator {
         // Check if relationship already exists in graph
         {
             let graph = self.causal_graph.read();
-            if graph.has_direct_cause(cause_id, effect_id)
-                && !self.config.update_existing
-            {
+            if graph.has_direct_cause(cause_id, effect_id) && !self.config.update_existing {
                 debug!(
                     cause = %cause_id,
                     effect = %effect_id,
@@ -257,8 +255,14 @@ impl E5EmbedderActivator {
         match &self.causal_model {
             Some(causal_model) => {
                 // Use real CausalModel for production embeddings with LLM guidance
-                self.generate_real_e5_embeddings(causal_model, cause_content, effect_content, direction, analysis)
-                    .await
+                self.generate_real_e5_embeddings(
+                    causal_model,
+                    cause_content,
+                    effect_content,
+                    direction,
+                    analysis,
+                )
+                .await
             }
             None => {
                 // Production mode: fail fast - CausalModel is required
@@ -296,7 +300,8 @@ impl E5EmbedderActivator {
         };
 
         // Extract key causal phrases from the mechanism text
-        let key_phrases: Vec<String> = analysis.mechanism
+        let key_phrases: Vec<String> = analysis
+            .mechanism
             .split_whitespace()
             .filter(|w| w.len() > 4)
             .take(5)
@@ -305,14 +310,18 @@ impl E5EmbedderActivator {
             .collect();
 
         let guidance = context_graph_core::traits::CausalHintGuidance {
-            cause_spans: Vec::new(),  // No char-level spans available from pair analysis
+            cause_spans: Vec::new(), // No char-level spans available from pair analysis
             effect_spans: Vec::new(),
             key_phrases,
             asymmetry_strength,
             confidence: analysis.confidence,
         };
 
-        let guidance_ref = if analysis.confidence >= 0.5 { Some(&guidance) } else { None };
+        let guidance_ref = if analysis.confidence >= 0.5 {
+            Some(&guidance)
+        } else {
+            None
+        };
 
         match direction {
             CausalLinkDirection::ACausesB => {
@@ -380,11 +389,9 @@ impl E5EmbedderActivator {
                     a_cause, a_effect, b_cause, b_effect,
                 ))
             }
-            CausalLinkDirection::NoCausalLink => {
-                Err(CausalAgentError::ConfigError {
-                    message: "Cannot generate embeddings for non-causal relationship".to_string(),
-                })
-            }
+            CausalLinkDirection::NoCausalLink => Err(CausalAgentError::ConfigError {
+                message: "Cannot generate embeddings for non-causal relationship".to_string(),
+            }),
         }
     }
 
@@ -402,20 +409,14 @@ impl E5EmbedderActivator {
         // Auto-create nodes if configured
         if self.config.auto_create_nodes {
             if !graph.has_node(cause_id) {
-                let node = CausalNode::with_id(
-                    cause_id,
-                    truncate_name(cause_content, 50),
-                    "memory",
-                );
+                let node =
+                    CausalNode::with_id(cause_id, truncate_name(cause_content, 50), "memory");
                 graph.add_node(node);
             }
 
             if !graph.has_node(effect_id) {
-                let node = CausalNode::with_id(
-                    effect_id,
-                    truncate_name(effect_content, 50),
-                    "memory",
-                );
+                let node =
+                    CausalNode::with_id(effect_id, truncate_name(effect_content, 50), "memory");
                 graph.add_node(node);
             }
         }
@@ -553,7 +554,10 @@ mod tests {
     fn test_truncate_name() {
         assert_eq!(truncate_name("Short", 50), "Short");
         assert_eq!(
-            truncate_name("This is a very long name that exceeds the maximum length", 20),
+            truncate_name(
+                "This is a very long name that exceeds the maximum length",
+                20
+            ),
             "This is a very lo..."
         );
     }

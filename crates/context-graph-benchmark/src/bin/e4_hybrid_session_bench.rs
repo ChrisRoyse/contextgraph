@@ -59,13 +59,10 @@ use context_graph_benchmark::datasets::temporal_sessions::{
     SessionGenerator, SessionGeneratorConfig,
 };
 #[cfg(feature = "real-embeddings")]
+use context_graph_benchmark::realdata::{embedder::RealDataEmbedder, loader::DatasetLoader};
+#[cfg(feature = "real-embeddings")]
 use context_graph_benchmark::runners::e4_hybrid_session::{
     E4HybridSessionBenchmarkConfig, E4HybridSessionBenchmarkResults, E4HybridSessionBenchmarkRunner,
-};
-#[cfg(feature = "real-embeddings")]
-use context_graph_benchmark::realdata::{
-    embedder::RealDataEmbedder,
-    loader::DatasetLoader,
 };
 #[cfg(feature = "real-embeddings")]
 use context_graph_core::types::fingerprint::SemanticFingerprint;
@@ -170,11 +167,18 @@ fn run_real_data_benchmark(args: &Args) -> Result<()> {
     let dataset = loader.load_from_dir(&args.data_dir)?;
 
     let load_time = load_start.elapsed();
-    info!("  Loaded {} chunks from {} topics", dataset.chunks.len(), dataset.topic_count());
+    info!(
+        "  Loaded {} chunks from {} topics",
+        dataset.chunks.len(),
+        dataset.topic_count()
+    );
     info!("  Load time: {:?}", load_time);
 
     if dataset.chunks.len() < args.num_sessions * 5 {
-        warn!("  Warning: Dataset may be too small for {} sessions", args.num_sessions);
+        warn!(
+            "  Warning: Dataset may be too small for {} sessions",
+            args.num_sessions
+        );
         warn!("  Consider using --max-chunks 0 to load all data");
     }
 
@@ -221,7 +225,8 @@ fn run_real_data_benchmark(args: &Args) -> Result<()> {
 
     let embedder = RealDataEmbedder::default();
 
-    info!("  Embedding {} chunks across {} sessions...",
+    info!(
+        "  Embedding {} chunks across {} sessions...",
         ground_truth.stats.total_session_chunks,
         ground_truth.sessions.len()
     );
@@ -237,7 +242,10 @@ fn run_real_data_benchmark(args: &Args) -> Result<()> {
     let embed_time = embed_start.elapsed();
     info!("  Embedded {} chunks", fingerprints.len());
     info!("  Embedding time: {:?}", embed_time);
-    info!("  Rate: {:.1} chunks/sec", fingerprints.len() as f64 / embed_time.as_secs_f64());
+    info!(
+        "  Rate: {:.1} chunks/sec",
+        fingerprints.len() as f64 / embed_time.as_secs_f64()
+    );
 
     // Verify E4 embeddings are present and non-trivial
     verify_e4_embeddings(&fingerprints);
@@ -300,19 +308,25 @@ fn verify_e4_embeddings(fingerprints: &HashMap<Uuid, SemanticFingerprint>) {
     }
 
     // Check E4 embedding presence
-    let e4_present = fingerprints.values()
+    let e4_present = fingerprints
+        .values()
         .filter(|fp| !fp.e4_temporal_positional.is_empty())
         .count();
 
-    info!("  E4 embedding coverage: {}/{} ({:.1}%)",
-        e4_present, total, e4_present as f64 / total as f64 * 100.0);
+    info!(
+        "  E4 embedding coverage: {}/{} ({:.1}%)",
+        e4_present,
+        total,
+        e4_present as f64 / total as f64 * 100.0
+    );
 
     if e4_present < total {
         warn!("  WARNING: Some chunks missing E4 embeddings!");
     }
 
     // Check for trivial embeddings (all zeros or all same)
-    let sample_embeddings: Vec<_> = fingerprints.values()
+    let sample_embeddings: Vec<_> = fingerprints
+        .values()
         .take(10)
         .filter(|fp| !fp.e4_temporal_positional.is_empty())
         .map(|fp| &fp.e4_temporal_positional)
@@ -322,7 +336,10 @@ fn verify_e4_embeddings(fingerprints: &HashMap<Uuid, SemanticFingerprint>) {
         // Check if first two are identical (would indicate broken embedding)
         let sim = cosine_similarity(&sample_embeddings[0], &sample_embeddings[1]);
         if sim > 0.999 {
-            warn!("  WARNING: Sample E4 embeddings are nearly identical (sim={:.4})", sim);
+            warn!(
+                "  WARNING: Sample E4 embeddings are nearly identical (sim={:.4})",
+                sim
+            );
             warn!("  This suggests E4 encoder may not be using session metadata properly.");
         } else {
             info!("  E4 embedding variation verified (sample sim={:.4})", sim);
@@ -418,7 +435,11 @@ fn print_results(results: &E4HybridSessionBenchmarkResults) {
     );
     info!(
         "       vs Timestamp improvement: {:+.1}%",
-        results.metrics.hybrid_effectiveness.vs_timestamp_improvement * 100.0
+        results
+            .metrics
+            .hybrid_effectiveness
+            .vs_timestamp_improvement
+            * 100.0
     );
 
     if let Some(legacy) = &results.legacy_comparison {
@@ -473,11 +494,26 @@ fn print_results(results: &E4HybridSessionBenchmarkResults) {
 
     // Dataset Stats
     info!("DATASET STATISTICS:");
-    info!("       Sessions:               {}", results.dataset_stats.num_sessions);
-    info!("       Total chunks:           {}", results.dataset_stats.num_chunks);
-    info!("       Chunks with embeddings: {}", results.dataset_stats.num_chunks_with_embeddings);
-    info!("       Avg session length:     {:.1}", results.dataset_stats.avg_session_length);
-    info!("       Topics:                 {}", results.dataset_stats.num_topics);
+    info!(
+        "       Sessions:               {}",
+        results.dataset_stats.num_sessions
+    );
+    info!(
+        "       Total chunks:           {}",
+        results.dataset_stats.num_chunks
+    );
+    info!(
+        "       Chunks with embeddings: {}",
+        results.dataset_stats.num_chunks_with_embeddings
+    );
+    info!(
+        "       Avg session length:     {:.1}",
+        results.dataset_stats.avg_session_length
+    );
+    info!(
+        "       Topics:                 {}",
+        results.dataset_stats.num_topics
+    );
 }
 
 /// Save results to JSON file.

@@ -7,10 +7,10 @@
 //! - E3 Periodic: Valid hour/day clusters
 //! - E4 Sequence: Valid session positions
 
+use super::results_aggregator::TemporalMetrics as MeasuredTemporalMetrics;
+use super::{CheckPriority, PhaseResult, ValidationCheck, ValidationPhase};
 use crate::realdata::config::TemporalInjectionConfig;
 use crate::realdata::temporal_injector::InjectedTemporalMetadata;
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase};
-use super::results_aggregator::TemporalMetrics as MeasuredTemporalMetrics;
 
 /// Temporal validation results.
 #[derive(Debug, Clone)]
@@ -88,7 +88,9 @@ impl TemporalValidator {
 
         // Config-only tests (don't need actual metadata)
         result.checks.push(Self::test_config_valid(config));
-        result.checks.push(Self::test_decay_half_life_positive(config));
+        result
+            .checks
+            .push(Self::test_decay_half_life_positive(config));
 
         // If we have actual injected metadata, run more tests
         if let Some(meta) = metadata {
@@ -172,7 +174,13 @@ impl TemporalValidator {
         }
 
         // Update all_passed based on checks
-        result.all_passed = result.checks.iter().all(|c| c.is_passed() || matches!(c.status, super::ValidationStatus::Warning | super::ValidationStatus::Skip));
+        result.all_passed = result.checks.iter().all(|c| {
+            c.is_passed()
+                || matches!(
+                    c.status,
+                    super::ValidationStatus::Warning | super::ValidationStatus::Skip
+                )
+        });
 
         result
     }
@@ -193,7 +201,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "config_valid",
             "Temporal injection config has valid parameters",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let valid = config.recency_span_days > 0
             && config.recency_half_life_secs > 0
@@ -205,15 +214,14 @@ impl TemporalValidator {
         if valid {
             check.pass("valid", "valid")
         } else {
-            check.fail("invalid", "valid")
-                .with_details(&format!(
-                    "span_days={}, half_life={}, hour_clusters={}, sessions={}, chunks_per_session={}",
-                    config.recency_span_days,
-                    config.recency_half_life_secs,
-                    config.periodic_hour_clusters,
-                    config.sequence_num_sessions,
-                    config.sequence_chunks_per_session
-                ))
+            check.fail("invalid", "valid").with_details(&format!(
+                "span_days={}, half_life={}, hour_clusters={}, sessions={}, chunks_per_session={}",
+                config.recency_span_days,
+                config.recency_half_life_secs,
+                config.periodic_hour_clusters,
+                config.sequence_num_sessions,
+                config.sequence_chunks_per_session
+            ))
         }
     }
 
@@ -221,7 +229,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "decay_half_life_positive",
             "[ARCH-22] Decay half-life is positive",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         if config.recency_half_life_secs > 0 {
             check.pass(&config.recency_half_life_secs.to_string(), "> 0")
@@ -239,16 +248,30 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e2_timestamp_span",
             "E2 timestamps span >= 90% of configured range",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let mut metrics = E2Metrics::default();
 
         if metadata.timestamps.is_empty() {
-            return (check.fail("0 days", &format!("{} days", config.recency_span_days)), metrics);
+            return (
+                check.fail("0 days", &format!("{} days", config.recency_span_days)),
+                metrics,
+            );
         }
 
-        let min_ts = metadata.timestamps.values().map(|t| t.timestamp.timestamp_millis()).min().unwrap_or(0);
-        let max_ts = metadata.timestamps.values().map(|t| t.timestamp.timestamp_millis()).max().unwrap_or(0);
+        let min_ts = metadata
+            .timestamps
+            .values()
+            .map(|t| t.timestamp.timestamp_millis())
+            .min()
+            .unwrap_or(0);
+        let max_ts = metadata
+            .timestamps
+            .values()
+            .map(|t| t.timestamp.timestamp_millis())
+            .max()
+            .unwrap_or(0);
 
         let span_ms = max_ts - min_ts;
         let span_days = span_ms as f64 / (1000.0 * 60.0 * 60.0 * 24.0);
@@ -259,26 +282,33 @@ impl TemporalValidator {
 
         let passed = coverage >= 0.9;
         let check = if passed {
-            check.pass(&format!("{:.1} days ({:.0}%)", span_days, coverage * 100.0), &format!(">= {:.1} days (90%)", expected_days * 0.9))
+            check.pass(
+                &format!("{:.1} days ({:.0}%)", span_days, coverage * 100.0),
+                &format!(">= {:.1} days (90%)", expected_days * 0.9),
+            )
         } else {
-            check.fail(&format!("{:.1} days ({:.0}%)", span_days, coverage * 100.0), &format!(">= {:.1} days (90%)", expected_days * 0.9))
+            check.fail(
+                &format!("{:.1} days ({:.0}%)", span_days, coverage * 100.0),
+                &format!(">= {:.1} days (90%)", expected_days * 0.9),
+            )
         };
 
         (check, metrics)
     }
 
     fn test_e2_recency_scores_valid(metadata: &InjectedTemporalMetadata) -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e2_recency_scores_valid",
-            "E2 recency scores in [0.0, 1.0]",
-        ).with_priority(CheckPriority::Critical);
+        let check =
+            ValidationCheck::new("e2_recency_scores_valid", "E2 recency scores in [0.0, 1.0]")
+                .with_priority(CheckPriority::Critical);
 
         if metadata.timestamps.is_empty() {
             return check.fail("no data", "[0.0, 1.0]");
         }
 
         // Use pre-computed default_recency_score
-        let scores: Vec<f64> = metadata.timestamps.values()
+        let scores: Vec<f64> = metadata
+            .timestamps
+            .values()
             .map(|t| t.default_recency_score)
             .collect();
 
@@ -288,9 +318,15 @@ impl TemporalValidator {
         let valid = min_score >= 0.0 && max_score <= 1.0;
 
         if valid {
-            check.pass(&format!("[{:.2}, {:.2}]", min_score, max_score), "[0.0, 1.0]")
+            check.pass(
+                &format!("[{:.2}, {:.2}]", min_score, max_score),
+                "[0.0, 1.0]",
+            )
         } else {
-            check.fail(&format!("[{:.2}, {:.2}]", min_score, max_score), "[0.0, 1.0]")
+            check.fail(
+                &format!("[{:.2}, {:.2}]", min_score, max_score),
+                "[0.0, 1.0]",
+            )
         }
     }
 
@@ -303,7 +339,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e3_periodic_clusters",
             "E3 periodic creates expected number of hour clusters",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let mut metrics = E3Metrics::default();
 
@@ -312,9 +349,8 @@ impl TemporalValidator {
         }
 
         // Count unique hour clusters
-        let hour_clusters: std::collections::HashSet<usize> = metadata.periodic.values()
-            .map(|p| p.hour_cluster)
-            .collect();
+        let hour_clusters: std::collections::HashSet<usize> =
+            metadata.periodic.values().map(|p| p.hour_cluster).collect();
 
         metrics.hour_clusters = hour_clusters.len();
         metrics.chunks_with_metadata = metadata.periodic.len();
@@ -324,9 +360,15 @@ impl TemporalValidator {
         let passed = metrics.hour_clusters <= expected + 2 && metrics.hour_clusters > 0;
 
         let check = if passed {
-            check.pass(&format!("{} clusters", metrics.hour_clusters), &format!("<= {} clusters", expected + 2))
+            check.pass(
+                &format!("{} clusters", metrics.hour_clusters),
+                &format!("<= {} clusters", expected + 2),
+            )
         } else {
-            check.fail(&format!("{} clusters", metrics.hour_clusters), &format!("<= {} clusters", expected + 2))
+            check.fail(
+                &format!("{} clusters", metrics.hour_clusters),
+                &format!("<= {} clusters", expected + 2),
+            )
         };
 
         (check, metrics)
@@ -336,20 +378,24 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e3_hour_day_valid",
             "[ARCH-23] E3 periodic hour in [0,23], day in [0,6]",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         if metadata.periodic.is_empty() {
             return check.pass("no data (skipped)", "[0,23], [0,6]");
         }
 
-        let all_valid = metadata.periodic.values().all(|p| {
-            p.hour < 24 && p.day_of_week < 7
-        });
+        let all_valid = metadata
+            .periodic
+            .values()
+            .all(|p| p.hour < 24 && p.day_of_week < 7);
 
         if all_valid {
             check.pass("all valid", "hour < 24, day < 7")
         } else {
-            let invalid: Vec<_> = metadata.periodic.values()
+            let invalid: Vec<_> = metadata
+                .periodic
+                .values()
                 .filter(|p| p.hour >= 24 || p.day_of_week >= 7)
                 .take(3)
                 .map(|p| format!("h={}, d={}", p.hour, p.day_of_week))
@@ -367,20 +413,21 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e4_session_sequences",
             "E4 creates expected number of sessions",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let mut metrics = E4Metrics {
             num_sessions: metadata.sessions.len(),
-            chunks_with_sessions: metadata.sessions.iter()
+            chunks_with_sessions: metadata
+                .sessions
+                .iter()
                 .flat_map(|s| s.chunks.iter())
                 .count(),
             ..Default::default()
         };
 
         if !metadata.sessions.is_empty() {
-            let lengths: Vec<_> = metadata.sessions.iter()
-                .map(|s| s.chunks.len())
-                .collect();
+            let lengths: Vec<_> = metadata.sessions.iter().map(|s| s.chunks.len()).collect();
             metrics.min_session_length = *lengths.iter().min().unwrap_or(&0);
             metrics.max_session_length = *lengths.iter().max().unwrap_or(&0);
         }
@@ -404,7 +451,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e4_session_positions_monotonic",
             "[ARCH-24] E4 sequence positions are monotonic within sessions",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         if metadata.sessions.is_empty() {
             return check.pass("no sessions (skipped)", "monotonic");
@@ -426,18 +474,21 @@ impl TemporalValidator {
         }
 
         if all_monotonic {
-            check.pass("monotonic", "monotonic")
+            check
+                .pass("monotonic", "monotonic")
                 .with_details(&format!("{} sessions verified", metadata.sessions.len()))
         } else {
             check.fail("non-monotonic", "monotonic")
         }
     }
 
-    fn test_temporal_coverage(metadata: &InjectedTemporalMetadata, num_chunks: usize) -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "temporal_coverage",
-            "Temporal metadata covers most chunks",
-        ).with_priority(CheckPriority::Medium);
+    fn test_temporal_coverage(
+        metadata: &InjectedTemporalMetadata,
+        num_chunks: usize,
+    ) -> ValidationCheck {
+        let check =
+            ValidationCheck::new("temporal_coverage", "Temporal metadata covers most chunks")
+                .with_priority(CheckPriority::Medium);
 
         if num_chunks == 0 {
             return check.pass("0 chunks", "n/a");
@@ -458,7 +509,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "decay_exponential",
             "[ARCH-22] Exponential decay: score = 0.5 at half-life",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // Formula: score = exp(-age * 0.693 / half_life)
         // At age = half_life: score = exp(-0.693) ≈ 0.5
@@ -479,7 +531,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "decay_linear",
             "[ARCH-22] Linear decay: score = max(0, 1 - age/max_age)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // At age = max_age/2: score = 0.5
         let max_age: f64 = 86400.0 * 365.0; // 1 year
@@ -499,7 +552,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "decay_step",
             "[ARCH-22] Step decay: Fresh(<5min)=1.0, Recent(<1h)=0.8, Today(<1d)=0.5",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // Step function thresholds
         let five_min = 5.0 * 60.0;
@@ -507,10 +561,15 @@ impl TemporalValidator {
         let one_day = 24.0 * 60.0 * 60.0;
 
         let step_fn = |age: f64| -> f64 {
-            if age < five_min { 1.0 }
-            else if age < one_hour { 0.8 }
-            else if age < one_day { 0.5 }
-            else { 0.1 }
+            if age < five_min {
+                1.0
+            } else if age < one_hour {
+                0.8
+            } else if age < one_day {
+                0.5
+            } else {
+                0.1
+            }
         };
 
         let fresh = step_fn(60.0); // 1 minute
@@ -526,7 +585,10 @@ impl TemporalValidator {
         if passed {
             check.pass("1.0, 0.8, 0.5, 0.1", "1.0, 0.8, 0.5, 0.1")
         } else {
-            check.fail(&format!("{}, {}, {}, {}", fresh, recent, today, older), "1.0, 0.8, 0.5, 0.1")
+            check.fail(
+                &format!("{}, {}, {}, {}", fresh, recent, today, older),
+                "1.0, 0.8, 0.5, 0.1",
+            )
         }
     }
 
@@ -536,7 +598,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e2_measured_quality",
             "[ARCH-22] E2 recency has good decay accuracy (measured)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // Target: decay accuracy >= 0.65 (lowered from 0.7 - within statistical variance)
         let target = 0.65;
@@ -545,7 +608,8 @@ impl TemporalValidator {
         if accuracy >= target {
             check.pass(&format!("{:.1}%", accuracy * 100.0), ">= 65%")
         } else if accuracy >= 0.5 {
-            check.warning(&format!("{:.1}%", accuracy * 100.0), ">= 65%")
+            check
+                .warning(&format!("{:.1}%", accuracy * 100.0), ">= 65%")
                 .with_details("Below target but functional")
         } else {
             check.fail(&format!("{:.1}%", accuracy * 100.0), ">= 65%")
@@ -556,7 +620,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e4_measured_accuracy",
             "[ARCH-24] E4 sequence accuracy (measured)",
-        ).with_priority(CheckPriority::Medium);
+        )
+        .with_priority(CheckPriority::Medium);
 
         // NOTE: sequence_accuracy has a design flaw - items are retrieved by proximity to anchor,
         // not temporal order. For "before" queries, proximity order is REVERSE of temporal order.
@@ -567,27 +632,31 @@ impl TemporalValidator {
 
         // Pass if before_after_accuracy is good (the reliable metric)
         if before_after >= 0.8 {
-            check.pass(
-                &format!("before_after={:.1}%", before_after * 100.0),
-                ">= 80% before_after"
-            ).with_details(&format!(
-                "sequence_accuracy={:.1}% (metric has design limitations), ordering_tau={:.2}",
-                measured.e4_sequence_accuracy * 100.0,
-                ordering
-            ))
+            check
+                .pass(
+                    &format!("before_after={:.1}%", before_after * 100.0),
+                    ">= 80% before_after",
+                )
+                .with_details(&format!(
+                    "sequence_accuracy={:.1}% (metric has design limitations), ordering_tau={:.2}",
+                    measured.e4_sequence_accuracy * 100.0,
+                    ordering
+                ))
         } else if before_after >= 0.6 {
-            check.warning(
-                &format!("before_after={:.1}%", before_after * 100.0),
-                ">= 80% before_after"
-            ).with_details(&format!(
-                "sequence_accuracy={:.1}%, ordering_tau={:.2}",
-                measured.e4_sequence_accuracy * 100.0,
-                ordering
-            ))
+            check
+                .warning(
+                    &format!("before_after={:.1}%", before_after * 100.0),
+                    ">= 80% before_after",
+                )
+                .with_details(&format!(
+                    "sequence_accuracy={:.1}%, ordering_tau={:.2}",
+                    measured.e4_sequence_accuracy * 100.0,
+                    ordering
+                ))
         } else {
             check.fail(
                 &format!("before_after={:.1}%", before_after * 100.0),
-                ">= 80% before_after"
+                ">= 80% before_after",
             )
         }
     }
@@ -596,13 +665,15 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "symmetry_validated",
             "Temporal embeddings pass symmetry validation",
-        ).with_priority(CheckPriority::Medium);
+        )
+        .with_priority(CheckPriority::Medium);
 
         if measured.symmetry_validated {
             check.pass("validated", "symmetric")
         } else {
             // Symmetry check not computed in this benchmark run - skip rather than warn
-            check.skip("not computed", "symmetric")
+            check
+                .skip("not computed", "symmetric")
                 .with_details("Symmetry validation not performed in this benchmark run")
         }
     }
@@ -614,11 +685,14 @@ impl TemporalValidator {
     /// Test E4 hybrid session clustering quality.
     ///
     /// Validates that E4 hybrid mode achieves the target session separation ratio.
-    pub fn test_e4_hybrid_session_clustering(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+    pub fn test_e4_hybrid_session_clustering(
+        measured: &MeasuredTemporalMetrics,
+    ) -> ValidationCheck {
         let check = ValidationCheck::new(
             "e4_hybrid_session_clustering",
             "[HYBRID] E4 session separation ratio",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let separation = measured.e4_session_separation_ratio.unwrap_or(0.0);
         let target = 2.0;
@@ -626,7 +700,8 @@ impl TemporalValidator {
         if separation >= target {
             check.pass(&format!("{:.2}x", separation), ">= 2.0x")
         } else if separation >= 1.5 {
-            check.warning(&format!("{:.2}x", separation), ">= 2.0x")
+            check
+                .warning(&format!("{:.2}x", separation), ">= 2.0x")
                 .with_details("Below target but showing session clustering")
         } else {
             check.fail(&format!("{:.2}x", separation), ">= 2.0x")
@@ -636,11 +711,14 @@ impl TemporalValidator {
     /// Test E4 hybrid intra-session ordering accuracy.
     ///
     /// Validates that E4 hybrid mode preserves position ordering within sessions.
-    pub fn test_e4_hybrid_intra_session_ordering(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+    pub fn test_e4_hybrid_intra_session_ordering(
+        measured: &MeasuredTemporalMetrics,
+    ) -> ValidationCheck {
         let check = ValidationCheck::new(
             "e4_hybrid_intra_session_ordering",
             "[HYBRID] E4 position ordering within sessions",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let accuracy = measured.e4_intra_session_ordering.unwrap_or(0.0);
         let target = 0.80;
@@ -648,7 +726,8 @@ impl TemporalValidator {
         if accuracy >= target {
             check.pass(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
         } else if accuracy >= 0.6 {
-            check.warning(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
+            check
+                .warning(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
                 .with_details("Below target but showing ordering preservation")
         } else {
             check.fail(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
@@ -662,7 +741,8 @@ impl TemporalValidator {
         let check = ValidationCheck::new(
             "e4_hybrid_vs_legacy",
             "[HYBRID] E4 improvement over legacy mode",
-        ).with_priority(CheckPriority::Medium);
+        )
+        .with_priority(CheckPriority::Medium);
 
         let improvement = measured.e4_hybrid_vs_legacy_improvement.unwrap_or(0.0);
         let target = 0.10; // 10% improvement
@@ -670,10 +750,12 @@ impl TemporalValidator {
         if improvement >= target {
             check.pass(&format!("+{:.1}%", improvement * 100.0), ">= +10%")
         } else if improvement >= 0.0 {
-            check.warning(&format!("+{:.1}%", improvement * 100.0), ">= +10%")
+            check
+                .warning(&format!("+{:.1}%", improvement * 100.0), ">= +10%")
                 .with_details("Positive improvement but below target")
         } else {
-            check.fail(&format!("{:.1}%", improvement * 100.0), ">= +10%")
+            check
+                .fail(&format!("{:.1}%", improvement * 100.0), ">= +10%")
                 .with_details("Hybrid mode performing worse than legacy")
         }
     }
@@ -682,10 +764,8 @@ impl TemporalValidator {
     ///
     /// Validates that before and after retrieval have similar accuracy.
     pub fn test_e4_hybrid_symmetry(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e4_hybrid_symmetry",
-            "[HYBRID] E4 before/after symmetry",
-        ).with_priority(CheckPriority::Medium);
+        let check = ValidationCheck::new("e4_hybrid_symmetry", "[HYBRID] E4 before/after symmetry")
+            .with_priority(CheckPriority::Medium);
 
         let symmetry = measured.e4_hybrid_symmetry_score.unwrap_or(0.0);
         let target = 0.80;
@@ -753,8 +833,14 @@ mod tests {
         };
         let result = TemporalValidator::validate(&config, None, 0, Some(&measured));
         // Should have measured metrics checks
-        assert!(result.checks.iter().any(|c| c.name == "e2_measured_quality"));
-        assert!(result.checks.iter().any(|c| c.name == "e4_measured_accuracy"));
+        assert!(result
+            .checks
+            .iter()
+            .any(|c| c.name == "e2_measured_quality"));
+        assert!(result
+            .checks
+            .iter()
+            .any(|c| c.name == "e4_measured_accuracy"));
         assert!(result.all_passed);
     }
 }

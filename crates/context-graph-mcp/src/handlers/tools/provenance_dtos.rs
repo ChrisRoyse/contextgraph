@@ -10,7 +10,10 @@ pub struct GetAuditTrailParams {
     pub target_id: Option<String>,
     pub start_time: Option<String>,
     pub end_time: Option<String>,
-    #[serde(default = "default_audit_limit", deserialize_with = "deserialize_usize_lenient")]
+    #[serde(
+        default = "default_audit_limit",
+        deserialize_with = "deserialize_usize_lenient"
+    )]
     pub limit: usize,
 }
 
@@ -27,10 +30,10 @@ pub fn deserialize_usize_lenient<'de, D: Deserializer<'de>>(d: D) -> Result<usiz
             .as_u64()
             .map(|n| n as usize)
             .ok_or_else(|| serde::de::Error::custom("limit must be a non-negative integer")),
-        serde_json::Value::String(s) => s
-            .parse::<usize>()
-            .map_err(serde::de::Error::custom),
-        _ => Err(serde::de::Error::custom("limit must be an integer or string")),
+        serde_json::Value::String(s) => s.parse::<usize>().map_err(serde::de::Error::custom),
+        _ => Err(serde::de::Error::custom(
+            "limit must be an integer or string",
+        )),
     }
 }
 

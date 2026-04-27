@@ -105,7 +105,7 @@ impl TeleologicalFingerprint {
     pub fn teleological_vector(&self) -> [f32; TELEOLOGICAL_VECTOR_DIM] {
         let s = &self.semantic;
         [
-            l2_norm(&s.e1_semantic),                // E1  Semantic
+            l2_norm(&s.e1_semantic),                 // E1  Semantic
             l2_norm(&s.e2_temporal_recent),          // E2  Temporal-Recent
             l2_norm(&s.e3_temporal_periodic),        // E3  Temporal-Periodic
             l2_norm(&s.e4_temporal_positional),      // E4  Temporal-Positional

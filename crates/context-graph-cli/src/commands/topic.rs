@@ -156,7 +156,10 @@ async fn handle_portfolio(args: PortfolioArgs) -> i32 {
     match client.is_server_running().await {
         Ok(true) => {}
         Ok(false) => {
-            eprintln!("Error: MCP server not running at {}", client.server_address());
+            eprintln!(
+                "Error: MCP server not running at {}",
+                client.server_address()
+            );
             eprintln!("Start the server with: context-graph-mcp");
             return 1;
         }
@@ -171,7 +174,10 @@ async fn handle_portfolio(args: PortfolioArgs) -> i32 {
     match client.get_topic_portfolio(Some(args.format.as_str())).await {
         Ok(result) => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                );
             } else {
                 print_portfolio(&result, args.format);
             }
@@ -204,7 +210,10 @@ async fn handle_stability(args: StabilityArgs) -> i32 {
     match client.is_server_running().await {
         Ok(true) => {}
         Ok(false) => {
-            eprintln!("Error: MCP server not running at {}", client.server_address());
+            eprintln!(
+                "Error: MCP server not running at {}",
+                client.server_address()
+            );
             eprintln!("Start the server with: context-graph-mcp");
             return 1;
         }
@@ -219,7 +228,10 @@ async fn handle_stability(args: StabilityArgs) -> i32 {
     match client.get_topic_stability(Some(args.hours)).await {
         Ok(result) => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                );
             } else {
                 print_stability(&result);
             }
@@ -242,7 +254,10 @@ async fn handle_detect(args: DetectArgs) -> i32 {
     match client.is_server_running().await {
         Ok(true) => {}
         Ok(false) => {
-            eprintln!("Error: MCP server not running at {}", client.server_address());
+            eprintln!(
+                "Error: MCP server not running at {}",
+                client.server_address()
+            );
             eprintln!("Start the server with: context-graph-mcp");
             return 1;
         }
@@ -257,7 +272,10 @@ async fn handle_detect(args: DetectArgs) -> i32 {
     match client.detect_topics(args.force).await {
         Ok(result) => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                );
             } else {
                 print_detection_result(&result);
             }
@@ -290,9 +308,18 @@ fn format_portfolio(result: &serde_json::Value, format: TopicFormat) -> String {
         }
 
         for topic in topics {
-            let name = topic.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
-            let confidence = topic.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
-            let weighted_agreement = topic.get("weighted_agreement").and_then(|w| w.as_f64()).unwrap_or(0.0);
+            let name = topic
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("Unknown");
+            let confidence = topic
+                .get("confidence")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(0.0);
+            let weighted_agreement = topic
+                .get("weighted_agreement")
+                .and_then(|w| w.as_f64())
+                .unwrap_or(0.0);
 
             match format {
                 TopicFormat::Brief => {
@@ -302,11 +329,11 @@ fn format_portfolio(result: &serde_json::Value, format: TopicFormat) -> String {
                     writeln!(out, "Topic: {}", name).unwrap();
                     writeln!(out, "  Confidence: {:.2}", confidence).unwrap();
                     writeln!(out, "  Weighted Agreement: {:.2}", weighted_agreement).unwrap();
-                    if let Some(spaces) = topic.get("contributing_spaces").and_then(|s| s.as_array()) {
-                        let space_names: Vec<&str> = spaces
-                            .iter()
-                            .filter_map(|s| s.as_str())
-                            .collect();
+                    if let Some(spaces) =
+                        topic.get("contributing_spaces").and_then(|s| s.as_array())
+                    {
+                        let space_names: Vec<&str> =
+                            spaces.iter().filter_map(|s| s.as_str()).collect();
                         writeln!(out, "  Contributing Spaces: {}", space_names.join(", ")).unwrap();
                     }
                     writeln!(out).unwrap();
@@ -315,14 +342,16 @@ fn format_portfolio(result: &serde_json::Value, format: TopicFormat) -> String {
                     writeln!(out, "Topic: {}", name).unwrap();
                     writeln!(out, "  Confidence: {:.2}", confidence).unwrap();
                     writeln!(out, "  Weighted Agreement: {:.2}", weighted_agreement).unwrap();
-                    if let Some(spaces) = topic.get("contributing_spaces").and_then(|s| s.as_array()) {
-                        let space_names: Vec<&str> = spaces
-                            .iter()
-                            .filter_map(|s| s.as_str())
-                            .collect();
+                    if let Some(spaces) =
+                        topic.get("contributing_spaces").and_then(|s| s.as_array())
+                    {
+                        let space_names: Vec<&str> =
+                            spaces.iter().filter_map(|s| s.as_str()).collect();
                         writeln!(out, "  Contributing Spaces: {}", space_names.join(", ")).unwrap();
                     }
-                    if let Some(strengths) = topic.get("embedder_strengths").and_then(|s| s.as_object()) {
+                    if let Some(strengths) =
+                        topic.get("embedder_strengths").and_then(|s| s.as_object())
+                    {
                         writeln!(out, "  Embedder Strengths:").unwrap();
                         for (embedder, strength) in strengths {
                             let val = strength.as_f64().unwrap_or(0.0);
@@ -359,9 +388,18 @@ fn format_stability(result: &serde_json::Value) -> String {
     writeln!(out, "Topic Stability Metrics").unwrap();
     writeln!(out, "=======================\n").unwrap();
 
-    let churn_rate = result.get("churn_rate").and_then(|c| c.as_f64()).unwrap_or(0.0);
-    let entropy = result.get("entropy").and_then(|e| e.as_f64()).unwrap_or(0.0);
-    let dream_recommended = result.get("dream_recommended").and_then(|d| d.as_bool()).unwrap_or(false);
+    let churn_rate = result
+        .get("churn_rate")
+        .and_then(|c| c.as_f64())
+        .unwrap_or(0.0);
+    let entropy = result
+        .get("entropy")
+        .and_then(|e| e.as_f64())
+        .unwrap_or(0.0);
+    let dream_recommended = result
+        .get("dream_recommended")
+        .and_then(|d| d.as_bool())
+        .unwrap_or(false);
 
     // Churn rate with status indicator
     let churn_status = if churn_rate < 0.3 {
@@ -416,8 +454,14 @@ fn print_detection_result(result: &serde_json::Value) {
     println!("Topic Detection Results");
     println!("=======================\n");
 
-    let topics_found = result.get("topics_found").and_then(|t| t.as_u64()).unwrap_or(0);
-    let memories_processed = result.get("memories_processed").and_then(|m| m.as_u64()).unwrap_or(0);
+    let topics_found = result
+        .get("topics_found")
+        .and_then(|t| t.as_u64())
+        .unwrap_or(0);
+    let memories_processed = result
+        .get("memories_processed")
+        .and_then(|m| m.as_u64())
+        .unwrap_or(0);
 
     println!("Memories Processed: {}", memories_processed);
     println!("Topics Found: {}", topics_found);
@@ -426,8 +470,14 @@ fn print_detection_result(result: &serde_json::Value) {
         if !topics.is_empty() {
             println!("\nDiscovered Topics:");
             for topic in topics {
-                let name = topic.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
-                let confidence = topic.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0);
+                let name = topic
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("Unknown");
+                let confidence = topic
+                    .get("confidence")
+                    .and_then(|c| c.as_f64())
+                    .unwrap_or(0.0);
                 println!("  - {} (confidence: {:.2})", name, confidence);
             }
         }

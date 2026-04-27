@@ -333,10 +333,7 @@ impl McpClient {
 
         info!(
             content_len = content.len(),
-            importance,
-            modality,
-            session_id,
-            "Calling MCP store_memory"
+            importance, modality, session_id, "Calling MCP store_memory"
         );
 
         self.call_tool(params).await
@@ -452,9 +449,7 @@ impl McpClient {
 
         info!(
             query_len = query.len(),
-            top_k,
-            include_content,
-            "Calling MCP search_graph"
+            top_k, include_content, "Calling MCP search_graph"
         );
 
         self.call_tool(params).await
@@ -532,9 +527,7 @@ impl McpClient {
 
         debug!(
             query_len = query.len(),
-            direction,
-            top_k,
-            "Calling MCP search_causes (fast path) - R10 causal intent"
+            direction, top_k, "Calling MCP search_causes (fast path) - R10 causal intent"
         );
 
         self.call_tool_fast(params).await
@@ -727,10 +720,7 @@ impl McpClient {
     /// # Returns
     ///
     /// The MCP tool result as JSON value containing detected topics.
-    pub async fn detect_topics(
-        &self,
-        force: bool,
-    ) -> Result<serde_json::Value, McpClientError> {
+    pub async fn detect_topics(&self, force: bool) -> Result<serde_json::Value, McpClientError> {
         let params = json!({
             "name": "detect_topics",
             "arguments": {
@@ -858,9 +848,15 @@ impl McpClient {
     /// ```
     ///
     /// This function extracts the actual tool result from the wrapper.
-    fn unwrap_mcp_response(response: serde_json::Value) -> Result<serde_json::Value, McpClientError> {
+    fn unwrap_mcp_response(
+        response: serde_json::Value,
+    ) -> Result<serde_json::Value, McpClientError> {
         // Check for error response
-        if response.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if response
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             let error_msg = Self::extract_content_text(&response)
                 .map(String::from)
                 .unwrap_or_else(|| "Unknown MCP error".to_string());
@@ -932,8 +928,7 @@ impl McpClient {
 
         debug!(
             text_len = text.len(),
-            include_unknown,
-            "Calling MCP extract_entities (fast path)"
+            include_unknown, "Calling MCP extract_entities (fast path)"
         );
 
         self.call_tool_fast(params).await

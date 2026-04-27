@@ -19,16 +19,12 @@ use crate::gpu::normalize_gpu;
 /// # Arguments
 /// * `hidden_states` - Final encoder output, shape `[1, seq_len, hidden_size]`.
 /// * `hidden_size`   - Expected output dim (1024 for BGE-M3 Dense).
-pub fn pool_and_normalize(
-    hidden_states: &Tensor,
-    hidden_size: usize,
-) -> EmbeddingResult<Vec<f32>> {
-    let (batch, seq_len, hidden) =
-        hidden_states
-            .dims3()
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("BgeM3Dense pool get_dims failed: {}", e),
-            })?;
+pub fn pool_and_normalize(hidden_states: &Tensor, hidden_size: usize) -> EmbeddingResult<Vec<f32>> {
+    let (batch, seq_len, hidden) = hidden_states
+        .dims3()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("BgeM3Dense pool get_dims failed: {}", e),
+        })?;
 
     if hidden != hidden_size {
         return Err(EmbeddingError::InvalidDimension {

@@ -14,9 +14,7 @@
 //!   --verbose            Print per-query details
 
 use clap::Parser;
-use context_graph_benchmark::causal_bench::{
-    comparison, data_loader, metrics, phases, report,
-};
+use context_graph_benchmark::causal_bench::{comparison, data_loader, metrics, phases, report};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
@@ -100,11 +98,7 @@ fn main() -> anyhow::Result<()> {
     let mut pairs = data_loader::load_ground_truth(&gt_path)?;
     let mut queries = data_loader::load_queries(&queries_path)?;
 
-    tracing::info!(
-        "Loaded {} pairs, {} queries",
-        pairs.len(),
-        queries.len()
-    );
+    tracing::info!("Loaded {} pairs, {} queries", pairs.len(), queries.len());
 
     // Quick mode: subsample
     if args.quick {
@@ -126,14 +120,20 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Configure embedding provider
-    let provider: std::sync::Arc<dyn context_graph_benchmark::causal_bench::provider::EmbeddingProvider> = if args.gpu {
+    let provider: std::sync::Arc<
+        dyn context_graph_benchmark::causal_bench::provider::EmbeddingProvider,
+    > = if args.gpu {
         #[cfg(feature = "real-embeddings")]
         {
             use context_graph_benchmark::causal_bench::provider::EmbeddingProvider;
             tracing::info!("Loading GPU provider from {}", args.model_path.display());
-            let gpu = context_graph_benchmark::causal_bench::provider::GpuProvider::new(&args.model_path)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            tracing::info!("GPU provider ready ({})", if gpu.is_gpu() { "trained" } else { "base" });
+            let gpu =
+                context_graph_benchmark::causal_bench::provider::GpuProvider::new(&args.model_path)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+            tracing::info!(
+                "GPU provider ready ({})",
+                if gpu.is_gpu() { "trained" } else { "base" }
+            );
             std::sync::Arc::new(gpu)
         }
         #[cfg(not(feature = "real-embeddings"))]
@@ -141,7 +141,9 @@ fn main() -> anyhow::Result<()> {
             anyhow::bail!("--gpu requires the `real-embeddings` feature. Rebuild with: cargo build --release --features real-embeddings");
         }
     } else {
-        std::sync::Arc::new(context_graph_benchmark::causal_bench::provider::SyntheticProvider::new())
+        std::sync::Arc::new(
+            context_graph_benchmark::causal_bench::provider::SyntheticProvider::new(),
+        )
     };
 
     // Configure benchmark

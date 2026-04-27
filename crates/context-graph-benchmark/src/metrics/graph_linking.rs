@@ -288,41 +288,83 @@ impl GraphLinkingReport {
             md.push_str(&format!("**Tier**: {} memories\n\n", tier));
         }
         md.push_str(&format!("**Timestamp**: {}\n\n", self.timestamp));
-        md.push_str(&format!("**Total Duration**: {:.2}s\n\n", self.total_duration_secs));
+        md.push_str(&format!(
+            "**Total Duration**: {:.2}s\n\n",
+            self.total_duration_secs
+        ));
 
         // NN-Descent
         md.push_str("## NN-Descent\n\n");
         md.push_str(&format!("- Nodes: {}\n", self.nn_descent.num_nodes));
         md.push_str(&format!("- K: {}\n", self.nn_descent.k));
         md.push_str(&format!("- Iterations: {}\n", self.nn_descent.iterations));
-        md.push_str(&format!("- Convergence Rate: {:.4}\n", self.nn_descent.convergence_rate));
+        md.push_str(&format!(
+            "- Convergence Rate: {:.4}\n",
+            self.nn_descent.convergence_rate
+        ));
         md.push_str(&format!("- Latency: {}\n", self.nn_descent.latency));
-        md.push_str(&format!("- Throughput: {:.0} edges/sec\n\n", self.nn_descent.edges_per_sec));
+        md.push_str(&format!(
+            "- Throughput: {:.0} edges/sec\n\n",
+            self.nn_descent.edges_per_sec
+        ));
 
         // EdgeBuilder
         md.push_str("## EdgeBuilder\n\n");
-        md.push_str(&format!("- Pairs Processed: {}\n", self.edge_builder.pairs_processed));
-        md.push_str(&format!("- Edges Created: {}\n", self.edge_builder.edges_created));
-        md.push_str(&format!("- Latency/Pair: {}\n", self.edge_builder.latency_per_pair));
-        md.push_str(&format!("- Throughput: {:.0} pairs/sec\n\n", self.edge_builder.pairs_per_sec));
+        md.push_str(&format!(
+            "- Pairs Processed: {}\n",
+            self.edge_builder.pairs_processed
+        ));
+        md.push_str(&format!(
+            "- Edges Created: {}\n",
+            self.edge_builder.edges_created
+        ));
+        md.push_str(&format!(
+            "- Latency/Pair: {}\n",
+            self.edge_builder.latency_per_pair
+        ));
+        md.push_str(&format!(
+            "- Throughput: {:.0} pairs/sec\n\n",
+            self.edge_builder.pairs_per_sec
+        ));
 
         // Graph Expansion
         md.push_str("## Graph Expansion\n\n");
-        md.push_str(&format!("- Expansion Ratio: {:.2}x\n", self.graph_expansion.expansion_ratio));
-        md.push_str(&format!("- Edges/Candidate: {:.1}\n", self.graph_expansion.edges_per_candidate));
+        md.push_str(&format!(
+            "- Expansion Ratio: {:.2}x\n",
+            self.graph_expansion.expansion_ratio
+        ));
+        md.push_str(&format!(
+            "- Edges/Candidate: {:.1}\n",
+            self.graph_expansion.edges_per_candidate
+        ));
         md.push_str(&format!("- Latency: {}\n\n", self.graph_expansion.latency));
 
         // Weight Projection
         md.push_str("## Weight Projection\n\n");
-        md.push_str(&format!("- Inferences: {}\n", self.weight_projection.inferences));
-        md.push_str(&format!("- Latency: {}\n", self.weight_projection.latency_per_inference));
-        md.push_str(&format!("- Throughput: {:.0} inf/sec\n\n", self.weight_projection.throughput_per_sec));
+        md.push_str(&format!(
+            "- Inferences: {}\n",
+            self.weight_projection.inferences
+        ));
+        md.push_str(&format!(
+            "- Latency: {}\n",
+            self.weight_projection.latency_per_inference
+        ));
+        md.push_str(&format!(
+            "- Throughput: {:.0} inf/sec\n\n",
+            self.weight_projection.throughput_per_sec
+        ));
 
         // R-GCN
         md.push_str("## R-GCN\n\n");
-        md.push_str(&format!("- Nodes: {}, Edges: {}\n", self.rgcn.nodes, self.rgcn.edges));
+        md.push_str(&format!(
+            "- Nodes: {}, Edges: {}\n",
+            self.rgcn.nodes, self.rgcn.edges
+        ));
         md.push_str(&format!("- Latency: {}\n", self.rgcn.total_latency));
-        md.push_str(&format!("- Throughput: {:.0} nodes/sec\n\n", self.rgcn.nodes_per_sec));
+        md.push_str(&format!(
+            "- Throughput: {:.0} nodes/sec\n\n",
+            self.rgcn.nodes_per_sec
+        ));
 
         md
     }
@@ -346,15 +388,24 @@ impl GraphLinkingReport {
         println!("  Latency/pair: {}", self.edge_builder.latency_per_pair);
 
         println!("\nWeight Projection:");
-        println!("  Throughput: {:.0} inf/sec", self.weight_projection.throughput_per_sec);
-        println!("  Latency: {}", self.weight_projection.latency_per_inference);
+        println!(
+            "  Throughput: {:.0} inf/sec",
+            self.weight_projection.throughput_per_sec
+        );
+        println!(
+            "  Latency: {}",
+            self.weight_projection.latency_per_inference
+        );
 
         println!("\nR-GCN:");
         println!("  Nodes: {}, Edges: {}", self.rgcn.nodes, self.rgcn.edges);
         println!("  Latency: {}", self.rgcn.total_latency);
 
         println!("\nGraph Expansion:");
-        println!("  Expansion ratio: {:.2}x", self.graph_expansion.expansion_ratio);
+        println!(
+            "  Expansion ratio: {:.2}x",
+            self.graph_expansion.expansion_ratio
+        );
         println!("  Latency: {}", self.graph_expansion.latency);
     }
 }
@@ -368,7 +419,9 @@ pub struct LatencyTracker {
 impl LatencyTracker {
     /// Create a new tracker.
     pub fn new() -> Self {
-        Self { samples: Vec::new() }
+        Self {
+            samples: Vec::new(),
+        }
     }
 
     /// Record a duration sample.

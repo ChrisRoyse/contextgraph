@@ -371,7 +371,8 @@ mod tests {
 
     #[test]
     fn test_parse_hybrid_uuid_session() {
-        let hybrid = parse_hybrid_position("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1");
+        let hybrid =
+            parse_hybrid_position("session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:1");
         assert_eq!(
             hybrid.session_id,
             Some("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string())
@@ -405,7 +406,10 @@ mod tests {
     #[test]
     fn test_extract_session_id() {
         // Basic extraction
-        assert_eq!(extract_session_id("session:abc123"), Some("abc123".to_string()));
+        assert_eq!(
+            extract_session_id("session:abc123"),
+            Some("abc123".to_string())
+        );
 
         // With other parts
         assert_eq!(

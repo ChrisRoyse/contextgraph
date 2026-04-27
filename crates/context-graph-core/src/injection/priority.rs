@@ -551,12 +551,20 @@ mod tests {
         PriorityRanker::compute_priority_at(&mut memory_a, now);
         PriorityRanker::compute_priority_at(&mut memory_b, now);
 
-        println!("Memory A: relevance={}, recency={}, diversity={}, priority={}",
-            memory_a.relevance_score, memory_a.recency_factor,
-            memory_a.diversity_bonus, memory_a.priority);
-        println!("Memory B: relevance={}, recency={}, diversity={}, priority={}",
-            memory_b.relevance_score, memory_b.recency_factor,
-            memory_b.diversity_bonus, memory_b.priority);
+        println!(
+            "Memory A: relevance={}, recency={}, diversity={}, priority={}",
+            memory_a.relevance_score,
+            memory_a.recency_factor,
+            memory_a.diversity_bonus,
+            memory_a.priority
+        );
+        println!(
+            "Memory B: relevance={}, recency={}, diversity={}, priority={}",
+            memory_b.relevance_score,
+            memory_b.recency_factor,
+            memory_b.diversity_bonus,
+            memory_b.priority
+        );
 
         // Memory A should have higher priority
         assert!(
@@ -775,18 +783,36 @@ mod tests {
             // RecentSession with high relevance
             make_candidate_at(0.95, now, 5.0, InjectionCategory::RecentSession),
             // DivergenceAlert with low relevance
-            make_candidate_at(0.3, now - Duration::days(5), 0.5, InjectionCategory::DivergenceAlert),
+            make_candidate_at(
+                0.3,
+                now - Duration::days(5),
+                0.5,
+                InjectionCategory::DivergenceAlert,
+            ),
             // HighRelevanceCluster with medium relevance
-            make_candidate_at(0.7, now - Duration::hours(2), 3.0, InjectionCategory::HighRelevanceCluster),
+            make_candidate_at(
+                0.7,
+                now - Duration::hours(2),
+                3.0,
+                InjectionCategory::HighRelevanceCluster,
+            ),
             // SingleSpaceMatch with high relevance
-            make_candidate_at(0.85, now - Duration::minutes(10), 2.0, InjectionCategory::SingleSpaceMatch),
+            make_candidate_at(
+                0.85,
+                now - Duration::minutes(10),
+                2.0,
+                InjectionCategory::SingleSpaceMatch,
+            ),
         ];
 
         PriorityRanker::rank_candidates_at(&mut candidates, now);
 
         // Verify category order (regardless of relevance)
         assert_eq!(candidates[0].category, InjectionCategory::DivergenceAlert);
-        assert_eq!(candidates[1].category, InjectionCategory::HighRelevanceCluster);
+        assert_eq!(
+            candidates[1].category,
+            InjectionCategory::HighRelevanceCluster
+        );
         assert_eq!(candidates[2].category, InjectionCategory::SingleSpaceMatch);
         assert_eq!(candidates[3].category, InjectionCategory::RecentSession);
 

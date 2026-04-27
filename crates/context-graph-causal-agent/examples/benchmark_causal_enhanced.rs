@@ -152,7 +152,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("  Created {} claim-evidence pairs for benchmarking", pairs.len());
+    println!(
+        "  Created {} claim-evidence pairs for benchmarking",
+        pairs.len()
+    );
     println!();
 
     // Limit pairs for benchmarking
@@ -162,7 +165,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(20);
 
     let pairs = &pairs[..pairs.len().min(max_pairs)];
-    println!("Running benchmark on {} pairs (set BENCHMARK_PAIRS env to change)\n", pairs.len());
+    println!(
+        "Running benchmark on {} pairs (set BENCHMARK_PAIRS env to change)\n",
+        pairs.len()
+    );
 
     // Run with few-shot enabled
     println!("\n═══════════════════════════════════════════════════════════════");
@@ -253,7 +259,11 @@ async fn run_benchmark(
                     *mechanism_type_counts.entry(mt.clone()).or_insert(0) += 1;
                 }
 
-                let symbol = if analysis.has_causal_link { "✓" } else { "✗" };
+                let symbol = if analysis.has_causal_link {
+                    "✓"
+                } else {
+                    "✗"
+                };
                 let conf = format!("{:.2}", analysis.confidence);
                 let mech_type_str = mech_type.clone().unwrap_or_else(|| "N/A".to_string());
 
@@ -282,7 +292,12 @@ async fn run_benchmark(
                 });
             }
             Err(e) => {
-                println!("│ {:>2} │ ✗ {} ERROR: {:?} │", i + 1, truncate(claim, 30), e);
+                println!(
+                    "│ {:>2} │ ✗ {} ERROR: {:?} │",
+                    i + 1,
+                    truncate(claim, 30),
+                    e
+                );
             }
         }
     }
@@ -294,25 +309,39 @@ async fn run_benchmark(
     // Calculate statistics
     let pairs_with_causal = results.iter().filter(|r| r.has_causal_link).count();
     let pairs_without_causal = results.len() - pairs_with_causal;
-    let avg_confidence: f32 = results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
+    let avg_confidence: f32 =
+        results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
     let inference_times: Vec<u64> = results.iter().map(|r| r.inference_time_ms).collect();
     let avg_time = inference_times.iter().sum::<u64>() as f64 / inference_times.len() as f64;
     let min_time = *inference_times.iter().min().unwrap_or(&0);
     let max_time = *inference_times.iter().max().unwrap_or(&0);
     let throughput = results.len() as f64 / total_time.as_secs_f64();
 
-    let mode_name = if use_few_shot { "few_shot" } else { "zero_shot" };
+    let mode_name = if use_few_shot {
+        "few_shot"
+    } else {
+        "zero_shot"
+    };
 
     println!("╔═══════════════════════════════════════════════════════════════╗");
-    println!("║              {} RESULTS                              ║", mode_name.to_uppercase());
+    println!(
+        "║              {} RESULTS                              ║",
+        mode_name.to_uppercase()
+    );
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Total Pairs Analyzed: {:>40} ║", results.len());
     println!("║ Pairs with Causal Link: {:>38} ║", pairs_with_causal);
-    println!("║ Pairs without Causal Link: {:>35} ║", pairs_without_causal);
+    println!(
+        "║ Pairs without Causal Link: {:>35} ║",
+        pairs_without_causal
+    );
     println!("║ Average Confidence: {:>41.2} ║", avg_confidence);
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Average Inference Time: {:>34.0}ms ║", avg_time);
-    println!("║ Min/Max Inference Time: {:>25}ms / {}ms ║", min_time, max_time);
+    println!(
+        "║ Min/Max Inference Time: {:>25}ms / {}ms ║",
+        min_time, max_time
+    );
     println!("║ Throughput: {:>42.2} pairs/sec ║", throughput);
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Direction Distribution:                                       ║");
@@ -324,7 +353,10 @@ async fn run_benchmark(
     for (mech_type, count) in &mechanism_type_counts {
         println!("║   {:20}: {:>38} ║", mech_type, count);
     }
-    let no_mech_type = results.iter().filter(|r| r.mechanism_type.is_none()).count();
+    let no_mech_type = results
+        .iter()
+        .filter(|r| r.mechanism_type.is_none())
+        .count();
     if no_mech_type > 0 {
         println!("║   {:20}: {:>38} ║", "N/A (not detected)", no_mech_type);
     }
@@ -355,9 +387,16 @@ fn calculate_comparison(few_shot: &ModeResults, non_few_shot: &ModeResults) -> C
     // Calculate agreement rates
     let mut causal_agreements = 0;
     let mut direction_agreements = 0;
-    let total = few_shot.detailed_results.len().min(non_few_shot.detailed_results.len());
+    let total = few_shot
+        .detailed_results
+        .len()
+        .min(non_few_shot.detailed_results.len());
 
-    for (fs, nfs) in few_shot.detailed_results.iter().zip(non_few_shot.detailed_results.iter()) {
+    for (fs, nfs) in few_shot
+        .detailed_results
+        .iter()
+        .zip(non_few_shot.detailed_results.iter())
+    {
         if fs.has_causal_link == nfs.has_causal_link {
             causal_agreements += 1;
         }
@@ -370,13 +409,20 @@ fn calculate_comparison(few_shot: &ModeResults, non_few_shot: &ModeResults) -> C
     let direction_agreement_rate = direction_agreements as f64 / total as f64;
 
     // Mechanism type coverage
-    let fs_with_mech_type = few_shot.detailed_results.iter()
-        .filter(|r| r.mechanism_type.is_some()).count();
-    let nfs_with_mech_type = non_few_shot.detailed_results.iter()
-        .filter(|r| r.mechanism_type.is_some()).count();
+    let fs_with_mech_type = few_shot
+        .detailed_results
+        .iter()
+        .filter(|r| r.mechanism_type.is_some())
+        .count();
+    let nfs_with_mech_type = non_few_shot
+        .detailed_results
+        .iter()
+        .filter(|r| r.mechanism_type.is_some())
+        .count();
 
     let mechanism_type_coverage_few_shot = fs_with_mech_type as f64 / few_shot.total_pairs as f64;
-    let mechanism_type_coverage_non_few_shot = nfs_with_mech_type as f64 / non_few_shot.total_pairs as f64;
+    let mechanism_type_coverage_non_few_shot =
+        nfs_with_mech_type as f64 / non_few_shot.total_pairs as f64;
 
     ComparisonMetrics {
         inference_speedup,
@@ -388,7 +434,11 @@ fn calculate_comparison(few_shot: &ModeResults, non_few_shot: &ModeResults) -> C
     }
 }
 
-fn print_comparison_summary(few_shot: &ModeResults, non_few_shot: &ModeResults, comparison: &ComparisonMetrics) {
+fn print_comparison_summary(
+    few_shot: &ModeResults,
+    non_few_shot: &ModeResults,
+    comparison: &ComparisonMetrics,
+) {
     println!("\n");
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║                    COMPARISON SUMMARY                          ║");
@@ -403,19 +453,15 @@ fn print_comparison_summary(few_shot: &ModeResults, non_few_shot: &ModeResults, 
     );
     println!(
         "║ Avg Confidence            │ {:>7.2}     │ {:>7.2}     │ {:>+.2} ║",
-        few_shot.avg_confidence,
-        non_few_shot.avg_confidence,
-        comparison.confidence_delta
+        few_shot.avg_confidence, non_few_shot.avg_confidence, comparison.confidence_delta
     );
     println!(
         "║ Throughput (pairs/sec)    │ {:>7.2}     │ {:>7.2}     │       ║",
-        few_shot.throughput_pairs_per_sec,
-        non_few_shot.throughput_pairs_per_sec
+        few_shot.throughput_pairs_per_sec, non_few_shot.throughput_pairs_per_sec
     );
     println!(
         "║ Causal Links Detected     │ {:>7}     │ {:>7}     │       ║",
-        few_shot.pairs_with_causal_link,
-        non_few_shot.pairs_with_causal_link
+        few_shot.pairs_with_causal_link, non_few_shot.pairs_with_causal_link
     );
     println!(
         "║ Mechanism Type Coverage   │ {:>6.0}%     │ {:>6.0}%     │       ║",
@@ -466,7 +512,9 @@ fn load_chunks(path: &PathBuf) -> Result<Vec<Chunk>, Box<dyn std::error::Error>>
     Ok(chunks)
 }
 
-fn load_qrels(path: &PathBuf) -> Result<HashMap<String, HashMap<String, i32>>, Box<dyn std::error::Error>> {
+fn load_qrels(
+    path: &PathBuf,
+) -> Result<HashMap<String, HashMap<String, i32>>, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let qrels: HashMap<String, HashMap<String, i32>> = serde_json::from_reader(file)?;
     Ok(qrels)

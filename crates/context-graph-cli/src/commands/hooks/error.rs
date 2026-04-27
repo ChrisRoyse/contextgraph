@@ -80,7 +80,6 @@ impl HookError {
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self::InvalidInput(message.into())
     }
-
 }
 
 #[cfg(test)]
@@ -136,7 +135,10 @@ mod tests {
 
     #[test]
     fn test_error_codes() {
-        assert_eq!(HookError::invalid_input("x").error_code(), "ERR_INVALID_INPUT");
+        assert_eq!(
+            HookError::invalid_input("x").error_code(),
+            "ERR_INVALID_INPUT"
+        );
         assert_eq!(HookError::general("x").error_code(), "ERR_GENERAL");
     }
 

@@ -226,9 +226,11 @@ pub fn execute_hook_script(
 
     // Spawn process
     let mut child = cmd.spawn().map_err(|e| {
-        E2EError::IoError(std::io::Error::other(
-            format!("Failed to spawn bash for {}: {}", script_path.display(), e),
-        ))
+        E2EError::IoError(std::io::Error::other(format!(
+            "Failed to spawn bash for {}: {}",
+            script_path.display(),
+            e
+        )))
     })?;
 
     // Write input to stdin
@@ -447,13 +449,15 @@ pub fn verify_all_scripts_exist() -> Result<(), E2EError> {
             .args(["setup", "--force", "--target-dir"])
             .arg(&root)
             .output()
-            .map_err(|e| E2EError::IoError(std::io::Error::other(
-                format!(
+            .map_err(|e| {
+                E2EError::IoError(std::io::Error::other(format!(
                     "Failed to run `{} setup --force --target-dir {}`: {}. \
                      Build the CLI first: cargo build -p context-graph-cli",
-                    cli.display(), root.display(), e
-                ),
-            )))?;
+                    cli.display(),
+                    root.display(),
+                    e
+                )))
+            })?;
 
         if !output.status.success() {
             return Err(E2EError::ScriptNotFound(format!(

@@ -110,9 +110,7 @@ impl DirectionalContrastiveLoss {
             .map_err(map_candle)?;
 
         // Scale by temperature
-        let logits = sim_matrix
-            .affine(1.0 / tau, 0.0)
-            .map_err(map_candle)?;
+        let logits = sim_matrix.affine(1.0 / tau, 0.0).map_err(map_candle)?;
 
         // Online hard negative mining: amplify top-k hardest negative logits per row
         // This focuses gradient signal on the most confusing negatives, improving separation.
@@ -124,8 +122,7 @@ impl DirectionalContrastiveLoss {
         };
 
         // Labels: diagonal (each cause_i pairs with effect_i)
-        let labels = Tensor::arange(0u32, n as u32, cause_vecs.device())
-            .map_err(map_candle)?;
+        let labels = Tensor::arange(0u32, n as u32, cause_vecs.device()).map_err(map_candle)?;
 
         // Differentiable cross-entropy via gather (maintains computation graph)
         candle_nn::loss::cross_entropy(&logits, &labels).map_err(map_candle)
@@ -136,11 +133,7 @@ impl DirectionalContrastiveLoss {
     /// For each row i, identifies the top-k off-diagonal logits that are below
     /// the diagonal (positive) logit (semi-hard strategy), and multiplies them
     /// by `hard_negative_scale`. This amplifies gradient on confusing negatives.
-    fn apply_hard_negative_mining(
-        &self,
-        logits: &Tensor,
-        n: usize,
-    ) -> EmbeddingResult<Tensor> {
+    fn apply_hard_negative_mining(&self, logits: &Tensor, n: usize) -> EmbeddingResult<Tensor> {
         let scale = self.config.hard_negative_scale;
         let k = self.config.hard_negative_count.min(n - 1);
 
@@ -151,7 +144,11 @@ impl DirectionalContrastiveLoss {
                     .get(i)
                     .and_then(|row| row.to_vec1::<f32>())
                     .unwrap_or_else(|e| {
-                        tracing::warn!("Hard negative mining: failed to extract logit row {}: {}", i, e);
+                        tracing::warn!(
+                            "Hard negative mining: failed to extract logit row {}: {}",
+                            i,
+                            e
+                        );
                         vec![0.0; n]
                     })
             })
@@ -161,7 +158,7 @@ impl DirectionalContrastiveLoss {
         let mut mask_data = vec![1.0f32; n * n];
         for i in 0..n {
             let positive_logit = logits_data[i][i]; // diagonal = positive
-            // Collect off-diagonal (negative) logits with their indices
+                                                    // Collect off-diagonal (negative) logits with their indices
             let mut negatives: Vec<(usize, f32)> = logits_data[i]
                 .iter()
                 .enumerate()
@@ -176,8 +173,7 @@ impl DirectionalContrastiveLoss {
             }
         }
 
-        let mask = Tensor::from_vec(mask_data, (n, n), logits.device())
-            .map_err(map_candle)?;
+        let mask = Tensor::from_vec(mask_data, (n, n), logits.device()).map_err(map_candle)?;
         logits.mul(&mask).map_err(map_candle)
     }
 
@@ -366,8 +362,20 @@ fn batch_cosine_similarity(a: &Tensor, b: &Tensor) -> EmbeddingResult<Tensor> {
     let dot = (a * b).map_err(map_candle)?.sum(1).map_err(map_candle)?;
 
     // Norms
-    let norm_a = a.sqr().map_err(map_candle)?.sum(1).map_err(map_candle)?.sqrt().map_err(map_candle)?;
-    let norm_b = b.sqr().map_err(map_candle)?.sum(1).map_err(map_candle)?.sqrt().map_err(map_candle)?;
+    let norm_a = a
+        .sqr()
+        .map_err(map_candle)?
+        .sum(1)
+        .map_err(map_candle)?
+        .sqrt()
+        .map_err(map_candle)?;
+    let norm_b = b
+        .sqr()
+        .map_err(map_candle)?
+        .sum(1)
+        .map_err(map_candle)?
+        .sqrt()
+        .map_err(map_candle)?;
 
     let denom = (norm_a * norm_b).map_err(map_candle)?;
 
@@ -410,8 +418,24 @@ mod tests {
         let effect = Tensor::from_slice(&effect_data, (n, d), &device).unwrap();
 
         // L2 normalize
-        let cause_norm = cause.sqr().unwrap().sum(1).unwrap().sqrt().unwrap().unsqueeze(1).unwrap();
-        let effect_norm = effect.sqr().unwrap().sum(1).unwrap().sqrt().unwrap().unsqueeze(1).unwrap();
+        let cause_norm = cause
+            .sqr()
+            .unwrap()
+            .sum(1)
+            .unwrap()
+            .sqrt()
+            .unwrap()
+            .unsqueeze(1)
+            .unwrap();
+        let effect_norm = effect
+            .sqr()
+            .unwrap()
+            .sum(1)
+            .unwrap()
+            .sqrt()
+            .unwrap()
+            .unsqueeze(1)
+            .unwrap();
 
         let cause = cause.broadcast_div(&cause_norm).unwrap();
         let effect = effect.broadcast_div(&effect_norm).unwrap();
@@ -452,7 +476,11 @@ mod tests {
         let val: f32 = loss.flatten_all().unwrap().to_vec1().unwrap()[0];
 
         // Separation loss is mean cosine similarity, should be in [-1, 1]
-        assert!((-1.0..=1.0).contains(&val), "Separation loss should be in [-1,1], got {}", val);
+        assert!(
+            (-1.0..=1.0).contains(&val),
+            "Separation loss should be in [-1,1], got {}",
+            val
+        );
     }
 
     #[test]
@@ -461,7 +489,9 @@ mod tests {
         let (cause, effect) = make_test_vecs(4, 16);
         let confidences = Tensor::from_slice(&[0.9f32, 0.8, 0.7, 0.1], 4, &Device::Cpu).unwrap();
 
-        let loss = loss_fn.soft_label_loss(&cause, &effect, &confidences).unwrap();
+        let loss = loss_fn
+            .soft_label_loss(&cause, &effect, &confidences)
+            .unwrap();
         let val: f32 = loss.flatten_all().unwrap().to_vec1().unwrap()[0];
 
         // MSE should be non-negative
@@ -478,7 +508,10 @@ mod tests {
         let total_val: f32 = total.flatten_all().unwrap().to_vec1().unwrap()[0];
 
         assert!(total_val > 0.0, "Total loss should be positive");
-        assert!(components.contrastive > 0.0, "Contrastive component should be positive");
+        assert!(
+            components.contrastive > 0.0,
+            "Contrastive component should be positive"
+        );
         assert!(components.total > 0.0, "Logged total should match");
     }
 
@@ -513,14 +546,28 @@ mod tests {
 
         // backward() should succeed and produce non-zero gradients
         let grads = loss.backward().unwrap();
-        let cause_grad = grads.get(cause_var.as_tensor()).expect("cause gradient must exist");
-        let effect_grad = grads.get(effect_var.as_tensor()).expect("effect gradient must exist");
+        let cause_grad = grads
+            .get(cause_var.as_tensor())
+            .expect("cause gradient must exist");
+        let effect_grad = grads
+            .get(effect_var.as_tensor())
+            .expect("effect gradient must exist");
 
         // Gradients must be non-zero (not disconnected)
         let cause_grad_norm: f32 = cause_grad
-            .sqr().unwrap().sum_all().unwrap().to_scalar().unwrap();
+            .sqr()
+            .unwrap()
+            .sum_all()
+            .unwrap()
+            .to_scalar()
+            .unwrap();
         let effect_grad_norm: f32 = effect_grad
-            .sqr().unwrap().sum_all().unwrap().to_scalar().unwrap();
+            .sqr()
+            .unwrap()
+            .sum_all()
+            .unwrap()
+            .to_scalar()
+            .unwrap();
 
         assert!(
             cause_grad_norm > 1e-10,
@@ -542,16 +589,40 @@ mod tests {
         // Test 1: well-separated vectors (high diagonal, low off-diagonal → loss should be low)
         let d = 16;
         let cause1 = Tensor::from_slice(
-            &(0..4 * d).map(|i| if i % d == (i / d) { 1.0f32 } else { 0.0 }).collect::<Vec<_>>(),
-            (4, d), &Device::Cpu,
-        ).unwrap();
+            &(0..4 * d)
+                .map(|i| if i % d == (i / d) { 1.0f32 } else { 0.0 })
+                .collect::<Vec<_>>(),
+            (4, d),
+            &Device::Cpu,
+        )
+        .unwrap();
         let effect1 = Tensor::from_slice(
-            &(0..4 * d).map(|i| if i % d == (i / d) { 0.9f32 } else { 0.1 }).collect::<Vec<_>>(),
-            (4, d), &Device::Cpu,
-        ).unwrap();
+            &(0..4 * d)
+                .map(|i| if i % d == (i / d) { 0.9f32 } else { 0.1 })
+                .collect::<Vec<_>>(),
+            (4, d),
+            &Device::Cpu,
+        )
+        .unwrap();
         // L2 normalize
-        let cn1 = cause1.sqr().unwrap().sum(1).unwrap().sqrt().unwrap().unsqueeze(1).unwrap();
-        let en1 = effect1.sqr().unwrap().sum(1).unwrap().sqrt().unwrap().unsqueeze(1).unwrap();
+        let cn1 = cause1
+            .sqr()
+            .unwrap()
+            .sum(1)
+            .unwrap()
+            .sqrt()
+            .unwrap()
+            .unsqueeze(1)
+            .unwrap();
+        let en1 = effect1
+            .sqr()
+            .unwrap()
+            .sum(1)
+            .unwrap()
+            .sqrt()
+            .unwrap()
+            .unsqueeze(1)
+            .unwrap();
         let cause1 = cause1.broadcast_div(&cn1).unwrap();
         let effect1 = effect1.broadcast_div(&en1).unwrap();
 

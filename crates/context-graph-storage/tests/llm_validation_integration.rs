@@ -175,9 +175,13 @@ async fn overwrite_is_idempotent() {
 #[tokio::test(flavor = "multi_thread")]
 async fn clear_all_empties_the_cf() {
     let (_td, store) = open_store();
-    for (i, v) in [valid_validation(), invalid_validation(), reclassify_validation()]
-        .iter()
-        .enumerate()
+    for (i, v) in [
+        valid_validation(),
+        invalid_validation(),
+        reclassify_validation(),
+    ]
+    .iter()
+    .enumerate()
     {
         store
             .store_llm_edge_validation(Uuid::new_v4(), Uuid::new_v4(), i as u8, v)

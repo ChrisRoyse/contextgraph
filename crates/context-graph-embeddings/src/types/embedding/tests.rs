@@ -403,10 +403,10 @@ mod tests {
             (ModelId::Graph, 1024),             // E8: e5-large-v2 (upgraded from MiniLM 384D)
             (ModelId::Hdc, 10000),              // E9: Hyperdimensional (10K-bit)
             (ModelId::Contextual, 768),         // E10: e5-base-v2
-            (ModelId::Entity, 384),             // E11: Legacy MiniLM-L6-v2 (production uses Kepler 768D)
-            (ModelId::LateInteraction, 128),    // E12: ColBERT per-token
-            (ModelId::Splade, 30522),           // E13: SPLADE v3
-            (ModelId::Kepler, 768),             // E11 production: KEPLER (RoBERTa-base)
+            (ModelId::Entity, 384), // E11: Legacy MiniLM-L6-v2 (production uses Kepler 768D)
+            (ModelId::LateInteraction, 128), // E12: ColBERT per-token
+            (ModelId::Splade, 30522), // E13: SPLADE v3
+            (ModelId::Kepler, 768), // E11 production: KEPLER (RoBERTa-base)
         ];
 
         for (model_id, expected_dim) in models_and_dims {

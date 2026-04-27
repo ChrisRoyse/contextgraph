@@ -89,7 +89,10 @@ async fn handle_check(args: CheckArgs) -> i32 {
     match client.is_server_running().await {
         Ok(true) => {}
         Ok(false) => {
-            eprintln!("Error: MCP server not running at {}", client.server_address());
+            eprintln!(
+                "Error: MCP server not running at {}",
+                client.server_address()
+            );
             eprintln!("Start the server with: context-graph-mcp");
             return 1;
         }
@@ -104,7 +107,10 @@ async fn handle_check(args: CheckArgs) -> i32 {
     match client.get_divergence_alerts(Some(args.hours)).await {
         Ok(result) => {
             if args.json {
-                println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                );
             } else {
                 print_divergence(&result, args.verbose);
             }
@@ -130,9 +136,18 @@ fn format_divergence(result: &serde_json::Value, verbose: bool) -> String {
     writeln!(out, "===================\n").unwrap();
 
     // Get overall divergence status
-    let is_divergent = result.get("is_divergent").and_then(|d| d.as_bool()).unwrap_or(false);
-    let divergence_score = result.get("divergence_score").and_then(|s| s.as_f64()).unwrap_or(0.0);
-    let lookback_hours = result.get("lookback_hours").and_then(|h| h.as_u64()).unwrap_or(2);
+    let is_divergent = result
+        .get("is_divergent")
+        .and_then(|d| d.as_bool())
+        .unwrap_or(false);
+    let divergence_score = result
+        .get("divergence_score")
+        .and_then(|s| s.as_f64())
+        .unwrap_or(0.0);
+    let lookback_hours = result
+        .get("lookback_hours")
+        .and_then(|h| h.as_u64())
+        .unwrap_or(2);
 
     writeln!(out, "Lookback Period: {} hours", lookback_hours).unwrap();
     writeln!(out, "Divergence Score: {:.2}", divergence_score).unwrap();
@@ -148,8 +163,14 @@ fn format_divergence(result: &serde_json::Value, verbose: bool) -> String {
             if !alerts.is_empty() {
                 writeln!(out, "Alerts:").unwrap();
                 for alert in alerts {
-                    let msg = alert.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown alert");
-                    let severity = alert.get("severity").and_then(|s| s.as_str()).unwrap_or("info");
+                    let msg = alert
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Unknown alert");
+                    let severity = alert
+                        .get("severity")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("info");
                     let icon = match severity {
                         "high" | "critical" => "!!",
                         "medium" | "warning" => "!",
@@ -163,7 +184,10 @@ fn format_divergence(result: &serde_json::Value, verbose: bool) -> String {
 
         // Verbose: show per-embedder scores
         if verbose {
-            if let Some(scores) = result.get("embedder_divergences").and_then(|s| s.as_object()) {
+            if let Some(scores) = result
+                .get("embedder_divergences")
+                .and_then(|s| s.as_object())
+            {
                 writeln!(out, "Embedder-Level Divergence (SEMANTIC only):").unwrap();
                 // Sort by divergence score descending
                 let mut score_vec: Vec<_> = scores.iter().collect();
@@ -183,15 +207,26 @@ fn format_divergence(result: &serde_json::Value, verbose: bool) -> String {
             }
         }
 
-        writeln!(out, "Note: Divergence may be intentional (new topic exploration)").unwrap();
-        writeln!(out, "      or indicate context switch that should be captured.").unwrap();
+        writeln!(
+            out,
+            "Note: Divergence may be intentional (new topic exploration)"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "      or indicate context switch that should be captured."
+        )
+        .unwrap();
     } else {
         writeln!(out, "STATUS: ALIGNED").unwrap();
         writeln!(out, "Current activity aligns with recent patterns.").unwrap();
 
         if verbose {
             // Show per-embedder scores even when aligned
-            if let Some(scores) = result.get("embedder_divergences").and_then(|s| s.as_object()) {
+            if let Some(scores) = result
+                .get("embedder_divergences")
+                .and_then(|s| s.as_object())
+            {
                 writeln!(out, "\nEmbedder-Level Divergence (SEMANTIC only):").unwrap();
                 for (embedder, score) in scores {
                     let val = score.as_f64().unwrap_or(0.0);

@@ -144,7 +144,10 @@ async fn test_md_chunk_stores_source_metadata() {
     let display = meta.display_string();
     println!("\nVERIFICATION 4: Display String Format");
     println!("  Display: {}", display);
-    assert!(display.contains(file_path), "Display should contain file path");
+    assert!(
+        display.contains(file_path),
+        "Display should contain file path"
+    );
     assert!(display.contains("1/3"), "Display should contain chunk info");
     println!("  ✓ Display string formatted correctly");
 
@@ -284,11 +287,7 @@ async fn test_batch_source_metadata_retrieval() {
                 assert_eq!(meta.file_path, Some(file_path.to_string()));
                 assert_eq!(meta.chunk_index, Some(i as u32));
                 assert_eq!(meta.total_chunks, Some(5));
-                println!(
-                    "  ✓ Chunk {}: {}",
-                    i + 1,
-                    meta.display_string()
-                );
+                println!("  ✓ Chunk {}: {}", i + 1, meta.display_string());
             }
             None => {
                 panic!("FAIL: Metadata for chunk {} was not found!", i + 1);
@@ -346,7 +345,10 @@ async fn test_delete_by_file_path_removes_source_metadata() {
     // Verify they exist
     println!("\nBEFORE DELETE:");
     for id in &memory_ids {
-        let meta = teleological_store.get_source_metadata(*id).await.expect("get");
+        let meta = teleological_store
+            .get_source_metadata(*id)
+            .await
+            .expect("get");
         assert!(meta.is_some(), "Metadata should exist before delete");
         println!("  ID {}: source metadata exists ✓", id);
     }

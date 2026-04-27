@@ -93,9 +93,9 @@ impl RocksDbTeleologicalStore {
     ) -> CoreResult<AnomalyDerivationSummary> {
         let t0 = std::time::Instant::now();
 
-        let edges = edge_repository.iter_all_typed_edges().map_err(|e| {
-            CoreError::StorageError(format!("iter_all_typed_edges failed: {}", e))
-        })?;
+        let edges = edge_repository
+            .iter_all_typed_edges()
+            .map_err(|e| CoreError::StorageError(format!("iter_all_typed_edges failed: {}", e)))?;
 
         let mut summary = AnomalyDerivationSummary::default();
         summary.edges_scanned = edges.len();

@@ -115,14 +115,12 @@ impl DenseEmbedderAdapter {
         }
 
         let input = match instruction {
-            Some(inst) => {
-                ModelInput::text_with_instruction(content, inst).map_err(|e| {
-                    CoreError::ValidationError {
-                        field: "content".to_string(),
-                        message: e.to_string(),
-                    }
-                })?
-            }
+            Some(inst) => ModelInput::text_with_instruction(content, inst).map_err(|e| {
+                CoreError::ValidationError {
+                    field: "content".to_string(),
+                    message: e.to_string(),
+                }
+            })?,
             None => ModelInput::text(content).map_err(|e| CoreError::ValidationError {
                 field: "content".to_string(),
                 message: e.to_string(),
@@ -405,9 +403,10 @@ impl CausalDualEmbedderAdapter {
             ));
         }
 
-        self.model.embed_dual(content).await.map_err(|e| {
-            CoreError::Embedding(format!("E5 dual embedding failed: {}", e))
-        })
+        self.model
+            .embed_dual(content)
+            .await
+            .map_err(|e| CoreError::Embedding(format!("E5 dual embedding failed: {}", e)))
     }
 
     /// Check if the model is ready for embedding.
@@ -447,12 +446,11 @@ impl CausalDualEmbedderAdapter {
         let guidance = hint.and_then(|h| h.to_guidance());
 
         // Embed with LLM-guided marker detection
-        let (mut cause_vec, mut effect_vec) = self.model
+        let (mut cause_vec, mut effect_vec) = self
+            .model
             .embed_dual_guided(content, guidance.as_ref())
             .await
-            .map_err(|e| {
-                CoreError::Embedding(format!("E5 guided dual embedding failed: {}", e))
-            })?;
+            .map_err(|e| CoreError::Embedding(format!("E5 guided dual embedding failed: {}", e)))?;
 
         // KEEP the direction bias (complementary to marker guidance)
         if let Some(hint) = hint {
@@ -547,9 +545,10 @@ impl GraphDualEmbedderAdapter {
             ));
         }
 
-        self.model.embed_dual(content).await.map_err(|e| {
-            CoreError::Embedding(format!("E8 dual embedding failed: {}", e))
-        })
+        self.model
+            .embed_dual(content)
+            .await
+            .map_err(|e| CoreError::Embedding(format!("E8 dual embedding failed: {}", e)))
     }
 
     /// Check if the model is ready for embedding.
@@ -616,9 +615,10 @@ impl ContextualDualEmbedderAdapter {
             ));
         }
 
-        self.model.embed_dual(content).await.map_err(|e| {
-            CoreError::Embedding(format!("E10 dual embedding failed: {}", e))
-        })
+        self.model
+            .embed_dual(content)
+            .await
+            .map_err(|e| CoreError::Embedding(format!("E10 dual embedding failed: {}", e)))
     }
 
     /// Check if the model is ready for embedding.
@@ -809,9 +809,9 @@ impl ProductionMultiArrayProvider {
         e3_model.load().await?;
         e4_model.load().await?;
         e5_causal_model.load().await?; // E5 loaded directly
-        // Load trained LoRA + projection weights (REQUIRED for E5 to function correctly).
-        // FAIL FAST: Without trained weights, E5 produces near-uniform scores that
-        // make the causal gate a no-op. No silent fallback to base model.
+                                       // Load trained LoRA + projection weights (REQUIRED for E5 to function correctly).
+                                       // FAIL FAST: Without trained weights, E5 produces near-uniform scores that
+                                       // make the causal gate a no-op. No silent fallback to base model.
         let trained_dir = models_dir.join("causal").join("trained");
         e5_causal_model.load_trained_weights(&trained_dir)?;
         e6_model.load().await?;
@@ -842,11 +842,9 @@ impl ProductionMultiArrayProvider {
             E3_DIM,
         ));
         // E4-FIX: Store as concrete type for embed_with_instruction() access
-        let e4_temporal_positional: Arc<DenseEmbedderAdapter> = Arc::new(DenseEmbedderAdapter::new(
-            e4_model,
-            ModelId::TemporalPositional,
-            E4_DIM,
-        ));
+        let e4_temporal_positional: Arc<DenseEmbedderAdapter> = Arc::new(
+            DenseEmbedderAdapter::new(e4_model, ModelId::TemporalPositional, E4_DIM),
+        );
 
         // E5: Use CausalDualEmbedderAdapter for asymmetric embeddings (ARCH-15)
         let e5_causal: Arc<CausalDualEmbedderAdapter> =
@@ -1216,8 +1214,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e14_bge_m3_dense: e14_vec,
         };
 
-        let per_embedder_latency =
-            [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
+        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1444,8 +1441,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e14_bge_m3_dense: e14_vec,
         };
 
-        let per_embedder_latency =
-            [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
+        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1888,11 +1884,7 @@ mod tests {
         let model = DeterministicModel {
             initialized: AtomicBool::new(true),
         };
-        let adapter = DenseEmbedderAdapter::new(
-            Box::new(model),
-            ModelId::Semantic,
-            1024,
-        );
+        let adapter = DenseEmbedderAdapter::new(Box::new(model), ModelId::Semantic, 1024);
 
         // Empty content must be rejected with a ValidationError
         let result = adapter.embed("").await;
@@ -2066,7 +2058,10 @@ mod tests {
 
         let e2 = metadata.e2_instruction();
         let e3 = metadata.e3_instruction();
-        assert_eq!(e2, e3, "E3 instruction should delegate to E2 (same timestamp format)");
+        assert_eq!(
+            e2, e3,
+            "E3 instruction should delegate to E2 (same timestamp format)"
+        );
     }
 
     /// Test that e2_instruction without timestamp produces epoch-based instruction.

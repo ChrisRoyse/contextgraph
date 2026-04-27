@@ -22,7 +22,9 @@ use uuid::Uuid;
 
 use context_graph_benchmark::realdata::embedder::{EmbedderConfig, RealDataEmbedder};
 use context_graph_benchmark::realdata::loader::DatasetLoader;
-use context_graph_core::traits::{SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions};
+use context_graph_core::traits::{
+    SearchStrategy, TeleologicalMemoryStore, TeleologicalSearchOptions,
+};
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
@@ -73,7 +75,11 @@ fn parse_args() -> Args {
                 let levels_str = argv.next().expect("--concurrency requires a value");
                 args.concurrency_levels = levels_str
                     .split(',')
-                    .map(|s| s.trim().parse().expect("concurrency level must be a number"))
+                    .map(|s| {
+                        s.trim()
+                            .parse()
+                            .expect("concurrency level must be a number")
+                    })
                     .collect();
             }
             "--output" | "-o" => {
@@ -253,41 +259,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     print!("  Benchmarking search_semantic... ");
     std::io::stdout().flush()?;
     let baseline = benchmark_search_semantic(&store, &query_fp, args.iterations, args.warmup).await;
-    println!("P50={:.2}ms, P99={:.2}ms", baseline.p50_us as f64 / 1000.0, baseline.p99_us as f64 / 1000.0);
-    operations.insert("search_semantic".to_string(), OperationResult {
-        baseline,
-        concurrent: HashMap::new(),
-    });
+    println!(
+        "P50={:.2}ms, P99={:.2}ms",
+        baseline.p50_us as f64 / 1000.0,
+        baseline.p99_us as f64 / 1000.0
+    );
+    operations.insert(
+        "search_semantic".to_string(),
+        OperationResult {
+            baseline,
+            concurrent: HashMap::new(),
+        },
+    );
 
     // Benchmark retrieve_batch
     print!("  Benchmarking retrieve_batch... ");
     std::io::stdout().flush()?;
     let baseline = benchmark_retrieve_batch(&store, args.iterations, args.warmup).await;
-    println!("P50={:.2}ms, P99={:.2}ms", baseline.p50_us as f64 / 1000.0, baseline.p99_us as f64 / 1000.0);
-    operations.insert("retrieve_batch".to_string(), OperationResult {
-        baseline,
-        concurrent: HashMap::new(),
-    });
+    println!(
+        "P50={:.2}ms, P99={:.2}ms",
+        baseline.p50_us as f64 / 1000.0,
+        baseline.p99_us as f64 / 1000.0
+    );
+    operations.insert(
+        "retrieve_batch".to_string(),
+        OperationResult {
+            baseline,
+            concurrent: HashMap::new(),
+        },
+    );
 
     // Benchmark count
     print!("  Benchmarking count... ");
     std::io::stdout().flush()?;
     let baseline = benchmark_count(&store, args.iterations, args.warmup).await;
-    println!("P50={:.2}ms, P99={:.2}ms", baseline.p50_us as f64 / 1000.0, baseline.p99_us as f64 / 1000.0);
-    operations.insert("count".to_string(), OperationResult {
-        baseline,
-        concurrent: HashMap::new(),
-    });
+    println!(
+        "P50={:.2}ms, P99={:.2}ms",
+        baseline.p50_us as f64 / 1000.0,
+        baseline.p99_us as f64 / 1000.0
+    );
+    operations.insert(
+        "count".to_string(),
+        OperationResult {
+            baseline,
+            concurrent: HashMap::new(),
+        },
+    );
 
     // Benchmark get_content_batch
     print!("  Benchmarking get_content_batch... ");
     std::io::stdout().flush()?;
     let baseline = benchmark_get_content_batch(&store, args.iterations, args.warmup).await;
-    println!("P50={:.2}ms, P99={:.2}ms", baseline.p50_us as f64 / 1000.0, baseline.p99_us as f64 / 1000.0);
-    operations.insert("get_content_batch".to_string(), OperationResult {
-        baseline,
-        concurrent: HashMap::new(),
-    });
+    println!(
+        "P50={:.2}ms, P99={:.2}ms",
+        baseline.p50_us as f64 / 1000.0,
+        baseline.p99_us as f64 / 1000.0
+    );
+    operations.insert(
+        "get_content_batch".to_string(),
+        OperationResult {
+            baseline,
+            concurrent: HashMap::new(),
+        },
+    );
 
     println!();
 
@@ -299,35 +333,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Testing concurrency level: {}", concurrency);
 
         // search_semantic concurrent
-        let stats = benchmark_search_semantic_concurrent(
-            &store,
-            &query_fp,
-            concurrency,
-            args.iterations,
-        ).await;
-        println!("    search_semantic: throughput={:.0} ops/s, scaling={:.2}x",
-                 stats.throughput_ops_sec, stats.scaling_factor);
-        operations.get_mut("search_semantic").unwrap().concurrent.insert(concurrency, stats);
+        let stats =
+            benchmark_search_semantic_concurrent(&store, &query_fp, concurrency, args.iterations)
+                .await;
+        println!(
+            "    search_semantic: throughput={:.0} ops/s, scaling={:.2}x",
+            stats.throughput_ops_sec, stats.scaling_factor
+        );
+        operations
+            .get_mut("search_semantic")
+            .unwrap()
+            .concurrent
+            .insert(concurrency, stats);
 
         // retrieve_batch concurrent
-        let stats = benchmark_retrieve_batch_concurrent(
-            &store,
-            concurrency,
-            args.iterations,
-        ).await;
-        println!("    retrieve_batch: throughput={:.0} ops/s, scaling={:.2}x",
-                 stats.throughput_ops_sec, stats.scaling_factor);
-        operations.get_mut("retrieve_batch").unwrap().concurrent.insert(concurrency, stats);
+        let stats = benchmark_retrieve_batch_concurrent(&store, concurrency, args.iterations).await;
+        println!(
+            "    retrieve_batch: throughput={:.0} ops/s, scaling={:.2}x",
+            stats.throughput_ops_sec, stats.scaling_factor
+        );
+        operations
+            .get_mut("retrieve_batch")
+            .unwrap()
+            .concurrent
+            .insert(concurrency, stats);
 
         // count concurrent
-        let stats = benchmark_count_concurrent(
-            &store,
-            concurrency,
-            args.iterations,
-        ).await;
-        println!("    count: throughput={:.0} ops/s, scaling={:.2}x",
-                 stats.throughput_ops_sec, stats.scaling_factor);
-        operations.get_mut("count").unwrap().concurrent.insert(concurrency, stats);
+        let stats = benchmark_count_concurrent(&store, concurrency, args.iterations).await;
+        println!(
+            "    count: throughput={:.0} ops/s, scaling={:.2}x",
+            stats.throughput_ops_sec, stats.scaling_factor
+        );
+        operations
+            .get_mut("count")
+            .unwrap()
+            .concurrent
+            .insert(concurrency, stats);
     }
 
     println!();
@@ -372,7 +413,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // Setup: Load Data and Create Store
 // ============================================================================
 
-async fn setup_store(args: &Args) -> Result<(RocksDbTeleologicalStore, TeleologicalFingerprint), Box<dyn std::error::Error>> {
+async fn setup_store(
+    args: &Args,
+) -> Result<(RocksDbTeleologicalStore, TeleologicalFingerprint), Box<dyn std::error::Error>> {
     println!("PHASE 1: Setup");
     println!("{}", "-".repeat(70));
 
@@ -466,14 +509,18 @@ async fn benchmark_search_semantic(
 
     // Warmup
     for _ in 0..warmup {
-        let _ = store.search_semantic(&query.semantic, options.clone()).await;
+        let _ = store
+            .search_semantic(&query.semantic, options.clone())
+            .await;
     }
 
     // Measure
     let mut latencies = Vec::with_capacity(iterations);
     for _ in 0..iterations {
         let start = Instant::now();
-        let _ = store.search_semantic(&query.semantic, options.clone()).await;
+        let _ = store
+            .search_semantic(&query.semantic, options.clone())
+            .await;
         latencies.push(start.elapsed().as_micros() as u64);
     }
 
@@ -606,7 +653,8 @@ async fn benchmark_search_semantic_concurrent(
     let throughput = all_latencies.len() as f64 / (wall_clock_ms as f64 / 1000.0);
 
     // Calculate scaling factor (vs single-threaded baseline)
-    let baseline_throughput = 1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
+    let baseline_throughput =
+        1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
     let scaling_factor = throughput / baseline_throughput.max(1.0);
 
     ConcurrentStats {
@@ -655,7 +703,8 @@ async fn benchmark_retrieve_batch_concurrent(
     let wall_clock_ms = wall_start.elapsed().as_millis() as u64;
     let throughput = all_latencies.len() as f64 / (wall_clock_ms as f64 / 1000.0);
 
-    let baseline_throughput = 1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
+    let baseline_throughput =
+        1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
     let scaling_factor = throughput / baseline_throughput.max(1.0);
 
     ConcurrentStats {
@@ -703,7 +752,8 @@ async fn benchmark_count_concurrent(
     let wall_clock_ms = wall_start.elapsed().as_millis() as u64;
     let throughput = all_latencies.len() as f64 / (wall_clock_ms as f64 / 1000.0);
 
-    let baseline_throughput = 1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
+    let baseline_throughput =
+        1000.0 * 1000.0 / LatencyStats::from_measurements(&all_latencies).mean_us;
     let scaling_factor = throughput / baseline_throughput.max(1.0);
 
     ConcurrentStats {
@@ -744,7 +794,9 @@ async fn detect_blocking(
     // Run 100 blocking operations
     let start = Instant::now();
     for _ in 0..100 {
-        let _ = store.search_semantic(&query.semantic, options.clone()).await;
+        let _ = store
+            .search_semantic(&query.semantic, options.clone())
+            .await;
     }
     let elapsed = start.elapsed();
 
@@ -800,7 +852,8 @@ fn generate_summary(
             if stats.scaling_factor < 1.5 {
                 recommendations.push(
                     "Warning: Scaling factor at concurrency=4 is below 1.5x. \
-                     Consider checking for contention issues.".to_string()
+                     Consider checking for contention issues."
+                        .to_string(),
                 );
             } else {
                 recommendations.push(format!(
@@ -814,7 +867,7 @@ fn generate_summary(
     // Check blocking
     if blocking.is_blocking {
         recommendations.push(
-            "WARNING: Blocking detected! spawn_blocking may not be working correctly.".to_string()
+            "WARNING: Blocking detected! spawn_blocking may not be working correctly.".to_string(),
         );
     } else {
         recommendations.push(format!(
@@ -880,9 +933,25 @@ fn generate_markdown_report(
     // Summary
     writeln!(f, "## Summary")?;
     writeln!(f)?;
-    writeln!(f, "- **Optimal Concurrency:** {}", results.summary.optimal_concurrency)?;
-    writeln!(f, "- **Peak Throughput:** {:.0} ops/sec", results.summary.peak_throughput)?;
-    writeln!(f, "- **Blocking Detected:** {}", if results.summary.blocking_detected { "Yes" } else { "No" })?;
+    writeln!(
+        f,
+        "- **Optimal Concurrency:** {}",
+        results.summary.optimal_concurrency
+    )?;
+    writeln!(
+        f,
+        "- **Peak Throughput:** {:.0} ops/sec",
+        results.summary.peak_throughput
+    )?;
+    writeln!(
+        f,
+        "- **Blocking Detected:** {}",
+        if results.summary.blocking_detected {
+            "Yes"
+        } else {
+            "No"
+        }
+    )?;
     writeln!(f)?;
 
     // Single-Threaded Baseline
@@ -892,12 +961,15 @@ fn generate_markdown_report(
     writeln!(f, "|-----------|-----|-----|-----|------|")?;
 
     for (name, result) in &results.operations {
-        writeln!(f, "| {} | {:.2}ms | {:.2}ms | {:.2}ms | {:.2}ms |",
-                 name,
-                 result.baseline.p50_us as f64 / 1000.0,
-                 result.baseline.p90_us as f64 / 1000.0,
-                 result.baseline.p99_us as f64 / 1000.0,
-                 result.baseline.mean_us / 1000.0)?;
+        writeln!(
+            f,
+            "| {} | {:.2}ms | {:.2}ms | {:.2}ms | {:.2}ms |",
+            name,
+            result.baseline.p50_us as f64 / 1000.0,
+            result.baseline.p90_us as f64 / 1000.0,
+            result.baseline.p99_us as f64 / 1000.0,
+            result.baseline.mean_us / 1000.0
+        )?;
     }
     writeln!(f)?;
 
@@ -916,11 +988,11 @@ fn generate_markdown_report(
 
         for &level in &levels {
             if let Some(stats) = search_result.concurrent.get(level) {
-                writeln!(f, "| {} | {:.0} ops/s | {:.2}x | {}ms |",
-                         level,
-                         stats.throughput_ops_sec,
-                         stats.scaling_factor,
-                         stats.wall_clock_ms)?;
+                writeln!(
+                    f,
+                    "| {} | {:.0} ops/s | {:.2}x | {}ms |",
+                    level, stats.throughput_ops_sec, stats.scaling_factor, stats.wall_clock_ms
+                )?;
             }
         }
         writeln!(f)?;
@@ -931,12 +1003,35 @@ fn generate_markdown_report(
     writeln!(f)?;
     writeln!(f, "| Metric | Value |")?;
     writeln!(f, "|--------|-------|")?;
-    writeln!(f, "| Elapsed | {}ms |", results.blocking_detection.elapsed_ms)?;
-    writeln!(f, "| Expected Ticks | {} |", results.blocking_detection.expected_ticks)?;
-    writeln!(f, "| Actual Ticks | {} |", results.blocking_detection.actual_ticks)?;
-    writeln!(f, "| Tick Ratio | {:.2} |", results.blocking_detection.tick_ratio)?;
-    writeln!(f, "| Blocking Detected | {} |",
-             if results.blocking_detection.is_blocking { "Yes" } else { "No" })?;
+    writeln!(
+        f,
+        "| Elapsed | {}ms |",
+        results.blocking_detection.elapsed_ms
+    )?;
+    writeln!(
+        f,
+        "| Expected Ticks | {} |",
+        results.blocking_detection.expected_ticks
+    )?;
+    writeln!(
+        f,
+        "| Actual Ticks | {} |",
+        results.blocking_detection.actual_ticks
+    )?;
+    writeln!(
+        f,
+        "| Tick Ratio | {:.2} |",
+        results.blocking_detection.tick_ratio
+    )?;
+    writeln!(
+        f,
+        "| Blocking Detected | {} |",
+        if results.blocking_detection.is_blocking {
+            "Yes"
+        } else {
+            "No"
+        }
+    )?;
     writeln!(f)?;
 
     // Recommendations
@@ -948,7 +1043,10 @@ fn generate_markdown_report(
     writeln!(f)?;
 
     writeln!(f, "---")?;
-    writeln!(f, "*Generated with context-graph-benchmark spawn-blocking-bench*")?;
+    writeln!(
+        f,
+        "*Generated with context-graph-benchmark spawn-blocking-bench*"
+    )?;
 
     Ok(())
 }
@@ -959,9 +1057,22 @@ fn print_summary(results: &BenchmarkResults) {
     println!("  Benchmark Summary");
     println!("=======================================================================");
     println!();
-    println!("Optimal Concurrency: {}", results.summary.optimal_concurrency);
-    println!("Peak Throughput: {:.0} ops/sec", results.summary.peak_throughput);
-    println!("Blocking Detected: {}", if results.summary.blocking_detected { "Yes" } else { "No" });
+    println!(
+        "Optimal Concurrency: {}",
+        results.summary.optimal_concurrency
+    );
+    println!(
+        "Peak Throughput: {:.0} ops/sec",
+        results.summary.peak_throughput
+    );
+    println!(
+        "Blocking Detected: {}",
+        if results.summary.blocking_detected {
+            "Yes"
+        } else {
+            "No"
+        }
+    );
     println!();
     println!("Recommendations:");
     for rec in &results.summary.recommendations {

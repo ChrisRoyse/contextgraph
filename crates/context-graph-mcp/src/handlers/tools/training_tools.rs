@@ -31,6 +31,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use chrono::Utc;
 use context_graph_core::graph_linking::TypedEdge;
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 use context_graph_core::teleological::tucker::{
@@ -46,7 +47,6 @@ use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_core::types::SourceMetadata;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_storage::EdgeRepository;
-use chrono::Utc;
 use serde_json::json;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -121,12 +121,7 @@ impl Handlers {
             .unwrap_or(false);
 
         // ---- Validate session filter ----
-        if filter == "session"
-            && filter_id
-                .as_deref()
-                .map(|s| s.is_empty())
-                .unwrap_or(true)
-        {
+        if filter == "session" && filter_id.as_deref().map(|s| s.is_empty()).unwrap_or(true) {
             return self.tool_error(id, "filter='session' requires a non-empty filterId");
         }
 
@@ -146,10 +141,8 @@ impl Handlers {
                 Ok(n) => n,
                 Err(e) => {
                     error!(error = %e, "clear_all_training_records failed");
-                    return self.tool_error(
-                        id,
-                        &format!("Failed to clear CF_TRAINING_RECORDS: {}", e),
-                    );
+                    return self
+                        .tool_error(id, &format!("Failed to clear CF_TRAINING_RECORDS: {}", e));
                 }
             }
         } else {
@@ -274,11 +267,7 @@ impl Handlers {
         let elapsed_ms = started.elapsed().as_millis() as u64;
         info!(
             exported,
-            skipped,
-            errors,
-            cleared,
-            elapsed_ms,
-            "export_training_corpus complete"
+            skipped, errors, cleared, elapsed_ms, "export_training_corpus complete"
         );
 
         self.tool_result(
@@ -359,41 +348,42 @@ impl Handlers {
 
         // Dense embeddings (gate by include flag).
         let sem = &fp.semantic;
-        let (e1, e2, e3, e4, e5c, e5e, e7, e8s, e8t, e9, e10p, e10c, e11, e14) = if include_embeddings {
-            (
-                sem.e1_semantic.clone(),
-                sem.e2_temporal_recent.clone(),
-                sem.e3_temporal_periodic.clone(),
-                sem.e4_temporal_positional.clone(),
-                sem.e5_causal_as_cause.clone(),
-                sem.e5_causal_as_effect.clone(),
-                sem.e7_code.clone(),
-                sem.e8_graph_as_source.clone(),
-                sem.e8_graph_as_target.clone(),
-                sem.e9_hdc.clone(),
-                sem.e10_multimodal_paraphrase.clone(),
-                sem.e10_multimodal_as_context.clone(),
-                sem.e11_entity.clone(),
-                sem.e14_bge_m3_dense.clone(),
-            )
-        } else {
-            (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            )
-        };
+        let (e1, e2, e3, e4, e5c, e5e, e7, e8s, e8t, e9, e10p, e10c, e11, e14) =
+            if include_embeddings {
+                (
+                    sem.e1_semantic.clone(),
+                    sem.e2_temporal_recent.clone(),
+                    sem.e3_temporal_periodic.clone(),
+                    sem.e4_temporal_positional.clone(),
+                    sem.e5_causal_as_cause.clone(),
+                    sem.e5_causal_as_effect.clone(),
+                    sem.e7_code.clone(),
+                    sem.e8_graph_as_source.clone(),
+                    sem.e8_graph_as_target.clone(),
+                    sem.e9_hdc.clone(),
+                    sem.e10_multimodal_paraphrase.clone(),
+                    sem.e10_multimodal_as_context.clone(),
+                    sem.e11_entity.clone(),
+                    sem.e14_bge_m3_dense.clone(),
+                )
+            } else {
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+            };
 
         // Sparse embeddings
         let (e6_idx, e6_val, e13_idx, e13_val) = if include_sparse {
@@ -576,10 +566,7 @@ impl Handlers {
             .and_then(|v| v.as_u64())
             .unwrap_or(50)
             .min(1000) as usize;
-        let offset = args
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let include_shape = args
             .get("includeShape")
             .and_then(|v| v.as_bool())
@@ -590,14 +577,16 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(id, "list_training_records requires RocksDbTeleologicalStore.");
+            return self.tool_error(
+                id,
+                "list_training_records requires RocksDbTeleologicalStore.",
+            );
         };
 
         let ids = match rocksdb_store.list_training_record_ids().await {
             Ok(v) => v,
             Err(e) => {
-                return self
-                    .tool_error(id, &format!("list_training_record_ids failed: {}", e));
+                return self.tool_error(id, &format!("list_training_record_ids failed: {}", e));
             }
         };
         let total = ids.len();
@@ -722,7 +711,10 @@ impl Handlers {
             .as_any()
             .downcast_ref::<RocksDbTeleologicalStore>()
         else {
-            return self.tool_error(id, "count_training_records requires RocksDbTeleologicalStore.");
+            return self.tool_error(
+                id,
+                "count_training_records requires RocksDbTeleologicalStore.",
+            );
         };
         match rocksdb_store.count_training_records().await {
             Ok(n) => self.tool_result(id, json!({"count": n})),
@@ -945,8 +937,8 @@ fn estimate_record_size(r: &TrainingRecord) -> u64 {
         + r.e13_splade_indices.len() * 2
         + r.e13_splade_values.len() * 4;
     let token_bytes: usize = r.e12_token_embeddings.iter().map(|v| v.len() * 4).sum();
-    let edge_bytes = (r.outgoing_edges.len() + r.incoming_edges.len())
-        * (16 + 4 + 4 + 4 + NUM_EMBEDDERS * 4);
+    let edge_bytes =
+        (r.outgoing_edges.len() + r.incoming_edges.len()) * (16 + 4 + 4 + 4 + NUM_EMBEDDERS * 4);
     let knn_bytes: usize = r.knn_neighbors.iter().map(|v| v.len() * (16 + 4)).sum();
     let content_bytes = r.content.len();
     (dense_bytes * 4 + sparse_bytes + token_bytes + edge_bytes + knn_bytes + content_bytes) as u64

@@ -31,11 +31,11 @@ use chrono::Utc;
 use serde::Serialize;
 use tracing::{info, warn};
 
-use context_graph_core::causal::asymmetric::{
-    compute_asymmetric_similarity, detect_causal_query_intent, CausalDirection,
-};
 use context_graph_benchmark::metrics::causal::{
     compute_direction_detection_metrics, DirectionDetectionMetrics,
+};
+use context_graph_core::causal::asymmetric::{
+    compute_asymmetric_similarity, detect_causal_query_intent, CausalDirection,
 };
 
 // ============================================================================
@@ -262,106 +262,358 @@ fn marker_detection_dataset() -> Vec<(&'static str, CausalDirection)> {
         // === Cause queries (40) ===
         ("Why does rust have ownership?", CausalDirection::Cause),
         ("What causes memory leaks in C++?", CausalDirection::Cause),
-        ("What is the root cause of inflation?", CausalDirection::Cause),
-        ("Why do batteries degrade over time?", CausalDirection::Cause),
-        ("Diagnose the authentication failure", CausalDirection::Cause),
-        ("Why is the server crashing under load?", CausalDirection::Cause),
-        ("What caused the 2008 financial crisis?", CausalDirection::Cause),
+        (
+            "What is the root cause of inflation?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why do batteries degrade over time?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Diagnose the authentication failure",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why is the server crashing under load?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What caused the 2008 financial crisis?",
+            CausalDirection::Cause,
+        ),
         ("Explain why plants need sunlight", CausalDirection::Cause),
-        ("What triggers an immune response to allergens?", CausalDirection::Cause),
-        ("Investigate the source of the data corruption", CausalDirection::Cause),
-        ("What is the root cause of the segfault?", CausalDirection::Cause),
-        ("Why does concrete crack in cold weather?", CausalDirection::Cause),
-        ("What leads to antibiotic resistance in bacteria?", CausalDirection::Cause),
-        ("Debug the null pointer exception in the auth module", CausalDirection::Cause),
-        ("What factor is responsible for the performance regression?", CausalDirection::Cause),
-        ("How come the tests pass locally but fail in CI?", CausalDirection::Cause),
-        ("Troubleshoot the network timeout issue", CausalDirection::Cause),
-        ("What is the underlying mechanism of CRISPR gene editing?", CausalDirection::Cause),
-        ("What is the origin of the universe according to cosmology?", CausalDirection::Cause),
-        ("Why does the ocean appear blue from space?", CausalDirection::Cause),
-        ("What is the etiology of Alzheimer's disease?", CausalDirection::Cause),
+        (
+            "What triggers an immune response to allergens?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Investigate the source of the data corruption",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the root cause of the segfault?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why does concrete crack in cold weather?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What leads to antibiotic resistance in bacteria?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Debug the null pointer exception in the auth module",
+            CausalDirection::Cause,
+        ),
+        (
+            "What factor is responsible for the performance regression?",
+            CausalDirection::Cause,
+        ),
+        (
+            "How come the tests pass locally but fail in CI?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Troubleshoot the network timeout issue",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the underlying mechanism of CRISPR gene editing?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the origin of the universe according to cosmology?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why does the ocean appear blue from space?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the etiology of Alzheimer's disease?",
+            CausalDirection::Cause,
+        ),
         ("Why did the Roman Empire fall?", CausalDirection::Cause),
-        ("What drives tectonic plate movement?", CausalDirection::Cause),
-        ("Explain the pathogenesis of type 1 diabetes", CausalDirection::Cause),
-        ("What causes aurora borealis in polar regions?", CausalDirection::Cause),
-        ("Reason for the build failure on ARM architecture", CausalDirection::Cause),
-        ("Where did the security vulnerability originate?", CausalDirection::Cause),
+        (
+            "What drives tectonic plate movement?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Explain the pathogenesis of type 1 diabetes",
+            CausalDirection::Cause,
+        ),
+        (
+            "What causes aurora borealis in polar regions?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Reason for the build failure on ARM architecture",
+            CausalDirection::Cause,
+        ),
+        (
+            "Where did the security vulnerability originate?",
+            CausalDirection::Cause,
+        ),
         ("How did the data breach occur?", CausalDirection::Cause),
-        ("What is the driving force behind urbanization?", CausalDirection::Cause),
-        ("Identify the failure mode of the bridge collapse", CausalDirection::Cause),
-        ("Why are coral reefs dying worldwide?", CausalDirection::Cause),
-        ("What are the reasons for high employee turnover?", CausalDirection::Cause),
-        ("What is the molecular basis of sickle cell anemia?", CausalDirection::Cause),
-        ("What factors influence voter turnout in elections?", CausalDirection::Cause),
+        (
+            "What is the driving force behind urbanization?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Identify the failure mode of the bridge collapse",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why are coral reefs dying worldwide?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What are the reasons for high employee turnover?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the molecular basis of sickle cell anemia?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What factors influence voter turnout in elections?",
+            CausalDirection::Cause,
+        ),
         ("Explain why ice floats on water", CausalDirection::Cause),
-        ("What are the predictors of heart disease?", CausalDirection::Cause),
-        ("What is attributed to the decline in bee populations?", CausalDirection::Cause),
-        ("Why did the algorithm produce incorrect results?", CausalDirection::Cause),
-        ("What is the primary driver of climate change?", CausalDirection::Cause),
-        ("What is the basis for the heliocentric model?", CausalDirection::Cause),
+        (
+            "What are the predictors of heart disease?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is attributed to the decline in bee populations?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why did the algorithm produce incorrect results?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the primary driver of climate change?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the basis for the heliocentric model?",
+            CausalDirection::Cause,
+        ),
         // === Effect queries (40) ===
-        ("What happens if you delete the main branch?", CausalDirection::Effect),
-        ("What are the consequences of deforestation?", CausalDirection::Effect),
-        ("What are the effects of sleep deprivation?", CausalDirection::Effect),
-        ("What will happen if interest rates rise?", CausalDirection::Effect),
+        (
+            "What happens if you delete the main branch?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the consequences of deforestation?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the effects of sleep deprivation?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What will happen if interest rates rise?",
+            CausalDirection::Effect,
+        ),
         ("Impact of AI on employment trends", CausalDirection::Effect),
-        ("What are the downstream effects of gene knockout?", CausalDirection::Effect),
-        ("What would happen if the internet went down globally?", CausalDirection::Effect),
-        ("Consequences of removing the rate limiter from the API", CausalDirection::Effect),
-        ("What is the result of mixing bleach and ammonia?", CausalDirection::Effect),
-        ("What does deforestation lead to in tropical regions?", CausalDirection::Effect),
-        ("If you remove the index, what happens to query performance?", CausalDirection::Effect),
-        ("What is the outcome of the French Revolution?", CausalDirection::Effect),
-        ("What are the long-term effects of childhood trauma?", CausalDirection::Effect),
-        ("Impact of automation on manufacturing jobs", CausalDirection::Effect),
-        ("What will happen to biodiversity if temperatures rise 3 degrees?", CausalDirection::Effect),
-        ("What are the implications of quantum computing for cryptography?", CausalDirection::Effect),
-        ("If I increase the batch size, what happens to training speed?", CausalDirection::Effect),
-        ("What does high inflation lead to in developing economies?", CausalDirection::Effect),
-        ("What are the consequences of ocean acidification for fisheries?", CausalDirection::Effect),
-        ("What will this code change do to the memory footprint?", CausalDirection::Effect),
-        ("What is the impact of social media on political polarization?", CausalDirection::Effect),
-        ("What happens when you apply a force to a stationary object?", CausalDirection::Effect),
-        ("Consequences of deleting the foreign key constraint", CausalDirection::Effect),
-        ("What are the effects of meditation on brain structure?", CausalDirection::Effect),
-        ("What results from prolonged exposure to microgravity?", CausalDirection::Effect),
-        ("If we double the learning rate what is the effect on convergence?", CausalDirection::Effect),
-        ("What does urbanization lead to in water resource management?", CausalDirection::Effect),
-        ("What are the ramifications of Brexit for EU trade?", CausalDirection::Effect),
-        ("What will happen if we remove the cache layer?", CausalDirection::Effect),
-        ("What is the consequence of ignoring technical debt?", CausalDirection::Effect),
-        ("What does excessive screen time do to children's development?", CausalDirection::Effect),
-        ("Outcome of increasing the replication factor to five", CausalDirection::Effect),
-        ("What happens if you overflow a stack buffer in C?", CausalDirection::Effect),
-        ("What are the effects of minimum wage increases on small business?", CausalDirection::Effect),
-        ("Impact of GDPR on data collection practices", CausalDirection::Effect),
-        ("What would happen if photosynthesis stopped globally?", CausalDirection::Effect),
-        ("Consequences of running the database without backups", CausalDirection::Effect),
-        ("What does chronic sleep debt lead to over years?", CausalDirection::Effect),
-        ("If the supply chain breaks, what happens to retail prices?", CausalDirection::Effect),
-        ("What are the implications of removing null safety from the language?", CausalDirection::Effect),
+        (
+            "What are the downstream effects of gene knockout?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What would happen if the internet went down globally?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Consequences of removing the rate limiter from the API",
+            CausalDirection::Effect,
+        ),
+        (
+            "What is the result of mixing bleach and ammonia?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does deforestation lead to in tropical regions?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If you remove the index, what happens to query performance?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What is the outcome of the French Revolution?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the long-term effects of childhood trauma?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Impact of automation on manufacturing jobs",
+            CausalDirection::Effect,
+        ),
+        (
+            "What will happen to biodiversity if temperatures rise 3 degrees?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the implications of quantum computing for cryptography?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If I increase the batch size, what happens to training speed?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does high inflation lead to in developing economies?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the consequences of ocean acidification for fisheries?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What will this code change do to the memory footprint?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What is the impact of social media on political polarization?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What happens when you apply a force to a stationary object?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Consequences of deleting the foreign key constraint",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the effects of meditation on brain structure?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What results from prolonged exposure to microgravity?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If we double the learning rate what is the effect on convergence?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does urbanization lead to in water resource management?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the ramifications of Brexit for EU trade?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What will happen if we remove the cache layer?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What is the consequence of ignoring technical debt?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does excessive screen time do to children's development?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Outcome of increasing the replication factor to five",
+            CausalDirection::Effect,
+        ),
+        (
+            "What happens if you overflow a stack buffer in C?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the effects of minimum wage increases on small business?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Impact of GDPR on data collection practices",
+            CausalDirection::Effect,
+        ),
+        (
+            "What would happen if photosynthesis stopped globally?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Consequences of running the database without backups",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does chronic sleep debt lead to over years?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If the supply chain breaks, what happens to retail prices?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the implications of removing null safety from the language?",
+            CausalDirection::Effect,
+        ),
         // === Neutral/Unknown queries (20) ===
         ("Tell me about Rust programming", CausalDirection::Unknown),
-        ("Describe the architecture of Linux", CausalDirection::Unknown),
+        (
+            "Describe the architecture of Linux",
+            CausalDirection::Unknown,
+        ),
         ("List the prime numbers below 100", CausalDirection::Unknown),
         ("Show me the config file", CausalDirection::Unknown),
-        ("What is the syntax for a Python list comprehension?", CausalDirection::Unknown),
+        (
+            "What is the syntax for a Python list comprehension?",
+            CausalDirection::Unknown,
+        ),
         ("How many bytes in a kilobyte?", CausalDirection::Unknown),
         ("Summarize the plot of Hamlet", CausalDirection::Unknown),
         ("Define the term machine learning", CausalDirection::Unknown),
         ("Who invented the telephone?", CausalDirection::Unknown),
-        ("Compare PostgreSQL and MySQL features", CausalDirection::Unknown),
+        (
+            "Compare PostgreSQL and MySQL features",
+            CausalDirection::Unknown,
+        ),
         ("What is the population of Tokyo?", CausalDirection::Unknown),
         ("Translate hello into Japanese", CausalDirection::Unknown),
-        ("What programming languages does Google use?", CausalDirection::Unknown),
-        ("Show the git log for the past week", CausalDirection::Unknown),
-        ("Describe the HTTP request lifecycle", CausalDirection::Unknown),
-        ("What is the difference between TCP and UDP?", CausalDirection::Unknown),
-        ("List all Kubernetes resource types", CausalDirection::Unknown),
-        ("Explain the concept of polymorphism", CausalDirection::Unknown),
-        ("What are the features of Rust 2024 edition?", CausalDirection::Unknown),
-        ("How many planets are in the solar system?", CausalDirection::Unknown),
+        (
+            "What programming languages does Google use?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Show the git log for the past week",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Describe the HTTP request lifecycle",
+            CausalDirection::Unknown,
+        ),
+        (
+            "What is the difference between TCP and UDP?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "List all Kubernetes resource types",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Explain the concept of polymorphism",
+            CausalDirection::Unknown,
+        ),
+        (
+            "What are the features of Rust 2024 edition?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "How many planets are in the solar system?",
+            CausalDirection::Unknown,
+        ),
     ]
 }
 
@@ -371,122 +623,410 @@ fn marker_detection_dataset() -> Vec<(&'static str, CausalDirection)> {
 fn query_intent_dataset() -> Vec<(&'static str, CausalDirection)> {
     vec![
         // === Cause queries (30) — conversational and indirect ===
-        ("My app keeps crashing, what's going on?", CausalDirection::Cause), // No explicit cause markers, but troubleshooting
-        ("Why is my test failing intermittently?", CausalDirection::Cause),
-        ("What's behind the recent spike in latency?", CausalDirection::Cause),
-        ("Can you explain what triggers migraines?", CausalDirection::Cause),
-        ("I need to understand the root cause of the outage", CausalDirection::Cause),
-        ("How did this regression get introduced?", CausalDirection::Cause),
-        ("What factors contribute to soil degradation?", CausalDirection::Cause),
-        ("Why are bees disappearing worldwide?", CausalDirection::Cause),
-        ("What drove the rapid adoption of smartphones?", CausalDirection::Cause),
+        (
+            "My app keeps crashing, what's going on?",
+            CausalDirection::Cause,
+        ), // No explicit cause markers, but troubleshooting
+        (
+            "Why is my test failing intermittently?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What's behind the recent spike in latency?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Can you explain what triggers migraines?",
+            CausalDirection::Cause,
+        ),
+        (
+            "I need to understand the root cause of the outage",
+            CausalDirection::Cause,
+        ),
+        (
+            "How did this regression get introduced?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What factors contribute to soil degradation?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why are bees disappearing worldwide?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What drove the rapid adoption of smartphones?",
+            CausalDirection::Cause,
+        ),
         ("Diagnose why the pipeline is stuck", CausalDirection::Cause),
-        ("What is responsible for the increase in allergies?", CausalDirection::Cause),
-        ("The server is returning 500 errors — investigate", CausalDirection::Cause),
-        ("What precipitated the stock market crash of 1929?", CausalDirection::Cause),
-        ("Why does the database lock up during batch jobs?", CausalDirection::Cause),
-        ("What underlying mechanism explains enzyme inhibition?", CausalDirection::Cause),
-        ("Where did this configuration drift originate?", CausalDirection::Cause),
-        ("Explain the pathogenesis of atherosclerosis", CausalDirection::Cause),
-        ("What accounts for the gender pay gap?", CausalDirection::Cause),
-        ("Why do some materials become superconducting?", CausalDirection::Cause),
-        ("Find the source of the memory leak in production", CausalDirection::Cause),
-        ("What molecular basis underlies sickle cell disease?", CausalDirection::Cause),
-        ("How come this used to work but now it doesn't?", CausalDirection::Cause),
-        ("What makes the Pacific Ring of Fire so seismically active?", CausalDirection::Cause), // "makes" not an indicator
+        (
+            "What is responsible for the increase in allergies?",
+            CausalDirection::Cause,
+        ),
+        (
+            "The server is returning 500 errors — investigate",
+            CausalDirection::Cause,
+        ),
+        (
+            "What precipitated the stock market crash of 1929?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why does the database lock up during batch jobs?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What underlying mechanism explains enzyme inhibition?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Where did this configuration drift originate?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Explain the pathogenesis of atherosclerosis",
+            CausalDirection::Cause,
+        ),
+        (
+            "What accounts for the gender pay gap?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why do some materials become superconducting?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Find the source of the memory leak in production",
+            CausalDirection::Cause,
+        ),
+        (
+            "What molecular basis underlies sickle cell disease?",
+            CausalDirection::Cause,
+        ),
+        (
+            "How come this used to work but now it doesn't?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What makes the Pacific Ring of Fire so seismically active?",
+            CausalDirection::Cause,
+        ), // "makes" not an indicator
         ("Debug the authentication timeout", CausalDirection::Cause),
-        ("Explain why ice is less dense than liquid water", CausalDirection::Cause),
-        ("What is the etiology of Crohn's disease?", CausalDirection::Cause),
-        ("The deployment failed — troubleshoot", CausalDirection::Cause),
-        ("What factors influence election outcomes?", CausalDirection::Cause),
-        ("Why is the Pacific Ocean shrinking?", CausalDirection::Cause),
-        ("What is attributed to the decline in insect populations?", CausalDirection::Cause),
+        (
+            "Explain why ice is less dense than liquid water",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is the etiology of Crohn's disease?",
+            CausalDirection::Cause,
+        ),
+        (
+            "The deployment failed — troubleshoot",
+            CausalDirection::Cause,
+        ),
+        (
+            "What factors influence election outcomes?",
+            CausalDirection::Cause,
+        ),
+        (
+            "Why is the Pacific Ocean shrinking?",
+            CausalDirection::Cause,
+        ),
+        (
+            "What is attributed to the decline in insect populations?",
+            CausalDirection::Cause,
+        ),
         // === Effect queries (30) — conversational and indirect ===
-        ("What happens if I delete the production database?", CausalDirection::Effect),
-        ("If we raise prices 20%, what will customers do?", CausalDirection::Effect),
-        ("What are the long-term effects of microplastics?", CausalDirection::Effect),
-        ("If I remove this dependency, what breaks?", CausalDirection::Effect),
-        ("What would happen to the economy without immigration?", CausalDirection::Effect),
-        ("What downstream effects does deforestation have?", CausalDirection::Effect),
-        ("If you double the thread pool size, what's the impact?", CausalDirection::Effect),
-        ("What are the consequences of ignoring technical debt?", CausalDirection::Effect),
-        ("What does chronic sleep deprivation do to your brain?", CausalDirection::Effect),
-        ("Impact of remote work on urban real estate", CausalDirection::Effect),
-        ("What results from ocean acidification in coral reefs?", CausalDirection::Effect),
-        ("Consequences of removing the foreign key constraint", CausalDirection::Effect),
-        ("What are the ramifications of a US default on debt?", CausalDirection::Effect),
-        ("How does this medication affect liver function?", CausalDirection::Effect), // "affect" not a direct indicator
-        ("If the learning rate is too high, what happens?", CausalDirection::Effect),
-        ("What are the implications of CRISPR for agriculture?", CausalDirection::Effect),
-        ("Outcome of switching from REST to GraphQL", CausalDirection::Effect),
-        ("What does increased CO2 do to plant growth?", CausalDirection::Effect),
-        ("If we migrate to Kubernetes, what are the side effects?", CausalDirection::Effect),
-        ("What happens when you mix bleach and vinegar?", CausalDirection::Effect),
-        ("What would be the result of abolishing the filibuster?", CausalDirection::Effect),
-        ("What are the complications of untreated diabetes?", CausalDirection::Effect),
-        ("If the cache is cold, what is the latency impact?", CausalDirection::Effect),
-        ("What ripple effects does a port strike have on supply chains?", CausalDirection::Effect),
-        ("Predict what happens if we scale to 10x traffic", CausalDirection::Effect),
-        ("What are the sequelae of traumatic brain injury?", CausalDirection::Effect),
-        ("If I change this API contract, what breaks downstream?", CausalDirection::Effect),
-        ("What does prolonged isolation do to mental health?", CausalDirection::Effect),
-        ("Impact of rising sea levels on coastal infrastructure", CausalDirection::Effect),
-        ("If the fed raises rates again, what is the forecast?", CausalDirection::Effect),
+        (
+            "What happens if I delete the production database?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If we raise prices 20%, what will customers do?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the long-term effects of microplastics?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If I remove this dependency, what breaks?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What would happen to the economy without immigration?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What downstream effects does deforestation have?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If you double the thread pool size, what's the impact?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the consequences of ignoring technical debt?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does chronic sleep deprivation do to your brain?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Impact of remote work on urban real estate",
+            CausalDirection::Effect,
+        ),
+        (
+            "What results from ocean acidification in coral reefs?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Consequences of removing the foreign key constraint",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the ramifications of a US default on debt?",
+            CausalDirection::Effect,
+        ),
+        (
+            "How does this medication affect liver function?",
+            CausalDirection::Effect,
+        ), // "affect" not a direct indicator
+        (
+            "If the learning rate is too high, what happens?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the implications of CRISPR for agriculture?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Outcome of switching from REST to GraphQL",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does increased CO2 do to plant growth?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If we migrate to Kubernetes, what are the side effects?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What happens when you mix bleach and vinegar?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What would be the result of abolishing the filibuster?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the complications of untreated diabetes?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If the cache is cold, what is the latency impact?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What ripple effects does a port strike have on supply chains?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Predict what happens if we scale to 10x traffic",
+            CausalDirection::Effect,
+        ),
+        (
+            "What are the sequelae of traumatic brain injury?",
+            CausalDirection::Effect,
+        ),
+        (
+            "If I change this API contract, what breaks downstream?",
+            CausalDirection::Effect,
+        ),
+        (
+            "What does prolonged isolation do to mental health?",
+            CausalDirection::Effect,
+        ),
+        (
+            "Impact of rising sea levels on coastal infrastructure",
+            CausalDirection::Effect,
+        ),
+        (
+            "If the fed raises rates again, what is the forecast?",
+            CausalDirection::Effect,
+        ),
         // === Neutral/Unknown queries (20) — some tricky near-misses ===
-        ("Describe the architecture of the authentication system", CausalDirection::Unknown),
-        ("What are the features of Rust's borrow checker?", CausalDirection::Unknown),
-        ("Compare React and Vue for frontend development", CausalDirection::Unknown),
-        ("List all API endpoints in the payments service", CausalDirection::Unknown),
+        (
+            "Describe the architecture of the authentication system",
+            CausalDirection::Unknown,
+        ),
+        (
+            "What are the features of Rust's borrow checker?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Compare React and Vue for frontend development",
+            CausalDirection::Unknown,
+        ),
+        (
+            "List all API endpoints in the payments service",
+            CausalDirection::Unknown,
+        ),
         ("How tall is Mount Everest?", CausalDirection::Unknown),
-        ("What year did the Berlin Wall fall?", CausalDirection::Unknown),
-        ("Summarize the key points of the meeting", CausalDirection::Unknown),
-        ("Show me the latest logs from the staging server", CausalDirection::Unknown),
-        ("What is the current temperature in Tokyo?", CausalDirection::Unknown),
-        ("Define the term quantum entanglement", CausalDirection::Unknown),
+        (
+            "What year did the Berlin Wall fall?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Summarize the key points of the meeting",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Show me the latest logs from the staging server",
+            CausalDirection::Unknown,
+        ),
+        (
+            "What is the current temperature in Tokyo?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Define the term quantum entanglement",
+            CausalDirection::Unknown,
+        ),
         ("Who is the CEO of Apple?", CausalDirection::Unknown),
-        ("What programming language is TensorFlow written in?", CausalDirection::Unknown),
-        ("How many users signed up last month?", CausalDirection::Unknown),
-        ("Explain the concept of dependency injection", CausalDirection::Unknown),
-        ("What is the difference between TCP and UDP?", CausalDirection::Unknown),
+        (
+            "What programming language is TensorFlow written in?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "How many users signed up last month?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "Explain the concept of dependency injection",
+            CausalDirection::Unknown,
+        ),
+        (
+            "What is the difference between TCP and UDP?",
+            CausalDirection::Unknown,
+        ),
         ("Convert this Python code to Rust", CausalDirection::Unknown),
         ("What is the market cap of Tesla?", CausalDirection::Unknown),
-        ("Describe the structure of a red blood cell", CausalDirection::Unknown),
-        ("When was the first iPhone released?", CausalDirection::Unknown),
-        ("How do you create a Docker container?", CausalDirection::Unknown),
+        (
+            "Describe the structure of a red blood cell",
+            CausalDirection::Unknown,
+        ),
+        (
+            "When was the first iPhone released?",
+            CausalDirection::Unknown,
+        ),
+        (
+            "How do you create a Docker container?",
+            CausalDirection::Unknown,
+        ),
     ]
 }
 
 /// Phase 4.2: causal mechanism examples.
 fn mechanism_examples() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
     vec![
-        ("direct", vec![
-            ("Smoking causes lung cancer", "Lung cancer is caused by smoking"),
-            ("Heat melts ice", "Ice melts when heated"),
-            ("Gravity pulls objects downward", "Objects fall due to gravity"),
-            ("Acid corrodes metal", "Metal corrodes when exposed to acid"),
-            ("Sunlight drives photosynthesis", "Photosynthesis is driven by sunlight"),
-        ]),
-        ("mediated", vec![
-            ("Stress raises cortisol which damages neurons", "Neuron damage results from cortisol elevated by stress"),
-            ("Deforestation increases CO2 which warms climate", "Climate warming traces back through CO2 to deforestation"),
-            ("Poor diet causes obesity which increases heart disease", "Heart disease risk rises through obesity from poor diet"),
-            ("Education improves literacy which boosts employment", "Employment improves through literacy gains from education"),
-            ("Exercise releases endorphins which reduce pain", "Pain reduction follows from endorphins released by exercise"),
-        ]),
-        ("feedback", vec![
-            ("Anxiety causes insomnia which worsens anxiety", "Insomnia worsens anxiety which then deepens insomnia"),
-            ("Inflation reduces spending which slows economy causing more inflation", "Economic slowdown from reduced spending feeds back into inflation"),
-            ("Stress causes poor sleep which increases stress", "Poor sleep from stress creates a cycle of worsening stress"),
-            ("Debt causes interest which increases debt", "Interest on debt accumulates creating larger debt"),
-            ("Population growth increases resource use which limits population", "Resource limits from population growth constrain further growth"),
-        ]),
-        ("temporal", vec![
-            ("Earthquake preceded the tsunami by fifteen minutes", "The tsunami arrived fifteen minutes after the earthquake"),
-            ("Seed germination occurs days before the first leaf appears", "First leaf emergence follows days after seed germination"),
-            ("Infection precedes fever by twelve to twenty-four hours", "Fever develops twelve to twenty-four hours after infection begins"),
-            ("Lightning occurs moments before thunder is heard", "Thunder is heard moments after lightning strikes"),
-            ("Injury triggers inflammation which peaks after forty-eight hours", "Peak inflammation occurs forty-eight hours post injury"),
-        ]),
+        (
+            "direct",
+            vec![
+                (
+                    "Smoking causes lung cancer",
+                    "Lung cancer is caused by smoking",
+                ),
+                ("Heat melts ice", "Ice melts when heated"),
+                (
+                    "Gravity pulls objects downward",
+                    "Objects fall due to gravity",
+                ),
+                ("Acid corrodes metal", "Metal corrodes when exposed to acid"),
+                (
+                    "Sunlight drives photosynthesis",
+                    "Photosynthesis is driven by sunlight",
+                ),
+            ],
+        ),
+        (
+            "mediated",
+            vec![
+                (
+                    "Stress raises cortisol which damages neurons",
+                    "Neuron damage results from cortisol elevated by stress",
+                ),
+                (
+                    "Deforestation increases CO2 which warms climate",
+                    "Climate warming traces back through CO2 to deforestation",
+                ),
+                (
+                    "Poor diet causes obesity which increases heart disease",
+                    "Heart disease risk rises through obesity from poor diet",
+                ),
+                (
+                    "Education improves literacy which boosts employment",
+                    "Employment improves through literacy gains from education",
+                ),
+                (
+                    "Exercise releases endorphins which reduce pain",
+                    "Pain reduction follows from endorphins released by exercise",
+                ),
+            ],
+        ),
+        (
+            "feedback",
+            vec![
+                (
+                    "Anxiety causes insomnia which worsens anxiety",
+                    "Insomnia worsens anxiety which then deepens insomnia",
+                ),
+                (
+                    "Inflation reduces spending which slows economy causing more inflation",
+                    "Economic slowdown from reduced spending feeds back into inflation",
+                ),
+                (
+                    "Stress causes poor sleep which increases stress",
+                    "Poor sleep from stress creates a cycle of worsening stress",
+                ),
+                (
+                    "Debt causes interest which increases debt",
+                    "Interest on debt accumulates creating larger debt",
+                ),
+                (
+                    "Population growth increases resource use which limits population",
+                    "Resource limits from population growth constrain further growth",
+                ),
+            ],
+        ),
+        (
+            "temporal",
+            vec![
+                (
+                    "Earthquake preceded the tsunami by fifteen minutes",
+                    "The tsunami arrived fifteen minutes after the earthquake",
+                ),
+                (
+                    "Seed germination occurs days before the first leaf appears",
+                    "First leaf emergence follows days after seed germination",
+                ),
+                (
+                    "Infection precedes fever by twelve to twenty-four hours",
+                    "Fever develops twelve to twenty-four hours after infection begins",
+                ),
+                (
+                    "Lightning occurs moments before thunder is heard",
+                    "Thunder is heard moments after lightning strikes",
+                ),
+                (
+                    "Injury triggers inflammation which peaks after forty-eight hours",
+                    "Peak inflammation occurs forty-eight hours post injury",
+                ),
+            ],
+        ),
     ]
 }
 
@@ -533,8 +1073,16 @@ fn compute_3class_precision_recall(
         }
     }
 
-    let precision = if tp + fp > 0 { tp as f64 / (tp + fp) as f64 } else { 0.0 };
-    let recall = if tp + fn_ > 0 { tp as f64 / (tp + fn_) as f64 } else { 0.0 };
+    let precision = if tp + fp > 0 {
+        tp as f64 / (tp + fp) as f64
+    } else {
+        0.0
+    };
+    let recall = if tp + fn_ > 0 {
+        tp as f64 / (tp + fn_) as f64
+    } else {
+        0.0
+    };
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
     } else {
@@ -551,7 +1099,9 @@ fn compute_3class_precision_recall(
 /// Phase 1.1: Vector Distinctness (requires real-embeddings feature).
 #[cfg(feature = "real-embeddings")]
 async fn run_phase_1_1() -> Result<BenchmarkResult<VectorDistinctnessMetrics>> {
-    use context_graph_embeddings::{get_warm_causal_model, initialize_global_warm_provider, is_warm_initialized};
+    use context_graph_embeddings::{
+        get_warm_causal_model, initialize_global_warm_provider, is_warm_initialized,
+    };
 
     info!("=== Phase 1.1: Vector Distinctness ===");
     let phase_start = Instant::now();
@@ -559,12 +1109,13 @@ async fn run_phase_1_1() -> Result<BenchmarkResult<VectorDistinctnessMetrics>> {
     // Initialize warm provider if not yet ready
     if !is_warm_initialized() {
         info!("Initializing warm provider (loading embedding models to GPU)...");
-        initialize_global_warm_provider().await
+        initialize_global_warm_provider()
+            .await
             .context("Failed to initialize global warm provider for Phase 1.1")?;
     }
 
-    let causal_model = get_warm_causal_model()
-        .context("Failed to get warm CausalModel for Phase 1.1")?;
+    let causal_model =
+        get_warm_causal_model().context("Failed to get warm CausalModel for Phase 1.1")?;
 
     let categories: Vec<(&str, Vec<&str>)> = vec![
         ("explicit_causal", explicit_causal_texts()),
@@ -581,13 +1132,22 @@ async fn run_phase_1_1() -> Result<BenchmarkResult<VectorDistinctnessMetrics>> {
     let mut total_texts = 0usize;
 
     for (cat_name, texts) in &categories {
-        info!("  Embedding category '{}' ({} texts)...", cat_name, texts.len());
+        info!(
+            "  Embedding category '{}' ({} texts)...",
+            cat_name,
+            texts.len()
+        );
         let mut cat_distances: Vec<f64> = Vec::new();
         let mut cat_degenerate = 0usize;
 
         for text in texts {
-            let (cause_vec, effect_vec) = causal_model.embed_dual(text).await
-                .with_context(|| format!("embed_dual failed for text: '{}'", &text[..text.len().min(60)]))?;
+            let (cause_vec, effect_vec) =
+                causal_model.embed_dual(text).await.with_context(|| {
+                    format!(
+                        "embed_dual failed for text: '{}'",
+                        &text[..text.len().min(60)]
+                    )
+                })?;
 
             let sim = cosine_similarity(&cause_vec, &effect_vec);
             let distance = 1.0 - sim as f64;
@@ -605,7 +1165,10 @@ async fn run_phase_1_1() -> Result<BenchmarkResult<VectorDistinctnessMetrics>> {
             cat_distances.iter().sum::<f64>() / cat_distances.len() as f64
         };
 
-        info!("    {} mean distance: {:.4}, degenerate: {}", cat_name, cat_mean, cat_degenerate);
+        info!(
+            "    {} mean distance: {:.4}, degenerate: {}",
+            cat_name, cat_mean, cat_degenerate
+        );
         per_category_mean_distance.insert(cat_name.to_string(), cat_mean);
         per_category_degenerate_count.insert(cat_name.to_string(), cat_degenerate);
         total_degenerate += cat_degenerate;
@@ -624,8 +1187,10 @@ async fn run_phase_1_1() -> Result<BenchmarkResult<VectorDistinctnessMetrics>> {
     };
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 1.1 complete in {:.2?}: overall_mean={:.4}, degenerate={:.1}%",
-        elapsed, overall_mean, degenerate_pct);
+    info!(
+        "Phase 1.1 complete in {:.2?}: overall_mean={:.4}, degenerate={:.1}%",
+        elapsed, overall_mean, degenerate_pct
+    );
 
     // Targets: mean distance > 0.05, degenerate < 20%
     let pass = overall_mean > 0.05 && degenerate_pct < 20.0;
@@ -678,19 +1243,29 @@ fn run_phase_1_2() -> Result<BenchmarkResult<MarkerDetectionMetrics>> {
         compute_3class_precision_recall(&predictions, &ground_truth, CausalDirection::Unknown);
 
     // Compute 3-class accuracy (all classes count)
-    let correct = predictions.iter().zip(ground_truth.iter())
+    let correct = predictions
+        .iter()
+        .zip(ground_truth.iter())
         .filter(|(p, g)| p == g)
         .count();
     let overall_accuracy = correct as f64 / dataset.len() as f64;
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 1.2 complete in {:.2?}: 3-class accuracy={:.2}%, cause_f1={:.3}, effect_f1={:.3}",
-        elapsed, overall_accuracy * 100.0, cause_f1, effect_f1);
+    info!(
+        "Phase 1.2 complete in {:.2?}: 3-class accuracy={:.2}%, cause_f1={:.3}, effect_f1={:.3}",
+        elapsed,
+        overall_accuracy * 100.0,
+        cause_f1,
+        effect_f1
+    );
 
     // Log misclassifications for debugging
     for ((text, expected), predicted) in dataset.iter().zip(predictions.iter()) {
         if predicted != expected {
-            warn!("  MISS: '{}' expected={:?} got={:?}", text, expected, predicted);
+            warn!(
+                "  MISS: '{}' expected={:?} got={:?}",
+                text, expected, predicted
+            );
         }
     }
 
@@ -758,14 +1333,19 @@ fn run_phase_3_4() -> Result<BenchmarkResult<QueryIntentMetrics>> {
         compute_3class_precision_recall(&predictions, &ground_truth, CausalDirection::Unknown);
 
     // 3-class accuracy
-    let correct = predictions.iter().zip(ground_truth.iter())
+    let correct = predictions
+        .iter()
+        .zip(ground_truth.iter())
         .filter(|(p, g)| p == g)
         .count();
     let three_class_accuracy = correct as f64 / dataset.len() as f64;
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 3.4 complete in {:.2?}: 3-class accuracy={:.2}%",
-        elapsed, three_class_accuracy * 100.0);
+    info!(
+        "Phase 3.4 complete in {:.2?}: 3-class accuracy={:.2}%",
+        elapsed,
+        three_class_accuracy * 100.0
+    );
 
     // Target: 3-class accuracy >= 70%
     let pass = three_class_accuracy >= 0.70;
@@ -824,20 +1404,39 @@ fn run_phase_4_1() -> Result<BenchmarkResult<ModifierSweepMetrics>> {
         // This represents effect query matched to cause result (dampened)
         let backward_sim = base_cosine as f64 * e2c_mod;
 
-        let ratio = if backward_sim > 0.0 { forward_sim / backward_sim } else { 0.0 };
+        let ratio = if backward_sim > 0.0 {
+            forward_sim / backward_sim
+        } else {
+            0.0
+        };
 
         // Also verify against the actual compute_asymmetric_similarity function
         // for the default modifiers (1.2/0.8 case)
         if (c2e_mod - 1.2).abs() < 0.05 {
             let api_forward = compute_asymmetric_similarity(
-                base_cosine, CausalDirection::Cause, CausalDirection::Effect, None, None,
+                base_cosine,
+                CausalDirection::Cause,
+                CausalDirection::Effect,
+                None,
+                None,
             );
             let api_backward = compute_asymmetric_similarity(
-                base_cosine, CausalDirection::Effect, CausalDirection::Cause, None, None,
+                base_cosine,
+                CausalDirection::Effect,
+                CausalDirection::Cause,
+                None,
+                None,
             );
-            info!("  API verification at 1.2/0.8: forward={:.4}, backward={:.4}, ratio={:.4}",
-                api_forward, api_backward,
-                if api_backward > 0.0 { api_forward / api_backward } else { 0.0 });
+            info!(
+                "  API verification at 1.2/0.8: forward={:.4}, backward={:.4}, ratio={:.4}",
+                api_forward,
+                api_backward,
+                if api_backward > 0.0 {
+                    api_forward / api_backward
+                } else {
+                    0.0
+                }
+            );
         }
 
         // Target ratio is 1.5 (from 1.2/0.8 in the constitution)
@@ -855,8 +1454,10 @@ fn run_phase_4_1() -> Result<BenchmarkResult<ModifierSweepMetrics>> {
             ratio,
         });
 
-        info!("  c2e={:.1}, e2c={:.1}: forward={:.4}, backward={:.4}, ratio={:.4}",
-            c2e_mod, e2c_mod, forward_sim, backward_sim, ratio);
+        info!(
+            "  c2e={:.1}, e2c={:.1}: forward={:.4}, backward={:.4}, ratio={:.4}",
+            c2e_mod, e2c_mod, forward_sim, backward_sim, ratio
+        );
     }
 
     let optimal_ratio = if optimal_pair.1 > 0.0 {
@@ -866,8 +1467,10 @@ fn run_phase_4_1() -> Result<BenchmarkResult<ModifierSweepMetrics>> {
     };
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 4.1 complete in {:.2?}: optimal_pair=({:.1}, {:.1}), ratio={:.4}",
-        elapsed, optimal_pair.0, optimal_pair.1, optimal_ratio);
+    info!(
+        "Phase 4.1 complete in {:.2?}: optimal_pair=({:.1}, {:.1}), ratio={:.4}",
+        elapsed, optimal_pair.0, optimal_pair.1, optimal_ratio
+    );
 
     // Pass if the optimal ratio is within 0.1 of target 1.5
     let pass = (optimal_ratio - 1.5).abs() < 0.1;
@@ -918,10 +1521,18 @@ fn run_phase_4_2() -> Result<BenchmarkResult<PerMechanismMetrics>> {
         // - Temporal: Sequential -> moderate-high asymmetry (1.2-1.4)
 
         let forward_sim = compute_asymmetric_similarity(
-            base_cosine, CausalDirection::Cause, CausalDirection::Effect, None, None,
+            base_cosine,
+            CausalDirection::Cause,
+            CausalDirection::Effect,
+            None,
+            None,
         );
         let backward_sim = compute_asymmetric_similarity(
-            base_cosine, CausalDirection::Effect, CausalDirection::Cause, None, None,
+            base_cosine,
+            CausalDirection::Effect,
+            CausalDirection::Cause,
+            None,
+            None,
         );
 
         let current_ratio = if backward_sim > 0.0 {
@@ -951,14 +1562,21 @@ fn run_phase_4_2() -> Result<BenchmarkResult<PerMechanismMetrics>> {
             _ => (1.2, 0.8),
         };
 
-        let fb_ratio = if rec_e2c > 0.0 { rec_c2e / rec_e2c } else { 0.0 };
+        let fb_ratio = if rec_e2c > 0.0 {
+            rec_c2e / rec_e2c
+        } else {
+            0.0
+        };
 
-        let example_pairs: Vec<(String, String)> = pairs.iter()
+        let example_pairs: Vec<(String, String)> = pairs
+            .iter()
             .map(|(a, b)| (a.to_string(), b.to_string()))
             .collect();
 
-        info!("  {}: current_ratio={:.3}, recommended=({:.2}, {:.2}), rec_ratio={:.3}",
-            mechanism_name, current_ratio, rec_c2e, rec_e2c, fb_ratio);
+        info!(
+            "  {}: current_ratio={:.3}, recommended=({:.2}, {:.2}), rec_ratio={:.3}",
+            mechanism_name, current_ratio, rec_c2e, rec_e2c, fb_ratio
+        );
 
         mechanism_entries.push(MechanismModifierEntry {
             mechanism: mechanism_name.to_string(),
@@ -970,12 +1588,16 @@ fn run_phase_4_2() -> Result<BenchmarkResult<PerMechanismMetrics>> {
     }
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 4.2 complete in {:.2?}: analyzed {} mechanisms", elapsed, mechanism_entries.len());
+    info!(
+        "Phase 4.2 complete in {:.2?}: analyzed {} mechanisms",
+        elapsed,
+        mechanism_entries.len()
+    );
 
     // Pass if all mechanisms have reasonable ratios (> 1.0 and < 3.0)
-    let pass = mechanism_entries.iter().all(|m| {
-        m.forward_backward_ratio > 1.0 && m.forward_backward_ratio < 3.0
-    });
+    let pass = mechanism_entries
+        .iter()
+        .all(|m| m.forward_backward_ratio > 1.0 && m.forward_backward_ratio < 3.0);
 
     let mut targets = HashMap::new();
     targets.insert("min_ratio".to_string(), 1.0);
@@ -1020,7 +1642,8 @@ async fn main() -> Result<()> {
     #[cfg(feature = "real-embeddings")]
     {
         info!("Phase 1.1 enabled (real-embeddings feature active)");
-        let result = run_phase_1_1().await
+        let result = run_phase_1_1()
+            .await
             .context("Phase 1.1 (Vector Distinctness) failed")?;
         if !result.pass {
             warn!("Phase 1.1 FAILED targets");
@@ -1035,13 +1658,14 @@ async fn main() -> Result<()> {
 
     #[cfg(not(feature = "real-embeddings"))]
     {
-        warn!("Phase 1.1 SKIPPED: real-embeddings feature not enabled. \
-               Rebuild with --features real-embeddings to include GPU vector tests.");
+        warn!(
+            "Phase 1.1 SKIPPED: real-embeddings feature not enabled. \
+               Rebuild with --features real-embeddings to include GPU vector tests."
+        );
     }
 
     // Phase 1.2: Marker Detection (pure code)
-    let result_1_2 = run_phase_1_2()
-        .context("Phase 1.2 (Marker Detection) failed")?;
+    let result_1_2 = run_phase_1_2().context("Phase 1.2 (Marker Detection) failed")?;
     if !result_1_2.pass {
         warn!("Phase 1.2 FAILED targets");
         all_passed = false;
@@ -1053,8 +1677,7 @@ async fn main() -> Result<()> {
     )?;
 
     // Phase 3.4: Query Intent Detection (pure code)
-    let result_3_4 = run_phase_3_4()
-        .context("Phase 3.4 (Query Intent Detection) failed")?;
+    let result_3_4 = run_phase_3_4().context("Phase 3.4 (Query Intent Detection) failed")?;
     if !result_3_4.pass {
         warn!("Phase 3.4 FAILED targets");
         all_passed = false;
@@ -1066,8 +1689,7 @@ async fn main() -> Result<()> {
     )?;
 
     // Phase 4.1: Direction Modifier Sweep (pure code)
-    let result_4_1 = run_phase_4_1()
-        .context("Phase 4.1 (Direction Modifier Sweep) failed")?;
+    let result_4_1 = run_phase_4_1().context("Phase 4.1 (Direction Modifier Sweep) failed")?;
     if !result_4_1.pass {
         warn!("Phase 4.1 FAILED targets");
         all_passed = false;
@@ -1079,8 +1701,7 @@ async fn main() -> Result<()> {
     )?;
 
     // Phase 4.2: Per-Mechanism Modifiers (pure code)
-    let result_4_2 = run_phase_4_2()
-        .context("Phase 4.2 (Per-Mechanism Modifiers) failed")?;
+    let result_4_2 = run_phase_4_2().context("Phase 4.2 (Per-Mechanism Modifiers) failed")?;
     if !result_4_2.pass {
         warn!("Phase 4.2 FAILED targets");
         all_passed = false;
@@ -1092,7 +1713,10 @@ async fn main() -> Result<()> {
     )?;
 
     let total_elapsed = overall_start.elapsed();
-    info!("All phases complete in {:.2?}. Overall pass: {}", total_elapsed, all_passed);
+    info!(
+        "All phases complete in {:.2?}. Overall pass: {}",
+        total_elapsed, all_passed
+    );
 
     if !all_passed {
         warn!("One or more phases did not meet target thresholds. Check individual JSON results.");

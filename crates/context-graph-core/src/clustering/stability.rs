@@ -341,7 +341,11 @@ impl TopicStabilityTracker {
         let avg = sum / count as f32;
 
         // Guard against NaN per AP-10
-        if avg.is_nan() { 0.0 } else { avg }
+        if avg.is_nan() {
+            0.0
+        } else {
+            avg
+        }
     }
 
     /// Check if system is stable (low churn over time).
@@ -447,7 +451,11 @@ mod tests {
 
         // 1 removed + 1 added = 2 changes, union = 3
         // churn = 2/3 ≈ 0.666
-        assert!((churn - (2.0 / 3.0)).abs() < 0.01, "Expected ~0.666, got {}", churn);
+        assert!(
+            (churn - (2.0 / 3.0)).abs() < 0.01,
+            "Expected ~0.666, got {}",
+            churn
+        );
 
         println!("[PASS] Partial change churn computed correctly\n");
     }
@@ -482,7 +490,11 @@ mod tests {
 
         // 2 removed + 2 added = 4 changes, union = 4
         // churn = 4/4 = 1.0
-        assert!((churn - 1.0).abs() < 0.001, "Expected 1.0 (complete turnover), got {}", churn);
+        assert!(
+            (churn - 1.0).abs() < 0.001,
+            "Expected 1.0 (complete turnover), got {}",
+            churn
+        );
 
         println!("[PASS] Complete turnover = 1.0 churn\n");
     }
@@ -524,14 +536,20 @@ mod tests {
         let mut tracker = TopicStabilityTracker::new();
         tracker.current_churn = 0.6; // > 0.5 threshold
 
-        println!("STATE BEFORE: churn = {}, entropy = 0.8", tracker.current_churn);
+        println!(
+            "STATE BEFORE: churn = {}, entropy = 0.8",
+            tracker.current_churn
+        );
         println!("CONDITION: entropy (0.8) > threshold (0.7) AND churn (0.6) > threshold (0.5)");
 
         let should_trigger = tracker.check_dream_trigger(0.8);
 
         println!("STATE AFTER: should_trigger = {}", should_trigger);
 
-        assert!(should_trigger, "High entropy + high churn should trigger dream (AP-70)");
+        assert!(
+            should_trigger,
+            "High entropy + high churn should trigger dream (AP-70)"
+        );
 
         println!("[PASS] Dream triggered on high entropy AND high churn (AP-70)\n");
     }
@@ -551,7 +569,10 @@ mod tests {
 
         println!("STATE AFTER: should_trigger = {}", should_trigger);
 
-        assert!(should_trigger, "Sustained high entropy (120s > 60s) should trigger");
+        assert!(
+            should_trigger,
+            "Sustained high entropy (120s > 60s) should trigger"
+        );
 
         println!("[PASS] Sustained high entropy triggers dream\n");
     }
@@ -563,28 +584,46 @@ mod tests {
 
         // No history = stable (no evidence of instability)
         println!("STATE BEFORE: empty history");
-        assert!(tracker.is_stable(), "Empty history should be considered stable");
+        assert!(
+            tracker.is_stable(),
+            "Empty history should be considered stable"
+        );
 
         // Add low churn history
         let now = Utc::now();
-        tracker.churn_history.push_back((now - Duration::hours(5), 0.1));
-        tracker.churn_history.push_back((now - Duration::hours(4), 0.15));
-        tracker.churn_history.push_back((now - Duration::hours(3), 0.1));
+        tracker
+            .churn_history
+            .push_back((now - Duration::hours(5), 0.1));
+        tracker
+            .churn_history
+            .push_back((now - Duration::hours(4), 0.15));
+        tracker
+            .churn_history
+            .push_back((now - Duration::hours(3), 0.1));
 
         println!("STATE AFTER: low churn entries [0.1, 0.15, 0.1]");
 
         assert!(tracker.is_stable(), "Low churn should be stable");
 
         // Add high churn
-        tracker.churn_history.push_back((now - Duration::hours(2), 0.6));
-        tracker.churn_history.push_back((now - Duration::hours(1), 0.5));
+        tracker
+            .churn_history
+            .push_back((now - Duration::hours(2), 0.6));
+        tracker
+            .churn_history
+            .push_back((now - Duration::hours(1), 0.5));
         tracker.churn_history.push_back((now, 0.4));
 
-        println!("STATE AFTER high churn: is_stable = {}", tracker.is_stable());
+        println!(
+            "STATE AFTER high churn: is_stable = {}",
+            tracker.is_stable()
+        );
 
-        assert!(!tracker.is_stable(), "High recent churn should not be stable");
+        assert!(
+            !tracker.is_stable(),
+            "High recent churn should not be stable"
+        );
 
         println!("[PASS] Stability detection works correctly\n");
     }
-
 }

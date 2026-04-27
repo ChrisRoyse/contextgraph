@@ -113,8 +113,8 @@ pub use pruning::{
 // Global warm provider re-exports (TASK-EMB-016)
 // Model accessor functions added for graph/causal discovery services
 pub use global_provider::{
-    get_warm_causal_model, get_warm_graph_model, get_warm_provider, initialize_global_warm_provider,
-    is_warm_initialized, warm_status_message,
+    get_warm_causal_model, get_warm_graph_model, get_warm_provider,
+    initialize_global_warm_provider, is_warm_initialized, warm_status_message,
 };
 
 // Adapter re-exports

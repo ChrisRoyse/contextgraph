@@ -5,8 +5,10 @@
 //! - Evidence collection for verification
 //! - Boundary condition testing
 
-use context_graph_core::clustering::{ClusterMembership, TopicSynthesizer, TopicProfile};
-use context_graph_core::embeddings::category::{category_for, topic_threshold, max_weighted_agreement};
+use context_graph_core::clustering::{ClusterMembership, TopicProfile, TopicSynthesizer};
+use context_graph_core::embeddings::category::{
+    category_for, max_weighted_agreement, topic_threshold,
+};
 use context_graph_core::teleological::Embedder;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -23,7 +25,13 @@ fn create_test_memberships(
             memberships
                 .entry(*embedder)
                 .or_insert_with(Vec::new)
-                .push(ClusterMembership::new(id, *embedder, *cluster_id, 0.9, true));
+                .push(ClusterMembership::new(
+                    id,
+                    *embedder,
+                    *cluster_id,
+                    0.9,
+                    true,
+                ));
         }
     }
 
@@ -124,15 +132,18 @@ fn edge_case_4_threshold_boundary_exactly_2_5() {
 
     // 2 semantic (2.0) + 1 relational (0.5) = exactly 2.5
     let config: Vec<(Embedder, i32)> = vec![
-        (Embedder::Semantic, 1),  // weight 1.0
-        (Embedder::Causal, 1),    // weight 1.0
-        (Embedder::Entity, 1),    // weight 0.5 (relational)
+        (Embedder::Semantic, 1), // weight 1.0
+        (Embedder::Causal, 1),   // weight 1.0
+        (Embedder::Entity, 1),   // weight 0.5 (relational)
     ];
 
     let memberships = create_test_memberships(&[id1, id2], &config);
 
     let expected_weight: f32 = 1.0 + 1.0 + 0.5;
-    println!("STATE BEFORE: 2 memories, shared spaces = {:?}", config.iter().map(|(e, _)| e.name()).collect::<Vec<_>>());
+    println!(
+        "STATE BEFORE: 2 memories, shared spaces = {:?}",
+        config.iter().map(|(e, _)| e.name()).collect::<Vec<_>>()
+    );
     println!("  Expected weighted_agreement = {}", expected_weight);
     println!("  topic_threshold() = {}", topic_threshold());
 
@@ -161,14 +172,17 @@ fn edge_case_5_below_threshold_2_49() {
 
     // Only 2 semantic = 2.0 < 2.5
     let config: Vec<(Embedder, i32)> = vec![
-        (Embedder::Semantic, 1),  // weight 1.0
-        (Embedder::Causal, 1),    // weight 1.0
+        (Embedder::Semantic, 1), // weight 1.0
+        (Embedder::Causal, 1),   // weight 1.0
     ];
 
     let memberships = create_test_memberships(&[id1, id2], &config);
 
     let expected_weight: f32 = 1.0 + 1.0;
-    println!("STATE BEFORE: 2 memories, shared spaces = {:?}", config.iter().map(|(e, _)| e.name()).collect::<Vec<_>>());
+    println!(
+        "STATE BEFORE: 2 memories, shared spaces = {:?}",
+        config.iter().map(|(e, _)| e.name()).collect::<Vec<_>>()
+    );
     println!("  Expected weighted_agreement = {}", expected_weight);
     println!("  This is < topic_threshold() = {}", topic_threshold());
 
@@ -192,23 +206,34 @@ fn edge_case_6_temporal_only_zero_weight() {
 
     // All 3 temporal embedders
     let config: Vec<(Embedder, i32)> = vec![
-        (Embedder::TemporalRecent, 1),      // weight 0.0
-        (Embedder::TemporalPeriodic, 1),    // weight 0.0
-        (Embedder::TemporalPositional, 1),  // weight 0.0
+        (Embedder::TemporalRecent, 1),     // weight 0.0
+        (Embedder::TemporalPeriodic, 1),   // weight 0.0
+        (Embedder::TemporalPositional, 1), // weight 0.0
     ];
 
     let memberships = create_test_memberships(&[id1, id2], &config);
 
     println!("STATE BEFORE: 2 memories, shared temporal spaces only");
-    for e in [Embedder::TemporalRecent, Embedder::TemporalPeriodic, Embedder::TemporalPositional] {
-        println!("  {:?} -> topic_weight = {}", e.name(), category_for(e).topic_weight());
+    for e in [
+        Embedder::TemporalRecent,
+        Embedder::TemporalPeriodic,
+        Embedder::TemporalPositional,
+    ] {
+        println!(
+            "  {:?} -> topic_weight = {}",
+            e.name(),
+            category_for(e).topic_weight()
+        );
     }
 
     let topics = synthesizer.synthesize_topics(&memberships).unwrap();
 
     println!("STATE AFTER: topics.len() = {}", topics.len());
 
-    assert!(topics.is_empty(), "Temporal-only should not form topic per AP-60");
+    assert!(
+        topics.is_empty(),
+        "Temporal-only should not form topic per AP-60"
+    );
 
     println!("[EVIDENCE] 3 temporal spaces (0.0 weight) -> 0 topics - AP-60 VERIFIED");
 }
@@ -237,15 +262,20 @@ fn edge_case_7_max_weighted_agreement() {
     let mut expected_max = 0.0f32;
     for embedder in Embedder::all() {
         expected_max += category_for(embedder).topic_weight();
-        println!("  {:?}: weight = {}, cumulative = {:.1}",
-                 embedder.short_name(),
-                 category_for(embedder).topic_weight(),
-                 expected_max);
+        println!(
+            "  {:?}: weight = {}, cumulative = {:.1}",
+            embedder.short_name(),
+            category_for(embedder).topic_weight(),
+            expected_max
+        );
     }
 
     println!("STATE BEFORE: 2 memories, ALL 13 spaces share cluster=1");
     println!("  Expected max weighted_agreement = {}", expected_max);
-    println!("  max_weighted_agreement() constant = {}", max_weighted_agreement());
+    println!(
+        "  max_weighted_agreement() constant = {}",
+        max_weighted_agreement()
+    );
 
     let topics = synthesizer.synthesize_topics(&memberships).unwrap();
 
@@ -257,7 +287,10 @@ fn edge_case_7_max_weighted_agreement() {
     }
 
     assert_eq!(topics.len(), 1, "Max agreement should form topic");
-    assert!((topics[0].confidence - 1.0).abs() < 0.001, "Max confidence should be 1.0");
+    assert!(
+        (topics[0].confidence - 1.0).abs() < 0.001,
+        "Max confidence should be 1.0"
+    );
 
     println!("[EVIDENCE] All 13 spaces -> confidence=1.0 (max) - SUCCESS");
 }
@@ -276,8 +309,8 @@ fn edge_case_8_different_clusters_no_agreement() {
         memberships.insert(
             embedder,
             vec![
-                ClusterMembership::new(id1, embedder, 1, 0.9, true),  // cluster 1
-                ClusterMembership::new(id2, embedder, 2, 0.9, true),  // cluster 2 (different!)
+                ClusterMembership::new(id1, embedder, 1, 0.9, true), // cluster 1
+                ClusterMembership::new(id2, embedder, 2, 0.9, true), // cluster 2 (different!)
             ],
         );
     }
@@ -288,7 +321,10 @@ fn edge_case_8_different_clusters_no_agreement() {
 
     println!("STATE AFTER: topics.len() = {}", topics.len());
 
-    assert!(topics.is_empty(), "Different clusters should not form topic");
+    assert!(
+        topics.is_empty(),
+        "Different clusters should not form topic"
+    );
 
     println!("[EVIDENCE] Same space, different clusters -> 0 topics - SUCCESS");
 }
@@ -320,7 +356,10 @@ fn edge_case_9_mixed_temporal_and_semantic() {
 
     println!("STATE AFTER: topics.len() = {}", topics.len());
 
-    assert!(topics.is_empty(), "2 semantic + 3 temporal = 2.0 should not form topic");
+    assert!(
+        topics.is_empty(),
+        "2 semantic + 3 temporal = 2.0 should not form topic"
+    );
 
     println!("[EVIDENCE] Temporal adds 0.0 to weighted_agreement - SUCCESS");
 }
@@ -359,8 +398,12 @@ fn edge_case_10_multi_topic_groups() {
 
     println!("STATE AFTER: topics.len() = {}", topics.len());
     for (i, topic) in topics.iter().enumerate() {
-        println!("  Topic {}: {} members, confidence={:.4}",
-                 i, topic.member_count(), topic.confidence);
+        println!(
+            "  Topic {}: {} members, confidence={:.4}",
+            i,
+            topic.member_count(),
+            topic.confidence
+        );
     }
 
     // Should form 2 topics (one per cluster group)
@@ -375,7 +418,15 @@ fn test_topic_profile_strength_clamping() {
     println!("\n=== EDGE CASE 11: TopicProfile Strength Clamping ===");
     println!("PURPOSE: Strength values should be clamped to [0.0, 1.0]");
 
-    let extremes = [f32::MAX, f32::MIN, f32::NEG_INFINITY, f32::INFINITY, -10.0, 10.0, 0.5];
+    let extremes = [
+        f32::MAX,
+        f32::MIN,
+        f32::NEG_INFINITY,
+        f32::INFINITY,
+        -10.0,
+        10.0,
+        0.5,
+    ];
 
     for &val in &extremes {
         let mut strengths = [0.0f32; 14];
@@ -383,7 +434,10 @@ fn test_topic_profile_strength_clamping() {
 
         let profile = TopicProfile::new(strengths);
 
-        println!("  Input: {} -> Output: {} (clamped to [0.0, 1.0])", val, profile.strengths[0]);
+        println!(
+            "  Input: {} -> Output: {} (clamped to [0.0, 1.0])",
+            val, profile.strengths[0]
+        );
 
         assert!(profile.strengths[0] >= 0.0, "Strength should be >= 0.0");
         assert!(profile.strengths[0] <= 1.0, "Strength should be <= 1.0");
@@ -423,13 +477,20 @@ fn test_synthesizer_configuration_validation() {
     // Test extreme merge thresholds
     let synth = TopicSynthesizer::with_config(100.0, -100.0);
     println!("  Input: merge=100.0, silhouette=-100.0");
-    println!("  Output: merge={}, silhouette={}",
-             synth.merge_similarity_threshold(), synth.min_silhouette());
+    println!(
+        "  Output: merge={}, silhouette={}",
+        synth.merge_similarity_threshold(),
+        synth.min_silhouette()
+    );
 
-    assert!((synth.merge_similarity_threshold() - 1.0).abs() < f32::EPSILON,
-            "merge_threshold should clamp to 1.0");
-    assert!((synth.min_silhouette() - (-1.0)).abs() < f32::EPSILON,
-            "min_silhouette should clamp to -1.0");
+    assert!(
+        (synth.merge_similarity_threshold() - 1.0).abs() < f32::EPSILON,
+        "merge_threshold should clamp to 1.0"
+    );
+    assert!(
+        (synth.min_silhouette() - (-1.0)).abs() < f32::EPSILON,
+        "min_silhouette should clamp to -1.0"
+    );
 
     println!("[EVIDENCE] Configuration values properly bounded - SUCCESS");
 }

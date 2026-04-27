@@ -94,11 +94,11 @@ impl ModelId {
             Self::Graph => 1024,   // e5-large-v2 (upgraded from MiniLM 384D)
             Self::Hdc => 10000,    // 10K-bit vector
             Self::Contextual => 768,
-            Self::Entity => 384,   // Legacy MiniLM-L6-v2 (use ModelId::Kepler for 768D production E11)
+            Self::Entity => 384, // Legacy MiniLM-L6-v2 (use ModelId::Kepler for 768D production E11)
             Self::LateInteraction => 128, // Per-token dimension
-            Self::Splade => 30522,        // SPLADE v3 vocab size
-            Self::Kepler => 768,          // KEPLER (RoBERTa-base)
-            Self::BgeM3Dense => 1024,     // BGE-M3 dense head (XLM-RoBERTa-Large)
+            Self::Splade => 30522, // SPLADE v3 vocab size
+            Self::Kepler => 768, // KEPLER (RoBERTa-base)
+            Self::BgeM3Dense => 1024, // BGE-M3 dense head (XLM-RoBERTa-Large)
         }
     }
 
@@ -113,12 +113,12 @@ impl ModelId {
     #[must_use]
     pub const fn projected_dimension(&self) -> usize {
         match self {
-            Self::Sparse => 1536,  // 30K -> 1536 via learned projection
-            Self::Hdc => 1024,     // 10K-bit -> 1024 via projection
-            Self::Splade => 1536,  // 30K -> 1536 via learned projection (same as E6)
-            Self::Kepler => 768,   // No projection needed
+            Self::Sparse => 1536,     // 30K -> 1536 via learned projection
+            Self::Hdc => 1024,        // 10K-bit -> 1024 via projection
+            Self::Splade => 1536,     // 30K -> 1536 via learned projection (same as E6)
+            Self::Kepler => 768,      // No projection needed
             Self::BgeM3Dense => 1024, // No projection needed (native 1024D dense head)
-            _ => self.dimension(), // No projection needed (Code is now native 1536D)
+            _ => self.dimension(),    // No projection needed (Code is now native 1536D)
         }
     }
 
@@ -148,17 +148,17 @@ impl ModelId {
     #[must_use]
     pub const fn max_tokens(&self) -> usize {
         match self {
-            Self::Code => 32768,    // Qodo-Embed-1-1.5B (Qwen2) supports 32K context
-            Self::Causal => 512,    // nomic-embed-text-v1.5 (capped from 8192)
+            Self::Code => 32768,     // Qodo-Embed-1-1.5B (Qwen2) supports 32K context
+            Self::Causal => 512,     // nomic-embed-text-v1.5 (capped from 8192)
             Self::Contextual => 512, // EMB-1 FIX: e5-base-v2 uses BERT tokenizer (512), not CLIP (77)
             Self::TemporalRecent
             | Self::TemporalPeriodic
             | Self::TemporalPositional
             | Self::Hdc => usize::MAX, // Custom models: no token limit
-            Self::Splade => 512,    // SPLADE v3 uses BERT tokenizer limit
-            Self::Kepler => 512,    // KEPLER uses RoBERTa tokenizer limit
+            Self::Splade => 512,     // SPLADE v3 uses BERT tokenizer limit
+            Self::Kepler => 512,     // KEPLER uses RoBERTa tokenizer limit
             Self::BgeM3Dense => 8192, // BGE-M3 supports up to 8192 tokens
-            _ => 512,               // Standard BERT-family limit
+            _ => 512,                // Standard BERT-family limit
         }
     }
 
@@ -170,15 +170,15 @@ impl ModelId {
     pub const fn tokenizer_family(&self) -> TokenizerFamily {
         match self {
             Self::Semantic => TokenizerFamily::BertWordpiece, // e5 uses BERT tokenizer
-            Self::Causal => TokenizerFamily::BertWordpiece,    // nomic-embed uses BERT tokenizer
+            Self::Causal => TokenizerFamily::BertWordpiece,   // nomic-embed uses BERT tokenizer
             Self::Sparse => TokenizerFamily::BertWordpiece,   // SPLADE uses BERT
-            Self::Code => TokenizerFamily::BertWordpiece,     // Qodo-Embed-1-1.5B uses Qwen2 BPE — mapped to BertWordpiece for enum simplicity (loads its own tokenizer)
-            Self::Graph => TokenizerFamily::BertWordpiece,    // MiniLM uses BERT
+            Self::Code => TokenizerFamily::BertWordpiece, // Qodo-Embed-1-1.5B uses Qwen2 BPE — mapped to BertWordpiece for enum simplicity (loads its own tokenizer)
+            Self::Graph => TokenizerFamily::BertWordpiece, // MiniLM uses BERT
             Self::Contextual => TokenizerFamily::BertWordpiece, // EMB-1 FIX: e5-base-v2 uses BERT, not CLIP
-            Self::Entity => TokenizerFamily::BertWordpiece,   // all-MiniLM uses BERT
-            Self::Kepler => TokenizerFamily::RobertaBpe,      // KEPLER uses RoBERTa/GPT-2 BPE
+            Self::Entity => TokenizerFamily::BertWordpiece,     // all-MiniLM uses BERT
+            Self::Kepler => TokenizerFamily::RobertaBpe,        // KEPLER uses RoBERTa/GPT-2 BPE
             Self::LateInteraction => TokenizerFamily::BertWordpiece, // ColBERT uses BERT
-            Self::Splade => TokenizerFamily::BertWordpiece,   // SPLADE v3 uses BERT
+            Self::Splade => TokenizerFamily::BertWordpiece,     // SPLADE v3 uses BERT
             Self::BgeM3Dense => TokenizerFamily::XlmRobertaSentencePiece, // BGE-M3 uses XLM-RoBERTa SentencePiece
             Self::TemporalRecent
             | Self::TemporalPeriodic
@@ -243,9 +243,9 @@ impl ModelId {
             Self::Graph,              // E8
             Self::Hdc,                // E9
             Self::Contextual,         // E10
+            Self::Kepler,             // E11 production (768D KEPLER)
             Self::LateInteraction,    // E12
             Self::Splade,             // E13
-            Self::Kepler,             // E11 production (768D KEPLER)
             Self::BgeM3Dense,         // E14 (BGE-M3 dense head, 1024D)
         ]
     }
@@ -275,9 +275,9 @@ impl ModelId {
             Self::Hdc => 1,
             Self::Contextual => 15,
             Self::Entity => 2,
-            Self::Kepler => 5,          // Slightly slower than Entity due to larger model
+            Self::Kepler => 5, // Slightly slower than Entity due to larger model
             Self::LateInteraction => 8,
-            Self::Splade => 3, // Similar to E6 Sparse
+            Self::Splade => 3,      // Similar to E6 Sparse
             Self::BgeM3Dense => 50, // BGE-M3 on 8k context ~3x slower than e5-large-v2 (15ms)
         }
     }

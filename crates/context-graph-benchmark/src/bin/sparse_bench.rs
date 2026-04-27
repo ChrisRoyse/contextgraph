@@ -26,7 +26,6 @@ use clap::Parser;
 use tracing::{info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 
-
 #[cfg(feature = "real-embeddings")]
 use context_graph_benchmark::realdata::embedder::EmbeddedDataset;
 #[cfg(feature = "real-embeddings")]
@@ -121,7 +120,11 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     // Setup logging
-    let log_level = if args.verbose { Level::DEBUG } else { Level::INFO };
+    let log_level = if args.verbose {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
     let subscriber = FmtSubscriber::builder()
         .with_max_level(log_level)
         .with_target(false)
@@ -161,13 +164,16 @@ fn run_real_data_benchmark(args: &Args) -> Result<()> {
     info!("Loading dataset from: {}", args.data_dir.display());
     let load_start = Instant::now();
 
-    let loader = DatasetLoader::new()
-        .with_max_chunks(args.max_chunks);
+    let loader = DatasetLoader::new().with_max_chunks(args.max_chunks);
 
     let dataset = loader.load_from_dir(&args.data_dir)?;
     let load_time = load_start.elapsed();
 
-    info!("  Loaded {} chunks from {} topics", dataset.chunks.len(), dataset.topic_count());
+    info!(
+        "  Loaded {} chunks from {} topics",
+        dataset.chunks.len(),
+        dataset.topic_count()
+    );
     info!("  Load time: {:?}", load_time);
 
     // Step 2: Generate embeddings
@@ -177,11 +183,13 @@ fn run_real_data_benchmark(args: &Args) -> Result<()> {
 
     let embedder = RealDataEmbedder::default();
     let embedded = tokio::runtime::Runtime::new()?.block_on(async {
-        embedder.embed_dataset_batched(
-            &dataset,
-            args.checkpoint_dir.as_deref(),
-            args.checkpoint_interval,
-        ).await
+        embedder
+            .embed_dataset_batched(
+                &dataset,
+                args.checkpoint_dir.as_deref(),
+                args.checkpoint_interval,
+            )
+            .await
     })?;
     let embed_time = embed_start.elapsed();
 
@@ -274,23 +282,31 @@ fn evaluate_e6_sparse(
         let query_topic_name = query_chunk.topic_hint.clone();
         let query_doc_id = &query_chunk.doc_id;
 
-        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else {
+            continue;
+        };
 
         // Skip if E6 sparse is empty
-        if query_fp.e6_sparse.indices.is_empty() { continue; }
+        if query_fp.e6_sparse.indices.is_empty() {
+            continue;
+        }
 
         // Track sparsity
         total_active_terms += query_fp.e6_sparse.indices.len();
         total_vectors += 1;
 
         // Exclude same-document chunks
-        let same_doc_uuids: HashSet<Uuid> = embedded.chunk_info.iter()
+        let same_doc_uuids: HashSet<Uuid> = embedded
+            .chunk_info
+            .iter()
             .filter(|(_, info)| &info.doc_id == query_doc_id)
             .map(|(id, _)| *id)
             .collect();
 
         // E6 Sparse scoring
-        let mut e6_scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+        let mut e6_scores: Vec<(Uuid, f32)> = embedded
+            .fingerprints
+            .iter()
             .filter(|(id, _)| !same_doc_uuids.contains(id))
             .map(|(id, fp)| {
                 let sim = query_fp.e6_sparse.dot(&fp.e6_sparse);
@@ -300,7 +316,9 @@ fn evaluate_e6_sparse(
         e6_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // E1 Semantic scoring (baseline)
-        let mut e1_scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+        let mut e1_scores: Vec<(Uuid, f32)> = embedded
+            .fingerprints
+            .iter()
             .filter(|(id, _)| !same_doc_uuids.contains(id))
             .map(|(id, fp)| {
                 let sim = cosine_similarity(&query_fp.e1_semantic, &fp.e1_semantic);
@@ -310,7 +328,9 @@ fn evaluate_e6_sparse(
         e1_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // E13 SPLADE scoring (comparison)
-        let mut e13_scores: Vec<(Uuid, f32)> = embedded.fingerprints.iter()
+        let mut e13_scores: Vec<(Uuid, f32)> = embedded
+            .fingerprints
+            .iter()
             .filter(|(id, _)| !same_doc_uuids.contains(id))
             .map(|(id, fp)| {
                 let sim = query_fp.e13_splade.dot(&fp.e13_splade);
@@ -320,27 +340,47 @@ fn evaluate_e6_sparse(
         e13_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Find relevant documents (same topic, different document)
-        let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+        let relevant: Vec<Uuid> = embedded
+            .topic_assignments
+            .iter()
             .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
             .map(|(id, _)| *id)
             .collect();
 
-        if relevant.is_empty() { continue; }
+        if relevant.is_empty() {
+            continue;
+        }
 
         // Compute MRR@10 for each embedder
-        if let Some(pos) = e6_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+        if let Some(pos) = e6_scores
+            .iter()
+            .take(10)
+            .position(|(id, _)| relevant.contains(id))
+        {
             e6_mrr_sum += 1.0 / (pos + 1) as f64;
         }
-        if let Some(pos) = e1_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+        if let Some(pos) = e1_scores
+            .iter()
+            .take(10)
+            .position(|(id, _)| relevant.contains(id))
+        {
             e1_mrr_sum += 1.0 / (pos + 1) as f64;
         }
-        if let Some(pos) = e13_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+        if let Some(pos) = e13_scores
+            .iter()
+            .take(10)
+            .position(|(id, _)| relevant.contains(id))
+        {
             e13_mrr_sum += 1.0 / (pos + 1) as f64;
         }
 
         // Per-topic tracking
         let entry = topic_mrr_sums.entry(query_topic_name).or_insert((0.0, 0));
-        if let Some(pos) = e6_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+        if let Some(pos) = e6_scores
+            .iter()
+            .take(10)
+            .position(|(id, _)| relevant.contains(id))
+        {
             entry.0 += 1.0 / (pos + 1) as f64;
         }
         entry.1 += 1;
@@ -360,14 +400,27 @@ fn evaluate_e6_sparse(
         0.0
     };
 
-    let per_topic_mrr: HashMap<String, f64> = topic_mrr_sums.into_iter()
+    let per_topic_mrr: HashMap<String, f64> = topic_mrr_sums
+        .into_iter()
         .map(|(topic, (sum, count))| (topic, if count > 0 { sum / count as f64 } else { 0.0 }))
         .collect();
 
     EvaluationResults {
-        e6_mrr: if query_count > 0 { e6_mrr_sum / query_count as f64 } else { 0.0 },
-        e1_mrr: if query_count > 0 { e1_mrr_sum / query_count as f64 } else { 0.0 },
-        e13_mrr: if query_count > 0 { e13_mrr_sum / query_count as f64 } else { 0.0 },
+        e6_mrr: if query_count > 0 {
+            e6_mrr_sum / query_count as f64
+        } else {
+            0.0
+        },
+        e1_mrr: if query_count > 0 {
+            e1_mrr_sum / query_count as f64
+        } else {
+            0.0
+        },
+        e13_mrr: if query_count > 0 {
+            e13_mrr_sum / query_count as f64
+        } else {
+            0.0
+        },
         avg_active_terms,
         sparsity_ratio,
         query_count,
@@ -382,7 +435,9 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 fn run_synthetic_benchmark(args: &Args) -> Result<()> {
     use context_graph_benchmark::datasets::sparse::{E6SparseDatasetConfig, KeywordDomain};
-    use context_graph_benchmark::runners::sparse::{E6SparseBenchmarkConfig, E6SparseBenchmarkRunner};
+    use context_graph_benchmark::runners::sparse::{
+        E6SparseBenchmarkConfig, E6SparseBenchmarkRunner,
+    };
 
     info!("Running with synthetic dataset (no real embeddings)");
     info!("  Documents: {}", args.num_documents);
@@ -431,17 +486,32 @@ fn print_results(results: &E6RealBenchmarkResults) {
     println!("  E13 SPLADE:   {:.4}", results.e13_mrr_at_10);
     println!();
     println!("## E6 Performance vs Baselines");
-    println!("  E6 vs E1:     {:+.4} ({:+.2}%)",
+    println!(
+        "  E6 vs E1:     {:+.4} ({:+.2}%)",
         results.e6_vs_e1_delta,
-        if results.e1_mrr_at_10 > 0.0 { results.e6_vs_e1_delta / results.e1_mrr_at_10 * 100.0 } else { 0.0 });
-    println!("  E6 vs E13:    {:+.4} ({:+.2}%)",
+        if results.e1_mrr_at_10 > 0.0 {
+            results.e6_vs_e1_delta / results.e1_mrr_at_10 * 100.0
+        } else {
+            0.0
+        }
+    );
+    println!(
+        "  E6 vs E13:    {:+.4} ({:+.2}%)",
         results.e6_vs_e13_delta,
-        if results.e13_mrr_at_10 > 0.0 { results.e6_vs_e13_delta / results.e13_mrr_at_10 * 100.0 } else { 0.0 });
+        if results.e13_mrr_at_10 > 0.0 {
+            results.e6_vs_e13_delta / results.e13_mrr_at_10 * 100.0
+        } else {
+            0.0
+        }
+    );
     println!();
     println!("## Sparsity Analysis");
     println!("  Avg Active Terms: {:.1}", results.avg_active_terms);
-    println!("  Sparsity Ratio:   {:.4} ({:.2}% zeros)",
-        results.sparsity_ratio, results.sparsity_ratio * 100.0);
+    println!(
+        "  Sparsity Ratio:   {:.4} ({:.2}% zeros)",
+        results.sparsity_ratio,
+        results.sparsity_ratio * 100.0
+    );
     println!("  Vocabulary Size:  30522 (BERT)");
     println!();
     println!("## Dataset Statistics");
@@ -471,12 +541,21 @@ fn print_results(results: &E6RealBenchmarkResults) {
     let sparsity_target = results.sparsity_ratio > 0.95;
 
     println!("## Target Evaluation");
-    println!("  E6 MRR@10 >= 0.50:     {} ({:.4})",
-        if e6_target { "PASS" } else { "FAIL" }, results.e6_mrr_at_10);
-    println!("  E6 > E1 (delta > 0):   {} ({:+.4})",
-        if delta_target { "PASS" } else { "FAIL" }, results.e6_vs_e1_delta);
-    println!("  Sparsity > 0.95:       {} ({:.4})",
-        if sparsity_target { "PASS" } else { "FAIL" }, results.sparsity_ratio);
+    println!(
+        "  E6 MRR@10 >= 0.50:     {} ({:.4})",
+        if e6_target { "PASS" } else { "FAIL" },
+        results.e6_mrr_at_10
+    );
+    println!(
+        "  E6 > E1 (delta > 0):   {} ({:+.4})",
+        if delta_target { "PASS" } else { "FAIL" },
+        results.e6_vs_e1_delta
+    );
+    println!(
+        "  Sparsity > 0.95:       {} ({:.4})",
+        if sparsity_target { "PASS" } else { "FAIL" },
+        results.sparsity_ratio
+    );
     println!();
 
     let all_pass = e6_target && delta_target && sparsity_target;
@@ -511,7 +590,10 @@ fn generate_markdown_report(results: &E6RealBenchmarkResults) -> String {
     let mut report = String::new();
 
     report.push_str("# E6 Sparse Embedder Benchmark Report\n\n");
-    report.push_str(&format!("Generated: {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+    report.push_str(&format!(
+        "Generated: {}\n\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    ));
 
     report.push_str("## Overview\n\n");
     report.push_str("This benchmark evaluates the E6 (V_selectivity) sparse embedder using real Wikipedia data.\n");
@@ -520,38 +602,89 @@ fn generate_markdown_report(results: &E6RealBenchmarkResults) -> String {
     report.push_str("## Summary\n\n");
     report.push_str("| Metric | Value | Target | Status |\n");
     report.push_str("|--------|-------|--------|--------|\n");
-    report.push_str(&format!("| E6 MRR@10 | {:.4} | >= 0.50 | {} |\n",
+    report.push_str(&format!(
+        "| E6 MRR@10 | {:.4} | >= 0.50 | {} |\n",
         results.e6_mrr_at_10,
-        if results.e6_mrr_at_10 >= 0.50 { "PASS" } else { "FAIL" }));
-    report.push_str(&format!("| E6 vs E1 Delta | {:+.4} | > 0.00 | {} |\n",
+        if results.e6_mrr_at_10 >= 0.50 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
+    report.push_str(&format!(
+        "| E6 vs E1 Delta | {:+.4} | > 0.00 | {} |\n",
         results.e6_vs_e1_delta,
-        if results.e6_vs_e1_delta > 0.0 { "PASS" } else { "FAIL" }));
-    report.push_str(&format!("| Sparsity | {:.4} | > 0.95 | {} |\n\n",
+        if results.e6_vs_e1_delta > 0.0 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
+    report.push_str(&format!(
+        "| Sparsity | {:.4} | > 0.95 | {} |\n\n",
         results.sparsity_ratio,
-        if results.sparsity_ratio > 0.95 { "PASS" } else { "FAIL" }));
+        if results.sparsity_ratio > 0.95 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
 
     report.push_str("## Retrieval Quality\n\n");
     report.push_str("| Embedder | MRR@10 | Notes |\n");
     report.push_str("|----------|--------|-------|\n");
-    report.push_str(&format!("| E6 Sparse | {:.4} | Keyword-based sparse |\n", results.e6_mrr_at_10));
-    report.push_str(&format!("| E1 Semantic | {:.4} | Dense baseline |\n", results.e1_mrr_at_10));
-    report.push_str(&format!("| E13 SPLADE | {:.4} | Learned sparse |\n\n", results.e13_mrr_at_10));
+    report.push_str(&format!(
+        "| E6 Sparse | {:.4} | Keyword-based sparse |\n",
+        results.e6_mrr_at_10
+    ));
+    report.push_str(&format!(
+        "| E1 Semantic | {:.4} | Dense baseline |\n",
+        results.e1_mrr_at_10
+    ));
+    report.push_str(&format!(
+        "| E13 SPLADE | {:.4} | Learned sparse |\n\n",
+        results.e13_mrr_at_10
+    ));
 
     report.push_str("## Sparsity Analysis\n\n");
-    report.push_str(&format!("- **Average Active Terms**: {:.1}\n", results.avg_active_terms));
-    report.push_str(&format!("- **Sparsity Ratio**: {:.4} ({:.2}% zeros)\n",
-        results.sparsity_ratio, results.sparsity_ratio * 100.0));
+    report.push_str(&format!(
+        "- **Average Active Terms**: {:.1}\n",
+        results.avg_active_terms
+    ));
+    report.push_str(&format!(
+        "- **Sparsity Ratio**: {:.4} ({:.2}% zeros)\n",
+        results.sparsity_ratio,
+        results.sparsity_ratio * 100.0
+    ));
     report.push_str("- **Vocabulary Size**: 30522 (BERT tokenizer)\n\n");
 
     report.push_str("## Dataset\n\n");
-    report.push_str(&format!("- **Corpus Size**: {} documents\n", results.corpus_size));
-    report.push_str(&format!("- **Query Count**: {} queries\n", results.query_count));
-    report.push_str(&format!("- **Topics**: {} unique topics\n\n", results.per_topic_mrr.len()));
+    report.push_str(&format!(
+        "- **Corpus Size**: {} documents\n",
+        results.corpus_size
+    ));
+    report.push_str(&format!(
+        "- **Query Count**: {} queries\n",
+        results.query_count
+    ));
+    report.push_str(&format!(
+        "- **Topics**: {} unique topics\n\n",
+        results.per_topic_mrr.len()
+    ));
 
     report.push_str("## Performance\n\n");
-    report.push_str(&format!("- **Data Loading**: {}ms\n", results.timings.data_load_ms));
-    report.push_str(&format!("- **Embedding**: {}ms\n", results.timings.embedding_ms));
-    report.push_str(&format!("- **Evaluation**: {}ms\n", results.timings.evaluation_ms));
+    report.push_str(&format!(
+        "- **Data Loading**: {}ms\n",
+        results.timings.data_load_ms
+    ));
+    report.push_str(&format!(
+        "- **Embedding**: {}ms\n",
+        results.timings.embedding_ms
+    ));
+    report.push_str(&format!(
+        "- **Evaluation**: {}ms\n",
+        results.timings.evaluation_ms
+    ));
     report.push_str(&format!("- **Total**: {}ms\n\n", results.timings.total_ms));
 
     if !results.per_topic_mrr.is_empty() {

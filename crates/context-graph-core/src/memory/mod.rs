@@ -42,17 +42,19 @@ pub mod source;
 pub mod store;
 pub mod watcher;
 
+pub use ast_chunker::{
+    AstChunkConfig, AstChunkerError, AstCodeChunker, CodeChunk, CodeChunkMetadata, EntityType,
+};
 pub use capture::{
     CaptureError, EmbedderError, EmbeddingProvider, MemoryCaptureService,
     MultiArrayEmbeddingAdapter,
 };
-pub use ast_chunker::{AstChunkConfig, AstChunkerError, AstCodeChunker, CodeChunk, CodeChunkMetadata, EntityType};
+pub use chunker::{ChunkerError, TextChunk, TextChunker};
 pub use code_capture::{
     CodeCaptureError, CodeCaptureResult, CodeCaptureService, CodeEmbedderError,
     CodeEmbeddingProvider, CodeSearchResult, CodeStorage,
 };
 pub use code_watcher::{CodeFileWatcher, CodeWatcherError, WatcherStats};
-pub use chunker::{ChunkerError, TextChunk, TextChunker};
 // ChunkMetadata is defined in this file and exported directly
 pub use manager::{SessionError, SessionManager, CF_SESSIONS};
 pub use session::{Session, SessionStatus};

@@ -274,6 +274,10 @@ mod tests {
     #[test]
     fn test_queues_created_for_all_14_models() {
         let all_models = ModelId::all();
-        assert_eq!(all_models.len(), 15, "Expected 15 models (14 + legacy Entity)");
+        assert_eq!(
+            all_models.len(),
+            15,
+            "Expected 15 models (14 + legacy Entity)"
+        );
     }
 }

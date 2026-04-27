@@ -39,16 +39,16 @@ pub struct StoredQuantizedFingerprint {
     pub version: u8,
 
     /// Per-embedder quantized embeddings.
-    /// Key: embedder index (0-12)
+    /// Key: embedder index (0-13)
     /// Value: Quantized embedding with method-specific metadata
     ///
     /// # Invariant
-    /// All 13 embedders MUST be present. Missing embedder = panic on load.
+    /// All 14 embedders MUST be present. Missing embedder = panic on load.
     pub embeddings: HashMap<u8, QuantizedEmbedding>,
 
-    /// 13D topic profile (NOT quantized - only 52 bytes).
+    /// 14D topic profile (NOT quantized - only 56 bytes).
     /// Each dimension = alignment of that embedder's output to emergent topics.
-    /// Represents topic alignment signature across all 13 embedding spaces.
+    /// Represents topic alignment signature across all 14 embedding spaces.
     pub topic_profile: [f32; 14],
 
     /// SHA-256 content hash (32 bytes).
@@ -74,12 +74,12 @@ impl StoredQuantizedFingerprint {
     ///
     /// # Arguments
     /// * `id` - UUID for this fingerprint
-    /// * `embeddings` - HashMap of quantized embeddings (must have all 13)
-    /// * `topic_profile` - 13D topic alignment signature
+    /// * `embeddings` - HashMap of quantized embeddings (must have all 14)
+    /// * `topic_profile` - 14D topic alignment signature
     /// * `content_hash` - SHA-256 of source content
     ///
     /// # Panics
-    /// Panics if `embeddings` doesn't contain exactly 13 entries.
+    /// Panics if `embeddings` doesn't contain exactly 14 entries.
     #[must_use]
     pub fn new(
         id: Uuid,
@@ -138,7 +138,7 @@ impl StoredQuantizedFingerprint {
         // Fixed fields
         size += 16; // id (UUID)
         size += 1; // version
-        size += 52; // topic_profile (13 × 4 bytes)
+        size += 56; // topic_profile (14 x 4 bytes)
         size += 32; // content_hash
         size += 8; // created_at_ms
         size += 8; // last_updated_ms
@@ -159,7 +159,7 @@ impl StoredQuantizedFingerprint {
     /// Get quantized embedding for a specific embedder.
     ///
     /// # Arguments
-    /// * `embedder_idx` - Embedder index (0-12)
+    /// * `embedder_idx` - Embedder index (0-13)
     ///
     /// # Panics
     /// Panics if embedder_idx is out of range or embedding is missing.
@@ -184,11 +184,13 @@ impl StoredQuantizedFingerprint {
     #[must_use]
     pub fn validate_quantization_methods(&self) -> bool {
         for (idx, qe) in &self.embeddings {
-            if let Ok(model_id) = ModelId::try_from(*idx) {
+            if let Some(model_id) = ModelId::production().get(*idx as usize).copied() {
                 let expected = QuantizationMethod::for_model_id(model_id);
                 if qe.method != expected {
                     return false;
                 }
+            } else {
+                return false;
             }
         }
         true

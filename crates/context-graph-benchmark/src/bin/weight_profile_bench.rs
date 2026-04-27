@@ -22,8 +22,8 @@
 
 use std::time::Instant;
 
-use context_graph_core::weights::{get_weight_profile, get_profile_names, WEIGHT_PROFILES};
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+use context_graph_core::weights::{get_profile_names, get_weight_profile, WEIGHT_PROFILES};
 
 /// Content types we're testing
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -70,9 +70,9 @@ impl ContentType {
     /// Get the primary embedder index that should be weighted highest
     fn primary_embedder_index(&self) -> usize {
         match self {
-            ContentType::Code => 6,    // E7
-            ContentType::Causal => 4,  // E5
-            ContentType::Graph => 7,   // E8
+            ContentType::Code => 6,     // E7
+            ContentType::Causal => 4,   // E5
+            ContentType::Graph => 7,    // E8
             ContentType::Factual => 10, // E11
             ContentType::General => 0,  // E1
         }
@@ -103,27 +103,27 @@ impl SimulatedScores {
         // Also give small boosts to related embedders
         match content_type {
             ContentType::Code => {
-                scores[0] = base_score + 0.1;  // E1 semantic
+                scores[0] = base_score + 0.1; // E1 semantic
                 scores[5] = base_score + 0.15; // E6 keywords (function names)
                 scores[10] = base_score + 0.1; // E11 entity (class names)
             }
             ContentType::Causal => {
-                scores[0] = base_score + 0.1;  // E1 semantic
+                scores[0] = base_score + 0.1; // E1 semantic
                 scores[7] = base_score + 0.15; // E8 graph (causal chains)
             }
             ContentType::Graph => {
-                scores[0] = base_score + 0.1;  // E1 semantic
+                scores[0] = base_score + 0.1; // E1 semantic
                 scores[10] = base_score + 0.15; // E11 entity
-                scores[4] = base_score + 0.1;  // E5 causal (for dependency)
+                scores[4] = base_score + 0.1; // E5 causal (for dependency)
             }
             ContentType::Factual => {
-                scores[0] = base_score + 0.1;  // E1 semantic
+                scores[0] = base_score + 0.1; // E1 semantic
                 scores[5] = base_score + 0.15; // E6 keywords
             }
             ContentType::General => {
-                scores[4] = base_score + 0.05;  // E5 causal
-                scores[6] = base_score + 0.05;  // E7 code
-                scores[9] = base_score + 0.05;  // E10 multimodal
+                scores[4] = base_score + 0.05; // E5 causal
+                scores[6] = base_score + 0.05; // E7 code
+                scores[9] = base_score + 0.05; // E10 multimodal
             }
         }
 
@@ -197,7 +197,11 @@ fn compute_mrr(ranked: &[(usize, f32, ContentType)], target: ContentType) -> f32
 }
 
 /// Compute Precision@K for a target content type
-fn compute_precision_at_k(ranked: &[(usize, f32, ContentType)], target: ContentType, k: usize) -> f32 {
+fn compute_precision_at_k(
+    ranked: &[(usize, f32, ContentType)],
+    target: ContentType,
+    k: usize,
+) -> f32 {
     let top_k = ranked.iter().take(k);
     let relevant_count = top_k.filter(|(_, _, ct)| *ct == target).count();
     relevant_count as f32 / k as f32
@@ -225,7 +229,11 @@ fn generate_test_corpus() -> Vec<SimulatedScores> {
         // Each type gets 10 items with base scores between 0.4 and 0.6
         for i in 0..10 {
             let base_score = 0.4 + (i as f32 * 0.02);
-            corpus.push(SimulatedScores::for_content_type(content_type, id, base_score));
+            corpus.push(SimulatedScores::for_content_type(
+                content_type,
+                id,
+                base_score,
+            ));
             id += 1;
         }
     }
@@ -265,7 +273,10 @@ fn print_results_table(results: &[ProfileTestResult]) {
         "{:<20} | {:<10} | {:>6} | {:>6} | {:>8} | {:>8} | {:>8}",
         "Profile", "Target", "MRR", "Rank", "P@3", "P@5", "P@10"
     );
-    println!("{:-<20}-+-{:-<10}-+-{:-<6}-+-{:-<6}-+-{:-<8}-+-{:-<8}-+-{:-<8}", "", "", "", "", "", "", "");
+    println!(
+        "{:-<20}-+-{:-<10}-+-{:-<6}-+-{:-<6}-+-{:-<8}-+-{:-<8}-+-{:-<8}",
+        "", "", "", "", "", "", ""
+    );
 
     for result in results {
         let rank_str = result
@@ -301,9 +312,19 @@ fn print_weight_analysis() {
     ];
 
     let embedder_names = [
-        "E1_Semantic", "E2_Temporal", "E3_Periodic", "E4_Position",
-        "E5_Causal", "E6_Sparse", "E7_Code", "E8_Graph",
-        "E9_HDC", "E10_Multi", "E11_Entity", "E12_ColBERT", "E13_SPLADE"
+        "E1_Semantic",
+        "E2_Temporal",
+        "E3_Periodic",
+        "E4_Position",
+        "E5_Causal",
+        "E6_Sparse",
+        "E7_Code",
+        "E8_Graph",
+        "E9_HDC",
+        "E10_Multi",
+        "E11_Entity",
+        "E12_ColBERT",
+        "E13_SPLADE",
     ];
 
     // Print header
@@ -356,8 +377,14 @@ fn run_comparison_benchmark() {
     ];
 
     for content_type in ContentType::all() {
-        println!("\n--- Target: {} content ---", content_type.name().to_uppercase());
-        println!("Expected best profile: {}", content_type.expected_best_profile());
+        println!(
+            "\n--- Target: {} content ---",
+            content_type.name().to_uppercase()
+        );
+        println!(
+            "Expected best profile: {}",
+            content_type.expected_best_profile()
+        );
         println!();
 
         let mut results = Vec::new();
@@ -367,7 +394,11 @@ fn run_comparison_benchmark() {
         }
 
         // Sort by MRR descending
-        results.sort_by(|a, b| b.mrr.partial_cmp(&a.mrr).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.mrr
+                .partial_cmp(&a.mrr)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         println!(
             "{:<20} | {:>6} | {:>6} | {:>8}",
@@ -406,7 +437,10 @@ fn run_comparison_benchmark() {
         let actual_best = &results[0].profile_name;
         let expected_best = content_type.expected_best_profile();
         if actual_best == expected_best {
-            println!("\n  [PASS] Expected profile '{}' performed best!", expected_best);
+            println!(
+                "\n  [PASS] Expected profile '{}' performed best!",
+                expected_best
+            );
         } else {
             panic!(
                 "\n  [FAIL] Weight profile regression: expected '{}' to perform best for {:?}, \
@@ -445,7 +479,10 @@ fn run_latency_benchmark() {
     }
     let elapsed = start.elapsed();
     let per_call_ns = elapsed.as_nanos() / iterations as u128;
-    println!("{:<25}: {:>8} ns/call (fail-fast)", "invalid_profile", per_call_ns);
+    println!(
+        "{:<25}: {:>8} ns/call (fail-fast)",
+        "invalid_profile", per_call_ns
+    );
 }
 
 /// Test that all profiles sum to ~1.0
@@ -470,7 +507,10 @@ fn verify_profile_integrity() {
 
     println!();
     if all_valid {
-        println!("All {} profiles have valid weight sums.", WEIGHT_PROFILES.len());
+        println!(
+            "All {} profiles have valid weight sums.",
+            WEIGHT_PROFILES.len()
+        );
     } else {
         println!("WARNING: Some profiles have invalid weight sums!");
     }
@@ -480,7 +520,10 @@ fn main() {
     println!("\n{:#<100}", "");
     println!("#{:^98}#", "");
     println!("#{:^98}#", "WEIGHT PROFILE IMPACT BENCHMARK");
-    println!("#{:^98}#", "Testing the fix for weight_profile parameter being ignored");
+    println!(
+        "#{:^98}#",
+        "Testing the fix for weight_profile parameter being ignored"
+    );
     println!("#{:^98}#", "");
     println!("{:#<100}\n", "");
 

@@ -6,11 +6,7 @@ use uuid::Uuid;
 // record_traversal() Tests
 #[test]
 fn test_record_traversal_increments_count() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     assert_eq!(edge.traversal_count, 0);
     edge.record_traversal();
     assert_eq!(edge.traversal_count, 1);
@@ -20,11 +16,7 @@ fn test_record_traversal_increments_count() {
 
 #[test]
 fn test_record_traversal_updates_timestamp() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     assert!(edge.last_traversed_at.is_none());
     edge.record_traversal();
     assert!(edge.last_traversed_at.is_some());
@@ -32,11 +24,7 @@ fn test_record_traversal_updates_timestamp() {
 
 #[test]
 fn test_record_traversal_saturates() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.traversal_count = u64::MAX;
     edge.record_traversal();
     assert_eq!(edge.traversal_count, u64::MAX);
@@ -44,11 +32,7 @@ fn test_record_traversal_saturates() {
 
 #[test]
 fn test_record_traversal_updates_timestamp_each_time() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.record_traversal();
     let first = edge.last_traversed_at.unwrap();
     std::thread::sleep(std::time::Duration::from_millis(1));
@@ -60,11 +44,7 @@ fn test_record_traversal_updates_timestamp_each_time() {
 // is_reliable_shortcut() Tests
 #[test]
 fn test_is_reliable_shortcut_all_conditions_met() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 5;
     edge.steering_reward = 0.5;
@@ -74,11 +54,7 @@ fn test_is_reliable_shortcut_all_conditions_met() {
 
 #[test]
 fn test_is_reliable_shortcut_fails_not_shortcut() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = false;
     edge.traversal_count = 5;
     edge.steering_reward = 0.5;
@@ -88,11 +64,7 @@ fn test_is_reliable_shortcut_fails_not_shortcut() {
 
 #[test]
 fn test_is_reliable_shortcut_fails_low_traversal() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 2;
     edge.steering_reward = 0.5;
@@ -102,11 +74,7 @@ fn test_is_reliable_shortcut_fails_low_traversal() {
 
 #[test]
 fn test_is_reliable_shortcut_fails_low_reward() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 5;
     edge.steering_reward = 0.2;
@@ -116,11 +84,7 @@ fn test_is_reliable_shortcut_fails_low_reward() {
 
 #[test]
 fn test_is_reliable_shortcut_fails_low_confidence() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 5;
     edge.steering_reward = 0.5;
@@ -130,11 +94,7 @@ fn test_is_reliable_shortcut_fails_low_confidence() {
 
 #[test]
 fn test_is_reliable_shortcut_boundary_traversal() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 3;
     edge.steering_reward = 0.5;
@@ -144,11 +104,7 @@ fn test_is_reliable_shortcut_boundary_traversal() {
 
 #[test]
 fn test_is_reliable_shortcut_boundary_reward() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 5;
     edge.steering_reward = 0.3; // Exactly 0.3 - should FAIL (need > 0.3)
@@ -158,11 +114,7 @@ fn test_is_reliable_shortcut_boundary_reward() {
 
 #[test]
 fn test_is_reliable_shortcut_boundary_confidence() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.is_amortized_shortcut = true;
     edge.traversal_count = 5;
     edge.steering_reward = 0.5;
@@ -173,11 +125,7 @@ fn test_is_reliable_shortcut_boundary_confidence() {
 // mark_as_shortcut() Tests
 #[test]
 fn test_mark_as_shortcut() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     assert!(!edge.is_amortized_shortcut);
     edge.mark_as_shortcut();
     assert!(edge.is_amortized_shortcut);
@@ -185,11 +133,7 @@ fn test_mark_as_shortcut() {
 
 #[test]
 fn test_mark_as_shortcut_idempotent() {
-    let mut edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     edge.mark_as_shortcut();
     edge.mark_as_shortcut();
     assert!(edge.is_amortized_shortcut);
@@ -198,21 +142,13 @@ fn test_mark_as_shortcut_idempotent() {
 // age_seconds() Tests
 #[test]
 fn test_age_seconds_non_negative() {
-    let edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     assert!(edge.age_seconds() >= 0);
 }
 
 #[test]
 fn test_age_seconds_increases() {
-    let edge = GraphEdge::new(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        EdgeType::Semantic,
-    );
+    let edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), EdgeType::Semantic);
     let age1 = edge.age_seconds();
     std::thread::sleep(std::time::Duration::from_millis(1));
     let age2 = edge.age_seconds();

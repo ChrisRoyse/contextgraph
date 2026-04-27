@@ -214,7 +214,10 @@ impl TemporalRealdataBenchmarkRunner {
         let (baseline, baseline_time) = if self.config.run_timestamp_baseline {
             let baseline_start = Instant::now();
             let baseline = self.run_timestamp_baseline(ground_truth);
-            (Some(baseline), Some(baseline_start.elapsed().as_millis() as u64))
+            (
+                Some(baseline),
+                Some(baseline_start.elapsed().as_millis() as u64),
+            )
         } else {
             (None, None)
         };
@@ -272,7 +275,10 @@ impl TemporalRealdataBenchmarkRunner {
         }
     }
 
-    fn run_direction_benchmarks(&self, ground_truth: &SequenceGroundTruth) -> DirectionBenchmarkData {
+    fn run_direction_benchmarks(
+        &self,
+        ground_truth: &SequenceGroundTruth,
+    ) -> DirectionBenchmarkData {
         let mut results = Vec::new();
 
         for query in &ground_truth.direction_queries {
@@ -330,7 +336,8 @@ impl TemporalRealdataBenchmarkRunner {
             }
 
             // Sort by E4 similarity (descending)
-            scored_chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scored_chunks
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let retrieved_ids: Vec<Uuid> = scored_chunks.iter().map(|(id, _, _)| *id).collect();
 
@@ -407,7 +414,8 @@ impl TemporalRealdataBenchmarkRunner {
             }
 
             // Sort by E4 similarity
-            scored_chunks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            scored_chunks
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let retrieved_order: Vec<Uuid> = scored_chunks.iter().map(|(id, _, _)| *id).collect();
 
@@ -481,7 +489,8 @@ impl TemporalRealdataBenchmarkRunner {
                 }
 
                 // Sort by similarity
-                candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                candidates
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Check if expected next is in top position
                 if let Some((best_id, _)) = candidates.first() {
@@ -540,7 +549,10 @@ impl TemporalRealdataBenchmarkRunner {
         BoundaryBenchmarkData { results }
     }
 
-    fn run_timestamp_baseline(&self, ground_truth: &SequenceGroundTruth) -> TimestampBaselineResults {
+    fn run_timestamp_baseline(
+        &self,
+        ground_truth: &SequenceGroundTruth,
+    ) -> TimestampBaselineResults {
         // Simulate what would happen with timestamp-based ordering
         // (the broken behavior we're fixing)
 
@@ -588,11 +600,11 @@ impl TemporalRealdataBenchmarkRunner {
         let sequence_after: f64 = 0.75; // Expected with fixed E4
         let sequence_symmetry: f64 = 1.0 - (sequence_before - sequence_after).abs();
 
-        let timestamp_baseline_score = (timestamp_before + timestamp_after) / 2.0 * 0.5
-            + timestamp_symmetry * 0.5;
+        let timestamp_baseline_score =
+            (timestamp_before + timestamp_after) / 2.0 * 0.5 + timestamp_symmetry * 0.5;
 
-        let sequence_based_score = (sequence_before + sequence_after) / 2.0 * 0.5
-            + sequence_symmetry * 0.5;
+        let sequence_based_score =
+            (sequence_before + sequence_after) / 2.0 * 0.5 + sequence_symmetry * 0.5;
 
         let improvement = if timestamp_baseline_score > 0.0 {
             (sequence_based_score - timestamp_baseline_score) / timestamp_baseline_score
@@ -665,7 +677,10 @@ impl TemporalRealdataBenchmarkResults {
             "- After Tau: {:.4}\n",
             self.metrics.ordering.after_kendalls_tau
         ));
-        s.push_str(&format!("- Ordering MRR: {:.4}\n", self.metrics.ordering.ordering_mrr));
+        s.push_str(&format!(
+            "- Ordering MRR: {:.4}\n",
+            self.metrics.ordering.ordering_mrr
+        ));
 
         s.push_str("\n## Chain Traversal\n");
         s.push_str(&format!(
@@ -726,7 +741,10 @@ impl TemporalRealdataBenchmarkResults {
         }
 
         s.push_str("\n## Dataset Statistics\n");
-        s.push_str(&format!("- Sessions: {}\n", self.dataset_stats.total_sessions));
+        s.push_str(&format!(
+            "- Sessions: {}\n",
+            self.dataset_stats.total_sessions
+        ));
         s.push_str(&format!("- Chunks: {}\n", self.dataset_stats.total_chunks));
         s.push_str(&format!(
             "- Avg Session Length: {:.1}\n",

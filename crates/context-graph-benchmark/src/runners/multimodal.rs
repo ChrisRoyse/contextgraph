@@ -414,9 +414,11 @@ impl E10MultimodalBenchmarkRunner {
         let context_keywords = &doc.context_keywords;
         let query_lower = query.query.to_lowercase();
 
-        let has_paraphrase_match = paraphrase_keywords.iter()
+        let has_paraphrase_match = paraphrase_keywords
+            .iter()
             .any(|kw| query_lower.contains(&kw.to_lowercase()));
-        let has_context_match = context_keywords.iter()
+        let has_context_match = context_keywords
+            .iter()
             .any(|kw| query_lower.contains(&kw.to_lowercase()));
 
         // Boost based on paraphrase/context keyword matches
@@ -429,8 +431,7 @@ impl E10MultimodalBenchmarkRunner {
 
         // Apply direction modifier - this is the key E10 signal
         // paraphrase→context: 1.2x, context→paraphrase: 0.8x, same: 1.0x
-        let direction_mod =
-            ParaphraseDirection::direction_modifier(query.direction, doc.direction);
+        let direction_mod = ParaphraseDirection::direction_modifier(query.direction, doc.direction);
         score *= direction_mod as f64;
 
         score.clamp(0.0, 1.0)
@@ -475,13 +476,17 @@ impl E10MultimodalBenchmarkRunner {
 
         for &base_sim in &test_similarities {
             // Compute paraphrase→context similarity
-            let paraphrase_to_context_mod =
-                ParaphraseDirection::direction_modifier(ParaphraseDirection::Paraphrase, ParaphraseDirection::Context);
+            let paraphrase_to_context_mod = ParaphraseDirection::direction_modifier(
+                ParaphraseDirection::Paraphrase,
+                ParaphraseDirection::Context,
+            );
             let paraphrase_to_context_sim = base_sim * paraphrase_to_context_mod as f64;
 
             // Compute context→paraphrase similarity
-            let context_to_paraphrase_mod =
-                ParaphraseDirection::direction_modifier(ParaphraseDirection::Context, ParaphraseDirection::Paraphrase);
+            let context_to_paraphrase_mod = ParaphraseDirection::direction_modifier(
+                ParaphraseDirection::Context,
+                ParaphraseDirection::Paraphrase,
+            );
             let context_to_paraphrase_sim = base_sim * context_to_paraphrase_mod as f64;
 
             // Compute observed ratio
@@ -553,19 +558,25 @@ impl E10MultimodalBenchmarkRunner {
 
     /// Compute MRR using E1-only scoring (no direction modifiers).
     fn compute_mrr_e1_only(&self, dataset: &E10MultimodalBenchmarkDataset) -> f64 {
-        let all_queries: Vec<_> = dataset.paraphrase_queries.iter()
+        let all_queries: Vec<_> = dataset
+            .paraphrase_queries
+            .iter()
             .chain(dataset.context_queries.iter())
             .collect();
 
         let mut mrr_sum = 0.0;
         for query in &all_queries {
-            let expected_docs: Vec<String> = query.expected_top_docs.iter()
+            let expected_docs: Vec<String> = query
+                .expected_top_docs
+                .iter()
                 .map(|id| id.to_string())
                 .collect();
 
             // Score documents using ONLY E1-style scoring (keyword overlap + domain)
             // NO direction modifiers
-            let mut scores: Vec<(String, f64)> = dataset.documents.iter()
+            let mut scores: Vec<(String, f64)> = dataset
+                .documents
+                .iter()
                 .map(|doc| {
                     let keyword_sim = Self::compute_keyword_overlap(&query.query, &doc.content);
                     let mut score = 0.2 + keyword_sim * 0.4;
@@ -596,18 +607,24 @@ impl E10MultimodalBenchmarkRunner {
 
     /// Compute MRR using E10-only scoring (direction modifiers only, weak semantic).
     fn compute_mrr_e10_only(&self, dataset: &E10MultimodalBenchmarkDataset) -> f64 {
-        let all_queries: Vec<_> = dataset.paraphrase_queries.iter()
+        let all_queries: Vec<_> = dataset
+            .paraphrase_queries
+            .iter()
             .chain(dataset.context_queries.iter())
             .collect();
 
         let mut mrr_sum = 0.0;
         for query in &all_queries {
-            let expected_docs: Vec<String> = query.expected_top_docs.iter()
+            let expected_docs: Vec<String> = query
+                .expected_top_docs
+                .iter()
                 .map(|id| id.to_string())
                 .collect();
 
             // Score documents using direction modifiers as PRIMARY signal
-            let mut scores: Vec<(String, f64)> = dataset.documents.iter()
+            let mut scores: Vec<(String, f64)> = dataset
+                .documents
+                .iter()
                 .map(|doc| {
                     // Minimal semantic signal
                     let mut score = 0.3;
@@ -618,10 +635,8 @@ impl E10MultimodalBenchmarkRunner {
                     }
 
                     // Direction modifier is the PRIMARY signal for E10-only
-                    let direction_mod = ParaphraseDirection::direction_modifier(
-                        query.direction,
-                        doc.direction,
-                    );
+                    let direction_mod =
+                        ParaphraseDirection::direction_modifier(query.direction, doc.direction);
                     score *= direction_mod as f64;
 
                     // Add noise based on doc ID to break ties
@@ -647,17 +662,23 @@ impl E10MultimodalBenchmarkRunner {
 
     /// Compute MRR using blended E1+E10 scoring.
     fn compute_mrr_blended(&self, dataset: &E10MultimodalBenchmarkDataset, blend: f64) -> f64 {
-        let all_queries: Vec<_> = dataset.paraphrase_queries.iter()
+        let all_queries: Vec<_> = dataset
+            .paraphrase_queries
+            .iter()
             .chain(dataset.context_queries.iter())
             .collect();
 
         let mut mrr_sum = 0.0;
         for query in &all_queries {
-            let expected_docs: Vec<String> = query.expected_top_docs.iter()
+            let expected_docs: Vec<String> = query
+                .expected_top_docs
+                .iter()
                 .map(|id| id.to_string())
                 .collect();
 
-            let mut scores: Vec<(String, f64)> = dataset.documents.iter()
+            let mut scores: Vec<(String, f64)> = dataset
+                .documents
+                .iter()
                 .map(|doc| {
                     // E1 component: keyword + domain
                     let keyword_sim = Self::compute_keyword_overlap(&query.query, &doc.content);
@@ -667,10 +688,8 @@ impl E10MultimodalBenchmarkRunner {
                     }
 
                     // E10 component: direction modifiers
-                    let direction_mod = ParaphraseDirection::direction_modifier(
-                        query.direction,
-                        doc.direction,
-                    );
+                    let direction_mod =
+                        ParaphraseDirection::direction_modifier(query.direction, doc.direction);
                     let e10_score = 0.5 * direction_mod as f64;
 
                     // Blend: (1-blend)*E1 + blend*E10
@@ -701,31 +720,39 @@ impl E10MultimodalBenchmarkRunner {
     fn compute_mrr_full_13_space(&self, dataset: &E10MultimodalBenchmarkDataset) -> f64 {
         // Full 13-space simulation: E1+E10 blend with additional signals
         // In a real benchmark, this would use all 13 embedders
-        let all_queries: Vec<_> = dataset.paraphrase_queries.iter()
+        let all_queries: Vec<_> = dataset
+            .paraphrase_queries
+            .iter()
             .chain(dataset.context_queries.iter())
             .collect();
 
         let mut mrr_sum = 0.0;
         for query in &all_queries {
-            let expected_docs: Vec<String> = query.expected_top_docs.iter()
+            let expected_docs: Vec<String> = query
+                .expected_top_docs
+                .iter()
                 .map(|id| id.to_string())
                 .collect();
 
-            let mut scores: Vec<(String, f64)> = dataset.documents.iter()
+            let mut scores: Vec<(String, f64)> = dataset
+                .documents
+                .iter()
                 .map(|doc| {
                     // E1 semantic
                     let keyword_sim = Self::compute_keyword_overlap(&query.query, &doc.content);
                     let e1_score = 0.2 + keyword_sim * 0.4;
 
                     // E10 direction
-                    let direction_mod = ParaphraseDirection::direction_modifier(
-                        query.direction,
-                        doc.direction,
-                    );
+                    let direction_mod =
+                        ParaphraseDirection::direction_modifier(query.direction, doc.direction);
                     let e10_score = direction_mod as f64;
 
                     // Domain matching (E11-like entity awareness)
-                    let domain_score = if doc.domain == query.expected_domain { 0.3 } else { 0.0 };
+                    let domain_score = if doc.domain == query.expected_domain {
+                        0.3
+                    } else {
+                        0.0
+                    };
 
                     // Simulate additional embedder contributions
                     // (In real benchmark, these would be actual E6, E7, etc. scores)
@@ -733,10 +760,10 @@ impl E10MultimodalBenchmarkRunner {
                     let additional_signal = doc_id_hash as f64 / 5000.0;
 
                     // Full 13-space weighted fusion (simplified)
-                    let score = 0.35 * e1_score +
-                               0.25 * e10_score +
-                               0.25 * domain_score +
-                               0.15 * additional_signal;
+                    let score = 0.35 * e1_score
+                        + 0.25 * e10_score
+                        + 0.25 * domain_score
+                        + 0.15 * additional_signal;
 
                     (doc.id.to_string(), score)
                 })
@@ -756,18 +783,29 @@ impl E10MultimodalBenchmarkRunner {
     }
 
     /// Compute Precision@K for a given blend value.
-    fn compute_precision_at_k(&self, dataset: &E10MultimodalBenchmarkDataset, blend: f64, k: usize) -> f64 {
-        let all_queries: Vec<_> = dataset.paraphrase_queries.iter()
+    fn compute_precision_at_k(
+        &self,
+        dataset: &E10MultimodalBenchmarkDataset,
+        blend: f64,
+        k: usize,
+    ) -> f64 {
+        let all_queries: Vec<_> = dataset
+            .paraphrase_queries
+            .iter()
             .chain(dataset.context_queries.iter())
             .collect();
 
         let mut precision_sum = 0.0;
         for query in &all_queries {
-            let expected_docs: Vec<String> = query.expected_top_docs.iter()
+            let expected_docs: Vec<String> = query
+                .expected_top_docs
+                .iter()
                 .map(|id| id.to_string())
                 .collect();
 
-            let mut scores: Vec<(String, f64)> = dataset.documents.iter()
+            let mut scores: Vec<(String, f64)> = dataset
+                .documents
+                .iter()
                 .map(|doc| {
                     let keyword_sim = Self::compute_keyword_overlap(&query.query, &doc.content);
                     let mut e1_score = 0.2 + keyword_sim * 0.4;
@@ -775,10 +813,8 @@ impl E10MultimodalBenchmarkRunner {
                         e1_score += 0.3;
                     }
 
-                    let direction_mod = ParaphraseDirection::direction_modifier(
-                        query.direction,
-                        doc.direction,
-                    );
+                    let direction_mod =
+                        ParaphraseDirection::direction_modifier(query.direction, doc.direction);
                     let e10_score = 0.5 * direction_mod as f64;
                     let blended = (1.0 - blend) * e1_score + blend * e10_score;
 
@@ -791,7 +827,8 @@ impl E10MultimodalBenchmarkRunner {
 
             // Count relevant docs in top K
             let top_k: Vec<_> = scores.iter().take(k).collect();
-            let relevant_in_top_k = top_k.iter()
+            let relevant_in_top_k = top_k
+                .iter()
                 .filter(|(id, _)| expected_docs.contains(id))
                 .count();
 
@@ -841,7 +878,10 @@ mod tests {
         );
         println!(
             "  Asymmetry ratio: {:.2} (expected 1.5)",
-            results.metrics.asymmetric_retrieval.observed_asymmetry_ratio
+            results
+                .metrics
+                .asymmetric_retrieval
+                .observed_asymmetry_ratio
         );
     }
 
@@ -895,29 +935,51 @@ mod tests {
         let ablation = results.metrics.ablation.as_ref().unwrap();
 
         // All MRR values should be valid (0-1 range)
-        assert!(ablation.e1_only_mrr >= 0.0 && ablation.e1_only_mrr <= 1.0,
-            "E1-only MRR should be in [0,1] range, got {}", ablation.e1_only_mrr);
-        assert!(ablation.e10_only_mrr >= 0.0 && ablation.e10_only_mrr <= 1.0,
-            "E10-only MRR should be in [0,1] range, got {}", ablation.e10_only_mrr);
-        assert!(ablation.e1_e10_blend_mrr >= 0.0 && ablation.e1_e10_blend_mrr <= 1.0,
-            "E1+E10 blend MRR should be in [0,1] range, got {}", ablation.e1_e10_blend_mrr);
-        assert!(ablation.full_13_space_mrr >= 0.0 && ablation.full_13_space_mrr <= 1.0,
-            "Full 13-space MRR should be in [0,1] range, got {}", ablation.full_13_space_mrr);
+        assert!(
+            ablation.e1_only_mrr >= 0.0 && ablation.e1_only_mrr <= 1.0,
+            "E1-only MRR should be in [0,1] range, got {}",
+            ablation.e1_only_mrr
+        );
+        assert!(
+            ablation.e10_only_mrr >= 0.0 && ablation.e10_only_mrr <= 1.0,
+            "E10-only MRR should be in [0,1] range, got {}",
+            ablation.e10_only_mrr
+        );
+        assert!(
+            ablation.e1_e10_blend_mrr >= 0.0 && ablation.e1_e10_blend_mrr <= 1.0,
+            "E1+E10 blend MRR should be in [0,1] range, got {}",
+            ablation.e1_e10_blend_mrr
+        );
+        assert!(
+            ablation.full_13_space_mrr >= 0.0 && ablation.full_13_space_mrr <= 1.0,
+            "Full 13-space MRR should be in [0,1] range, got {}",
+            ablation.full_13_space_mrr
+        );
 
         // E10 contribution is computed correctly (can be negative if E10 hurts)
         let expected_contribution = ablation.e1_e10_blend_mrr - ablation.e1_only_mrr;
-        assert!((ablation.e10_contribution - expected_contribution).abs() < 0.001,
-            "E10 contribution calculation incorrect");
+        assert!(
+            (ablation.e10_contribution - expected_contribution).abs() < 0.001,
+            "E10 contribution calculation incorrect"
+        );
 
         // Blend analysis should have correct number of points
         assert_eq!(ablation.blend_analysis.len(), 11); // 0.0 to 1.0 in 0.1 steps
 
         // Blend sweep should produce valid values
         for point in &ablation.blend_analysis {
-            assert!(point.mrr >= 0.0 && point.mrr <= 1.0,
-                "Blend MRR at {} should be in [0,1], got {}", point.blend_value, point.mrr);
-            assert!(point.precision_at_5 >= 0.0 && point.precision_at_5 <= 1.0,
-                "Blend P@5 at {} should be in [0,1], got {}", point.blend_value, point.precision_at_5);
+            assert!(
+                point.mrr >= 0.0 && point.mrr <= 1.0,
+                "Blend MRR at {} should be in [0,1], got {}",
+                point.blend_value,
+                point.mrr
+            );
+            assert!(
+                point.precision_at_5 >= 0.0 && point.precision_at_5 <= 1.0,
+                "Blend P@5 at {} should be in [0,1], got {}",
+                point.blend_value,
+                point.precision_at_5
+            );
         }
 
         println!("[VERIFIED] Ablation study (no ground truth leakage):");

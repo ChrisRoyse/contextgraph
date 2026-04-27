@@ -3,9 +3,9 @@
 //! Contains all result types for the unified real data benchmark, including
 //! per-embedder metrics, fusion comparisons, and cross-embedder analysis.
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use super::config::{EmbedderName, FusionStrategy, UnifiedBenchmarkConfig};
 
@@ -159,7 +159,8 @@ impl EmbedderResults {
             "relational_enhancer"
         } else {
             "structural_context"
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
@@ -359,10 +360,7 @@ impl ConstitutionalCompliance {
             "ARCH-10",
             "Divergence detection uses SEMANTIC embedders only",
             passed,
-            &format!(
-                "Non-semantic embedders in divergence: {:?}",
-                non_semantic
-            ),
+            &format!("Non-semantic embedders in divergence: {:?}", non_semantic),
         );
     }
 
@@ -377,10 +375,7 @@ impl ConstitutionalCompliance {
             "AP-73",
             "Temporal embedders (E2-E4) not in similarity fusion",
             passed,
-            &format!(
-                "Temporal embedders in fusion: {:?}",
-                temporal_in_fusion
-            ),
+            &format!("Temporal embedders in fusion: {:?}", temporal_in_fusion),
         );
     }
 
@@ -393,7 +388,10 @@ impl ConstitutionalCompliance {
             &format!("ASYMMETRIC-{}", embedder.as_str()),
             &format!("{} asymmetric ratio within 1.5 +/- 0.15", embedder.as_str()),
             passed,
-            &format!("ratio={:.3}, expected={:.3}+/-{:.3}", ratio, expected, tolerance),
+            &format!(
+                "ratio={:.3}, expected={:.3}+/-{:.3}",
+                ratio, expected, tolerance
+            ),
         );
     }
 }

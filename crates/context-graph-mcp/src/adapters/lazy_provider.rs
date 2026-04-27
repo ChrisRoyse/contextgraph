@@ -10,8 +10,10 @@ use async_trait::async_trait;
 use tokio::sync::RwLock;
 
 use context_graph_core::error::{CoreError, CoreResult};
-use context_graph_core::traits::{EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider};
-use context_graph_core::types::fingerprint::{NUM_EMBEDDERS, E11_DIM};
+use context_graph_core::traits::{
+    EmbeddingMetadata, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
+};
+use context_graph_core::types::fingerprint::{E11_DIM, NUM_EMBEDDERS};
 use context_graph_core::weights::E11_ENTITY_ENABLED;
 
 /// Lazy wrapper for MultiArrayEmbeddingProvider that allows immediate MCP startup.

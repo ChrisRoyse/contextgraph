@@ -73,12 +73,7 @@ mod tests {
         graph.add_node(node1);
         graph.add_node(node2);
 
-        graph.add_edge(CausalEdge::new(
-            node1_id,
-            node2_id,
-            0.8,
-            "direct causation",
-        ));
+        graph.add_edge(CausalEdge::new(node1_id, node2_id, 0.8, "direct causation"));
 
         let effects = graph.get_effects(node1_id);
         assert_eq!(effects.len(), 1);

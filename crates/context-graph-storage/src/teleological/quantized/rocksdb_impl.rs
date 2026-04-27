@@ -19,7 +19,7 @@ use crate::teleological::column_families::{
     CF_TOPIC_PROFILES, QUANTIZED_EMBEDDER_CFS, QUANTIZED_EMBEDDER_CF_COUNT,
 };
 use crate::teleological::schema::topic_profile_key;
-use crate::teleological::serialization::deserialize_topic_profile;
+use crate::teleological::serialization::{deserialize_topic_profile, serialize_topic_profile};
 use crate::teleological::RocksDbTeleologicalStore;
 
 // =============================================================================
@@ -83,7 +83,21 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
             batch.put_cf(cf, key, &serialized);
         }
 
-        // Atomic write of all embedders
+        // Store the topic profile in its canonical CF in the same batch. Loading
+        // a StoredQuantizedFingerprint reads this CF, so writing it here keeps
+        // the struct roundtrip physically verifiable instead of returning zeros.
+        let topic_cf = self.get_cf(CF_TOPIC_PROFILES).map_err(|_| {
+            QuantizedStorageError::ColumnFamilyNotFound {
+                cf_name: CF_TOPIC_PROFILES.to_string(),
+            }
+        })?;
+        batch.put_cf(
+            topic_cf,
+            topic_profile_key(&fingerprint.id),
+            serialize_topic_profile(&fingerprint.topic_profile),
+        );
+
+        // Atomic write of all embedders and the topic profile.
         self.db()
             .write(batch)
             .map_err(|e| QuantizedStorageError::WriteFailed {
@@ -260,7 +274,14 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
             batch.delete_cf(cf, key);
         }
 
-        // Atomic delete
+        let topic_cf = self.get_cf(CF_TOPIC_PROFILES).map_err(|_| {
+            QuantizedStorageError::ColumnFamilyNotFound {
+                cf_name: CF_TOPIC_PROFILES.to_string(),
+            }
+        })?;
+        batch.delete_cf(topic_cf, topic_profile_key(&id));
+
+        // Atomic delete of all embedder rows and the topic profile row.
         self.db()
             .write(batch)
             .map_err(|e| QuantizedStorageError::WriteFailed {

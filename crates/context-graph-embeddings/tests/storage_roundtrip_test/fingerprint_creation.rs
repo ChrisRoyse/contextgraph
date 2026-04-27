@@ -125,7 +125,10 @@ fn test_topic_profile_storage() {
         create_content_hash(42),
     );
 
-    assert_eq!(fp.topic_profile, pv, "Topic profile must be stored correctly");
+    assert_eq!(
+        fp.topic_profile, pv,
+        "Topic profile must be stored correctly"
+    );
 
     println!("[PASS] topic_profile stored correctly");
 }

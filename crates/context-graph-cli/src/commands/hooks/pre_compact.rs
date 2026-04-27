@@ -197,16 +197,17 @@ fn extract_compact_info(input: &HookInput) -> HookResult<(String, Vec<String>)> 
 
 /// Build a session summary string from recent user prompts.
 fn build_session_summary(session_id: &str, trigger: &str, user_prompts: &[String]) -> String {
-    let mut summary = format!(
-        "[SessionSummary: {} (trigger: {})]\n",
-        session_id, trigger
-    );
+    let mut summary = format!("[SessionSummary: {} (trigger: {})]\n", session_id, trigger);
 
     if user_prompts.is_empty() {
         summary.push_str("Pre-compaction checkpoint — no conversation context available.\n");
     } else {
         summary.push_str("Recent topics:\n");
-        for (i, prompt) in user_prompts.iter().take(MAX_PROMPTS_FOR_SUMMARY).enumerate() {
+        for (i, prompt) in user_prompts
+            .iter()
+            .take(MAX_PROMPTS_FOR_SUMMARY)
+            .enumerate()
+        {
             let truncated = if prompt.len() > 200 {
                 format!("{}...", &prompt[..prompt.floor_char_boundary(200)])
             } else {

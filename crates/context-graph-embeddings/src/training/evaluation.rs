@@ -42,9 +42,7 @@ impl EvaluationMetrics {
 
     /// Check Option B fine-tuning targets specifically.
     pub fn meets_finetuning_targets(&self) -> bool {
-        self.score_spread > 0.10
-            && self.anisotropy < 0.30
-            && self.standalone_accuracy >= 0.67
+        self.score_spread > 0.10 && self.anisotropy < 0.30 && self.standalone_accuracy >= 0.67
     }
 
     /// Format metrics as a summary string.
@@ -74,10 +72,7 @@ impl Evaluator {
     /// # Arguments
     /// * `cause_vecs` - Cause embeddings [N, D] (L2-normalized)
     /// * `effect_vecs` - Effect embeddings [N, D] (L2-normalized)
-    pub fn directional_accuracy(
-        cause_vecs: &Tensor,
-        effect_vecs: &Tensor,
-    ) -> EmbeddingResult<f32> {
+    pub fn directional_accuracy(cause_vecs: &Tensor, effect_vecs: &Tensor) -> EmbeddingResult<f32> {
         let forward_sim = batch_cosine_sim(cause_vecs, effect_vecs)?;
         let reverse_sim = batch_cosine_sim(effect_vecs, cause_vecs)?;
 
@@ -99,20 +94,15 @@ impl Evaluator {
     }
 
     /// Compute direction ratio: mean(forward_sim) / mean(reverse_sim).
-    pub fn direction_ratio(
-        cause_vecs: &Tensor,
-        effect_vecs: &Tensor,
-    ) -> EmbeddingResult<f32> {
+    pub fn direction_ratio(cause_vecs: &Tensor, effect_vecs: &Tensor) -> EmbeddingResult<f32> {
         let forward_sim = batch_cosine_sim(cause_vecs, effect_vecs)?;
         let reverse_sim = batch_cosine_sim(effect_vecs, cause_vecs)?;
 
         let forward_vals: Vec<f32> = forward_sim.to_vec1().map_err(map_candle)?;
         let reverse_vals: Vec<f32> = reverse_sim.to_vec1().map_err(map_candle)?;
 
-        let mean_forward: f32 =
-            forward_vals.iter().sum::<f32>() / forward_vals.len().max(1) as f32;
-        let mean_reverse: f32 =
-            reverse_vals.iter().sum::<f32>() / reverse_vals.len().max(1) as f32;
+        let mean_forward: f32 = forward_vals.iter().sum::<f32>() / forward_vals.len().max(1) as f32;
+        let mean_reverse: f32 = reverse_vals.iter().sum::<f32>() / reverse_vals.len().max(1) as f32;
 
         if mean_reverse.abs() < 1e-8 {
             return Ok(f32::INFINITY);
@@ -124,10 +114,7 @@ impl Evaluator {
     /// Compute AUC for causal vs non-causal discrimination.
     ///
     /// Uses similarity scores as predictions and binary labels (1=causal, 0=non-causal).
-    pub fn causal_auc(
-        similarities: &[f32],
-        labels: &[bool],
-    ) -> f32 {
+    pub fn causal_auc(similarities: &[f32], labels: &[bool]) -> f32 {
         if similarities.len() != labels.len() || similarities.is_empty() {
             return 0.0;
         }
@@ -188,7 +175,11 @@ impl Evaluator {
         let mut mrr_sum = 0.0f32;
 
         for (i, &correct_idx) in correct_indices.iter().enumerate().take(n) {
-            let row: Vec<f32> = sim_matrix.get(i).map_err(map_candle)?.to_vec1().map_err(map_candle)?;
+            let row: Vec<f32> = sim_matrix
+                .get(i)
+                .map_err(map_candle)?
+                .to_vec1()
+                .map_err(map_candle)?;
 
             // Rank: count how many candidates have higher similarity
             let correct_sim = row[correct_idx];
@@ -233,18 +224,27 @@ impl Evaluator {
         // Compute anisotropy from all embedding vectors (cause + effect)
         let mut vector_array: Vec<Vec<f32>> = Vec::with_capacity(2 * n);
         for i in 0..n {
-            let v: Vec<f32> = cause_vecs.get(i).map_err(map_candle)?.to_vec1().map_err(map_candle)?;
+            let v: Vec<f32> = cause_vecs
+                .get(i)
+                .map_err(map_candle)?
+                .to_vec1()
+                .map_err(map_candle)?;
             vector_array.push(v);
         }
         for i in 0..n {
-            let v: Vec<f32> = effect_vecs.get(i).map_err(map_candle)?.to_vec1().map_err(map_candle)?;
+            let v: Vec<f32> = effect_vecs
+                .get(i)
+                .map_err(map_candle)?
+                .to_vec1()
+                .map_err(map_candle)?;
             vector_array.push(v);
         }
         let anisotropy = Self::anisotropy_measure(&vector_array);
 
         // Standalone accuracy: each cause should retrieve its matching effect as top-1
         let expected_indices: Vec<usize> = (0..n).collect();
-        let standalone_accuracy = Self::standalone_top1_accuracy(cause_vecs, effect_vecs, &expected_indices)?;
+        let standalone_accuracy =
+            Self::standalone_top1_accuracy(cause_vecs, effect_vecs, &expected_indices)?;
 
         // Topical MRR: same retrieval setup (cause→effect matching)
         let topical_mrr = Self::topical_mrr(cause_vecs, effect_vecs, &expected_indices)?;
@@ -455,13 +455,21 @@ mod tests {
         let sims = vec![0.9, 0.8, 0.7, 0.3, 0.2, 0.1];
         let labels = vec![true, true, true, false, false, false];
         let auc = Evaluator::causal_auc(&sims, &labels);
-        assert!((auc - 1.0).abs() < 1e-6, "Perfect separation AUC should be 1.0, got {}", auc);
+        assert!(
+            (auc - 1.0).abs() < 1e-6,
+            "Perfect separation AUC should be 1.0, got {}",
+            auc
+        );
 
         // Interleaved scores: AUC should be between 0 and 1
         let sims = vec![0.6, 0.4, 0.5, 0.3];
         let labels = vec![true, false, true, false];
         let auc = Evaluator::causal_auc(&sims, &labels);
-        assert!((0.0..=1.0).contains(&auc), "AUC should be in [0, 1], got {}", auc);
+        assert!(
+            (0.0..=1.0).contains(&auc),
+            "AUC should be in [0, 1], got {}",
+            auc
+        );
     }
 
     #[test]
@@ -471,21 +479,17 @@ mod tests {
         // whether cos(cause_i, effect_i) > cos(effect_i, cause_i).
         // For standard cosine, these are identical, so accuracy should be 0%.
         // After training with asymmetric projections, this would differ.
-        let cause = Tensor::from_slice(
-            &[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0],
-            (2, 3),
-            &device,
-        )
-        .unwrap();
-        let effect = Tensor::from_slice(
-            &[0.9f32, 0.1, 0.0, 0.1, 0.9, 0.0],
-            (2, 3),
-            &device,
-        )
-        .unwrap();
+        let cause =
+            Tensor::from_slice(&[1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0], (2, 3), &device).unwrap();
+        let effect =
+            Tensor::from_slice(&[0.9f32, 0.1, 0.0, 0.1, 0.9, 0.0], (2, 3), &device).unwrap();
 
         let acc = Evaluator::directional_accuracy(&cause, &effect).unwrap();
         // Symmetric cosine → forward == reverse → 0% accuracy (none strictly greater)
-        assert!((0.0..=1.0).contains(&acc), "Accuracy should be in [0,1], got {}", acc);
+        assert!(
+            (0.0..=1.0).contains(&acc),
+            "Accuracy should be in [0,1], got {}",
+            acc
+        );
     }
 }

@@ -13,9 +13,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use tracing::{debug, error, info, warn};
 
+use context_graph_core::memory::store::MemoryStore;
 use context_graph_core::memory::watcher::GitFileWatcher;
 use context_graph_core::memory::{MemoryCaptureService, MultiArrayEmbeddingAdapter};
-use context_graph_core::memory::store::MemoryStore;
 
 use super::McpServer;
 
@@ -58,7 +58,9 @@ impl McpServer {
             }
             if self.models_loading.load(Ordering::SeqCst) {
                 error!("Embedding models still loading after 60s — file watcher cannot start");
-                return Err(anyhow::anyhow!("Embedding models timed out after 60s — file watcher cannot start"));
+                return Err(anyhow::anyhow!(
+                    "Embedding models timed out after 60s — file watcher cannot start"
+                ));
             }
         }
 
@@ -66,8 +68,14 @@ impl McpServer {
         {
             let failed = self.models_failed.read().await;
             if let Some(ref err) = *failed {
-                error!("Cannot start file watcher — embedding models failed: {}", err);
-                return Err(anyhow::anyhow!("Embedding models failed: {} — file watcher cannot start", err));
+                error!(
+                    "Cannot start file watcher — embedding models failed: {}",
+                    err
+                );
+                return Err(anyhow::anyhow!(
+                    "Embedding models failed: {} — file watcher cannot start",
+                    err
+                ));
             }
         }
 
@@ -78,7 +86,9 @@ impl McpServer {
                 Some(p) => Arc::clone(p),
                 None => {
                     error!("Cannot start file watcher — no embedding provider available");
-                    return Err(anyhow::anyhow!("No embedding provider available — file watcher cannot start"));
+                    return Err(anyhow::anyhow!(
+                        "No embedding provider available — file watcher cannot start"
+                    ));
                 }
             }
         };
@@ -91,7 +101,11 @@ impl McpServer {
 
         // Create memory store in separate directory
         let memory_store = Arc::new(MemoryStore::new(&watcher_db_path).map_err(|e| {
-            anyhow::anyhow!("Failed to create memory store for file watcher at {:?}: {}", watcher_db_path, e)
+            anyhow::anyhow!(
+                "Failed to create memory store for file watcher at {:?}: {}",
+                watcher_db_path,
+                e
+            )
         })?);
 
         // Create embedding adapter
@@ -141,7 +155,11 @@ impl McpServer {
                 );
 
                 // Create file watcher
-                let mut watcher = match GitFileWatcher::new(watch_paths.clone(), capture_service, session_id.clone()) {
+                let mut watcher = match GitFileWatcher::new(
+                    watch_paths.clone(),
+                    capture_service,
+                    session_id.clone(),
+                ) {
                     Ok(w) => w,
                     Err(e) => {
                         error!(error = %e, "Failed to create file watcher");
@@ -190,7 +208,9 @@ impl McpServer {
         // Store the thread handle for joining during shutdown
         // ERR-12 FIX: Panic on poisoned lock — if another thread panicked, state is corrupt
         {
-            let mut guard = self.file_watcher_thread.lock()
+            let mut guard = self
+                .file_watcher_thread
+                .lock()
                 .expect("file_watcher_thread mutex poisoned: another thread panicked");
             *guard = Some(thread_handle);
         }
@@ -327,7 +347,10 @@ impl McpServer {
         {
             let failed = self.models_failed.read().await;
             if let Some(ref err) = *failed {
-                error!("Cannot start graph builder - embedding models failed: {}", err);
+                error!(
+                    "Cannot start graph builder - embedding models failed: {}",
+                    err
+                );
                 return Ok(false);
             }
         }

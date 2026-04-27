@@ -43,9 +43,12 @@ impl RGCNLayerWeights {
     fn get_relation_weight(&self, relation: usize, _device: &Device) -> EmbeddingResult<Tensor> {
         if self.use_bases {
             // Basis decomposition: W_r = Σ_b a_rb * B_b
-            let att = self.att.as_ref().ok_or_else(|| EmbeddingError::ConfigError {
-                message: "Attention coefficients missing for basis decomposition".to_string(),
-            })?;
+            let att = self
+                .att
+                .as_ref()
+                .ok_or_else(|| EmbeddingError::ConfigError {
+                    message: "Attention coefficients missing for basis decomposition".to_string(),
+                })?;
 
             // Get attention coefficients for this relation
             let att_r = att.i(relation).map_err(|e| EmbeddingError::GpuError {
@@ -86,9 +89,11 @@ impl RGCNLayerWeights {
             })
         } else {
             // Full relation-specific weights
-            self.weight.i(relation).map_err(|e| EmbeddingError::GpuError {
-                message: format!("Failed to get weight for relation {}: {}", relation, e),
-            })
+            self.weight
+                .i(relation)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("Failed to get weight for relation {}: {}", relation, e),
+                })
         }
     }
 }
@@ -449,11 +454,10 @@ impl RelationalGCN {
             }
         })?;
 
-        let bias = Tensor::zeros(out_dim, DType::F32, device).map_err(|e| {
-            EmbeddingError::GpuError {
+        let bias =
+            Tensor::zeros(out_dim, DType::F32, device).map_err(|e| EmbeddingError::GpuError {
                 message: format!("Failed to create random bias: {}", e),
-            }
-        })?;
+            })?;
 
         Ok(RGCNLayerWeights {
             weight,
@@ -494,17 +498,12 @@ mod tests {
         let num_nodes = 5;
         let node_features = Tensor::randn(0f32, 1f32, (num_nodes, INPUT_DIM), &device).unwrap();
 
-        let edge_index = vec![
-            (0, 1),
-            (1, 2),
-            (2, 3),
-            (3, 4),
-            (0, 2),
-            (1, 3),
-        ];
+        let edge_index = vec![(0, 1), (1, 2), (2, 3), (3, 4), (0, 2), (1, 3)];
         let edge_types = vec![0, 1, 2, 3, 0, 1]; // Various relation types
 
-        let embeddings = model.forward(&node_features, &edge_index, &edge_types).unwrap();
+        let embeddings = model
+            .forward(&node_features, &edge_index, &edge_types)
+            .unwrap();
 
         let shape = embeddings.dims2().unwrap();
         assert_eq!(shape.0, num_nodes);
@@ -522,7 +521,9 @@ mod tests {
         let edge_index = vec![(0, 1), (1, 2)];
         let edge_types = vec![0, 1];
 
-        let embeddings = model.forward(&node_features, &edge_index, &edge_types).unwrap();
+        let embeddings = model
+            .forward(&node_features, &edge_index, &edge_types)
+            .unwrap();
 
         let score = model.link_score(&embeddings, 0, 1).unwrap();
         assert!(score.is_finite());

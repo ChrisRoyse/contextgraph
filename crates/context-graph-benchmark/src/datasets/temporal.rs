@@ -290,10 +290,7 @@ impl TemporalDatasetGenerator {
 
     /// Generate a complete temporal benchmark dataset.
     pub fn generate(&mut self) -> TemporalBenchmarkDataset {
-        let base_ts = self
-            .config
-            .base_timestamp
-            .unwrap_or_else(Utc::now);
+        let base_ts = self.config.base_timestamp.unwrap_or_else(Utc::now);
 
         // Generate memories with temporal distribution
         let mut memories = self.generate_memories(base_ts);
@@ -334,10 +331,14 @@ impl TemporalDatasetGenerator {
                     ((exp_sample * time_span_ms as f64 / 5.0) as i64).min(time_span_ms)
                 }
                 "clustered" => {
-                    let cluster = self.rng.gen_range(0..self.config.recency_config.num_clusters);
+                    let cluster = self
+                        .rng
+                        .gen_range(0..self.config.recency_config.num_clusters);
                     let cluster_center = time_span_ms * cluster as i64
                         / self.config.recency_config.num_clusters as i64;
-                    let noise = self.rng.gen_range(-(time_span_ms / 20)..(time_span_ms / 20));
+                    let noise = self
+                        .rng
+                        .gen_range(-(time_span_ms / 20)..(time_span_ms / 20));
                     (cluster_center + noise).clamp(0, time_span_ms)
                 }
                 _ => self.rng.gen_range(0..time_span_ms),
@@ -384,7 +385,9 @@ impl TemporalDatasetGenerator {
             let random_val: f64 = self.rng.gen_range(0.0..1.0);
             if random_val < concentration / (concentration + 1.0) {
                 // Pick a peak hour
-                let idx = self.rng.gen_range(0..self.config.periodic_config.peak_hours.len());
+                let idx = self
+                    .rng
+                    .gen_range(0..self.config.periodic_config.peak_hours.len());
                 self.config.periodic_config.peak_hours[idx]
             } else {
                 // Random hour
@@ -400,7 +403,9 @@ impl TemporalDatasetGenerator {
         {
             let random_day_val: f64 = self.rng.gen_range(0.0..1.0);
             if random_day_val < concentration / (concentration + 1.0) {
-                let idx = self.rng.gen_range(0..self.config.periodic_config.peak_days.len());
+                let idx = self
+                    .rng
+                    .gen_range(0..self.config.periodic_config.peak_days.len());
                 self.config.periodic_config.peak_days[idx]
             } else {
                 self.rng.gen_range(0..7)
@@ -433,7 +438,9 @@ impl TemporalDatasetGenerator {
             .max(3) as usize;
 
             // Find contiguous memories for this chain
-            let start_idx = self.rng.gen_range(0..memories.len().saturating_sub(chain_length));
+            let start_idx = self
+                .rng
+                .gen_range(0..memories.len().saturating_sub(chain_length));
             let mut chain: Vec<usize> = Vec::new();
 
             for idx in start_idx..(start_idx + chain_length).min(memories.len()) {
@@ -464,8 +471,7 @@ impl TemporalDatasetGenerator {
 
     fn identify_boundaries(&self, memories: &[TemporalMemory]) -> Vec<usize> {
         let mut boundaries = Vec::new();
-        let gap_threshold =
-            Duration::hours(self.config.sequence_config.session_gap_hours as i64);
+        let gap_threshold = Duration::hours(self.config.sequence_config.session_gap_hours as i64);
 
         for i in 1..memories.len() {
             let gap = memories[i].timestamp - memories[i - 1].timestamp;
@@ -483,7 +489,8 @@ impl TemporalDatasetGenerator {
         base_ts: DateTime<Utc>,
     ) -> Vec<RecencyQuery> {
         let num_recency_queries = self.config.num_queries / 3;
-        let fresh_threshold = Duration::hours(self.config.recency_config.fresh_threshold_hours as i64);
+        let fresh_threshold =
+            Duration::hours(self.config.recency_config.fresh_threshold_hours as i64);
 
         (0..num_recency_queries)
             .map(|_| {
@@ -658,10 +665,7 @@ impl TemporalBenchmarkDataset {
         // Check recency queries have fresh memories
         for query in &self.recency_queries {
             if query.fresh_memory_ids.is_empty() {
-                return Err(format!(
-                    "Recency query {} has no fresh memories",
-                    query.id
-                ));
+                return Err(format!("Recency query {} has no fresh memories", query.id));
             }
         }
 
@@ -678,10 +682,7 @@ impl TemporalBenchmarkDataset {
         // Check sequence queries have expected IDs
         for query in &self.sequence_queries {
             if query.expected_ids.is_empty() {
-                return Err(format!(
-                    "Sequence query {} has no expected IDs",
-                    query.id
-                ));
+                return Err(format!("Sequence query {} has no expected IDs", query.id));
             }
         }
 
@@ -800,7 +801,10 @@ mod tests {
         // Peak hours should have more memories
         let peak_count: usize = stats.hour_distribution[9..12].iter().copied().sum();
         let non_peak_count: usize = stats.hour_distribution[0..9].iter().copied().sum::<usize>()
-            + stats.hour_distribution[12..24].iter().copied().sum::<usize>();
+            + stats.hour_distribution[12..24]
+                .iter()
+                .copied()
+                .sum::<usize>();
 
         // With concentration=5.0, peak hours should have significantly more
         assert!(peak_count as f64 / non_peak_count as f64 > 0.5);

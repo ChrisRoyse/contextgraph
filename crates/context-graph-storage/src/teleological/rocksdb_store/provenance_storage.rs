@@ -44,10 +44,7 @@ impl RocksDbTeleologicalStore {
     ///
     /// # Key Format
     /// `{merged_uuid_bytes}_{timestamp_nanos_be}` (24 bytes)
-    pub fn append_merge_record(
-        &self,
-        record: &MergeRecord,
-    ) -> TeleologicalStoreResult<()> {
+    pub fn append_merge_record(&self, record: &MergeRecord) -> TeleologicalStoreResult<()> {
         let key = record.storage_key();
 
         let bytes = serde_json::to_vec(record).map_err(|e| {
@@ -107,12 +104,7 @@ impl RocksDbTeleologicalStore {
                     "FAIL FAST: RocksDB iteration failed on CF '{}' for merged_id {}: {}",
                     CF_MERGE_HISTORY, merged_id, e
                 );
-                TeleologicalStoreError::rocksdb_op(
-                    "prefix_iterate",
-                    CF_MERGE_HISTORY,
-                    None,
-                    e,
-                )
+                TeleologicalStoreError::rocksdb_op("prefix_iterate", CF_MERGE_HISTORY, None, e)
             })?;
 
             // Verify key prefix matches (prefix_iterator may overshoot)
@@ -220,12 +212,7 @@ impl RocksDbTeleologicalStore {
                     "FAIL FAST: RocksDB iteration failed on CF '{}' for memory {}: {}",
                     CF_IMPORTANCE_HISTORY, memory_id, e
                 );
-                TeleologicalStoreError::rocksdb_op(
-                    "prefix_iterate",
-                    CF_IMPORTANCE_HISTORY,
-                    None,
-                    e,
-                )
+                TeleologicalStoreError::rocksdb_op("prefix_iterate", CF_IMPORTANCE_HISTORY, None, e)
             })?;
 
             // Verify key prefix matches
@@ -233,20 +220,16 @@ impl RocksDbTeleologicalStore {
                 break;
             }
 
-            let record: ImportanceChangeRecord =
-                serde_json::from_slice(&value).map_err(|e| {
-                    error!(
-                        "FAIL FAST: Failed to deserialize ImportanceChangeRecord from CF '{}': {}",
-                        CF_IMPORTANCE_HISTORY, e
-                    );
-                    TeleologicalStoreError::Deserialization {
-                        key: format!("importance_history:{}", hex_encode(&key)),
-                        message: format!(
-                            "ImportanceChangeRecord deserialization failed: {}",
-                            e
-                        ),
-                    }
-                })?;
+            let record: ImportanceChangeRecord = serde_json::from_slice(&value).map_err(|e| {
+                error!(
+                    "FAIL FAST: Failed to deserialize ImportanceChangeRecord from CF '{}': {}",
+                    CF_IMPORTANCE_HISTORY, e
+                );
+                TeleologicalStoreError::Deserialization {
+                    key: format!("importance_history:{}", hex_encode(&key)),
+                    message: format!("ImportanceChangeRecord deserialization failed: {}", e),
+                }
+            })?;
             records.push(record);
         }
 
@@ -443,9 +426,7 @@ impl RocksDbTeleologicalStore {
     }
 
     /// List all custom weight profiles.
-    pub fn list_custom_weight_profiles(
-        &self,
-    ) -> TeleologicalStoreResult<Vec<(String, [f32; 14])>> {
+    pub fn list_custom_weight_profiles(&self) -> TeleologicalStoreResult<Vec<(String, [f32; 14])>> {
         let cf = self.get_cf(CF_CUSTOM_WEIGHT_PROFILES)?;
         let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
 
@@ -492,10 +473,7 @@ impl RocksDbTeleologicalStore {
     }
 
     /// Delete a custom weight profile.
-    pub fn delete_custom_weight_profile(
-        &self,
-        name: &str,
-    ) -> TeleologicalStoreResult<bool> {
+    pub fn delete_custom_weight_profile(&self, name: &str) -> TeleologicalStoreResult<bool> {
         let cf = self.get_cf(CF_CUSTOM_WEIGHT_PROFILES)?;
         let key = name.as_bytes();
 

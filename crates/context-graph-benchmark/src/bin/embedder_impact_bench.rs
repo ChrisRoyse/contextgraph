@@ -161,8 +161,7 @@ fn format_table(results: &EmbedderImpactResults) -> String {
     out.push_str("\n=== Embedder Impact Benchmark Results ===\n");
     out.push_str(&format!(
         "Duration: {}ms | Tiers: {:?}\n\n",
-        results.metadata.duration_ms,
-        results.metadata.config.tiers
+        results.metadata.duration_ms, results.metadata.config.tiers
     ));
 
     // Per-tier results
@@ -178,12 +177,20 @@ fn format_table(results: &EmbedderImpactResults) -> String {
         out.push_str(&format!(
             "Baseline (E1 only):  MRR={:.3}, P@10={:.3}\n",
             tier_results.baseline_metrics.mrr,
-            tier_results.baseline_metrics.precision_at.get(&10).unwrap_or(&0.0)
+            tier_results
+                .baseline_metrics
+                .precision_at
+                .get(&10)
+                .unwrap_or(&0.0)
         ));
         out.push_str(&format!(
             "Multispace (all 13): MRR={:.3}, P@10={:.3}\n\n",
             tier_results.multispace_metrics.mrr,
-            tier_results.multispace_metrics.precision_at.get(&10).unwrap_or(&0.0)
+            tier_results
+                .multispace_metrics
+                .precision_at
+                .get(&10)
+                .unwrap_or(&0.0)
         ));
 
         // Ablation table
@@ -193,7 +200,11 @@ fn format_table(results: &EmbedderImpactResults) -> String {
         out.push_str("+------------------+----------+----------+-----------+----------+\n");
 
         let mut deltas: Vec<_> = tier_results.ablation_deltas.values().collect();
-        deltas.sort_by(|a, b| b.impact_pct.partial_cmp(&a.impact_pct).unwrap_or(std::cmp::Ordering::Equal));
+        deltas.sort_by(|a, b| {
+            b.impact_pct
+                .partial_cmp(&a.impact_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for delta in deltas {
             let critical = if delta.is_critical { "YES" } else { "no" };
@@ -215,7 +226,11 @@ fn format_table(results: &EmbedderImpactResults) -> String {
         out.push_str("+------------------+----------+----------+-----------+\n");
 
         let mut enhancements: Vec<_> = tier_results.enhancement_deltas.values().collect();
-        enhancements.sort_by(|a, b| b.improvement_pct.partial_cmp(&a.improvement_pct).unwrap_or(std::cmp::Ordering::Equal));
+        enhancements.sort_by(|a, b| {
+            b.improvement_pct
+                .partial_cmp(&a.improvement_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for delta in enhancements {
             out.push_str(&format!(
@@ -232,7 +247,10 @@ fn format_table(results: &EmbedderImpactResults) -> String {
         if let Some(ref blind) = tier_results.blind_spots {
             out.push_str("Blind Spot Analysis (what E1 missed):\n");
             out.push_str(&format!("  E1 found: {} docs\n", blind.e1_found_count));
-            out.push_str(&format!("  E1 blind spot %: {:.1}%\n", blind.e1_blind_spot_percentage()));
+            out.push_str(&format!(
+                "  E1 blind spot %: {:.1}%\n",
+                blind.e1_blind_spot_percentage()
+            ));
 
             let sorted = blind.sorted_by_unique_finds();
             for unique in sorted.iter().take(5) {
@@ -269,22 +287,53 @@ fn format_table(results: &EmbedderImpactResults) -> String {
             RecommendationType::BlindSpotFinder => "BLIND_SPOT",
             RecommendationType::Performance => "PERF",
         };
-        out.push_str(&format!("{} {} - {}\n", priority, rec_type, rec.description));
+        out.push_str(&format!(
+            "{} {} - {}\n",
+            priority, rec_type, rec.description
+        ));
     }
 
     // Compliance
     out.push_str(&format!(
         "\n=== Constitutional Compliance: {} ===\n",
-        if results.compliance.is_compliant { "PASS" } else { "FAIL" }
+        if results.compliance.is_compliant {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
-    out.push_str(&format!("  ARCH-09 (topic threshold >= 2.5): {}\n",
-        if results.compliance.arch09_topic_threshold { "PASS" } else { "FAIL" }));
-    out.push_str(&format!("  ARCH-12 (E1 is foundation): {}\n",
-        if results.compliance.arch12_e1_foundation { "PASS" } else { "FAIL" }));
-    out.push_str(&format!("  ARCH-21 (uses Weighted RRF): {}\n",
-        if results.compliance.arch21_weighted_rrf { "PASS" } else { "FAIL" }));
-    out.push_str(&format!("  AP-60 (temporal 0 topic impact): {}\n",
-        if results.compliance.ap60_temporal_zero_topic { "PASS" } else { "FAIL" }));
+    out.push_str(&format!(
+        "  ARCH-09 (topic threshold >= 2.5): {}\n",
+        if results.compliance.arch09_topic_threshold {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
+    out.push_str(&format!(
+        "  ARCH-12 (E1 is foundation): {}\n",
+        if results.compliance.arch12_e1_foundation {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
+    out.push_str(&format!(
+        "  ARCH-21 (uses Weighted RRF): {}\n",
+        if results.compliance.arch21_weighted_rrf {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
+    out.push_str(&format!(
+        "  AP-60 (temporal 0 topic impact): {}\n",
+        if results.compliance.ap60_temporal_zero_topic {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
 
     out
 }
@@ -295,12 +344,13 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
     out.push_str("# Embedder Impact Benchmark Report\n\n");
     out.push_str(&format!(
         "**Duration:** {}ms | **Tiers:** {:?}\n\n",
-        results.metadata.duration_ms,
-        results.metadata.config.tiers
+        results.metadata.duration_ms, results.metadata.config.tiers
     ));
 
     out.push_str("## Summary\n\n");
-    out.push_str("This benchmark measures how each of the 13 embedders impacts retrieval quality.\n\n");
+    out.push_str(
+        "This benchmark measures how each of the 13 embedders impacts retrieval quality.\n\n",
+    );
 
     // Per-tier results
     for (tier, tier_results) in &results.tier_results {
@@ -317,16 +367,40 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
         out.push_str(&format!(
             "| E1 Only | {:.3} | {:.3} | {:.3} | {:.3} |\n",
             tier_results.baseline_metrics.mrr,
-            tier_results.baseline_metrics.precision_at.get(&10).unwrap_or(&0.0),
-            tier_results.baseline_metrics.recall_at.get(&10).unwrap_or(&0.0),
-            tier_results.baseline_metrics.ndcg_at.get(&10).unwrap_or(&0.0)
+            tier_results
+                .baseline_metrics
+                .precision_at
+                .get(&10)
+                .unwrap_or(&0.0),
+            tier_results
+                .baseline_metrics
+                .recall_at
+                .get(&10)
+                .unwrap_or(&0.0),
+            tier_results
+                .baseline_metrics
+                .ndcg_at
+                .get(&10)
+                .unwrap_or(&0.0)
         ));
         out.push_str(&format!(
             "| All 13 | {:.3} | {:.3} | {:.3} | {:.3} |\n\n",
             tier_results.multispace_metrics.mrr,
-            tier_results.multispace_metrics.precision_at.get(&10).unwrap_or(&0.0),
-            tier_results.multispace_metrics.recall_at.get(&10).unwrap_or(&0.0),
-            tier_results.multispace_metrics.ndcg_at.get(&10).unwrap_or(&0.0)
+            tier_results
+                .multispace_metrics
+                .precision_at
+                .get(&10)
+                .unwrap_or(&0.0),
+            tier_results
+                .multispace_metrics
+                .recall_at
+                .get(&10)
+                .unwrap_or(&0.0),
+            tier_results
+                .multispace_metrics
+                .ndcg_at
+                .get(&10)
+                .unwrap_or(&0.0)
         ));
 
         // Ablation table
@@ -335,7 +409,11 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
         out.push_str("|----------|-------|--------|----------|----------|\n");
 
         let mut deltas: Vec<_> = tier_results.ablation_deltas.values().collect();
-        deltas.sort_by(|a, b| b.impact_pct.partial_cmp(&a.impact_pct).unwrap_or(std::cmp::Ordering::Equal));
+        deltas.sort_by(|a, b| {
+            b.impact_pct
+                .partial_cmp(&a.impact_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for delta in deltas {
             let critical = if delta.is_critical { "**YES**" } else { "no" };
@@ -356,7 +434,11 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
         out.push_str("|----------|-------|--------|---------------|\n");
 
         let mut enhancements: Vec<_> = tier_results.enhancement_deltas.values().collect();
-        enhancements.sort_by(|a, b| b.improvement_pct.partial_cmp(&a.improvement_pct).unwrap_or(std::cmp::Ordering::Equal));
+        enhancements.sort_by(|a, b| {
+            b.improvement_pct
+                .partial_cmp(&a.improvement_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         for delta in enhancements {
             out.push_str(&format!(
@@ -372,8 +454,10 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
         // Blind spots
         if let Some(ref blind) = tier_results.blind_spots {
             out.push_str("### Blind Spot Analysis\n\n");
-            out.push_str(&format!("E1 would miss **{:.1}%** of relevant documents without enhancers.\n\n",
-                blind.e1_blind_spot_percentage()));
+            out.push_str(&format!(
+                "E1 would miss **{:.1}%** of relevant documents without enhancers.\n\n",
+                blind.e1_blind_spot_percentage()
+            ));
 
             out.push_str("| Embedder | Unique Finds | Avg Relevance | % of Total |\n");
             out.push_str("|----------|--------------|---------------|------------|\n");
@@ -406,7 +490,9 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
             2 => "🟡",
             _ => "🟢",
         };
-        out.push_str(&format!("{} **{}**: {}\n\n", emoji,
+        out.push_str(&format!(
+            "{} **{}**: {}\n\n",
+            emoji,
             match rec.recommendation_type {
                 RecommendationType::Essential => "Essential",
                 RecommendationType::Valuable => "Valuable",
@@ -420,18 +506,46 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
 
     // Compliance
     out.push_str("## Constitutional Compliance\n\n");
-    let status = if results.compliance.is_compliant { "✅ PASS" } else { "❌ FAIL" };
+    let status = if results.compliance.is_compliant {
+        "✅ PASS"
+    } else {
+        "❌ FAIL"
+    };
     out.push_str(&format!("**Overall:** {}\n\n", status));
     out.push_str("| Rule | Status |\n");
     out.push_str("|------|--------|\n");
-    out.push_str(&format!("| ARCH-09: Topic threshold >= 2.5 | {} |\n",
-        if results.compliance.arch09_topic_threshold { "✅" } else { "❌" }));
-    out.push_str(&format!("| ARCH-12: E1 is foundation | {} |\n",
-        if results.compliance.arch12_e1_foundation { "✅" } else { "❌" }));
-    out.push_str(&format!("| ARCH-21: Uses Weighted RRF | {} |\n",
-        if results.compliance.arch21_weighted_rrf { "✅" } else { "❌" }));
-    out.push_str(&format!("| AP-60: Temporal 0 topic impact | {} |\n",
-        if results.compliance.ap60_temporal_zero_topic { "✅" } else { "❌" }));
+    out.push_str(&format!(
+        "| ARCH-09: Topic threshold >= 2.5 | {} |\n",
+        if results.compliance.arch09_topic_threshold {
+            "✅"
+        } else {
+            "❌"
+        }
+    ));
+    out.push_str(&format!(
+        "| ARCH-12: E1 is foundation | {} |\n",
+        if results.compliance.arch12_e1_foundation {
+            "✅"
+        } else {
+            "❌"
+        }
+    ));
+    out.push_str(&format!(
+        "| ARCH-21: Uses Weighted RRF | {} |\n",
+        if results.compliance.arch21_weighted_rrf {
+            "✅"
+        } else {
+            "❌"
+        }
+    ));
+    out.push_str(&format!(
+        "| AP-60: Temporal 0 topic impact | {} |\n",
+        if results.compliance.ap60_temporal_zero_topic {
+            "✅"
+        } else {
+            "❌"
+        }
+    ));
 
     if !results.compliance.notes.is_empty() {
         out.push_str("\n**Notes:**\n");
@@ -440,8 +554,10 @@ fn format_markdown(results: &EmbedderImpactResults) -> String {
         }
     }
 
-    out.push_str(&format!("\n---\n*Generated by embedder-impact-bench at {}*\n",
-        results.metadata.started_at));
+    out.push_str(&format!(
+        "\n---\n*Generated by embedder-impact-bench at {}*\n",
+        results.metadata.started_at
+    ));
 
     out
 }
@@ -497,7 +613,11 @@ fn format_e5_table_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "│ Min distance: {:>6.3} (threshold: 0.300)  {}                │\n",
         e5.vector_verification.min_cause_effect_distance,
-        if e5.vector_verification.min_cause_effect_distance >= 0.3 { "✓" } else { "✗" }
+        if e5.vector_verification.min_cause_effect_distance >= 0.3 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str(&format!(
         "│ Threshold violations: {:>4}                                  │\n",
@@ -510,17 +630,29 @@ fn format_e5_table_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "│ Cause:   {:>5.1}% (target: 40%)  {}                          │\n",
         e5.direction_distribution.actual_cause_pct,
-        if (e5.direction_distribution.actual_cause_pct - 40.0).abs() <= 5.0 { "✓" } else { "✗" }
+        if (e5.direction_distribution.actual_cause_pct - 40.0).abs() <= 5.0 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str(&format!(
         "│ Effect:  {:>5.1}% (target: 40%)  {}                          │\n",
         e5.direction_distribution.actual_effect_pct,
-        if (e5.direction_distribution.actual_effect_pct - 40.0).abs() <= 5.0 { "✓" } else { "✗" }
+        if (e5.direction_distribution.actual_effect_pct - 40.0).abs() <= 5.0 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str(&format!(
         "│ Unknown: {:>5.1}% (target: 20%)  {}                          │\n",
         e5.direction_distribution.actual_unknown_pct,
-        if (e5.direction_distribution.actual_unknown_pct - 20.0).abs() <= 5.0 { "✓" } else { "✗" }
+        if (e5.direction_distribution.actual_unknown_pct - 20.0).abs() <= 5.0 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str("└────────────────────────────────────────────────────────────────┘\n\n");
 
@@ -537,7 +669,11 @@ fn format_e5_table_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "│ Improvement:    {:>+6.1}%  {}                                │\n",
         e5.asymmetric_comparison.mrr_improvement_pct,
-        if e5.asymmetric_comparison.mrr_improvement_pct > 10.0 { "✓" } else { "✗" }
+        if e5.asymmetric_comparison.mrr_improvement_pct > 10.0 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str(&format!(
         "│ Asymmetric wins: {:>5.1}%                                    │\n",
@@ -550,7 +686,11 @@ fn format_e5_table_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "│ Observed ratio: {:>5.2} (target: 1.50)  {}                   │\n",
         e5.observed_asymmetry_ratio,
-        if (e5.observed_asymmetry_ratio - 1.5).abs() <= 0.2 { "✓" } else { "✗" }
+        if (e5.observed_asymmetry_ratio - 1.5).abs() <= 0.2 {
+            "✓"
+        } else {
+            "✗"
+        }
     ));
     out.push_str(&format!(
         "│ Cause MRR:   {:>7.4}                                        │\n",
@@ -571,23 +711,43 @@ fn format_e5_table_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str("┌─ E5 Constitutional Compliance ────────────────────────────────┐\n");
     out.push_str(&format!(
         "│ ARCH-18 (asymmetric similarity):    {}                       │\n",
-        if compliance.arch18_asymmetric { "PASS" } else { "FAIL" }
+        if compliance.arch18_asymmetric {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
     out.push_str(&format!(
         "│ AP-77 (no symmetric alone):         {}                       │\n",
-        if compliance.ap77_no_symmetric { "PASS" } else { "FAIL" }
+        if compliance.ap77_no_symmetric {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
     out.push_str(&format!(
         "│ Direction modifiers correct:        {}                       │\n",
-        if compliance.direction_modifiers_correct { "PASS" } else { "FAIL" }
+        if compliance.direction_modifiers_correct {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
     out.push_str(&format!(
         "│ Asymmetry ratio valid (1.3-1.7):    {}                       │\n",
-        if compliance.asymmetry_ratio_valid { "PASS" } else { "FAIL" }
+        if compliance.asymmetry_ratio_valid {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
     out.push_str(&format!(
         "│ Overall E5 Compliance:              {}                       │\n",
-        if compliance.all_pass() { "PASS" } else { "FAIL" }
+        if compliance.all_pass() {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     ));
     out.push_str("└────────────────────────────────────────────────────────────────┘\n");
 
@@ -610,7 +770,11 @@ fn format_e5_markdown_section(e5: &E5ImpactAnalysis) -> String {
         e5.vector_verification.distinct_vector_pct,
         e5.vector_verification.docs_with_distinct_vectors,
         e5.vector_verification.total_docs_checked,
-        if e5.vector_verification.threshold_violations == 0 { "✅" } else { "❌" }
+        if e5.vector_verification.threshold_violations == 0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Avg cause/effect distance | {:.3} | - |\n",
@@ -619,12 +783,20 @@ fn format_e5_markdown_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "| Min distance (threshold: 0.3) | {:.3} | {} |\n",
         e5.vector_verification.min_cause_effect_distance,
-        if e5.vector_verification.min_cause_effect_distance >= 0.3 { "✅" } else { "❌" }
+        if e5.vector_verification.min_cause_effect_distance >= 0.3 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Threshold violations | {} | {} |\n\n",
         e5.vector_verification.threshold_violations,
-        if e5.vector_verification.threshold_violations == 0 { "✅" } else { "❌" }
+        if e5.vector_verification.threshold_violations == 0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
 
     // Direction Distribution
@@ -634,17 +806,29 @@ fn format_e5_markdown_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "| Cause | {:.1}% | 40% | {} |\n",
         e5.direction_distribution.actual_cause_pct,
-        if (e5.direction_distribution.actual_cause_pct - 40.0).abs() <= 5.0 { "✅" } else { "❌" }
+        if (e5.direction_distribution.actual_cause_pct - 40.0).abs() <= 5.0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Effect | {:.1}% | 40% | {} |\n",
         e5.direction_distribution.actual_effect_pct,
-        if (e5.direction_distribution.actual_effect_pct - 40.0).abs() <= 5.0 { "✅" } else { "❌" }
+        if (e5.direction_distribution.actual_effect_pct - 40.0).abs() <= 5.0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Unknown | {:.1}% | 20% | {} |\n\n",
         e5.direction_distribution.actual_unknown_pct,
-        if (e5.direction_distribution.actual_unknown_pct - 20.0).abs() <= 5.0 { "✅" } else { "❌" }
+        if (e5.direction_distribution.actual_unknown_pct - 20.0).abs() <= 5.0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
 
     // Asymmetric vs Symmetric
@@ -662,12 +846,20 @@ fn format_e5_markdown_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "| MRR Improvement | {:+.1}% | >10% | {} |\n",
         e5.asymmetric_comparison.mrr_improvement_pct,
-        if e5.asymmetric_comparison.mrr_improvement_pct > 10.0 { "✅" } else { "❌" }
+        if e5.asymmetric_comparison.mrr_improvement_pct > 10.0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Asymmetric wins | {:.1}% | >50% | {} |\n\n",
         e5.asymmetric_comparison.asymmetric_wins_pct,
-        if e5.asymmetric_comparison.asymmetric_wins_pct > 50.0 { "✅" } else { "❌" }
+        if e5.asymmetric_comparison.asymmetric_wins_pct > 50.0 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
 
     // Direction MRR Breakdown
@@ -675,38 +867,68 @@ fn format_e5_markdown_section(e5: &E5ImpactAnalysis) -> String {
     out.push_str(&format!(
         "**Observed ratio: {:.2}** (target: 1.50 ± 0.2) {}\n\n",
         e5.observed_asymmetry_ratio,
-        if (e5.observed_asymmetry_ratio - 1.5).abs() <= 0.2 { "✅" } else { "❌" }
+        if (e5.observed_asymmetry_ratio - 1.5).abs() <= 0.2 {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str("| Direction | MRR |\n");
     out.push_str("|-----------|-----|\n");
     out.push_str(&format!("| Cause | {:.4} |\n", e5.direction_mrr.cause_mrr));
-    out.push_str(&format!("| Effect | {:.4} |\n", e5.direction_mrr.effect_mrr));
-    out.push_str(&format!("| Unknown | {:.4} |\n\n", e5.direction_mrr.unknown_mrr));
+    out.push_str(&format!(
+        "| Effect | {:.4} |\n",
+        e5.direction_mrr.effect_mrr
+    ));
+    out.push_str(&format!(
+        "| Unknown | {:.4} |\n\n",
+        e5.direction_mrr.unknown_mrr
+    ));
 
     // Constitutional Compliance
     let compliance = e5.verify_compliance();
     out.push_str("#### E5 Constitutional Compliance\n\n");
     out.push_str(&format!(
         "**Overall: {}**\n\n",
-        if compliance.all_pass() { "✅ PASS" } else { "❌ FAIL" }
+        if compliance.all_pass() {
+            "✅ PASS"
+        } else {
+            "❌ FAIL"
+        }
     ));
     out.push_str("| Rule | Status |\n");
     out.push_str("|------|--------|\n");
     out.push_str(&format!(
         "| ARCH-18: E5 uses asymmetric similarity | {} |\n",
-        if compliance.arch18_asymmetric { "✅" } else { "❌" }
+        if compliance.arch18_asymmetric {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| AP-77: E5 not symmetric alone | {} |\n",
-        if compliance.ap77_no_symmetric { "✅" } else { "❌" }
+        if compliance.ap77_no_symmetric {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Direction modifiers correct | {} |\n",
-        if compliance.direction_modifiers_correct { "✅" } else { "❌" }
+        if compliance.direction_modifiers_correct {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
     out.push_str(&format!(
         "| Asymmetry ratio valid (1.3-1.7) | {} |\n\n",
-        if compliance.asymmetry_ratio_valid { "✅" } else { "❌" }
+        if compliance.asymmetry_ratio_valid {
+            "✅"
+        } else {
+            "❌"
+        }
     ));
 
     out

@@ -119,14 +119,38 @@ impl DegradationAnalysis {
     fn compute_limits(&mut self) {
         let threshold = targets::DEGRADATION_THRESHOLD;
 
-        let baseline_p10 = self.baseline.retrieval.precision_at.get(&10).copied().unwrap_or(1.0);
-        let baseline_r10 = self.baseline.retrieval.recall_at.get(&10).copied().unwrap_or(1.0);
+        let baseline_p10 = self
+            .baseline
+            .retrieval
+            .precision_at
+            .get(&10)
+            .copied()
+            .unwrap_or(1.0);
+        let baseline_r10 = self
+            .baseline
+            .retrieval
+            .recall_at
+            .get(&10)
+            .copied()
+            .unwrap_or(1.0);
         let baseline_mrr = self.baseline.retrieval.mrr;
         let baseline_purity = self.baseline.clustering.purity;
 
         for point in &self.points {
-            let p10 = point.metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
-            let r10 = point.metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
+            let p10 = point
+                .metrics
+                .retrieval
+                .precision_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0);
+            let r10 = point
+                .metrics
+                .retrieval
+                .recall_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0);
             let mrr = point.metrics.retrieval.mrr;
             let purity = point.metrics.clustering.purity;
 
@@ -168,8 +192,20 @@ impl DegradationAnalysis {
             return;
         }
 
-        let baseline_p10 = self.baseline.retrieval.precision_at.get(&10).copied().unwrap_or(1.0);
-        let baseline_r10 = self.baseline.retrieval.recall_at.get(&10).copied().unwrap_or(1.0);
+        let baseline_p10 = self
+            .baseline
+            .retrieval
+            .precision_at
+            .get(&10)
+            .copied()
+            .unwrap_or(1.0);
+        let baseline_r10 = self
+            .baseline
+            .retrieval
+            .recall_at
+            .get(&10)
+            .copied()
+            .unwrap_or(1.0);
         let baseline_mrr = self.baseline.retrieval.mrr;
         let baseline_purity = self.baseline.clustering.purity;
 
@@ -182,8 +218,20 @@ impl DegradationAnalysis {
         for point in &self.points {
             let log_size = (point.corpus_size as f64).log10();
 
-            let p10 = point.metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
-            let r10 = point.metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
+            let p10 = point
+                .metrics
+                .retrieval
+                .precision_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0);
+            let r10 = point
+                .metrics
+                .retrieval
+                .recall_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0);
             let mrr = point.metrics.retrieval.mrr;
             let purity = point.metrics.clustering.purity;
 
@@ -212,7 +260,7 @@ impl DegradationAnalysis {
     pub fn scales_better_than(&self, other: &DegradationAnalysis) -> bool {
         // Compare overall limits (higher is better)
         match (self.limits.overall_limit, other.limits.overall_limit) {
-            (None, Some(_)) => true,  // No limit beats having a limit
+            (None, Some(_)) => true, // No limit beats having a limit
             (Some(_), None) => false,
             (Some(a), Some(b)) => a > b,
             (None, None) => {
@@ -234,9 +282,7 @@ impl DegradationAnalysis {
     /// SAF > 1 means multi-space scales better.
     pub fn scaling_advantage_factor(&self, other: &DegradationAnalysis) -> Option<f64> {
         match (self.limits.overall_limit, other.limits.overall_limit) {
-            (Some(self_limit), Some(other_limit)) => {
-                Some(self_limit as f64 / other_limit as f64)
-            }
+            (Some(self_limit), Some(other_limit)) => Some(self_limit as f64 / other_limit as f64),
             (None, Some(_)) => Some(f64::INFINITY), // No limit is infinite advantage
             _ => None,
         }
@@ -304,11 +350,35 @@ impl DegradationComparison {
             if let Some(point_b) = b.points.iter().find(|p| p.tier == point_a.tier) {
                 let tier_name = point_a.tier.to_string();
 
-                let p10_a = point_a.metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
-                let p10_b = point_b.metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0);
+                let p10_a = point_a
+                    .metrics
+                    .retrieval
+                    .precision_at
+                    .get(&10)
+                    .copied()
+                    .unwrap_or(0.0);
+                let p10_b = point_b
+                    .metrics
+                    .retrieval
+                    .precision_at
+                    .get(&10)
+                    .copied()
+                    .unwrap_or(0.0);
 
-                let r10_a = point_a.metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
-                let r10_b = point_b.metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0);
+                let r10_a = point_a
+                    .metrics
+                    .retrieval
+                    .recall_at
+                    .get(&10)
+                    .copied()
+                    .unwrap_or(0.0);
+                let r10_b = point_b
+                    .metrics
+                    .retrieval
+                    .recall_at
+                    .get(&10)
+                    .copied()
+                    .unwrap_or(0.0);
 
                 let mrr_a = point_a.metrics.retrieval.mrr;
                 let mrr_b = point_b.metrics.retrieval.mrr;
@@ -350,7 +420,7 @@ fn improvement_pct(a: f64, b: f64) -> f64 {
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
     use super::*;
-    use crate::metrics::{RetrievalMetrics, ClusteringMetrics};
+    use crate::metrics::{ClusteringMetrics, RetrievalMetrics};
     use std::collections::HashMap;
 
     fn make_metrics(p10: f64, r10: f64, mrr: f64, purity: f64) -> ScalingMetrics {

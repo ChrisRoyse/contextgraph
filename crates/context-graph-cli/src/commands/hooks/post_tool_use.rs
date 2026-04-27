@@ -20,9 +20,7 @@ use crate::mcp_client::McpClient;
 
 use super::args::PostToolArgs;
 use super::error::{HookError, HookResult};
-use super::types::{
-    CoherenceState, HookInput, HookOutput, HookPayload, StabilityClassification,
-};
+use super::types::{CoherenceState, HookInput, HookOutput, HookPayload, StabilityClassification};
 
 // ============================================================================
 // Constants (from constitution.yaml)
@@ -304,7 +302,10 @@ fn analyze_tool_response(tool_name: &str, _tool_response: &str, tool_success: bo
         _ => ImpactLevel::None,
     };
 
-    ToolImpact { level, tool_success }
+    ToolImpact {
+        level,
+        tool_success,
+    }
 }
 
 /// Update snapshot based on tool impact
@@ -359,7 +360,12 @@ fn build_coherence_state(snapshot: &SessionSnapshot) -> CoherenceState {
 ///
 /// # Note
 /// Failure is non-fatal - we log and continue rather than failing the hook.
-async fn capture_tool_memory(tool_name: &str, tool_response: &str, tool_success: bool, session_id: &str) {
+async fn capture_tool_memory(
+    tool_name: &str,
+    tool_response: &str,
+    tool_success: bool,
+    session_id: &str,
+) {
     // R7: Capture both successful AND failed tool responses
     // Failed tools get importance=0.3 with FailurePattern source type
     // Successful tools get importance=0.4 with HookDescription source type
@@ -373,7 +379,10 @@ async fn capture_tool_memory(tool_name: &str, tool_response: &str, tool_success:
     } else {
         // R7: Capture failure patterns for all tools (not just TOOLS_TO_CAPTURE)
         // so that repeated failures can be surfaced as context
-        info!(tool_name, "POST_TOOL: R7 capturing failure pattern for failed tool");
+        info!(
+            tool_name,
+            "POST_TOOL: R7 capturing failure pattern for failed tool"
+        );
         (0.3, "FailurePattern")
     };
 
@@ -441,7 +450,17 @@ async fn capture_tool_memory(tool_name: &str, tool_response: &str, tool_success:
 
     // Store via MCP inject_context
     // SESSION-ID-FIX: Pass session_id for proper session-scoped storage
-    match client.inject_context(&content, &rationale, importance, Some(session_id), Some("text"), None).await {
+    match client
+        .inject_context(
+            &content,
+            &rationale,
+            importance,
+            Some(session_id),
+            Some("text"),
+            None,
+        )
+        .await
+    {
         Ok(result) => {
             let fingerprint_id = result
                 .get("fingerprintId")
@@ -780,7 +799,10 @@ impl From<std::io::Error> for MyError {
 "#;
 
         let result = infer_tool_success(code_with_error_type);
-        assert!(result, "Code with Error types should be considered successful");
+        assert!(
+            result,
+            "Code with Error types should be considered successful"
+        );
 
         println!("RESULT: PASS - Error type names don't trigger false failures");
     }

@@ -97,11 +97,7 @@ impl GraphProjectionWeights {
     /// # Errors
     ///
     /// Returns `EmbeddingError::GpuError` if tensor creation fails.
-    pub fn initialize(
-        hidden_size: usize,
-        device: &Device,
-        seed: u64,
-    ) -> EmbeddingResult<Self> {
+    pub fn initialize(hidden_size: usize, device: &Device, seed: u64) -> EmbeddingResult<Self> {
         if hidden_size != GRAPH_DIMENSION {
             return Err(EmbeddingError::InvalidDimension {
                 expected: GRAPH_DIMENSION,
@@ -241,7 +237,6 @@ impl GraphProjectionWeights {
                 message: format!("Graph target projection bias add failed: {}", e),
             })
     }
-
 }
 
 /// Create a perturbed identity matrix: I + N(0, std)
@@ -267,7 +262,8 @@ fn create_perturbed_identity<R: Rng>(size: usize, rng: &mut R, std: f64) -> Vec<
             // Using Box-Muller transform for normal distribution
             let u1: f64 = rng.gen_range(0.0001f64..1.0f64);
             let u2: f64 = rng.gen_range(0.0f64..1.0f64);
-            let normal: f64 = (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
+            let normal: f64 =
+                (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
             let perturbation = (normal * std) as f32;
 
             data[idx] = identity + perturbation;
@@ -333,7 +329,10 @@ mod tests {
                 break;
             }
         }
-        assert!(different, "Different seeds should produce different matrices");
+        assert!(
+            different,
+            "Different seeds should produce different matrices"
+        );
         println!("[PASS] Different seeds produce different matrices");
     }
 
@@ -365,6 +364,9 @@ mod tests {
             GRAPH_PROJECTION_SEED, E5_CAUSAL_SEED,
             "E8 graph projection seed must be different from E5 causal projection seed"
         );
-        println!("[PASS] E8 projection seed is unique from E5: 0x{:X} != 0x{:X}", GRAPH_PROJECTION_SEED, E5_CAUSAL_SEED);
+        println!(
+            "[PASS] E8 projection seed is unique from E5: 0x{:X} != 0x{:X}",
+            GRAPH_PROJECTION_SEED, E5_CAUSAL_SEED
+        );
     }
 }

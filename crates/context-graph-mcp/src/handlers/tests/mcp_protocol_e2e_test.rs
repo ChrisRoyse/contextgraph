@@ -937,11 +937,20 @@ async fn test_e2e_all_11_tools_callable() {
     let expected = 11;
     let actual = successful_tools.len();
     let all_expected: HashSet<&str> = [
-        "store_memory", "get_memetic_status", "search_graph",
-        "trigger_consolidation", "get_topic_portfolio", "get_topic_stability",
-        "detect_topics", "get_divergence_alerts", "boost_importance",
-        "merge_concepts", "forget_concept",
-    ].into_iter().collect();
+        "store_memory",
+        "get_memetic_status",
+        "search_graph",
+        "trigger_consolidation",
+        "get_topic_portfolio",
+        "get_topic_stability",
+        "detect_topics",
+        "get_divergence_alerts",
+        "boost_importance",
+        "merge_concepts",
+        "forget_concept",
+    ]
+    .into_iter()
+    .collect();
     let missing: Vec<&&str> = all_expected.difference(&successful_tools).collect();
     assert_eq!(
         actual, expected,

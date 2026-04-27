@@ -147,7 +147,10 @@ impl RealDataEmbedder {
     ///
     /// Note: This is an async function that requires tokio runtime.
     #[cfg(feature = "real-embeddings")]
-    pub async fn embed_dataset(&self, dataset: &RealDataset) -> Result<EmbeddedDataset, EmbedError> {
+    pub async fn embed_dataset(
+        &self,
+        dataset: &RealDataset,
+    ) -> Result<EmbeddedDataset, EmbedError> {
         use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
 
         // Initialize the warm provider (loads all 13 models to GPU)
@@ -155,8 +158,7 @@ impl RealDataEmbedder {
             .await
             .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
-        let provider = get_warm_provider()
-            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+        let provider = get_warm_provider().map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
         let total = dataset.chunks.len();
         let mut fingerprints = HashMap::with_capacity(total);
@@ -164,7 +166,12 @@ impl RealDataEmbedder {
 
         for (i, chunk) in dataset.chunks.iter().enumerate() {
             if self.config.show_progress && i % 100 == 0 {
-                eprint!("\rEmbedding: {}/{} chunks ({:.1}%)", i, total, i as f64 / total as f64 * 100.0);
+                eprint!(
+                    "\rEmbedding: {}/{} chunks ({:.1}%)",
+                    i,
+                    total,
+                    i as f64 / total as f64 * 100.0
+                );
             }
 
             // Embed using the warm provider (all 13 embedders)
@@ -221,26 +228,44 @@ impl RealDataEmbedder {
             .await
             .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
-        let provider = get_warm_provider()
-            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+        let provider = get_warm_provider().map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
         let total = dataset.chunks.len();
         let batch_size = self.config.batch_size;
-        let checkpoint_interval = if checkpoint_interval == 0 { 1000 } else { checkpoint_interval };
+        let checkpoint_interval = if checkpoint_interval == 0 {
+            1000
+        } else {
+            checkpoint_interval
+        };
 
         // Try to load existing checkpoint
         let (mut fingerprints, mut chunk_info, start_idx) = if let Some(dir) = checkpoint_dir {
             match EmbeddingCheckpoint::load(dir) {
                 Ok(checkpoint) => {
                     if self.config.show_progress {
-                        eprintln!("Resuming from checkpoint: {} embeddings", checkpoint.embedded_count);
+                        eprintln!(
+                            "Resuming from checkpoint: {} embeddings",
+                            checkpoint.embedded_count
+                        );
                     }
-                    (checkpoint.fingerprints, checkpoint.chunk_info, checkpoint.embedded_count)
+                    (
+                        checkpoint.fingerprints,
+                        checkpoint.chunk_info,
+                        checkpoint.embedded_count,
+                    )
                 }
-                Err(_) => (HashMap::with_capacity(total), HashMap::with_capacity(total), 0),
+                Err(_) => (
+                    HashMap::with_capacity(total),
+                    HashMap::with_capacity(total),
+                    0,
+                ),
             }
         } else {
-            (HashMap::with_capacity(total), HashMap::with_capacity(total), 0)
+            (
+                HashMap::with_capacity(total),
+                HashMap::with_capacity(total),
+                0,
+            )
         };
 
         let start_time = Instant::now();
@@ -271,9 +296,11 @@ impl RealDataEmbedder {
                     };
                     eprint!(
                         "\rEmbedding: {}/{} ({:.1}%) | {:.1} chunks/s | ETA: {:.0}s",
-                        global_idx, total,
+                        global_idx,
+                        total,
                         global_idx as f64 / total as f64 * 100.0,
-                        rate, eta
+                        rate,
+                        eta
                     );
                 }
 
@@ -368,8 +395,7 @@ impl RealDataEmbedder {
             .await
             .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
-        let provider = get_warm_provider()
-            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+        let provider = get_warm_provider().map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
         let total: usize = sessions.iter().map(|s| s.len()).sum();
         let mut fingerprints = HashMap::with_capacity(total);
@@ -392,9 +418,11 @@ impl RealDataEmbedder {
                     };
                     eprint!(
                         "\rEmbedding sequences: {}/{} ({:.1}%) | {:.1} chunks/s | ETA: {:.0}s",
-                        processed, total,
+                        processed,
+                        total,
                         processed as f64 / total as f64 * 100.0,
-                        rate, eta
+                        rate,
+                        eta
                     );
                 }
 
@@ -444,16 +472,16 @@ impl RealDataEmbedder {
             .await
             .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
-        let provider = get_warm_provider()
-            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+        let provider = get_warm_provider().map_err(|e| EmbedError::Pipeline(e.to_string()))?;
 
         // Flatten sessions into (chunk, session_id, sequence) tuples
         let all_chunks: Vec<_> = sessions
             .iter()
             .flat_map(|session| {
-                session.chunks.iter().map(move |chunk| {
-                    (chunk, session.session_id.clone(), chunk.sequence_position)
-                })
+                session
+                    .chunks
+                    .iter()
+                    .map(move |chunk| (chunk, session.session_id.clone(), chunk.sequence_position))
             })
             .collect();
 
@@ -473,17 +501,17 @@ impl RealDataEmbedder {
                     let eta = (total - processed) as f64 / rate;
                     eprint!(
                         "\rEmbedding sessions: {}/{} ({:.1}%) | {:.1} chunks/s | ETA: {:.0}s",
-                        processed, total,
+                        processed,
+                        total,
                         processed as f64 / total as f64 * 100.0,
-                        rate, eta
+                        rate,
+                        eta
                     );
                 }
 
                 // Create metadata with session sequence for E4
-                let metadata = EmbeddingMetadata::with_sequence(
-                    session_id.clone(),
-                    *sequence_pos as u64,
-                );
+                let metadata =
+                    EmbeddingMetadata::with_sequence(session_id.clone(), *sequence_pos as u64);
 
                 // Embed using the warm provider with sequence metadata
                 let output = provider

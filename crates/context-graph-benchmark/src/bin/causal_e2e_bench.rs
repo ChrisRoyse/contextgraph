@@ -27,8 +27,7 @@ use context_graph_core::causal::CausalDirection;
 
 #[cfg(feature = "real-embeddings")]
 use context_graph_causal_agent::{
-    CausalDiscoveryService, CausalDiscoveryConfig,
-    types::MemoryForAnalysis,
+    types::MemoryForAnalysis, CausalDiscoveryConfig, CausalDiscoveryService,
 };
 
 // ============================================================================
@@ -46,7 +45,11 @@ struct BenchmarkResult<M: Serialize> {
     actual: HashMap<String, f64>,
 }
 
-fn write_json_result<M: Serialize>(dir: &str, filename: &str, result: &BenchmarkResult<M>) -> Result<()> {
+fn write_json_result<M: Serialize>(
+    dir: &str,
+    filename: &str,
+    result: &BenchmarkResult<M>,
+) -> Result<()> {
     fs::create_dir_all(dir)?;
     let path = format!("{}/{}", dir, filename);
     let json = serde_json::to_string_pretty(result)?;
@@ -361,8 +364,14 @@ fn run_phase_6_2() -> Result<BenchmarkResult<DomainTransferMetrics>> {
         let effect_acc = effect_correct as f64 / ds.causal_effect.len() as f64;
         let non_causal_acc = non_causal_correct as f64 / ds.non_causal.len() as f64;
 
-        info!("  {}: accuracy={:.1}% (cause={:.1}%, effect={:.1}%, non_causal={:.1}%)",
-            ds.domain, accuracy * 100.0, cause_acc * 100.0, effect_acc * 100.0, non_causal_acc * 100.0);
+        info!(
+            "  {}: accuracy={:.1}% (cause={:.1}%, effect={:.1}%, non_causal={:.1}%)",
+            ds.domain,
+            accuracy * 100.0,
+            cause_acc * 100.0,
+            effect_acc * 100.0,
+            non_causal_acc * 100.0
+        );
 
         per_domain.push(DomainResult {
             domain: ds.domain.to_string(),
@@ -382,16 +391,25 @@ fn run_phase_6_2() -> Result<BenchmarkResult<DomainTransferMetrics>> {
 
     let accuracies: Vec<f64> = per_domain.iter().map(|d| d.accuracy).collect();
     let mean = accuracies.iter().sum::<f64>() / accuracies.len() as f64;
-    let variance = accuracies.iter().map(|a| (a - mean).powi(2)).sum::<f64>() / accuracies.len() as f64;
+    let variance =
+        accuracies.iter().map(|a| (a - mean).powi(2)).sum::<f64>() / accuracies.len() as f64;
 
     let min_acc = accuracies.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_acc = accuracies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let weakest = per_domain.iter().min_by(|a, b| a.accuracy.partial_cmp(&b.accuracy).unwrap())
-        .map(|d| d.domain.clone()).unwrap_or_default();
+    let weakest = per_domain
+        .iter()
+        .min_by(|a, b| a.accuracy.partial_cmp(&b.accuracy).unwrap())
+        .map(|d| d.domain.clone())
+        .unwrap_or_default();
 
     let elapsed = phase_start.elapsed();
-    info!("Phase 6.2 complete in {:.2?}: overall={:.1}%, variance={:.4}, weakest={}",
-        elapsed, overall_accuracy * 100.0, variance, weakest);
+    info!(
+        "Phase 6.2 complete in {:.2?}: overall={:.1}%, variance={:.4}, weakest={}",
+        elapsed,
+        overall_accuracy * 100.0,
+        variance,
+        weakest
+    );
 
     // Pass criteria: overall >= 70%, variance < 0.15 (15%), min domain >= 0.50
     let pass = overall_accuracy >= 0.70 && variance < 0.0225 && min_acc >= 0.50;
@@ -624,8 +642,14 @@ fn run_phase_6_3() -> Result<BenchmarkResult<AdversarialMetrics>> {
 
     let base_cosine: f32 = 0.85;
 
-    let reject_count = dataset.iter().filter(|c| matches!(c.expected, RejectAsNonCausal)).count();
-    let detect_count = dataset.iter().filter(|c| matches!(c.expected, DetectAsCausal)).count();
+    let reject_count = dataset
+        .iter()
+        .filter(|c| matches!(c.expected, RejectAsNonCausal))
+        .count();
+    let detect_count = dataset
+        .iter()
+        .filter(|c| matches!(c.expected, DetectAsCausal))
+        .count();
 
     for case in &dataset {
         let predicted = detect_causal_query_intent(case.text);
@@ -641,19 +665,33 @@ fn run_phase_6_3() -> Result<BenchmarkResult<AdversarialMetrics>> {
                     entry.1 += 1;
                 } else {
                     false_detections += 1;
-                    warn!("  FALSE DETECTION [{}]: '{}' → {:?} (expected Unknown)",
-                        case.category, case.text, predicted);
+                    warn!(
+                        "  FALSE DETECTION [{}]: '{}' → {:?} (expected Unknown)",
+                        case.category, case.text, predicted
+                    );
                 }
             }
             DetectAsCausal => {
                 // Compute asymmetric analysis for all structural-marker cases
                 let forward = compute_asymmetric_similarity(
-                    base_cosine, predicted, CausalDirection::Effect, None, None,
+                    base_cosine,
+                    predicted,
+                    CausalDirection::Effect,
+                    None,
+                    None,
                 );
                 let backward = compute_asymmetric_similarity(
-                    base_cosine, predicted, CausalDirection::Cause, None, None,
+                    base_cosine,
+                    predicted,
+                    CausalDirection::Cause,
+                    None,
+                    None,
                 );
-                let ratio = if backward > 0.0 { forward as f64 / backward as f64 } else { 0.0 };
+                let ratio = if backward > 0.0 {
+                    forward as f64 / backward as f64
+                } else {
+                    0.0
+                };
 
                 asymmetric_results.push(AsymmetricAdversarialResult {
                     text: case.text.to_string(),
@@ -669,32 +707,39 @@ fn run_phase_6_3() -> Result<BenchmarkResult<AdversarialMetrics>> {
                     entry.1 += 1;
                 } else {
                     missed_detections += 1;
-                    warn!("  MISSED DETECTION [{}]: '{}' → Unknown (expected Cause/Effect)",
-                        case.category, case.text);
+                    warn!(
+                        "  MISSED DETECTION [{}]: '{}' → Unknown (expected Cause/Effect)",
+                        case.category, case.text
+                    );
                 }
             }
         }
     }
 
     let per_category: Vec<CategoryResult> = {
-        let mut cats: Vec<_> = category_stats.iter().map(|(cat, (total, correct))| {
-            CategoryResult {
+        let mut cats: Vec<_> = category_stats
+            .iter()
+            .map(|(cat, (total, correct))| CategoryResult {
                 category: cat.to_string(),
                 total: *total,
                 correct: *correct,
                 accuracy: *correct as f64 / *total as f64,
-            }
-        }).collect();
+            })
+            .collect();
         cats.sort_by(|a, b| a.category.cmp(&b.category));
         cats
     };
 
     let rejection_rate = if reject_count > 0 {
         correct_rejections as f64 / reject_count as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let detection_rate = if detect_count > 0 {
         correct_detections as f64 / detect_count as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let total_correct = correct_rejections + correct_detections;
     let overall_accuracy = total_correct as f64 / dataset.len() as f64;
 
@@ -708,7 +753,9 @@ fn run_phase_6_3() -> Result<BenchmarkResult<AdversarialMetrics>> {
     // Pass: rejection rate >= 80%, detection rate >= 60%, false positive rate < 20%
     let false_positive_rate = if reject_count > 0 {
         false_detections as f64 / reject_count as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let pass = rejection_rate >= 0.80 && detection_rate >= 0.60 && false_positive_rate < 0.20;
 
     let mut targets = HashMap::new();
@@ -766,29 +813,92 @@ async fn run_phase_6_1() -> Result<BenchmarkResult<FullPipelineMetrics>> {
     // Ground truth pairs: (text_a, text_b, has_link, direction)
     let ground_truth: Vec<(&str, &str, bool, &str)> = vec![
         // True causal pairs (A causes B)
-        ("Smoking damages lung tissue over time", "Lung cancer develops in chronic smokers", true, "a_causes_b"),
-        ("Deforestation removes carbon sinks from ecosystems", "Atmospheric CO2 levels have increased dramatically", true, "a_causes_b"),
-        ("The company laid off 30% of its workforce", "Employee morale plummeted across all departments", true, "a_causes_b"),
-        ("Chronic sleep deprivation accumulated over months", "Cognitive performance declined significantly", true, "a_causes_b"),
-        ("Heavy rainfall saturated the soil completely", "A massive landslide destroyed the village below", true, "a_causes_b"),
+        (
+            "Smoking damages lung tissue over time",
+            "Lung cancer develops in chronic smokers",
+            true,
+            "a_causes_b",
+        ),
+        (
+            "Deforestation removes carbon sinks from ecosystems",
+            "Atmospheric CO2 levels have increased dramatically",
+            true,
+            "a_causes_b",
+        ),
+        (
+            "The company laid off 30% of its workforce",
+            "Employee morale plummeted across all departments",
+            true,
+            "a_causes_b",
+        ),
+        (
+            "Chronic sleep deprivation accumulated over months",
+            "Cognitive performance declined significantly",
+            true,
+            "a_causes_b",
+        ),
+        (
+            "Heavy rainfall saturated the soil completely",
+            "A massive landslide destroyed the village below",
+            true,
+            "a_causes_b",
+        ),
         // True causal pairs (B causes A)
-        ("The bridge collapsed during rush hour", "Structural fatigue from years of neglect weakened the supports", true, "b_causes_a"),
-        ("Inflation exceeded 10% in the third quarter", "The central bank dramatically increased interest rates", true, "b_causes_a"),
+        (
+            "The bridge collapsed during rush hour",
+            "Structural fatigue from years of neglect weakened the supports",
+            true,
+            "b_causes_a",
+        ),
+        (
+            "Inflation exceeded 10% in the third quarter",
+            "The central bank dramatically increased interest rates",
+            true,
+            "b_causes_a",
+        ),
         // Bidirectional
-        ("Anxiety prevents restful sleep at night", "Poor sleep quality increases daytime anxiety levels", true, "bidirectional"),
+        (
+            "Anxiety prevents restful sleep at night",
+            "Poor sleep quality increases daytime anxiety levels",
+            true,
+            "bidirectional",
+        ),
         // Non-causal pairs
-        ("The Pacific Ocean is the largest ocean on Earth", "Mount Everest is the tallest mountain in the world", false, "none"),
-        ("Python was created by Guido van Rossum in 1991", "JavaScript was created by Brendan Eich in 1995", false, "none"),
-        ("The sun is approximately 93 million miles from Earth", "Saturn has prominent rings made of ice and rock", false, "none"),
-        ("Chess was invented in India around the 6th century", "The violin was developed in Italy in the 16th century", false, "none"),
+        (
+            "The Pacific Ocean is the largest ocean on Earth",
+            "Mount Everest is the tallest mountain in the world",
+            false,
+            "none",
+        ),
+        (
+            "Python was created by Guido van Rossum in 1991",
+            "JavaScript was created by Brendan Eich in 1995",
+            false,
+            "none",
+        ),
+        (
+            "The sun is approximately 93 million miles from Earth",
+            "Saturn has prominent rings made of ice and rock",
+            false,
+            "none",
+        ),
+        (
+            "Chess was invented in India around the 6th century",
+            "The violin was developed in Italy in the 16th century",
+            false,
+            "none",
+        ),
     ];
 
     let config = CausalDiscoveryConfig::default().with_env_overrides();
-    let service = CausalDiscoveryService::new(config).await
+    let service = CausalDiscoveryService::new(config)
+        .await
         .context("Failed to create CausalDiscoveryService")?;
 
     // Load model
-    service.load_model().await
+    service
+        .load_model()
+        .await
         .context("Failed to load LLM model")?;
 
     let mut true_positives = 0usize;
@@ -802,7 +912,11 @@ async fn run_phase_6_1() -> Result<BenchmarkResult<FullPipelineMetrics>> {
 
     // Access LLM directly for pair analysis
     for (text_a, text_b, expected_link, expected_dir) in &ground_truth {
-        info!("  Testing: '{}' ↔ '{}'", &text_a[..40.min(text_a.len())], &text_b[..40.min(text_b.len())]);
+        info!(
+            "  Testing: '{}' ↔ '{}'",
+            &text_a[..40.min(text_a.len())],
+            &text_b[..40.min(text_b.len())]
+        );
 
         // Use the service's LLM directly
         let memories = vec![
@@ -862,22 +976,32 @@ async fn run_phase_6_1() -> Result<BenchmarkResult<FullPipelineMetrics>> {
 
     let precision = if true_positives + false_positives > 0 {
         true_positives as f64 / (true_positives + false_positives) as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let recall = if true_positives + false_negatives > 0 {
         true_positives as f64 / (true_positives + false_negatives) as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
-    } else { 0.0 };
+    } else {
+        0.0
+    };
     let direction_accuracy = if direction_total > 0 {
         direction_correct as f64 / direction_total as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let total_elapsed = phase_start.elapsed();
     let per_pair = total_elapsed.as_millis() as f64 / ground_truth.len() as f64;
 
-    info!("Phase 6.1 complete in {:.2?}: F1={:.3}, direction_acc={:.3}, per_pair={:.0}ms",
-        total_elapsed, f1, direction_accuracy, per_pair);
+    info!(
+        "Phase 6.1 complete in {:.2?}: F1={:.3}, direction_acc={:.3}, per_pair={:.0}ms",
+        total_elapsed, f1, direction_accuracy, per_pair
+    );
 
     let pass = f1 >= 0.70 && direction_accuracy >= 0.60;
 
@@ -932,7 +1056,8 @@ async fn main() -> Result<()> {
     #[cfg(feature = "real-embeddings")]
     {
         info!("Phase 6.1 enabled (real-embeddings feature active)");
-        let result = run_phase_6_1().await
+        let result = run_phase_6_1()
+            .await
             .context("Phase 6.1 (Full Pipeline) failed")?;
         if !result.pass {
             warn!("Phase 6.1 FAILED targets");
@@ -947,13 +1072,14 @@ async fn main() -> Result<()> {
 
     #[cfg(not(feature = "real-embeddings"))]
     {
-        warn!("Phase 6.1 SKIPPED: real-embeddings feature not enabled. \
-               Rebuild with --features real-embeddings to include LLM pipeline tests.");
+        warn!(
+            "Phase 6.1 SKIPPED: real-embeddings feature not enabled. \
+               Rebuild with --features real-embeddings to include LLM pipeline tests."
+        );
     }
 
     // Phase 6.2: Domain Transfer (pure code)
-    let result_6_2 = run_phase_6_2()
-        .context("Phase 6.2 (Domain Transfer) failed")?;
+    let result_6_2 = run_phase_6_2().context("Phase 6.2 (Domain Transfer) failed")?;
     if !result_6_2.pass {
         warn!("Phase 6.2 FAILED targets");
         all_passed = false;
@@ -965,8 +1091,7 @@ async fn main() -> Result<()> {
     )?;
 
     // Phase 6.3: Adversarial Robustness (pure code)
-    let result_6_3 = run_phase_6_3()
-        .context("Phase 6.3 (Adversarial Robustness) failed")?;
+    let result_6_3 = run_phase_6_3().context("Phase 6.3 (Adversarial Robustness) failed")?;
     if !result_6_3.pass {
         warn!("Phase 6.3 FAILED targets");
         all_passed = false;
@@ -978,7 +1103,10 @@ async fn main() -> Result<()> {
     )?;
 
     let total_elapsed = overall_start.elapsed();
-    info!("All Phase 6 benchmarks complete in {:.2?}. Overall pass: {}", total_elapsed, all_passed);
+    info!(
+        "All Phase 6 benchmarks complete in {:.2?}. Overall pass: {}",
+        total_elapsed, all_passed
+    );
 
     if !all_passed {
         warn!("One or more Phase 6 benchmarks did not meet target thresholds.");

@@ -21,8 +21,7 @@ use uuid::Uuid;
 
 use crate::error::GraphAgentResult;
 use crate::types::{
-    DomainMarkers, GraphCandidate, GraphMarkers, MemoryForGraphAnalysis,
-    RelationshipType,
+    DomainMarkers, GraphCandidate, GraphMarkers, MemoryForGraphAnalysis, RelationshipType,
 };
 
 /// Configuration for the memory scanner.
@@ -118,9 +117,7 @@ impl MemoryScanner {
                     }
 
                     // Check session constraint
-                    if self.config.same_session_only
-                        && mem_a.session_id != mem_b.session_id
-                    {
+                    if self.config.same_session_only && mem_a.session_id != mem_b.session_id {
                         continue;
                     }
 
@@ -442,9 +439,8 @@ mod tests {
         assert!(!scanner.looks_like_code("This is just plain text without any code."));
 
         // Legal content should NOT look like code
-        assert!(!scanner.looks_like_code(
-            "The court held that pursuant to 42 U.S.C. § 1983, the plaintiff..."
-        ));
+        assert!(!scanner
+            .looks_like_code("The court held that pursuant to 42 U.S.C. § 1983, the plaintiff..."));
     }
 
     #[test]

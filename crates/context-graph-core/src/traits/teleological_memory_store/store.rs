@@ -10,9 +10,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::error::{CoreError, CoreResult};
-use crate::types::fingerprint::{
-    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
-};
+use crate::types::fingerprint::{SemanticFingerprint, SparseVector, TeleologicalFingerprint};
 use crate::types::SourceMetadata;
 
 use super::backend::TeleologicalStorageBackend;
@@ -373,7 +371,10 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     ///
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
-    async fn get_source_metadata_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<SourceMetadata>>>;
+    async fn get_source_metadata_batch(
+        &self,
+        ids: &[Uuid],
+    ) -> CoreResult<Vec<Option<SourceMetadata>>>;
 
     /// Find all fingerprint IDs that have source metadata matching a file path.
     ///
@@ -428,7 +429,8 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     ///
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
-    async fn index_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<()>;
+    async fn index_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid)
+        -> CoreResult<()>;
 
     /// Remove fingerprint ID from file index (called on delete).
     ///
@@ -443,7 +445,11 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     ///
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
-    async fn unindex_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<bool>;
+    async fn unindex_file_fingerprint(
+        &self,
+        file_path: &str,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<bool>;
 
     /// Clear all fingerprints for a file from index (bulk delete).
     ///
@@ -591,7 +597,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         relationship: &crate::types::CausalRelationship,
     ) -> CoreResult<Uuid> {
         let _ = relationship;
-        Err(CoreError::Internal("Causal relationship storage not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal relationship storage not supported by this backend".into(),
+        ))
     }
 
     /// Retrieve a causal relationship by ID.
@@ -606,7 +614,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         id: Uuid,
     ) -> CoreResult<Option<crate::types::CausalRelationship>> {
         let _ = id;
-        Err(CoreError::Internal("Causal relationship storage not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal relationship storage not supported by this backend".into(),
+        ))
     }
 
     /// Get all causal relationships derived from a source fingerprint.
@@ -621,7 +631,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         source_id: Uuid,
     ) -> CoreResult<Vec<crate::types::CausalRelationship>> {
         let _ = source_id;
-        Err(CoreError::Internal("Causal relationship storage not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal relationship storage not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships by description similarity (E1-based fallback).
@@ -640,7 +652,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         direction_filter: Option<&str>,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
         let _ = (query_embedding, top_k, direction_filter);
-        Err(CoreError::Internal("Causal relationship search not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal relationship search not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships using E5 asymmetric embeddings.
@@ -664,7 +678,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
         let _ = (query_embedding, search_causes, top_k);
-        Err(CoreError::Internal("Causal E5 search not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal E5 search not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships using hybrid source + explanation scoring.
@@ -693,8 +709,16 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         source_weight: f32,
         explanation_weight: f32,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
-        let _ = (query_embedding, search_causes, top_k, source_weight, explanation_weight);
-        Err(CoreError::Internal("Causal E5 hybrid search not supported by this backend".into()))
+        let _ = (
+            query_embedding,
+            search_causes,
+            top_k,
+            source_weight,
+            explanation_weight,
+        );
+        Err(CoreError::Internal(
+            "Causal E5 hybrid search not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships using E8 graph embeddings.
@@ -713,7 +737,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
         let _ = (query_embedding, search_sources, top_k);
-        Err(CoreError::Internal("Causal E8 search not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal E8 search not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships using E11 entity embeddings.
@@ -730,7 +756,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
         let _ = (query_embedding, top_k);
-        Err(CoreError::Internal("Causal E11 search not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal E11 search not supported by this backend".into(),
+        ))
     }
 
     /// Search causal relationships using all 4 embedders for maximum accuracy.
@@ -763,8 +791,18 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
         config: &crate::types::MultiEmbedderConfig,
     ) -> CoreResult<Vec<crate::types::CausalSearchResult>> {
-        let _ = (e1_embedding, e5_embedding, e8_embedding, e11_embedding, search_causes, top_k, config);
-        Err(CoreError::Internal("Causal multi-embedder search not supported by this backend".into()))
+        let _ = (
+            e1_embedding,
+            e5_embedding,
+            e8_embedding,
+            e11_embedding,
+            search_causes,
+            top_k,
+            config,
+        );
+        Err(CoreError::Internal(
+            "Causal multi-embedder search not supported by this backend".into(),
+        ))
     }
 
     /// Count total stored causal relationships.
@@ -775,7 +813,9 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
     async fn count_causal_relationships(&self) -> CoreResult<usize> {
-        Err(CoreError::Internal("Causal relationship storage not supported by this backend".into()))
+        Err(CoreError::Internal(
+            "Causal relationship storage not supported by this backend".into(),
+        ))
     }
 
     // ==================== Audit Log (Phase 1.1) ====================
@@ -791,7 +831,10 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
     /// - `CoreError::SerializationError` - Serialization failure
-    async fn append_audit_record(&self, record: &crate::types::audit::AuditRecord) -> CoreResult<()>;
+    async fn append_audit_record(
+        &self,
+        record: &crate::types::audit::AuditRecord,
+    ) -> CoreResult<()>;
 
     /// Retrieve audit records for a specific target entity.
     ///
@@ -843,7 +886,10 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// Append a merge record to the permanent merge history.
     ///
     /// Stored in CF_MERGE_HISTORY. PERMANENT -- never expires.
-    async fn append_merge_record(&self, record: &crate::types::audit::MergeRecord) -> CoreResult<()>;
+    async fn append_merge_record(
+        &self,
+        record: &crate::types::audit::MergeRecord,
+    ) -> CoreResult<()>;
 
     /// Retrieve merge history for a specific merged fingerprint.
     async fn get_merge_history(
@@ -857,7 +903,10 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// Append an importance change record to the permanent history.
     ///
     /// Stored in CF_IMPORTANCE_HISTORY. PERMANENT -- never expires.
-    async fn append_importance_change(&self, record: &crate::types::audit::ImportanceChangeRecord) -> CoreResult<()>;
+    async fn append_importance_change(
+        &self,
+        record: &crate::types::audit::ImportanceChangeRecord,
+    ) -> CoreResult<()>;
 
     /// Retrieve importance change history for a specific memory.
     async fn get_importance_history(
@@ -871,7 +920,10 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// Store an embedding version record for a fingerprint.
     ///
     /// Stored in CF_EMBEDDING_REGISTRY. Overwrites existing record on re-embedding.
-    async fn store_embedding_version(&self, record: &crate::types::audit::EmbeddingVersionRecord) -> CoreResult<()>;
+    async fn store_embedding_version(
+        &self,
+        record: &crate::types::audit::EmbeddingVersionRecord,
+    ) -> CoreResult<()>;
 
     /// Retrieve the embedding version record for a fingerprint.
     async fn get_embedding_version(

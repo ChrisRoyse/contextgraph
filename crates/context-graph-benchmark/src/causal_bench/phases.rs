@@ -89,7 +89,12 @@ impl BenchConfig {
             return;
         }
         let total = queries.len() * pairs.len();
-        tracing::info!("  Pre-computing E1 semantic scores: {} queries x {} pairs = {}", queries.len(), pairs.len(), total);
+        tracing::info!(
+            "  Pre-computing E1 semantic scores: {} queries x {} pairs = {}",
+            queries.len(),
+            pairs.len(),
+            total
+        );
         let mut cache = HashMap::with_capacity(total);
         for (qi, query) in queries.iter().enumerate() {
             for pair in pairs {
@@ -139,7 +144,10 @@ impl std::fmt::Debug for BenchConfig {
             .field("causal_gate_threshold", &self.causal_gate_threshold)
             .field("e5_weight", &self.e5_weight)
             .field("provider", &self.provider.name())
-            .field("cached_pairs", &self.pair_score_cache.get().map(|c| c.len()))
+            .field(
+                "cached_pairs",
+                &self.pair_score_cache.get().map(|c| c.len()),
+            )
             .field("cached_e1", &self.e1_score_cache.get().map(|c| c.len()))
             .finish()
     }
@@ -155,10 +163,7 @@ impl std::fmt::Debug for BenchConfig {
 /// Results are deterministic and model-independent (marked model_dependent=false).
 ///
 /// Pass criteria: accuracy >= 90%, negation false positive rate < 15%
-pub fn phase1_query_intent(
-    queries: &[BenchmarkQuery],
-    verbose: bool,
-) -> PhaseBenchmarkResult {
+pub fn phase1_query_intent(queries: &[BenchmarkQuery], verbose: bool) -> PhaseBenchmarkResult {
     let start = std::time::Instant::now();
 
     let mut predicted = Vec::new();
@@ -251,7 +256,13 @@ pub fn phase1_query_intent(
 
     let duration = start.elapsed().as_millis() as u64;
 
-    let mut result = metrics::make_phase_result(1, "Query Intent Detection [heuristic]", phase_metrics, targets, duration);
+    let mut result = metrics::make_phase_result(
+        1,
+        "Query Intent Detection [heuristic]",
+        phase_metrics,
+        targets,
+        duration,
+    );
     result.model_dependent = false;
     result
 }
@@ -324,9 +335,11 @@ pub fn phase2_e5_quality(
     let ce_distance = compute_cause_effect_distance(causal_pairs, config);
 
     if config.verbose {
-        tracing::info!("  E5 score range: {:.4}-{:.4}",
+        tracing::info!(
+            "  E5 score range: {:.4}-{:.4}",
             all_scores.iter().cloned().fold(f32::INFINITY, f32::min),
-            all_scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max));
+            all_scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+        );
         tracing::info!("  Spread: {:.4}, Anisotropy: {:.4}", spread, anisotropy);
         tracing::info!("  Standalone accuracy: {:.4}", standalone_acc);
         tracing::info!("  Cause-effect distance: {:.4}", ce_distance);
@@ -397,7 +410,11 @@ fn compute_standalone_accuracy(pairs: &[BenchmarkPair], config: &BenchConfig) ->
         // GPU mode: use real embeddings for similarity-based retrieval
         let embeddings: Vec<Vec<f32>> = pairs
             .iter()
-            .map(|p| config.provider.e5_embedding(&format!("{} {}", p.cause_text, p.effect_text)))
+            .map(|p| {
+                config
+                    .provider
+                    .e5_embedding(&format!("{} {}", p.cause_text, p.effect_text))
+            })
             .collect();
 
         let mut correct = 0usize;
@@ -405,7 +422,9 @@ fn compute_standalone_accuracy(pairs: &[BenchmarkPair], config: &BenchConfig) ->
             let mut best_idx = 0;
             let mut best_sim = f32::NEG_INFINITY;
             for (j, _) in pairs.iter().enumerate() {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let sim = metrics::cosine_similarity(&embeddings[i], &embeddings[j]);
                 if sim > best_sim {
                     best_sim = sim;
@@ -425,7 +444,9 @@ fn compute_standalone_accuracy(pairs: &[BenchmarkPair], config: &BenchConfig) ->
             let mut best_idx = 0;
             let mut best_diff = f32::INFINITY;
             for (j, cand_pair) in pairs.iter().enumerate() {
-                if i == j { continue; }
+                if i == j {
+                    continue;
+                }
                 let cand_score = synthetic_e5_score(cand_pair, true);
                 let diff = (query_score - cand_score).abs();
                 if diff < best_diff {
@@ -511,8 +532,12 @@ pub fn phase3_direction_modifiers(
         // Use real E5 embeddings for base similarity.
         // Forward: embed cause_text as cause, effect_text as effect (correct alignment)
         // Reverse: embed effect_text as cause, cause_text as effect (swapped alignment)
-        let fwd_base = config.provider.e5_score(&pair.cause_text, &pair.effect_text);
-        let rev_base = config.provider.e5_score(&pair.effect_text, &pair.cause_text);
+        let fwd_base = config
+            .provider
+            .e5_score(&pair.cause_text, &pair.effect_text);
+        let rev_base = config
+            .provider
+            .e5_score(&pair.effect_text, &pair.cause_text);
 
         let fwd = fwd_base * cause_to_effect;
         let rev = rev_base * effect_to_cause;
@@ -623,7 +648,11 @@ pub fn phase4_ablation(
     let acc_e5only = e5_only_correct as f32 / n;
     let delta = metrics::ablation_delta(acc_with, acc_without);
 
-    let e5_rrf_pct = if n > 0.0 { (acc_e5only * 100.0) as f64 } else { 0.0 };
+    let e5_rrf_pct = if n > 0.0 {
+        (acc_e5only * 100.0) as f64
+    } else {
+        0.0
+    };
 
     let mut phase_metrics = HashMap::new();
     phase_metrics.insert("accuracy_with_e5".to_string(), acc_with as f64);
@@ -761,7 +790,10 @@ pub fn phase5_causal_gate(
     phase_metrics.insert("tnr".to_string(), tnr as f64);
     phase_metrics.insert("causal_mean".to_string(), causal_mean as f64);
     phase_metrics.insert("non_causal_mean".to_string(), non_causal_mean as f64);
-    phase_metrics.insert("score_gap".to_string(), (causal_mean - non_causal_mean) as f64);
+    phase_metrics.insert(
+        "score_gap".to_string(),
+        (causal_mean - non_causal_mean) as f64,
+    );
     phase_metrics.insert("threshold".to_string(), threshold as f64);
 
     let mut targets = HashMap::new();
@@ -813,11 +845,7 @@ pub fn phase6_e2e_retrieval(
     // Average NDCG@5
     let mut ndcg_sum = 0.0f32;
     for (i, query) in queries.iter().enumerate() {
-        let ndcg = metrics::retrieval_ndcg_at_k(
-            &ranked_results[i],
-            &query.expected_top5_ids,
-            5,
-        );
+        let ndcg = metrics::retrieval_ndcg_at_k(&ranked_results[i], &query.expected_top5_ids, 5);
         ndcg_sum += ndcg;
     }
     let avg_ndcg = ndcg_sum / queries.len().max(1) as f32;
@@ -896,7 +924,8 @@ fn simulate_ranked_search(
         let top_k = 20.min(scored.len()); // rerank top-20 candidates
         let rerank_weight = config.rerank_weight;
 
-        let query_words: Vec<String> = query.query
+        let query_words: Vec<String> = query
+            .query
             .split_whitespace()
             .filter(|w| w.len() > 3)
             .map(|w| w.to_lowercase())
@@ -906,17 +935,21 @@ fn simulate_ranked_search(
         for scored_item in scored.iter_mut().take(top_k) {
             let pair_id = &scored_item.0;
             if let Some(pair) = pairs.iter().find(|p| p.id == *pair_id) {
-                let all_words: Vec<&str> = pair.cause_text.split_whitespace()
+                let all_words: Vec<&str> = pair
+                    .cause_text
+                    .split_whitespace()
                     .chain(pair.effect_text.split_whitespace())
                     .collect();
                 let total_words = all_words.len().max(1);
 
-                let overlap = all_words.iter()
+                let overlap = all_words
+                    .iter()
                     .filter(|w| w.len() > 3 && query_words.iter().any(|qw| qw == &w.to_lowercase()))
                     .count();
 
                 let maxsim_proxy = (overlap as f32 / total_words as f32).min(1.0);
-                scored_item.1 = (1.0 - rerank_weight) * scored_item.1 + rerank_weight * maxsim_proxy;
+                scored_item.1 =
+                    (1.0 - rerank_weight) * scored_item.1 + rerank_weight * maxsim_proxy;
             }
         }
 
@@ -990,8 +1023,18 @@ pub fn phase7_cross_domain(
     if config.verbose {
         tracing::info!("  Train domains: {:?}", train_domains);
         tracing::info!("  Held-out domains: {:?}", held_out_domains);
-        tracing::info!("  Train accuracy: {:.4} ({}/{})", train_acc, train_correct, train_queries.len());
-        tracing::info!("  Held-out accuracy: {:.4} ({}/{})", held_out_acc, held_out_correct, held_out_queries.len());
+        tracing::info!(
+            "  Train accuracy: {:.4} ({}/{})",
+            train_acc,
+            train_correct,
+            train_queries.len()
+        );
+        tracing::info!(
+            "  Held-out accuracy: {:.4} ({}/{})",
+            held_out_acc,
+            held_out_correct,
+            held_out_queries.len()
+        );
         tracing::info!("  Transfer gap: {:.4}", gap);
     }
 
@@ -1000,14 +1043,23 @@ pub fn phase7_cross_domain(
     phase_metrics.insert("held_out_accuracy".to_string(), held_out_acc as f64);
     phase_metrics.insert("gap".to_string(), gap as f64);
     phase_metrics.insert("train_queries".to_string(), train_queries.len() as f64);
-    phase_metrics.insert("held_out_queries".to_string(), held_out_queries.len() as f64);
+    phase_metrics.insert(
+        "held_out_queries".to_string(),
+        held_out_queries.len() as f64,
+    );
 
     let mut targets = HashMap::new();
     targets.insert("held_out_accuracy".to_string(), 0.45);
     targets.insert("gap".to_string(), 0.25); // max
 
     let duration = start.elapsed().as_millis() as u64;
-    metrics::make_phase_result(7, "Cross-Domain Generalization", phase_metrics, targets, duration)
+    metrics::make_phase_result(
+        7,
+        "Cross-Domain Generalization",
+        phase_metrics,
+        targets,
+        duration,
+    )
 }
 
 // ============================================================================
@@ -1021,10 +1073,7 @@ pub fn phase7_cross_domain(
 /// Real mode is model_dependent=true; synthetic mode is model_dependent=false.
 ///
 /// Pass criteria: overhead < 2.5x, throughput > 80 QPS
-pub fn phase8_performance(
-    pairs: &[BenchmarkPair],
-    config: &BenchConfig,
-) -> PhaseBenchmarkResult {
+pub fn phase8_performance(pairs: &[BenchmarkPair], config: &BenchConfig) -> PhaseBenchmarkResult {
     let start = std::time::Instant::now();
 
     let n = pairs.len();
@@ -1041,13 +1090,17 @@ pub fn phase8_performance(
         for pair in pairs.iter().take(sample_size) {
             // Time E5 dual embedding
             let e5_start = std::time::Instant::now();
-            let _ = config.provider.e5_score(&pair.cause_text, &pair.effect_text);
+            let _ = config
+                .provider
+                .e5_score(&pair.cause_text, &pair.effect_text);
             e5_t.push(e5_start.elapsed().as_micros() as u64);
 
             // Time E1 embedding (if available)
             if config.provider.has_e1() {
                 let e1_start = std::time::Instant::now();
-                let _ = config.provider.e1_score(&pair.cause_text, &pair.effect_text);
+                let _ = config
+                    .provider
+                    .e1_score(&pair.cause_text, &pair.effect_text);
                 e1_t.push(e1_start.elapsed().as_micros() as u64);
             } else {
                 // Synthetic E1 when no semantic model loaded
@@ -1100,10 +1153,19 @@ pub fn phase8_performance(
     if config.verbose {
         tracing::info!("  Mode: {}", mode);
         tracing::info!("  E1 median: {}us, p95: {}us", e1_median, e1_p95);
-        tracing::info!("  E5 median: {}us, p95: {}us, p99: {}us", e5_median, e5_p95, e5_p99);
+        tracing::info!(
+            "  E5 median: {}us, p95: {}us, p99: {}us",
+            e5_median,
+            e5_p95,
+            e5_p99
+        );
         tracing::info!("  Overhead: {:.2}x", overhead);
         tracing::info!("  Throughput: {:.1} QPS", throughput);
-        tracing::info!("  Dual storage: {} bytes ({:.1}x single)", dual_storage_bytes, 2.0);
+        tracing::info!(
+            "  Dual storage: {} bytes ({:.1}x single)",
+            dual_storage_bytes,
+            2.0
+        );
     }
 
     let phase_name = if is_real {
@@ -1121,13 +1183,16 @@ pub fn phase8_performance(
     phase_metrics.insert("overhead".to_string(), overhead);
     phase_metrics.insert("throughput".to_string(), throughput);
     phase_metrics.insert("dual_storage_bytes".to_string(), dual_storage_bytes as f64);
-    phase_metrics.insert("storage_ratio".to_string(), dual_storage_bytes as f64 / single_storage_bytes.max(1) as f64);
+    phase_metrics.insert(
+        "storage_ratio".to_string(),
+        dual_storage_bytes as f64 / single_storage_bytes.max(1) as f64,
+    );
 
     let mut targets = HashMap::new();
     targets.insert("overhead".to_string(), 2.5); // max
-    // GPU throughput target is lower than synthetic — real inference is ~5-15 QPS
-    // depending on GPU, batch size, and model size. Synthetic target is higher
-    // because it uses text-length formulas, not real inference.
+                                                 // GPU throughput target is lower than synthetic — real inference is ~5-15 QPS
+                                                 // depending on GPU, batch size, and model size. Synthetic target is higher
+                                                 // because it uses text-length formulas, not real inference.
     let throughput_target = if is_real { 3.0 } else { 80.0 };
     targets.insert("throughput".to_string(), throughput_target);
 
@@ -1169,40 +1234,77 @@ pub fn run_all_phases(
     let (train_pairs, held_out_pairs) =
         super::data_loader::split_by_domain(pairs, &["psychology", "history"]);
 
-    tracing::info!("=== Phase 1: Query Intent Detection ({} queries) ===", queries.len());
+    tracing::info!(
+        "=== Phase 1: Query Intent Detection ({} queries) ===",
+        queries.len()
+    );
     results.push(phase1_query_intent(queries, config.verbose));
 
-    tracing::info!("=== Phase 2: E5 Embedding Quality ({} causal + {} non-causal) ===", causal_pairs.len(), non_causal_pairs.len());
+    tracing::info!(
+        "=== Phase 2: E5 Embedding Quality ({} causal + {} non-causal) ===",
+        causal_pairs.len(),
+        non_causal_pairs.len()
+    );
     results.push(phase2_e5_quality(&causal_pairs, &non_causal_pairs, config));
 
-    tracing::info!("=== Phase 3: Direction Modifiers ({} forward pairs) ===", forward_pairs.len());
+    tracing::info!(
+        "=== Phase 3: Direction Modifiers ({} forward pairs) ===",
+        forward_pairs.len()
+    );
     results.push(phase3_direction_modifiers(&forward_pairs, config));
 
     // Pre-compute E5 scores for all pairs once. Phases 4/6/7 call simulate_search()
     // per query×pair — without caching, GPU mode would require 90,000+ forward passes.
     // With caching: 250 pair scores computed once, reused across all queries.
     if config.provider.is_gpu() {
-        tracing::info!("=== Pre-computing E5 pair scores ({} pairs) ===", pairs.len());
+        tracing::info!(
+            "=== Pre-computing E5 pair scores ({} pairs) ===",
+            pairs.len()
+        );
     }
     config.precompute_pair_scores(pairs);
 
     // Pre-compute E1 semantic scores for all query x pair combinations
     if config.provider.has_e1() {
-        tracing::info!("=== Pre-computing E1 semantic scores ({} queries x {} pairs) ===", queries.len(), pairs.len());
+        tracing::info!(
+            "=== Pre-computing E1 semantic scores ({} queries x {} pairs) ===",
+            queries.len(),
+            pairs.len()
+        );
     }
     config.precompute_e1_scores(queries, pairs);
 
-    tracing::info!("=== Phase 4: Ablation Analysis ({} queries × {} pairs) ===", queries.len(), pairs.len());
+    tracing::info!(
+        "=== Phase 4: Ablation Analysis ({} queries × {} pairs) ===",
+        queries.len(),
+        pairs.len()
+    );
     results.push(phase4_ablation(queries, pairs, config));
 
-    tracing::info!("=== Phase 5: Causal Gate ({} causal + {} non-causal) ===", causal_pairs.len(), non_causal_pairs.len());
+    tracing::info!(
+        "=== Phase 5: Causal Gate ({} causal + {} non-causal) ===",
+        causal_pairs.len(),
+        non_causal_pairs.len()
+    );
     results.push(phase5_causal_gate(&causal_pairs, &non_causal_pairs, config));
 
-    tracing::info!("=== Phase 6: End-to-End Retrieval ({} queries) ===", queries.len());
+    tracing::info!(
+        "=== Phase 6: End-to-End Retrieval ({} queries) ===",
+        queries.len()
+    );
     results.push(phase6_e2e_retrieval(queries, pairs, config));
 
-    tracing::info!("=== Phase 7: Cross-Domain ({} train + {} held-out) ===", train_pairs.len(), held_out_pairs.len());
-    results.push(phase7_cross_domain(queries, &train_pairs, &held_out_pairs, config));
+    tracing::info!(
+        "=== Phase 7: Cross-Domain ({} train + {} held-out) ===",
+        train_pairs.len(),
+        held_out_pairs.len()
+    );
+    results.push(phase7_cross_domain(
+        queries,
+        &train_pairs,
+        &held_out_pairs,
+        config,
+    ));
 
     tracing::info!("=== Phase 8: Performance ({} pairs) ===", pairs.len());
     results.push(phase8_performance(pairs, config));
@@ -1239,7 +1341,12 @@ pub fn run_single_phase(
         4 => Some(phase4_ablation(queries, pairs, config)),
         5 => Some(phase5_causal_gate(&causal_pairs, &non_causal_pairs, config)),
         6 => Some(phase6_e2e_retrieval(queries, pairs, config)),
-        7 => Some(phase7_cross_domain(queries, &train_pairs, &held_out_pairs, config)),
+        7 => Some(phase7_cross_domain(
+            queries,
+            &train_pairs,
+            &held_out_pairs,
+            config,
+        )),
         8 => Some(phase8_performance(pairs, config)),
         _ => None,
     }
@@ -1352,7 +1459,10 @@ mod tests {
 
     #[test]
     fn test_detect_intent_effect() {
-        assert_eq!(detect_intent("What happens when interest rates rise?"), "effect");
+        assert_eq!(
+            detect_intent("What happens when interest rates rise?"),
+            "effect"
+        );
         assert_eq!(detect_intent("Consequence of deforestation"), "effect");
         assert_eq!(detect_intent("The effect of smoking on health"), "effect");
     }

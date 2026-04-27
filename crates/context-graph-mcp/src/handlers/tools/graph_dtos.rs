@@ -265,8 +265,12 @@ impl GetGraphPathRequest {
     /// - minSimilarity is outside [0, 1] or NaN/infinite
     pub fn validate(&self) -> Result<Uuid, String> {
         // Validate anchor UUID
-        let anchor_uuid = Uuid::parse_str(&self.anchor_id)
-            .map_err(|e| format!("Invalid UUID format for anchorId '{}': {}", self.anchor_id, e))?;
+        let anchor_uuid = Uuid::parse_str(&self.anchor_id).map_err(|e| {
+            format!(
+                "Invalid UUID format for anchorId '{}': {}",
+                self.anchor_id, e
+            )
+        })?;
 
         // Validate direction
         let valid_directions = ["forward", "backward"];
@@ -553,7 +557,10 @@ impl GetGraphPathResponse {
             return 0.0;
         }
         // The last hop's cumulative_strength is the total score
-        self.path.last().map(|h| h.cumulative_strength).unwrap_or(0.0)
+        self.path
+            .last()
+            .map(|h| h.cumulative_strength)
+            .unwrap_or(0.0)
     }
 }
 
@@ -658,17 +665,30 @@ impl DiscoverGraphRelationshipsRequest {
             // 20 relationship types (19 + none)
             let valid_types = [
                 // Containment
-                "contains", "scoped_by",
+                "contains",
+                "scoped_by",
                 // Dependency
-                "depends_on", "imports", "requires",
+                "depends_on",
+                "imports",
+                "requires",
                 // Reference
-                "references", "cites", "interprets", "distinguishes",
+                "references",
+                "cites",
+                "interprets",
+                "distinguishes",
                 // Implementation
-                "implements", "complies_with", "fulfills",
+                "implements",
+                "complies_with",
+                "fulfills",
                 // Extension
-                "extends", "modifies", "supersedes", "overrules",
+                "extends",
+                "modifies",
+                "supersedes",
+                "overrules",
                 // Invocation
-                "calls", "applies", "used_by",
+                "calls",
+                "applies",
+                "used_by",
             ];
             for t in types {
                 if !valid_types.contains(&t.as_str()) {
@@ -798,29 +818,50 @@ impl ValidateGraphLinkRequest {
     /// On success, returns the parsed (source_uuid, target_uuid). On failure, returns an error message.
     pub fn validate(&self) -> Result<(Uuid, Uuid), String> {
         // Parse source UUID
-        let source_uuid = Uuid::parse_str(&self.source_id)
-            .map_err(|e| format!("Invalid UUID format for source_id '{}': {}", self.source_id, e))?;
+        let source_uuid = Uuid::parse_str(&self.source_id).map_err(|e| {
+            format!(
+                "Invalid UUID format for source_id '{}': {}",
+                self.source_id, e
+            )
+        })?;
 
         // Parse target UUID
-        let target_uuid = Uuid::parse_str(&self.target_id)
-            .map_err(|e| format!("Invalid UUID format for target_id '{}': {}", self.target_id, e))?;
+        let target_uuid = Uuid::parse_str(&self.target_id).map_err(|e| {
+            format!(
+                "Invalid UUID format for target_id '{}': {}",
+                self.target_id, e
+            )
+        })?;
 
         // Validate expected_relationship_type if provided
         if let Some(ref t) = self.expected_relationship_type {
             // 20 relationship types (19 + none)
             let valid_types = [
                 // Containment
-                "contains", "scoped_by",
+                "contains",
+                "scoped_by",
                 // Dependency
-                "depends_on", "imports", "requires",
+                "depends_on",
+                "imports",
+                "requires",
                 // Reference
-                "references", "cites", "interprets", "distinguishes",
+                "references",
+                "cites",
+                "interprets",
+                "distinguishes",
                 // Implementation
-                "implements", "complies_with", "fulfills",
+                "implements",
+                "complies_with",
+                "fulfills",
                 // Extension
-                "extends", "modifies", "supersedes", "overrules",
+                "extends",
+                "modifies",
+                "supersedes",
+                "overrules",
                 // Invocation
-                "calls", "applies", "used_by",
+                "calls",
+                "applies",
+                "used_by",
             ];
             if !valid_types.contains(&t.as_str()) {
                 return Err(format!(
@@ -978,7 +1019,10 @@ mod tests {
             direction: "both".to_string(),
             ..Default::default()
         };
-        assert!(!both.is_source(), "MCP-7: 'both' must NOT map to is_source()");
+        assert!(
+            !both.is_source(),
+            "MCP-7: 'both' must NOT map to is_source()"
+        );
         assert!(both.is_both(), "MCP-7: 'both' must map to is_both()");
 
         println!("[PASS] is_source, is_both work correctly");
@@ -1092,19 +1136,15 @@ mod tests {
         // Second hop: cumulative = 0.85 * 0.8 * 0.9^1 = 0.85 * 0.72 = 0.612
         let expected = 0.85 * 0.8 * 0.9;
         assert!((hop.cumulative_strength - expected).abs() < 0.01);
-        println!("[PASS] Hop attenuation applied correctly: {}", hop.cumulative_strength);
+        println!(
+            "[PASS] Hop attenuation applied correctly: {}",
+            hop.cumulative_strength
+        );
     }
 
     #[test]
     fn test_graph_path_hop_with_content() {
-        let hop = GraphPathHop::new(
-            Uuid::nil(),
-            0,
-            0.8,
-            0.85,
-            1.0,
-            GraphDirection::Unknown,
-        );
+        let hop = GraphPathHop::new(Uuid::nil(), 0, 0.8, 0.85, 1.0, GraphDirection::Unknown);
 
         let hop_with_content = hop._with_content("Test content".to_string());
         assert_eq!(hop_with_content.content, Some("Test content".to_string()));

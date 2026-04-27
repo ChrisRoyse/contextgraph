@@ -40,12 +40,11 @@ pub fn compute_rotary_freqs(
         }
     }
 
-    let angle_tensor =
-        Tensor::from_slice(&angles, (seq_len, half_dim), device).map_err(|e| {
-            EmbeddingError::GpuError {
-                message: format!("RoPE angle tensor failed: {}", e),
-            }
-        })?;
+    let angle_tensor = Tensor::from_slice(&angles, (seq_len, half_dim), device).map_err(|e| {
+        EmbeddingError::GpuError {
+            message: format!("RoPE angle tensor failed: {}", e),
+        }
+    })?;
 
     let cos = angle_tensor.cos().map_err(|e| EmbeddingError::GpuError {
         message: format!("RoPE cos failed: {}", e),
@@ -66,11 +65,7 @@ pub fn compute_rotary_freqs(
 /// Non-interleaved: split head_dim into first and second halves:
 ///   new[..., :half] = x[..., :half] * cos - x[..., half:] * sin
 ///   new[..., half:] = x[..., half:] * cos + x[..., :half] * sin
-fn apply_rotary_emb(
-    x: &Tensor,
-    cos: &Tensor,
-    sin: &Tensor,
-) -> EmbeddingResult<Tensor> {
+fn apply_rotary_emb(x: &Tensor, cos: &Tensor, sin: &Tensor) -> EmbeddingResult<Tensor> {
     let head_dim = x.dim(3).map_err(|e| EmbeddingError::GpuError {
         message: format!("RoPE get head_dim failed: {}", e),
     })?;
@@ -185,20 +180,14 @@ pub fn self_attention_forward(
                 })?,
         )
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} Wqkv matmul failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} Wqkv matmul failed: {}", layer_idx, e),
         })?;
 
     // Reshape to [batch, seq, 3, heads, head_dim]
     let qkv = qkv
         .reshape((batch_size, seq_len, 3, num_heads, head_dim))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} QKV reshape failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} QKV reshape failed: {}", layer_idx, e),
         })?;
 
     // Extract Q, K, V → [batch, heads, seq, head_dim]
@@ -325,20 +314,14 @@ pub fn self_attention_forward_with_lora(
                 })?,
         )
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} Wqkv matmul failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} Wqkv matmul failed: {}", layer_idx, e),
         })?;
 
     // Reshape to [batch, seq, 3, heads, head_dim]
     let qkv = qkv
         .reshape((batch_size, seq_len, 3, num_heads, head_dim))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "CausalModel layer {} QKV reshape failed: {}",
-                layer_idx, e
-            ),
+            message: format!("CausalModel layer {} QKV reshape failed: {}", layer_idx, e),
         })?;
 
     // Extract Q, K, V → [batch, heads, seq, head_dim]
@@ -351,15 +334,24 @@ pub fn self_attention_forward_with_lora(
     let q_delta = q_delta
         .reshape((batch_size, seq_len, num_heads, head_dim))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA Q reshape failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA Q reshape failed: {}",
+                layer_idx, e
+            ),
         })?
         .transpose(1, 2)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA Q transpose failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA Q transpose failed: {}",
+                layer_idx, e
+            ),
         })?
         .contiguous()
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA Q contiguous failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA Q contiguous failed: {}",
+                layer_idx, e
+            ),
         })?;
     let q = q.add(&q_delta).map_err(|e| EmbeddingError::GpuError {
         message: format!("CausalModel layer {} LoRA Q add failed: {}", layer_idx, e),
@@ -370,15 +362,24 @@ pub fn self_attention_forward_with_lora(
     let v_delta = v_delta
         .reshape((batch_size, seq_len, num_heads, head_dim))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA V reshape failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA V reshape failed: {}",
+                layer_idx, e
+            ),
         })?
         .transpose(1, 2)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA V transpose failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA V transpose failed: {}",
+                layer_idx, e
+            ),
         })?
         .contiguous()
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel layer {} LoRA V contiguous failed: {}", layer_idx, e),
+            message: format!(
+                "CausalModel layer {} LoRA V contiguous failed: {}",
+                layer_idx, e
+            ),
         })?;
     let v = v.add(&v_delta).map_err(|e| EmbeddingError::GpuError {
         message: format!("CausalModel layer {} LoRA V add failed: {}", layer_idx, e),
@@ -391,15 +392,24 @@ pub fn self_attention_forward_with_lora(
         let k_delta = k_delta
             .reshape((batch_size, seq_len, num_heads, head_dim))
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!("CausalModel layer {} LoRA K reshape failed: {}", layer_idx, e),
+                message: format!(
+                    "CausalModel layer {} LoRA K reshape failed: {}",
+                    layer_idx, e
+                ),
             })?
             .transpose(1, 2)
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!("CausalModel layer {} LoRA K transpose failed: {}", layer_idx, e),
+                message: format!(
+                    "CausalModel layer {} LoRA K transpose failed: {}",
+                    layer_idx, e
+                ),
             })?
             .contiguous()
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!("CausalModel layer {} LoRA K contiguous failed: {}", layer_idx, e),
+                message: format!(
+                    "CausalModel layer {} LoRA K contiguous failed: {}",
+                    layer_idx, e
+                ),
             })?;
         k.add(&k_delta).map_err(|e| EmbeddingError::GpuError {
             message: format!("CausalModel layer {} LoRA K add failed: {}", layer_idx, e),

@@ -120,7 +120,10 @@ mod tests {
     #[test]
     fn test_trigger_schema_and_defaults() {
         let tools = definitions();
-        let trigger = tools.iter().find(|t| t.name == "trigger_causal_discovery").unwrap();
+        let trigger = tools
+            .iter()
+            .find(|t| t.name == "trigger_causal_discovery")
+            .unwrap();
         assert!(trigger.description.contains("LLM") || trigger.description.contains("Qwen"));
         assert!(trigger.description.contains("E5") || trigger.description.contains("CausalModel"));
         let props = trigger.input_schema["properties"].as_object().unwrap();
@@ -132,8 +135,14 @@ mod tests {
         assert!(mode_enum.contains(&json!("extract")));
         assert!(mode_enum.contains(&json!("pairs")));
         // CD-H3 FIX: similarityThreshold and skipAnalyzed removed (were never read by handler)
-        assert!(!props.contains_key("similarityThreshold"), "similarityThreshold should be removed");
-        assert!(!props.contains_key("skipAnalyzed"), "skipAnalyzed should be removed");
+        assert!(
+            !props.contains_key("similarityThreshold"),
+            "similarityThreshold should be removed"
+        );
+        assert!(
+            !props.contains_key("skipAnalyzed"),
+            "skipAnalyzed should be removed"
+        );
         let scope_enum = props["sessionScope"]["enum"].as_array().unwrap();
         assert!(scope_enum.contains(&json!("current")));
         assert!(scope_enum.contains(&json!("all")));

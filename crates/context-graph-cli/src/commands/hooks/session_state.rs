@@ -99,7 +99,10 @@ impl SessionCache {
         let guard = match SESSION_CACHE.lock() {
             Ok(g) => g,
             Err(e) => {
-                eprintln!("ERROR: Session cache mutex poisoned: {} — session state unavailable", e);
+                eprintln!(
+                    "ERROR: Session cache mutex poisoned: {} — session state unavailable",
+                    e
+                );
                 return None;
             }
         };
@@ -112,7 +115,10 @@ impl SessionCache {
         match SESSION_CACHE.lock() {
             Ok(g) => g.is_some(),
             Err(e) => {
-                eprintln!("ERROR: Session cache mutex poisoned: {} — cannot check warmth", e);
+                eprintln!(
+                    "ERROR: Session cache mutex poisoned: {} — cannot check warmth",
+                    e
+                );
                 false
             }
         }
@@ -126,7 +132,10 @@ pub fn store_in_cache(snapshot: &SessionSnapshot) {
             *guard = Some(snapshot.clone());
         }
         Err(e) => {
-            eprintln!("ERROR: Session cache mutex poisoned: {} — cannot store snapshot", e);
+            eprintln!(
+                "ERROR: Session cache mutex poisoned: {} — cannot store snapshot",
+                e
+            );
         }
     }
 }

@@ -51,10 +51,7 @@ pub fn encoder_layer_forward(
     let ffn_output = ffn_forward(&attention_output, &layer.ffn, config, layer_idx)?;
 
     let output = (&attention_output + &ffn_output).map_err(|e| EmbeddingError::GpuError {
-        message: format!(
-            "BgeM3Dense layer {} FFN residual failed: {}",
-            layer_idx, e
-        ),
+        message: format!("BgeM3Dense layer {} FFN residual failed: {}", layer_idx, e),
     })?;
 
     layer_norm(

@@ -478,10 +478,12 @@ mod tests {
 
     #[test]
     fn test_category_ord() {
-        let mut categories = [InjectionCategory::RecentSession,
+        let mut categories = [
+            InjectionCategory::RecentSession,
             InjectionCategory::DivergenceAlert,
             InjectionCategory::SingleSpaceMatch,
-            InjectionCategory::HighRelevanceCluster];
+            InjectionCategory::HighRelevanceCluster,
+        ];
         categories.sort();
 
         assert_eq!(categories[0], InjectionCategory::DivergenceAlert);
@@ -542,15 +544,20 @@ mod tests {
 
     #[test]
     fn test_candidate_sorting_by_category() {
-        let mut candidates = [make_candidate(0.9, 2.0, InjectionCategory::SingleSpaceMatch),
+        let mut candidates = [
+            make_candidate(0.9, 2.0, InjectionCategory::SingleSpaceMatch),
             make_candidate(0.8, 0.5, InjectionCategory::DivergenceAlert),
             make_candidate(0.7, 1.0, InjectionCategory::RecentSession),
-            make_candidate(0.85, 3.0, InjectionCategory::HighRelevanceCluster)];
+            make_candidate(0.85, 3.0, InjectionCategory::HighRelevanceCluster),
+        ];
 
         candidates.sort();
 
         assert_eq!(candidates[0].category, InjectionCategory::DivergenceAlert);
-        assert_eq!(candidates[1].category, InjectionCategory::HighRelevanceCluster);
+        assert_eq!(
+            candidates[1].category,
+            InjectionCategory::HighRelevanceCluster
+        );
         assert_eq!(candidates[2].category, InjectionCategory::SingleSpaceMatch);
         assert_eq!(candidates[3].category, InjectionCategory::RecentSession);
         println!("[PASS] Candidates sort by category first");
@@ -711,11 +718,11 @@ mod tests {
             0.5,
             3.0,
             vec![
-                Embedder::Semantic,       // Semantic - counts
-                Embedder::Code,           // Semantic - counts
-                Embedder::TemporalRecent, // Temporal - excluded
+                Embedder::Semantic,         // Semantic - counts
+                Embedder::Code,             // Semantic - counts
+                Embedder::TemporalRecent,   // Temporal - excluded
                 Embedder::TemporalPeriodic, // Temporal - excluded
-                Embedder::Graph,      // Relational - counts
+                Embedder::Graph,            // Relational - counts
             ],
             InjectionCategory::HighRelevanceCluster,
             Utc::now(),

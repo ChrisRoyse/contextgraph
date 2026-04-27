@@ -93,8 +93,12 @@ impl MultiSpaceSimilarity {
         let mut scores = PerSpaceScores::new();
 
         for embedder in Embedder::all() {
-            let sim =
-                compute_similarity_for_space_with_direction(embedder, query, memory, causal_direction);
+            let sim = compute_similarity_for_space_with_direction(
+                embedder,
+                query,
+                memory,
+                causal_direction,
+            );
             scores.set_score(embedder, sim);
         }
 
@@ -319,7 +323,10 @@ mod tests {
         scores_two.set_score(Embedder::Semantic, 0.80);
         scores_two.set_score(Embedder::Code, 0.85);
 
-        assert!(similarity.compute_relevance_score(&scores_two) > similarity.compute_relevance_score(&scores_one));
+        assert!(
+            similarity.compute_relevance_score(&scores_two)
+                > similarity.compute_relevance_score(&scores_one)
+        );
     }
 
     #[test]
@@ -332,7 +339,11 @@ mod tests {
         scores.set_score(Embedder::TemporalPositional, 0.95);
 
         let weighted = similarity.compute_weighted_similarity(&scores);
-        assert!(weighted < 0.01, "Temporal-only should give near-zero weighted: {}", weighted);
+        assert!(
+            weighted < 0.01,
+            "Temporal-only should give near-zero weighted: {}",
+            weighted
+        );
 
         let rel = similarity.compute_relevance_score(&scores);
         assert_eq!(rel, 0.0, "Temporal-only should give 0.0 relevance");
@@ -384,9 +395,19 @@ mod tests {
         scores_low.set_score(Embedder::Semantic, 0.50);
 
         let results = vec![
-            SimilarityResult::with_relevance(Uuid::new_v4(), scores_high.clone(), 0.8, vec![Embedder::Semantic]),
+            SimilarityResult::with_relevance(
+                Uuid::new_v4(),
+                scores_high.clone(),
+                0.8,
+                vec![Embedder::Semantic],
+            ),
             SimilarityResult::with_relevance(Uuid::new_v4(), scores_low.clone(), 0.0, vec![]),
-            SimilarityResult::with_relevance(Uuid::new_v4(), scores_high.clone(), 0.7, vec![Embedder::Semantic]),
+            SimilarityResult::with_relevance(
+                Uuid::new_v4(),
+                scores_high.clone(),
+                0.7,
+                vec![Embedder::Semantic],
+            ),
         ];
 
         let filtered = filter_relevant(&similarity, results);
@@ -419,7 +440,8 @@ mod tests {
         memory.e5_causal_as_effect = vec![0.9; 768];
 
         let sym = similarity.compute_similarity(&query, &memory);
-        let with_cause = similarity.compute_similarity_with_direction(&query, &memory, CausalDirection::Cause);
+        let with_cause =
+            similarity.compute_similarity_with_direction(&query, &memory, CausalDirection::Cause);
 
         for embedder in Embedder::all() {
             if !matches!(embedder, Embedder::Causal) {
@@ -428,7 +450,9 @@ mod tests {
                 assert!(
                     (s - c).abs() < 1e-5,
                     "{:?} should be unchanged: sym={}, cause={}",
-                    embedder, s, c
+                    embedder,
+                    s,
+                    c
                 );
             }
         }

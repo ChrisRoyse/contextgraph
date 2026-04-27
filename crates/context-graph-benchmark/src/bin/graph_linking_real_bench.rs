@@ -134,7 +134,9 @@ fn parse_args() -> Args {
     while let Some(arg) = argv.next() {
         match arg.as_str() {
             "--data-dir" | "-d" => {
-                args.data_dir = Some(PathBuf::from(argv.next().expect("--data-dir requires a value")));
+                args.data_dir = Some(PathBuf::from(
+                    argv.next().expect("--data-dir requires a value"),
+                ));
             }
             "--num-chunks" | "-n" => {
                 args.num_chunks = argv
@@ -214,11 +216,7 @@ struct Memory {
 // ============================================================================
 
 /// Generate synthetic memories with controlled clustering.
-fn generate_synthetic_memories(
-    num_memories: usize,
-    num_topics: usize,
-    seed: u64,
-) -> Vec<Memory> {
+fn generate_synthetic_memories(num_memories: usize, num_topics: usize, seed: u64) -> Vec<Memory> {
     use rand::prelude::*;
     use rand_chacha::ChaCha8Rng;
 
@@ -230,9 +228,7 @@ fn generate_synthetic_memories(
     for topic_id in 0..num_topics {
         for emb_id in 0..13u8 {
             let dim = EMBEDDING_DIMS[emb_id as usize];
-            let mut centroid: Vec<f32> = (0..dim)
-                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
-                .collect();
+            let mut centroid: Vec<f32> = (0..dim).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
             normalize(&mut centroid);
             topic_centroids.insert((topic_id, emb_id), centroid);
         }
@@ -304,9 +300,7 @@ fn load_real_data_with_embeddings(
     for topic_id in 0..num_topics {
         for emb_id in 0..13u8 {
             let dim = EMBEDDING_DIMS[emb_id as usize];
-            let mut centroid: Vec<f32> = (0..dim)
-                .map(|_| rng.gen::<f32>() * 2.0 - 1.0)
-                .collect();
+            let mut centroid: Vec<f32> = (0..dim).map(|_| rng.gen::<f32>() * 2.0 - 1.0).collect();
             normalize(&mut centroid);
             topic_centroids.insert((topic_id, emb_id), centroid);
         }
@@ -591,7 +585,8 @@ fn main() -> Result<()> {
 
     // Load or generate data
     let (memories, num_topics, data_source) = if let Some(ref data_dir) = args.data_dir {
-        let (memories, dataset) = load_real_data_with_embeddings(data_dir, args.num_chunks, args.seed)?;
+        let (memories, dataset) =
+            load_real_data_with_embeddings(data_dir, args.num_chunks, args.seed)?;
         let num_topics = dataset.topic_count();
         let source = format!("Real: {} ({} chunks)", data_dir.display(), memories.len());
         (memories, num_topics, source)
@@ -602,11 +597,19 @@ fn main() -> Result<()> {
             args.num_chunks, num_topics
         );
         let memories = generate_synthetic_memories(args.num_chunks, num_topics, args.seed);
-        let source = format!("Synthetic: {} memories, {} topics", memories.len(), num_topics);
+        let source = format!(
+            "Synthetic: {} memories, {} topics",
+            memories.len(),
+            num_topics
+        );
         (memories, num_topics, source)
     };
 
-    info!("Data loaded: {} memories, {} topics", memories.len(), num_topics);
+    info!(
+        "Data loaded: {} memories, {} topics",
+        memories.len(),
+        num_topics
+    );
 
     // Run benchmark phases
     let mut results = BenchmarkResults {
@@ -673,7 +676,11 @@ fn phase1_nn_descent(
 
     // Build K-NN graphs for SYMMETRIC embedders using NnDescent.build()
     for &emb_id in &SYMMETRIC_EMBEDDERS {
-        info!("  Building K-NN for E{} ({}) - SYMMETRIC", emb_id + 1, embedder_name(emb_id));
+        info!(
+            "  Building K-NN for E{} ({}) - SYMMETRIC",
+            emb_id + 1,
+            embedder_name(emb_id)
+        );
 
         let nn = NnDescent::new(emb_id, &nodes, config.clone());
 
@@ -687,10 +694,18 @@ fn phase1_nn_descent(
                 },
                 &cosine_similarity,
             )
-            .context(format!("NN-Descent failed for symmetric embedder E{}", emb_id + 1))?;
+            .context(format!(
+                "NN-Descent failed for symmetric embedder E{}",
+                emb_id + 1
+            ))?;
 
         let edge_count = graph.edge_count();
-        info!("    E{} ({}): {} edges", emb_id + 1, embedder_name(emb_id), edge_count);
+        info!(
+            "    E{} ({}): {} edges",
+            emb_id + 1,
+            embedder_name(emb_id),
+            edge_count
+        );
         results.edges_per_embedder.insert(emb_id, edge_count);
         knn_graphs.insert(emb_id, graph);
     }
@@ -698,7 +713,11 @@ fn phase1_nn_descent(
     // Build K-NN graphs for ASYMMETRIC embedders using build_asymmetric_knn()
     // Per AP-77: E5 (causal) and E8 (graph) MUST use asymmetric similarity
     for &emb_id in &ASYMMETRIC_EMBEDDERS {
-        info!("  Building K-NN for E{} ({}) - ASYMMETRIC (AP-77)", emb_id + 1, embedder_name(emb_id));
+        info!(
+            "  Building K-NN for E{} ({}) - ASYMMETRIC (AP-77)",
+            emb_id + 1,
+            embedder_name(emb_id)
+        );
 
         // For asymmetric embedders, we need separate source/target embeddings
         // In real usage, these would be different projections (cause vs effect)
@@ -721,10 +740,18 @@ fn phase1_nn_descent(
             &cosine_similarity,
             config.clone(),
         )
-        .context(format!("build_asymmetric_knn failed for E{} (AP-77 embedder)", emb_id + 1))?;
+        .context(format!(
+            "build_asymmetric_knn failed for E{} (AP-77 embedder)",
+            emb_id + 1
+        ))?;
 
         let edge_count = graph.edge_count();
-        info!("    E{} ({}): {} edges (directed)", emb_id + 1, embedder_name(emb_id), edge_count);
+        info!(
+            "    E{} ({}): {} edges (directed)",
+            emb_id + 1,
+            embedder_name(emb_id),
+            edge_count
+        );
         results.edges_per_embedder.insert(emb_id, edge_count);
         knn_graphs.insert(emb_id, graph);
     }
@@ -950,10 +977,7 @@ fn phase5_topic_validation(
     info!("Phase 5: Validating topic clustering in K-NN graphs");
 
     // Build memory ID to topic mapping
-    let id_to_topic: HashMap<Uuid, usize> = memories
-        .iter()
-        .map(|m| (m.id, m.topic_id))
-        .collect();
+    let id_to_topic: HashMap<Uuid, usize> = memories.iter().map(|m| (m.id, m.topic_id)).collect();
 
     // Count intra-topic vs inter-topic edges in E1 graph
     let e1_graph = knn_graphs.get(&0).context("E1 K-NN graph not found")?;
@@ -962,8 +986,14 @@ fn phase5_topic_validation(
     let mut inter_topic = 0usize;
 
     for edge in e1_graph.edges() {
-        let source_topic = id_to_topic.get(&edge.source()).copied().unwrap_or(usize::MAX);
-        let target_topic = id_to_topic.get(&edge.target()).copied().unwrap_or(usize::MAX);
+        let source_topic = id_to_topic
+            .get(&edge.source())
+            .copied()
+            .unwrap_or(usize::MAX);
+        let target_topic = id_to_topic
+            .get(&edge.target())
+            .copied()
+            .unwrap_or(usize::MAX);
 
         if source_topic == target_topic {
             intra_topic += 1;

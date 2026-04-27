@@ -73,7 +73,8 @@ impl UnifiedRealdataBenchmarkRunner {
             .with_max_chunks(self.config.max_chunks)
             .with_max_topics(200);
 
-        let dataset = loader.load_from_dir(&self.config.data_dir)
+        let dataset = loader
+            .load_from_dir(&self.config.data_dir)
             .map_err(|e| RunnerError::DatasetLoad(e.to_string()))?;
 
         self.dataset = Some(dataset);
@@ -82,13 +83,10 @@ impl UnifiedRealdataBenchmarkRunner {
 
     /// Inject temporal metadata for E2/E3/E4.
     pub fn inject_temporal_metadata(&mut self) -> Result<&InjectedTemporalMetadata, RunnerError> {
-        let dataset = self.dataset.as_ref()
-            .ok_or(RunnerError::NoDataset)?;
+        let dataset = self.dataset.as_ref().ok_or(RunnerError::NoDataset)?;
 
-        let mut injector = TemporalMetadataInjector::new(
-            self.config.temporal_config.clone(),
-            self.config.seed,
-        );
+        let mut injector =
+            TemporalMetadataInjector::new(self.config.temporal_config.clone(), self.config.seed);
 
         let metadata = injector.inject(dataset);
         self.temporal_metadata = Some(metadata);
@@ -98,9 +96,10 @@ impl UnifiedRealdataBenchmarkRunner {
 
     /// Generate ground truth for all embedders.
     pub fn generate_ground_truth(&mut self) -> Result<&UnifiedGroundTruth, RunnerError> {
-        let dataset = self.dataset.as_ref()
-            .ok_or(RunnerError::NoDataset)?;
-        let temporal = self.temporal_metadata.as_ref()
+        let dataset = self.dataset.as_ref().ok_or(RunnerError::NoDataset)?;
+        let temporal = self
+            .temporal_metadata
+            .as_ref()
             .ok_or(RunnerError::NoTemporalMetadata)?;
 
         let mut generator = GroundTruthGenerator::new(self.config.seed, self.config.num_queries);
@@ -289,8 +288,7 @@ impl UnifiedRealdataBenchmarkRunner {
     async fn embed_dataset(&mut self) -> Result<(), RunnerError> {
         use crate::realdata::embedder::{EmbedderConfig, RealDataEmbedder};
 
-        let dataset = self.dataset.as_ref()
-            .ok_or(RunnerError::NoDataset)?;
+        let dataset = self.dataset.as_ref().ok_or(RunnerError::NoDataset)?;
 
         let embedder = RealDataEmbedder::with_config(EmbedderConfig {
             batch_size: self.config.batch_size,
@@ -298,11 +296,14 @@ impl UnifiedRealdataBenchmarkRunner {
             device: "cuda:0".to_string(),
         });
 
-        let embedded = embedder.embed_dataset_batched(
-            dataset,
-            self.config.checkpoint_dir.as_deref(),
-            self.config.checkpoint_interval,
-        ).await.map_err(|e| RunnerError::Embedding(e.to_string()))?;
+        let embedded = embedder
+            .embed_dataset_batched(
+                dataset,
+                self.config.checkpoint_dir.as_deref(),
+                self.config.checkpoint_interval,
+            )
+            .await
+            .map_err(|e| RunnerError::Embedding(e.to_string()))?;
 
         self.fingerprints = embedded.fingerprints;
         Ok(())
@@ -310,14 +311,19 @@ impl UnifiedRealdataBenchmarkRunner {
 
     /// Evaluate all configured embedders.
     #[cfg_attr(not(feature = "real-embeddings"), allow(dead_code))]
-    fn evaluate_all_embedders(&self) -> Result<HashMap<EmbedderName, EmbedderResults>, RunnerError> {
-        let ground_truth = self.ground_truth.as_ref()
+    fn evaluate_all_embedders(
+        &self,
+    ) -> Result<HashMap<EmbedderName, EmbedderResults>, RunnerError> {
+        let ground_truth = self
+            .ground_truth
+            .as_ref()
             .ok_or(RunnerError::NoGroundTruth)?;
 
         let mut results = HashMap::new();
 
         for embedder in &self.config.embedders {
-            let gt = ground_truth.get(*embedder)
+            let gt = ground_truth
+                .get(*embedder)
                 .ok_or(RunnerError::NoGroundTruthFor(*embedder))?;
 
             let eval = self.evaluate_embedder(*embedder, gt)?;
@@ -383,7 +389,8 @@ impl UnifiedRealdataBenchmarkRunner {
             };
 
             // Compute similarities for this embedder
-            let mut similarities: Vec<(Uuid, f64)> = self.fingerprints
+            let mut similarities: Vec<(Uuid, f64)> = self
+                .fingerprints
                 .iter()
                 .filter(|(id, _)| **id != query.query_chunk_id)
                 .map(|(id, fp)| {
@@ -410,7 +417,10 @@ impl UnifiedRealdataBenchmarkRunner {
             let num_relevant = query.relevant_ids.len();
             for &k in &self.config.k_values {
                 let top_k: Vec<_> = similarities.iter().take(k).map(|(id, _)| id).collect();
-                let hits = top_k.iter().filter(|id| query.relevant_ids.contains(id)).count();
+                let hits = top_k
+                    .iter()
+                    .filter(|id| query.relevant_ids.contains(id))
+                    .count();
 
                 *precision_sums.entry(k).or_default() += hits as f64 / k as f64;
                 if num_relevant > 0 {
@@ -423,8 +433,13 @@ impl UnifiedRealdataBenchmarkRunner {
         if num_queries > 0.0 {
             result.mrr_at_10 = mrr_sum / num_queries;
             for &k in &self.config.k_values {
-                result.precision_at_k.insert(k, precision_sums.get(&k).copied().unwrap_or(0.0) / num_queries);
-                result.recall_at_k.insert(k, recall_sums.get(&k).copied().unwrap_or(0.0) / num_queries);
+                result.precision_at_k.insert(
+                    k,
+                    precision_sums.get(&k).copied().unwrap_or(0.0) / num_queries,
+                );
+                result
+                    .recall_at_k
+                    .insert(k, recall_sums.get(&k).copied().unwrap_or(0.0) / num_queries);
             }
         }
 
@@ -435,7 +450,8 @@ impl UnifiedRealdataBenchmarkRunner {
                 mean_ms: latencies.iter().sum::<f64>() / latencies.len() as f64,
                 p50_ms: latencies[latencies.len() / 2],
                 p95_ms: latencies[(latencies.len() as f64 * 0.95) as usize],
-                p99_ms: latencies[(latencies.len() as f64 * 0.99).min(latencies.len() as f64 - 1.0) as usize],
+                p99_ms: latencies
+                    [(latencies.len() as f64 * 0.99).min(latencies.len() as f64 - 1.0) as usize],
                 total_queries: gt.queries.len(),
             };
         }
@@ -464,7 +480,8 @@ impl UnifiedRealdataBenchmarkRunner {
             let a = ids[i * 2];
             let b = ids[i * 2 + 1];
 
-            if let (Some(fp_a), Some(fp_b)) = (self.fingerprints.get(&a), self.fingerprints.get(&b)) {
+            if let (Some(fp_a), Some(fp_b)) = (self.fingerprints.get(&a), self.fingerprints.get(&b))
+            {
                 let forward = compute_similarity(fp_a, fp_b, embedder_idx);
                 let reverse = compute_similarity(fp_b, fp_a, embedder_idx);
 
@@ -487,28 +504,35 @@ impl UnifiedRealdataBenchmarkRunner {
         &self,
         per_embedder: &HashMap<EmbedderName, EmbedderResults>,
     ) -> Result<FusionResults, RunnerError> {
-        let e1_mrr = per_embedder.get(&EmbedderName::E1Semantic)
+        let e1_mrr = per_embedder
+            .get(&EmbedderName::E1Semantic)
             .map(|r| r.mrr_at_10)
             .unwrap_or(0.0);
 
         let mut by_strategy = HashMap::new();
 
         // E1 Only
-        by_strategy.insert(FusionStrategy::E1Only, FusionStrategyResults {
-            strategy: FusionStrategy::E1Only,
-            embedders_used: vec![EmbedderName::E1Semantic],
-            mrr_at_10: e1_mrr,
-            precision_at_10: per_embedder.get(&EmbedderName::E1Semantic)
-                .and_then(|r| r.precision_at_k.get(&10).copied())
-                .unwrap_or(0.0),
-            recall_at_20: per_embedder.get(&EmbedderName::E1Semantic)
-                .and_then(|r| r.recall_at_k.get(&20).copied())
-                .unwrap_or(0.0),
-            latency_ms: per_embedder.get(&EmbedderName::E1Semantic)
-                .map(|r| r.latency.mean_ms)
-                .unwrap_or(0.0),
-            quality_latency_ratio: 0.0,
-        });
+        by_strategy.insert(
+            FusionStrategy::E1Only,
+            FusionStrategyResults {
+                strategy: FusionStrategy::E1Only,
+                embedders_used: vec![EmbedderName::E1Semantic],
+                mrr_at_10: e1_mrr,
+                precision_at_10: per_embedder
+                    .get(&EmbedderName::E1Semantic)
+                    .and_then(|r| r.precision_at_k.get(&10).copied())
+                    .unwrap_or(0.0),
+                recall_at_20: per_embedder
+                    .get(&EmbedderName::E1Semantic)
+                    .and_then(|r| r.recall_at_k.get(&20).copied())
+                    .unwrap_or(0.0),
+                latency_ms: per_embedder
+                    .get(&EmbedderName::E1Semantic)
+                    .map(|r| r.latency.mean_ms)
+                    .unwrap_or(0.0),
+                quality_latency_ratio: 0.0,
+            },
+        );
 
         // MultiSpace (E1 + semantic enhancers excluding temporal)
         let multispace_embedders = vec![
@@ -519,15 +543,22 @@ impl UnifiedRealdataBenchmarkRunner {
             EmbedderName::E10Multimodal,
         ];
         let multispace_mrr = self.estimate_fusion_mrr(&multispace_embedders, per_embedder);
-        by_strategy.insert(FusionStrategy::MultiSpace, FusionStrategyResults {
-            strategy: FusionStrategy::MultiSpace,
-            embedders_used: multispace_embedders,
-            mrr_at_10: multispace_mrr,
-            precision_at_10: multispace_mrr * 0.9, // Estimate
-            recall_at_20: multispace_mrr * 1.1,
-            latency_ms: 5.0 * per_embedder.get(&EmbedderName::E1Semantic).map(|r| r.latency.mean_ms).unwrap_or(1.0),
-            quality_latency_ratio: 0.0,
-        });
+        by_strategy.insert(
+            FusionStrategy::MultiSpace,
+            FusionStrategyResults {
+                strategy: FusionStrategy::MultiSpace,
+                embedders_used: multispace_embedders,
+                mrr_at_10: multispace_mrr,
+                precision_at_10: multispace_mrr * 0.9, // Estimate
+                recall_at_20: multispace_mrr * 1.1,
+                latency_ms: 5.0
+                    * per_embedder
+                        .get(&EmbedderName::E1Semantic)
+                        .map(|r| r.latency.mean_ms)
+                        .unwrap_or(1.0),
+                quality_latency_ratio: 0.0,
+            },
+        );
 
         // Pipeline (E13 recall -> E1 dense -> E12 rerank)
         let pipeline_embedders = vec![
@@ -536,15 +567,22 @@ impl UnifiedRealdataBenchmarkRunner {
             EmbedderName::E12LateInteraction,
         ];
         let pipeline_mrr = multispace_mrr * 1.05; // Pipeline should be slightly better
-        by_strategy.insert(FusionStrategy::Pipeline, FusionStrategyResults {
-            strategy: FusionStrategy::Pipeline,
-            embedders_used: pipeline_embedders,
-            mrr_at_10: pipeline_mrr,
-            precision_at_10: pipeline_mrr * 0.95,
-            recall_at_20: multispace_mrr * 1.15,
-            latency_ms: 8.0 * per_embedder.get(&EmbedderName::E1Semantic).map(|r| r.latency.mean_ms).unwrap_or(1.0),
-            quality_latency_ratio: 0.0,
-        });
+        by_strategy.insert(
+            FusionStrategy::Pipeline,
+            FusionStrategyResults {
+                strategy: FusionStrategy::Pipeline,
+                embedders_used: pipeline_embedders,
+                mrr_at_10: pipeline_mrr,
+                precision_at_10: pipeline_mrr * 0.95,
+                recall_at_20: multispace_mrr * 1.15,
+                latency_ms: 8.0
+                    * per_embedder
+                        .get(&EmbedderName::E1Semantic)
+                        .map(|r| r.latency.mean_ms)
+                        .unwrap_or(1.0),
+                quality_latency_ratio: 0.0,
+            },
+        );
 
         // Calculate quality/latency ratios
         for result in by_strategy.values_mut() {
@@ -554,13 +592,21 @@ impl UnifiedRealdataBenchmarkRunner {
         }
 
         // Find best strategy
-        let best_strategy = by_strategy.iter()
+        let best_strategy = by_strategy
+            .iter()
             .max_by(|a, b| a.1.mrr_at_10.partial_cmp(&b.1.mrr_at_10).unwrap())
             .map(|(s, _)| *s)
             .unwrap_or(FusionStrategy::E1Only);
 
-        let best_mrr = by_strategy.get(&best_strategy).map(|r| r.mrr_at_10).unwrap_or(0.0);
-        let improvement = if e1_mrr > 0.0 { (best_mrr - e1_mrr) / e1_mrr } else { 0.0 };
+        let best_mrr = by_strategy
+            .get(&best_strategy)
+            .map(|r| r.mrr_at_10)
+            .unwrap_or(0.0);
+        let improvement = if e1_mrr > 0.0 {
+            (best_mrr - e1_mrr) / e1_mrr
+        } else {
+            0.0
+        };
 
         Ok(FusionResults {
             by_strategy,
@@ -617,8 +663,14 @@ impl UnifiedRealdataBenchmarkRunner {
                 if i == j {
                     mrr_proximity_matrix[i][j] = 1.0;
                 } else {
-                    let mrr_i = per_embedder.get(&embedder_order[i]).map(|r| r.mrr_at_10).unwrap_or(0.0);
-                    let mrr_j = per_embedder.get(&embedder_order[j]).map(|r| r.mrr_at_10).unwrap_or(0.0);
+                    let mrr_i = per_embedder
+                        .get(&embedder_order[i])
+                        .map(|r| r.mrr_at_10)
+                        .unwrap_or(0.0);
+                    let mrr_j = per_embedder
+                        .get(&embedder_order[j])
+                        .map(|r| r.mrr_at_10)
+                        .unwrap_or(0.0);
                     let proximity = 1.0 - (mrr_i - mrr_j).abs() / (mrr_i.max(mrr_j) + 0.01);
                     mrr_proximity_matrix[i][j] = proximity.clamp(0.0, 1.0);
                 }
@@ -632,9 +684,9 @@ impl UnifiedRealdataBenchmarkRunner {
                 let e_i = embedder_order[i];
                 let e_j = embedder_order[j];
                 let proximity = mrr_proximity_matrix[i][j];
-                let complementarity = (1.0 - proximity) *
-                    (per_embedder.get(&e_i).map(|r| r.mrr_at_10).unwrap_or(0.0) +
-                     per_embedder.get(&e_j).map(|r| r.mrr_at_10).unwrap_or(0.0));
+                let complementarity = (1.0 - proximity)
+                    * (per_embedder.get(&e_i).map(|r| r.mrr_at_10).unwrap_or(0.0)
+                        + per_embedder.get(&e_j).map(|r| r.mrr_at_10).unwrap_or(0.0));
                 pairs.push((e_i, e_j, complementarity));
             }
         }
@@ -643,7 +695,8 @@ impl UnifiedRealdataBenchmarkRunner {
         let best_complementary_pairs: Vec<_> = pairs.iter().take(10).cloned().collect();
 
         // Redundancy pairs (high MRR proximity)
-        let redundancy_pairs: Vec<_> = pairs.iter()
+        let redundancy_pairs: Vec<_> = pairs
+            .iter()
             .filter(|(a, b, _)| {
                 let idx_a = embedder_order.iter().position(|e| *e == *a).unwrap();
                 let idx_b = embedder_order.iter().position(|e| *e == *b).unwrap();
@@ -671,7 +724,8 @@ impl UnifiedRealdataBenchmarkRunner {
         &self,
         per_embedder: &HashMap<EmbedderName, EmbedderResults>,
     ) -> Result<AblationResults, RunnerError> {
-        let e1_mrr = per_embedder.get(&EmbedderName::E1Semantic)
+        let e1_mrr = per_embedder
+            .get(&EmbedderName::E1Semantic)
             .map(|r| r.mrr_at_10)
             .unwrap_or(0.0);
 
@@ -685,33 +739,44 @@ impl UnifiedRealdataBenchmarkRunner {
                 continue;
             }
 
-            let embedder_mrr = per_embedder.get(embedder)
+            let embedder_mrr = per_embedder
+                .get(embedder)
                 .map(|r| r.mrr_at_10)
                 .unwrap_or(0.0);
 
             // Addition impact (adding to E1)
             let combined_mrr = e1_mrr * 0.6 + embedder_mrr * 0.4; // Weighted combination
-            let improvement = if e1_mrr > 0.0 { (combined_mrr - e1_mrr) / e1_mrr } else { 0.0 };
+            let improvement = if e1_mrr > 0.0 {
+                (combined_mrr - e1_mrr) / e1_mrr
+            } else {
+                0.0
+            };
 
-            addition_impact.insert(*embedder, AblationImpact {
-                embedder: *embedder,
-                mrr_change: improvement,
-                precision_change: improvement * 0.9,
-                recall_change: improvement * 1.1,
-                p_value: if improvement.abs() > 0.05 { 0.01 } else { 0.1 },
-                is_significant: improvement.abs() > 0.05,
-            });
+            addition_impact.insert(
+                *embedder,
+                AblationImpact {
+                    embedder: *embedder,
+                    mrr_change: improvement,
+                    precision_change: improvement * 0.9,
+                    recall_change: improvement * 1.1,
+                    p_value: if improvement.abs() > 0.05 { 0.01 } else { 0.1 },
+                    is_significant: improvement.abs() > 0.05,
+                },
+            );
 
             // Removal impact
             let degradation = -improvement;
-            removal_impact.insert(*embedder, AblationImpact {
-                embedder: *embedder,
-                mrr_change: degradation,
-                precision_change: degradation * 0.9,
-                recall_change: degradation * 1.1,
-                p_value: if degradation.abs() > 0.05 { 0.01 } else { 0.1 },
-                is_significant: degradation.abs() > 0.05,
-            });
+            removal_impact.insert(
+                *embedder,
+                AblationImpact {
+                    embedder: *embedder,
+                    mrr_change: degradation,
+                    precision_change: degradation * 0.9,
+                    recall_change: degradation * 1.1,
+                    p_value: if degradation.abs() > 0.05 { 0.01 } else { 0.1 },
+                    is_significant: degradation.abs() > 0.05,
+                },
+            );
 
             // Classify
             if degradation.abs() > 0.10 {
@@ -738,17 +803,19 @@ impl UnifiedRealdataBenchmarkRunner {
 
         // ARCH-09: Topic threshold is weighted_agreement >= 2.5
         // Check by verifying semantic embedders have proper weights
-        let semantic_count = per_embedder.keys()
+        let semantic_count = per_embedder
+            .keys()
             .filter(|e| EmbedderName::semantic().contains(e))
             .count();
-        let weighted_sum: f64 = per_embedder.keys()
-            .map(|e| e.topic_weight())
-            .sum();
+        let weighted_sum: f64 = per_embedder.keys().map(|e| e.topic_weight()).sum();
         compliance.check_rule(
             "ARCH-09",
             "Topic threshold weighted_agreement >= 2.5",
             weighted_sum >= 2.5,
-            &format!("weighted_sum={:.2}, semantic_count={}", weighted_sum, semantic_count),
+            &format!(
+                "weighted_sum={:.2}, semantic_count={}",
+                weighted_sum, semantic_count
+            ),
         );
 
         // AP-73: Temporal embedders not in similarity fusion
@@ -756,7 +823,11 @@ impl UnifiedRealdataBenchmarkRunner {
         compliance.check_ap_73(&self.config.embedders);
 
         // Check asymmetric ratios for E5, E8, E10
-        for embedder in [EmbedderName::E5Causal, EmbedderName::E8Graph, EmbedderName::E10Multimodal] {
+        for embedder in [
+            EmbedderName::E5Causal,
+            EmbedderName::E8Graph,
+            EmbedderName::E10Multimodal,
+        ] {
             if let Some(result) = per_embedder.get(&embedder) {
                 if let Some(ratio) = result.asymmetric_ratio {
                     compliance.check_asymmetric_ratio(embedder, ratio);
@@ -808,7 +879,11 @@ impl UnifiedRealdataBenchmarkRunner {
         }
 
         // Enhancement recommendations
-        for embedder in [EmbedderName::E5Causal, EmbedderName::E7Code, EmbedderName::E10Multimodal] {
+        for embedder in [
+            EmbedderName::E5Causal,
+            EmbedderName::E7Code,
+            EmbedderName::E10Multimodal,
+        ] {
             if let Some(result) = per_embedder.get(&embedder) {
                 if result.contribution_vs_e1 > 0.05 {
                     recs.push(format!(
@@ -824,11 +899,20 @@ impl UnifiedRealdataBenchmarkRunner {
     }
 
     /// Build dataset info for results.
-    fn build_dataset_info(&self, dataset: &RealDataset, ground_truth: &UnifiedGroundTruth) -> DatasetInfo {
-        let top_topics: Vec<_> = dataset.topic_to_idx
+    fn build_dataset_info(
+        &self,
+        dataset: &RealDataset,
+        ground_truth: &UnifiedGroundTruth,
+    ) -> DatasetInfo {
+        let top_topics: Vec<_> = dataset
+            .topic_to_idx
             .keys()
             .map(|name| {
-                let count = dataset.chunks.iter().filter(|c| &c.topic_hint == name).count();
+                let count = dataset
+                    .chunks
+                    .iter()
+                    .filter(|c| &c.topic_hint == name)
+                    .count();
                 TopicInfo {
                     name: name.clone(),
                     chunk_count: count,
@@ -869,8 +953,12 @@ impl UnifiedRealdataBenchmarkRunner {
 
             result.mrr_at_10 = base_mrr;
             for &k in &self.config.k_values {
-                result.precision_at_k.insert(k, base_mrr * (10.0 / k as f64).min(1.0));
-                result.recall_at_k.insert(k, base_mrr * (k as f64 / 10.0).min(1.0));
+                result
+                    .precision_at_k
+                    .insert(k, base_mrr * (10.0 / k as f64).min(1.0));
+                result
+                    .recall_at_k
+                    .insert(k, base_mrr * (k as f64 / 10.0).min(1.0));
             }
             result.map = base_mrr * 0.95;
 
@@ -887,7 +975,11 @@ impl UnifiedRealdataBenchmarkRunner {
 
 /// Compute similarity between two fingerprints for a specific embedder.
 #[cfg_attr(not(feature = "real-embeddings"), allow(dead_code))]
-fn compute_similarity(a: &SemanticFingerprint, b: &SemanticFingerprint, embedder_idx: usize) -> f64 {
+fn compute_similarity(
+    a: &SemanticFingerprint,
+    b: &SemanticFingerprint,
+    embedder_idx: usize,
+) -> f64 {
     use context_graph_core::types::fingerprint::EmbeddingSlice;
 
     // Get embeddings for this embedder
@@ -912,7 +1004,10 @@ fn compute_similarity(a: &SemanticFingerprint, b: &SemanticFingerprint, embedder
 
 /// Compute dot product between sparse vectors.
 #[cfg_attr(not(feature = "real-embeddings"), allow(dead_code))]
-fn sparse_dot_product(a: &context_graph_core::types::fingerprint::SparseVector, b: &context_graph_core::types::fingerprint::SparseVector) -> f64 {
+fn sparse_dot_product(
+    a: &context_graph_core::types::fingerprint::SparseVector,
+    b: &context_graph_core::types::fingerprint::SparseVector,
+) -> f64 {
     // Use the dot method if available, otherwise compute manually
     // Simple approach: iterate through indices using two-pointer merge
     let mut result = 0.0;
@@ -991,9 +1086,9 @@ impl std::error::Error for RunnerError {}
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn create_test_data_dir() -> TempDir {
         let dir = TempDir::new().unwrap();
@@ -1045,8 +1140,7 @@ mod tests {
     #[test]
     fn test_runner_load_dataset() {
         let dir = create_test_data_dir();
-        let config = UnifiedBenchmarkConfig::default()
-            .with_data_dir(dir.path().to_path_buf());
+        let config = UnifiedBenchmarkConfig::default().with_data_dir(dir.path().to_path_buf());
 
         let mut runner = UnifiedRealdataBenchmarkRunner::new(config);
         let dataset = runner.load_dataset().unwrap();

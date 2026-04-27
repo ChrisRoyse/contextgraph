@@ -33,7 +33,14 @@ fn main() {
     println!("=============================\n");
 
     println!("Configuration:");
-    println!("  Tiers: {:?}", config.tiers.iter().map(|t| t.tier.to_string()).collect::<Vec<_>>());
+    println!(
+        "  Tiers: {:?}",
+        config
+            .tiers
+            .iter()
+            .map(|t| t.tier.to_string())
+            .collect::<Vec<_>>()
+    );
     println!("  Seed: {}", config.seed);
     println!("  K values: {:?}", config.k_values);
     println!();
@@ -180,7 +187,10 @@ fn parse_tiers(s: &str) -> Vec<Tier> {
                 "4" => Some(Tier::Tier4),
                 "5" => Some(Tier::Tier5),
                 _ => {
-                    eprintln!("Warning: Invalid tier '{}'. Valid tiers are 0-5. Skipping.", trimmed);
+                    eprintln!(
+                        "Warning: Invalid tier '{}'. Valid tiers are 0-5. Skipping.",
+                        trimmed
+                    );
                     None
                 }
             }

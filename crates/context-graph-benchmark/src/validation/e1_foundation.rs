@@ -5,8 +5,11 @@
 //! - E1 provides strong baseline (MRR@10 > 0.6)
 //! - ARCH-17: Enhancement behavior (refine when strong, broaden when weak)
 
+use super::{
+    CheckPriority, PhaseResult, Recommendation, RecommendationCategory, ValidationCheck,
+    ValidationPhase,
+};
 use crate::realdata::config::{EmbedderName, FusionStrategy};
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase, Recommendation, RecommendationCategory};
 
 /// E1 foundation validation results.
 #[derive(Debug, Clone)]
@@ -138,10 +141,8 @@ impl E1FoundationValidator {
     // Individual tests
 
     fn test_e1_in_semantic() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e1_in_semantic",
-            "E1 is in semantic embedders",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("e1_in_semantic", "E1 is in semantic embedders")
+            .with_priority(CheckPriority::Critical);
 
         let semantic = EmbedderName::semantic();
         let e1_in_semantic = semantic.contains(&EmbedderName::E1Semantic);
@@ -157,7 +158,8 @@ impl E1FoundationValidator {
         let check = ValidationCheck::new(
             "e1_is_entry_embedder",
             "[ARCH-12] E1 is the default entry point for all retrieval",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // E1 should have index 0 (first embedder)
         let e1_index = EmbedderName::E1Semantic.index();
@@ -179,7 +181,8 @@ impl E1FoundationValidator {
         let check = ValidationCheck::new(
             "default_is_e1only",
             "[ARCH-13] Default fusion strategy is E1Only",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let default = FusionStrategy::default();
 
@@ -191,13 +194,12 @@ impl E1FoundationValidator {
     }
 
     fn test_e1_max_weight() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e1_max_weight",
-            "E1 has maximum topic weight (1.0)",
-        ).with_priority(CheckPriority::High);
+        let check = ValidationCheck::new("e1_max_weight", "E1 has maximum topic weight (1.0)")
+            .with_priority(CheckPriority::High);
 
         let e1_weight = EmbedderName::E1Semantic.topic_weight();
-        let max_weight = EmbedderName::all().iter()
+        let max_weight = EmbedderName::all()
+            .iter()
             .map(|e| e.topic_weight())
             .fold(0.0f64, f64::max);
 
@@ -212,7 +214,8 @@ impl E1FoundationValidator {
         let check = ValidationCheck::new(
             "e1_used_for_divergence",
             "[ARCH-10] E1 used for divergence detection",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let used = EmbedderName::E1Semantic.used_for_divergence();
 
@@ -227,12 +230,19 @@ impl E1FoundationValidator {
         let check = ValidationCheck::new(
             "e1_baseline_quality",
             "E1 provides strong baseline (MRR@10 > 0.6)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let meets_target = mrr_at_10 >= E1_MRR_TARGET;
 
         if meets_target {
-            (check.pass(&format!("{:.3}", mrr_at_10), &format!("> {:.1}", E1_MRR_TARGET)), None)
+            (
+                check.pass(
+                    &format!("{:.3}", mrr_at_10),
+                    &format!("> {:.1}", E1_MRR_TARGET),
+                ),
+                None,
+            )
         } else {
             let rec = Recommendation {
                 category: RecommendationCategory::Critical,
@@ -242,7 +252,13 @@ impl E1FoundationValidator {
                 recommended: Some(format!("> {:.1}", E1_MRR_TARGET)),
                 reason: "E1 as foundation should provide strong baseline".to_string(),
             };
-            (check.warning(&format!("{:.3}", mrr_at_10), &format!("> {:.1}", E1_MRR_TARGET)), Some(rec))
+            (
+                check.warning(
+                    &format!("{:.3}", mrr_at_10),
+                    &format!("> {:.1}", E1_MRR_TARGET),
+                ),
+                Some(rec),
+            )
         }
     }
 
@@ -250,20 +266,31 @@ impl E1FoundationValidator {
         let check = ValidationCheck::new(
             "arch_17_enhancement",
             "[ARCH-17] E1 strong (>0.8): enhancers refine; weak (<0.4): enhancers broaden",
-        ).with_priority(CheckPriority::Medium);
+        )
+        .with_priority(CheckPriority::Medium);
 
         // This is informational - shows the distribution
         // Strong matches should be refined, weak should be broadened
         let balanced = (strong_pct + weak_pct) < 1.0; // Should not be all edge cases
 
         if balanced {
-            check.pass(
-                &format!("strong={:.0}%, weak={:.0}%", strong_pct * 100.0, weak_pct * 100.0),
-                "balanced distribution",
-            ).with_details("Enhancement strategy depends on E1 match strength")
+            check
+                .pass(
+                    &format!(
+                        "strong={:.0}%, weak={:.0}%",
+                        strong_pct * 100.0,
+                        weak_pct * 100.0
+                    ),
+                    "balanced distribution",
+                )
+                .with_details("Enhancement strategy depends on E1 match strength")
         } else {
             check.warning(
-                &format!("strong={:.0}%, weak={:.0}%", strong_pct * 100.0, weak_pct * 100.0),
+                &format!(
+                    "strong={:.0}%, weak={:.0}%",
+                    strong_pct * 100.0,
+                    weak_pct * 100.0
+                ),
                 "balanced distribution",
             )
         }
@@ -275,8 +302,14 @@ impl E1FoundationValidator {
             return (0.0, 0.0);
         }
 
-        let strong_count = similarities.iter().filter(|&&s| s > E1_STRONG_THRESHOLD).count();
-        let weak_count = similarities.iter().filter(|&&s| s < E1_WEAK_THRESHOLD).count();
+        let strong_count = similarities
+            .iter()
+            .filter(|&&s| s > E1_STRONG_THRESHOLD)
+            .count();
+        let weak_count = similarities
+            .iter()
+            .filter(|&&s| s < E1_WEAK_THRESHOLD)
+            .count();
         let total = similarities.len() as f64;
 
         (strong_count as f64 / total, weak_count as f64 / total)
@@ -316,7 +349,9 @@ mod tests {
     #[test]
     fn test_baseline_quality_low() {
         let (check, rec) = E1FoundationValidator::test_e1_baseline_quality(0.45);
-        assert!(!check.is_passed() || matches!(check.status, super::super::ValidationStatus::Warning));
+        assert!(
+            !check.is_passed() || matches!(check.status, super::super::ValidationStatus::Warning)
+        );
         assert!(rec.is_some());
     }
 

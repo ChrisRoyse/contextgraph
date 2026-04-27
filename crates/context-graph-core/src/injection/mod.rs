@@ -22,21 +22,20 @@ pub mod priority;
 pub mod result;
 pub mod temporal_enrichment;
 
+pub use crate::clustering::MAX_WEIGHTED_AGREEMENT;
 pub use budget::{
-    TokenBudget, TokenBudgetManager, SelectionStats, BudgetTooSmall,
-    DEFAULT_TOKEN_BUDGET, BRIEF_BUDGET, MIN_BUDGET, estimate_tokens,
+    estimate_tokens, BudgetTooSmall, SelectionStats, TokenBudget, TokenBudgetManager, BRIEF_BUDGET,
+    DEFAULT_TOKEN_BUDGET, MIN_BUDGET,
 };
 pub use candidate::{
     InjectionCandidate, InjectionCategory, MAX_DIVERSITY_BONUS, MAX_RECENCY_FACTOR,
     MIN_DIVERSITY_BONUS, MIN_RECENCY_FACTOR, TOKEN_MULTIPLIER,
 };
-pub use crate::clustering::MAX_WEIGHTED_AGREEMENT;
+pub use formatter::{ContextFormatter, BRIEF_MAX_TOKENS, SUMMARY_MAX_WORDS};
 pub use pipeline::{InjectionError, InjectionPipeline};
 pub use priority::{DiversityBonus, PriorityRanker, RecencyFactor};
 pub use result::InjectionResult;
 pub use temporal_enrichment::{
-    TemporalBadge, TemporalBadgeType, TemporalEnrichmentProvider,
-    DEFAULT_SAME_SESSION_THRESHOLD, DEFAULT_SAME_DAY_THRESHOLD,
-    DEFAULT_SAME_PERIOD_THRESHOLD, DEFAULT_SAME_SEQUENCE_THRESHOLD,
+    TemporalBadge, TemporalBadgeType, TemporalEnrichmentProvider, DEFAULT_SAME_DAY_THRESHOLD,
+    DEFAULT_SAME_PERIOD_THRESHOLD, DEFAULT_SAME_SEQUENCE_THRESHOLD, DEFAULT_SAME_SESSION_THRESHOLD,
 };
-pub use formatter::{ContextFormatter, SUMMARY_MAX_WORDS, BRIEF_MAX_TOKENS};

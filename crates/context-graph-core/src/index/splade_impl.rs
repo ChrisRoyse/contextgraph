@@ -259,7 +259,9 @@ impl SpladeInvertedIndex {
         let file = File::open(path).map_err(|e| IndexError::io("opening SPLADE index file", e))?;
 
         // Check file size before attempting deserialization
-        let metadata = file.metadata().map_err(|e| IndexError::io("reading SPLADE index file metadata", e))?;
+        let metadata = file
+            .metadata()
+            .map_err(|e| IndexError::io("reading SPLADE index file metadata", e))?;
         if metadata.len() > Self::MAX_LOAD_FILE_SIZE {
             return Err(IndexError::serialization(
                 "SPLADE index file too large",

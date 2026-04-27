@@ -7,8 +7,11 @@
 
 use std::collections::HashMap;
 
+use super::{
+    CheckPriority, PhaseResult, Recommendation, RecommendationCategory, ValidationCheck,
+    ValidationPhase,
+};
 use crate::realdata::config::EmbedderName;
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase, Recommendation, RecommendationCategory};
 
 /// Asymmetric validation results.
 #[derive(Debug, Clone)]
@@ -104,12 +107,16 @@ impl AsymmetricValidator {
         if let Some(ratios) = measured_ratios {
             for (embedder, &ratio) in ratios {
                 if EmbedderName::asymmetric().contains(embedder) {
-                    let (check, _metrics, recommendation) = Self::test_asymmetric_ratio(*embedder, ratio);
+                    let (check, _metrics, recommendation) =
+                        Self::test_asymmetric_ratio(*embedder, ratio);
 
-                    result.embedder_metrics.insert(*embedder, AsymmetricMetrics {
-                        asymmetric_ratio: ratio,
-                        ..Default::default()
-                    });
+                    result.embedder_metrics.insert(
+                        *embedder,
+                        AsymmetricMetrics {
+                            asymmetric_ratio: ratio,
+                            ..Default::default()
+                        },
+                    );
 
                     if !check.is_passed() {
                         result.all_passed = false;
@@ -133,10 +140,13 @@ impl AsymmetricValidator {
                     if let Some(metrics) = result.embedder_metrics.get_mut(embedder) {
                         metrics.distinctness_percentage = pct;
                     } else {
-                        result.embedder_metrics.insert(*embedder, AsymmetricMetrics {
-                            distinctness_percentage: pct,
-                            ..Default::default()
-                        });
+                        result.embedder_metrics.insert(
+                            *embedder,
+                            AsymmetricMetrics {
+                                distinctness_percentage: pct,
+                                ..Default::default()
+                            },
+                        );
                     }
 
                     if !check.is_passed() {
@@ -170,14 +180,16 @@ impl AsymmetricValidator {
         let check = ValidationCheck::new(
             "asymmetric_embedders_defined",
             "Asymmetric embedders = 3 (E5, E8, E10)",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let asymmetric = EmbedderName::asymmetric();
         let count = asymmetric.len();
 
         if count == 3 {
             let names: Vec<_> = asymmetric.iter().map(|e| e.as_str()).collect();
-            check.pass(&count.to_string(), "3")
+            check
+                .pass(&count.to_string(), "3")
                 .with_details(&names.join(", "))
         } else {
             check.fail(&count.to_string(), "3")
@@ -188,7 +200,8 @@ impl AsymmetricValidator {
         let check = ValidationCheck::new(
             "e5_is_asymmetric",
             "[ARCH-18] E5 Causal uses asymmetric similarity",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let asymmetric = EmbedderName::asymmetric();
         let e5_is_asymmetric = asymmetric.contains(&EmbedderName::E5Causal);
@@ -201,10 +214,8 @@ impl AsymmetricValidator {
     }
 
     fn test_e8_is_asymmetric() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e8_is_asymmetric",
-            "E8 Graph uses asymmetric similarity",
-        ).with_priority(CheckPriority::High);
+        let check = ValidationCheck::new("e8_is_asymmetric", "E8 Graph uses asymmetric similarity")
+            .with_priority(CheckPriority::High);
 
         let asymmetric = EmbedderName::asymmetric();
         let e8_is_asymmetric = asymmetric.contains(&EmbedderName::E8Graph);
@@ -220,7 +231,8 @@ impl AsymmetricValidator {
         let check = ValidationCheck::new(
             "e10_is_asymmetric",
             "E10 Multimodal uses asymmetric similarity",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let asymmetric = EmbedderName::asymmetric();
         let e10_is_asymmetric = asymmetric.contains(&EmbedderName::E10Multimodal);
@@ -236,7 +248,8 @@ impl AsymmetricValidator {
         let check = ValidationCheck::new(
             "direction_modifiers",
             "Direction modifiers: cause→effect=1.2, effect→cause=0.8, same=1.0",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // Verify the modifiers match expected values
         let valid = (DIRECTION_MODIFIER_CAUSE_EFFECT - 1.2).abs() < f64::EPSILON
@@ -247,17 +260,31 @@ impl AsymmetricValidator {
             check.pass("1.2, 0.8, 1.0", "1.2, 0.8, 1.0")
         } else {
             check.fail(
-                &format!("{}, {}, {}", DIRECTION_MODIFIER_CAUSE_EFFECT, DIRECTION_MODIFIER_EFFECT_CAUSE, DIRECTION_MODIFIER_SAME),
+                &format!(
+                    "{}, {}, {}",
+                    DIRECTION_MODIFIER_CAUSE_EFFECT,
+                    DIRECTION_MODIFIER_EFFECT_CAUSE,
+                    DIRECTION_MODIFIER_SAME
+                ),
                 "1.2, 0.8, 1.0",
             )
         }
     }
 
-    fn test_asymmetric_ratio(embedder: EmbedderName, ratio: f64) -> (ValidationCheck, AsymmetricMetrics, Option<Recommendation>) {
+    fn test_asymmetric_ratio(
+        embedder: EmbedderName,
+        ratio: f64,
+    ) -> (ValidationCheck, AsymmetricMetrics, Option<Recommendation>) {
         let check = ValidationCheck::new(
             &format!("{}_asymmetric_ratio", embedder.as_str()),
-            &format!("{} asymmetric ratio within {} ± {}", embedder.as_str(), EXPECTED_ASYMMETRIC_RATIO, ASYMMETRIC_RATIO_TOLERANCE),
-        ).with_priority(CheckPriority::High);
+            &format!(
+                "{} asymmetric ratio within {} ± {}",
+                embedder.as_str(),
+                EXPECTED_ASYMMETRIC_RATIO,
+                ASYMMETRIC_RATIO_TOLERANCE
+            ),
+        )
+        .with_priority(CheckPriority::High);
 
         let metrics = AsymmetricMetrics {
             asymmetric_ratio: ratio,
@@ -269,12 +296,22 @@ impl AsymmetricValidator {
         let in_range = ratio >= lower && ratio <= upper;
 
         let (check, recommendation) = if in_range {
-            (check.pass(&format!("{:.3}", ratio), &format!("[{:.2}, {:.2}]", lower, upper)), None)
+            (
+                check.pass(
+                    &format!("{:.3}", ratio),
+                    &format!("[{:.2}, {:.2}]", lower, upper),
+                ),
+                None,
+            )
         } else {
             // Create recommendation for out-of-range ratio
             let rec = Recommendation {
                 category: RecommendationCategory::ParameterTuning,
-                description: format!("{} ratio {:.3} outside target range", embedder.as_str(), ratio),
+                description: format!(
+                    "{} ratio {:.3} outside target range",
+                    embedder.as_str(),
+                    ratio
+                ),
                 component: format!("{} direction_modifier", embedder.as_str()),
                 current: Some(format!("{:.3}", ratio)),
                 recommended: Some(format!("{:.2}", EXPECTED_ASYMMETRIC_RATIO)),
@@ -284,30 +321,60 @@ impl AsymmetricValidator {
                     "Increase direction_modifier from 1.2 to ~1.3".to_string()
                 },
             };
-            (check.fail(&format!("{:.3}", ratio), &format!("[{:.2}, {:.2}]", lower, upper)), Some(rec))
+            (
+                check.fail(
+                    &format!("{:.3}", ratio),
+                    &format!("[{:.2}, {:.2}]", lower, upper),
+                ),
+                Some(rec),
+            )
         };
 
         (check, metrics, recommendation)
     }
 
-    fn test_vector_distinctness(embedder: EmbedderName, percentage: f64) -> (ValidationCheck, Option<Recommendation>) {
+    fn test_vector_distinctness(
+        embedder: EmbedderName,
+        percentage: f64,
+    ) -> (ValidationCheck, Option<Recommendation>) {
         let check = ValidationCheck::new(
             &format!("{}_vector_distinctness", embedder.as_str()),
-            &format!("{} vector distinctness > {}%", embedder.as_str(), MIN_DISTINCTNESS * 100.0),
-        ).with_priority(CheckPriority::High);
+            &format!(
+                "{} vector distinctness > {}%",
+                embedder.as_str(),
+                MIN_DISTINCTNESS * 100.0
+            ),
+        )
+        .with_priority(CheckPriority::High);
 
         let (check, recommendation) = if percentage >= MIN_DISTINCTNESS {
-            (check.pass(&format!("{:.1}%", percentage * 100.0), &format!("> {:.0}%", MIN_DISTINCTNESS * 100.0)), None)
+            (
+                check.pass(
+                    &format!("{:.1}%", percentage * 100.0),
+                    &format!("> {:.0}%", MIN_DISTINCTNESS * 100.0),
+                ),
+                None,
+            )
         } else {
             let rec = Recommendation {
                 category: RecommendationCategory::Performance,
-                description: format!("{} forward/reverse vectors too similar ({:.1}% distinct)", embedder.as_str(), percentage * 100.0),
+                description: format!(
+                    "{} forward/reverse vectors too similar ({:.1}% distinct)",
+                    embedder.as_str(),
+                    percentage * 100.0
+                ),
                 component: embedder.as_str().to_string(),
                 current: Some(format!("{:.1}%", percentage * 100.0)),
                 recommended: Some(format!("> {:.0}%", MIN_DISTINCTNESS * 100.0)),
                 reason: "Low distinctness reduces asymmetric effectiveness".to_string(),
             };
-            (check.warning(&format!("{:.1}%", percentage * 100.0), &format!("> {:.0}%", MIN_DISTINCTNESS * 100.0)), Some(rec))
+            (
+                check.warning(
+                    &format!("{:.1}%", percentage * 100.0),
+                    &format!("> {:.0}%", MIN_DISTINCTNESS * 100.0),
+                ),
+                Some(rec),
+            )
         };
 
         (check, recommendation)

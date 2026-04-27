@@ -601,8 +601,8 @@ pub const CF_EMB_8: &str = "emb_8";
 /// Quantization: PQ-8 (8 bytes compressed from 768D).
 pub const CF_EMB_9: &str = "emb_9";
 
-/// Column family for E11_Entity (ModelId=10) quantized embeddings.
-/// Quantization: Float8E4M3 (768 bytes from 768D).
+/// Column family for E11_Entity/Kepler (production slot 10) quantized embeddings.
+/// Quantization: PQ-8 (8 bytes compressed from 768D).
 pub const CF_EMB_10: &str = "emb_10";
 
 /// Column family for E12_LateInteraction (ModelId=11) quantized embeddings.
@@ -1339,7 +1339,6 @@ pub fn importance_history_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-
 // =============================================================================
 // PHASE 5 PROVENANCE CF OPTION BUILDERS
 // =============================================================================
@@ -1473,10 +1472,7 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
             CF_E13_SPLADE_INVERTED,
             e13_splade_inverted_cf_options(cache),
         ),
-        ColumnFamilyDescriptor::new(
-            CF_E6_SPARSE_INVERTED,
-            e6_sparse_inverted_cf_options(cache),
-        ),
+        ColumnFamilyDescriptor::new(CF_E6_SPARSE_INVERTED, e6_sparse_inverted_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_E1_MATRYOSHKA_128, e1_matryoshka_128_cf_options(cache)),
         // TASK-CONTENT-001: Content storage CF
         ColumnFamilyDescriptor::new(CF_CONTENT, content_cf_options(cache)),
@@ -1508,7 +1504,10 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         // Phase 6 Provenance: Embedding version registry
         ColumnFamilyDescriptor::new(CF_EMBEDDING_REGISTRY, embedding_registry_cf_options(cache)),
         // Custom weight profile persistence
-        ColumnFamilyDescriptor::new(CF_CUSTOM_WEIGHT_PROFILES, custom_weight_profiles_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_CUSTOM_WEIGHT_PROFILES,
+            custom_weight_profiles_cf_options(cache),
+        ),
         // HNSW graph persistence for fast startup
         ColumnFamilyDescriptor::new(CF_HNSW_GRAPHS, hnsw_graphs_cf_options(cache)),
         // Training record export (export_training_corpus MCP tool)
@@ -1532,10 +1531,7 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         // Typed-edge training-data factory (F1/F4):
         // CF_TYPED_EDGE_RECORDS stores exported corpus rows;
         // CF_TYPED_EDGE_VALIDATIONS stores LLM verdicts on typed edges.
-        ColumnFamilyDescriptor::new(
-            CF_TYPED_EDGE_RECORDS,
-            typed_edge_records_cf_options(cache),
-        ),
+        ColumnFamilyDescriptor::new(CF_TYPED_EDGE_RECORDS, typed_edge_records_cf_options(cache)),
         ColumnFamilyDescriptor::new(
             CF_TYPED_EDGE_VALIDATIONS,
             typed_edge_validations_cf_options(cache),
@@ -1799,7 +1795,10 @@ pub fn get_code_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
         ColumnFamilyDescriptor::new(CF_CODE_E7_EMBEDDINGS, code_e7_embeddings_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_CODE_FILE_INDEX, code_file_index_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_CODE_NAME_INDEX, code_name_index_cf_options(cache)),
-        ColumnFamilyDescriptor::new(CF_CODE_SIGNATURE_INDEX, code_signature_index_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_CODE_SIGNATURE_INDEX,
+            code_signature_index_cf_options(cache),
+        ),
     ]
 }
 
@@ -1909,7 +1908,10 @@ pub fn causal_by_source_cf_options(cache: &Cache) -> Options {
 /// Vector of 2 `ColumnFamilyDescriptor`s for causal relationship storage.
 pub fn get_causal_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
-        ColumnFamilyDescriptor::new(CF_CAUSAL_RELATIONSHIPS, causal_relationships_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_CAUSAL_RELATIONSHIPS,
+            causal_relationships_cf_options(cache),
+        ),
         ColumnFamilyDescriptor::new(CF_CAUSAL_BY_SOURCE, causal_by_source_cf_options(cache)),
     ]
 }

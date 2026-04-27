@@ -243,7 +243,10 @@ mod tests {
         let v1 = compute_decay_embedding(t1, None, &decay_rates);
         let v2 = compute_decay_embedding(t2, None, &decay_rates);
 
-        assert_ne!(v1, v2, "Different timestamps must produce different vectors");
+        assert_ne!(
+            v1, v2,
+            "Different timestamps must produce different vectors"
+        );
 
         // Cosine similarity should be positive (1 hour apart is relatively close)
         let dot: f32 = v1.iter().zip(v2.iter()).map(|(a, b)| a * b).sum();

@@ -84,13 +84,13 @@ impl Default for LlmConfig {
         Self {
             model_path: PathBuf::from("models/hermes-2-pro/Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf"),
             context_size: 4096,
-            temperature: 0.0, // Deterministic for analysis
-            max_tokens: 512, // Increased from 256 to support 1-3 paragraph descriptions
+            temperature: 0.0,       // Deterministic for analysis
+            max_tokens: 512,        // Increased from 256 to support 1-3 paragraph descriptions
             n_gpu_layers: u32::MAX, // Full GPU offload
             causal_grammar_path: PathBuf::from("models/hermes-2-pro/causal_analysis.gbnf"),
             graph_grammar_path: PathBuf::from("models/hermes-2-pro/graph_relationship.gbnf"),
             validation_grammar_path: PathBuf::from("models/hermes-2-pro/validation.gbnf"),
-            batch_size: 2048, // Increased for few-shot prompts
+            batch_size: 2048,   // Increased for few-shot prompts
             use_few_shot: true, // Enable few-shot examples by default for better accuracy
         }
     }
@@ -198,9 +198,12 @@ impl CausalDiscoveryLLM {
     /// Create with custom configuration.
     pub fn with_config(config: LlmConfig) -> CausalAgentResult<Self> {
         // Load grammar files with type-specific fallbacks (CA-H1 FIX)
-        let causal_grammar = Self::load_grammar_file(&config.causal_grammar_path, GrammarType::Causal)?;
-        let graph_grammar = Self::load_grammar_file(&config.graph_grammar_path, GrammarType::Graph)?;
-        let validation_grammar = Self::load_grammar_file(&config.validation_grammar_path, GrammarType::Validation)?;
+        let causal_grammar =
+            Self::load_grammar_file(&config.causal_grammar_path, GrammarType::Causal)?;
+        let graph_grammar =
+            Self::load_grammar_file(&config.graph_grammar_path, GrammarType::Graph)?;
+        let validation_grammar =
+            Self::load_grammar_file(&config.validation_grammar_path, GrammarType::Validation)?;
         // Single-text and multi-relationship grammars use embedded defaults
         let single_text_grammar = Self::default_single_text_grammar().to_string();
         let multi_relationship_grammar = Self::default_multi_relationship_grammar().to_string();
@@ -441,9 +444,11 @@ ws ::= [ \t\n\r]*"#
 
         // Use few-shot examples for better accuracy when enabled
         let prompt = if self.config.use_few_shot {
-            self.prompt_builder.build_analysis_prompt_with_examples(memory_a, memory_b)
+            self.prompt_builder
+                .build_analysis_prompt_with_examples(memory_a, memory_b)
         } else {
-            self.prompt_builder.build_analysis_prompt(memory_a, memory_b)
+            self.prompt_builder
+                .build_analysis_prompt(memory_a, memory_b)
         };
 
         debug!(
@@ -489,11 +494,7 @@ ws ::= [ \t\n\r]*"#
         let mut results = Vec::with_capacity(pairs.len());
 
         for (i, (a, b)) in pairs.iter().enumerate() {
-            debug!(
-                pair_index = i,
-                total = pairs.len(),
-                "Analyzing pair"
-            );
+            debug!(pair_index = i, total = pairs.len(), "Analyzing pair");
 
             match self.analyze_causal_relationship(a, b).await {
                 Ok(result) => results.push(Ok(result)),
@@ -604,8 +605,16 @@ ws ::= [ \t\n\r]*"#
                 // Set description if provided and non-empty
                 hint.description = parsed.description.filter(|d| !d.is_empty());
                 // Set LLM-identified entity spans
-                hint.cause_spans = parsed.cause_entities.iter().map(|e| (e.start, e.end)).collect();
-                hint.effect_spans = parsed.effect_entities.iter().map(|e| (e.start, e.end)).collect();
+                hint.cause_spans = parsed
+                    .cause_entities
+                    .iter()
+                    .map(|e| (e.start, e.end))
+                    .collect();
+                hint.effect_spans = parsed
+                    .effect_entities
+                    .iter()
+                    .map(|e| (e.start, e.end))
+                    .collect();
                 hint.asymmetry_strength = parsed.asymmetry_strength.unwrap_or(0.0).clamp(0.0, 1.0);
                 Ok(hint)
             }
@@ -633,9 +642,7 @@ ws ::= [ \t\n\r]*"#
 
         // Extract is_causal
         let is_causal_re = Regex::new(r#""is_causal"\s*:\s*(true|false)"#).unwrap();
-        let is_causal_match = is_causal_re
-            .captures(response)
-            .and_then(|c| c.get(1));
+        let is_causal_match = is_causal_re.captures(response).and_then(|c| c.get(1));
         if is_causal_match.is_some() {
             fields_found += 1;
         }
@@ -815,15 +822,18 @@ ws ::= [ \t\n\r]*"#
                     .filter(|r| r.confidence >= 0.5) // Filter low confidence
                     .map(|r| {
                         // Parse source spans
-                        let mut source_spans: Vec<SourceSpan> = r.source_spans
+                        let mut source_spans: Vec<SourceSpan> = r
+                            .source_spans
                             .into_iter()
-                            .map(|s| SourceSpan::new(
-                                s.start_char,
-                                s.end_char,
-                                // Unescape the excerpt
-                                s.text_excerpt.replace("\\n", "\n").replace("\\\"", "\""),
-                                SpanType::from_str(&s.span_type),
-                            ))
+                            .map(|s| {
+                                SourceSpan::new(
+                                    s.start_char,
+                                    s.end_char,
+                                    // Unescape the excerpt
+                                    s.text_excerpt.replace("\\n", "\n").replace("\\\"", "\""),
+                                    SpanType::from_str(&s.span_type),
+                                )
+                            })
                             .collect();
 
                         // FIX: Correct paraphrased excerpts using actual source text
@@ -839,7 +849,8 @@ ws ::= [ \t\n\r]*"#
                             // Unescape the explanation string
                             r.explanation.replace("\\n", "\n"),
                             r.confidence,
-                            MechanismType::from_str(&r.mechanism_type).unwrap_or(MechanismType::Direct),
+                            MechanismType::from_str(&r.mechanism_type)
+                                .unwrap_or(MechanismType::Direct),
                             source_spans,
                         )
                     })
@@ -990,21 +1001,22 @@ ws ::= [ \t\n\r]*"#
         };
 
         // Create context for this generation
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(Some(std::num::NonZeroU32::new(self.config.context_size).unwrap()));
+        let ctx_params = LlamaContextParams::default().with_n_ctx(Some(
+            std::num::NonZeroU32::new(self.config.context_size).unwrap(),
+        ));
 
-        let mut ctx = model
-            .new_context(backend, ctx_params)
-            .map_err(|e| CausalAgentError::LlmInferenceError {
+        let mut ctx = model.new_context(backend, ctx_params).map_err(|e| {
+            CausalAgentError::LlmInferenceError {
                 message: format!("Failed to create context: {}", e),
-            })?;
+            }
+        })?;
 
         // Tokenize the prompt
-        let tokens = model
-            .str_to_token(prompt, AddBos::Always)
-            .map_err(|e| CausalAgentError::LlmInferenceError {
+        let tokens = model.str_to_token(prompt, AddBos::Always).map_err(|e| {
+            CausalAgentError::LlmInferenceError {
                 message: format!("Tokenization failed: {}", e),
-            })?;
+            }
+        })?;
 
         let prompt_len = tokens.len();
         debug!(prompt_tokens = prompt_len, "Tokenized prompt");
@@ -1015,11 +1027,11 @@ ws ::= [ \t\n\r]*"#
         // Add tokens to batch
         for (i, &token) in tokens.iter().enumerate() {
             let is_last = i == tokens.len() - 1;
-            batch
-                .add(token, i as i32, &[0], is_last)
-                .map_err(|e| CausalAgentError::LlmInferenceError {
+            batch.add(token, i as i32, &[0], is_last).map_err(|e| {
+                CausalAgentError::LlmInferenceError {
                     message: format!("Failed to add token to batch: {}", e),
-                })?;
+                }
+            })?;
         }
 
         // Process the prompt
@@ -1039,10 +1051,11 @@ ws ::= [ \t\n\r]*"#
 
         // Create sampler chain with grammar constraint
         let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::grammar(model, grammar_str, "root")
-                .map_err(|e| CausalAgentError::LlmInferenceError {
+            LlamaSampler::grammar(model, grammar_str, "root").map_err(|e| {
+                CausalAgentError::LlmInferenceError {
                     message: format!("Failed to create grammar sampler: {}", e),
-                })?,
+                }
+            })?,
             LlamaSampler::temp(self.config.temperature),
             LlamaSampler::greedy(),
         ]);
@@ -1108,7 +1121,9 @@ ws ::= [ \t\n\r]*"#
         prompt: &str,
         grammar_type: GrammarType,
     ) -> CausalAgentResult<String> {
-        let (output, _tokens, _time) = self.generate_with_grammar_and_metadata(prompt, grammar_type).await?;
+        let (output, _tokens, _time) = self
+            .generate_with_grammar_and_metadata(prompt, grammar_type)
+            .await?;
         Ok(output)
     }
 

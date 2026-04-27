@@ -1,7 +1,7 @@
 //! Trait definition for quantized fingerprint storage.
 //!
 //! Defines the `QuantizedFingerprintStorage` trait for storing and retrieving
-//! quantized fingerprints with all 13 embedders.
+//! quantized fingerprints with all 14 embedders.
 
 use context_graph_embeddings::{
     QuantizationRouter, QuantizedEmbedding, StoredQuantizedFingerprint,
@@ -17,7 +17,7 @@ use super::error::QuantizedStorageResult;
 /// Trait for storing and retrieving quantized fingerprints.
 ///
 /// Implementations MUST:
-/// 1. Store all 13 embedders atomically (WriteBatch)
+/// 1. Store all 14 embedders atomically (WriteBatch)
 /// 2. Verify all embedders present on load
 /// 3. FAIL FAST on any error (no partial writes/reads)
 /// 4. Support version checking (panic on mismatch)
@@ -26,21 +26,21 @@ use super::error::QuantizedStorageResult;
 ///
 /// Implementations must be `Send + Sync` for use in async contexts.
 pub trait QuantizedFingerprintStorage: Send + Sync {
-    /// Store a complete quantized fingerprint with all 13 embedders.
+    /// Store a complete quantized fingerprint with all 14 embedders.
     ///
     /// Uses atomic WriteBatch to ensure all-or-nothing semantics.
-    /// Stores each embedder in its dedicated column family (emb_0..emb_12).
+    /// Stores each embedder in its dedicated column family (emb_0..emb_13).
     ///
     /// # Arguments
     /// * `fingerprint` - Complete fingerprint with all 13 embedders
     ///
     /// # Errors
-    /// - `MissingEmbedder` - Fingerprint doesn't have all 13 embedders
+    /// - `MissingEmbedder` - Fingerprint doesn't have all 14 embedders
     /// - `SerializationFailed` - bincode serialization error
     /// - `WriteFailed` - RocksDB write error
     ///
     /// # Panics
-    /// Panics if fingerprint.embeddings.len() != 13 (FAIL FAST policy).
+    /// Panics if fingerprint.embeddings.len() != 14 (FAIL FAST policy).
     fn store_quantized_fingerprint(
         &self,
         fingerprint: &StoredQuantizedFingerprint,
@@ -48,7 +48,7 @@ pub trait QuantizedFingerprintStorage: Send + Sync {
 
     /// Load a complete quantized fingerprint by UUID.
     ///
-    /// Reads all 13 embedders from their respective column families.
+    /// Reads all 14 embedders from their respective column families.
     /// Verifies version matches current STORAGE_VERSION.
     ///
     /// # Arguments
@@ -73,7 +73,7 @@ pub trait QuantizedFingerprintStorage: Send + Sync {
     ///
     /// # Arguments
     /// * `fingerprint_id` - UUID of the fingerprint
-    /// * `embedder_idx` - Embedder index (0-12)
+    /// * `embedder_idx` - Embedder index (0-13)
     ///
     /// # Returns
     /// The `QuantizedEmbedding` for the specified embedder.
@@ -83,7 +83,7 @@ pub trait QuantizedFingerprintStorage: Send + Sync {
     /// - `DeserializationFailed` - bincode deserialization error
     ///
     /// # Panics
-    /// Panics if embedder_idx >= 13 (FAIL FAST policy).
+    /// Panics if embedder_idx >= 14 (FAIL FAST policy).
     fn load_embedder(
         &self,
         fingerprint_id: Uuid,

@@ -140,8 +140,9 @@ impl RealDataBenchRunner {
                 .ok_or_else(|| RealDataError::DatasetNotLoaded)?;
 
             let embedder = RealDataEmbedder::new();
-            let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| RealDataError::EmbedError(format!("Failed to create runtime: {}", e)))?;
+            let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                RealDataError::EmbedError(format!("Failed to create runtime: {}", e))
+            })?;
             let embedded = rt
                 .block_on(embedder.embed_dataset(dataset))
                 .map_err(|e| RealDataError::EmbedError(e.to_string()))?;
@@ -153,10 +154,7 @@ impl RealDataBenchRunner {
 
     /// Run the full benchmark suite.
     pub fn run_benchmarks(&self) -> Result<RealDataResults, RealDataError> {
-        let embedded = self
-            .embedded
-            .as_ref()
-            .ok_or(RealDataError::NotEmbedded)?;
+        let embedded = self.embedded.as_ref().ok_or(RealDataError::NotEmbedded)?;
 
         // Build indexes
         let fingerprints: Vec<(Uuid, &SemanticFingerprint)> = embedded

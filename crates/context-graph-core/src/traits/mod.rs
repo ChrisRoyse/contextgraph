@@ -37,4 +37,3 @@ pub use teleological_memory_store::{
     DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection, SequenceOptions,
     TemporalScale, TemporalSearchOptions, TimeWindow,
 };
-

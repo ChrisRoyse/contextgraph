@@ -228,7 +228,8 @@ impl TuckerCompressor for CpuTuckerCompressor {
                     if vp == 0.0 {
                         continue;
                     }
-                    let row = &mut m[p * REFERENCE_EMBEDDING_DIM..(p + 1) * REFERENCE_EMBEDDING_DIM];
+                    let row =
+                        &mut m[p * REFERENCE_EMBEDDING_DIM..(p + 1) * REFERENCE_EMBEDDING_DIM];
                     for q in 0..REFERENCE_EMBEDDING_DIM {
                         row[q] += vp * views[i][q];
                     }
@@ -251,8 +252,10 @@ impl TuckerCompressor for CpuTuckerCompressor {
                 for k in 0..r3 {
                     // dot_d(U3[:,k] * A[i,:] * B[j,:])
                     let u3_col = &u3_cols[k];
-                    let a_row = &a_mat[i * REFERENCE_EMBEDDING_DIM..(i + 1) * REFERENCE_EMBEDDING_DIM];
-                    let b_row = &b_mat[j * REFERENCE_EMBEDDING_DIM..(j + 1) * REFERENCE_EMBEDDING_DIM];
+                    let a_row =
+                        &a_mat[i * REFERENCE_EMBEDDING_DIM..(i + 1) * REFERENCE_EMBEDDING_DIM];
+                    let b_row =
+                        &b_mat[j * REFERENCE_EMBEDDING_DIM..(j + 1) * REFERENCE_EMBEDDING_DIM];
                     let mut s = 0.0f64;
                     for d in 0..REFERENCE_EMBEDDING_DIM {
                         s += (u3_col[d] as f64) * (a_row[d] as f64) * (b_row[d] as f64);
@@ -303,14 +306,14 @@ pub fn extract_reference_view(
     copy_dense_to_row(&fp.e3_temporal_periodic, &mut boxed[2]); // E3 512D pad
     copy_dense_to_row(&fp.e4_temporal_positional, &mut boxed[3]); // E4 512D pad
     copy_dense_to_row(fp.get_e5_as_cause(), &mut boxed[4]); // E5 cause 768D pad
-    // E6 sparse -> zero row (index 5)
+                                                            // E6 sparse -> zero row (index 5)
     copy_dense_to_row(&fp.e7_code, &mut boxed[6]); // E7 1536D truncate
     copy_dense_to_row(fp.get_e8_as_source(), &mut boxed[7]); // E8 source 1024D
     copy_dense_to_row(&fp.e9_hdc, &mut boxed[8]); // E9 1024D
     copy_dense_to_row(&fp.e10_multimodal_paraphrase, &mut boxed[9]); // E10 para 768D pad
     copy_dense_to_row(&fp.e11_entity, &mut boxed[10]); // E11 768D pad
     copy_tokens_mean_to_row(&fp.e12_late_interaction, &mut boxed[11]); // E12 mean-pool
-    // E13 sparse -> zero row (index 12)
+                                                                       // E13 sparse -> zero row (index 12)
 
     boxed
 }
@@ -493,11 +496,7 @@ fn jacobi_eigen_13(
 /// converge to the next-largest eigenvalue. We implement this by keeping an
 /// explicit list of already-extracted `(lambda, u)` pairs and subtracting
 /// their contribution from `G_3 @ x` at each multiply.
-fn power_iteration_top_k(
-    m_flat: &[f32],
-    n: usize,
-    k: usize,
-) -> Result<Vec<Vec<f32>>, TuckerError> {
+fn power_iteration_top_k(m_flat: &[f32], n: usize, k: usize) -> Result<Vec<Vec<f32>>, TuckerError> {
     assert_eq!(m_flat.len(), n * n);
 
     let mut deflated: Vec<(f64, Vec<f32>)> = Vec::with_capacity(k);
@@ -683,8 +682,7 @@ fn project_factor_onto_views(
             if coeff == 0.0 {
                 continue;
             }
-            let row = &mut out[col * REFERENCE_EMBEDDING_DIM
-                ..(col + 1) * REFERENCE_EMBEDDING_DIM];
+            let row = &mut out[col * REFERENCE_EMBEDDING_DIM..(col + 1) * REFERENCE_EMBEDDING_DIM];
             let src = &views[i];
             for d in 0..REFERENCE_EMBEDDING_DIM {
                 row[d] += coeff * src[d];
@@ -749,8 +747,8 @@ pub fn reconstruct_tensor(core: &TuckerCore) -> Vec<f32> {
                         continue;
                     }
                     let coef = u1_ia * u2_jb;
-                    let base = i * NUM_EMBEDDERS * REFERENCE_EMBEDDING_DIM
-                        + j * REFERENCE_EMBEDDING_DIM;
+                    let base =
+                        i * NUM_EMBEDDERS * REFERENCE_EMBEDDING_DIM + j * REFERENCE_EMBEDDING_DIM;
                     for d in 0..REFERENCE_EMBEDDING_DIM {
                         out[base + d] += (coef * tmp_d[d]) as f32;
                     }
@@ -882,8 +880,7 @@ mod tests {
     /// reconstruction error in FSV-16.
     fn materialize_full_tensor(fp: &SemanticFingerprint) -> Vec<f32> {
         let views = extract_reference_view(fp);
-        let mut out =
-            vec![0.0f32; NUM_EMBEDDERS * NUM_EMBEDDERS * REFERENCE_EMBEDDING_DIM];
+        let mut out = vec![0.0f32; NUM_EMBEDDERS * NUM_EMBEDDERS * REFERENCE_EMBEDDING_DIM];
         for i in 0..NUM_EMBEDDERS {
             for j in 0..NUM_EMBEDDERS {
                 for d in 0..REFERENCE_EMBEDDING_DIM {

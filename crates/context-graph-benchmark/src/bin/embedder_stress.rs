@@ -53,9 +53,9 @@ enum OutputFormat {
 #[allow(dead_code)]
 struct EmbeddedDoc {
     doc_id: usize,
-    content: String,  // Kept for debug output
+    content: String, // Kept for debug output
     fingerprint: SemanticFingerprint,
-    uuid: Uuid,  // Kept for traceability
+    uuid: Uuid, // Kept for traceability
 }
 
 /// Search result from an index
@@ -187,18 +187,23 @@ async fn embed_text(text: &str, verbose: bool) -> Result<SemanticFingerprint, St
         .await
         .map_err(|e| format!("FATAL: Failed to initialize embedding provider: {}", e))?;
 
-    let provider = get_warm_provider()
-        .map_err(|e| format!("FATAL: Failed to get warm provider: {}", e))?;
+    let provider =
+        get_warm_provider().map_err(|e| format!("FATAL: Failed to get warm provider: {}", e))?;
 
-    let output = provider
-        .embed_all(text)
-        .await
-        .map_err(|e| format!("FATAL: Embedding failed for text '{}': {}", &text[..text.len().min(30)], e))?;
+    let output = provider.embed_all(text).await.map_err(|e| {
+        format!(
+            "FATAL: Embedding failed for text '{}': {}",
+            &text[..text.len().min(30)],
+            e
+        )
+    })?;
 
     if verbose {
-        eprintln!("[EMBED] Success - E1 dim: {}, E7 dim: {}",
+        eprintln!(
+            "[EMBED] Success - E1 dim: {}, E7 dim: {}",
             output.fingerprint.e1_semantic.len(),
-            output.fingerprint.e7_code.len());
+            output.fingerprint.e7_code.len()
+        );
     }
 
     Ok(output.fingerprint)
@@ -210,10 +215,17 @@ async fn embed_text(_text: &str, _verbose: bool) -> Result<SemanticFingerprint, 
 }
 
 /// Embed entire stress corpus for a config
-async fn embed_corpus(config: &EmbedderStressConfig, verbose: bool) -> Result<Vec<EmbeddedDoc>, String> {
+async fn embed_corpus(
+    config: &EmbedderStressConfig,
+    verbose: bool,
+) -> Result<Vec<EmbeddedDoc>, String> {
     let mut docs = Vec::with_capacity(config.corpus.len());
 
-    eprintln!("[CORPUS] Embedding {} documents for {}...", config.corpus.len(), config.name);
+    eprintln!(
+        "[CORPUS] Embedding {} documents for {}...",
+        config.corpus.len(),
+        config.name
+    );
     let start = Instant::now();
 
     for entry in &config.corpus {
@@ -257,7 +269,11 @@ fn get_embedder_vector(fp: &SemanticFingerprint, embedder: EmbedderIndex) -> Opt
         EmbedderIndex::E5Causal => {
             // Legacy: use active vector (cause) as default for backwards compatibility
             let cause = fp.get_e5_as_cause();
-            if !cause.is_empty() { Some(cause) } else { None }
+            if !cause.is_empty() {
+                Some(cause)
+            } else {
+                None
+            }
         }
         // E5 asymmetric indexes (ARCH-15)
         EmbedderIndex::E5CausalCause => Some(fp.get_e5_as_cause()),
@@ -266,13 +282,21 @@ fn get_embedder_vector(fp: &SemanticFingerprint, embedder: EmbedderIndex) -> Opt
         EmbedderIndex::E8Graph => {
             // Legacy: use active vector (source) as default for backwards compatibility
             let source = fp.get_e8_as_source();
-            if !source.is_empty() { Some(source) } else { None }
+            if !source.is_empty() {
+                Some(source)
+            } else {
+                None
+            }
         }
         EmbedderIndex::E9HDC => Some(&fp.e9_hdc),
         EmbedderIndex::E10Multimodal => {
             // Use paraphrase vector as default E10 vector
             let paraphrase = fp.get_e10_as_paraphrase();
-            if !paraphrase.is_empty() { Some(paraphrase) } else { None }
+            if !paraphrase.is_empty() {
+                Some(paraphrase)
+            } else {
+                None
+            }
         }
         // E10 asymmetric indexes (ARCH-15)
         EmbedderIndex::E10MultimodalParaphrase => Some(fp.get_e10_as_paraphrase()),
@@ -299,7 +323,10 @@ fn search_with_embedder(
         Some(v) => v,
         None => {
             if verbose {
-                eprintln!("[SEARCH] Embedder {:?} uses sparse vectors - using E1 fallback", embedder);
+                eprintln!(
+                    "[SEARCH] Embedder {:?} uses sparse vectors - using E1 fallback",
+                    embedder
+                );
             }
             &query_fp.e1_semantic
         }
@@ -363,9 +390,11 @@ fn search_multi_space(
     results.truncate(top_k);
 
     if verbose {
-        eprintln!("[MULTI-SPACE] Top result: doc {} with sim {:.4}",
+        eprintln!(
+            "[MULTI-SPACE] Top result: doc {} with sim {:.4}",
             results.first().map(|r| r.0).unwrap_or(0),
-            results.first().map(|r| r.1).unwrap_or(0.0));
+            results.first().map(|r| r.1).unwrap_or(0.0)
+        );
     }
 
     results
@@ -386,7 +415,10 @@ fn compute_query_mrr(results: &[SearchResult], expected_docs: &[usize]) -> f32 {
 
 /// Check if expected doc is rank 1
 fn check_success(results: &[SearchResult], expected_docs: &[usize]) -> bool {
-    results.first().map(|r| expected_docs.contains(&r.doc_id)).unwrap_or(false)
+    results
+        .first()
+        .map(|r| expected_docs.contains(&r.doc_id))
+        .unwrap_or(false)
 }
 
 /// Check anti-ranking (expected bad docs should NOT be in top-k)
@@ -429,7 +461,12 @@ async fn run_stress_test(
     let mut anti_score_sum = 0.0f32;
 
     for (i, query) in config.queries.iter().enumerate() {
-        eprintln!("[QUERY {}/{}] {}", i + 1, config.queries.len(), &query.query);
+        eprintln!(
+            "[QUERY {}/{}] {}",
+            i + 1,
+            config.queries.len(),
+            &query.query
+        );
 
         // Embed query
         let query_fp = embed_text(&query.query, verbose).await?;
@@ -458,10 +495,22 @@ async fn run_stress_test(
             } else {
                 " "
             };
-            eprintln!("  {}. doc {} - sim {:.4} {}", j + 1, r.doc_id, r.similarity, marker);
+            eprintln!(
+                "  {}. doc {} - sim {:.4} {}",
+                j + 1,
+                r.doc_id,
+                r.similarity,
+                marker
+            );
         }
-        eprintln!("[QUERY {}/{}] MRR: {:.4}, Success: {}, Anti-score: {:.4}",
-            i + 1, config.queries.len(), mrr, success, anti_score);
+        eprintln!(
+            "[QUERY {}/{}] MRR: {:.4}, Success: {}, Anti-score: {:.4}",
+            i + 1,
+            config.queries.len(),
+            mrr,
+            success,
+            anti_score
+        );
     }
 
     let query_count = config.queries.len() as f32;
@@ -471,7 +520,8 @@ async fn run_stress_test(
 
     // Step 3: Run ablation to measure this embedder's contribution
     eprintln!("[ABLATION] Computing ablation delta for {}...", config.name);
-    let ablation_delta = compute_ablation_delta(&corpus, &config.queries, config.embedder, verbose).await?;
+    let ablation_delta =
+        compute_ablation_delta(&corpus, &config.queries, config.embedder, verbose).await?;
 
     let result = EmbedderStressResults {
         embedder: config.embedder,
@@ -485,8 +535,13 @@ async fn run_stress_test(
         queries_total: config.queries.len(),
     };
 
-    eprintln!("[TEST] Completed {} - MRR: {:.4}, Success: {:.1}%, Ablation Δ: {:.4}",
-        config.name, stress_mrr, success_rate * 100.0, ablation_delta);
+    eprintln!(
+        "[TEST] Completed {} - MRR: {:.4}, Success: {:.1}%, Ablation Δ: {:.4}",
+        config.name,
+        stress_mrr,
+        success_rate * 100.0,
+        ablation_delta
+    );
 
     Ok(result)
 }
@@ -512,7 +567,8 @@ async fn compute_ablation_delta(
         all_mrr_sum += compute_query_mrr(&all_results, &query.expected_top_docs);
 
         // Multi-space without target (using E1 only as proxy)
-        let without_results = search_with_embedder(&query_fp, corpus, EmbedderIndex::E1Semantic, 10, false);
+        let without_results =
+            search_with_embedder(&query_fp, corpus, EmbedderIndex::E1Semantic, 10, false);
         without_mrr_sum += compute_query_mrr(&without_results, &query.expected_top_docs);
     }
 
@@ -523,8 +579,10 @@ async fn compute_ablation_delta(
     let delta = all_score - without_score;
 
     if verbose {
-        eprintln!("[ABLATION] All embedders MRR: {:.4}, Without {:?} MRR: {:.4}, Delta: {:.4}",
-            all_score, target_embedder, without_score, delta);
+        eprintln!(
+            "[ABLATION] All embedders MRR: {:.4}, Without {:?} MRR: {:.4}, Delta: {:.4}",
+            all_score, target_embedder, without_score, delta
+        );
     }
 
     Ok(delta.max(0.0)) // Delta should be non-negative
@@ -542,7 +600,14 @@ async fn main() {
     eprintln!("  PER-EMBEDDER STRESS TEST BENCHMARK (REAL EMBEDDINGS)");
     eprintln!("=======================================================================");
     eprintln!();
-    eprintln!("Mode: {}", if cfg!(feature = "real-embeddings") { "REAL EMBEDDINGS" } else { "ERROR - NO EMBEDDINGS" });
+    eprintln!(
+        "Mode: {}",
+        if cfg!(feature = "real-embeddings") {
+            "REAL EMBEDDINGS"
+        } else {
+            "ERROR - NO EMBEDDINGS"
+        }
+    );
     eprintln!();
 
     #[cfg(not(feature = "real-embeddings"))]
@@ -583,9 +648,13 @@ async fn main() {
             }
             Err(e) => {
                 eprintln!();
-                eprintln!("=======================================================================");
+                eprintln!(
+                    "======================================================================="
+                );
                 eprintln!("  FATAL ERROR");
-                eprintln!("=======================================================================");
+                eprintln!(
+                    "======================================================================="
+                );
                 eprintln!("Stress test for {} failed: {}", config.name, e);
                 eprintln!();
                 eprintln!("This is a REAL failure, not a test skip. Debug and fix the issue.");
@@ -614,15 +683,25 @@ async fn main() {
     eprintln!("  VERIFICATION SUMMARY");
     eprintln!("=======================================================================");
     eprintln!("Total embedders tested: {}", results.len());
-    eprintln!("Total queries executed: {}", results.iter().map(|r| r.queries_total).sum::<usize>());
-    eprintln!("Total queries passed: {}", results.iter().map(|r| r.queries_passed).sum::<usize>());
+    eprintln!(
+        "Total queries executed: {}",
+        results.iter().map(|r| r.queries_total).sum::<usize>()
+    );
+    eprintln!(
+        "Total queries passed: {}",
+        results.iter().map(|r| r.queries_passed).sum::<usize>()
+    );
 
-    let avg_mrr: f32 = results.iter().map(|r| r.stress_test_mrr).sum::<f32>() / results.len() as f32;
+    let avg_mrr: f32 =
+        results.iter().map(|r| r.stress_test_mrr).sum::<f32>() / results.len() as f32;
     eprintln!("Average MRR across all tests: {:.4}", avg_mrr);
 
     if avg_mrr < 0.5 {
         eprintln!();
-        eprintln!("WARNING: Average MRR is low ({:.4}). Check stress corpus and embeddings.", avg_mrr);
+        eprintln!(
+            "WARNING: Average MRR is low ({:.4}). Check stress corpus and embeddings.",
+            avg_mrr
+        );
     }
 
     eprintln!();
@@ -749,27 +828,45 @@ fn print_markdown_output(results: &[EmbedderStressResults]) {
     println!("## Summary");
     println!();
     println!("- **Total embedders tested**: {}", results.len());
-    println!("- **Total queries executed**: {}", results.iter().map(|r| r.queries_total).sum::<usize>());
-    println!("- **Average MRR**: {:.4}", results.iter().map(|r| r.stress_test_mrr).sum::<f32>() / results.len() as f32);
+    println!(
+        "- **Total queries executed**: {}",
+        results.iter().map(|r| r.queries_total).sum::<usize>()
+    );
+    println!(
+        "- **Average MRR**: {:.4}",
+        results.iter().map(|r| r.stress_test_mrr).sum::<f32>() / results.len() as f32
+    );
 
     println!();
     println!("## Recommendations");
     println!();
 
-    let high: Vec<_> = results.iter().filter(|r| r.unique_contribution > 0.08).collect();
+    let high: Vec<_> = results
+        .iter()
+        .filter(|r| r.unique_contribution > 0.08)
+        .collect();
     if !high.is_empty() {
         println!("### High Value Embedders");
         for r in high {
-            println!("- **{}**: {:.3} unique contribution", r.name, r.unique_contribution);
+            println!(
+                "- **{}**: {:.3} unique contribution",
+                r.name, r.unique_contribution
+            );
         }
         println!();
     }
 
-    let low: Vec<_> = results.iter().filter(|r| r.unique_contribution < 0.03).collect();
+    let low: Vec<_> = results
+        .iter()
+        .filter(|r| r.unique_contribution < 0.03)
+        .collect();
     if !low.is_empty() {
         println!("### Low Value Embedders (consider reducing weight)");
         for r in low {
-            println!("- **{}**: {:.3} unique contribution", r.name, r.unique_contribution);
+            println!(
+                "- **{}**: {:.3} unique contribution",
+                r.name, r.unique_contribution
+            );
         }
     }
 }

@@ -42,12 +42,18 @@ fn test_semantic_fingerprint_dimensions() {
     // E5 now uses dual vectors for asymmetric causal similarity
     assert_eq!(fp.e5_causal_as_cause.len(), E5_DIM);
     assert_eq!(fp.e5_causal_as_effect.len(), E5_DIM);
-    assert!(fp.e5_causal.is_empty(), "Legacy e5_causal should be empty in new format");
+    assert!(
+        fp.e5_causal.is_empty(),
+        "Legacy e5_causal should be empty in new format"
+    );
     assert_eq!(fp.e7_code.len(), E7_DIM);
     // E8 now uses dual vectors for asymmetric graph similarity
     assert_eq!(fp.e8_graph_as_source.len(), E8_DIM);
     assert_eq!(fp.e8_graph_as_target.len(), E8_DIM);
-    assert!(fp.e8_graph.is_empty(), "Legacy e8_graph should be empty in new format");
+    assert!(
+        fp.e8_graph.is_empty(),
+        "Legacy e8_graph should be empty in new format"
+    );
     assert_eq!(fp.e9_hdc.len(), E9_DIM);
     // E10 uses dual vectors for asymmetric paraphrase/context similarity
     assert_eq!(fp.e10_multimodal_paraphrase.len(), E10_DIM);
@@ -160,7 +166,10 @@ fn test_embedding_name() {
         Some("E12_Late_Interaction")
     );
     assert_eq!(SemanticFingerprint::embedding_name(12), Some("E13_SPLADE"));
-    assert_eq!(SemanticFingerprint::embedding_name(13), Some("E14_BgeM3Dense"));
+    assert_eq!(
+        SemanticFingerprint::embedding_name(13),
+        Some("E14_BgeM3Dense")
+    );
     assert_eq!(SemanticFingerprint::embedding_name(14), None);
 }
 

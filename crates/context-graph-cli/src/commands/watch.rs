@@ -22,13 +22,15 @@
 //! Run `context-graph-cli warmup` first to load embedding models into VRAM.
 
 use clap::Args;
+use context_graph_core::memory::store::MemoryStore;
+use context_graph_core::memory::watcher::GitFileWatcher;
 use context_graph_core::memory::{
     EmbeddingProvider, MemoryCaptureService, MultiArrayEmbeddingAdapter,
 };
-use context_graph_core::memory::store::MemoryStore;
-use context_graph_core::memory::watcher::GitFileWatcher;
 use context_graph_core::traits::TeleologicalMemoryStore;
-use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider, is_warm_initialized};
+use context_graph_embeddings::{
+    get_warm_provider, initialize_global_warm_provider, is_warm_initialized,
+};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -124,9 +126,13 @@ pub async fn handle_watch(args: WatchArgs) -> i32 {
 
     // Phase 8 Fix: Try to create TeleologicalMemoryStore for MCP search integration
     // This ensures file watcher memories are searchable via MCP tools
-    let capture_service: Arc<MemoryCaptureService> = match RocksDbTeleologicalStore::open(&db_path) {
+    let capture_service: Arc<MemoryCaptureService> = match RocksDbTeleologicalStore::open(&db_path)
+    {
         Ok(store) => {
-            info!("Opened TeleologicalStore at {:?} - memories will be searchable via MCP tools", db_path);
+            info!(
+                "Opened TeleologicalStore at {:?} - memories will be searchable via MCP tools",
+                db_path
+            );
             let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(store);
             // Create capture service WITH teleological store for MCP integration
             Arc::new(MemoryCaptureService::with_teleological_store(

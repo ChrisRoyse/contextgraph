@@ -50,8 +50,7 @@ fn record_round_trips_with_full_content() {
         exporter_version: "typed_edge_export_v1".into(),
     };
     let bytes = bincode::serialize(&rec).expect("serialize record");
-    let back: TypedEdgeTrainingRecord =
-        bincode::deserialize(&bytes).expect("deserialize record");
+    let back: TypedEdgeTrainingRecord = bincode::deserialize(&bytes).expect("deserialize record");
     assert_eq!(rec, back);
 }
 
@@ -79,7 +78,6 @@ fn record_round_trips_without_content_or_validation() {
         exporter_version: "typed_edge_export_v1".into(),
     };
     let bytes = bincode::serialize(&rec).expect("serialize record");
-    let back: TypedEdgeTrainingRecord =
-        bincode::deserialize(&bytes).expect("deserialize record");
+    let back: TypedEdgeTrainingRecord = bincode::deserialize(&bytes).expect("deserialize record");
     assert_eq!(rec, back);
 }

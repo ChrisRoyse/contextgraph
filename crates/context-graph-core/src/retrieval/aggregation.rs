@@ -582,10 +582,10 @@ mod tests {
         // id2: found only by E11 (unique contribution)
         // id3: found by E1, E5, E7
         let ranked_lists = vec![
-            (0, vec![id1, id3]),   // E1: id1=rank0, id3=rank1
-            (4, vec![id1, id3]),   // E5: id1=rank0, id3=rank1
-            (6, vec![id3]),        // E7: only id3
-            (10, vec![id2]),       // E11: only id2 (unique!)
+            (0, vec![id1, id3]), // E1: id1=rank0, id3=rank1
+            (4, vec![id1, id3]), // E5: id1=rank0, id3=rank1
+            (6, vec![id3]),      // E7: only id3
+            (10, vec![id2]),     // E11: only id2 (unique!)
         ];
 
         let results = AggregationStrategy::aggregate_rrf_additive(&ranked_lists, 60.0, 0.1);
@@ -638,11 +638,23 @@ mod tests {
 
         // unique: rrf=1/61, boosted=1/61*1.1
         // common: rrf=3/61, boosted=3/61
-        println!("Unique: rrf={:.4}, boosted={:.4}", unique.rrf_score, unique.boosted_score);
-        println!("Common: rrf={:.4}, boosted={:.4}", common.rrf_score, common.boosted_score);
+        println!(
+            "Unique: rrf={:.4}, boosted={:.4}",
+            unique.rrf_score, unique.boosted_score
+        );
+        println!(
+            "Common: rrf={:.4}, boosted={:.4}",
+            common.rrf_score, common.boosted_score
+        );
 
-        assert!(unique.boosted_score > unique.rrf_score, "Unique should get boost");
-        assert_eq!(common.boosted_score, common.rrf_score, "Common should not get boost");
+        assert!(
+            unique.boosted_score > unique.rrf_score,
+            "Unique should get boost"
+        );
+        assert_eq!(
+            common.boosted_score, common.rrf_score,
+            "Common should not get boost"
+        );
 
         // Verify 10% boost for unique
         let expected_boost = unique.rrf_score * 1.1;
@@ -660,15 +672,28 @@ mod tests {
         // id found by E1 at rank 5, E5 at rank 0, E7 at rank 3
         // Primary should be E5 (best rank)
         let ranked_lists = vec![
-            (0, vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), id]), // E1 rank 5
-            (4, vec![id]),                                                                                 // E5 rank 0
-            (6, vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), id]),                                 // E7 rank 3
+            (
+                0,
+                vec![
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    id,
+                ],
+            ), // E1 rank 5
+            (4, vec![id]),                                                 // E5 rank 0
+            (6, vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), id]), // E7 rank 3
         ];
 
         let results = AggregationStrategy::aggregate_rrf_additive(&ranked_lists, 60.0, 0.1);
         let result = results.iter().find(|r| r.memory_id == id).unwrap();
 
-        assert_eq!(result.primary_embedder, 4, "Primary should be E5 (best rank)");
+        assert_eq!(
+            result.primary_embedder, 4,
+            "Primary should be E5 (best rank)"
+        );
         assert_eq!(result.best_rank, 0);
         assert_eq!(result.primary_embedder_name(), "E5_Causal");
 
@@ -684,9 +709,9 @@ mod tests {
         let id3 = Uuid::new_v4();
 
         let ranked_lists = vec![
-            (0, vec![id1, id2, id3]),   // E1: id1=rank0, id2=rank1, id3=rank2
-            (4, vec![id1, id2]),        // E5: id1=rank0, id2=rank1
-            (6, vec![id1]),             // E7: id1=rank0
+            (0, vec![id1, id2, id3]), // E1: id1=rank0, id2=rank1, id3=rank2
+            (4, vec![id1, id2]),      // E5: id1=rank0, id2=rank1
+            (6, vec![id1]),           // E7: id1=rank0
         ];
 
         let results = AggregationStrategy::aggregate_rrf_additive(&ranked_lists, 60.0, 0.1);
@@ -694,7 +719,7 @@ mod tests {
         // Results should be sorted by boosted_score descending
         for i in 1..results.len() {
             assert!(
-                results[i-1].boosted_score >= results[i].boosted_score,
+                results[i - 1].boosted_score >= results[i].boosted_score,
                 "Results should be sorted by score descending"
             );
         }

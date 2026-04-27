@@ -547,9 +547,8 @@ mod tests {
 
     #[test]
     fn test_build_typed_edges_below_threshold() {
-        let mut builder = EdgeBuilder::new(
-            EdgeBuilderConfig::default().with_min_weighted_agreement(2.5),
-        );
+        let mut builder =
+            EdgeBuilder::new(EdgeBuilderConfig::default().with_min_weighted_agreement(2.5));
 
         let node1 = Uuid::new_v4();
         let node2 = Uuid::new_v4();
@@ -558,14 +557,16 @@ mod tests {
         builder.add_knn_graph(create_test_graph(0, vec![(node1, node2, 0.8)]));
 
         let edges = builder.build_typed_edges().unwrap();
-        assert!(edges.is_empty(), "Edge should not be created below threshold");
+        assert!(
+            edges.is_empty(),
+            "Edge should not be created below threshold"
+        );
     }
 
     #[test]
     fn test_build_typed_edges_above_threshold() {
-        let mut builder = EdgeBuilder::new(
-            EdgeBuilderConfig::default().with_min_weighted_agreement(2.0),
-        );
+        let mut builder =
+            EdgeBuilder::new(EdgeBuilderConfig::default().with_min_weighted_agreement(2.0));
 
         let node1 = Uuid::new_v4();
         let node2 = Uuid::new_v4();
@@ -588,10 +589,7 @@ mod tests {
         let node1 = Uuid::new_v4();
         let node2 = Uuid::new_v4();
 
-        builder.add_knn_graph(create_test_graph(
-            0,
-            vec![(node1, node2, 0.8)],
-        ));
+        builder.add_knn_graph(create_test_graph(0, vec![(node1, node2, 0.8)]));
 
         let stats = builder.stats();
         assert_eq!(stats.graph_count, 1);

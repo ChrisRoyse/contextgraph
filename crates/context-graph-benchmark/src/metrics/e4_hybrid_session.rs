@@ -245,7 +245,8 @@ impl CompositeE4HybridMetrics {
         let ordering_score = ordering.normalized_score();
         let effectiveness_score = effectiveness.normalized_score();
 
-        let overall_score = 0.4 * clustering_score + 0.4 * ordering_score + 0.2 * effectiveness_score;
+        let overall_score =
+            0.4 * clustering_score + 0.4 * ordering_score + 0.2 * effectiveness_score;
 
         // Count targets met
         let targets = [
@@ -662,7 +663,9 @@ pub fn compute_intra_session_ordering(
                 let immediate_before_pos = anchor_pos - 1;
                 let mut sorted: Vec<_> = before_sims.iter().collect();
                 sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                if let Some(rank) = sorted.iter().position(|(pos, _)| *pos == immediate_before_pos)
+                if let Some(rank) = sorted
+                    .iter()
+                    .position(|(pos, _)| *pos == immediate_before_pos)
                 {
                     mrr_sum += 1.0 / (rank + 1) as f64;
                     mrr_count += 1;
@@ -809,7 +812,7 @@ pub fn compute_hybrid_effectiveness(
         vs_legacy_improvement,
         vs_timestamp_improvement,
         signature_distinctness: 0.0, // Computed separately if session signatures available
-        position_preservation: 0.0,   // Computed separately
+        position_preservation: 0.0,  // Computed separately
         legacy_separation_ratio: legacy_metrics
             .map(|m| m.session_separation_ratio)
             .unwrap_or(0.0),
@@ -903,7 +906,11 @@ mod tests {
         }
     }
 
-    fn create_mock_embeddings(ids: &[Uuid], session_idx: usize, dim: usize) -> HashMap<Uuid, Vec<f32>> {
+    fn create_mock_embeddings(
+        ids: &[Uuid],
+        session_idx: usize,
+        dim: usize,
+    ) -> HashMap<Uuid, Vec<f32>> {
         ids.iter()
             .enumerate()
             .map(|(i, id)| {

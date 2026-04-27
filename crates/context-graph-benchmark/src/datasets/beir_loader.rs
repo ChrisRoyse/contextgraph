@@ -179,7 +179,8 @@ impl BeirDataset {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
         // Filter to queries with judgments
-        let mut valid_queries: Vec<_> = self.queries
+        let mut valid_queries: Vec<_> = self
+            .queries
             .iter()
             .filter(|q| self.qrels.judgments.contains_key(&q.query_id))
             .collect();
@@ -297,11 +298,12 @@ impl BeirLoader {
                 error: e,
             })?;
 
-            let chunk: BeirChunk = serde_json::from_str(&line).map_err(|e| BeirLoadError::JsonLine {
-                path: path.as_ref().to_path_buf(),
-                line: line_num + 1,
-                error: e,
-            })?;
+            let chunk: BeirChunk =
+                serde_json::from_str(&line).map_err(|e| BeirLoadError::JsonLine {
+                    path: path.as_ref().to_path_buf(),
+                    line: line_num + 1,
+                    error: e,
+                })?;
 
             chunks.push(chunk);
         }
@@ -329,11 +331,12 @@ impl BeirLoader {
                 error: e,
             })?;
 
-            let mut query: BeirQuery = serde_json::from_str(&line).map_err(|e| BeirLoadError::JsonLine {
-                path: path.as_ref().to_path_buf(),
-                line: line_num + 1,
-                error: e,
-            })?;
+            let mut query: BeirQuery =
+                serde_json::from_str(&line).map_err(|e| BeirLoadError::JsonLine {
+                    path: path.as_ref().to_path_buf(),
+                    line: line_num + 1,
+                    error: e,
+                })?;
 
             // Generate UUID for query
             let hash = md5::compute(query.query_id.as_bytes());
@@ -352,8 +355,8 @@ impl BeirLoader {
             error: e,
         })?;
 
-        let judgments: HashMap<String, HashMap<String, i32>> =
-            serde_json::from_reader(file).map_err(|e| BeirLoadError::Json {
+        let judgments: HashMap<String, HashMap<String, i32>> = serde_json::from_reader(file)
+            .map_err(|e| BeirLoadError::Json {
                 path: path.as_ref().to_path_buf(),
                 error: e,
             })?;
@@ -399,7 +402,13 @@ impl std::fmt::Display for BeirLoadError {
                 write!(f, "JSON error in {}: {}", path.display(), error)
             }
             BeirLoadError::JsonLine { path, line, error } => {
-                write!(f, "JSON error in {} at line {}: {}", path.display(), line, error)
+                write!(
+                    f,
+                    "JSON error in {} at line {}: {}",
+                    path.display(),
+                    line,
+                    error
+                )
             }
         }
     }

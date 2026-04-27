@@ -217,17 +217,11 @@ impl InjectionPipeline {
 
         // Step 1: Retrieve similar memories
         let similar_results = self.retriever.retrieve_similar(query, session_id, limit)?;
-        debug!(
-            count = similar_results.len(),
-            "Retrieved similar memories"
-        );
+        debug!(count = similar_results.len(), "Retrieved similar memories");
 
         // Step 2: Check for divergence
         let divergence_alerts = self.retriever.check_divergence(query, session_id)?.alerts;
-        debug!(
-            alert_count = divergence_alerts.len(),
-            "Checked divergence"
-        );
+        debug!(alert_count = divergence_alerts.len(), "Checked divergence");
 
         // Step 3: Convert to candidates with content lookup
         let mut candidates = self.convert_to_candidates(&similar_results)?;
@@ -304,9 +298,7 @@ impl InjectionPipeline {
         );
 
         // Retrieve fewer candidates for brief context
-        let similar_results = self
-            .retriever
-            .retrieve_similar(query, session_id, 10)?;
+        let similar_results = self.retriever.retrieve_similar(query, session_id, 10)?;
 
         // Convert to candidates
         let mut candidates = self.convert_to_candidates(&similar_results)?;
@@ -393,7 +385,6 @@ impl InjectionPipeline {
 
         Ok(candidates)
     }
-
 }
 
 // =============================================================================
@@ -515,9 +506,10 @@ mod tests {
         let memory_err = InjectionError::MemoryNotFound(Uuid::new_v4());
         assert!(memory_err.to_string().contains("Memory not found"));
 
-        let fingerprint_err =
-            InjectionError::InvalidFingerprint("validation failed".to_string());
-        assert!(fingerprint_err.to_string().contains("Invalid query fingerprint"));
+        let fingerprint_err = InjectionError::InvalidFingerprint("validation failed".to_string());
+        assert!(fingerprint_err
+            .to_string()
+            .contains("Invalid query fingerprint"));
 
         println!("[PASS] InjectionError Display implementations work");
     }

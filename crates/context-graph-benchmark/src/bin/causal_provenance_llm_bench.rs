@@ -398,8 +398,10 @@ async fn main() {
                 }
 
                 if args.verbose {
-                    println!("    → {} relationships, {} spans",
-                             doc_result.relationships_found, doc_result.spans_populated);
+                    println!(
+                        "    → {} relationships, {} spans",
+                        doc_result.relationships_found, doc_result.spans_populated
+                    );
                 }
             }
             Err(e) => {
@@ -427,10 +429,14 @@ async fn main() {
         total_relationships,
         avg_relationships_per_doc: if docs_with_relationships > 0 {
             total_relationships as f64 / docs_with_relationships as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         avg_confidence: if total_relationships > 0 {
             total_confidence / total_relationships as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         mechanism_distribution: mechanism_counts,
         json_parse_success_rate: (json_parse_successes as f64 / num_docs as f64) * 100.0,
     };
@@ -440,16 +446,24 @@ async fn main() {
         total_spans,
         spans_populated_rate: if total_relationships > 0 {
             (rels_with_spans as f64 / total_relationships as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         offset_valid_rate: if total_spans > 0 {
             (valid_offset_spans as f64 / total_spans as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         text_match_rate: if total_spans > 0 {
             (text_match_spans as f64 / total_spans as f64) * 100.0
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         avg_span_length: if total_spans > 0 {
             total_span_length as f64 / total_spans as f64
-        } else { 0.0 },
+        } else {
+            0.0
+        },
         span_type_distribution: span_type_counts,
     };
 
@@ -457,30 +471,51 @@ async fn main() {
     sorted_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     let latency = LatencyMetrics {
-        avg_extraction_ms: if extraction_times.is_empty() { 0.0 }
-                          else { extraction_times.iter().sum::<f64>() / extraction_times.len() as f64 },
+        avg_extraction_ms: if extraction_times.is_empty() {
+            0.0
+        } else {
+            extraction_times.iter().sum::<f64>() / extraction_times.len() as f64
+        },
         min_extraction_ms: sorted_times.first().copied().unwrap_or(0.0),
         max_extraction_ms: sorted_times.last().copied().unwrap_or(0.0),
-        p95_extraction_ms: if sorted_times.is_empty() { 0.0 }
-                          else { sorted_times[(sorted_times.len() as f64 * 0.95) as usize] },
+        p95_extraction_ms: if sorted_times.is_empty() {
+            0.0
+        } else {
+            sorted_times[(sorted_times.len() as f64 * 0.95) as usize]
+        },
         total_time_sec: benchmark_start.elapsed().as_secs_f64(),
     };
 
     // Print results
     println!("═══ Extraction Results ══════════════════════════════════════════════════════════");
     println!("  Documents processed: {}", num_docs);
-    println!("  Documents with relationships: {}", docs_with_relationships);
+    println!(
+        "  Documents with relationships: {}",
+        docs_with_relationships
+    );
     println!("  Total relationships: {}", total_relationships);
-    println!("  JSON parse success: {:.1}%", extraction_metrics.json_parse_success_rate);
+    println!(
+        "  JSON parse success: {:.1}%",
+        extraction_metrics.json_parse_success_rate
+    );
     println!("  Avg confidence: {:.2}", extraction_metrics.avg_confidence);
     println!();
 
     println!("═══ Source Span Accuracy ═══════════════════════════════════════════════════════");
     println!("  Total spans: {}", total_spans);
-    println!("  Span populated rate: {:.1}%", span_accuracy.spans_populated_rate);
-    println!("  Offset valid rate: {:.1}%", span_accuracy.offset_valid_rate);
+    println!(
+        "  Span populated rate: {:.1}%",
+        span_accuracy.spans_populated_rate
+    );
+    println!(
+        "  Offset valid rate: {:.1}%",
+        span_accuracy.offset_valid_rate
+    );
     println!("  Text match rate: {:.1}%", span_accuracy.text_match_rate);
-    println!("  Avg span length: {:.0} chars", span_accuracy.avg_span_length);
+    println!(
+        "  Avg span length: {:.0} chars",
+        span_accuracy.avg_span_length
+    );
     println!();
 
     println!("═══ Latency ═══════════════════════════════════════════════════════════════════");
@@ -509,28 +544,64 @@ async fn main() {
     };
 
     println!("═══ Performance Targets ═════════════════════════════════════════════════════════");
-    println!("  Span populated (>80%):  {} ({:.1}%)",
-             if targets.span_populated_met { "✓ PASS" } else { "✗ FAIL" },
-             span_accuracy.spans_populated_rate);
-    println!("  Offset valid (>90%):    {} ({:.1}%)",
-             if targets.offset_valid_met { "✓ PASS" } else { "✗ FAIL" },
-             span_accuracy.offset_valid_rate);
-    println!("  Text match (>70%):      {} ({:.1}%)",
-             if targets.text_match_met { "✓ PASS" } else { "✗ FAIL" },
-             span_accuracy.text_match_rate);
-    println!("  JSON parse (>95%):      {} ({:.1}%)",
-             if targets.json_parse_met { "✓ PASS" } else { "✗ FAIL" },
-             extraction_metrics.json_parse_success_rate);
+    println!(
+        "  Span populated (>80%):  {} ({:.1}%)",
+        if targets.span_populated_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_accuracy.spans_populated_rate
+    );
+    println!(
+        "  Offset valid (>90%):    {} ({:.1}%)",
+        if targets.offset_valid_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_accuracy.offset_valid_rate
+    );
+    println!(
+        "  Text match (>70%):      {} ({:.1}%)",
+        if targets.text_match_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        span_accuracy.text_match_rate
+    );
+    println!(
+        "  JSON parse (>95%):      {} ({:.1}%)",
+        if targets.json_parse_met {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        },
+        extraction_metrics.json_parse_success_rate
+    );
     println!();
 
     if targets.all_critical_passed {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✓ ALL TARGETS PASSED                                       ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✓ ALL TARGETS PASSED                                       ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     } else {
-        println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    ✗ SOME TARGETS FAILED                                      ║");
-        println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
+        println!(
+            "╔═══════════════════════════════════════════════════════════════════════════════╗"
+        );
+        println!(
+            "║                    ✗ SOME TARGETS FAILED                                      ║"
+        );
+        println!(
+            "╚═══════════════════════════════════════════════════════════════════════════════╝"
+        );
     }
 
     // Generate recommendations
@@ -539,13 +610,16 @@ async fn main() {
         recommendations.push("Improve GBNF grammar to require source_spans field".to_string());
     }
     if !targets.text_match_met {
-        recommendations.push("Refine prompt to ensure text_excerpt matches source exactly".to_string());
+        recommendations
+            .push("Refine prompt to ensure text_excerpt matches source exactly".to_string());
     }
     if !targets.json_parse_met {
-        recommendations.push("Review GBNF grammar for edge cases causing parse failures".to_string());
+        recommendations
+            .push("Review GBNF grammar for edge cases causing parse failures".to_string());
     }
     if all_passed {
-        recommendations.push("All targets met - provenance extraction working correctly".to_string());
+        recommendations
+            .push("All targets met - provenance extraction working correctly".to_string());
     }
 
     // Build results

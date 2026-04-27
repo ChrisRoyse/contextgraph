@@ -15,12 +15,14 @@ use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
-use context_graph_core::teleological::types::{NUM_EMBEDDERS, TuckerCore};
+use context_graph_core::teleological::types::{TuckerCore, NUM_EMBEDDERS};
 use context_graph_core::training::{
     compute_cross_correlations, compute_group_alignments, extract_temporal_labels, CausalLabel,
     PeriodicBucket, TrainingEdge, TrainingRecord, NUM_CROSS_CORRELATIONS,
 };
-use context_graph_core::types::fingerprint::{SemanticFingerprint, SparseVector, TeleologicalFingerprint};
+use context_graph_core::types::fingerprint::{
+    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -101,11 +103,9 @@ fn synthetic_record(seed_content: &str, topic_peaks: &[(usize, f32)]) -> Trainin
 fn open_store() -> (TempDir, Arc<RocksDbTeleologicalStore>) {
     let td = TempDir::new().expect("tempdir");
     let path = td.path().join("store");
-    let store = RocksDbTeleologicalStore::open_with_config(
-        &path,
-        TeleologicalStoreConfig::default(),
-    )
-    .expect("open store");
+    let store =
+        RocksDbTeleologicalStore::open_with_config(&path, TeleologicalStoreConfig::default())
+            .expect("open store");
     (td, Arc::new(store))
 }
 
@@ -162,7 +162,11 @@ async fn roundtrip_single_record_preserves_all_fields() {
         store.count_training_records().await.unwrap(),
         record.e14_bge_m3_dense.len(),
         record.cross_correlations.len(),
-        record.cross_correlations.last().copied().unwrap_or_default()
+        record
+            .cross_correlations
+            .last()
+            .copied()
+            .unwrap_or_default()
     );
     store
         .store_training_record(id, &record)
@@ -261,10 +265,7 @@ async fn delete_existing_removes_record() {
 async fn clear_all_removes_every_record() {
     let (_td, store) = open_store();
     for i in 0..7 {
-        let rec = synthetic_record(
-            &format!("r{}", i),
-            &[(i % NUM_EMBEDDERS, 0.5)],
-        );
+        let rec = synthetic_record(&format!("r{}", i), &[(i % NUM_EMBEDDERS, 0.5)]);
         store
             .store_training_record(rec.memory_id, &rec)
             .await
@@ -286,11 +287,7 @@ async fn store_is_idempotent_overwrites_prior_record() {
 
     rec.content = "v2 overwritten".into();
     store.store_training_record(id, &rec).await.unwrap();
-    let after = store
-        .get_training_record(id)
-        .await
-        .unwrap()
-        .unwrap();
+    let after = store.get_training_record(id).await.unwrap().unwrap();
 
     assert_eq!(after.content, "v2 overwritten");
     assert_eq!(store.count_training_records().await.unwrap(), 1);

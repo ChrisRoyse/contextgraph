@@ -132,7 +132,11 @@ fn identical_members_give_coherence_near_one() {
         );
     }
     // Coherence (p50 of E1 cosines) is ≈1.0
-    assert!(c.coherence > 0.99, "coherence={} expected >0.99", c.coherence);
+    assert!(
+        c.coherence > 0.99,
+        "coherence={} expected >0.99",
+        c.coherence
+    );
 }
 
 #[test]
@@ -204,7 +208,10 @@ fn score_own_member_matches_centroid_highly() {
         "combined_score={} expected >0.99",
         result.combined_score
     );
-    assert!(result.in_spread_p95, "expected in_spread_p95=true for own-member score");
+    assert!(
+        result.in_spread_p95,
+        "expected in_spread_p95=true for own-member score"
+    );
     // Every active embedder reports near-1 cosine.
     for (i, c_val) in result.per_embedder_cosine.iter().enumerate() {
         if c.per_embedder[i].coverage > 0.0 {
@@ -259,14 +266,26 @@ fn per_embedder_includes_all_13() {
     .expect("compile");
     assert_eq!(c.per_embedder.len(), NUM_EMBEDDERS);
     // Embedder 11 (E12) is token-level.
-    assert!(matches!(c.per_embedder[11].vector_kind, VectorKind::TokenLevel));
+    assert!(matches!(
+        c.per_embedder[11].vector_kind,
+        VectorKind::TokenLevel
+    ));
     // E6 and E13 are sparse.
     assert!(matches!(c.per_embedder[5].vector_kind, VectorKind::Sparse));
     assert!(matches!(c.per_embedder[12].vector_kind, VectorKind::Sparse));
     // E5, E8, E10 are asymmetric.
-    assert!(matches!(c.per_embedder[4].vector_kind, VectorKind::Asymmetric));
-    assert!(matches!(c.per_embedder[7].vector_kind, VectorKind::Asymmetric));
-    assert!(matches!(c.per_embedder[9].vector_kind, VectorKind::Asymmetric));
+    assert!(matches!(
+        c.per_embedder[4].vector_kind,
+        VectorKind::Asymmetric
+    ));
+    assert!(matches!(
+        c.per_embedder[7].vector_kind,
+        VectorKind::Asymmetric
+    ));
+    assert!(matches!(
+        c.per_embedder[9].vector_kind,
+        VectorKind::Asymmetric
+    ));
     // E6 / E13 produce top-term lists.
     assert!(!c.per_embedder[5].sparse_top_terms.is_empty());
     assert!(!c.per_embedder[12].sparse_top_terms.is_empty());

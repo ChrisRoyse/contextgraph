@@ -42,25 +42,24 @@ use std::time::Instant;
 
 use chrono::Utc;
 
-use context_graph_benchmark::validation::{
-    ValidationBenchmarkConfig, ValidationBenchmarkResults, ValidationPhase,
-    ValidationDatasetInfo, ValidationSummary, PhaseResult, ValidationReportGenerator,
-    generate_console_summary, Recommendation, RecommendationCategory,
-    BenchmarkResultsAggregator,
-};
-use context_graph_benchmark::validation::config_validation::ConfigValidator;
-use context_graph_benchmark::validation::temporal_validation::TemporalValidator;
-use context_graph_benchmark::validation::ground_truth_validation::GroundTruthValidator;
+use context_graph_benchmark::validation::ablation_validation::AblationValidator;
 use context_graph_benchmark::validation::arch_compliance::ArchComplianceValidator;
 use context_graph_benchmark::validation::asymmetric_validation::AsymmetricValidator;
-use context_graph_benchmark::validation::ablation_validation::AblationValidator;
+use context_graph_benchmark::validation::config_validation::ConfigValidator;
 use context_graph_benchmark::validation::e1_foundation::E1FoundationValidator;
 use context_graph_benchmark::validation::fusion_validation::FusionValidator;
+use context_graph_benchmark::validation::ground_truth_validation::GroundTruthValidator;
+use context_graph_benchmark::validation::temporal_validation::TemporalValidator;
+use context_graph_benchmark::validation::{
+    generate_console_summary, BenchmarkResultsAggregator, PhaseResult, Recommendation,
+    RecommendationCategory, ValidationBenchmarkConfig, ValidationBenchmarkResults,
+    ValidationDatasetInfo, ValidationPhase, ValidationReportGenerator, ValidationSummary,
+};
 
 use context_graph_benchmark::realdata::config::TemporalInjectionConfig;
+use context_graph_benchmark::realdata::ground_truth::GroundTruthGenerator;
 use context_graph_benchmark::realdata::loader::DatasetLoader;
 use context_graph_benchmark::realdata::temporal_injector::TemporalMetadataInjector;
-use context_graph_benchmark::realdata::ground_truth::GroundTruthGenerator;
 
 // ============================================================================
 // CLI Arguments
@@ -114,7 +113,8 @@ fn parse_args() -> Args {
                 args.data_dir = PathBuf::from(argv.next().expect("--data-dir requires a value"));
             }
             "--results-dir" | "-r" => {
-                args.results_dir = PathBuf::from(argv.next().expect("--results-dir requires a value"));
+                args.results_dir =
+                    PathBuf::from(argv.next().expect("--results-dir requires a value"));
             }
             "--max-chunks" | "-n" => {
                 args.max_chunks = argv
@@ -266,8 +266,18 @@ fn main() {
     if args.verbose {
         eprintln!("=== Unified Real Data Benchmark Validation ===");
         eprintln!("Data directory: {}", args.data_dir.display());
-        eprintln!("Max chunks: {}", if args.max_chunks == 0 { "unlimited".to_string() } else { args.max_chunks.to_string() });
-        eprintln!("Phases: {:?}", args.phases.iter().map(|p| p.as_str()).collect::<Vec<_>>());
+        eprintln!(
+            "Max chunks: {}",
+            if args.max_chunks == 0 {
+                "unlimited".to_string()
+            } else {
+                args.max_chunks.to_string()
+            }
+        );
+        eprintln!(
+            "Phases: {:?}",
+            args.phases.iter().map(|p| p.as_str()).collect::<Vec<_>>()
+        );
         eprintln!("Output: {}", args.output_dir.display());
         eprintln!("Fail fast: {}", args.fail_fast);
         eprintln!();
@@ -305,13 +315,19 @@ fn main() {
 
     let measured_ratios = if aggregator.has_results() {
         if args.verbose {
-            eprintln!("Loaded benchmark results from: {}", args.results_dir.display());
+            eprintln!(
+                "Loaded benchmark results from: {}",
+                args.results_dir.display()
+            );
             eprintln!("  Files loaded: {:?}", aggregator.loaded_files());
         }
         Some(aggregator.get_all_asymmetric_ratios())
     } else {
         if args.verbose {
-            eprintln!("No benchmark results found in {}. Using structural validation only.", args.results_dir.display());
+            eprintln!(
+                "No benchmark results found in {}. Using structural validation only.",
+                args.results_dir.display()
+            );
         }
         None
     };
@@ -325,7 +341,8 @@ fn main() {
         }
         let phase_start = Instant::now();
         let result = ConfigValidator::validate();
-        let phase_result = ConfigValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result =
+            ConfigValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -345,7 +362,10 @@ fn main() {
         }
         let phase_start = Instant::now();
         let result = ArchComplianceValidator::validate();
-        let phase_result = ArchComplianceValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result = ArchComplianceValidator::to_phase_result(
+            result,
+            phase_start.elapsed().as_millis() as u64,
+        );
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -356,7 +376,8 @@ fn main() {
     // ========================================================================
     // Phase: Asymmetric Validation
     // ========================================================================
-    if args.phases.contains(&ValidationPhase::Asymmetric) && (!args.fail_fast || !critical_failure) {
+    if args.phases.contains(&ValidationPhase::Asymmetric) && (!args.fail_fast || !critical_failure)
+    {
         if args.verbose {
             eprintln!("Running Asymmetric Validation...");
             if let Some(ref ratios) = measured_ratios {
@@ -366,7 +387,8 @@ fn main() {
         let phase_start = Instant::now();
         let result = AsymmetricValidator::validate(measured_ratios.as_ref(), None);
         recommendations.extend(result.recommendations.clone());
-        let phase_result = AsymmetricValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result =
+            AsymmetricValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -383,10 +405,15 @@ fn main() {
         }
         let phase_start = Instant::now();
         // Pass aggregated results for measured contribution validation
-        let aggregated = if aggregator.has_results() { Some(aggregator.results()) } else { None };
+        let aggregated = if aggregator.has_results() {
+            Some(aggregator.results())
+        } else {
+            None
+        };
         let result = AblationValidator::validate(None, aggregated);
         recommendations.extend(result.recommendations.clone());
-        let phase_result = AblationValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result =
+            AblationValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -397,7 +424,9 @@ fn main() {
     // ========================================================================
     // Phase: E1 Foundation Validation
     // ========================================================================
-    if args.phases.contains(&ValidationPhase::E1Foundation) && (!args.fail_fast || !critical_failure) {
+    if args.phases.contains(&ValidationPhase::E1Foundation)
+        && (!args.fail_fast || !critical_failure)
+    {
         if args.verbose {
             eprintln!("Running E1 Foundation Validation...");
         }
@@ -413,7 +442,10 @@ fn main() {
 
         let result = E1FoundationValidator::validate(e1_mrr, None, None, None, None);
         recommendations.extend(result.recommendations.clone());
-        let phase_result = E1FoundationValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result = E1FoundationValidator::to_phase_result(
+            result,
+            phase_start.elapsed().as_millis() as u64,
+        );
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -431,7 +463,8 @@ fn main() {
         let phase_start = Instant::now();
         let result = FusionValidator::validate(None);
         recommendations.extend(result.recommendations.clone());
-        let phase_result = FusionValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+        let phase_result =
+            FusionValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
 
         if !phase_result.all_passed {
             critical_failure = true;
@@ -461,24 +494,38 @@ fn main() {
                 dataset_info.num_documents = dataset.metadata.total_documents;
 
                 if args.verbose {
-                    eprintln!("Loaded {} chunks, {} topics", dataset_info.chunks_used, dataset_info.num_topics);
+                    eprintln!(
+                        "Loaded {} chunks, {} topics",
+                        dataset_info.chunks_used, dataset_info.num_topics
+                    );
                 }
 
                 // Phase: Temporal Validation
-                let temporal_metadata = if args.phases.contains(&ValidationPhase::Temporal) && (!args.fail_fast || !critical_failure) {
+                let temporal_metadata = if args.phases.contains(&ValidationPhase::Temporal)
+                    && (!args.fail_fast || !critical_failure)
+                {
                     if args.verbose {
                         eprintln!("Running Temporal Validation...");
                     }
                     let phase_start = Instant::now();
 
                     let temporal_config = TemporalInjectionConfig::default();
-                    let mut injector = TemporalMetadataInjector::new(temporal_config.clone(), args.seed);
+                    let mut injector =
+                        TemporalMetadataInjector::new(temporal_config.clone(), args.seed);
                     let metadata = injector.inject(&dataset);
 
                     // Get measured temporal metrics from aggregator
                     let measured_temporal = aggregator.get_temporal_metrics();
-                    let result = TemporalValidator::validate(&temporal_config, Some(&metadata), dataset.chunks.len(), measured_temporal);
-                    let phase_result = TemporalValidator::to_phase_result(result, phase_start.elapsed().as_millis() as u64);
+                    let result = TemporalValidator::validate(
+                        &temporal_config,
+                        Some(&metadata),
+                        dataset.chunks.len(),
+                        measured_temporal,
+                    );
+                    let phase_result = TemporalValidator::to_phase_result(
+                        result,
+                        phase_start.elapsed().as_millis() as u64,
+                    );
 
                     if !phase_result.all_passed {
                         critical_failure = true;
@@ -493,18 +540,24 @@ fn main() {
                 };
 
                 // Phase: Ground Truth Validation
-                if args.phases.contains(&ValidationPhase::GroundTruth) && (!args.fail_fast || !critical_failure) {
+                if args.phases.contains(&ValidationPhase::GroundTruth)
+                    && (!args.fail_fast || !critical_failure)
+                {
                     if let Some(metadata) = &temporal_metadata {
                         if args.verbose {
                             eprintln!("Running Ground Truth Validation...");
                         }
                         let gt_phase_start = Instant::now();
 
-                        let mut gt_generator = GroundTruthGenerator::new(args.seed, args.num_queries);
+                        let mut gt_generator =
+                            GroundTruthGenerator::new(args.seed, args.num_queries);
                         let ground_truth = gt_generator.generate(&dataset, metadata);
 
                         let result = GroundTruthValidator::validate(Some(&ground_truth));
-                        let phase_result = GroundTruthValidator::to_phase_result(result, gt_phase_start.elapsed().as_millis() as u64);
+                        let phase_result = GroundTruthValidator::to_phase_result(
+                            result,
+                            gt_phase_start.elapsed().as_millis() as u64,
+                        );
 
                         if !phase_result.all_passed {
                             critical_failure = true;
@@ -526,7 +579,8 @@ fn main() {
                             context_graph_benchmark::validation::ValidationCheck::new(
                                 "dataset_load",
                                 "Load dataset",
-                            ).fail(&e.to_string(), "dataset available")
+                            )
+                            .fail(&e.to_string(), "dataset available"),
                         );
                         phase_result.finalize(0);
                         phase_results.insert(*phase, phase_result);
@@ -553,11 +607,14 @@ fn main() {
         summary.warning_checks += result.warnings;
         summary.skipped_checks += result.skipped;
 
-        summary.per_phase.insert(*phase, context_graph_benchmark::validation::PhaseSummary {
-            passed: result.passed,
-            failed: result.failed,
-            total: result.passed + result.failed,
-        });
+        summary.per_phase.insert(
+            *phase,
+            context_graph_benchmark::validation::PhaseSummary {
+                passed: result.passed,
+                failed: result.failed,
+                total: result.passed + result.failed,
+            },
+        );
 
         // Count critical failures
         for check in &result.checks {
@@ -613,7 +670,9 @@ fn main() {
     // Markdown report
     let report_path = args.output_dir.join("report.md");
     let report_gen = ValidationReportGenerator::new(results.clone());
-    report_gen.write_to_file(&report_path).expect("Failed to write report");
+    report_gen
+        .write_to_file(&report_path)
+        .expect("Failed to write report");
 
     if args.verbose {
         eprintln!("Report written to: {}", report_path.display());
@@ -656,8 +715,10 @@ fn main() {
         std::process::exit(0);
     } else {
         if args.verbose {
-            eprintln!("\nValidation FAILED ({} failures, {} critical)",
-                results.summary.failed_checks, results.summary.critical_failures);
+            eprintln!(
+                "\nValidation FAILED ({} failures, {} critical)",
+                results.summary.failed_checks, results.summary.critical_failures
+            );
         }
         std::process::exit(1);
     }
@@ -668,19 +729,26 @@ fn generate_recommendations_markdown(recommendations: &[Recommendation]) -> Stri
     md.push_str("# Optimization Recommendations\n\n");
 
     // Critical
-    let critical: Vec<_> = recommendations.iter()
+    let critical: Vec<_> = recommendations
+        .iter()
         .filter(|r| matches!(r.category, RecommendationCategory::Critical))
         .collect();
     if !critical.is_empty() {
         md.push_str("## Critical Issues (Must Fix)\n\n");
         for (i, rec) in critical.iter().enumerate() {
-            md.push_str(&format!("{}. [{}] {}\n", i + 1, rec.component, rec.description));
+            md.push_str(&format!(
+                "{}. [{}] {}\n",
+                i + 1,
+                rec.component,
+                rec.description
+            ));
         }
         md.push('\n');
     }
 
     // Performance
-    let perf: Vec<_> = recommendations.iter()
+    let perf: Vec<_> = recommendations
+        .iter()
         .filter(|r| matches!(r.category, RecommendationCategory::Performance))
         .collect();
     if !perf.is_empty() {
@@ -692,7 +760,8 @@ fn generate_recommendations_markdown(recommendations: &[Recommendation]) -> Stri
     }
 
     // Parameter Tuning
-    let params: Vec<_> = recommendations.iter()
+    let params: Vec<_> = recommendations
+        .iter()
         .filter(|r| matches!(r.category, RecommendationCategory::ParameterTuning))
         .collect();
     if !params.is_empty() {
@@ -700,17 +769,20 @@ fn generate_recommendations_markdown(recommendations: &[Recommendation]) -> Stri
         md.push_str("| Parameter | Current | Recommended | Reason |\n");
         md.push_str("|-----------|---------|-------------|--------|\n");
         for rec in params {
-            md.push_str(&format!("| {} | {} | {} | {} |\n",
+            md.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
                 rec.component,
                 rec.current.as_deref().unwrap_or("-"),
                 rec.recommended.as_deref().unwrap_or("-"),
-                rec.reason));
+                rec.reason
+            ));
         }
         md.push('\n');
     }
 
     // Best Practices
-    let best: Vec<_> = recommendations.iter()
+    let best: Vec<_> = recommendations
+        .iter()
         .filter(|r| matches!(r.category, RecommendationCategory::BestPractice))
         .collect();
     if !best.is_empty() {

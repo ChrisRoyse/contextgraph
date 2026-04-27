@@ -64,11 +64,11 @@ use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use context_graph_embeddings::{GpuConfig, ProductionMultiArrayProvider};
 
 // LLM-assisted causal discovery
+use context_graph_causal_agent::activator::ActivatorConfig;
+use context_graph_causal_agent::scanner::ScannerConfig;
 use context_graph_causal_agent::{
     CausalDiscoveryConfig, CausalDiscoveryService, LlmConfig, MemoryForAnalysis,
 };
-use context_graph_causal_agent::activator::ActivatorConfig;
-use context_graph_causal_agent::scanner::ScannerConfig;
 
 // ============================================================================
 // Constants (Per Constitution v6.5)
@@ -215,15 +215,10 @@ impl BenchmarkResults {
         println!("║         GPU GRAPH LINKING BENCHMARK - REAL EMBEDDINGS                ║");
         println!("╠══════════════════════════════════════════════════════════════════════╣");
         println!("║ Configuration:                                                       ║");
-        println!(
-            "║   Data: {:58} ║",
-            truncate_str(&self.data_source, 58)
-        );
+        println!("║   Data: {:58} ║", truncate_str(&self.data_source, 58));
         println!(
             "║   Memories: {:5}  Topics: {:3}  K: {:3}                              ║",
-            self.num_memories,
-            self.num_topics,
-            self.k
+            self.num_memories, self.num_topics, self.k
         );
         println!(
             "║   GPU: {}  LLM: {}                                               ║",
@@ -311,7 +306,11 @@ impl BenchmarkResults {
                 continue;
             }
             if let Some(&count) = self.embedder_unique_finds.get(&emb_id) {
-                let overlap = self.embedder_overlap_with_e1.get(&emb_id).copied().unwrap_or(0.0);
+                let overlap = self
+                    .embedder_overlap_with_e1
+                    .get(&emb_id)
+                    .copied()
+                    .unwrap_or(0.0);
                 println!(
                     "║   E{:2} ({:12}): {:5} unique, {:5.1}% overlap with E1          ║",
                     emb_id + 1,
@@ -418,41 +417,56 @@ fn embedder_name(id: u8) -> &'static str {
 /// Generate synthetic content with causal relationships for testing
 fn generate_synthetic_content(num_items: usize, num_topics: usize) -> Vec<(String, usize, String)> {
     let topics = [
-        ("database", vec![
-            "PostgreSQL uses MVCC for concurrent transactions",
-            "Redis provides in-memory caching with persistence",
-            "MongoDB stores documents in BSON format",
-            "SQLite is an embedded database engine",
-            "Because of high read throughput, we chose Redis for caching",
-        ]),
-        ("authentication", vec![
-            "JWT tokens contain encoded user claims",
-            "OAuth2 provides delegated authorization",
-            "SAML uses XML for identity federation",
-            "Because users needed SSO, we implemented OAuth2",
-            "Session cookies store authentication state",
-        ]),
-        ("networking", vec![
-            "TCP provides reliable ordered delivery",
-            "UDP enables low-latency communication",
-            "HTTP/2 multiplexes streams over single connection",
-            "Because of latency requirements, we chose UDP",
-            "WebSockets enable full-duplex communication",
-        ]),
-        ("rust_code", vec![
-            "impl Iterator for MyStruct allows iteration",
-            "async fn processes futures concurrently",
-            "Arc<Mutex<T>> enables shared mutable state",
-            "Because of ownership rules, we used Arc",
-            "#[derive(Clone)] generates Clone implementation",
-        ]),
-        ("architecture", vec![
-            "Microservices enable independent deployment",
-            "Event sourcing captures all state changes",
-            "CQRS separates read and write models",
-            "Because of scaling needs, we adopted microservices",
-            "API Gateway handles cross-cutting concerns",
-        ]),
+        (
+            "database",
+            vec![
+                "PostgreSQL uses MVCC for concurrent transactions",
+                "Redis provides in-memory caching with persistence",
+                "MongoDB stores documents in BSON format",
+                "SQLite is an embedded database engine",
+                "Because of high read throughput, we chose Redis for caching",
+            ],
+        ),
+        (
+            "authentication",
+            vec![
+                "JWT tokens contain encoded user claims",
+                "OAuth2 provides delegated authorization",
+                "SAML uses XML for identity federation",
+                "Because users needed SSO, we implemented OAuth2",
+                "Session cookies store authentication state",
+            ],
+        ),
+        (
+            "networking",
+            vec![
+                "TCP provides reliable ordered delivery",
+                "UDP enables low-latency communication",
+                "HTTP/2 multiplexes streams over single connection",
+                "Because of latency requirements, we chose UDP",
+                "WebSockets enable full-duplex communication",
+            ],
+        ),
+        (
+            "rust_code",
+            vec![
+                "impl Iterator for MyStruct allows iteration",
+                "async fn processes futures concurrently",
+                "Arc<Mutex<T>> enables shared mutable state",
+                "Because of ownership rules, we used Arc",
+                "#[derive(Clone)] generates Clone implementation",
+            ],
+        ),
+        (
+            "architecture",
+            vec![
+                "Microservices enable independent deployment",
+                "Event sourcing captures all state changes",
+                "CQRS separates read and write models",
+                "Because of scaling needs, we adopted microservices",
+                "API Gateway handles cross-cutting concerns",
+            ],
+        ),
     ];
 
     let mut content = Vec::with_capacity(num_items);
@@ -675,7 +689,9 @@ async fn phase1_gpu_embeddings(
 
     info!(
         "Phase 1 complete: {} embeddings in {:.2}ms (avg {:.2}ms/item)",
-        results.embeddings_generated, results.embedding_duration_ms, results.avg_embedding_latency_ms
+        results.embeddings_generated,
+        results.embedding_duration_ms,
+        results.avg_embedding_latency_ms
     );
 
     Ok(memories)
@@ -837,8 +853,8 @@ fn phase3_edge_repository(
     let temp_dir = TempDir::new().context("Failed to create temp dir")?;
     let db_path = temp_dir.path();
 
-    let store =
-        RocksDbTeleologicalStore::open(db_path).context("Failed to open RocksDbTeleologicalStore")?;
+    let store = RocksDbTeleologicalStore::open(db_path)
+        .context("Failed to open RocksDbTeleologicalStore")?;
     let edge_repo = EdgeRepository::new(store.db_arc());
 
     let start = Instant::now();
@@ -1012,8 +1028,14 @@ fn phase6_topic_validation(
     let mut inter_topic = 0usize;
 
     for edge in e1_graph.edges() {
-        let source_topic = id_to_topic.get(&edge.source()).copied().unwrap_or(usize::MAX);
-        let target_topic = id_to_topic.get(&edge.target()).copied().unwrap_or(usize::MAX);
+        let source_topic = id_to_topic
+            .get(&edge.source())
+            .copied()
+            .unwrap_or(usize::MAX);
+        let target_topic = id_to_topic
+            .get(&edge.target())
+            .copied()
+            .unwrap_or(usize::MAX);
 
         if source_topic == target_topic {
             intra_topic += 1;

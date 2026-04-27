@@ -124,5 +124,3 @@ fn test_key_functions_deterministic() {
     let term_key2 = e13_splade_inverted_key(term_id);
     assert_eq!(term_key1, term_key2);
 }
-
-

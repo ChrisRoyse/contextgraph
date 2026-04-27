@@ -307,23 +307,45 @@ mod tests {
         for tool in &tools {
             assert!(!tool.name.is_empty());
             assert!(!tool.description.is_empty());
-            assert!(tool.description.contains("E11") || tool.description.contains("TransE")
-                || tool.description.contains("entit") || tool.description.contains("canonical"));
+            assert!(
+                tool.description.contains("E11")
+                    || tool.description.contains("TransE")
+                    || tool.description.contains("entit")
+                    || tool.description.contains("canonical")
+            );
         }
         let extract = tools.iter().find(|t| t.name == "extract_entities").unwrap();
         assert!(extract.description.contains("ARCH-20"));
-        let search = tools.iter().find(|t| t.name == "search_by_entities").unwrap();
+        let search = tools
+            .iter()
+            .find(|t| t.name == "search_by_entities")
+            .unwrap();
         assert!(search.description.contains("ARCH-12"));
     }
 
     #[test]
     fn test_schema_required_fields() {
         let tools = definitions();
-        assert!(tools.iter().find(|t| t.name == "extract_entities").unwrap()
-            .input_schema["required"].as_array().unwrap().contains(&json!("text")));
-        assert!(tools.iter().find(|t| t.name == "search_by_entities").unwrap()
-            .input_schema["required"].as_array().unwrap().contains(&json!("entities")));
-        let validate = tools.iter().find(|t| t.name == "validate_knowledge").unwrap();
+        assert!(tools
+            .iter()
+            .find(|t| t.name == "extract_entities")
+            .unwrap()
+            .input_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("text")));
+        assert!(tools
+            .iter()
+            .find(|t| t.name == "search_by_entities")
+            .unwrap()
+            .input_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("entities")));
+        let validate = tools
+            .iter()
+            .find(|t| t.name == "validate_knowledge")
+            .unwrap();
         let required = validate.input_schema["required"].as_array().unwrap();
         assert!(required.contains(&json!("subject")));
         assert!(required.contains(&json!("predicate")));

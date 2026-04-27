@@ -2241,7 +2241,11 @@ fn compute_blind_spots(embedder_scores: &[f32; 14], e1_score: f32) -> Vec<serde_
         (10, "E11_Entity", "entity knowledge"),
         (11, "E12_ColBERT", "phrase precision"),
         (12, "E13_SPLADE", "term expansion"),
-        (13, "E14_BGE_M3_Dense", "multilingual/long-context semantic match"),
+        (
+            13,
+            "E14_BGE_M3_Dense",
+            "multilingual/long-context semantic match",
+        ),
     ];
 
     for (idx, name, finds) in enhancers {

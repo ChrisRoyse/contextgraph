@@ -394,13 +394,19 @@ impl CausalE11Index {
         };
 
         let new_index = Index::new(&options).map_err(|e| {
-            error!("Failed to create new usearch index during CausalE11Index rebuild: {}", e);
+            error!(
+                "Failed to create new usearch index during CausalE11Index rebuild: {}",
+                e
+            );
             CoreError::Internal(format!("usearch rebuild failed: {}", e))
         })?;
 
         let capacity = vectors.len().max(INITIAL_CAPACITY);
         new_index.reserve(capacity).map_err(|e| {
-            error!("Failed to reserve capacity during CausalE11Index rebuild: {}", e);
+            error!(
+                "Failed to reserve capacity during CausalE11Index rebuild: {}",
+                e
+            );
             CoreError::Internal(format!("usearch reserve failed during rebuild: {}", e))
         })?;
 
@@ -487,13 +493,12 @@ impl CausalE11Index {
             ..Default::default()
         };
 
-        let new_index = Index::new(&options).unwrap_or_else(|e| {
-            panic!("FAIL FAST: Failed to recreate usearch index: {}", e)
-        });
+        let new_index = Index::new(&options)
+            .unwrap_or_else(|e| panic!("FAIL FAST: Failed to recreate usearch index: {}", e));
 
-        new_index.reserve(INITIAL_CAPACITY).unwrap_or_else(|e| {
-            panic!("FAIL FAST: Failed to reserve capacity: {}", e)
-        });
+        new_index
+            .reserve(INITIAL_CAPACITY)
+            .unwrap_or_else(|e| panic!("FAIL FAST: Failed to reserve capacity: {}", e));
 
         // BLD-09 FIX: Acquire locks in the SAME order as insert() to prevent
         // ABBA deadlock. insert() order: id_to_key → key_to_id → index → next_key.
@@ -654,7 +659,10 @@ mod tests {
         let wrong_dim = vec![0.1f32; 512];
         let result = index.insert(id, &wrong_dim);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("dimension mismatch"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("dimension mismatch"));
 
         // Wrong dimension for search
         let result = index.search(&wrong_dim, 10);

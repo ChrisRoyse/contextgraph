@@ -23,8 +23,8 @@ use context_graph_core::types::fingerprint::SemanticFingerprint;
 use crate::datasets::temporal_sessions::{SessionGeneratorConfig, TemporalSession};
 use crate::metrics::e4_hybrid_session::{
     compute_hybrid_effectiveness, compute_intra_session_ordering,
-    compute_session_clustering_metrics, E4HybridSessionMetrics,
-    IntraSessionOrderingMetrics, SessionClusteringMetrics,
+    compute_session_clustering_metrics, E4HybridSessionMetrics, IntraSessionOrderingMetrics,
+    SessionClusteringMetrics,
 };
 
 // ============================================================================
@@ -282,8 +282,12 @@ impl E4HybridSessionBenchmarkRunner {
         let (legacy_comparison, legacy_comparison_ms) = if self.config.run_legacy_comparison {
             let legacy_start = Instant::now();
             let legacy_embeddings = self.simulate_legacy_e4(&e4_embeddings, sessions);
-            let legacy_results = self.run_legacy_comparison(sessions, &legacy_embeddings, &clustering_metrics);
-            (Some(legacy_results), Some(legacy_start.elapsed().as_millis() as u64))
+            let legacy_results =
+                self.run_legacy_comparison(sessions, &legacy_embeddings, &clustering_metrics);
+            (
+                Some(legacy_results),
+                Some(legacy_start.elapsed().as_millis() as u64),
+            )
         } else {
             (None, None)
         };
@@ -292,8 +296,12 @@ impl E4HybridSessionBenchmarkRunner {
         let (timestamp_baseline, timestamp_baseline_ms) = if self.config.run_timestamp_baseline {
             let baseline_start = Instant::now();
             let timestamp_embeddings = self.simulate_timestamp_baseline(&e4_embeddings, sessions);
-            let baseline_results = self.run_timestamp_baseline(sessions, &timestamp_embeddings, &clustering_metrics);
-            (Some(baseline_results), Some(baseline_start.elapsed().as_millis() as u64))
+            let baseline_results =
+                self.run_timestamp_baseline(sessions, &timestamp_embeddings, &clustering_metrics);
+            (
+                Some(baseline_results),
+                Some(baseline_start.elapsed().as_millis() as u64),
+            )
         } else {
             (None, None)
         };
@@ -301,8 +309,11 @@ impl E4HybridSessionBenchmarkRunner {
         // Compute hybrid effectiveness
         let legacy_clustering = legacy_comparison.as_ref().map(|l| &l.clustering);
         let timestamp_clustering = timestamp_baseline.as_ref().map(|t| &t.clustering);
-        let hybrid_effectiveness =
-            compute_hybrid_effectiveness(&clustering_metrics, legacy_clustering, timestamp_clustering);
+        let hybrid_effectiveness = compute_hybrid_effectiveness(
+            &clustering_metrics,
+            legacy_clustering,
+            timestamp_clustering,
+        );
 
         // Build composite metrics
         let composite = crate::metrics::e4_hybrid_session::CompositeE4HybridMetrics::compute(
@@ -581,7 +592,9 @@ mod tests {
         }
     }
 
-    fn create_test_fingerprints(sessions: &[TemporalSession]) -> HashMap<Uuid, SemanticFingerprint> {
+    fn create_test_fingerprints(
+        sessions: &[TemporalSession],
+    ) -> HashMap<Uuid, SemanticFingerprint> {
         let mut fingerprints = HashMap::new();
 
         for (session_idx, session) in sessions.iter().enumerate() {
@@ -651,10 +664,7 @@ mod tests {
 
     #[test]
     fn test_runner_basic() {
-        let sessions = vec![
-            create_test_session("s1", 5),
-            create_test_session("s2", 5),
-        ];
+        let sessions = vec![create_test_session("s1", 5), create_test_session("s2", 5)];
 
         let fingerprints = create_test_fingerprints(&sessions);
 

@@ -98,7 +98,7 @@ impl From<Embedder> for ModelId {
             Embedder::Graph => ModelId::Graph,
             Embedder::Hdc => ModelId::Hdc,
             Embedder::Contextual => ModelId::Contextual,
-            Embedder::Entity => ModelId::Kepler,  // Production E11 is KEPLER (768D), not legacy Entity (384D)
+            Embedder::Entity => ModelId::Kepler, // Production E11 is KEPLER (768D), not legacy Entity (384D)
             Embedder::LateInteraction => ModelId::LateInteraction,
             Embedder::KeywordSplade => ModelId::Splade,
             Embedder::BgeM3Dense => ModelId::BgeM3Dense,
@@ -160,7 +160,7 @@ mod tests {
             (Embedder::Graph, ModelId::Graph),
             (Embedder::Hdc, ModelId::Hdc),
             (Embedder::Contextual, ModelId::Contextual),
-            (Embedder::Entity, ModelId::Kepler),  // Production E11 is KEPLER (768D)
+            (Embedder::Entity, ModelId::Kepler), // Production E11 is KEPLER (768D)
             (Embedder::LateInteraction, ModelId::LateInteraction),
             (Embedder::KeywordSplade, ModelId::Splade),
             (Embedder::BgeM3Dense, ModelId::BgeM3Dense), // E14

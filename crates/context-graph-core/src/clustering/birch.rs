@@ -352,7 +352,10 @@ impl ClusteringFeature {
 
         // Check dimension match
         if self.ls.len() != other.ls.len() {
-            return Err(ClusterError::dimension_mismatch(self.ls.len(), other.ls.len()));
+            return Err(ClusterError::dimension_mismatch(
+                self.ls.len(),
+                other.ls.len(),
+            ));
         }
 
         // Additive merge
@@ -397,7 +400,10 @@ impl ClusteringFeature {
     /// Returns `ClusterError::DimensionMismatch` if dimensions differ.
     pub fn distance(&self, other: &ClusteringFeature) -> Result<f32, ClusterError> {
         if self.ls.len() != other.ls.len() {
-            return Err(ClusterError::dimension_mismatch(self.ls.len(), other.ls.len()));
+            return Err(ClusterError::dimension_mismatch(
+                self.ls.len(),
+                other.ls.len(),
+            ));
         }
 
         let c1 = self.centroid();
@@ -587,7 +593,6 @@ mod tests {
 
         println!("[PASS] test_cf_serialization_roundtrip - JSON: {}", json);
     }
-
 }
 
 // =============================================================================
@@ -716,11 +721,7 @@ impl BIRCHNode {
     /// Returns an empty CF if node has no entries.
     #[must_use]
     pub fn total_cf(&self) -> ClusteringFeature {
-        let dim = self
-            .entries
-            .first()
-            .map(|e| e.cf.dimension())
-            .unwrap_or(0);
+        let dim = self.entries.first().map(|e| e.cf.dimension()).unwrap_or(0);
 
         let mut total = ClusteringFeature::new(dim);
         for entry in &self.entries {
@@ -936,7 +937,8 @@ impl BIRCHTree {
             if let Some(ref mut child) = child_opt {
                 // Insert into child (now we have exclusive access)
                 let threshold = self.params.threshold;
-                let cluster_idx = Self::insert_into_node_owned(child, embedding, memory_id, threshold);
+                let cluster_idx =
+                    Self::insert_into_node_owned(child, embedding, memory_id, threshold);
 
                 // Check if child needs splitting before putting back
                 let needs_split = child.entries.len() > self.params.max_node_entries;
@@ -985,7 +987,8 @@ impl BIRCHTree {
             let closest_idx = node.find_closest(embedding).unwrap_or(0);
 
             if let Some(ref mut child) = node.entries[closest_idx].child {
-                let cluster_idx = Self::insert_into_node_owned(child, embedding, memory_id, threshold);
+                let cluster_idx =
+                    Self::insert_into_node_owned(child, embedding, memory_id, threshold);
                 let _ = node.entries[closest_idx].cf.add_point(embedding);
                 cluster_idx
             } else {
@@ -1431,7 +1434,11 @@ mod birch_tree_tests {
 
         // With high threshold, close points should merge
         let clusters = tree.get_clusters();
-        assert_eq!(clusters.len(), 1, "Close points should merge into one cluster");
+        assert_eq!(
+            clusters.len(),
+            1,
+            "Close points should merge into one cluster"
+        );
         assert_eq!(clusters[0].n, 2, "Cluster should have 2 points");
 
         let members = tree.get_cluster_members();
@@ -1450,10 +1457,15 @@ mod birch_tree_tests {
         let mut tree = BIRCHTree::new(params, 2).expect("valid tree");
 
         tree.insert(&[0.0, 0.0], Uuid::new_v4()).expect("insert 1");
-        tree.insert(&[100.0, 100.0], Uuid::new_v4()).expect("insert 2");
+        tree.insert(&[100.0, 100.0], Uuid::new_v4())
+            .expect("insert 2");
 
         let clusters = tree.get_clusters();
-        assert_eq!(clusters.len(), 2, "Distant points should be in separate clusters");
+        assert_eq!(
+            clusters.len(),
+            2,
+            "Distant points should be in separate clusters"
+        );
 
         println!("[PASS] test_birch_separate_distant_points");
     }
@@ -1568,8 +1580,16 @@ mod birch_tree_tests {
 
         // Physical verification 2: Sum of members equals total_points
         let member_sum: usize = members.iter().map(|(_, ids)| ids.len()).sum();
-        assert_eq!(member_sum, tree.total_points(), "Member sum must equal total_points");
-        println!("[PHYSICAL] Member sum: {}, total_points: {}", member_sum, tree.total_points());
+        assert_eq!(
+            member_sum,
+            tree.total_points(),
+            "Member sum must equal total_points"
+        );
+        println!(
+            "[PHYSICAL] Member sum: {}, total_points: {}",
+            member_sum,
+            tree.total_points()
+        );
 
         // Physical verification 3: CF values are mathematically correct
         let clusters = tree.get_clusters();
@@ -1583,18 +1603,24 @@ mod birch_tree_tests {
             );
 
             assert!(cf.n > 0, "Cluster {} must have points", i);
-            assert!(cf.centroid().iter().all(|v| v.is_finite()), "Centroid must be finite");
+            assert!(
+                cf.centroid().iter().all(|v| v.is_finite()),
+                "Centroid must be finite"
+            );
             assert!(cf.radius() >= 0.0, "Radius must be non-negative");
         }
 
         // Physical verification 4: Tree structure is valid
-        assert!(tree.root.entries.iter().all(|e| {
-            if e.is_leaf() {
-                e.child.is_none()
-            } else {
-                e.child.is_some() && e.memory_ids.is_empty()
-            }
-        }), "Tree structure must be valid");
+        assert!(
+            tree.root.entries.iter().all(|e| {
+                if e.is_leaf() {
+                    e.child.is_none()
+                } else {
+                    e.child.is_some() && e.memory_ids.is_empty()
+                }
+            }),
+            "Tree structure must be valid"
+        );
 
         println!("[PASS] test_physical_output_verification");
     }

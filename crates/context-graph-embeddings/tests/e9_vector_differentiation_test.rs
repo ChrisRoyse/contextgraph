@@ -35,16 +35,18 @@ fn vectors_are_identical(a: &[f32], b: &[f32]) -> bool {
 #[tokio::test]
 #[ignore = "requires models directory with pretrained weights"]
 async fn test_e1_e9_vectors_differ_in_fingerprint() {
-    let models_dir = PathBuf::from(
-        std::env::var("MODELS_DIR").unwrap_or_else(|_| "./models".to_string()),
-    );
+    let models_dir =
+        PathBuf::from(std::env::var("MODELS_DIR").unwrap_or_else(|_| "./models".to_string()));
 
     let provider = ProductionMultiArrayProvider::new(models_dir, GpuConfig::default())
         .await
         .expect("Failed to create provider");
 
     let test_content = "authentication failed for user";
-    let output = provider.embed_all(test_content).await.expect("embed_all() failed");
+    let output = provider
+        .embed_all(test_content)
+        .await
+        .expect("embed_all() failed");
     let fingerprint = output.fingerprint;
 
     let e1 = &fingerprint.e1_semantic;
@@ -57,23 +59,31 @@ async fn test_e1_e9_vectors_differ_in_fingerprint() {
         0.0
     };
 
-    assert!(!identical, "CRITICAL: E1 and E9 vectors must NOT be identical!");
-    assert!(similarity < 0.95, "E1 and E9 should not have >0.95 similarity, got {}", similarity);
+    assert!(
+        !identical,
+        "CRITICAL: E1 and E9 vectors must NOT be identical!"
+    );
+    assert!(
+        similarity < 0.95,
+        "E1 and E9 should not have >0.95 similarity, got {}",
+        similarity
+    );
 }
 
 /// Verify E5 vector is also different from E1
 #[tokio::test]
 #[ignore = "requires models directory with pretrained weights"]
 async fn test_e1_e5_vectors_differ_in_fingerprint() {
-    let models_dir = PathBuf::from(
-        std::env::var("MODELS_DIR").unwrap_or_else(|_| "./models".to_string()),
-    );
+    let models_dir =
+        PathBuf::from(std::env::var("MODELS_DIR").unwrap_or_else(|_| "./models".to_string()));
 
     let provider = ProductionMultiArrayProvider::new(models_dir, GpuConfig::default())
         .await
         .expect("Failed to create provider");
 
-    let output = provider.embed_all("test content for verification").await
+    let output = provider
+        .embed_all("test content for verification")
+        .await
         .expect("embed_all() failed");
     let fingerprint = output.fingerprint;
 

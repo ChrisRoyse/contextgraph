@@ -55,7 +55,6 @@ pub const VALID_THRESHOLD: f32 = -5.0;
 /// Score between -10.0 and -5.0 is uncertain.
 pub const UNCERTAIN_THRESHOLD: f32 = -10.0;
 
-
 // ============================================================================
 // TRAIT IMPLS (parse_request helper)
 // ============================================================================
@@ -180,7 +179,10 @@ pub struct EntityLinkDto {
     pub extraction_method: Option<String>,
 
     /// Human-readable explanation of the confidence score.
-    #[serde(rename = "confidenceExplanation", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "confidenceExplanation",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub confidence_explanation: Option<String>,
 }
 
@@ -286,7 +288,6 @@ pub struct EntityByType {
     #[serde(rename = "Unknown", skip_serializing_if = "Vec::is_empty")]
     pub unknown: Vec<EntityLinkDto>,
 }
-
 
 // ============================================================================
 // SEARCH_BY_ENTITIES DTOs
@@ -768,7 +769,10 @@ pub struct ValidateKnowledgeResponse {
     pub supporting_memories: Option<Vec<Uuid>>,
 
     /// Memory IDs that may contradict this triple.
-    #[serde(rename = "contradictingMemories", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "contradictingMemories",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub contradicting_memories: Option<Vec<Uuid>>,
 
     /// Whether confidence/validation were adjusted by memory evidence.
@@ -1095,23 +1099,43 @@ mod tests {
     fn test_transe_score_to_confidence() {
         // Perfect score (0) should give max confidence
         let conf_0 = transe_score_to_confidence(0.0);
-        assert!((conf_0 - 1.0).abs() < 0.01, "Score 0 should give confidence 1.0, got {}", conf_0);
+        assert!(
+            (conf_0 - 1.0).abs() < 0.01,
+            "Score 0 should give confidence 1.0, got {}",
+            conf_0
+        );
 
         // Score -5.0 (valid threshold) should give ~0.67 confidence
         let conf_5 = transe_score_to_confidence(-5.0);
-        assert!((conf_5 - 0.67).abs() < 0.01, "Score -5 should give ~0.67 confidence, got {}", conf_5);
+        assert!(
+            (conf_5 - 0.67).abs() < 0.01,
+            "Score -5 should give ~0.67 confidence, got {}",
+            conf_5
+        );
 
         // Score -7.5 (midpoint) should give ~0.5 confidence
         let conf_75 = transe_score_to_confidence(-7.5);
-        assert!((conf_75 - 0.5).abs() < 0.01, "Score -7.5 should give ~0.5 confidence, got {}", conf_75);
+        assert!(
+            (conf_75 - 0.5).abs() < 0.01,
+            "Score -7.5 should give ~0.5 confidence, got {}",
+            conf_75
+        );
 
         // Score -10.0 (invalid threshold) should give ~0.33 confidence
         let conf_10 = transe_score_to_confidence(-10.0);
-        assert!((conf_10 - 0.33).abs() < 0.01, "Score -10 should give ~0.33 confidence, got {}", conf_10);
+        assert!(
+            (conf_10 - 0.33).abs() < 0.01,
+            "Score -10 should give ~0.33 confidence, got {}",
+            conf_10
+        );
 
         // Very negative score should give 0 confidence
         let conf_20 = transe_score_to_confidence(-20.0);
-        assert!((conf_20 - 0.0).abs() < 0.01, "Score -20 should give 0 confidence, got {}", conf_20);
+        assert!(
+            (conf_20 - 0.0).abs() < 0.01,
+            "Score -20 should give 0 confidence, got {}",
+            conf_20
+        );
     }
 
     #[test]
@@ -1119,7 +1143,7 @@ mod tests {
         // KEPLER thresholds: valid > -5.0, uncertain >= -10.0, invalid < -10.0
         assert_eq!(validation_from_score(0.0), "valid");
         assert_eq!(validation_from_score(-3.0), "valid");
-        assert_eq!(validation_from_score(-5.0), "uncertain");  // Boundary
+        assert_eq!(validation_from_score(-5.0), "uncertain"); // Boundary
         assert_eq!(validation_from_score(-7.0), "uncertain");
         assert_eq!(validation_from_score(-10.0), "uncertain"); // Boundary
         assert_eq!(validation_from_score(-10.1), "unlikely");
@@ -1129,7 +1153,10 @@ mod tests {
     #[test]
     fn test_entity_type_to_string() {
         assert_eq!(entity_type_to_string(EntityType::Database), "Database");
-        assert_eq!(entity_type_to_string(EntityType::ProgrammingLanguage), "ProgrammingLanguage");
+        assert_eq!(
+            entity_type_to_string(EntityType::ProgrammingLanguage),
+            "ProgrammingLanguage"
+        );
         assert_eq!(entity_type_to_string(EntityType::Unknown), "Unknown");
     }
 }

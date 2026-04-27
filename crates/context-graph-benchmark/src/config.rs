@@ -174,7 +174,10 @@ pub struct BenchmarkConfig {
 impl Default for BenchmarkConfig {
     fn default() -> Self {
         Self {
-            tiers: Tier::ci_tiers().iter().map(|&t| TierConfig::for_tier(t)).collect(),
+            tiers: Tier::ci_tiers()
+                .iter()
+                .map(|&t| TierConfig::for_tier(t))
+                .collect(),
             k_values: vec![1, 5, 10, 20, 50],
             seed: 42,
             ci_mode: true,
@@ -189,7 +192,10 @@ impl BenchmarkConfig {
     /// Create config for full benchmark (all tiers).
     pub fn full() -> Self {
         Self {
-            tiers: Tier::all().iter().map(|&t| TierConfig::for_tier(t)).collect(),
+            tiers: Tier::all()
+                .iter()
+                .map(|&t| TierConfig::for_tier(t))
+                .collect(),
             ci_mode: false,
             ..Default::default()
         }

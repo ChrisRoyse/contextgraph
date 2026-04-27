@@ -58,13 +58,8 @@ fn start_session(session_id: &str, db_path: &Path) -> HookScriptResult {
 /// Execute session_end.sh and assert success
 fn end_session(session_id: &str, db_path: &Path) -> HookScriptResult {
     let input = create_claude_code_session_end_input(session_id, "normal");
-    let result = execute_hook_script(
-        "session_end.sh",
-        &input,
-        TIMEOUT_SESSION_END_MS,
-        db_path,
-    )
-    .expect("session_end.sh failed");
+    let result = execute_hook_script("session_end.sh", &input, TIMEOUT_SESSION_END_MS, db_path)
+        .expect("session_end.sh failed");
     assert_eq!(
         result.exit_code, EXIT_SUCCESS,
         "session_end.sh failed: stderr={}",
@@ -106,13 +101,8 @@ fn capture_memory(
         content,
         true,
     );
-    let result = execute_hook_script(
-        "post_tool_use.sh",
-        &input,
-        TIMEOUT_POST_TOOL_MS,
-        db_path,
-    )
-    .expect("post_tool_use.sh failed");
+    let result = execute_hook_script("post_tool_use.sh", &input, TIMEOUT_POST_TOOL_MS, db_path)
+        .expect("post_tool_use.sh failed");
     assert_eq!(
         result.exit_code, EXIT_SUCCESS,
         "post_tool_use.sh failed: stderr={}",
@@ -728,7 +718,8 @@ async fn test_e2e_long_prompt_handling() {
     println!("Session ID: {}", session_id);
 
     // Create a 10KB+ prompt (~11KB with 150 repeats)
-    let base_text = "This is a test prompt that will be repeated many times to create a long input. ";
+    let base_text =
+        "This is a test prompt that will be repeated many times to create a long input. ";
     let long_prompt: String = base_text.repeat(150);
     let prompt_len = long_prompt.len();
     println!(

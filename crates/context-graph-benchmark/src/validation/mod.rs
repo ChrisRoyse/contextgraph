@@ -23,29 +23,29 @@
 //!   --output benchmark_results/validation
 //! ```
 
-pub mod config_validation;
-pub mod temporal_validation;
-pub mod ground_truth_validation;
+pub mod ablation_validation;
 pub mod arch_compliance;
 pub mod asymmetric_validation;
-pub mod ablation_validation;
+pub mod config_validation;
 pub mod e1_foundation;
 pub mod fusion_validation;
+pub mod ground_truth_validation;
 pub mod results_aggregator;
+pub mod temporal_validation;
 
-pub use config_validation::{ConfigValidator, ConfigValidationResult};
-pub use temporal_validation::{TemporalValidator, TemporalValidationResult};
-pub use ground_truth_validation::{GroundTruthValidator, GroundTruthValidationResult};
-pub use arch_compliance::{ArchComplianceValidator, ArchComplianceResult};
-pub use asymmetric_validation::{AsymmetricValidator, AsymmetricValidationResult};
-pub use ablation_validation::{AblationValidator, AblationValidationResult};
-pub use e1_foundation::{E1FoundationValidator, E1FoundationResult};
-pub use fusion_validation::{FusionValidator, FusionValidationResult};
-pub use results_aggregator::{BenchmarkResultsAggregator, AggregatedResults};
+pub use ablation_validation::{AblationValidationResult, AblationValidator};
+pub use arch_compliance::{ArchComplianceResult, ArchComplianceValidator};
+pub use asymmetric_validation::{AsymmetricValidationResult, AsymmetricValidator};
+pub use config_validation::{ConfigValidationResult, ConfigValidator};
+pub use e1_foundation::{E1FoundationResult, E1FoundationValidator};
+pub use fusion_validation::{FusionValidationResult, FusionValidator};
+pub use ground_truth_validation::{GroundTruthValidationResult, GroundTruthValidator};
+pub use results_aggregator::{AggregatedResults, BenchmarkResultsAggregator};
+pub use temporal_validation::{TemporalValidationResult, TemporalValidator};
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 /// Configuration for the validation benchmark.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,7 +245,8 @@ impl ValidationCheck {
     }
 
     pub fn is_critical_failure(&self) -> bool {
-        matches!(self.status, ValidationStatus::Fail) && matches!(self.priority, CheckPriority::Critical)
+        matches!(self.status, ValidationStatus::Fail)
+            && matches!(self.priority, CheckPriority::Critical)
     }
 }
 
@@ -443,7 +444,10 @@ impl ValidationReportGenerator {
 
         // Header
         report.push_str("# Unified Real Data Benchmark Validation Report\n\n");
-        report.push_str(&format!("Generated: {}\n\n", self.results.end_time.format("%Y-%m-%d %H:%M:%S UTC")));
+        report.push_str(&format!(
+            "Generated: {}\n\n",
+            self.results.end_time.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
 
         // Summary
         report.push_str("## Summary\n\n");
@@ -454,19 +458,30 @@ impl ValidationReportGenerator {
         report.push_str(&format!("| Passed | {} |\n", summary.passed_checks));
         report.push_str(&format!("| Failed | {} |\n", summary.failed_checks));
         report.push_str(&format!("| Warnings | {} |\n", summary.warning_checks));
-        report.push_str(&format!("| Critical Failures | {} |\n", summary.critical_failures));
-        report.push_str(&format!("| Overall Status | {} |\n\n", if summary.all_passed { "PASS" } else { "FAIL" }));
+        report.push_str(&format!(
+            "| Critical Failures | {} |\n",
+            summary.critical_failures
+        ));
+        report.push_str(&format!(
+            "| Overall Status | {} |\n\n",
+            if summary.all_passed { "PASS" } else { "FAIL" }
+        ));
 
         // ARCH Compliance
         report.push_str("## ARCH Compliance\n\n");
-        report.push_str(&format!("Rules Passed: {}/{}\n\n", summary.arch_rules_passed, summary.arch_rules_total));
+        report.push_str(&format!(
+            "Rules Passed: {}/{}\n\n",
+            summary.arch_rules_passed, summary.arch_rules_total
+        ));
 
         // Phase Results
         report.push_str("## Phase Results\n\n");
         for (phase, result) in &self.results.phase_results {
             report.push_str(&format!("### {}\n\n", phase.as_str()));
-            report.push_str(&format!("Duration: {}ms | Passed: {} | Failed: {} | Warnings: {}\n\n",
-                result.duration_ms, result.passed, result.failed, result.warnings));
+            report.push_str(&format!(
+                "Duration: {}ms | Passed: {} | Failed: {} | Warnings: {}\n\n",
+                result.duration_ms, result.passed, result.failed, result.warnings
+            ));
 
             if !result.checks.is_empty() {
                 report.push_str("| Check | Status | Expected | Actual |\n");
@@ -478,8 +493,10 @@ impl ValidationReportGenerator {
                         ValidationStatus::Warning => "WARN",
                         ValidationStatus::Skip => "SKIP",
                     };
-                    report.push_str(&format!("| {} | {} | {} | {} |\n",
-                        check.name, status, check.expected, check.actual));
+                    report.push_str(&format!(
+                        "| {} | {} | {} | {} |\n",
+                        check.name, status, check.expected, check.actual
+                    ));
                 }
                 report.push('\n');
             }
@@ -490,19 +507,30 @@ impl ValidationReportGenerator {
             report.push_str("## Recommendations\n\n");
 
             // Critical
-            let critical: Vec<_> = self.results.recommendations.iter()
+            let critical: Vec<_> = self
+                .results
+                .recommendations
+                .iter()
                 .filter(|r| matches!(r.category, RecommendationCategory::Critical))
                 .collect();
             if !critical.is_empty() {
                 report.push_str("### Critical Issues (Must Fix)\n\n");
                 for (i, rec) in critical.iter().enumerate() {
-                    report.push_str(&format!("{}. [{}] {}\n", i + 1, rec.component, rec.description));
+                    report.push_str(&format!(
+                        "{}. [{}] {}\n",
+                        i + 1,
+                        rec.component,
+                        rec.description
+                    ));
                 }
                 report.push('\n');
             }
 
             // Performance
-            let perf: Vec<_> = self.results.recommendations.iter()
+            let perf: Vec<_> = self
+                .results
+                .recommendations
+                .iter()
                 .filter(|r| matches!(r.category, RecommendationCategory::Performance))
                 .collect();
             if !perf.is_empty() {
@@ -514,7 +542,10 @@ impl ValidationReportGenerator {
             }
 
             // Parameter Tuning
-            let params: Vec<_> = self.results.recommendations.iter()
+            let params: Vec<_> = self
+                .results
+                .recommendations
+                .iter()
                 .filter(|r| matches!(r.category, RecommendationCategory::ParameterTuning))
                 .collect();
             if !params.is_empty() {
@@ -522,11 +553,13 @@ impl ValidationReportGenerator {
                 report.push_str("| Parameter | Current | Recommended | Reason |\n");
                 report.push_str("|-----------|---------|-------------|--------|\n");
                 for rec in params {
-                    report.push_str(&format!("| {} | {} | {} | {} |\n",
+                    report.push_str(&format!(
+                        "| {} | {} | {} | {} |\n",
                         rec.component,
                         rec.current.as_deref().unwrap_or("-"),
                         rec.recommended.as_deref().unwrap_or("-"),
-                        rec.reason));
+                        rec.reason
+                    ));
                 }
                 report.push('\n');
             }
@@ -553,25 +586,43 @@ pub fn generate_console_summary(results: &ValidationBenchmarkResults) -> String 
     // Overall status
     let status = if summary.all_passed { "PASS" } else { "FAIL" };
     s.push_str(&format!("║  Overall Status: {:>47} ║\n", status));
-    s.push_str(&format!("║  Total Checks: {:>49} ║\n", summary.total_checks));
+    s.push_str(&format!(
+        "║  Total Checks: {:>49} ║\n",
+        summary.total_checks
+    ));
     s.push_str(&format!("║  Passed: {:>55} ║\n", summary.passed_checks));
     s.push_str(&format!("║  Failed: {:>55} ║\n", summary.failed_checks));
     s.push_str(&format!("║  Warnings: {:>53} ║\n", summary.warning_checks));
-    s.push_str(&format!("║  Critical Failures: {:>44} ║\n", summary.critical_failures));
+    s.push_str(&format!(
+        "║  Critical Failures: {:>44} ║\n",
+        summary.critical_failures
+    ));
     s.push_str("╠══════════════════════════════════════════════════════════════════╣\n");
 
     // ARCH compliance
-    s.push_str(&format!("║  ARCH Rules: {}/{} {:>47} ║\n",
-        summary.arch_rules_passed, summary.arch_rules_total,
-        if summary.arch_rules_passed == summary.arch_rules_total { "PASS" } else { "FAIL" }));
+    s.push_str(&format!(
+        "║  ARCH Rules: {}/{} {:>47} ║\n",
+        summary.arch_rules_passed,
+        summary.arch_rules_total,
+        if summary.arch_rules_passed == summary.arch_rules_total {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    ));
 
     // Per-phase summary
     s.push_str("╠══════════════════════════════════════════════════════════════════╣\n");
     for phase in ValidationPhase::all() {
         if let Some(result) = results.phase_results.get(&phase) {
             let phase_status = if result.all_passed { "PASS" } else { "FAIL" };
-            s.push_str(&format!("║  {:20} {:>4}/{:>4} {:>29} ║\n",
-                phase.as_str(), result.passed, result.passed + result.failed, phase_status));
+            s.push_str(&format!(
+                "║  {:20} {:>4}/{:>4} {:>29} ║\n",
+                phase.as_str(),
+                result.passed,
+                result.passed + result.failed,
+                phase_status
+            ));
         }
     }
 
@@ -586,8 +637,14 @@ mod tests {
 
     #[test]
     fn test_validation_phase_parse() {
-        assert_eq!(ValidationPhase::parse_from("config"), Some(ValidationPhase::Config));
-        assert_eq!(ValidationPhase::parse_from("ARCH"), Some(ValidationPhase::Arch));
+        assert_eq!(
+            ValidationPhase::parse_from("config"),
+            Some(ValidationPhase::Config)
+        );
+        assert_eq!(
+            ValidationPhase::parse_from("ARCH"),
+            Some(ValidationPhase::Arch)
+        );
         assert_eq!(ValidationPhase::parse_from("invalid"), None);
     }
 

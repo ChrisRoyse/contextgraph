@@ -232,12 +232,13 @@ fn test_production_includes_kepler() {
 
 #[test]
 fn test_production_order_matches_pipeline() {
-    // EMB-M2: Verify production() order is E1-E10, E12, E13, Kepler
+    // EMB-M2: Verify production() order is the active E1-E14 slot order.
     let prod = ModelId::production();
-    assert_eq!(prod[0], ModelId::Semantic);           // E1
-    assert_eq!(prod[4], ModelId::Causal);             // E5
-    assert_eq!(prod[9], ModelId::Contextual);         // E10
-    assert_eq!(prod[10], ModelId::LateInteraction);   // E12
-    assert_eq!(prod[11], ModelId::Splade);            // E13
-    assert_eq!(prod[12], ModelId::Kepler);            // E11 production
+    assert_eq!(prod[0], ModelId::Semantic); // E1
+    assert_eq!(prod[4], ModelId::Causal); // E5
+    assert_eq!(prod[9], ModelId::Contextual); // E10
+    assert_eq!(prod[10], ModelId::Kepler); // E11 production
+    assert_eq!(prod[11], ModelId::LateInteraction); // E12
+    assert_eq!(prod[12], ModelId::Splade); // E13
+    assert_eq!(prod[13], ModelId::BgeM3Dense); // E14
 }

@@ -75,9 +75,9 @@ struct ProviderState {
 #[cfg(feature = "candle")]
 mod cuda_impl {
     use super::*;
-    use std::path::PathBuf;
     use crate::config::GpuConfig;
     use crate::provider::ProductionMultiArrayProvider;
+    use std::path::PathBuf;
 
     /// Resolve models directory path.
     ///
@@ -105,7 +105,8 @@ mod cuda_impl {
     /// MUST be called ONCE at startup before any embedding operations.
     /// Subsequent calls are no-ops if initialization succeeded.
     pub async fn initialize_global_warm_provider_impl() -> EmbeddingResult<()> {
-        let slot = GLOBAL_WARM_PROVIDER.get_or_init(|| Arc::new(RwLock::new(ProviderState::default())));
+        let slot =
+            GLOBAL_WARM_PROVIDER.get_or_init(|| Arc::new(RwLock::new(ProviderState::default())));
 
         let mut guard = slot.write().await;
 
@@ -118,12 +119,17 @@ mod cuda_impl {
         // Previous initialization attempt failed - don't retry
         if let Some(ref err) = guard.init_error {
             return Err(EmbeddingError::InternalError {
-                message: format!("Global warm provider initialization previously failed: {}", err),
+                message: format!(
+                    "Global warm provider initialization previously failed: {}",
+                    err
+                ),
             });
         }
 
         tracing::info!("Initializing global warm provider with ProductionMultiArrayProvider...");
-        tracing::info!("Loading all 14 production embedding models to GPU VRAM (this takes 20-30 seconds)...");
+        tracing::info!(
+            "Loading all 14 production embedding models to GPU VRAM (this takes 20-30 seconds)..."
+        );
 
         let models_dir = resolve_models_dir();
         let gpu_config = GpuConfig::default();
@@ -141,7 +147,8 @@ mod cuda_impl {
 
         // Create ProductionMultiArrayProvider - this loads all production models.
         // NO FALLBACKS - if this fails, the system is not functional
-        let provider = match ProductionMultiArrayProvider::new(models_dir.clone(), gpu_config).await {
+        let provider = match ProductionMultiArrayProvider::new(models_dir.clone(), gpu_config).await
+        {
             Ok(p) => p,
             Err(e) => {
                 let err_msg = format!(
@@ -240,10 +247,8 @@ pub fn get_warm_provider() -> EmbeddingResult<Arc<dyn MultiArrayEmbeddingProvide
     })?;
 
     // Use try_read for non-blocking check
-    let guard = slot.try_read().map_err(|_| {
-        EmbeddingError::InternalError {
-            message: "Global warm provider is busy (lock contention). Retry later.".to_string(),
-        }
+    let guard = slot.try_read().map_err(|_| EmbeddingError::InternalError {
+        message: "Global warm provider is busy (lock contention). Retry later.".to_string(),
     })?;
 
     // Check if initialization failed
@@ -441,5 +446,4 @@ mod tests {
             );
         }
     }
-
 }

@@ -270,8 +270,7 @@ mod tests {
 
     #[test]
     fn test_builder_pattern() {
-        let query = TeleologicalQuery::from_text("complex query")
-            .with_breakdown(true);
+        let query = TeleologicalQuery::from_text("complex query").with_breakdown(true);
 
         assert_eq!(query.text, "complex query");
         assert!(query.include_breakdown);

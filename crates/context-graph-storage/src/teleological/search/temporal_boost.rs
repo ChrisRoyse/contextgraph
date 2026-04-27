@@ -23,8 +23,7 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use context_graph_core::traits::{
-    DecayFunction, SequenceDirection, TemporalSearchOptions,
-    TimeWindow, TeleologicalSearchResult,
+    DecayFunction, SequenceDirection, TeleologicalSearchResult, TemporalSearchOptions, TimeWindow,
 };
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 use tracing::debug;
@@ -62,8 +61,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 ///
 /// Returns (hour: 0-23, day_of_week: 0-6 where 0=Sunday).
 fn extract_temporal_components(timestamp_ms: i64) -> (u8, u8) {
-    let datetime = DateTime::from_timestamp_millis(timestamp_ms)
-        .unwrap_or_else(Utc::now);
+    let datetime = DateTime::from_timestamp_millis(timestamp_ms).unwrap_or_else(Utc::now);
     let hour = datetime.hour() as u8;
     // chrono weekday: Mon=0, Sun=6, but we use Sun=0, Sat=6
     let dow = datetime.weekday().num_days_from_sunday() as u8;
@@ -126,7 +124,6 @@ pub fn compute_e2_recency_score(
     }
 }
 
-
 // =============================================================================
 // E3 PERIODIC FUNCTIONS
 // =============================================================================
@@ -176,9 +173,8 @@ pub fn compute_periodic_match_fallback(
     // Hour matching with tolerance
     if let Some(th) = target_hour {
         factors += 1;
-        let hour_diff = ((th as i16 - memory_hour as i16).abs() % 24).min(
-            24 - (th as i16 - memory_hour as i16).abs() % 24
-        ) as f32;
+        let hour_diff = ((th as i16 - memory_hour as i16).abs() % 24)
+            .min(24 - (th as i16 - memory_hour as i16).abs() % 24) as f32;
         // Score: 1.0 for exact match, 0.0 for 12 hours apart
         score += (1.0 - hour_diff / 12.0).max(0.0);
     }
@@ -186,9 +182,8 @@ pub fn compute_periodic_match_fallback(
     // Day of week matching
     if let Some(td) = target_dow {
         factors += 1;
-        let dow_diff = ((td as i16 - memory_dow as i16).abs() % 7).min(
-            7 - (td as i16 - memory_dow as i16).abs() % 7
-        ) as f32;
+        let dow_diff = ((td as i16 - memory_dow as i16).abs() % 7)
+            .min(7 - (td as i16 - memory_dow as i16).abs() % 7) as f32;
         // Score: 1.0 for exact match, 0.0 for 3.5 days apart
         score += (1.0 - dow_diff / 3.5).max(0.0);
     }
@@ -445,9 +440,7 @@ pub fn filter_by_session<F>(
     F: Fn(&TeleologicalSearchResult) -> Option<&str>,
 {
     let original_len = results.len();
-    results.retain(|r| {
-        get_session(r) == Some(session_id)
-    });
+    results.retain(|r| get_session(r) == Some(session_id));
 
     debug!(
         "Session filter '{}': {} -> {} results",
@@ -594,7 +587,8 @@ pub fn apply_temporal_boosts_v2(
         if let Some(ref periodic_opts) = options.periodic_options {
             if let Some(fp) = memory_fp {
                 // Prefer embedding-based similarity
-                if !query_fp.e3_temporal_periodic.is_empty() && !fp.e3_temporal_periodic.is_empty() {
+                if !query_fp.e3_temporal_periodic.is_empty() && !fp.e3_temporal_periodic.is_empty()
+                {
                     data.periodic_score = compute_e3_periodic_score(
                         &query_fp.e3_temporal_periodic,
                         &fp.e3_temporal_periodic,
@@ -617,7 +611,9 @@ pub fn apply_temporal_boosts_v2(
             if let (Some(anchor), Some(anchor_time)) = (anchor_fp, anchor_ts) {
                 if let Some(fp) = memory_fp {
                     // Prefer embedding-based similarity with v2 sequence logic
-                    if !anchor.e4_temporal_positional.is_empty() && !fp.e4_temporal_positional.is_empty() {
+                    if !anchor.e4_temporal_positional.is_empty()
+                        && !fp.e4_temporal_positional.is_empty()
+                    {
                         // E4-FIX: Use v2 function that prefers sequence-based direction
                         data.sequence_score = compute_e4_sequence_score_v2(
                             &anchor.e4_temporal_positional,
@@ -646,15 +642,15 @@ pub fn apply_temporal_boosts_v2(
         }
 
         // Combine component scores
-        data.combined_score =
-            data.recency_score * recency_weight +
-            data.periodic_score * periodic_weight +
-            data.sequence_score * sequence_weight;
+        data.combined_score = data.recency_score * recency_weight
+            + data.periodic_score * periodic_weight
+            + data.sequence_score * sequence_weight;
 
         // Apply temporal boost to final similarity
         // formula: final = semantic * (1 - weight) + temporal * weight
         let original = result.similarity;
-        result.similarity = original * (1.0 - temporal_weight) + data.combined_score * temporal_weight;
+        result.similarity =
+            original * (1.0 - temporal_weight) + data.combined_score * temporal_weight;
 
         debug!(
             "Temporal boost v2 for {}: {} -> {} (recency={:.3}, periodic={:.3}, sequence={:.3}, mem_seq={:?}, anchor_seq={:?})",
@@ -668,7 +664,9 @@ pub fn apply_temporal_boosts_v2(
 
     // Re-sort results by boosted similarity
     results.sort_by(|a, b| {
-        b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     boost_data
@@ -728,8 +726,7 @@ mod tests {
 
     #[test]
     fn test_step_decay() {
-        let options = TemporalSearchOptions::default()
-            .with_decay_function(DecayFunction::Step);
+        let options = TemporalSearchOptions::default().with_decay_function(DecayFunction::Step);
 
         let now = 1000000000i64;
 
@@ -737,25 +734,36 @@ mod tests {
         assert_eq!(compute_e2_recency_score(now - 60_000, now, &options), 1.0);
 
         // < 1 hour = 0.8
-        assert_eq!(compute_e2_recency_score(now - 1_800_000, now, &options), 0.8);
+        assert_eq!(
+            compute_e2_recency_score(now - 1_800_000, now, &options),
+            0.8
+        );
 
         // < 1 day = 0.5
-        assert_eq!(compute_e2_recency_score(now - 43_200_000, now, &options), 0.5);
+        assert_eq!(
+            compute_e2_recency_score(now - 43_200_000, now, &options),
+            0.5
+        );
 
         // > 1 week = 0.1
-        assert_eq!(compute_e2_recency_score(now - 1_000_000_000, now, &options), 0.1);
+        assert_eq!(
+            compute_e2_recency_score(now - 1_000_000_000, now, &options),
+            0.1
+        );
     }
 
     #[test]
     fn test_no_decay() {
-        let options = TemporalSearchOptions::default()
-            .with_decay_function(DecayFunction::NoDecay);
+        let options = TemporalSearchOptions::default().with_decay_function(DecayFunction::NoDecay);
 
         let now = 1000000000i64;
 
         // All timestamps return 1.0
         assert_eq!(compute_e2_recency_score(now, now, &options), 1.0);
-        assert_eq!(compute_e2_recency_score(now - 1_000_000_000, now, &options), 1.0);
+        assert_eq!(
+            compute_e2_recency_score(now - 1_000_000_000, now, &options),
+            1.0
+        );
     }
 
     #[test]
@@ -778,24 +786,60 @@ mod tests {
         let memory_e4 = vec![1.0; 512]; // Perfect match
 
         // Before: memory must be before anchor
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 500, anchor_ts, SequenceDirection::Before);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            500,
+            anchor_ts,
+            SequenceDirection::Before,
+        );
         assert!(score > 0.9, "Before direction should match");
 
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1500, anchor_ts, SequenceDirection::Before);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1500,
+            anchor_ts,
+            SequenceDirection::Before,
+        );
         assert_eq!(score, 0.0, "Before direction should reject after");
 
         // After: memory must be after anchor
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1500, anchor_ts, SequenceDirection::After);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1500,
+            anchor_ts,
+            SequenceDirection::After,
+        );
         assert!(score > 0.9, "After direction should match");
 
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 500, anchor_ts, SequenceDirection::After);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            500,
+            anchor_ts,
+            SequenceDirection::After,
+        );
         assert_eq!(score, 0.0, "After direction should reject before");
 
         // Both: accept all
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 500, anchor_ts, SequenceDirection::Both);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            500,
+            anchor_ts,
+            SequenceDirection::Both,
+        );
         assert!(score > 0.9, "Both direction should match before");
 
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1500, anchor_ts, SequenceDirection::Both);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1500,
+            anchor_ts,
+            SequenceDirection::Both,
+        );
         assert!(score > 0.9, "Both direction should match after");
     }
 
@@ -806,16 +850,40 @@ mod tests {
         let memory_e4 = vec![1.0; 512];
 
         // At anchor_ts (same time): should be rejected
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1000, anchor_ts, SequenceDirection::After);
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1000,
+            anchor_ts,
+            SequenceDirection::After,
+        );
         assert_eq!(score, 0.0, "Same timestamp should be rejected for After");
 
         // At anchor_ts + 1 (within tolerance): should be rejected
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1001, anchor_ts, SequenceDirection::After);
-        assert_eq!(score, 0.0, "Timestamp within 1ms tolerance should be rejected for After");
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1001,
+            anchor_ts,
+            SequenceDirection::After,
+        );
+        assert_eq!(
+            score, 0.0,
+            "Timestamp within 1ms tolerance should be rejected for After"
+        );
 
         // At anchor_ts + 2 (beyond tolerance): should be accepted
-        let score = compute_e4_sequence_score(&anchor_e4, &memory_e4, 1002, anchor_ts, SequenceDirection::After);
-        assert!(score > 0.9, "Timestamp beyond 1ms tolerance should be accepted for After");
+        let score = compute_e4_sequence_score(
+            &anchor_e4,
+            &memory_e4,
+            1002,
+            anchor_ts,
+            SequenceDirection::After,
+        );
+        assert!(
+            score > 0.9,
+            "Timestamp beyond 1ms tolerance should be accepted for After"
+        );
     }
 
     #[test]
@@ -846,25 +914,34 @@ mod tests {
         // Memory at seq=5, anchor at seq=10
         // With Before direction: 5 < 10 = true -> should pass
         let score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
-            Some(5),   // memory_seq
-            Some(10),  // anchor_seq
-            1000,      // memory_ts (higher, but should be ignored)
-            500,       // anchor_ts (lower, but should be ignored)
+            &anchor_e4,
+            &memory_e4,
+            Some(5),  // memory_seq
+            Some(10), // anchor_seq
+            1000,     // memory_ts (higher, but should be ignored)
+            500,      // anchor_ts (lower, but should be ignored)
             SequenceDirection::Before,
         );
-        assert!(score > 0.9, "Sequence-based Before should pass: got {}", score);
+        assert!(
+            score > 0.9,
+            "Sequence-based Before should pass: got {}",
+            score
+        );
 
         // With After direction: 5 > 10 = false -> should fail
         let score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
-            Some(5),   // memory_seq
-            Some(10),  // anchor_seq
-            1000,      // memory_ts
-            500,       // anchor_ts
+            &anchor_e4,
+            &memory_e4,
+            Some(5),  // memory_seq
+            Some(10), // anchor_seq
+            1000,     // memory_ts
+            500,      // anchor_ts
             SequenceDirection::After,
         );
-        assert_eq!(score, 0.0, "Sequence-based After should fail for memory before anchor");
+        assert_eq!(
+            score, 0.0,
+            "Sequence-based After should fail for memory before anchor"
+        );
     }
 
     #[test]
@@ -875,25 +952,30 @@ mod tests {
 
         // No sequences, using timestamps: memory_ts=500 < anchor_ts=1000
         let score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
-            None,  // memory_seq (not available)
-            None,  // anchor_seq (not available)
-            500,   // memory_ts
-            1000,  // anchor_ts
+            &anchor_e4,
+            &memory_e4,
+            None, // memory_seq (not available)
+            None, // anchor_seq (not available)
+            500,  // memory_ts
+            1000, // anchor_ts
             SequenceDirection::Before,
         );
         assert!(score > 0.9, "Timestamp fallback Before should pass");
 
         // After direction with timestamp fallback
         let score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
+            &anchor_e4,
+            &memory_e4,
             None,
             None,
             500,
             1000,
             SequenceDirection::After,
         );
-        assert_eq!(score, 0.0, "Timestamp fallback After should fail for earlier memory");
+        assert_eq!(
+            score, 0.0,
+            "Timestamp fallback After should fail for earlier memory"
+        );
     }
 
     #[test]
@@ -904,27 +986,45 @@ mod tests {
 
         // Memory at seq=5, anchor at seq=10 (memory BEFORE anchor)
         let before_score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
-            Some(5), Some(10),
-            0, 0,
+            &anchor_e4,
+            &memory_e4,
+            Some(5),
+            Some(10),
+            0,
+            0,
             SequenceDirection::Before,
         );
 
         // Memory at seq=15, anchor at seq=10 (memory AFTER anchor)
         let after_score = compute_e4_sequence_score_v2(
-            &anchor_e4, &memory_e4,
-            Some(15), Some(10),
-            0, 0,
+            &anchor_e4,
+            &memory_e4,
+            Some(15),
+            Some(10),
+            0,
+            0,
             SequenceDirection::After,
         );
 
         // Both should pass with high scores (symmetric)
-        assert!(before_score > 0.9, "Before query should match: {}", before_score);
-        assert!(after_score > 0.9, "After query should match: {}", after_score);
+        assert!(
+            before_score > 0.9,
+            "Before query should match: {}",
+            before_score
+        );
+        assert!(
+            after_score > 0.9,
+            "After query should match: {}",
+            after_score
+        );
 
         // Symmetry: |before - after| should be small
         let symmetry_diff = (before_score - after_score).abs();
-        assert!(symmetry_diff < 0.1, "Scores should be symmetric: diff={}", symmetry_diff);
+        assert!(
+            symmetry_diff < 0.1,
+            "Scores should be symmetric: diff={}",
+            symmetry_diff
+        );
     }
 
     #[test]
@@ -934,8 +1034,10 @@ mod tests {
 
         // Memory at seq=5, anchor at seq=10, direction=Before
         let score = compute_sequence_proximity_v2(
-            Some(5), Some(10),
-            0, 0,
+            Some(5),
+            Some(10),
+            0,
+            0,
             SequenceDirection::Before,
             max_distance,
             false, // linear
@@ -945,8 +1047,10 @@ mod tests {
 
         // Memory at seq=8, anchor at seq=10, direction=Before
         let score = compute_sequence_proximity_v2(
-            Some(8), Some(10),
-            0, 0,
+            Some(8),
+            Some(10),
+            0,
+            0,
             SequenceDirection::Before,
             max_distance,
             false,
@@ -963,8 +1067,10 @@ mod tests {
         // Memory at seq=15, anchor at seq=10, direction=Before
         // 15 < 10 = false -> should return 0.0
         let score = compute_sequence_proximity_v2(
-            Some(15), Some(10),
-            0, 0,
+            Some(15),
+            Some(10),
+            0,
+            0,
             SequenceDirection::Before,
             max_distance,
             false,
@@ -974,8 +1080,10 @@ mod tests {
         // Memory at seq=5, anchor at seq=10, direction=After
         // 5 > 10 = false -> should return 0.0
         let score = compute_sequence_proximity_v2(
-            Some(5), Some(10),
-            0, 0,
+            Some(5),
+            Some(10),
+            0,
+            0,
             SequenceDirection::After,
             max_distance,
             false,

@@ -99,22 +99,42 @@ async fn main() {
     let mut e0_scores = [0f32; 14];
     e0_scores[0] = 0.92;
     e0_scores[4] = 0.10;
-    let e0 = synthetic_edge(sources[0], targets[0], GraphLinkEdgeType::SemanticSimilar, e0_scores);
+    let e0 = synthetic_edge(
+        sources[0],
+        targets[0],
+        GraphLinkEdgeType::SemanticSimilar,
+        e0_scores,
+    );
 
     let mut e1_scores = [0f32; 14];
     e1_scores[5] = 0.88;
     e1_scores[9] = 0.15;
-    let e1 = synthetic_edge(sources[1], targets[1], GraphLinkEdgeType::KeywordOverlap, e1_scores);
+    let e1 = synthetic_edge(
+        sources[1],
+        targets[1],
+        GraphLinkEdgeType::KeywordOverlap,
+        e1_scores,
+    );
 
     let mut e2_scores = [0f32; 14];
     e2_scores[6] = 0.85;
     e2_scores[0] = 0.05;
-    let e2 = synthetic_edge(sources[2], targets[2], GraphLinkEdgeType::CodeRelated, e2_scores);
+    let e2 = synthetic_edge(
+        sources[2],
+        targets[2],
+        GraphLinkEdgeType::CodeRelated,
+        e2_scores,
+    );
 
     let mut e3_scores = [0f32; 14];
     e3_scores[10] = 0.82;
     e3_scores[7] = 0.05;
-    let e3 = synthetic_edge(sources[3], targets[3], GraphLinkEdgeType::EntityShared, e3_scores);
+    let e3 = synthetic_edge(
+        sources[3],
+        targets[3],
+        GraphLinkEdgeType::EntityShared,
+        e3_scores,
+    );
 
     let mut e4_scores = [0f32; 14];
     e4_scores[9] = 0.80;
@@ -131,13 +151,31 @@ async fn main() {
     for v in &mut e5_scores {
         *v = 0.4;
     }
-    let e5 = synthetic_edge(sources[5], targets[5], GraphLinkEdgeType::SemanticSimilar, e5_scores);
+    let e5 = synthetic_edge(
+        sources[5],
+        targets[5],
+        GraphLinkEdgeType::SemanticSimilar,
+        e5_scores,
+    );
 
-    repo.store_typed_edges_batch(&[e0.clone(), e1.clone(), e2.clone(), e3.clone(), e4.clone(), e5.clone()])
-        .expect("seed edges");
+    repo.store_typed_edges_batch(&[
+        e0.clone(),
+        e1.clone(),
+        e2.clone(),
+        e3.clone(),
+        e4.clone(),
+        e5.clone(),
+    ])
+    .expect("seed edges");
 
     println!("  seeded edges: 6");
-    println!("  sources: {:?}", sources.iter().map(|u| u.to_string().split('-').next().unwrap().to_string()).collect::<Vec<_>>());
+    println!(
+        "  sources: {:?}",
+        sources
+            .iter()
+            .map(|u| u.to_string().split('-').next().unwrap().to_string())
+            .collect::<Vec<_>>()
+    );
 
     banner("PHASE B — F1 export_typed_edges_corpus (storage call)");
     // Build one TypedEdgeTrainingRecord per edge, store, then count.
@@ -203,11 +241,36 @@ async fn main() {
     println!("  per_kind_counts = {:?}", summary.per_kind_counts);
     assert_eq!(summary.edges_scanned, 6);
     assert_eq!(summary.pairs_written, 5);
-    assert_eq!(summary.per_kind_counts.get(&AnomalyKind::SemanticButNotCausal), Some(&1));
-    assert_eq!(summary.per_kind_counts.get(&AnomalyKind::KeywordButNotParaphrase), Some(&1));
-    assert_eq!(summary.per_kind_counts.get(&AnomalyKind::CodeShapeButDifferentIntent), Some(&1));
-    assert_eq!(summary.per_kind_counts.get(&AnomalyKind::EntitySharedButDifferentStructure), Some(&1));
-    assert_eq!(summary.per_kind_counts.get(&AnomalyKind::HdcRobustButSemanticDifferent), Some(&1));
+    assert_eq!(
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::SemanticButNotCausal),
+        Some(&1)
+    );
+    assert_eq!(
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::KeywordButNotParaphrase),
+        Some(&1)
+    );
+    assert_eq!(
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::CodeShapeButDifferentIntent),
+        Some(&1)
+    );
+    assert_eq!(
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::EntitySharedButDifferentStructure),
+        Some(&1)
+    );
+    assert_eq!(
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::HdcRobustButSemanticDifferent),
+        Some(&1)
+    );
     assert_eq!(store.count_contrastive_pairs().await.unwrap(), 5);
     println!("  F2 PASS: 5 named anomalies mined, generator tagged, non-match produced no pair");
 
@@ -243,8 +306,9 @@ async fn main() {
     banner("PHASE E — Edge Case 1: export_typed_edges_corpus on empty CF");
     let (td2, _) = (TempDir::new().unwrap(), ());
     let path2 = td2.path().join("store2");
-    let store2 = RocksDbTeleologicalStore::open_with_config(&path2, TeleologicalStoreConfig::default())
-        .expect("empty store");
+    let store2 =
+        RocksDbTeleologicalStore::open_with_config(&path2, TeleologicalStoreConfig::default())
+            .expect("empty store");
     let empty_count = store2.count_typed_edge_records().await.unwrap();
     println!("  fresh DB CF_TYPED_EDGE_RECORDS count = {}", empty_count);
     assert_eq!(empty_count, 0);
@@ -264,9 +328,7 @@ async fn main() {
     {
         use context_graph_storage::teleological::column_families::CF_TYPED_EDGE_RECORDS;
         let db = store.db_arc();
-        let cf = db
-            .cf_handle(CF_TYPED_EDGE_RECORDS)
-            .expect("CF handle");
+        let cf = db.cf_handle(CF_TYPED_EDGE_RECORDS).expect("CF handle");
         db.put_cf(&cf, &bad_key, &bad_payload).unwrap();
     }
     let err = store
@@ -283,10 +345,10 @@ async fn main() {
     println!("  EDGE CASE 2 PASS: fail-fast with structured error, no silent skip");
 
     banner("PHASE G — Edge Case 3: TrainingRecord v1 cannot be read by v2 decoder");
+    use context_graph_core::training::TrainingRecord;
     use context_graph_storage::teleological::rocksdb_store::export::{
         decode_training_record, encode_training_record,
     };
-    use context_graph_core::training::TrainingRecord;
     // Build a valid v2 record, encode, flip version byte to simulate a v1
     // payload, and verify decode rejects it.
     let rec = TrainingRecord {

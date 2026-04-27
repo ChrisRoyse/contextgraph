@@ -93,10 +93,7 @@ impl Handlers {
 
         // Parse parameters with defaults per schema
         // CD-H1 FIX: Read "maxPairs" to match schema (was "maxMemories")
-        let max_memories = args
-            .get("maxPairs")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(50) as usize;
+        let max_memories = args.get("maxPairs").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
         let min_confidence = args
             .get("minConfidence")
             .and_then(|v| v.as_f64())
@@ -176,10 +173,7 @@ impl Handlers {
                 Ok(fps) => fps,
                 Err(e) => {
                     error!(error = %e, "trigger_causal_discovery: Failed to scan fingerprints");
-                    return self.tool_error(
-                        id,
-                        &format!("Failed to scan fingerprints: {}", e),
-                    );
+                    return self.tool_error(id, &format!("Failed to scan fingerprints: {}", e));
                 }
             };
 
@@ -267,10 +261,19 @@ impl Handlers {
             info!("trigger_causal_discovery: Not enough memories for analysis (need at least 2)");
             let mut msg = "Not enough memories for causal analysis (need at least 2)".to_string();
             if used_session_filter {
-                msg = format!("{}. Filtered by session_id='{}'", msg, session_id.as_deref().unwrap_or("?"));
+                msg = format!(
+                    "{}. Filtered by session_id='{}'",
+                    msg,
+                    session_id.as_deref().unwrap_or("?")
+                );
             }
             if !file_read_errors.is_empty() {
-                msg = format!("{}. {} file(s) could not be read: {}", msg, file_read_errors.len(), file_read_errors.join("; "));
+                msg = format!(
+                    "{}. {} file(s) could not be read: {}",
+                    msg,
+                    file_read_errors.len(),
+                    file_read_errors.join("; ")
+                );
             }
             return self.tool_result(
                 id,
@@ -327,11 +330,7 @@ impl Handlers {
 
             // Get source metadata (optional)
             // MED-21 FIX: Log errors instead of silently swallowing with .ok()
-            let source_metadata = match self
-                .teleological_store
-                .get_source_metadata(*uuid)
-                .await
-            {
+            let source_metadata = match self.teleological_store.get_source_metadata(*uuid).await {
                 Ok(meta) => meta,
                 Err(e) => {
                     warn!(error = %e, memory_id = %uuid, "trigger_causal_discovery: Failed to read source_metadata");
@@ -357,7 +356,9 @@ impl Handlers {
                 created_at: fingerprint.created_at,
                 session_id: source_metadata.as_ref().and_then(|m| m.session_id.clone()),
                 e1_embedding: fingerprint.semantic.e1_semantic.to_vec(),
-                source_type: source_metadata.as_ref().map(|m| format!("{}", m.source_type)),
+                source_type: source_metadata
+                    .as_ref()
+                    .map(|m| format!("{}", m.source_type)),
                 file_path: source_metadata.and_then(|m| m.file_path),
             });
 
@@ -517,17 +518,14 @@ impl Handlers {
         };
 
         // Count total stored causal relationships (covers both pairs and extract modes)
-        let total_relationships_stored = match self
-            .teleological_store
-            .count_causal_relationships()
-            .await
-        {
-            Ok(count) => count,
-            Err(e) => {
-                warn!(error = %e, "Failed to count causal relationships");
-                0
-            }
-        };
+        let total_relationships_stored =
+            match self.teleological_store.count_causal_relationships().await {
+                Ok(count) => count,
+                Err(e) => {
+                    warn!(error = %e, "Failed to count causal relationships");
+                    0
+                }
+            };
 
         let mut response = json!({
             "agentStatus": if is_running { "running" } else { status_str },
@@ -604,10 +602,7 @@ impl Handlers {
         let provider = match &self.causal_hint_provider {
             Some(p) if p.is_available() => p,
             _ => {
-                return self.tool_error(
-                    id,
-                    "Causal hint provider not available - LLM not loaded",
-                );
+                return self.tool_error(id, "Causal hint provider not available - LLM not loaded");
             }
         };
 
@@ -776,9 +771,7 @@ impl Handlers {
                 let source_truncated: String = content.chars().take(500).collect();
                 let source_anchored_text = format!(
                     "{} {} causes {}.",
-                    source_truncated,
-                    relationship.cause,
-                    relationship.effect
+                    source_truncated, relationship.cause, relationship.effect
                 );
 
                 let (e5_source_cause, e5_source_effect) = match self
@@ -826,9 +819,7 @@ impl Handlers {
                 let e11_entity = if context_graph_core::weights::E11_ENTITY_ENABLED {
                     let e11_entity_text = format!(
                         "{} | {} | {}",
-                        relationship.cause,
-                        relationship.effect,
-                        relationship.explanation
+                        relationship.cause, relationship.effect, relationship.explanation
                     );
                     match self
                         .multi_array_provider
@@ -912,25 +903,30 @@ impl Handlers {
                                     "effect_statement": relationship.effect.chars().take(100).collect::<String>(),
                                 }));
 
-                                if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                                if let Err(e) = self
+                                    .teleological_store
+                                    .append_audit_record(&audit_record)
+                                    .await
+                                {
                                     error!(error = %e, "trigger_causal_discovery: Failed to write audit record (non-fatal)");
                                 }
                             }
 
                             // Generate full 14-embedder fingerprint for the explanation
-                            let metadata = EmbeddingMetadata::default().with_causal_hint(CausalHint {
-                                is_causal: true,
-                                direction_hint: CausalDirectionHint::Neutral,
-                                confidence: relationship.confidence,
-                                key_phrases: vec![
-                                    relationship.cause.clone(),
-                                    relationship.effect.clone(),
-                                ],
-                                description: Some(relationship.explanation.clone()),
-                                cause_spans: Vec::new(),
-                                effect_spans: Vec::new(),
-                                asymmetry_strength: 0.0,
-                            });
+                            let metadata =
+                                EmbeddingMetadata::default().with_causal_hint(CausalHint {
+                                    is_causal: true,
+                                    direction_hint: CausalDirectionHint::Neutral,
+                                    confidence: relationship.confidence,
+                                    key_phrases: vec![
+                                        relationship.cause.clone(),
+                                        relationship.effect.clone(),
+                                    ],
+                                    description: Some(relationship.explanation.clone()),
+                                    cause_spans: Vec::new(),
+                                    effect_spans: Vec::new(),
+                                    asymmetry_strength: 0.0,
+                                });
 
                             match self
                                 .multi_array_provider
@@ -938,7 +934,7 @@ impl Handlers {
                                 .await
                             {
                                 Ok(embedding_output) => {
-                                    use sha2::{Sha256, Digest};
+                                    use sha2::{Digest, Sha256};
                                     let mut hasher = Sha256::new();
                                     hasher.update(relationship.explanation.as_bytes());
                                     let content_hash: [u8; 32] = hasher.finalize().into();

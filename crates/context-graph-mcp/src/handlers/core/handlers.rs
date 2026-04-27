@@ -59,7 +59,6 @@ pub struct Handlers {
     // =========================================================================
     // Code Embedding Pipeline (E7-WIRING)
     // =========================================================================
-
     /// Code storage backend for storing and retrieving code entities.
     /// Optional - only present if code embedding is enabled.
     /// E7-WIRING: Added for search_code to query CodeStore directly.
@@ -73,7 +72,6 @@ pub struct Handlers {
     // =========================================================================
     // Graph Linking Pipeline (TASK-GRAPHLINK)
     // =========================================================================
-
     /// Edge repository for K-NN graph edges and typed edges.
     /// Optional - only present if graph linking is enabled.
     /// TASK-GRAPHLINK: Added for get_memory_neighbors, get_typed_edges, traverse_graph tools.
@@ -87,7 +85,6 @@ pub struct Handlers {
     // =========================================================================
     // Graph Discovery Agent (LLM-based relationship discovery)
     // =========================================================================
-
     /// Graph discovery service for LLM-based relationship detection.
     /// Only available when `llm` feature is enabled.
     /// Uses shared CausalDiscoveryLLM (~6GB VRAM for Qwen2.5-3B).
@@ -97,7 +94,6 @@ pub struct Handlers {
     // =========================================================================
     // Causal Hint Provider (CAUSAL-HINT Phase 5)
     // =========================================================================
-
     /// Causal hint provider for E5 embedding enhancement.
     /// Optional - uses LLM to analyze content for causal nature during store_memory.
     /// CAUSAL-HINT Phase 5: Provides direction hints to E5 embedder.
@@ -107,7 +103,6 @@ pub struct Handlers {
     // =========================================================================
     // Session-Scoped Custom Weight Profiles (NAV-GAP Phase 3.1)
     // =========================================================================
-
     /// Custom weight profiles created via create_weight_profile tool.
     /// Session-scoped: cleared when the server restarts.
     /// Accessible by name from search_graph's weightProfile, get_unified_neighbors, etc.
@@ -116,7 +111,6 @@ pub struct Handlers {
     // =========================================================================
     // Inline Causal Discovery (INLINE-CAUSAL)
     // =========================================================================
-
     /// Causal Discovery LLM for inline multi-relationship extraction during store_memory.
     /// When present, extract_causal_relationships() is called on every store_memory content
     /// to discover and persist CausalRelationship records inline with the 14-embedder pipeline.
@@ -132,7 +126,6 @@ pub struct Handlers {
     // =========================================================================
     // Daemon State (Multi-agent observability)
     // =========================================================================
-
     /// Daemon runtime state for the daemon_status tool.
     /// Injected by McpServer::new() via set_daemon_state() before Arc-wrapping.
     /// None in stdio mode or tests where daemon state is not applicable.
@@ -174,12 +167,16 @@ impl Handlers {
             edge_repository: None,
             graph_builder: None,
             graph_discovery_service: Some(graph_discovery_service),
-            causal_hint_provider: Some(Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider)),
+            causal_hint_provider: Some(Arc::new(
+                context_graph_embeddings::provider::NoOpCausalHintProvider,
+            )),
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             causal_discovery_llm: None,
             causal_model: None,
             daemon_state: None,
-            auto_consolidation_status: Arc::new(TokioRwLock::new(crate::handlers::tools::consolidation::AutoConsolidationStatus::default())),
+            auto_consolidation_status: Arc::new(TokioRwLock::new(
+                crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
+            )),
         })
     }
 
@@ -232,7 +229,9 @@ impl Handlers {
             causal_discovery_llm: Some(causal_discovery_llm),
             causal_model: Some(causal_model),
             daemon_state: None,
-            auto_consolidation_status: Arc::new(TokioRwLock::new(crate::handlers::tools::consolidation::AutoConsolidationStatus::default())),
+            auto_consolidation_status: Arc::new(TokioRwLock::new(
+                crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
+            )),
         })
     }
 
@@ -274,7 +273,9 @@ impl Handlers {
             #[cfg(feature = "llm")]
             causal_model: None,
             daemon_state: None,
-            auto_consolidation_status: Arc::new(TokioRwLock::new(crate::handlers::tools::consolidation::AutoConsolidationStatus::default())),
+            auto_consolidation_status: Arc::new(TokioRwLock::new(
+                crate::handlers::tools::consolidation::AutoConsolidationStatus::default(),
+            )),
         })
     }
 
@@ -396,7 +397,10 @@ impl Handlers {
         // Restore topic portfolio from storage on server init
         match self.restore_topic_portfolio().await {
             Ok(topic_count) => {
-                info!(topic_count, "Topic portfolio restored during MCP initialize");
+                info!(
+                    topic_count,
+                    "Topic portfolio restored during MCP initialize"
+                );
             }
             Err(e) => {
                 // Log error but don't fail initialization - new sessions can start fresh
@@ -413,7 +417,10 @@ impl Handlers {
                     for (name, weights) in profiles {
                         cache.insert(name, weights);
                     }
-                    info!(profile_count = count, "Custom weight profiles loaded from RocksDB");
+                    info!(
+                        profile_count = count,
+                        "Custom weight profiles loaded from RocksDB"
+                    );
                 }
             }
             Err(e) => {
@@ -486,11 +493,16 @@ impl Handlers {
     /// # Errors
     ///
     /// Returns error if storage operations fail.
-    pub async fn restore_topic_portfolio(&self) -> Result<usize, context_graph_core::error::CoreError> {
+    pub async fn restore_topic_portfolio(
+        &self,
+    ) -> Result<usize, context_graph_core::error::CoreError> {
         info!("Restoring topic portfolio from storage...");
 
         // Load latest portfolio from storage
-        let portfolio = self.teleological_store.load_latest_topic_portfolio().await?;
+        let portfolio = self
+            .teleological_store
+            .load_latest_topic_portfolio()
+            .await?;
 
         match portfolio {
             Some(portfolio) => {
@@ -531,7 +543,9 @@ impl Handlers {
     /// # Errors
     ///
     /// Returns error if storage operations fail.
-    pub async fn persist_topic_portfolio(&self) -> Result<usize, context_graph_core::error::CoreError> {
+    pub async fn persist_topic_portfolio(
+        &self,
+    ) -> Result<usize, context_graph_core::error::CoreError> {
         // Extract all data from locks BEFORE any async operations
         let (session_id, portfolio, churn_rate) = {
             // Get stability metrics from cluster_manager's internal tracker

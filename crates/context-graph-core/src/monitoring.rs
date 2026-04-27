@@ -548,11 +548,11 @@ impl LayerStatusProvider for StubLayerStatusProvider {
     }
 
     async fn action_status(&self) -> MonitorResult<LayerStatus> {
-        Ok(LayerStatus::NotImplemented)  // L4 not yet implemented
+        Ok(LayerStatus::NotImplemented) // L4 not yet implemented
     }
 
     async fn meta_status(&self) -> MonitorResult<LayerStatus> {
-        Ok(LayerStatus::NotImplemented)  // L5 not yet implemented
+        Ok(LayerStatus::NotImplemented) // L5 not yet implemented
     }
 
     async fn all_layer_info(&self) -> MonitorResult<Vec<LayerInfo>> {

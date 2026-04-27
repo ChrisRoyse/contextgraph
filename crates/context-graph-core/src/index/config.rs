@@ -62,7 +62,6 @@ pub const NUM_EMBEDDERS: usize = 14;
 /// E1 Matryoshka truncated dimension for Stage 2
 pub const E1_MATRYOSHKA_DIM: usize = 128;
 
-
 // ============================================================================
 // Distance metric (from context-graph-storage/teleological/indexes/hnsw_config/distance.rs)
 // ============================================================================

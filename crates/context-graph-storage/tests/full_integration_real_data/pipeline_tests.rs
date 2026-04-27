@@ -285,8 +285,8 @@ async fn test_all_column_families_populated() {
     );
 
     // Deserialize and verify
-    let retrieved_fp = deserialize_teleological_fingerprint(&fp_data)
-        .expect("Failed to deserialize fingerprint");
+    let retrieved_fp =
+        deserialize_teleological_fingerprint(&fp_data).expect("Failed to deserialize fingerprint");
     assert_eq!(retrieved_fp.id, id, "ID mismatch in fingerprints CF");
 
     // 2. Verify e1_matryoshka_128 CF has data

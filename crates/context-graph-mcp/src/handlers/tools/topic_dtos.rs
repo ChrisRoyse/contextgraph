@@ -437,7 +437,6 @@ pub struct PhaseBreakdown {
     pub merging: u32,
 }
 
-
 /// Response for detect_topics tool.
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectTopicsResponse {
@@ -783,7 +782,10 @@ mod tests {
         let json = serde_json::to_string(&phases).unwrap();
         assert!(json.contains("\"emerging\":2"));
         assert!(json.contains("\"stable\":8"));
-        assert_eq!(phases.emerging + phases.stable + phases.declining + phases.merging, 11);
+        assert_eq!(
+            phases.emerging + phases.stable + phases.declining + phases.merging,
+            11
+        );
         println!("[PASS] PhaseBreakdown serializes correctly");
     }
 
@@ -831,7 +833,9 @@ mod tests {
         assert!(DivergenceAlert::is_valid_semantic_space("E7_Code"));
         assert!(DivergenceAlert::is_valid_semantic_space("E6_Sparse"));
         assert!(DivergenceAlert::is_valid_semantic_space("E10_Multimodal"));
-        assert!(DivergenceAlert::is_valid_semantic_space("E12_LateInteraction"));
+        assert!(DivergenceAlert::is_valid_semantic_space(
+            "E12_LateInteraction"
+        ));
         assert!(DivergenceAlert::is_valid_semantic_space("E13_SPLADE"));
 
         // Audit-12 TST-H1 FIX: E5 Causal EXCLUDED per AP-77 (requires CausalDirection;

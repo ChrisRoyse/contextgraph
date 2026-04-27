@@ -45,13 +45,12 @@ extern "C" {
 
     fn cuMemAlloc_v2(dptr: *mut CUdeviceptr, bytesize: usize) -> CUresult;
     fn cuMemFree_v2(dptr: CUdeviceptr) -> CUresult;
-    fn cuMemcpyHtoD_v2(dstDevice: CUdeviceptr, srcHost: *const c_void, byteCount: usize)
-        -> CUresult;
-    fn cuMemcpyDtoH_v2(
-        dstHost: *mut c_void,
-        srcDevice: CUdeviceptr,
+    fn cuMemcpyHtoD_v2(
+        dstDevice: CUdeviceptr,
+        srcHost: *const c_void,
         byteCount: usize,
     ) -> CUresult;
+    fn cuMemcpyDtoH_v2(dstHost: *mut c_void, srcDevice: CUdeviceptr, byteCount: usize) -> CUresult;
 
     fn cuLaunchKernel(
         f: CUfunction,
@@ -159,7 +158,11 @@ impl GpuBuffer {
         if src.len() > self.size {
             return Err(CudaError::InvalidArgument {
                 argument: "src".to_string(),
-                reason: format!("Source size {} exceeds buffer size {}", src.len(), self.size),
+                reason: format!(
+                    "Source size {} exceeds buffer size {}",
+                    src.len(),
+                    self.size
+                ),
             });
         }
 
@@ -188,8 +191,7 @@ impl GpuBuffer {
             });
         }
 
-        let ret =
-            unsafe { cuMemcpyDtoH_v2(dst.as_mut_ptr() as *mut c_void, self.ptr, dst.len()) };
+        let ret = unsafe { cuMemcpyDtoH_v2(dst.as_mut_ptr() as *mut c_void, self.ptr, dst.len()) };
 
         if ret == CUDA_SUCCESS {
             Ok(())
@@ -296,8 +298,7 @@ impl CudaModule {
         })?;
 
         let mut func: CUfunction = std::ptr::null_mut();
-        let ret =
-            unsafe { cuModuleGetFunction(&mut func, self.module, name_cstring.as_ptr()) };
+        let ret = unsafe { cuModuleGetFunction(&mut func, self.module, name_cstring.as_ptr()) };
 
         if ret == CUDA_SUCCESS && !func.is_null() {
             Ok(func)
@@ -388,7 +389,8 @@ pub fn compute_core_distances_gpu(
         return Err(CudaError::CudaRuntimeError {
             operation: format!(
                 "compute_core_distances_kernel: n_points {} exceeds i32::MAX ({})",
-                n_points, i32::MAX
+                n_points,
+                i32::MAX
             ),
             code: -1,
         });
@@ -397,7 +399,8 @@ pub fn compute_core_distances_gpu(
         return Err(CudaError::CudaRuntimeError {
             operation: format!(
                 "compute_core_distances_kernel: dimension {} exceeds i32::MAX ({})",
-                dimension, i32::MAX
+                dimension,
+                i32::MAX
             ),
             code: -1,
         });
@@ -406,7 +409,8 @@ pub fn compute_core_distances_gpu(
         return Err(CudaError::CudaRuntimeError {
             operation: format!(
                 "compute_core_distances_kernel: k {} exceeds i32::MAX ({})",
-                k, i32::MAX
+                k,
+                i32::MAX
             ),
             code: -1,
         });
@@ -432,11 +436,11 @@ pub fn compute_core_distances_gpu(
             kernel,
             num_blocks,
             1,
-            1,          // grid
+            1, // grid
             BLOCK_SIZE,
             1,
-            1,          // block
-            0,          // shared mem
+            1,                    // block
+            0,                    // shared mem
             std::ptr::null_mut(), // stream
             params.as_mut_ptr(),
             std::ptr::null_mut(), // extra
@@ -541,7 +545,8 @@ pub fn compute_pairwise_distances_gpu(
         return Err(CudaError::CudaRuntimeError {
             operation: format!(
                 "compute_pairwise_distances_kernel: n_points {} exceeds i32::MAX ({})",
-                n_points, i32::MAX
+                n_points,
+                i32::MAX
             ),
             code: -1,
         });
@@ -550,7 +555,8 @@ pub fn compute_pairwise_distances_gpu(
         return Err(CudaError::CudaRuntimeError {
             operation: format!(
                 "compute_pairwise_distances_kernel: dimension {} exceeds i32::MAX ({})",
-                dimension, i32::MAX
+                dimension,
+                i32::MAX
             ),
             code: -1,
         });
@@ -590,11 +596,11 @@ pub fn compute_pairwise_distances_gpu(
             kernel,
             num_blocks,
             1,
-            1,          // grid
+            1, // grid
             BLOCK_SIZE,
             1,
-            1,          // block
-            0,          // shared mem
+            1,                    // block
+            0,                    // shared mem
             std::ptr::null_mut(), // stream
             params.as_mut_ptr(),
             std::ptr::null_mut(), // extra

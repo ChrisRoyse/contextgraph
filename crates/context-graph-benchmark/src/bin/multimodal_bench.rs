@@ -352,17 +352,38 @@ fn print_phase_results(results: &E10MultimodalBenchmarkResults, verbose: bool) {
     println!("\n=== Phase 3: Asymmetric Validation ===");
     let asym = &results.metrics.asymmetric_retrieval;
     println!("  Total queries: {}", asym.total_queries);
-    println!("  Paraphrase→Context modifier: {}", asym.paraphrase_to_context_modifier);
-    println!("  Context→Paraphrase modifier: {}", asym.context_to_paraphrase_modifier);
-    println!("  Observed ratio: {:.2} (expected 1.0 - E5-base-v2 handles asymmetry via prefixes)", asym.observed_asymmetry_ratio);
-    println!("  Formula compliant: {}", if asym.formula_compliant { "YES" } else { "NO" });
+    println!(
+        "  Paraphrase→Context modifier: {}",
+        asym.paraphrase_to_context_modifier
+    );
+    println!(
+        "  Context→Paraphrase modifier: {}",
+        asym.context_to_paraphrase_modifier
+    );
+    println!(
+        "  Observed ratio: {:.2} (expected 1.0 - E5-base-v2 handles asymmetry via prefixes)",
+        asym.observed_asymmetry_ratio
+    );
+    println!(
+        "  Formula compliant: {}",
+        if asym.formula_compliant { "YES" } else { "NO" }
+    );
 
     if verbose {
         println!("  Wins breakdown:");
-        println!("    Paraphrase→Context wins: {}", asym.paraphrase_to_context_wins);
-        println!("    Context→Paraphrase wins: {}", asym.context_to_paraphrase_wins);
+        println!(
+            "    Paraphrase→Context wins: {}",
+            asym.paraphrase_to_context_wins
+        );
+        println!(
+            "    Context→Paraphrase wins: {}",
+            asym.context_to_paraphrase_wins
+        );
         println!("    Ties: {}", asym.ties);
-        println!("    E10 contribution: {:.1}%", asym.e10_contribution_percentage);
+        println!(
+            "    E10 contribution: {:.1}%",
+            asym.e10_contribution_percentage
+        );
     }
 
     // Phase 4: Ablation Study
@@ -372,21 +393,30 @@ fn print_phase_results(results: &E10MultimodalBenchmarkResults, verbose: bool) {
         println!("  E10 only MRR: {:.3}", ablation.e10_only_mrr);
         println!("  E1+E10 blend MRR: {:.3}", ablation.e1_e10_blend_mrr);
         println!("  Full 13-space MRR: {:.3}", ablation.full_13_space_mrr);
-        println!("  E10 contribution: +{:.3} (+{:.1}%)",
-            ablation.e10_contribution, ablation.e10_contribution_percentage);
+        println!(
+            "  E10 contribution: +{:.3} (+{:.1}%)",
+            ablation.e10_contribution, ablation.e10_contribution_percentage
+        );
 
         // Find optimal blend
-        if let Some(best) = ablation.blend_analysis.iter()
+        if let Some(best) = ablation
+            .blend_analysis
+            .iter()
             .max_by(|a, b| a.mrr.partial_cmp(&b.mrr).unwrap())
         {
-            println!("  Optimal blend: {:.1} (MRR={:.3})", best.blend_value, best.mrr);
+            println!(
+                "  Optimal blend: {:.1} (MRR={:.3})",
+                best.blend_value, best.mrr
+            );
         }
 
         if verbose {
             println!("  Blend sweep:");
             for point in &ablation.blend_analysis {
-                println!("    blend={:.1}: MRR={:.3}, P@5={:.3}",
-                    point.blend_value, point.mrr, point.precision_at_5);
+                println!(
+                    "    blend={:.1}: MRR={:.3}, P@5={:.3}",
+                    point.blend_value, point.mrr, point.precision_at_5
+                );
             }
         }
     }
@@ -395,9 +425,15 @@ fn print_phase_results(results: &E10MultimodalBenchmarkResults, verbose: bool) {
     println!("\n=== Timings ===");
     let timings = &results.timings;
     println!("  Dataset generation: {}ms", timings.dataset_generation_ms);
-    println!("  Paraphrase detection: {}ms", timings.paraphrase_detection_ms);
+    println!(
+        "  Paraphrase detection: {}ms",
+        timings.paraphrase_detection_ms
+    );
     println!("  Context matching: {}ms", timings.context_matching_ms);
-    println!("  Asymmetric validation: {}ms", timings.asymmetric_validation_ms);
+    println!(
+        "  Asymmetric validation: {}ms",
+        timings.asymmetric_validation_ms
+    );
     if let Some(ablation_ms) = timings.ablation_ms {
         println!("  Ablation study: {}ms", ablation_ms);
     }
@@ -415,14 +451,18 @@ fn verify_formula_compliance(results: &E10MultimodalBenchmarkResults) -> bool {
     i2c_ok && c2i_ok && ratio_ok
 }
 
-fn build_summary(results: &E10MultimodalBenchmarkResults, formula_compliant: bool) -> BenchmarkSummary {
+fn build_summary(
+    results: &E10MultimodalBenchmarkResults,
+    formula_compliant: bool,
+) -> BenchmarkSummary {
     let para = &results.metrics.paraphrase_detection;
     let context = &results.metrics.context_matching;
     let asym = &results.metrics.asymmetric_retrieval;
 
     // Find optimal blend value
     let optimal_blend = results.metrics.ablation.as_ref().and_then(|abl| {
-        abl.blend_analysis.iter()
+        abl.blend_analysis
+            .iter()
             .max_by(|a, b| a.mrr.partial_cmp(&b.mrr).unwrap())
             .map(|p| p.blend_value)
     });
@@ -460,8 +500,16 @@ fn build_summary(results: &E10MultimodalBenchmarkResults, formula_compliant: boo
         // Ablation
         e1_only_mrr: results.metrics.ablation.as_ref().map(|a| a.e1_only_mrr),
         e10_only_mrr: results.metrics.ablation.as_ref().map(|a| a.e10_only_mrr),
-        e1_e10_blend_mrr: results.metrics.ablation.as_ref().map(|a| a.e1_e10_blend_mrr),
-        e10_contribution_percentage: results.metrics.ablation.as_ref().map(|a| a.e10_contribution_percentage),
+        e1_e10_blend_mrr: results
+            .metrics
+            .ablation
+            .as_ref()
+            .map(|a| a.e1_e10_blend_mrr),
+        e10_contribution_percentage: results
+            .metrics
+            .ablation
+            .as_ref()
+            .map(|a| a.e10_contribution_percentage),
         optimal_blend_value: optimal_blend,
 
         // Performance
@@ -476,19 +524,42 @@ fn print_summary(summary: &BenchmarkSummary) {
     println!("\n=== Summary ===");
 
     // Paraphrase Detection
-    let paraphrase_status = if summary.paraphrase_detection_accuracy > 0.7 { "✓" } else { "✗" };
-    println!("{} Paraphrase detection accuracy: {:.1}% (target: >70%)",
-        paraphrase_status, summary.paraphrase_detection_accuracy * 100.0);
+    let paraphrase_status = if summary.paraphrase_detection_accuracy > 0.7 {
+        "✓"
+    } else {
+        "✗"
+    };
+    println!(
+        "{} Paraphrase detection accuracy: {:.1}% (target: >70%)",
+        paraphrase_status,
+        summary.paraphrase_detection_accuracy * 100.0
+    );
 
     // MRR
     let mrr_status = if summary.mrr > 0.6 { "✓" } else { "✗" };
-    println!("{} Context matching MRR: {:.3} (target: >0.6)", mrr_status, summary.mrr);
+    println!(
+        "{} Context matching MRR: {:.3} (target: >0.6)",
+        mrr_status, summary.mrr
+    );
 
     // Asymmetry
-    let asym_status = if summary.formula_compliant { "✓" } else { "✗" };
-    println!("{} Asymmetry ratio: {:.2} (target: 1.0 ±0.1 - E5-base-v2 handles asymmetry via prefixes)", asym_status, summary.asymmetry_ratio);
-    println!("  Paraphrase→Context: {} (expected 1.0)", summary.paraphrase_to_context_modifier);
-    println!("  Context→Paraphrase: {} (expected 1.0)", summary.context_to_paraphrase_modifier);
+    let asym_status = if summary.formula_compliant {
+        "✓"
+    } else {
+        "✗"
+    };
+    println!(
+        "{} Asymmetry ratio: {:.2} (target: 1.0 ±0.1 - E5-base-v2 handles asymmetry via prefixes)",
+        asym_status, summary.asymmetry_ratio
+    );
+    println!(
+        "  Paraphrase→Context: {} (expected 1.0)",
+        summary.paraphrase_to_context_modifier
+    );
+    println!(
+        "  Context→Paraphrase: {} (expected 1.0)",
+        summary.context_to_paraphrase_modifier
+    );
 
     // Ablation
     if let (Some(e1), Some(blend), Some(contrib)) = (
@@ -497,8 +568,10 @@ fn print_summary(summary: &BenchmarkSummary) {
         summary.e10_contribution_percentage,
     ) {
         let ablation_status = if blend > e1 { "✓" } else { "✗" };
-        println!("{} E10 contribution: +{:.1}% (E1={:.3} → E1+E10={:.3})",
-            ablation_status, contrib, e1, blend);
+        println!(
+            "{} E10 contribution: +{:.1}% (E1={:.3} → E1+E10={:.3})",
+            ablation_status, contrib, e1, blend
+        );
 
         if let Some(optimal) = summary.optimal_blend_value {
             println!("  Optimal blend value: {:.1}", optimal);

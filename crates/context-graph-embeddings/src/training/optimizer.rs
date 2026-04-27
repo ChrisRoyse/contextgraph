@@ -189,19 +189,29 @@ impl AdamW {
 
             // Update first moment: m = β1 * m + (1 - β1) * grad
             // Detach to break computation graph chain (m/v are optimizer state, not model params)
-            param.m = param.m
+            param.m = param
+                .m
                 .affine(self.config.beta1, 0.0)
                 .map_err(map_candle)?
-                .add(&clipped_grad.affine(1.0 - self.config.beta1, 0.0).map_err(map_candle)?)
+                .add(
+                    &clipped_grad
+                        .affine(1.0 - self.config.beta1, 0.0)
+                        .map_err(map_candle)?,
+                )
                 .map_err(map_candle)?
                 .detach();
 
             // Update second moment: v = β2 * v + (1 - β2) * grad^2
             let grad_sq = clipped_grad.sqr().map_err(map_candle)?;
-            param.v = param.v
+            param.v = param
+                .v
                 .affine(self.config.beta2, 0.0)
                 .map_err(map_candle)?
-                .add(&grad_sq.affine(1.0 - self.config.beta2, 0.0).map_err(map_candle)?)
+                .add(
+                    &grad_sq
+                        .affine(1.0 - self.config.beta2, 0.0)
+                        .map_err(map_candle)?,
+                )
                 .map_err(map_candle)?
                 .detach();
 
@@ -216,7 +226,11 @@ impl AdamW {
                 .affine(self.config.epsilon, 0.0)
                 .map_err(map_candle)?;
             let denom = v_sqrt.add(&eps_tensor).map_err(map_candle)?;
-            let step_update = m_hat.div(&denom).map_err(map_candle)?.affine(-lr, 0.0).map_err(map_candle)?;
+            let step_update = m_hat
+                .div(&denom)
+                .map_err(map_candle)?
+                .affine(-lr, 0.0)
+                .map_err(map_candle)?;
 
             // Decoupled weight decay: θ = θ - lr * wd * θ
             let current = param.var.as_tensor().clone();
@@ -324,7 +338,11 @@ mod tests {
 
         opt.step = 50;
         let lr50 = opt.current_lr(ParamGroup::Projection);
-        assert!((lr50 - 0.5e-4).abs() < 1e-6, "Midpoint should be ~half, got {}", lr50);
+        assert!(
+            (lr50 - 0.5e-4).abs() < 1e-6,
+            "Midpoint should be ~half, got {}",
+            lr50
+        );
     }
 
     #[test]

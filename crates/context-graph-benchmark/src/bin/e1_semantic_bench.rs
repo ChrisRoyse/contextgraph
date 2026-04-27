@@ -249,7 +249,11 @@ fn run_synthetic_benchmark(args: &Args) -> Result<()> {
         k_values: args.top_k.clone(),
         noise_levels: args.noise_levels.clone(),
         num_separation_pairs: 5000,
-        run_ablation: !args.skip_ablation && matches!(args.benchmark, BenchmarkPhase::Ablation | BenchmarkPhase::All),
+        run_ablation: !args.skip_ablation
+            && matches!(
+                args.benchmark,
+                BenchmarkPhase::Ablation | BenchmarkPhase::All
+            ),
         run_domain_analysis: !args.skip_domain_analysis,
         seed: args.seed,
         show_progress: true,
@@ -342,7 +346,11 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
     let dataset = loader.load_from_dir(&args.data_dir)?;
 
     let load_time = load_start.elapsed();
-    info!("  Loaded {} chunks from {} topics", dataset.chunks.len(), dataset.topic_count());
+    info!(
+        "  Loaded {} chunks from {} topics",
+        dataset.chunks.len(),
+        dataset.topic_count()
+    );
     info!("  Load time: {:?}", load_time);
 
     // Step 2: Embed chunks with E1 (semantic embedder)
@@ -357,7 +365,10 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
     let embed_time = embed_start.elapsed();
     info!("  Embedded {} chunks", embedded.fingerprints.len());
     info!("  Embedding time: {:?}", embed_time);
-    info!("  Rate: {:.1} chunks/sec", embedded.fingerprints.len() as f64 / embed_time.as_secs_f64());
+    info!(
+        "  Rate: {:.1} chunks/sec",
+        embedded.fingerprints.len() as f64 / embed_time.as_secs_f64()
+    );
 
     // Extract E1 embeddings specifically
     let e1_embeddings: HashMap<Uuid, Vec<f32>> = embedded
@@ -366,7 +377,10 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
         .map(|(id, fp)| (*id, fp.e1_semantic.clone()))
         .collect();
 
-    info!("  E1 embedding dimension: {}", e1_embeddings.values().next().map(|e| e.len()).unwrap_or(0));
+    info!(
+        "  E1 embedding dimension: {}",
+        e1_embeddings.values().next().map(|e| e.len()).unwrap_or(0)
+    );
 
     // Convert to SemanticDocument format
     let documents: Vec<SemanticDocument> = dataset
@@ -379,14 +393,19 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
                 text: chunk.text.clone(),
                 domain: SemanticDomain::General, // Default for real data
                 topic: chunk.topic_hint.clone(),
-                topic_id: embedded.topic_assignments.get(&chunk.uuid()).copied().unwrap_or(0),
+                topic_id: embedded
+                    .topic_assignments
+                    .get(&chunk.uuid())
+                    .copied()
+                    .unwrap_or(0),
                 source_dataset: Some(chunk.doc_id.clone()),
             }
         })
         .collect();
 
     // Generate queries from the dataset
-    let queries = generate_queries_from_realdata(&documents, &e1_embeddings, args.num_queries, args.seed);
+    let queries =
+        generate_queries_from_realdata(&documents, &e1_embeddings, args.num_queries, args.seed);
 
     info!("");
     info!("Step 3: Running benchmark suite...");
@@ -395,14 +414,23 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
         k_values: args.top_k.clone(),
         noise_levels: args.noise_levels.clone(),
         num_separation_pairs: 5000,
-        run_ablation: !args.skip_ablation && matches!(args.benchmark, BenchmarkPhase::Ablation | BenchmarkPhase::All),
+        run_ablation: !args.skip_ablation
+            && matches!(
+                args.benchmark,
+                BenchmarkPhase::Ablation | BenchmarkPhase::All
+            ),
         run_domain_analysis: !args.skip_domain_analysis,
         seed: args.seed,
         show_progress: true,
     };
 
     let mut runner = E1SemanticBenchmarkRunner::new(bench_config);
-    let results = runner.run(&documents, &queries, &e1_embeddings, &embedded.topic_assignments);
+    let results = runner.run(
+        &documents,
+        &queries,
+        &e1_embeddings,
+        &embedded.topic_assignments,
+    );
 
     let total_time = total_start.elapsed();
 
@@ -418,7 +446,10 @@ fn run_realdata_benchmark(args: &Args) -> Result<()> {
     info!("=======================================================================");
     info!("  Dataset loading:      {:?}", load_time);
     info!("  Embedding generation: {:?}", embed_time);
-    info!("  Benchmark execution:  {:?}", std::time::Duration::from_millis(results.timings.total_ms));
+    info!(
+        "  Benchmark execution:  {:?}",
+        std::time::Duration::from_millis(results.timings.total_ms)
+    );
     info!("  Total time:           {:?}", total_time);
     info!("");
 
@@ -451,7 +482,10 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
     // Load BEIR queries
     let queries_path = args.data_dir.join("queries.jsonl");
     if !queries_path.exists() {
-        anyhow::bail!("queries.jsonl not found in {}. Run the BEIR download script first.", args.data_dir.display());
+        anyhow::bail!(
+            "queries.jsonl not found in {}. Run the BEIR download script first.",
+            args.data_dir.display()
+        );
     }
 
     let queries_file = std::fs::File::open(&queries_path)?;
@@ -469,7 +503,10 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
     // Load BEIR qrels
     let qrels_path = args.data_dir.join("qrels.json");
     if !qrels_path.exists() {
-        anyhow::bail!("qrels.json not found in {}. Run the BEIR download script first.", args.data_dir.display());
+        anyhow::bail!(
+            "qrels.json not found in {}. Run the BEIR download script first.",
+            args.data_dir.display()
+        );
     }
     let qrels_json: serde_json::Value = serde_json::from_reader(std::fs::File::open(&qrels_path)?)?;
     let qrels: HashMap<String, HashMap<String, i64>> = qrels_json
@@ -575,7 +612,10 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
         .filter(|(qid, _)| qrels.contains_key(qid))
         .collect();
 
-    println!("  Evaluating {} queries with ground truth...", queries_with_qrels.len());
+    println!(
+        "  Evaluating {} queries with ground truth...",
+        queries_with_qrels.len()
+    );
 
     for (i, (query_id, query_text)) in queries_with_qrels.iter().enumerate() {
         if i % 50 == 0 {
@@ -586,9 +626,7 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
         // Embed query with E1 (using "query: " prefix per e5-large-v2 format)
         let query_with_prefix = format!("query: {}", query_text);
         let query_output = tokio::runtime::Runtime::new()?
-            .block_on(async {
-                provider.embed_all(&query_with_prefix).await
-            })
+            .block_on(async { provider.embed_all(&query_with_prefix).await })
             .map_err(|e| anyhow::anyhow!("Failed to embed query: {}", e))?;
         let query_embedding = query_output.fingerprint.e1_semantic;
 
@@ -693,8 +731,14 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
     println!("=======================================================================");
     println!();
     println!("RETRIEVAL QUALITY:");
-    println!("  NDCG@10:    {:.2}%  (expected: {:.2}%)", avg_ndcg10, expected_ndcg10);
-    println!("  MRR@10:     {:.2}%  (expected: {:.2}%)", avg_mrr10, expected_mrr10);
+    println!(
+        "  NDCG@10:    {:.2}%  (expected: {:.2}%)",
+        avg_ndcg10, expected_ndcg10
+    );
+    println!(
+        "  MRR@10:     {:.2}%  (expected: {:.2}%)",
+        avg_mrr10, expected_mrr10
+    );
     println!("  MAP:        {:.2}%", avg_map);
     println!();
 
@@ -704,12 +748,21 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
 
     println!("VALIDATION:");
     if ndcg_diff <= 5.0 {
-        println!("  [PASS] NDCG@10 within 5% of expected ({:.2}% vs {:.2}%)", avg_ndcg10, expected_ndcg10);
+        println!(
+            "  [PASS] NDCG@10 within 5% of expected ({:.2}% vs {:.2}%)",
+            avg_ndcg10, expected_ndcg10
+        );
     } else {
-        println!("  [WARN] NDCG@10 differs by {:.2}% from expected", ndcg_diff);
+        println!(
+            "  [WARN] NDCG@10 differs by {:.2}% from expected",
+            ndcg_diff
+        );
     }
     if mrr_diff <= 5.0 {
-        println!("  [PASS] MRR@10 within 5% of expected ({:.2}% vs {:.2}%)", avg_mrr10, expected_mrr10);
+        println!(
+            "  [PASS] MRR@10 within 5% of expected ({:.2}% vs {:.2}%)",
+            avg_mrr10, expected_mrr10
+        );
     } else {
         println!("  [WARN] MRR@10 differs by {:.2}% from expected", mrr_diff);
     }
@@ -744,7 +797,11 @@ fn run_beir_benchmark(args: &Args) -> Result<()> {
             .to_string()
             + "_beir.json",
     );
-    fs::create_dir_all(output_path.parent().unwrap_or(&std::path::PathBuf::from(".")))?;
+    fs::create_dir_all(
+        output_path
+            .parent()
+            .unwrap_or(&std::path::PathBuf::from(".")),
+    )?;
     let mut file = File::create(&output_path)?;
     file.write_all(serde_json::to_string_pretty(&beir_results)?.as_bytes())?;
     println!("Results saved to: {}", output_path.display());
@@ -842,11 +899,17 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
     println!("RETRIEVAL QUALITY:");
     let mrr = results.metrics.retrieval.mrr;
     let mrr_status = if mrr >= 0.70 { "PASS" } else { "FAIL" };
-    println!("  [{}] MRR:                    {:.3} (target: >= 0.70)", mrr_status, mrr);
+    println!(
+        "  [{}] MRR:                    {:.3} (target: >= 0.70)",
+        mrr_status, mrr
+    );
 
     if let Some(&p10) = results.metrics.retrieval.precision_at.get(&10) {
         let p10_status = if p10 >= 0.60 { "PASS" } else { "FAIL" };
-        println!("  [{}] P@10:                   {:.3} (target: >= 0.60)", p10_status, p10);
+        println!(
+            "  [{}] P@10:                   {:.3} (target: >= 0.60)",
+            p10_status, p10
+        );
     }
 
     if let Some(&r10) = results.metrics.retrieval.recall_at.get(&10) {
@@ -857,16 +920,16 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
         println!("       NDCG@10:                {:.3}", ndcg10);
     }
 
-    println!("       MAP:                    {:.3}", results.metrics.retrieval.map);
+    println!(
+        "       MAP:                    {:.3}",
+        results.metrics.retrieval.map
+    );
     println!();
 
     // Topic Separation (informational - not a standard retrieval benchmark)
     println!("TOPIC SEPARATION (informational):");
     let sep = results.metrics.topic_separation.separation_ratio;
-    println!(
-        "       Separation ratio:       {:.2}x",
-        sep
-    );
+    println!("       Separation ratio:       {:.2}x", sep);
     println!(
         "       Intra-topic sim:        {:.3}",
         results.metrics.topic_separation.intra_topic_similarity
@@ -889,7 +952,11 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
     println!("NOISE ROBUSTNESS:");
     for (noise, mrr) in &results.metrics.noise_robustness.mrr_degradation {
         let status = if *noise == 0.2 {
-            if *mrr >= 0.55 { "PASS" } else { "FAIL" }
+            if *mrr >= 0.55 {
+                "PASS"
+            } else {
+                "FAIL"
+            }
         } else {
             "    "
         };
@@ -898,7 +965,11 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
             status,
             noise,
             mrr,
-            if *noise == 0.2 { " (target: >= 0.55)" } else { "" }
+            if *noise == 0.2 {
+                " (target: >= 0.55)"
+            } else {
+                ""
+            }
         );
     }
     println!(
@@ -908,7 +979,12 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
     println!();
 
     // Domain Coverage (if available)
-    if !results.metrics.domain_coverage.per_domain_metrics.is_empty() {
+    if !results
+        .metrics
+        .domain_coverage
+        .per_domain_metrics
+        .is_empty()
+    {
         println!("DOMAIN COVERAGE:");
         for (domain, metrics) in &results.metrics.domain_coverage.per_domain_metrics {
             println!("       {}: MRR={:.3}", domain, metrics.mrr);
@@ -955,7 +1031,10 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
     println!("VALIDATION SUMMARY:");
     for check in &results.validation.checks {
         let status = if check.passed { "PASS" } else { "FAIL" };
-        println!("  [{}] {}: {} ({})", status, check.description, check.actual, check.expected);
+        println!(
+            "  [{}] {}: {} ({})",
+            status, check.description, check.actual, check.expected
+        );
     }
     println!();
     println!(
@@ -966,19 +1045,46 @@ fn print_results(results: &E1SemanticBenchmarkResults) {
 
     // Dataset Stats
     println!("DATASET STATISTICS:");
-    println!("       Documents:              {}", results.dataset_stats.num_documents);
-    println!("       Queries:                {}", results.dataset_stats.num_queries);
-    println!("       Topics:                 {}", results.dataset_stats.num_topics);
-    println!("       Domains:                {}", results.dataset_stats.num_domains);
-    println!("       Embedding dimension:    {}", results.dataset_stats.embedding_dimension);
+    println!(
+        "       Documents:              {}",
+        results.dataset_stats.num_documents
+    );
+    println!(
+        "       Queries:                {}",
+        results.dataset_stats.num_queries
+    );
+    println!(
+        "       Topics:                 {}",
+        results.dataset_stats.num_topics
+    );
+    println!(
+        "       Domains:                {}",
+        results.dataset_stats.num_domains
+    );
+    println!(
+        "       Embedding dimension:    {}",
+        results.dataset_stats.embedding_dimension
+    );
     println!();
 
     // Timings
     println!("TIMING:");
-    println!("       Total benchmark:        {}ms", results.timings.total_ms);
-    println!("       Retrieval phase:        {}ms", results.timings.retrieval_ms);
-    println!("       Separation phase:       {}ms", results.timings.separation_ms);
-    println!("       Noise robustness:       {}ms", results.timings.noise_robustness_ms);
+    println!(
+        "       Total benchmark:        {}ms",
+        results.timings.total_ms
+    );
+    println!(
+        "       Retrieval phase:        {}ms",
+        results.timings.retrieval_ms
+    );
+    println!(
+        "       Separation phase:       {}ms",
+        results.timings.separation_ms
+    );
+    println!(
+        "       Noise robustness:       {}ms",
+        results.timings.noise_robustness_ms
+    );
     if let Some(domain_ms) = results.timings.domain_analysis_ms {
         println!("       Domain analysis:        {}ms", domain_ms);
     }

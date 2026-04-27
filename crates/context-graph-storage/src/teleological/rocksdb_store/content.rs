@@ -8,8 +8,8 @@
 //! runtime. Single-key operations use sync RocksDB calls directly since
 //! they're typically fast (<1ms).
 
-use std::sync::Arc;
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -314,8 +314,7 @@ impl RocksDbTeleologicalStore {
         let found_count = contents.iter().filter(|c| c.is_some()).count();
         debug!(
             "Batch content retrieval complete: {} requested, {} found",
-            batch_size,
-            found_count
+            batch_size, found_count
         );
         Ok(contents)
     }

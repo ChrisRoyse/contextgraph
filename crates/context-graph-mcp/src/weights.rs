@@ -11,7 +11,7 @@ pub use context_graph_core::weights::space_name;
 
 // Re-export E11 toggle and disable helper so MCP handlers can gate transparency display
 // and apply E11 disable to custom weights / custom profiles.
-pub use context_graph_core::weights::{E11_ENTITY_ENABLED, apply_e11_disable};
+pub use context_graph_core::weights::{apply_e11_disable, E11_ENTITY_ENABLED};
 
 /// Get raw weight profile by name (without E11 disable applied).
 ///
@@ -42,7 +42,7 @@ pub fn get_effective_weight_profile(name: &str) -> Result<[f32; NUM_EMBEDDERS], 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_graph_core::weights::{WEIGHT_PROFILES, validate_weights};
+    use context_graph_core::weights::{validate_weights, WEIGHT_PROFILES};
 
     /// Get snake_case key name for JSON serialization (test utility).
     fn space_json_key(idx: usize) -> &'static str {
@@ -66,20 +66,25 @@ mod tests {
     }
 
     /// Parse weights from JSON array (test utility).
-    fn parse_weights_from_json(
-        arr: &[serde_json::Value],
-    ) -> Result<[f32; NUM_EMBEDDERS], String> {
+    fn parse_weights_from_json(arr: &[serde_json::Value]) -> Result<[f32; NUM_EMBEDDERS], String> {
         if arr.len() != NUM_EMBEDDERS {
-            return Err(format!("Expected {} weights, got {}", NUM_EMBEDDERS, arr.len()));
+            return Err(format!(
+                "Expected {} weights, got {}",
+                NUM_EMBEDDERS,
+                arr.len()
+            ));
         }
 
         let mut weights = [0.0f32; NUM_EMBEDDERS];
         for (i, v) in arr.iter().enumerate() {
-            weights[i] = v.as_f64()
-                .ok_or_else(|| format!(
+            weights[i] = v.as_f64().ok_or_else(|| {
+                format!(
                     "Invalid weight at index {} ({}): {:?} is not a number",
-                    i, space_name(i), v
-                ))? as f32;
+                    i,
+                    space_name(i),
+                    v
+                )
+            })? as f32;
         }
 
         validate_weights(&weights).map_err(|e| e.to_string())?;
@@ -130,7 +135,10 @@ mod tests {
 
         let missing = get_weight_profile("nonexistent");
         assert!(missing.is_err(), "Unknown profile should return Err");
-        assert!(missing.unwrap_err().contains("nonexistent"), "Error should contain profile name");
+        assert!(
+            missing.unwrap_err().contains("nonexistent"),
+            "Error should contain profile name"
+        );
     }
 
     #[test]
@@ -166,15 +174,18 @@ mod tests {
     #[test]
     fn test_temporal_embedders_excluded_from_semantic_profiles() {
         let semantic_profiles = [
-            "semantic_search", "causal_reasoning", "code_search", "fact_checking",
-            "category_weighted", "typo_tolerant",
-            "graph_reasoning"
+            "semantic_search",
+            "causal_reasoning",
+            "code_search",
+            "fact_checking",
+            "category_weighted",
+            "typo_tolerant",
+            "graph_reasoning",
         ];
 
         for profile_name in semantic_profiles {
-            let weights = get_weight_profile(profile_name).unwrap_or_else(|e| {
-                panic!("Profile '{}' should exist: {}", profile_name, e)
-            });
+            let weights = get_weight_profile(profile_name)
+                .unwrap_or_else(|e| panic!("Profile '{}' should exist: {}", profile_name, e));
             assert_eq!(weights[1], 0.0, "E2 should be 0.0 in '{}'", profile_name);
             assert_eq!(weights[2], 0.0, "E3 should be 0.0 in '{}'", profile_name);
             assert_eq!(weights[3], 0.0, "E4 should be 0.0 in '{}'", profile_name);
@@ -249,9 +260,16 @@ mod tests {
     #[test]
     fn test_sequence_navigation_e4_is_primary() {
         let weights = get_weight_profile("sequence_navigation").unwrap();
-        assert!(weights[3] >= 0.50, "E4 should be >= 0.50 (got {})", weights[3]);
+        assert!(
+            weights[3] >= 0.50,
+            "E4 should be >= 0.50 (got {})",
+            weights[3]
+        );
         let max_weight = weights.iter().cloned().fold(0.0f32, f32::max);
-        assert!((weights[3] - max_weight).abs() < 0.001, "E4 should be highest weighted");
+        assert!(
+            (weights[3] - max_weight).abs() < 0.001,
+            "E4 should be highest weighted"
+        );
     }
 
     #[test]

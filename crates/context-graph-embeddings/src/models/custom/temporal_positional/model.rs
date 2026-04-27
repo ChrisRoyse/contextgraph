@@ -219,11 +219,7 @@ impl TemporalPositionalModel {
     /// # Arguments
     /// * `position` - The position value (sequence number or Unix timestamp)
     /// * `is_sequence` - True if position is a session sequence number
-    fn compute_positional_encoding_from_pos(
-        &self,
-        position: i64,
-        is_sequence: bool,
-    ) -> Vec<f32> {
+    fn compute_positional_encoding_from_pos(&self, position: i64, is_sequence: bool) -> Vec<f32> {
         compute_positional_encoding_from_position(position, self.base, self.d_model, is_sequence)
     }
 

@@ -272,12 +272,12 @@ impl StubMultiArrayProvider {
         };
 
         // Validate fingerprint before returning (ARCH-01: atomic)
-        fingerprint.validate().map_err(|e| {
-            CoreError::ValidationError {
+        fingerprint
+            .validate()
+            .map_err(|e| CoreError::ValidationError {
                 field: "fingerprint".to_string(),
                 message: format!("Validation failed after embedding: {}", e),
-            }
-        })?;
+            })?;
 
         // Verify total time
         let _total_elapsed = start_total.elapsed();
@@ -318,20 +318,20 @@ impl StubMultiArrayProvider {
     /// Collect model IDs from all embedders.
     fn collect_model_ids(&self) -> [String; NUM_EMBEDDERS] {
         [
-            self.dense_embedders[0].model_id().to_string(), // E1
-            self.dense_embedders[1].model_id().to_string(), // E2
-            self.dense_embedders[2].model_id().to_string(), // E3
-            self.dense_embedders[3].model_id().to_string(), // E4
-            self.dense_embedders[4].model_id().to_string(), // E5
+            self.dense_embedders[0].model_id().to_string(),  // E1
+            self.dense_embedders[1].model_id().to_string(),  // E2
+            self.dense_embedders[2].model_id().to_string(),  // E3
+            self.dense_embedders[3].model_id().to_string(),  // E4
+            self.dense_embedders[4].model_id().to_string(),  // E5
             self.sparse_embedders[0].model_id().to_string(), // E6
-            self.dense_embedders[5].model_id().to_string(), // E7
-            self.dense_embedders[6].model_id().to_string(), // E8
-            self.dense_embedders[7].model_id().to_string(), // E9
-            self.dense_embedders[8].model_id().to_string(), // E10
-            self.dense_embedders[9].model_id().to_string(), // E11
-            self.token_embedder.model_id().to_string(),     // E12
+            self.dense_embedders[5].model_id().to_string(),  // E7
+            self.dense_embedders[6].model_id().to_string(),  // E8
+            self.dense_embedders[7].model_id().to_string(),  // E9
+            self.dense_embedders[8].model_id().to_string(),  // E10
+            self.dense_embedders[9].model_id().to_string(),  // E11
+            self.token_embedder.model_id().to_string(),      // E12
             self.sparse_embedders[1].model_id().to_string(), // E13
-            "BAAI/bge-m3".to_string(),                      // E14 (BGE-M3 dense, stub)
+            "BAAI/bge-m3".to_string(),                       // E14 (BGE-M3 dense, stub)
         ]
     }
 }
@@ -397,20 +397,20 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
 
     fn model_ids(&self) -> [&str; NUM_EMBEDDERS] {
         [
-            self.dense_embedders[0].model_id(), // E1
-            self.dense_embedders[1].model_id(), // E2
-            self.dense_embedders[2].model_id(), // E3
-            self.dense_embedders[3].model_id(), // E4
-            self.dense_embedders[4].model_id(), // E5
+            self.dense_embedders[0].model_id(),  // E1
+            self.dense_embedders[1].model_id(),  // E2
+            self.dense_embedders[2].model_id(),  // E3
+            self.dense_embedders[3].model_id(),  // E4
+            self.dense_embedders[4].model_id(),  // E5
             self.sparse_embedders[0].model_id(), // E6
-            self.dense_embedders[5].model_id(), // E7
-            self.dense_embedders[6].model_id(), // E8
-            self.dense_embedders[7].model_id(), // E9
-            self.dense_embedders[8].model_id(), // E10
-            self.dense_embedders[9].model_id(), // E11
-            self.token_embedder.model_id(),     // E12
+            self.dense_embedders[5].model_id(),  // E7
+            self.dense_embedders[6].model_id(),  // E8
+            self.dense_embedders[7].model_id(),  // E9
+            self.dense_embedders[8].model_id(),  // E10
+            self.dense_embedders[9].model_id(),  // E11
+            self.token_embedder.model_id(),      // E12
             self.sparse_embedders[1].model_id(), // E13
-            "BAAI/bge-m3",                      // E14 (BGE-M3 dense, stub)
+            "BAAI/bge-m3",                       // E14 (BGE-M3 dense, stub)
         ]
     }
 
@@ -422,20 +422,20 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
 
     fn health_status(&self) -> [bool; NUM_EMBEDDERS] {
         [
-            self.dense_embedders[0].is_ready(), // E1
-            self.dense_embedders[1].is_ready(), // E2
-            self.dense_embedders[2].is_ready(), // E3
-            self.dense_embedders[3].is_ready(), // E4
-            self.dense_embedders[4].is_ready(), // E5
+            self.dense_embedders[0].is_ready(),  // E1
+            self.dense_embedders[1].is_ready(),  // E2
+            self.dense_embedders[2].is_ready(),  // E3
+            self.dense_embedders[3].is_ready(),  // E4
+            self.dense_embedders[4].is_ready(),  // E5
             self.sparse_embedders[0].is_ready(), // E6
-            self.dense_embedders[5].is_ready(), // E7
-            self.dense_embedders[6].is_ready(), // E8
-            self.dense_embedders[7].is_ready(), // E9
-            self.dense_embedders[8].is_ready(), // E10
-            self.dense_embedders[9].is_ready(), // E11
-            self.token_embedder.is_ready(),     // E12
+            self.dense_embedders[5].is_ready(),  // E7
+            self.dense_embedders[6].is_ready(),  // E8
+            self.dense_embedders[7].is_ready(),  // E9
+            self.dense_embedders[8].is_ready(),  // E10
+            self.dense_embedders[9].is_ready(),  // E11
+            self.token_embedder.is_ready(),      // E12
             self.sparse_embedders[1].is_ready(), // E13
-            true,                               // E14 (BGE-M3 dense, stub always ready)
+            true,                                // E14 (BGE-M3 dense, stub always ready)
         ]
     }
 }
@@ -512,22 +512,51 @@ mod tests {
         assert_eq!(fp.e4_temporal_positional.len(), 512, "E4 should be 512D");
         // E5 now uses dual vectors for asymmetric causal similarity
         assert_eq!(fp.e5_causal_as_cause.len(), 768, "E5 cause should be 768D");
-        assert_eq!(fp.e5_causal_as_effect.len(), 768, "E5 effect should be 768D");
-        assert!(fp.e5_causal.is_empty(), "E5 legacy should be empty in new format");
+        assert_eq!(
+            fp.e5_causal_as_effect.len(),
+            768,
+            "E5 effect should be 768D"
+        );
+        assert!(
+            fp.e5_causal.is_empty(),
+            "E5 legacy should be empty in new format"
+        );
         // E6 is sparse - check nnz instead
         assert!(fp.e6_sparse.nnz() > 0, "E6 should have active indices");
         assert_eq!(fp.e7_code.len(), 1536, "E7 should be 1536D");
         // E8 now uses dual vectors for asymmetric graph similarity
-        assert_eq!(fp.e8_graph_as_source.len(), 1024, "E8 source should be 1024D");
-        assert_eq!(fp.e8_graph_as_target.len(), 1024, "E8 target should be 1024D");
-        assert!(fp.e8_graph.is_empty(), "E8 legacy should be empty in new format");
+        assert_eq!(
+            fp.e8_graph_as_source.len(),
+            1024,
+            "E8 source should be 1024D"
+        );
+        assert_eq!(
+            fp.e8_graph_as_target.len(),
+            1024,
+            "E8 target should be 1024D"
+        );
+        assert!(
+            fp.e8_graph.is_empty(),
+            "E8 legacy should be empty in new format"
+        );
         assert_eq!(fp.e9_hdc.len(), 1024, "E9 should be 1024D");
         // E10 now uses dual vectors for asymmetric paraphrase/context similarity
-        assert_eq!(fp.e10_multimodal_paraphrase.len(), 768, "E10 paraphrase should be 768D");
-        assert_eq!(fp.e10_multimodal_as_context.len(), 768, "E10 context should be 768D");
+        assert_eq!(
+            fp.e10_multimodal_paraphrase.len(),
+            768,
+            "E10 paraphrase should be 768D"
+        );
+        assert_eq!(
+            fp.e10_multimodal_as_context.len(),
+            768,
+            "E10 context should be 768D"
+        );
         assert_eq!(fp.e11_entity.len(), 768, "E11 should be 768D (KEPLER)");
         // E12 should have tokens
-        assert!(!fp.e12_late_interaction.is_empty(), "E12 should have tokens");
+        assert!(
+            !fp.e12_late_interaction.is_empty(),
+            "E12 should have tokens"
+        );
         for token in &fp.e12_late_interaction {
             assert_eq!(token.len(), 128, "E12 tokens should be 128D");
         }
@@ -629,8 +658,14 @@ mod tests {
         let provider = StubMultiArrayProvider::new();
         let contents = vec!["a".to_string(), "b".to_string()];
 
-        let batch1 = provider.embed_batch_all(&contents, &[]).await.expect("first");
-        let batch2 = provider.embed_batch_all(&contents, &[]).await.expect("second");
+        let batch1 = provider
+            .embed_batch_all(&contents, &[])
+            .await
+            .expect("first");
+        let batch2 = provider
+            .embed_batch_all(&contents, &[])
+            .await
+            .expect("second");
 
         assert_eq!(batch1.len(), batch2.len());
         for (o1, o2) in batch1.iter().zip(batch2.iter()) {
@@ -691,10 +726,7 @@ mod tests {
 
         // Storage should be reasonable
         let size = output.fingerprint.storage_size();
-        assert!(
-            size > 0,
-            "Storage size should be positive"
-        );
+        assert!(size > 0, "Storage size should be positive");
 
         // Should be less than 100KB for typical content
         assert!(
@@ -715,7 +747,10 @@ mod tests {
     #[tokio::test]
     async fn test_e1_matryoshka_truncation() {
         let provider = StubMultiArrayProvider::new();
-        let output = provider.embed_all("matryoshka test").await.expect("success");
+        let output = provider
+            .embed_all("matryoshka test")
+            .await
+            .expect("success");
 
         // Test Matryoshka 128D truncation helper
         let truncated = output.e1_matryoshka_128();
@@ -811,22 +846,17 @@ mod tests {
     #[tokio::test]
     async fn test_edge_case_sparse_bounds() {
         let provider = StubMultiArrayProvider::new();
-        let output = provider.embed_all("sparse bounds test").await.expect("success");
+        let output = provider
+            .embed_all("sparse bounds test")
+            .await
+            .expect("success");
 
         // All sparse indices must be < 30522 (vocab size)
         for &idx in &output.fingerprint.e6_sparse.indices {
-            assert!(
-                (idx as usize) < 30_522,
-                "E6 index {} out of bounds",
-                idx
-            );
+            assert!((idx as usize) < 30_522, "E6 index {} out of bounds", idx);
         }
         for &idx in &output.fingerprint.e13_splade.indices {
-            assert!(
-                (idx as usize) < 30_522,
-                "E13 index {} out of bounds",
-                idx
-            );
+            assert!((idx as usize) < 30_522, "E13 index {} out of bounds", idx);
         }
     }
 
@@ -864,7 +894,10 @@ mod tests {
     #[tokio::test]
     async fn test_edge_case_e12_token_dimensions() {
         let provider = StubMultiArrayProvider::new();
-        let output = provider.embed_all("token dimension check test").await.expect("success");
+        let output = provider
+            .embed_all("token dimension check test")
+            .await
+            .expect("success");
 
         // Every token in E12 must be exactly 128D
         for (i, token) in output.fingerprint.e12_late_interaction.iter().enumerate() {
@@ -881,7 +914,10 @@ mod tests {
     #[tokio::test]
     async fn test_edge_case_values_in_range() {
         let provider = StubMultiArrayProvider::new();
-        let output = provider.embed_all("value range check").await.expect("success");
+        let output = provider
+            .embed_all("value range check")
+            .await
+            .expect("success");
 
         // Dense embeddings should have values in [-0.5, 0.5] range
         for (i, val) in output.fingerprint.e1_semantic.iter().enumerate() {

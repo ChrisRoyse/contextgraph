@@ -22,9 +22,8 @@ use super::helpers::{
     assert_exit_code, assert_output_bool, assert_timing_under_budget, create_post_tool_input,
     create_pre_tool_input, create_prompt_submit_input, create_session_end_input,
     create_session_start_input, deterministic_session_id, generate_test_session_id,
-    invoke_hook_with_stdin, log_test_evidence, EXIT_SUCCESS,
-    TIMEOUT_POST_TOOL_MS, TIMEOUT_PRE_TOOL_MS, TIMEOUT_SESSION_END_MS, TIMEOUT_SESSION_START_MS,
-    TIMEOUT_USER_PROMPT_MS,
+    invoke_hook_with_stdin, log_test_evidence, EXIT_SUCCESS, TIMEOUT_POST_TOOL_MS,
+    TIMEOUT_PRE_TOOL_MS, TIMEOUT_SESSION_END_MS, TIMEOUT_SESSION_START_MS, TIMEOUT_USER_PROMPT_MS,
 };
 
 // =============================================================================
@@ -379,7 +378,9 @@ async fn test_topic_state_injection() {
 fn verify_topic_state_structure(topic_state: &Value, context: &str) {
     // topic_stability must be in [0, 1] if present
     if let Some(stability) = topic_state.get("topic_stability") {
-        let stability_val = stability.as_f64().expect("topic_stability should be a number");
+        let stability_val = stability
+            .as_f64()
+            .expect("topic_stability should be a number");
         assert!(
             (0.0..=1.0).contains(&stability_val),
             "{}: topic_stability {} out of range [0, 1]",

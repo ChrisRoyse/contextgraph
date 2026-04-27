@@ -146,7 +146,10 @@ mod tests {
         let mem_id = Uuid::new_v4();
         let membership = ClusterMembership::noise(mem_id, Embedder::Semantic);
 
-        assert!(membership.is_noise(), "noise() should create noise membership");
+        assert!(
+            membership.is_noise(),
+            "noise() should create noise membership"
+        );
         assert_eq!(membership.cluster_id, -1, "noise cluster_id should be -1");
         assert_eq!(
             membership.membership_probability, 0.0,
@@ -194,7 +197,10 @@ mod tests {
         );
 
         let not_confident = ClusterMembership::new(mem_id, Embedder::Semantic, 1, 0.79, false);
-        assert!(!not_confident.is_confident(), "0.79 should not be confident");
+        assert!(
+            !not_confident.is_confident(),
+            "0.79 should not be confident"
+        );
 
         println!(
             "[PASS] test_is_confident_threshold - 0.9={}, 0.8={}, 0.79={}",
@@ -203,5 +209,4 @@ mod tests {
             not_confident.is_confident()
         );
     }
-
 }

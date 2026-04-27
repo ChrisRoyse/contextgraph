@@ -35,7 +35,6 @@ pub mod similarity {
     pub const RRF_K: f32 = 60.0;
 }
 
-
 /// Pipeline configuration defaults from constitution.yaml embeddings.retrieval_pipeline.
 pub mod pipeline {
     use super::similarity;

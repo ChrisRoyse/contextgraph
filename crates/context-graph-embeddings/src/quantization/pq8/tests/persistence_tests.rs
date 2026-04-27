@@ -57,7 +57,6 @@ fn test_codebook_save_and_load() {
             }
         }
     }
-
 }
 
 #[test]

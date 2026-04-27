@@ -86,9 +86,19 @@ mod tests {
         assert_eq!(def.name, "search_by_keywords");
         assert!(def.description.contains("E6"));
         assert!(def.description.contains("keyword"));
-        let required = def.input_schema.get("required").unwrap().as_array().unwrap();
+        let required = def
+            .input_schema
+            .get("required")
+            .unwrap()
+            .as_array()
+            .unwrap();
         assert!(required.iter().any(|v| v.as_str() == Some("query")));
-        let props = def.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = def
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(props.contains_key("query"));
         assert!(props.contains_key("topK"));
         assert!(props.contains_key("blendWithSemantic"));

@@ -12,9 +12,9 @@
 //! - AP-74: E12 rerank only
 //! - AP-75: E13 recall only
 
+use super::{CheckPriority, PhaseResult, ValidationCheck, ValidationPhase};
 use crate::realdata::config::{EmbedderName, FusionStrategy};
 use crate::realdata::results::ConstitutionalCompliance;
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase};
 
 /// ARCH compliance validation results.
 #[derive(Debug, Clone)]
@@ -210,7 +210,8 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "ARCH-01",
             "TeleologicalArray is atomic - store all 13 embeddings or nothing",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // Verify all 13 embedders exist
         let count = EmbedderName::all().len();
@@ -225,7 +226,8 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "ARCH-02",
             "Apples-to-apples only - compare E1<->E1, never E1<->E5",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // This is a design rule - verified by type system and index checks
         // Embedder indices are distinct (0-12)
@@ -235,27 +237,30 @@ impl ArchComplianceValidator {
         if unique_indices.len() == 13 && indices.iter().all(|&i| i < 13) {
             check.pass("unique indices 0-12", "distinct embedder indices")
         } else {
-            check.fail(&format!("{} unique indices", unique_indices.len()), "13 unique indices")
+            check.fail(
+                &format!("{} unique indices", unique_indices.len()),
+                "13 unique indices",
+            )
         }
     }
 
     fn check_arch_09() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "ARCH-09",
-            "Topic threshold is weighted_agreement >= 2.5",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("ARCH-09", "Topic threshold is weighted_agreement >= 2.5")
+            .with_priority(CheckPriority::Critical);
 
         // Calculate max weighted agreement
-        let max_wa: f64 = EmbedderName::all().iter()
-            .map(|e| e.topic_weight())
-            .sum();
+        let max_wa: f64 = EmbedderName::all().iter().map(|e| e.topic_weight()).sum();
 
         // Threshold should be achievable (2.5 out of 8.5 max)
         let threshold = 2.5;
         let achievable = max_wa >= threshold;
 
         if achievable {
-            check.pass(&format!("max={:.1}, threshold={:.1}", max_wa, threshold), ">= 2.5 threshold")
+            check
+                .pass(
+                    &format!("max={:.1}, threshold={:.1}", max_wa, threshold),
+                    ">= 2.5 threshold",
+                )
                 .with_details("3 semantic spaces agreeing = 3.0 -> TOPIC")
         } else {
             check.fail(&format!("max={:.1}", max_wa), ">= 2.5 achievable")
@@ -266,7 +271,8 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "ARCH-10",
             "Divergence detection uses SEMANTIC embedders only",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let semantic = EmbedderName::semantic();
         let divergence_embedders: Vec<_> = EmbedderName::all()
@@ -279,16 +285,26 @@ impl ArchComplianceValidator {
             && divergence_embedders.iter().all(|e| semantic.contains(e));
 
         if matches {
-            check.pass(&format!("{} semantic embedders", semantic.len()), "7 semantic only")
+            check.pass(
+                &format!("{} semantic embedders", semantic.len()),
+                "7 semantic only",
+            )
         } else {
-            let non_semantic: Vec<_> = divergence_embedders.iter()
+            let non_semantic: Vec<_> = divergence_embedders
+                .iter()
                 .filter(|e| !semantic.contains(e))
                 .map(|e| e.as_str())
                 .collect();
-            check.fail(
-                &format!("{} used, {} non-semantic", divergence_embedders.len(), non_semantic.len()),
-                "7 semantic only",
-            ).with_details(&format!("Non-semantic in divergence: {:?}", non_semantic))
+            check
+                .fail(
+                    &format!(
+                        "{} used, {} non-semantic",
+                        divergence_embedders.len(),
+                        non_semantic.len()
+                    ),
+                    "7 semantic only",
+                )
+                .with_details(&format!("Non-semantic in divergence: {:?}", non_semantic))
         }
     }
 
@@ -296,7 +312,8 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "ARCH-12",
             "E1 is THE semantic foundation - all retrieval starts with E1",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // E1 should be in semantic embedders
         let semantic = EmbedderName::semantic();
@@ -304,7 +321,8 @@ impl ArchComplianceValidator {
 
         // E1 should have the highest weight (or equal)
         let e1_weight = EmbedderName::E1Semantic.topic_weight();
-        let max_weight = EmbedderName::all().iter()
+        let max_weight = EmbedderName::all()
+            .iter()
             .map(|e| e.topic_weight())
             .fold(0.0, f64::max);
 
@@ -319,10 +337,9 @@ impl ArchComplianceValidator {
     }
 
     fn check_arch_13() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "ARCH-13",
-            "Search strategies: E1Only, MultiSpace, Pipeline",
-        ).with_priority(CheckPriority::High);
+        let check =
+            ValidationCheck::new("ARCH-13", "Search strategies: E1Only, MultiSpace, Pipeline")
+                .with_priority(CheckPriority::High);
 
         // Default should be E1Only
         let default = FusionStrategy::default();
@@ -337,17 +354,22 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "ARCH-14",
             "Weight profiles MUST have E2-E4=0.0 for semantic scoring",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let temporal = EmbedderName::temporal();
-        let all_zero = temporal.iter().all(|e| e.topic_weight().abs() < f64::EPSILON);
+        let all_zero = temporal
+            .iter()
+            .all(|e| e.topic_weight().abs() < f64::EPSILON);
 
-        let weights: Vec<_> = temporal.iter()
+        let weights: Vec<_> = temporal
+            .iter()
             .map(|e| format!("{}={}", e.as_str(), e.topic_weight()))
             .collect();
 
         if all_zero {
-            check.pass("E2-E4 = 0.0", "temporal weight = 0.0")
+            check
+                .pass("E2-E4 = 0.0", "temporal weight = 0.0")
                 .with_details(&weights.join(", "))
         } else {
             check.fail(&weights.join(", "), "all 0.0")
@@ -355,16 +377,15 @@ impl ArchComplianceValidator {
     }
 
     fn check_arch_18() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "ARCH-18",
-            "E5 Causal MUST use asymmetric similarity",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("ARCH-18", "E5 Causal MUST use asymmetric similarity")
+            .with_priority(CheckPriority::Critical);
 
         let asymmetric = EmbedderName::asymmetric();
         let e5_is_asymmetric = asymmetric.contains(&EmbedderName::E5Causal);
 
         if e5_is_asymmetric {
-            check.pass("E5 in asymmetric list", "E5 asymmetric")
+            check
+                .pass("E5 in asymmetric list", "E5 asymmetric")
                 .with_details("cause→effect direction matters")
         } else {
             check.fail("E5 not asymmetric", "E5 asymmetric")
@@ -375,11 +396,14 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "AP-73",
             "Temporal embedders (E2-E4) MUST NOT be in similarity fusion",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // This is enforced by design: temporal embedders have weight 0.0
         let temporal = EmbedderName::temporal();
-        let all_zero_weight = temporal.iter().all(|e| e.topic_weight().abs() < f64::EPSILON);
+        let all_zero_weight = temporal
+            .iter()
+            .all(|e| e.topic_weight().abs() < f64::EPSILON);
 
         if all_zero_weight {
             check.pass("E2-E4 weight=0 (excluded)", "temporal excluded from fusion")
@@ -392,7 +416,8 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "AP-74",
             "E12 ColBERT MUST only be used for re-ranking, NOT initial retrieval",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // E12 is in semantic (for topic detection) but should be Stage 3 in pipeline
         // This is a usage guideline - verify E12 exists and is semantic
@@ -400,7 +425,8 @@ impl ArchComplianceValidator {
         let e12_in_semantic = semantic.contains(&EmbedderName::E12LateInteraction);
 
         if e12_in_semantic {
-            check.pass("E12 defined, rerank-only guidance", "E12 for rerank only")
+            check
+                .pass("E12 defined, rerank-only guidance", "E12 for rerank only")
                 .with_details("Pipeline Stage 3: E12 MaxSim precision")
         } else {
             check.fail("E12 not in semantic", "E12 for rerank")
@@ -411,14 +437,16 @@ impl ArchComplianceValidator {
         let check = ValidationCheck::new(
             "AP-75",
             "E13 SPLADE MUST be used for Stage 1 recall, NOT final ranking",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         // E13 is sparse, used for initial recall
         let semantic = EmbedderName::semantic();
         let e13_in_semantic = semantic.contains(&EmbedderName::E13SPLADE);
 
         if e13_in_semantic {
-            check.pass("E13 defined, recall-only guidance", "E13 for recall only")
+            check
+                .pass("E13 defined, recall-only guidance", "E13 for recall only")
                 .with_details("Pipeline Stage 1: BM25+E13 sparse recall")
         } else {
             check.fail("E13 not in semantic", "E13 for recall")

@@ -189,7 +189,8 @@ impl TopicSynthesizer {
 
         for i in 0..n {
             for j in (i + 1)..n {
-                let wa = self.compute_weighted_agreement(&memory_ids[i], &memory_ids[j], mem_clusters);
+                let wa =
+                    self.compute_weighted_agreement(&memory_ids[i], &memory_ids[j], mem_clusters);
                 if wa >= threshold {
                     edges.push((i, j));
                 }
@@ -394,7 +395,6 @@ impl TopicSynthesizer {
 
         Ok(topics)
     }
-
 }
 
 #[cfg(test)]
@@ -448,8 +448,11 @@ mod tests {
         let id2 = Uuid::new_v4();
 
         // Semantic, Causal, Code are all SEMANTIC category (weight 1.0)
-        let memberships =
-            create_shared_memberships(id1, id2, &[Embedder::Semantic, Embedder::Causal, Embedder::Code]);
+        let memberships = create_shared_memberships(
+            id1,
+            id2,
+            &[Embedder::Semantic, Embedder::Causal, Embedder::Code],
+        );
 
         println!("=== TEST: test_weighted_agreement_3_semantic_forms_topic ===");
         println!("STATE BEFORE: 2 memories, shared spaces = [Semantic, Causal, Code]");
@@ -459,10 +462,7 @@ mod tests {
 
         println!("STATE AFTER: {} topic(s) formed", result.len());
         if !result.is_empty() {
-            println!(
-                "  Topic confidence: {:.3}",
-                result[0].confidence
-            );
+            println!("  Topic confidence: {:.3}", result[0].confidence);
             println!("  Topic member count: {}", result[0].member_count());
         }
 
@@ -539,8 +539,16 @@ mod tests {
         let strengths1 = [0.9f32; 14];
         let strengths2 = [0.88f32; 14]; // Very similar
 
-        let topic1 = Topic::new(TopicProfile::new(strengths1), HashMap::new(), vec![id1, id2]);
-        let topic2 = Topic::new(TopicProfile::new(strengths2), HashMap::new(), vec![id3, id4]);
+        let topic1 = Topic::new(
+            TopicProfile::new(strengths1),
+            HashMap::new(),
+            vec![id1, id2],
+        );
+        let topic2 = Topic::new(
+            TopicProfile::new(strengths2),
+            HashMap::new(),
+            vec![id3, id4],
+        );
 
         println!("=== TEST: test_merge_similar_topics ===");
         println!(
@@ -560,7 +568,11 @@ mod tests {
         let sim = TopicProfile::new(strengths1).similarity(&TopicProfile::new(strengths2));
         if sim >= 0.9 {
             assert_eq!(merged.len(), 1, "Similar topics should merge");
-            assert_eq!(merged[0].member_count(), 4, "Merged topic should have all members");
+            assert_eq!(
+                merged[0].member_count(),
+                4,
+                "Merged topic should have all members"
+            );
         }
         println!("[PASS] Similar topics merged correctly\n");
     }

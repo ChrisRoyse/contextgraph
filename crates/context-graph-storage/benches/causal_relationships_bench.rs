@@ -191,7 +191,8 @@ fn create_test_relationship_with_e11(
     source_id: Uuid,
     index: usize,
 ) -> CausalRelationship {
-    create_test_relationship(rng, source_id, index).with_entity_embedding(generate_e11_embedding(rng))
+    create_test_relationship(rng, source_id, index)
+        .with_entity_embedding(generate_e11_embedding(rng))
 }
 
 /// Create a relationship with ALL embeddings (E5 source + E8 graph + E11 entity).
@@ -241,7 +242,10 @@ fn bench_store_causal_relationship(c: &mut Criterion) {
     if benched > 0 {
         let final_count = rt.block_on(async { store.count_causal_relationships().await.unwrap() });
         println!("VERIFICATION: Stored {} causal relationships", final_count);
-        assert!(final_count > 0, "VERIFICATION FAILED: No relationships were stored");
+        assert!(
+            final_count > 0,
+            "VERIFICATION FAILED: No relationships were stored"
+        );
     }
 }
 
@@ -280,7 +284,10 @@ fn bench_get_causal_relationship(c: &mut Criterion) {
         .expect("VERIFICATION FAILED: get_causal_relationship failed")
         .expect("VERIFICATION FAILED: Relationship not found");
     assert_eq!(retrieved.id, stored_id, "VERIFICATION FAILED: ID mismatch");
-    println!("VERIFICATION: Retrieved relationship {} correctly", stored_id);
+    println!(
+        "VERIFICATION: Retrieved relationship {} correctly",
+        stored_id
+    );
 }
 
 /// Benchmark: Retrieve all causal relationships for a source fingerprint.
@@ -355,7 +362,10 @@ fn bench_search_scaling(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Pre-populate with relationships
-        println!("Populating {} causal relationships for tier {}...", tier_size, tier_size);
+        println!(
+            "Populating {} causal relationships for tier {}...",
+            tier_size, tier_size
+        );
         for i in 0..tier_size {
             let source_id = Uuid::new_v4();
             let rel = create_test_relationship(&mut rng, source_id, i);
@@ -471,9 +481,16 @@ fn bench_search_with_filter(c: &mut Criterion) {
 
     // Verify: Search returns results
     let results = rt
-        .block_on(async { store.search_causal_relationships(&query_embedding, 10, None).await })
+        .block_on(async {
+            store
+                .search_causal_relationships(&query_embedding, 10, None)
+                .await
+        })
         .expect("VERIFICATION FAILED: search failed");
-    assert!(!results.is_empty(), "VERIFICATION FAILED: No search results returned");
+    assert!(
+        !results.is_empty(),
+        "VERIFICATION FAILED: No search results returned"
+    );
     println!(
         "VERIFICATION: Search returned {} results, top similarity: {:.4}",
         results.len(),
@@ -567,7 +584,11 @@ fn bench_e5_search_comparison(c: &mut Criterion) {
         .block_on(async { store.search_causal_e5(&query_embedding, true, 10).await })
         .expect("VERIFICATION FAILED: e5 search failed");
     let hybrid_results = rt
-        .block_on(async { store.search_causal_e5_hybrid(&query_embedding, true, 10, 0.6, 0.4).await })
+        .block_on(async {
+            store
+                .search_causal_e5_hybrid(&query_embedding, true, 10, 0.6, 0.4)
+                .await
+        })
         .expect("VERIFICATION FAILED: hybrid search failed");
 
     println!(
@@ -828,7 +849,9 @@ fn bench_multi_embedder_search(c: &mut Criterion) {
     let results = rt
         .block_on(async {
             store
-                .search_causal_multi_embedder(&e1_query, &e5_query, &e8_query, &e11_query, true, 10, &config)
+                .search_causal_multi_embedder(
+                    &e1_query, &e5_query, &e8_query, &e11_query, true, 10, &config,
+                )
                 .await
         })
         .expect("VERIFICATION FAILED: multi_embedder search failed");
@@ -929,7 +952,10 @@ fn bench_e11_hnsw_vs_brute_force(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Pre-populate with relationships WITH E11 embeddings
-        println!("Populating {} causal relationships with E11 for HNSW comparison...", tier_size);
+        println!(
+            "Populating {} causal relationships with E11 for HNSW comparison...",
+            tier_size
+        );
         for i in 0..tier_size {
             let source_id = Uuid::new_v4();
             let rel = create_test_relationship_with_e11(&mut rng, source_id, i);
@@ -948,22 +974,17 @@ fn bench_e11_hnsw_vs_brute_force(c: &mut Criterion) {
         group.throughput(Throughput::Elements(tier_size as u64));
 
         // Benchmark HNSW search (via search_causal_e11 which now uses HNSW)
-        group.bench_with_input(
-            BenchmarkId::new("hnsw", tier_size),
-            &tier_size,
-            |b, _| {
-                b.iter(|| {
-                    rt.block_on(async {
-                        let results = store
-                            .search_causal_e11(black_box(&query_embedding), 10)
-                            .await
-                            .expect("BENCH ERROR: search_causal_e11 failed");
-                        black_box(results)
-                    })
+        group.bench_with_input(BenchmarkId::new("hnsw", tier_size), &tier_size, |b, _| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let results = store
+                        .search_causal_e11(black_box(&query_embedding), 10)
+                        .await
+                        .expect("BENCH ERROR: search_causal_e11 failed");
+                    black_box(results)
                 })
-            },
-        );
-
+            })
+        });
     }
 
     group.finish();
@@ -985,7 +1006,8 @@ fn bench_e11_hnsw_rebuild(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         // Setup: Create a store with relationships, close it
-                        let temp_dir = TempDir::new().expect("BENCH ERROR: Failed to create temp directory");
+                        let temp_dir =
+                            TempDir::new().expect("BENCH ERROR: Failed to create temp directory");
                         let path = temp_dir.path().to_path_buf();
 
                         {

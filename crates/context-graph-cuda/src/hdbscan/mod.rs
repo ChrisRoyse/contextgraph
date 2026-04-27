@@ -23,12 +23,14 @@
 //!
 //! No fallbacks - fails fast with detailed error messages if GPU unavailable.
 
+mod clusterer;
 mod error;
 mod gpu_knn;
-mod clusterer;
 
+pub use clusterer::{
+    ClusterMembership, ClusterSelectionMethod, GpuHdbscanClusterer, HdbscanParams,
+};
 pub use error::{GpuHdbscanError, GpuHdbscanResult};
-pub use clusterer::{ClusterMembership, ClusterSelectionMethod, GpuHdbscanClusterer, HdbscanParams};
 pub use gpu_knn::GpuKnnIndex;
 
 #[cfg(test)]

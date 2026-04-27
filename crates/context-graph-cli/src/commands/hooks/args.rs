@@ -101,7 +101,6 @@ pub enum ShellType {
 pub struct SessionStartArgs {
     // LOW-13: Removed dead `db_path` field — no handler reads it.
     // Session storage uses in-memory SessionCache per PRD v6 Section 14.
-
     /// Session ID (auto-generated if not provided)
     #[arg(long)]
     pub session_id: Option<String>,
@@ -165,7 +164,6 @@ pub struct PreToolArgs {
 #[derive(Args, Debug, Clone)]
 pub struct PostToolArgs {
     // LOW-13: Removed dead `db_path` field — no handler reads it.
-
     /// Session ID (REQUIRED)
     #[arg(long)]
     pub session_id: String,
@@ -197,7 +195,6 @@ pub struct PostToolArgs {
 #[derive(Args, Debug, Clone)]
 pub struct PromptSubmitArgs {
     // LOW-13: Removed dead `db_path` field — no handler reads it.
-
     /// Session ID (REQUIRED)
     #[arg(long)]
     pub session_id: String,
@@ -225,7 +222,6 @@ pub struct PromptSubmitArgs {
 #[derive(Args, Debug, Clone)]
 pub struct SessionEndArgs {
     // LOW-13: Removed dead `db_path` field — no handler reads it.
-
     /// Session ID (REQUIRED)
     #[arg(long)]
     pub session_id: String,

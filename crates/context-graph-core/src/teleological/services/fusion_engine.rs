@@ -8,10 +8,7 @@
 //! "Fusion is not just concatenation - it's the INTERPLAY between embeddings
 //! that creates meaning greater than the sum of its parts."
 
-use crate::teleological::{
-    types::NUM_EMBEDDERS,
-    TeleologicalProfile,
-};
+use crate::teleological::{types::NUM_EMBEDDERS, TeleologicalProfile};
 
 use super::synergy_service::SynergyService;
 

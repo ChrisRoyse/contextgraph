@@ -138,8 +138,16 @@ mod tests {
         assert_eq!(names.len(), len_before);
         // All have descriptions and schemas
         for tool in &tools {
-            assert!(!tool.description.is_empty(), "Tool {} missing description", tool.name);
-            assert!(tool.input_schema.get("type").is_some(), "Tool {} missing schema type", tool.name);
+            assert!(
+                !tool.description.is_empty(),
+                "Tool {} missing description",
+                tool.name
+            );
+            assert!(
+                tool.input_schema.get("type").is_some(),
+                "Tool {} missing schema type",
+                tool.name
+            );
         }
     }
 

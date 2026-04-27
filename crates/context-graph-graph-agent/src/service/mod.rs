@@ -456,7 +456,9 @@ impl GraphDiscoveryService {
             match tokio::time::timeout(Duration::from_secs(10), handle).await {
                 Ok(Ok(())) => info!("Graph discovery background task completed normally"),
                 Ok(Err(e)) => tracing::error!("Graph discovery background task panicked: {:?}", e),
-                Err(_) => tracing::error!("Graph discovery background task did not shut down within 10 seconds"),
+                Err(_) => tracing::error!(
+                    "Graph discovery background task did not shut down within 10 seconds"
+                ),
             }
         }
 

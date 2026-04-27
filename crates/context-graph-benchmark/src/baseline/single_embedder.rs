@@ -173,7 +173,11 @@ impl SingleEmbedderBaseline {
     /// Detect topics using k-means on the single embedding space.
     ///
     /// Returns predicted cluster labels for each ID.
-    pub fn detect_topics_kmeans(&self, n_clusters: usize, max_iters: usize) -> HashMap<Uuid, usize> {
+    pub fn detect_topics_kmeans(
+        &self,
+        n_clusters: usize,
+        max_iters: usize,
+    ) -> HashMap<Uuid, usize> {
         if self.embeddings.is_empty() || n_clusters == 0 {
             return HashMap::new();
         }
@@ -243,8 +247,8 @@ impl SingleEmbedderBaseline {
                 }
 
                 for d in 0..dim {
-                    centroid[d] =
-                        cluster_points.iter().map(|e| e[d]).sum::<f32>() / cluster_points.len() as f32;
+                    centroid[d] = cluster_points.iter().map(|e| e[d]).sum::<f32>()
+                        / cluster_points.len() as f32;
                 }
             }
         }

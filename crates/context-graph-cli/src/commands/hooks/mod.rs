@@ -75,27 +75,15 @@ fn emit_hook_result(result: HookResult<HookOutput>) -> i32 {
 /// - 4: Invalid input
 pub async fn handle_hooks_command(cmd: HooksCommands) -> i32 {
     match cmd {
-        HooksCommands::SessionStart(args) => {
-            emit_hook_result(session_start::execute(args).await)
-        }
-        HooksCommands::PreTool(args) => {
-            emit_hook_result(pre_tool_use::handle_pre_tool_use(&args))
-        }
-        HooksCommands::PostTool(args) => {
-            emit_hook_result(post_tool_use::execute(args).await)
-        }
+        HooksCommands::SessionStart(args) => emit_hook_result(session_start::execute(args).await),
+        HooksCommands::PreTool(args) => emit_hook_result(pre_tool_use::handle_pre_tool_use(&args)),
+        HooksCommands::PostTool(args) => emit_hook_result(post_tool_use::execute(args).await),
         HooksCommands::PromptSubmit(args) => {
             emit_hook_result(user_prompt_submit::execute(args).await)
         }
-        HooksCommands::SessionEnd(args) => {
-            emit_hook_result(session_end::execute(args).await)
-        }
-        HooksCommands::PreCompact(args) => {
-            emit_hook_result(pre_compact::execute(args).await)
-        }
-        HooksCommands::TaskCompleted(args) => {
-            emit_hook_result(task_completed::execute(args).await)
-        }
+        HooksCommands::SessionEnd(args) => emit_hook_result(session_end::execute(args).await),
+        HooksCommands::PreCompact(args) => emit_hook_result(pre_compact::execute(args).await),
+        HooksCommands::TaskCompleted(args) => emit_hook_result(task_completed::execute(args).await),
         HooksCommands::GenerateConfig(_args) => {
             error!(
                 "GenerateConfig is not implemented. Hook scripts are generated \

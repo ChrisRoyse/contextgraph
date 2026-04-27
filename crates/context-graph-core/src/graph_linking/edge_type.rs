@@ -110,14 +110,14 @@ impl GraphLinkEdgeType {
     /// - `None` = MultiAgreement (no single primary)
     pub fn primary_embedder_index(&self) -> Option<usize> {
         match self {
-            Self::SemanticSimilar => Some(0),  // E1
-            Self::CodeRelated => Some(6),      // E7
-            Self::EntityShared => Some(10),    // E11
-            Self::CausalChain => Some(4),      // E5
-            Self::GraphConnected => Some(7),   // E8
-            Self::ParaphraseAligned => Some(9),    // E10
-            Self::KeywordOverlap => Some(5),   // E6 (or E13=12)
-            Self::MultiAgreement => None,      // No single primary
+            Self::SemanticSimilar => Some(0),   // E1
+            Self::CodeRelated => Some(6),       // E7
+            Self::EntityShared => Some(10),     // E11
+            Self::CausalChain => Some(4),       // E5
+            Self::GraphConnected => Some(7),    // E8
+            Self::ParaphraseAligned => Some(9), // E10
+            Self::KeywordOverlap => Some(5),    // E6 (or E13=12)
+            Self::MultiAgreement => None,       // No single primary
         }
     }
 
@@ -126,14 +126,14 @@ impl GraphLinkEdgeType {
     /// Higher thresholds for specialized embedders, lower for broad semantic.
     pub fn default_threshold(&self) -> f32 {
         match self {
-            Self::SemanticSimilar => 0.75, // E1 is broad, need higher threshold
-            Self::CodeRelated => 0.70,     // E7 code is specific
-            Self::EntityShared => 0.65,    // E11 entity matching
-            Self::CausalChain => 0.60,     // E5 causal chains
-            Self::GraphConnected => 0.60,  // E8 graph structure
-            Self::ParaphraseAligned => 0.70,   // E10 paraphrase matching
-            Self::KeywordOverlap => 0.50,  // Sparse similarity scores differently
-            Self::MultiAgreement => 0.60,  // Multiple agree = strong signal
+            Self::SemanticSimilar => 0.75,   // E1 is broad, need higher threshold
+            Self::CodeRelated => 0.70,       // E7 code is specific
+            Self::EntityShared => 0.65,      // E11 entity matching
+            Self::CausalChain => 0.60,       // E5 causal chains
+            Self::GraphConnected => 0.60,    // E8 graph structure
+            Self::ParaphraseAligned => 0.70, // E10 paraphrase matching
+            Self::KeywordOverlap => 0.50,    // Sparse similarity scores differently
+            Self::MultiAgreement => 0.60,    // Multiple agree = strong signal
         }
     }
 
@@ -239,7 +239,10 @@ mod tests {
 
     #[test]
     fn test_default() {
-        assert_eq!(GraphLinkEdgeType::default(), GraphLinkEdgeType::SemanticSimilar);
+        assert_eq!(
+            GraphLinkEdgeType::default(),
+            GraphLinkEdgeType::SemanticSimilar
+        );
     }
 
     #[test]
@@ -276,22 +279,50 @@ mod tests {
 
     #[test]
     fn test_primary_embedder_index() {
-        assert_eq!(GraphLinkEdgeType::SemanticSimilar.primary_embedder_index(), Some(0));
-        assert_eq!(GraphLinkEdgeType::CausalChain.primary_embedder_index(), Some(4));
-        assert_eq!(GraphLinkEdgeType::KeywordOverlap.primary_embedder_index(), Some(5));
-        assert_eq!(GraphLinkEdgeType::CodeRelated.primary_embedder_index(), Some(6));
-        assert_eq!(GraphLinkEdgeType::GraphConnected.primary_embedder_index(), Some(7));
-        assert_eq!(GraphLinkEdgeType::ParaphraseAligned.primary_embedder_index(), Some(9));
-        assert_eq!(GraphLinkEdgeType::EntityShared.primary_embedder_index(), Some(10));
-        assert_eq!(GraphLinkEdgeType::MultiAgreement.primary_embedder_index(), None);
+        assert_eq!(
+            GraphLinkEdgeType::SemanticSimilar.primary_embedder_index(),
+            Some(0)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::CausalChain.primary_embedder_index(),
+            Some(4)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::KeywordOverlap.primary_embedder_index(),
+            Some(5)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::CodeRelated.primary_embedder_index(),
+            Some(6)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::GraphConnected.primary_embedder_index(),
+            Some(7)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::ParaphraseAligned.primary_embedder_index(),
+            Some(9)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::EntityShared.primary_embedder_index(),
+            Some(10)
+        );
+        assert_eq!(
+            GraphLinkEdgeType::MultiAgreement.primary_embedder_index(),
+            None
+        );
     }
 
     #[test]
     fn test_default_thresholds_valid() {
         for edge_type in GraphLinkEdgeType::all() {
             let threshold = edge_type.default_threshold();
-            assert!((0.0..=1.0).contains(&threshold),
-                    "{:?} has invalid threshold: {}", edge_type, threshold);
+            assert!(
+                (0.0..=1.0).contains(&threshold),
+                "{:?} has invalid threshold: {}",
+                edge_type,
+                threshold
+            );
         }
     }
 
@@ -300,7 +331,12 @@ mod tests {
         for edge_type in GraphLinkEdgeType::all() {
             let u8_val = edge_type.as_u8();
             let recovered = GraphLinkEdgeType::from_u8(u8_val);
-            assert_eq!(recovered, Some(edge_type), "Roundtrip failed for {:?}", edge_type);
+            assert_eq!(
+                recovered,
+                Some(edge_type),
+                "Roundtrip failed for {:?}",
+                edge_type
+            );
         }
     }
 
@@ -312,9 +348,15 @@ mod tests {
 
     #[test]
     fn test_display() {
-        assert_eq!(GraphLinkEdgeType::SemanticSimilar.to_string(), "semantic_similar");
+        assert_eq!(
+            GraphLinkEdgeType::SemanticSimilar.to_string(),
+            "semantic_similar"
+        );
         assert_eq!(GraphLinkEdgeType::CausalChain.to_string(), "causal_chain");
-        assert_eq!(GraphLinkEdgeType::MultiAgreement.to_string(), "multi_agreement");
+        assert_eq!(
+            GraphLinkEdgeType::MultiAgreement.to_string(),
+            "multi_agreement"
+        );
     }
 
     #[test]
@@ -322,7 +364,11 @@ mod tests {
         for edge_type in GraphLinkEdgeType::all() {
             let json = serde_json::to_string(&edge_type).unwrap();
             let recovered: GraphLinkEdgeType = serde_json::from_str(&json).unwrap();
-            assert_eq!(recovered, edge_type, "Serde roundtrip failed for {:?}", edge_type);
+            assert_eq!(
+                recovered, edge_type,
+                "Serde roundtrip failed for {:?}",
+                edge_type
+            );
         }
     }
 
@@ -346,8 +392,13 @@ mod tests {
     #[test]
     fn test_u8_values_sequential() {
         for (i, edge_type) in GraphLinkEdgeType::all().iter().enumerate() {
-            assert_eq!(edge_type.as_u8() as usize, i,
-                       "{:?} should have u8 value {}", edge_type, i);
+            assert_eq!(
+                edge_type.as_u8() as usize,
+                i,
+                "{:?} should have u8 value {}",
+                edge_type,
+                i
+            );
         }
     }
 }

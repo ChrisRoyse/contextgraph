@@ -309,7 +309,6 @@ mod tests {
         println!("[VERIFIED] Wrong dimension causes FAIL FAST");
     }
 
-
     // ========================================================================
     // PIPELINE STAGE TESTS
     // ========================================================================
@@ -321,9 +320,9 @@ mod tests {
         assert_eq!(PipelineStage::SpladeFilter.index(), 0);
         assert_eq!(PipelineStage::MatryoshkaAnn.index(), 1);
         assert_eq!(PipelineStage::RrfRerank.index(), 2);
-        assert_eq!(PipelineStage::GraphExpansion.index(), 3);  // Stage 3.5
-        assert_eq!(PipelineStage::GnnEnhance.index(), 4);      // Stage 3.75
-        assert_eq!(PipelineStage::MaxSimRerank.index(), 5);    // Stage 4
+        assert_eq!(PipelineStage::GraphExpansion.index(), 3); // Stage 3.5
+        assert_eq!(PipelineStage::GnnEnhance.index(), 4); // Stage 3.75
+        assert_eq!(PipelineStage::MaxSimRerank.index(), 5); // Stage 4
 
         println!("[VERIFIED] Stage indexes correct (6 stages)");
     }
@@ -333,11 +332,11 @@ mod tests {
         println!("=== TEST: Pipeline Stage All ===");
 
         let all = PipelineStage::all();
-        assert_eq!(all.len(), 6);  // 6 stages total
+        assert_eq!(all.len(), 6); // 6 stages total
         assert_eq!(all[0], PipelineStage::SpladeFilter);
-        assert_eq!(all[3], PipelineStage::GraphExpansion);   // Stage 3.5
-        assert_eq!(all[4], PipelineStage::GnnEnhance);       // Stage 3.75
-        assert_eq!(all[5], PipelineStage::MaxSimRerank);     // Stage 4
+        assert_eq!(all[3], PipelineStage::GraphExpansion); // Stage 3.5
+        assert_eq!(all[4], PipelineStage::GnnEnhance); // Stage 3.75
+        assert_eq!(all[5], PipelineStage::MaxSimRerank); // Stage 4
 
         println!("[VERIFIED] PipelineStage::all() returns 6 stages");
     }
@@ -484,7 +483,7 @@ mod tests {
         );
 
         assert_eq!(results.len(), 3); // All docs have at least one term
-        // Doc 1 should rank highest (has both terms)
+                                      // Doc 1 should rank highest (has both terms)
         assert_eq!(results[0].0, id1);
 
         println!("[VERIFIED] E6 sparse index add and search work correctly");

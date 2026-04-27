@@ -58,9 +58,7 @@ pub enum ConstellationError {
     TooFewMembers { count: usize, min: usize },
     #[error("constellation exceeded max_members={max}; got {count}")]
     TooManyMembers { count: usize, max: usize },
-    #[error(
-        "embedder {embedder_index} dimension mismatch: expected {expected}, got {actual}"
-    )]
+    #[error("embedder {embedder_index} dimension mismatch: expected {expected}, got {actual}")]
     DimensionMismatch {
         embedder_index: u8,
         expected: usize,
@@ -79,10 +77,7 @@ enum ObservedVector {
     /// E9 / E10 paraphrase / E11).
     Dense(Vec<f32>),
     /// Sparse observation (E6 / E13).
-    Sparse {
-        indices: Vec<u16>,
-        values: Vec<f32>,
-    },
+    Sparse { indices: Vec<u16>, values: Vec<f32> },
     /// Token-level observation (E12). Each inner `Vec<f32>` is one token
     /// (expected length 128).
     Tokens(Vec<Vec<f32>>),
@@ -346,13 +341,7 @@ pub fn compile_constellation<I>(
     synergy: &SynergyMatrix,
 ) -> Result<Constellation, ConstellationError>
 where
-    I: IntoIterator<
-        Item = (
-            Uuid,
-            SemanticFingerprint,
-            Option<[f32; NUM_EMBEDDERS]>,
-        ),
-    >,
+    I: IntoIterator<Item = (Uuid, SemanticFingerprint, Option<[f32; NUM_EMBEDDERS]>)>,
 {
     let mut acc = ConstellationAccumulator::new(selector, label);
     for (id, fp, profile) in members {
@@ -421,20 +410,20 @@ pub fn score_memory_against_constellation(
 /// and token-level kinds have `dimension = 0`.
 fn default_kind_and_dim(idx: u8) -> (VectorKind, usize) {
     match idx {
-        0 => (VectorKind::Dense, 1024),        // E1
-        1 => (VectorKind::Dense, 512),         // E2
-        2 => (VectorKind::Dense, 512),         // E3
-        3 => (VectorKind::Dense, 512),         // E4
-        4 => (VectorKind::Asymmetric, 768),    // E5 cause
-        5 => (VectorKind::Sparse, 0),          // E6
-        6 => (VectorKind::Dense, 1536),        // E7
-        7 => (VectorKind::Asymmetric, 1024),   // E8 source
-        8 => (VectorKind::Dense, 1024),        // E9
-        9 => (VectorKind::Asymmetric, 768),    // E10 paraphrase
-        10 => (VectorKind::Dense, 768),        // E11
-        11 => (VectorKind::TokenLevel, 0),     // E12
-        12 => (VectorKind::Sparse, 0),         // E13
-        13 => (VectorKind::Dense, 1024),       // E14 BGE-M3 Dense
+        0 => (VectorKind::Dense, 1024),      // E1
+        1 => (VectorKind::Dense, 512),       // E2
+        2 => (VectorKind::Dense, 512),       // E3
+        3 => (VectorKind::Dense, 512),       // E4
+        4 => (VectorKind::Asymmetric, 768),  // E5 cause
+        5 => (VectorKind::Sparse, 0),        // E6
+        6 => (VectorKind::Dense, 1536),      // E7
+        7 => (VectorKind::Asymmetric, 1024), // E8 source
+        8 => (VectorKind::Dense, 1024),      // E9
+        9 => (VectorKind::Asymmetric, 768),  // E10 paraphrase
+        10 => (VectorKind::Dense, 768),      // E11
+        11 => (VectorKind::TokenLevel, 0),   // E12
+        12 => (VectorKind::Sparse, 0),       // E13
+        13 => (VectorKind::Dense, 1024),     // E14 BGE-M3 Dense
         _ => (VectorKind::Dense, 0),
     }
 }
@@ -583,7 +572,8 @@ fn observe_tokens(acc: &mut EmbedderAccumulator, tokens: &[Vec<f32>]) {
     }
     acc.l2_samples.observe(n);
     acc.non_empty_count += 1;
-    acc.observations.push(ObservedVector::Tokens(tokens.to_vec()));
+    acc.observations
+        .push(ObservedVector::Tokens(tokens.to_vec()));
 }
 
 /// Pass 2: walk buffered observations and fill the cosine-to-centroid
@@ -619,8 +609,7 @@ fn finalize_cosine_pass(
                 return Ok(());
             }
             let inv = 1.0 / acc.non_empty_count as f32;
-            let mean_sparse: Vec<(u16, f32)> =
-                sums.iter().map(|(k, v)| (*k, *v * inv)).collect();
+            let mean_sparse: Vec<(u16, f32)> = sums.iter().map(|(k, v)| (*k, *v * inv)).collect();
             let mean_norm = sparse_l2(&mean_sparse);
             let obs = std::mem::take(&mut acc.observations);
             if mean_norm <= 0.0 {
@@ -715,9 +704,7 @@ fn build_stats(emb_idx: u8, acc: EmbedderAccumulator, total_members: usize) -> E
         _ => (Vec::new(), 0.0),
     };
     let (pooled_token_centroid, token_mean_l2) = match (&acc.token_pooled, acc.kind) {
-        (Some(w), VectorKind::TokenLevel) if w.count() > 0 => {
-            (w.mean().to_vec(), w.mean_l2())
-        }
+        (Some(w), VectorKind::TokenLevel) if w.count() > 0 => (w.mean().to_vec(), w.mean_l2()),
         _ => (Vec::new(), 0.0),
     };
     // Final mean_l2 for sparse/token-level uses their own centroid norms.
@@ -840,10 +827,7 @@ fn pick_dense<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> &'a [f32] {
     }
 }
 
-fn pick_sparse<'a>(
-    emb_idx: u8,
-    fp: &'a SemanticFingerprint,
-) -> Option<(&'a [u16], &'a [f32])> {
+fn pick_sparse<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> Option<(&'a [u16], &'a [f32])> {
     match emb_idx {
         5 => Some((&fp.e6_sparse.indices, &fp.e6_sparse.values)),
         12 => Some((&fp.e13_splade.indices, &fp.e13_splade.values)),

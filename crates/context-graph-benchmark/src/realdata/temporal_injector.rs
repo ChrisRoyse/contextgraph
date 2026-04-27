@@ -13,11 +13,11 @@
 //! All temporal embedders are POST-RETRIEVAL only - they NEVER participate in
 //! similarity fusion (AP-73).
 
-use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::config::TemporalInjectionConfig;
@@ -92,12 +92,18 @@ impl TemporalSession {
 
     /// Get chunks before a given sequence position.
     pub fn chunks_before(&self, pos: usize) -> Vec<&SessionChunk> {
-        self.chunks.iter().filter(|c| c.sequence_position < pos).collect()
+        self.chunks
+            .iter()
+            .filter(|c| c.sequence_position < pos)
+            .collect()
     }
 
     /// Get chunks after a given sequence position.
     pub fn chunks_after(&self, pos: usize) -> Vec<&SessionChunk> {
-        self.chunks.iter().filter(|c| c.sequence_position > pos).collect()
+        self.chunks
+            .iter()
+            .filter(|c| c.sequence_position > pos)
+            .collect()
     }
 }
 
@@ -198,8 +204,8 @@ impl TemporalMetadataInjector {
     /// Assigns timestamps based on document order with configurable decay.
     /// Documents are spread over the configured time span.
     pub fn inject_timestamps(&mut self, dataset: &RealDataset) -> HashMap<Uuid, InjectedTimestamp> {
-        let base_time = DateTime::from_timestamp_millis(self.config.base_timestamp_ms)
-            .unwrap_or_else(Utc::now);
+        let base_time =
+            DateTime::from_timestamp_millis(self.config.base_timestamp_ms).unwrap_or_else(Utc::now);
         let span_secs = self.config.recency_span_days as i64 * 24 * 3600;
 
         let mut timestamps = HashMap::with_capacity(dataset.chunks.len());
@@ -291,12 +297,7 @@ impl TemporalMetadataInjector {
             // Compute periodic embedding
             let h_rad = 2.0 * std::f64::consts::PI * hour as f64 / 24.0;
             let d_rad = 2.0 * std::f64::consts::PI * day_of_week as f64 / 7.0;
-            let periodic_embedding = [
-                h_rad.sin(),
-                h_rad.cos(),
-                d_rad.sin(),
-                d_rad.cos(),
-            ];
+            let periodic_embedding = [h_rad.sin(), h_rad.cos(), d_rad.sin(), d_rad.cos()];
 
             periodic.insert(
                 chunk.uuid(),
@@ -319,8 +320,8 @@ impl TemporalMetadataInjector {
     /// Also creates cross-document sessions by topic for variety.
     pub fn inject_sessions(&mut self, dataset: &RealDataset) -> Vec<TemporalSession> {
         let mut sessions = Vec::new();
-        let base_time = DateTime::from_timestamp_millis(self.config.base_timestamp_ms)
-            .unwrap_or_else(Utc::now);
+        let base_time =
+            DateTime::from_timestamp_millis(self.config.base_timestamp_ms).unwrap_or_else(Utc::now);
 
         // Strategy 1: Document-based sessions (chunks within a document)
         let mut doc_chunks: HashMap<&str, Vec<&ChunkRecord>> = HashMap::new();
@@ -351,7 +352,8 @@ impl TemporalMetadataInjector {
                 })
                 .collect();
 
-            let session_end = session_chunks.last()
+            let session_end = session_chunks
+                .last()
                 .map(|c| c.timestamp)
                 .unwrap_or(session_start);
 
@@ -370,7 +372,10 @@ impl TemporalMetadataInjector {
         // Strategy 2: Topic-based sessions (random chunks from same topic)
         let mut topic_chunks: HashMap<&str, Vec<&ChunkRecord>> = HashMap::new();
         for chunk in &dataset.chunks {
-            topic_chunks.entry(&chunk.topic_hint).or_default().push(chunk);
+            topic_chunks
+                .entry(&chunk.topic_hint)
+                .or_default()
+                .push(chunk);
         }
 
         let topics: Vec<_> = topic_chunks.keys().cloned().collect();
@@ -382,7 +387,8 @@ impl TemporalMetadataInjector {
                 }
 
                 // Sample random chunks from topic
-                let mut sampled: Vec<_> = chunks.choose_multiple(&mut self.rng, self.config.sequence_chunks_per_session)
+                let mut sampled: Vec<_> = chunks
+                    .choose_multiple(&mut self.rng, self.config.sequence_chunks_per_session)
                     .cloned()
                     .collect();
                 sampled.shuffle(&mut self.rng);
@@ -402,7 +408,8 @@ impl TemporalMetadataInjector {
                     })
                     .collect();
 
-                let session_end = session_chunks.last()
+                let session_end = session_chunks
+                    .last()
                     .map(|c| c.timestamp)
                     .unwrap_or(session_start);
 
@@ -459,11 +466,14 @@ impl DecayFunction {
                 (-clamped_age as f64 * 0.693 / half_life_secs as f64).exp()
             }
             DecayFunction::Step => {
-                if age_secs < 300 { // < 5 min
+                if age_secs < 300 {
+                    // < 5 min
                     1.0
-                } else if age_secs < 3600 { // < 1 hour
+                } else if age_secs < 3600 {
+                    // < 1 hour
                     0.8
-                } else if age_secs < 86400 { // < 1 day
+                } else if age_secs < 86400 {
+                    // < 1 day
                     0.5
                 } else {
                     0.1
@@ -477,9 +487,9 @@ impl DecayFunction {
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn create_test_dataset() -> (TempDir, RealDataset) {
         let dir = TempDir::new().unwrap();
@@ -495,7 +505,11 @@ mod tests {
             source: "test".to_string(),
             source_datasets: vec!["test".to_string()],
             dataset_stats: HashMap::new(),
-            top_topics: vec!["science".to_string(), "history".to_string(), "tech".to_string()],
+            top_topics: vec![
+                "science".to_string(),
+                "history".to_string(),
+                "tech".to_string(),
+            ],
             topic_counts: HashMap::new(),
         };
 
@@ -627,12 +641,20 @@ mod tests {
 
         // Negative age (future timestamps) should be clamped to 0, giving score = 1.0
         let score = DecayFunction::Exponential.score(-1000, half_life);
-        assert!((score - 1.0).abs() < f64::EPSILON, "Negative age should give score 1.0, got {}", score);
+        assert!(
+            (score - 1.0).abs() < f64::EPSILON,
+            "Negative age should give score 1.0, got {}",
+            score
+        );
         assert!(score <= 1.0, "Score should never exceed 1.0, got {}", score);
 
         // Very negative age should still give 1.0
         let score = DecayFunction::Exponential.score(-100000, half_life);
-        assert!((score - 1.0).abs() < f64::EPSILON, "Negative age should give score 1.0, got {}", score);
+        assert!(
+            (score - 1.0).abs() < f64::EPSILON,
+            "Negative age should give score 1.0, got {}",
+            score
+        );
     }
 
     #[test]

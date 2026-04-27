@@ -142,10 +142,7 @@ fn format_search_results(
         let mut header_added = false;
 
         for (i, memory) in memories.iter().enumerate() {
-            let content = memory
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let content = memory.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
             if content.is_empty() {
                 continue;

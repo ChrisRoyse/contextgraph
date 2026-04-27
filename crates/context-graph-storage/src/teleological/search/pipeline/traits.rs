@@ -92,9 +92,7 @@ impl InMemoryTokenStorage {
                 );
             } else {
                 // Safety: insertion_order and tokens are inconsistent — clear both
-                warn!(
-                    "Token storage insertion order desync — clearing cache"
-                );
+                warn!("Token storage insertion order desync — clearing cache");
                 inner.tokens.clear();
                 inner.insertion_order.clear();
                 break;
@@ -206,11 +204,7 @@ impl InMemorySpladeIndex {
     }
 
     /// Remove a document from all index structures.
-    fn evict_doc(
-        inner: &mut SpladeIndexInner,
-        doc_id: Uuid,
-        doc_terms: &[usize],
-    ) {
+    fn evict_doc(inner: &mut SpladeIndexInner, doc_id: Uuid, doc_terms: &[usize]) {
         inner.doc_norms.remove(&doc_id);
         for &term_id in doc_terms {
             if let Some(term_postings) = inner.posting_lists.get_mut(&term_id) {
@@ -275,7 +269,11 @@ impl InMemorySpladeIndex {
                 continue;
             }
 
-            inner.posting_lists.entry(term_id).or_default().push((id, weight));
+            inner
+                .posting_lists
+                .entry(term_id)
+                .or_default()
+                .push((id, weight));
             doc_term_ids.push(term_id);
 
             if added_terms.insert(term_id) {
@@ -369,9 +367,7 @@ impl InMemoryE6SparseIndex {
     }
 
     pub fn add(&self, id: Uuid, sparse: &[(usize, f32)]) {
-        self.doc_vectors
-            .write()
-            .insert(id, sparse.to_vec());
+        self.doc_vectors.write().insert(id, sparse.to_vec());
 
         let mut postings = self.posting_lists.write();
         for &(term_id, weight) in sparse {
@@ -521,12 +517,12 @@ fn contains_proper_noun(query: &str) -> bool {
 #[cfg(test)]
 fn high_common_word_ratio(query: &str) -> bool {
     const COMMON_WORDS: &[&str] = &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
-        "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must",
-        "can", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "or", "and",
-        "but", "if", "then", "else", "when", "where", "why", "how", "what", "which", "who",
-        "this", "that", "these", "those", "it", "its", "i", "you", "he", "she", "we", "they",
-        "me", "him", "her", "us", "them", "my", "your", "his", "her", "our", "their",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "can",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "or", "and", "but", "if",
+        "then", "else", "when", "where", "why", "how", "what", "which", "who", "this", "that",
+        "these", "those", "it", "its", "i", "you", "he", "she", "we", "they", "me", "him", "her",
+        "us", "them", "my", "your", "his", "her", "our", "their",
     ];
 
     let words: Vec<&str> = query.split_whitespace().collect();

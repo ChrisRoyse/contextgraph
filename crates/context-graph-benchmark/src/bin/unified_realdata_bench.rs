@@ -40,7 +40,6 @@ use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-
 use context_graph_benchmark::realdata::config::{EmbedderName, UnifiedBenchmarkConfig};
 use context_graph_benchmark::realdata::report::{generate_console_summary, ReportGenerator};
 use context_graph_benchmark::runners::unified_realdata::UnifiedRealdataBenchmarkRunner;
@@ -284,7 +283,14 @@ async fn main() {
     if args.verbose {
         eprintln!("=== Unified Real Data Benchmark ===");
         eprintln!("Data directory: {}", args.data_dir.display());
-        eprintln!("Max chunks: {}", if args.max_chunks == 0 { "unlimited".to_string() } else { args.max_chunks.to_string() });
+        eprintln!(
+            "Max chunks: {}",
+            if args.max_chunks == 0 {
+                "unlimited".to_string()
+            } else {
+                args.max_chunks.to_string()
+            }
+        );
         eprintln!("Num queries: {}", args.num_queries);
         eprintln!("Seed: {}", args.seed);
         if let Some(ref embedders) = args.embedders {
@@ -345,7 +351,9 @@ async fn main() {
         Err(e) => {
             eprintln!("Benchmark with embeddings failed: {}", e);
             eprintln!("Falling back to synthetic results...");
-            runner.run_without_embedding().expect("Synthetic benchmark failed")
+            runner
+                .run_without_embedding()
+                .expect("Synthetic benchmark failed")
         }
     };
 
@@ -368,12 +376,15 @@ async fn main() {
 
     // Generate and write markdown report
     let report_path = args.output_path.with_extension("md");
-    let report_path = report_path.with_file_name(
-        format!("{}_report.md", args.output_path.file_stem().unwrap().to_str().unwrap())
-    );
+    let report_path = report_path.with_file_name(format!(
+        "{}_report.md",
+        args.output_path.file_stem().unwrap().to_str().unwrap()
+    ));
 
     let generator = ReportGenerator::new(results.clone());
-    generator.write_to_file(&report_path).expect("Failed to write report");
+    generator
+        .write_to_file(&report_path)
+        .expect("Failed to write report");
 
     if args.verbose {
         eprintln!("Markdown report written to: {}", report_path.display());

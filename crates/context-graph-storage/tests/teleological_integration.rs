@@ -213,8 +213,8 @@ fn test_rocksdb_e13_splade_inverted_index() {
         .expect("Failed to get inverted index")
         .expect("Term not found");
 
-    let retrieved_ids = deserialize_memory_id_list(&retrieved_bytes)
-        .expect("Failed to deserialize memory ID list");
+    let retrieved_ids =
+        deserialize_memory_id_list(&retrieved_bytes).expect("Failed to deserialize memory ID list");
     println!(
         "AFTER: Retrieved {} memory IDs for term {}",
         retrieved_ids.len(),
@@ -277,7 +277,7 @@ fn test_rocksdb_multiple_fingerprints() {
             .expect("Fingerprint not found");
 
         let retrieved = deserialize_teleological_fingerprint(&retrieved_bytes)
-        .expect("Failed to deserialize fingerprint");
+            .expect("Failed to deserialize fingerprint");
 
         assert_eq!(original.id, retrieved.id, "ID mismatch at index {}", i);
         assert_eq!(
@@ -343,7 +343,7 @@ fn test_rocksdb_e13_multiple_terms() {
             .expect("Term not found");
 
         let retrieved_ids = deserialize_memory_id_list(&retrieved_bytes)
-        .expect("Failed to deserialize memory ID list");
+            .expect("Failed to deserialize memory ID list");
         assert_eq!(
             original_ids, &retrieved_ids,
             "Mismatch for term {}",
@@ -452,7 +452,7 @@ fn test_rocksdb_persistence() {
             .expect("Fingerprint not found after reopen");
 
         let retrieved = deserialize_teleological_fingerprint(&retrieved_bytes)
-        .expect("Failed to deserialize fingerprint");
+            .expect("Failed to deserialize fingerprint");
         assert_eq!(fp.id, retrieved.id);
 
         println!(
@@ -476,7 +476,11 @@ fn test_total_column_families_is_28_teleological() {
     // Count base CFs (8 original + 3 graph linking per TASK-GRAPHLINK-010)
     let base_descriptors = get_column_family_descriptors(&cache);
     println!("Base column families: {}", base_descriptors.len());
-    assert_eq!(base_descriptors.len(), 11, "Expected 11 base CFs (8 original + 3 graph linking)");
+    assert_eq!(
+        base_descriptors.len(),
+        11,
+        "Expected 11 base CFs (8 original + 3 graph linking)"
+    );
 
     // Count teleological CFs (28 active after typed-edges training-data factory)
     let teleological_descriptors = get_teleological_cf_descriptors(&cache);

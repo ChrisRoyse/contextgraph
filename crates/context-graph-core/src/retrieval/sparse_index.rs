@@ -128,7 +128,10 @@ impl PostingList {
     /// Maintains sorted order by memory_id.
     pub fn add(&mut self, posting: Posting) {
         // Binary search to find insertion point (maintain sorted order)
-        match self.postings.binary_search_by(|p| p.memory_id.cmp(&posting.memory_id)) {
+        match self
+            .postings
+            .binary_search_by(|p| p.memory_id.cmp(&posting.memory_id))
+        {
             Ok(idx) => {
                 // Memory already exists - update weight
                 self.postings[idx].weight = posting.weight;
@@ -142,7 +145,10 @@ impl PostingList {
 
     /// Remove a posting by memory_id.
     pub fn remove(&mut self, memory_id: Uuid) -> bool {
-        if let Ok(idx) = self.postings.binary_search_by(|p| p.memory_id.cmp(&memory_id)) {
+        if let Ok(idx) = self
+            .postings
+            .binary_search_by(|p| p.memory_id.cmp(&memory_id))
+        {
             self.postings.remove(idx);
             true
         } else {
@@ -238,7 +244,8 @@ impl SparseInvertedIndex {
     /// Create with pre-allocated capacity for expected document count.
     pub fn with_capacity(expected_docs: usize) -> Self {
         // Estimate ~100 unique terms per doc on average
-        let estimated_unique_terms = (expected_docs as f64 * 0.1).min(SPARSE_VOCAB_SIZE as f64) as usize;
+        let estimated_unique_terms =
+            (expected_docs as f64 * 0.1).min(SPARSE_VOCAB_SIZE as f64) as usize;
 
         Self {
             posting_lists: RwLock::new(HashMap::with_capacity(estimated_unique_terms)),
@@ -305,10 +312,7 @@ impl SparseInvertedIndex {
         for (&term_id, &weight) in sparse.indices.iter().zip(sparse.values.iter()) {
             let posting = Posting::new(memory_id, weight);
 
-            posting_guard
-                .entry(term_id)
-                .or_default()
-                .add(posting);
+            posting_guard.entry(term_id).or_default().add(posting);
 
             indexed_terms.push(term_id);
         }
@@ -397,10 +401,7 @@ impl SparseInvertedIndex {
         for (&term_id, &weight) in sparse.indices.iter().zip(sparse.values.iter()) {
             let posting = Posting::new(memory_id, weight);
 
-            posting_guard
-                .entry(term_id)
-                .or_default()
-                .add(posting);
+            posting_guard.entry(term_id).or_default().add(posting);
 
             indexed_terms.push(term_id);
         }
@@ -428,9 +429,17 @@ impl SparseInvertedIndex {
     /// # Returns
     /// * `Vec<RecallCandidate>` - Top candidates sorted by score (descending)
     /// * `RecallStats` - Statistics for monitoring
-    pub fn recall(&self, query: &SparseVector, limit: usize) -> (Vec<RecallCandidate>, RecallStats) {
+    pub fn recall(
+        &self,
+        query: &SparseVector,
+        limit: usize,
+    ) -> (Vec<RecallCandidate>, RecallStats) {
         let start = std::time::Instant::now();
-        let limit = if limit == 0 { DEFAULT_RECALL_LIMIT } else { limit };
+        let limit = if limit == 0 {
+            DEFAULT_RECALL_LIMIT
+        } else {
+            limit
+        };
 
         if query.is_empty() {
             return (Vec::new(), RecallStats::default());
@@ -489,7 +498,11 @@ impl SparseInvertedIndex {
             .collect();
 
         // Sort by descending score
-        candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Truncate to limit
         candidates.truncate(limit);
@@ -692,7 +705,10 @@ mod tests {
 
         // Second index fails
         let result = index.index(id, &sparse);
-        assert!(matches!(result, Err(SparseIndexError::AlreadyExists { .. })));
+        assert!(matches!(
+            result,
+            Err(SparseIndexError::AlreadyExists { .. })
+        ));
 
         println!("[VERIFIED] Duplicate indexing fails fast");
     }
@@ -791,8 +807,14 @@ mod tests {
 
         assert_eq!(candidates.len(), 2);
         // High-weight memory should rank first
-        assert_eq!(candidates[0].memory_id, id_high, "High-weight should rank first");
-        assert!(candidates[0].score > candidates[1].score, "Scores should be ordered");
+        assert_eq!(
+            candidates[0].memory_id, id_high,
+            "High-weight should rank first"
+        );
+        assert!(
+            candidates[0].score > candidates[1].score,
+            "Scores should be ordered"
+        );
 
         println!(
             "Scores: high={:.4}, low={:.4}",
@@ -955,9 +977,7 @@ mod tests {
         );
 
         // Perform recall
-        let query_terms: Vec<_> = (0..100)
-            .map(|i| (i as u16 * 300, 0.5))
-            .collect();
+        let query_terms: Vec<_> = (0..100).map(|i| (i as u16 * 300, 0.5)).collect();
         let query = create_test_sparse(&query_terms);
 
         let recall_start = std::time::Instant::now();
@@ -1047,7 +1067,11 @@ mod tests {
         let result = index.index(overflow_id, &sparse);
 
         match result {
-            Err(SparseIndexError::CapacityExceeded { memory_id, current, max_docs }) => {
+            Err(SparseIndexError::CapacityExceeded {
+                memory_id,
+                current,
+                max_docs,
+            }) => {
                 assert_eq!(memory_id, overflow_id);
                 assert_eq!(current, 5);
                 assert_eq!(max_docs, 5);
@@ -1078,5 +1102,4 @@ mod tests {
         assert_eq!(index.max_docs(), DEFAULT_MAX_SPARSE_DOCS);
         println!("[VERIFIED] Default max_docs = {}", DEFAULT_MAX_SPARSE_DOCS);
     }
-
 }

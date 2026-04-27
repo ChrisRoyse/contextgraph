@@ -15,9 +15,7 @@ use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use context_graph_causal_agent::{
-    CausalDiscoveryConfig, CausalDiscoveryService, DiscoveryCursor,
-};
+use context_graph_causal_agent::{CausalDiscoveryConfig, CausalDiscoveryService, DiscoveryCursor};
 use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_core::types::fingerprint::{
     SemanticFingerprint, SparseVector, TeleologicalFingerprint,
@@ -46,8 +44,12 @@ fn generate_sparse(seed: u64) -> SparseVector {
     let mut values = Vec::with_capacity(num_entries);
     for i in 0..num_entries {
         indices.push(((seed + i as u64 * 31) % 30522) as u16);
-        values
-            .push(((seed as f64 * 0.1 + i as f64 * 0.2) * PI as f64).sin().abs() as f32 + 0.1);
+        values.push(
+            ((seed as f64 * 0.1 + i as f64 * 0.2) * PI as f64)
+                .sin()
+                .abs() as f32
+                + 0.1,
+        );
     }
     SparseVector { indices, values }
 }
@@ -105,8 +107,7 @@ fn create_test_source_metadata(session_id: &str) -> SourceMetadata {
 
 /// Open a store and wrap in Arc for trait usage.
 fn open_test_store(path: &std::path::Path) -> Arc<dyn TeleologicalMemoryStore> {
-    let store = RocksDbTeleologicalStore::open(path)
-        .expect("Failed to open RocksDB store");
+    let store = RocksDbTeleologicalStore::open(path).expect("Failed to open RocksDB store");
     Arc::new(store)
 }
 
@@ -240,7 +241,8 @@ async fn test_store_and_retrieve_memory_with_content() {
     let store = open_test_store(tmp.path());
 
     // Store a fingerprint
-    let content = "Deploying version 2.3 of the authentication service introduced a breaking change";
+    let content =
+        "Deploying version 2.3 of the authentication service introduced a breaking change";
     let fp = create_test_fingerprint(100, content);
     let fp_id = fp.id;
     store.store(fp).await.expect("store fingerprint failed");
@@ -319,11 +321,7 @@ async fn test_scan_fingerprints_for_harvest() {
         .await
         .expect("scan_fingerprints_for_clustering failed");
 
-    assert_eq!(
-        scan_result.len(),
-        3,
-        "Should find 3 fingerprints in scan"
-    );
+    assert_eq!(scan_result.len(), 3, "Should find 3 fingerprints in scan");
 
     // Verify content is retrievable for each
     for id in &ids {
@@ -372,7 +370,11 @@ async fn test_empty_database_scan() {
 #[ignore = "requires LLM model weights"]
 async fn test_discovery_cycle_with_real_store() {
     let config = test_config();
-    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
+    assert!(
+        model_exists(&config),
+        "LLM model not found at {:?}",
+        config.llm_config.model_path
+    );
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());
@@ -506,7 +508,9 @@ async fn test_discovery_cycle_with_real_store() {
 
         println!("PASS: CausalRelationship physically verified in RocksDB");
     } else {
-        println!("NOTE: LLM did not confirm a causal link (model-dependent). Storage path not tested.");
+        println!(
+            "NOTE: LLM did not confirm a causal link (model-dependent). Storage path not tested."
+        );
     }
 }
 
@@ -514,14 +518,19 @@ async fn test_discovery_cycle_with_real_store() {
 #[ignore = "requires LLM model weights"]
 async fn test_non_causal_pair_no_relationship_stored() {
     let config = test_config();
-    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
+    assert!(
+        model_exists(&config),
+        "LLM model not found at {:?}",
+        config.llm_config.model_path
+    );
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());
 
     // Store non-causal pair (from spec §9.2)
     let content_c = "The weather in Seattle was particularly rainy during November 2025.";
-    let content_d = "The quarterly revenue report for Q4 2025 exceeded analyst expectations by 12%.";
+    let content_d =
+        "The quarterly revenue report for Q4 2025 exceeded analyst expectations by 12%.";
 
     let fp_c = create_test_fingerprint(400, content_c);
     let fp_d = create_test_fingerprint(401, content_d);
@@ -583,7 +592,11 @@ async fn test_non_causal_pair_no_relationship_stored() {
 #[ignore = "requires LLM model weights"]
 async fn test_audit_record_after_discovery() {
     let config = test_config();
-    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
+    assert!(
+        model_exists(&config),
+        "LLM model not found at {:?}",
+        config.llm_config.model_path
+    );
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());
@@ -597,11 +610,17 @@ async fn test_audit_record_after_discovery() {
         .await
         .unwrap();
 
-    let fp2 = create_test_fingerprint(501, "Users reported inability to access accounts after outage");
+    let fp2 = create_test_fingerprint(
+        501,
+        "Users reported inability to access accounts after outage",
+    );
     let id2 = fp2.id;
     store.store(fp2).await.unwrap();
     store
-        .store_content(id2, "Users reported inability to access accounts after outage")
+        .store_content(
+            id2,
+            "Users reported inability to access accounts after outage",
+        )
         .await
         .unwrap();
 

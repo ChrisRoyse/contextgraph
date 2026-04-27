@@ -984,13 +984,17 @@ pub fn build_e12_late_interaction_corpus() -> EmbedderStressConfig {
                 metadata: None,
             },
             StressCorpusEntry {
-                content: "SELECT name, email FROM users WHERE active = true ORDER BY created_at DESC".into(),
+                content:
+                    "SELECT name, email FROM users WHERE active = true ORDER BY created_at DESC"
+                        .into(),
                 doc_id: 3,
                 e1_limitation: Some("SQL clause order matters".into()),
                 metadata: None,
             },
             StressCorpusEntry {
-                content: "FROM users SELECT email, name WHERE true = active DESC ORDER BY created_at".into(),
+                content:
+                    "FROM users SELECT email, name WHERE true = active DESC ORDER BY created_at"
+                        .into(),
                 doc_id: 4,
                 e1_limitation: Some("Invalid SQL - wrong clause order".into()),
                 metadata: None,

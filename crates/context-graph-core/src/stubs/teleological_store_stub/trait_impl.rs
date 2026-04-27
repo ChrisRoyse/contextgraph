@@ -112,7 +112,8 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         sparse_query: &SparseVector,
         max_candidates: usize,
     ) -> CoreResult<Vec<(Uuid, usize)>> {
-        self.search_e6_sparse_impl(sparse_query, max_candidates).await
+        self.search_e6_sparse_impl(sparse_query, max_candidates)
+            .await
     }
 
     async fn store_batch(
@@ -223,7 +224,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         Ok(self.source_metadata.remove(&id).is_some())
     }
 
-    async fn get_source_metadata_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<SourceMetadata>>> {
+    async fn get_source_metadata_batch(
+        &self,
+        ids: &[Uuid],
+    ) -> CoreResult<Vec<Option<SourceMetadata>>> {
         Ok(ids
             .iter()
             .map(|id| self.source_metadata.get(id).map(|r| r.clone()))
@@ -239,7 +243,11 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
                 }
             }
         }
-        debug!("Found {} fingerprints for file_path: {}", matching_ids.len(), file_path);
+        debug!(
+            "Found {} fingerprints for file_path: {}",
+            matching_ids.len(),
+            file_path
+        );
         Ok(matching_ids)
     }
 
@@ -285,7 +293,11 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         Ok(ids)
     }
 
-    async fn index_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<()> {
+    async fn index_file_fingerprint(
+        &self,
+        file_path: &str,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<()> {
         // Proper implementation: maintain file_index DashMap
         let mut entry = self.file_index.entry(file_path.to_string()).or_default();
         if !entry.contains(&fingerprint_id) {
@@ -300,7 +312,11 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         Ok(())
     }
 
-    async fn unindex_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<bool> {
+    async fn unindex_file_fingerprint(
+        &self,
+        file_path: &str,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<bool> {
         // Proper implementation: remove from file_index DashMap
         let removed = if let Some(mut entry) = self.file_index.get_mut(file_path) {
             let before_len = entry.len();
@@ -400,9 +416,11 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
             topic_count = portfolio.topics.len(),
             "Persisting topic portfolio to in-memory store"
         );
-        self.topic_portfolios.insert(session_id.to_string(), portfolio.clone());
+        self.topic_portfolios
+            .insert(session_id.to_string(), portfolio.clone());
         // Also store as "__latest__"
-        self.topic_portfolios.insert("__latest__".to_string(), portfolio.clone());
+        self.topic_portfolios
+            .insert("__latest__".to_string(), portfolio.clone());
         Ok(())
     }
 
@@ -455,7 +473,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         &self,
         limit: usize,
     ) -> CoreResult<Vec<TeleologicalFingerprint>> {
-        debug!(limit = limit, "Listing fingerprints (unbiased) from in-memory store");
+        debug!(
+            limit = limit,
+            "Listing fingerprints (unbiased) from in-memory store"
+        );
         let mut results = Vec::new();
         for entry in self.data.iter() {
             if self.deleted.contains_key(entry.key()) {
@@ -634,12 +655,13 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
             let explanation_sim = compute_cosine_similarity(query_embedding, explanation_embedding);
 
             // Compute source similarity (if source embeddings exist)
-            let source_sim = if source_embedding.is_empty() || source_embedding.iter().all(|&v| v == 0.0) {
-                // No source embeddings - fall back to explanation only
-                explanation_sim
-            } else {
-                compute_cosine_similarity(query_embedding, source_embedding)
-            };
+            let source_sim =
+                if source_embedding.is_empty() || source_embedding.iter().all(|&v| v == 0.0) {
+                    // No source embeddings - fall back to explanation only
+                    explanation_sim
+                } else {
+                    compute_cosine_similarity(query_embedding, source_embedding)
+                };
 
             // Compute hybrid score
             let hybrid_score = source_weight * source_sim + explanation_weight * explanation_sim;
@@ -778,15 +800,15 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         use crate::types::CausalSearchResult;
 
         // Parallel search across all embedders
-        let e1_results = self.search_causal_relationships(e1_embedding, top_k * 3, None).await?;
-        let e5_results = self.search_causal_e5_hybrid(
-            e5_embedding,
-            search_causes,
-            top_k * 3,
-            0.6,
-            0.4,
-        ).await?;
-        let e8_results = self.search_causal_e8(e8_embedding, !search_causes, top_k * 3).await?;
+        let e1_results = self
+            .search_causal_relationships(e1_embedding, top_k * 3, None)
+            .await?;
+        let e5_results = self
+            .search_causal_e5_hybrid(e5_embedding, search_causes, top_k * 3, 0.6, 0.4)
+            .await?;
+        let e8_results = self
+            .search_causal_e8(e8_embedding, !search_causes, top_k * 3)
+            .await?;
         let e11_results = self.search_causal_e11(e11_embedding, top_k * 3).await?;
 
         // CRIT-05 FIX: Build rank maps from the ORIGINAL sorted Vecs (score-descending order).
@@ -797,19 +819,23 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         use std::collections::HashMap;
 
         // Build rank maps FIRST from the sorted Vecs (rank 0 = highest score)
-        let e1_ranks: HashMap<Uuid, usize> = e1_results.iter()
+        let e1_ranks: HashMap<Uuid, usize> = e1_results
+            .iter()
             .enumerate()
             .map(|(rank, (id, _))| (*id, rank))
             .collect();
-        let e5_ranks: HashMap<Uuid, usize> = e5_results.iter()
+        let e5_ranks: HashMap<Uuid, usize> = e5_results
+            .iter()
             .enumerate()
             .map(|(rank, (id, _))| (*id, rank))
             .collect();
-        let e8_ranks: HashMap<Uuid, usize> = e8_results.iter()
+        let e8_ranks: HashMap<Uuid, usize> = e8_results
+            .iter()
             .enumerate()
             .map(|(rank, (id, _))| (*id, rank))
             .collect();
-        let e11_ranks: HashMap<Uuid, usize> = e11_results.iter()
+        let e11_ranks: HashMap<Uuid, usize> = e11_results
+            .iter()
             .enumerate()
             .map(|(rank, (id, _))| (*id, rank))
             .collect();
@@ -887,7 +913,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Audit Log (Phase 1.1 Stubs) ====================
 
-    async fn append_audit_record(&self, _record: &crate::types::audit::AuditRecord) -> CoreResult<()> {
+    async fn append_audit_record(
+        &self,
+        _record: &crate::types::audit::AuditRecord,
+    ) -> CoreResult<()> {
         // Test stub: no-op for audit log append
         Ok(())
     }
@@ -918,7 +947,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Merge History (Phase 4 Stubs) ====================
 
-    async fn append_merge_record(&self, _record: &crate::types::audit::MergeRecord) -> CoreResult<()> {
+    async fn append_merge_record(
+        &self,
+        _record: &crate::types::audit::MergeRecord,
+    ) -> CoreResult<()> {
         // Test stub: no-op
         Ok(())
     }
@@ -934,7 +966,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Importance History (Phase 4 Stubs) ====================
 
-    async fn append_importance_change(&self, _record: &crate::types::audit::ImportanceChangeRecord) -> CoreResult<()> {
+    async fn append_importance_change(
+        &self,
+        _record: &crate::types::audit::ImportanceChangeRecord,
+    ) -> CoreResult<()> {
         // Test stub: no-op
         Ok(())
     }
@@ -950,7 +985,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Embedding Version Registry (Phase 6 Stubs) ====================
 
-    async fn store_embedding_version(&self, _record: &crate::types::audit::EmbeddingVersionRecord) -> CoreResult<()> {
+    async fn store_embedding_version(
+        &self,
+        _record: &crate::types::audit::EmbeddingVersionRecord,
+    ) -> CoreResult<()> {
         // Test stub: no-op
         Ok(())
     }
@@ -965,7 +1003,11 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Custom Weight Profile Persistence (Stubs) ====================
 
-    async fn store_custom_weight_profile(&self, _name: &str, _weights: &[f32; 14]) -> CoreResult<()> {
+    async fn store_custom_weight_profile(
+        &self,
+        _name: &str,
+        _weights: &[f32; 14],
+    ) -> CoreResult<()> {
         // Test stub: no-op
         Ok(())
     }
@@ -989,13 +1031,15 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     async fn store_processing_cursor(&self, _key: &str, _data: &[u8]) -> CoreResult<()> {
         Err(CoreError::NotImplemented(
-            "InMemoryTeleologicalStore does not support processing cursors. Use RocksDB.".to_string(),
+            "InMemoryTeleologicalStore does not support processing cursors. Use RocksDB."
+                .to_string(),
         ))
     }
 
     async fn get_processing_cursor(&self, _key: &str) -> CoreResult<Option<Vec<u8>>> {
         Err(CoreError::NotImplemented(
-            "InMemoryTeleologicalStore does not support processing cursors. Use RocksDB.".to_string(),
+            "InMemoryTeleologicalStore does not support processing cursors. Use RocksDB."
+                .to_string(),
         ))
     }
 

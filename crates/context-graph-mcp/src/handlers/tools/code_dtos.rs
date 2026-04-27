@@ -13,8 +13,8 @@
 //! - FAIL FAST: All errors propagate immediately with logging
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::fmt;
+use uuid::Uuid;
 
 use context_graph_core::traits::SearchStrategy;
 
@@ -74,7 +74,9 @@ impl<'de> serde::Deserialize<'de> for CodeSearchMode {
         match s.as_str() {
             "hybrid" | "Hybrid" => Ok(CodeSearchMode::Hybrid),
             "e7Only" | "E7Only" | "e7_only" => Ok(CodeSearchMode::E7Only),
-            "e1WithE7Rerank" | "E1WithE7Rerank" | "e1_with_e7_rerank" => Ok(CodeSearchMode::E1WithE7Rerank),
+            "e1WithE7Rerank" | "E1WithE7Rerank" | "e1_with_e7_rerank" => {
+                Ok(CodeSearchMode::E1WithE7Rerank)
+            }
             "pipeline" | "Pipeline" => {
                 tracing::debug!(
                     "CodeSearchMode 'pipeline' mapped to 'hybrid' (MED-17: Pipeline was identical to Hybrid)"
@@ -434,9 +436,17 @@ mod tests {
     #[test]
     fn test_validation_rejects_invalid() {
         assert!(SearchCodeRequest::default().validate().is_err());
-        let bad_blend = SearchCodeRequest { query: "test".to_string(), blend_with_semantic: 1.5, ..Default::default() };
+        let bad_blend = SearchCodeRequest {
+            query: "test".to_string(),
+            blend_with_semantic: 1.5,
+            ..Default::default()
+        };
         assert!(bad_blend.validate().is_err());
-        let bad_k = SearchCodeRequest { query: "test".to_string(), top_k: 100, ..Default::default() };
+        let bad_k = SearchCodeRequest {
+            query: "test".to_string(),
+            top_k: 100,
+            ..Default::default()
+        };
         assert!(bad_k.validate().is_err());
     }
 

@@ -83,5 +83,4 @@ impl CodeStorageError {
     pub fn cf_not_found(name: impl Into<String>) -> Self {
         Self::ColumnFamilyNotFound { name: name.into() }
     }
-
 }

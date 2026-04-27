@@ -72,10 +72,7 @@ pub fn similarity_profile(
     // E11 (dense, entity).
     out[10] = src3_cosine(&anchor.e11_entity, &negative.e11_entity);
     // E12 (token-level) — mean-pool both sides, then SRC-3 cosine.
-    out[11] = token_level_src3(
-        &anchor.e12_late_interaction,
-        &negative.e12_late_interaction,
-    );
+    out[11] = token_level_src3(&anchor.e12_late_interaction, &negative.e12_late_interaction);
     // E13 (sparse) — Jaccard.
     out[12] = jaccard_similarity(&anchor.e13_splade, &negative.e13_splade);
     // E14 (dense, BGE-M3) — symmetric SRC-3 cosine. When either side is empty

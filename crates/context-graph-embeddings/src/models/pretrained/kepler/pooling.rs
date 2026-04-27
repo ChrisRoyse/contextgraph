@@ -130,16 +130,19 @@ impl KeplerModel {
         eps: f64,
     ) -> EmbeddingResult<Tensor> {
         // Compute mean over last dimension
-        let mean = input
-            .mean_keepdim(candle_core::D::Minus1)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel layer_norm mean failed: {}", e),
-            })?;
+        let mean =
+            input
+                .mean_keepdim(candle_core::D::Minus1)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel layer_norm mean failed: {}", e),
+                })?;
 
         // Compute variance
-        let diff = input.broadcast_sub(&mean).map_err(|e| EmbeddingError::GpuError {
-            message: format!("KeplerModel layer_norm sub failed: {}", e),
-        })?;
+        let diff = input
+            .broadcast_sub(&mean)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("KeplerModel layer_norm sub failed: {}", e),
+            })?;
 
         let variance = diff
             .sqr()
@@ -161,9 +164,11 @@ impl KeplerModel {
                 message: format!("KeplerModel layer_norm sqrt failed: {}", e),
             })?;
 
-        let normalized = diff.broadcast_div(&std).map_err(|e| EmbeddingError::GpuError {
-            message: format!("KeplerModel layer_norm div failed: {}", e),
-        })?;
+        let normalized = diff
+            .broadcast_div(&std)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("KeplerModel layer_norm div failed: {}", e),
+            })?;
 
         // Apply affine transformation: weight * normalized + bias
         let scaled = normalized
@@ -192,11 +197,10 @@ impl KeplerModel {
             Self::self_attention_forward(hidden_states, &layer.attention, attention_mask, config)?;
 
         // Add & norm (attention)
-        let attention_output = (hidden_states + &attention_output).map_err(|e| {
-            EmbeddingError::GpuError {
+        let attention_output =
+            (hidden_states + &attention_output).map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel encoder attention residual failed: {}", e),
-            }
-        })?;
+            })?;
 
         let attention_output = Self::layer_norm(
             &attention_output,
@@ -209,10 +213,9 @@ impl KeplerModel {
         let ffn_output = Self::ffn_forward(&attention_output, &layer.ffn, config)?;
 
         // Add & norm (FFN)
-        let output =
-            (attention_output + &ffn_output).map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel encoder ffn residual failed: {}", e),
-            })?;
+        let output = (attention_output + &ffn_output).map_err(|e| EmbeddingError::GpuError {
+            message: format!("KeplerModel encoder ffn residual failed: {}", e),
+        })?;
 
         Self::layer_norm(
             &output,
@@ -229,11 +232,12 @@ impl KeplerModel {
         attention_mask: &Tensor,
         config: &BertConfig,
     ) -> EmbeddingResult<Tensor> {
-        let (batch, seq_len, hidden_size) = hidden_states.dims3().map_err(|e| {
-            EmbeddingError::GpuError {
-                message: format!("KeplerModel attention dims failed: {}", e),
-            }
-        })?;
+        let (batch, seq_len, hidden_size) =
+            hidden_states
+                .dims3()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel attention dims failed: {}", e),
+                })?;
 
         let head_dim = config.hidden_size / config.num_attention_heads;
 
@@ -246,9 +250,14 @@ impl KeplerModel {
 
         // Project Q, K, V
         let query = hidden_flat
-            .matmul(&attention.query_weight.t().map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel query transpose failed: {}", e),
-            })?)
+            .matmul(
+                &attention
+                    .query_weight
+                    .t()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("KeplerModel query transpose failed: {}", e),
+                    })?,
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel query matmul failed: {}", e),
             })?
@@ -262,9 +271,14 @@ impl KeplerModel {
             })?;
 
         let key = hidden_flat
-            .matmul(&attention.key_weight.t().map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel key transpose failed: {}", e),
-            })?)
+            .matmul(
+                &attention
+                    .key_weight
+                    .t()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("KeplerModel key transpose failed: {}", e),
+                    })?,
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel key matmul failed: {}", e),
             })?
@@ -278,9 +292,14 @@ impl KeplerModel {
             })?;
 
         let value = hidden_flat
-            .matmul(&attention.value_weight.t().map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel value transpose failed: {}", e),
-            })?)
+            .matmul(
+                &attention
+                    .value_weight
+                    .t()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("KeplerModel value transpose failed: {}", e),
+                    })?,
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel value matmul failed: {}", e),
             })?
@@ -347,23 +366,21 @@ impl KeplerModel {
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel key_t contiguous failed: {}", e),
             })?;
-        let scores = query
-            .matmul(&key_t)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel attention scores matmul failed: {}", e),
-            })?
-            * scale;
+        let scores = query.matmul(&key_t).map_err(|e| EmbeddingError::GpuError {
+            message: format!("KeplerModel attention scores matmul failed: {}", e),
+        })? * scale;
 
         let scores = scores.map_err(|e| EmbeddingError::GpuError {
             message: format!("KeplerModel attention scale failed: {}", e),
         })?;
 
         // Apply attention mask
-        let scores = scores
-            .broadcast_add(attention_mask)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel attention mask add failed: {}", e),
-            })?;
+        let scores =
+            scores
+                .broadcast_add(attention_mask)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel attention mask add failed: {}", e),
+                })?;
 
         // Softmax
         let probs = candle_nn::ops::softmax(&scores, candle_core::D::Minus1).map_err(|e| {
@@ -427,11 +444,12 @@ impl KeplerModel {
         ffn: &crate::gpu::FfnWeights,
         config: &BertConfig,
     ) -> EmbeddingResult<Tensor> {
-        let (batch, seq_len, hidden_size) = hidden_states.dims3().map_err(|e| {
-            EmbeddingError::GpuError {
-                message: format!("KeplerModel ffn dims failed: {}", e),
-            }
-        })?;
+        let (batch, seq_len, hidden_size) =
+            hidden_states
+                .dims3()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("KeplerModel ffn dims failed: {}", e),
+                })?;
 
         // Flatten to [batch*seq, hidden] for matmul
         let hidden_flat = hidden_states
@@ -442,11 +460,13 @@ impl KeplerModel {
 
         // Intermediate projection
         let intermediate = hidden_flat
-            .matmul(&ffn.intermediate_weight.t().map_err(|e| {
-                EmbeddingError::GpuError {
-                    message: format!("KeplerModel ffn intermediate transpose failed: {}", e),
-                }
-            })?)
+            .matmul(
+                &ffn.intermediate_weight
+                    .t()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("KeplerModel ffn intermediate transpose failed: {}", e),
+                    })?,
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel ffn intermediate matmul failed: {}", e),
             })?
@@ -462,9 +482,13 @@ impl KeplerModel {
 
         // Output projection
         activated
-            .matmul(&ffn.output_weight.t().map_err(|e| EmbeddingError::GpuError {
-                message: format!("KeplerModel ffn output transpose failed: {}", e),
-            })?)
+            .matmul(
+                &ffn.output_weight
+                    .t()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("KeplerModel ffn output transpose failed: {}", e),
+                    })?,
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("KeplerModel ffn output matmul failed: {}", e),
             })?

@@ -247,10 +247,7 @@ fn compute_qkv_projection(
 
     proj.broadcast_add(bias)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "BgeM3Dense layer {} {} bias failed: {}",
-                layer_idx, name, e
-            ),
+            message: format!("BgeM3Dense layer {} {} bias failed: {}", layer_idx, name, e),
         })
 }
 

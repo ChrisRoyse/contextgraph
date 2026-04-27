@@ -10,7 +10,7 @@ use crate::config::{BenchmarkConfig, Tier};
 use crate::metrics::ScalingMetrics;
 use crate::scaling::DegradationComparison;
 
-use super::scaling::{ScalingRunner, ScalingAnalysisResults};
+use super::scaling::{ScalingAnalysisResults, ScalingRunner};
 
 /// Main benchmark harness for comparative analysis.
 pub struct BenchmarkHarness {
@@ -81,12 +81,32 @@ impl BenchmarkHarness {
                     tier,
                     TierImprovement {
                         precision_10: compute_improvement(
-                            single_metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0),
-                            multi_metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0),
+                            single_metrics
+                                .retrieval
+                                .precision_at
+                                .get(&10)
+                                .copied()
+                                .unwrap_or(0.0),
+                            multi_metrics
+                                .retrieval
+                                .precision_at
+                                .get(&10)
+                                .copied()
+                                .unwrap_or(0.0),
                         ),
                         recall_10: compute_improvement(
-                            single_metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0),
-                            multi_metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0),
+                            single_metrics
+                                .retrieval
+                                .recall_at
+                                .get(&10)
+                                .copied()
+                                .unwrap_or(0.0),
+                            multi_metrics
+                                .retrieval
+                                .recall_at
+                                .get(&10)
+                                .copied()
+                                .unwrap_or(0.0),
                         ),
                         mrr: compute_improvement(
                             single_metrics.retrieval.mrr,
@@ -125,7 +145,8 @@ impl BenchmarkHarness {
 
         // Determine winner based on scaling (if meaningful) or metric improvements
         // Need at least 2 tiers for meaningful scaling comparison
-        let has_meaningful_scaling = single.tier_results.len() >= 2 && multi.tier_results.len() >= 2;
+        let has_meaningful_scaling =
+            single.tier_results.len() >= 2 && multi.tier_results.len() >= 2;
 
         let winner = if has_meaningful_scaling {
             if let (Some(ref single_deg), Some(ref multi_deg)) =
@@ -211,17 +232,20 @@ impl BenchmarkResults {
     /// Get summary string.
     pub fn summary(&self) -> String {
         let mut s = String::new();
-        s.push_str(&format!("Benchmark Results: {} vs {}\n",
-            self.multi_space.system_name,
-            self.single_embedder.system_name));
+        s.push_str(&format!(
+            "Benchmark Results: {} vs {}\n",
+            self.multi_space.system_name, self.single_embedder.system_name
+        ));
         s.push_str(&format!("Winner: {}\n", self.comparison.winner));
 
         if let Some(saf) = self.comparison.scaling_advantage_factor {
             s.push_str(&format!("Scaling Advantage Factor: {:.2}x\n", saf));
         }
 
-        s.push_str(&format!("Overall Improvement: {:.1}%\n",
-            self.comparison.overall_improvement * 100.0));
+        s.push_str(&format!(
+            "Overall Improvement: {:.1}%\n",
+            self.comparison.overall_improvement * 100.0
+        ));
 
         if let Some(mem_overhead) = self.comparison.memory_overhead_factor {
             s.push_str(&format!("Memory Overhead: {:.2}x\n", mem_overhead));
@@ -316,7 +340,12 @@ pub struct MetricsSummary {
 impl MetricsSummary {
     fn from_metrics(metrics: &ScalingMetrics) -> Self {
         Self {
-            precision_10: metrics.retrieval.precision_at.get(&10).copied().unwrap_or(0.0),
+            precision_10: metrics
+                .retrieval
+                .precision_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0),
             recall_10: metrics.retrieval.recall_at.get(&10).copied().unwrap_or(0.0),
             mrr: metrics.retrieval.mrr,
             ndcg_10: metrics.retrieval.ndcg_at.get(&10).copied().unwrap_or(0.0),
@@ -352,9 +381,7 @@ fn compute_overall_improvement(tier_improvements: &HashMap<Tier, TierImprovement
 
     let total: f64 = tier_improvements
         .values()
-        .map(|imp| {
-            (imp.precision_10 + imp.recall_10 + imp.mrr + imp.purity + imp.nmi) / 5.0
-        })
+        .map(|imp| (imp.precision_10 + imp.recall_10 + imp.mrr + imp.purity + imp.nmi) / 5.0)
         .sum();
 
     total / tier_improvements.len() as f64 / 100.0 // Convert to fraction

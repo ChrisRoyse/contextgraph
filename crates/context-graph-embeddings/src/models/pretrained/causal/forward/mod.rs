@@ -257,7 +257,9 @@ pub fn gpu_forward_base_tensor(
         .map(|&m| m as f32)
         .collect();
 
-    let max_len = config.max_position_embeddings.min(super::config::CAUSAL_MAX_TOKENS);
+    let max_len = config
+        .max_position_embeddings
+        .min(super::config::CAUSAL_MAX_TOKENS);
     let seq_len = token_ids.len().min(max_len);
     let token_ids = &token_ids[..seq_len];
     let attention_mask = &attention_mask[..seq_len];
@@ -319,7 +321,9 @@ pub fn gpu_forward_with_lora_tensor(
         .map(|&m| m as f32)
         .collect();
 
-    let max_len = config.max_position_embeddings.min(super::config::CAUSAL_MAX_TOKENS);
+    let max_len = config
+        .max_position_embeddings
+        .min(super::config::CAUSAL_MAX_TOKENS);
     let seq_len = token_ids.len().min(max_len);
     let token_ids = &token_ids[..seq_len];
     let attention_mask = &attention_mask[..seq_len];
@@ -375,7 +379,12 @@ pub fn gpu_forward_dual_trained(
     strategy: &dyn AttentionStrategy,
 ) -> EmbeddingResult<(Vec<f32>, Vec<f32>)> {
     let (cause_tensor, effect_tensor) = gpu_forward_dual_trainable_tensor(
-        text, weights, tokenizer, lora_layers, projection, strategy,
+        text,
+        weights,
+        tokenizer,
+        lora_layers,
+        projection,
+        strategy,
     )?;
 
     let cause_vec: Vec<f32> = cause_tensor
@@ -467,13 +476,8 @@ pub fn gpu_forward_dual_trainable_tensor(
     // Single LoRA-augmented forward pass — projection heads differentiate cause/effect.
     // Both projections share the same base embedding since the encoder is deterministic
     // and the input text is identical for both roles.
-    let base_emb = gpu_forward_with_lora_tensor(
-        &prefixed_text,
-        weights,
-        tokenizer,
-        lora_layers,
-        strategy,
-    )?;
+    let base_emb =
+        gpu_forward_with_lora_tensor(&prefixed_text, weights, tokenizer, lora_layers, strategy)?;
 
     // Apply trainable projections (gradients flow through Var tensors)
     let cause_proj = projection.project_cause_trainable(&base_emb)?;

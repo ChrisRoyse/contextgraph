@@ -52,8 +52,7 @@ pub use knn::*;
 #[cfg(feature = "faiss-working")]
 pub use faiss::{
     check_faiss_result, gpu_available as faiss_gpu_available, FaissGpuResourcesProvider,
-    FaissIndex, FaissStandardGpuResources, GpuResources as FaissGpuResources, MetricType,
-    FAISS_OK,
+    FaissIndex, FaissStandardGpuResources, GpuResources as FaissGpuResources, MetricType, FAISS_OK,
 };
 
 /// Check if FAISS GPU support is available.

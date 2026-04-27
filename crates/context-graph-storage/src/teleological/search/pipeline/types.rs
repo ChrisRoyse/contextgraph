@@ -5,8 +5,8 @@
 use uuid::Uuid;
 
 use super::super::super::indexes::EmbedderIndex;
-use context_graph_core::graph_linking::GraphLinkEdgeType;
 use super::super::error::SearchError;
+use context_graph_core::graph_linking::GraphLinkEdgeType;
 
 // ============================================================================
 // PIPELINE ERRORS
@@ -138,7 +138,6 @@ impl GraphExpansionConfig {
             ..Default::default()
         }
     }
-
 }
 
 // ============================================================================

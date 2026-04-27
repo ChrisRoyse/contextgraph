@@ -22,9 +22,11 @@ fn create_test_search() -> SingleEmbedderSearch {
 fn rand_float() -> f32 {
     use std::sync::atomic::{AtomicU32, Ordering};
     static SEED: AtomicU32 = AtomicU32::new(42);
-    let old = SEED.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |s| {
-        Some(s.wrapping_mul(1103515245).wrapping_add(12345))
-    }).unwrap();
+    let old = SEED
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |s| {
+            Some(s.wrapping_mul(1103515245).wrapping_add(12345))
+        })
+        .unwrap();
     let new_seed = old.wrapping_mul(1103515245).wrapping_add(12345);
     (new_seed as f32) / (u32::MAX as f32)
 }
@@ -151,7 +153,10 @@ fn test_search_orthogonal_vectors_low_similarity() {
     let hit = result.top().unwrap();
     println!("Similarity: {}", hit.similarity);
     // STOR-10: orthogonal vectors have similarity ~0.5, still notably lower than identical (~1.0)
-    assert!(hit.similarity < 0.6, "Orthogonal should be ~0.5 under STOR-10 formula");
+    assert!(
+        hit.similarity < 0.6,
+        "Orthogonal should be ~0.5 under STOR-10 formula"
+    );
 
     println!("RESULT: PASS");
 }
@@ -356,5 +361,9 @@ fn test_latency_recorded() {
         .unwrap();
 
     // TEST-11 FIX: Verify search completed and latency is within reasonable bounds.
-    assert!(result.latency_us < 10_000_000, "Latency should be under 10s, got {} us", result.latency_us);
+    assert!(
+        result.latency_us < 10_000_000,
+        "Latency should be under 10s, got {} us",
+        result.latency_us
+    );
 }

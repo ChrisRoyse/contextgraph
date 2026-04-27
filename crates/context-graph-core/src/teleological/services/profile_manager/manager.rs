@@ -368,7 +368,10 @@ impl ProfileManager {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_else(|e| {
-                warn!("System clock before UNIX epoch: {} — using 0 timestamp for usage recording", e);
+                warn!(
+                    "System clock before UNIX epoch: {} — using 0 timestamp for usage recording",
+                    e
+                );
                 std::time::Duration::ZERO
             })
             .as_millis() as u64;

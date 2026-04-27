@@ -26,7 +26,7 @@ use super::session_state::{store_in_cache, SessionCache, SessionSnapshot};
 use super::args::SessionEndArgs;
 use super::error::{HookError, HookResult};
 use super::types::{
-    CoherenceState, HookInput, HookOutput, HookPayload, StabilityClassification, SessionEndStatus,
+    CoherenceState, HookInput, HookOutput, HookPayload, SessionEndStatus, StabilityClassification,
 };
 
 /// Execute session-end hook.
@@ -271,10 +271,7 @@ mod tests {
         snapshot.differentiation = 0.82;
         store_in_cache(&snapshot);
 
-        println!(
-            "BEFORE: Cache warmed with session {}",
-            session_id
-        );
+        println!("BEFORE: Cache warmed with session {}", session_id);
 
         let args = SessionEndArgs {
             session_id: session_id.to_string(),
@@ -327,10 +324,13 @@ mod tests {
         println!("SOURCE OF TRUTH: Default values stored in cache");
 
         // Use unique session ID that won't be in cache
-        let cold_session_id = format!("test-session-end-cold-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos());
+        let cold_session_id = format!(
+            "test-session-end-cold-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
 
         let args = SessionEndArgs {
             session_id: cold_session_id.to_string(),
@@ -377,7 +377,10 @@ mod tests {
             persist_to_cache(session_id, cache_snapshot, Some(3600000));
 
         // Verify: Topic stability is 1.0 (fresh state)
-        assert!((topic_stability - 1.0).abs() < 0.01, "Topic stability should be 1.0");
+        assert!(
+            (topic_stability - 1.0).abs() < 0.01,
+            "Topic stability should be 1.0"
+        );
 
         // Verify: CoherenceState has correct values
         assert!((coherence_state.integration - 0.75).abs() < 0.01);
@@ -405,11 +408,13 @@ mod tests {
         let session_id = "test-cold-persist";
 
         // Execute with no cache snapshot
-        let (topic_stability, coherence_state) =
-            persist_to_cache(session_id, None, None);
+        let (topic_stability, coherence_state) = persist_to_cache(session_id, None, None);
 
         // Verify: Topic stability defaults to 1.0
-        assert!((topic_stability - 1.0).abs() < 0.01, "Topic stability should be 1.0");
+        assert!(
+            (topic_stability - 1.0).abs() < 0.01,
+            "Topic stability should be 1.0"
+        );
 
         // Verify: CoherenceState has default values (0.0)
         assert!((coherence_state.integration - 0.0).abs() < 0.01);

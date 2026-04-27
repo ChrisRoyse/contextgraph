@@ -30,11 +30,7 @@ fn test_gpu_knn_add_vectors() {
 
     // Create 10 random-ish vectors
     let vectors: Vec<Vec<f32>> = (0..10)
-        .map(|i| {
-            (0..128)
-                .map(|j| ((i * 128 + j) as f32).sin())
-                .collect()
-        })
+        .map(|i| (0..128).map(|j| ((i * 128 + j) as f32).sin()).collect())
         .collect();
 
     index.add(&vectors).expect("Failed to add vectors");
@@ -128,7 +124,8 @@ fn test_gpu_hdbscan_clustering() {
         memory_ids.push(Uuid::new_v4());
     }
 
-    let memberships = clusterer.fit(&embeddings, &memory_ids)
+    let memberships = clusterer
+        .fit(&embeddings, &memory_ids)
         .expect("HDBSCAN clustering failed");
 
     assert_eq!(memberships.len(), 10);
@@ -143,7 +140,11 @@ fn test_gpu_hdbscan_clustering() {
     // We expect 2 clusters (or possibly 1 if gap threshold is too high)
     // At minimum, not all points should be noise
     let non_noise = memberships.iter().filter(|m| m.cluster_id >= 0).count();
-    assert!(non_noise > 0, "All points marked as noise, found {} clusters", unique_clusters.len());
+    assert!(
+        non_noise > 0,
+        "All points marked as noise, found {} clusters",
+        unique_clusters.len()
+    );
 }
 
 /// Test error handling for insufficient data.
@@ -197,9 +198,9 @@ fn test_silhouette_score() {
 
     // Create perfectly separated clusters
     let embeddings = vec![
-        vec![0.0, 0.0], // Cluster 0
-        vec![0.1, 0.0], // Cluster 0
-        vec![0.0, 0.1], // Cluster 0
+        vec![0.0, 0.0],  // Cluster 0
+        vec![0.1, 0.0],  // Cluster 0
+        vec![0.0, 0.1],  // Cluster 0
         vec![10.0, 0.0], // Cluster 1
         vec![10.1, 0.0], // Cluster 1
         vec![10.0, 0.1], // Cluster 1
@@ -210,7 +211,10 @@ fn test_silhouette_score() {
     println!("Silhouette score: {:.4}", silhouette);
 
     // For well-separated clusters, silhouette should be high (close to 1.0)
-    assert!(silhouette > 0.5, "Silhouette score too low for separated clusters");
+    assert!(
+        silhouette > 0.5,
+        "Silhouette score too low for separated clusters"
+    );
 }
 
 /// Test with NaN values (should fail fast).
@@ -229,8 +233,15 @@ fn test_gpu_hdbscan_rejects_nan() {
     let result = clusterer.fit(&embeddings, &memory_ids);
 
     match result {
-        Err(GpuHdbscanError::NonFiniteValue { index: _, value_type }) => {
-            assert!(value_type.contains("NaN"), "Expected NaN in value_type, got: {}", value_type);
+        Err(GpuHdbscanError::NonFiniteValue {
+            index: _,
+            value_type,
+        }) => {
+            assert!(
+                value_type.contains("NaN"),
+                "Expected NaN in value_type, got: {}",
+                value_type
+            );
         }
         Err(e) => panic!("Expected NonFiniteValue error, got: {}", e),
         Ok(_) => panic!("Should have rejected NaN values"),
@@ -253,8 +264,15 @@ fn test_gpu_hdbscan_rejects_infinity() {
     let result = clusterer.fit(&embeddings, &memory_ids);
 
     match result {
-        Err(GpuHdbscanError::NonFiniteValue { index: _, value_type }) => {
-            assert!(value_type.contains("Infinity"), "Expected Infinity in value_type, got: {}", value_type);
+        Err(GpuHdbscanError::NonFiniteValue {
+            index: _,
+            value_type,
+        }) => {
+            assert!(
+                value_type.contains("Infinity"),
+                "Expected Infinity in value_type, got: {}",
+                value_type
+            );
         }
         Err(e) => panic!("Expected NonFiniteValue error, got: {}", e),
         Ok(_) => panic!("Should have rejected Infinity values"),

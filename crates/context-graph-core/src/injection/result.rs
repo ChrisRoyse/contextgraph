@@ -154,7 +154,10 @@ mod tests {
             vec![InjectionCategory::HighRelevanceCluster],
         );
 
-        assert!(!result.is_empty(), "Result with content should not be empty");
+        assert!(
+            !result.is_empty(),
+            "Result with content should not be empty"
+        );
         println!("[PASS] is_empty() returns false when content exists");
     }
 
@@ -214,7 +217,7 @@ mod tests {
     fn test_empty_context_with_metadata() {
         // Valid edge case: no formatted context but has metadata
         let result = InjectionResult::new(
-            String::new(), // Empty context
+            String::new(),        // Empty context
             vec![Uuid::new_v4()], // But has memories
             vec![],
             0,

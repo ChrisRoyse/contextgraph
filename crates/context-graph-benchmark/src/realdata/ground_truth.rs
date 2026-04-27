@@ -9,10 +9,10 @@
 //!
 //! This module generates ground truth sets per query, per embedder.
 
-use std::collections::{HashMap, HashSet};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::config::EmbedderName;
@@ -141,9 +141,11 @@ impl GroundTruthGenerator {
                 }
 
                 // E3: Periodic pattern relevance
-                EmbedderName::E3Periodic => {
-                    self.generate_periodic_ground_truth(&query_chunk_ids, dataset, temporal_metadata)
-                }
+                EmbedderName::E3Periodic => self.generate_periodic_ground_truth(
+                    &query_chunk_ids,
+                    dataset,
+                    temporal_metadata,
+                ),
 
                 // E4: Sequence-based relevance
                 EmbedderName::E4Sequence => {
@@ -180,7 +182,10 @@ impl GroundTruthGenerator {
         // Group chunks by topic
         let mut topic_chunks: HashMap<&str, Vec<&ChunkRecord>> = HashMap::new();
         for chunk in &dataset.chunks {
-            topic_chunks.entry(&chunk.topic_hint).or_default().push(chunk);
+            topic_chunks
+                .entry(&chunk.topic_hint)
+                .or_default()
+                .push(chunk);
         }
 
         // Filter topics with enough chunks
@@ -192,7 +197,8 @@ impl GroundTruthGenerator {
 
         if valid_topics.is_empty() {
             // Fallback: use any chunks
-            return dataset.chunks
+            return dataset
+                .chunks
                 .choose_multiple(&mut self.rng, self.num_queries.min(dataset.chunks.len()))
                 .map(|c| c.uuid())
                 .collect();
@@ -231,15 +237,16 @@ impl GroundTruthGenerator {
         embedder: EmbedderName,
     ) -> EmbedderGroundTruth {
         // Build UUID to chunk lookup
-        let id_to_chunk: HashMap<Uuid, &ChunkRecord> = dataset.chunks
-            .iter()
-            .map(|c| (c.uuid(), c))
-            .collect();
+        let id_to_chunk: HashMap<Uuid, &ChunkRecord> =
+            dataset.chunks.iter().map(|c| (c.uuid(), c)).collect();
 
         // Group chunks by topic
         let mut topic_chunks: HashMap<&str, Vec<&ChunkRecord>> = HashMap::new();
         for chunk in &dataset.chunks {
-            topic_chunks.entry(&chunk.topic_hint).or_default().push(chunk);
+            topic_chunks
+                .entry(&chunk.topic_hint)
+                .or_default()
+                .push(chunk);
         }
 
         let mut queries = Vec::new();
@@ -255,7 +262,8 @@ impl GroundTruthGenerator {
                     .map(|v| v.iter().filter(|c| c.uuid() != *query_id).collect())
                     .unwrap_or_default();
 
-                let relevant_ids: HashSet<Uuid> = relevant_chunks.iter().map(|c| c.uuid()).collect();
+                let relevant_ids: HashSet<Uuid> =
+                    relevant_chunks.iter().map(|c| c.uuid()).collect();
 
                 // Relevance scores: same document = 1.0, same topic = 0.8
                 let mut relevance_scores = HashMap::new();
@@ -305,27 +313,26 @@ impl GroundTruthGenerator {
         dataset: &RealDataset,
         temporal: &InjectedTemporalMetadata,
     ) -> EmbedderGroundTruth {
-        let id_to_chunk: HashMap<Uuid, &ChunkRecord> = dataset.chunks
-            .iter()
-            .map(|c| (c.uuid(), c))
-            .collect();
+        let id_to_chunk: HashMap<Uuid, &ChunkRecord> =
+            dataset.chunks.iter().map(|c| (c.uuid(), c)).collect();
 
         let mut queries = Vec::new();
         let mut total_relevant = 0;
 
         for query_id in query_ids {
-            if let (Some(query_chunk), Some(query_ts)) = (
-                id_to_chunk.get(query_id),
-                temporal.get_timestamp(query_id),
-            ) {
+            if let (Some(query_chunk), Some(query_ts)) =
+                (id_to_chunk.get(query_id), temporal.get_timestamp(query_id))
+            {
                 // Relevant: chunks within 1 hour of query timestamp
                 let window_secs = 3600;
                 let query_time = query_ts.timestamp;
 
-                let relevant_ids: HashSet<Uuid> = temporal.timestamps
+                let relevant_ids: HashSet<Uuid> = temporal
+                    .timestamps
                     .iter()
                     .filter(|(id, ts)| {
-                        *id != query_id && (ts.timestamp - query_time).num_seconds().abs() < window_secs
+                        *id != query_id
+                            && (ts.timestamp - query_time).num_seconds().abs() < window_secs
                     })
                     .map(|(id, _)| *id)
                     .collect();
@@ -380,21 +387,19 @@ impl GroundTruthGenerator {
         dataset: &RealDataset,
         temporal: &InjectedTemporalMetadata,
     ) -> EmbedderGroundTruth {
-        let id_to_chunk: HashMap<Uuid, &ChunkRecord> = dataset.chunks
-            .iter()
-            .map(|c| (c.uuid(), c))
-            .collect();
+        let id_to_chunk: HashMap<Uuid, &ChunkRecord> =
+            dataset.chunks.iter().map(|c| (c.uuid(), c)).collect();
 
         let mut queries = Vec::new();
         let mut total_relevant = 0;
 
         for query_id in query_ids {
-            if let (Some(query_chunk), Some(query_periodic)) = (
-                id_to_chunk.get(query_id),
-                temporal.get_periodic(query_id),
-            ) {
+            if let (Some(query_chunk), Some(query_periodic)) =
+                (id_to_chunk.get(query_id), temporal.get_periodic(query_id))
+            {
                 // Relevant: same hour cluster
-                let relevant_ids: HashSet<Uuid> = temporal.periodic
+                let relevant_ids: HashSet<Uuid> = temporal
+                    .periodic
                     .iter()
                     .filter(|(id, p)| {
                         *id != query_id && p.hour_cluster == query_periodic.hour_cluster
@@ -415,7 +420,10 @@ impl GroundTruthGenerator {
                 total_relevant += relevant_ids.len();
 
                 let mut extra = HashMap::new();
-                extra.insert("hour_cluster".to_string(), query_periodic.hour_cluster.to_string());
+                extra.insert(
+                    "hour_cluster".to_string(),
+                    query_periodic.hour_cluster.to_string(),
+                );
                 extra.insert("hour".to_string(), query_periodic.hour.to_string());
 
                 queries.push(QueryGroundTruth {
@@ -466,13 +474,12 @@ impl GroundTruthGenerator {
         for query_id in query_ids {
             if let Some(session) = chunk_to_session.get(query_id) {
                 // Find query position in session
-                let query_pos = session.chunks
-                    .iter()
-                    .position(|c| c.chunk_id == *query_id);
+                let query_pos = session.chunks.iter().position(|c| c.chunk_id == *query_id);
 
                 if let Some(pos) = query_pos {
                     // Relevant: adjacent chunks in same session
-                    let relevant_ids: HashSet<Uuid> = session.chunks
+                    let relevant_ids: HashSet<Uuid> = session
+                        .chunks
                         .iter()
                         .filter(|c| c.chunk_id != *query_id)
                         .map(|c| c.chunk_id)
@@ -482,7 +489,8 @@ impl GroundTruthGenerator {
                     for chunk in &session.chunks {
                         if chunk.chunk_id != *query_id {
                             // Score based on sequence distance
-                            let distance = (chunk.sequence_position as i32 - pos as i32).abs() as f64;
+                            let distance =
+                                (chunk.sequence_position as i32 - pos as i32).abs() as f64;
                             let score = 1.0 - (distance / session.chunks.len() as f64).min(0.5);
                             relevance_scores.insert(chunk.chunk_id, score);
                         }
@@ -493,7 +501,10 @@ impl GroundTruthGenerator {
                     let mut extra = HashMap::new();
                     extra.insert("session_id".to_string(), session.session_id.clone());
                     extra.insert("sequence_position".to_string(), pos.to_string());
-                    extra.insert("session_length".to_string(), session.chunks.len().to_string());
+                    extra.insert(
+                        "session_length".to_string(),
+                        session.chunks.len().to_string(),
+                    );
 
                     queries.push(QueryGroundTruth {
                         query_id: format!("E4_Sequence_{}", query_id),
@@ -530,10 +541,8 @@ impl GroundTruthGenerator {
         query_ids: &[Uuid],
         dataset: &RealDataset,
     ) -> EmbedderGroundTruth {
-        let id_to_chunk: HashMap<Uuid, &ChunkRecord> = dataset.chunks
-            .iter()
-            .map(|c| (c.uuid(), c))
-            .collect();
+        let id_to_chunk: HashMap<Uuid, &ChunkRecord> =
+            dataset.chunks.iter().map(|c| (c.uuid(), c)).collect();
 
         // Group chunks by document
         let mut doc_chunks: HashMap<&str, Vec<&ChunkRecord>> = HashMap::new();
@@ -553,7 +562,8 @@ impl GroundTruthGenerator {
                     .map(|v| v.iter().filter(|c| c.uuid() != *query_id).collect())
                     .unwrap_or_default();
 
-                let relevant_ids: HashSet<Uuid> = relevant_chunks.iter().map(|c| c.uuid()).collect();
+                let relevant_ids: HashSet<Uuid> =
+                    relevant_chunks.iter().map(|c| c.uuid()).collect();
 
                 // Score based on chunk distance within document
                 let mut relevance_scores = HashMap::new();
@@ -603,10 +613,8 @@ impl GroundTruthGenerator {
         query_ids: &[Uuid],
         dataset: &RealDataset,
     ) -> EmbedderGroundTruth {
-        let id_to_chunk: HashMap<Uuid, &ChunkRecord> = dataset.chunks
-            .iter()
-            .map(|c| (c.uuid(), c))
-            .collect();
+        let id_to_chunk: HashMap<Uuid, &ChunkRecord> =
+            dataset.chunks.iter().map(|c| (c.uuid(), c)).collect();
 
         // Group by word count range (structural similarity proxy)
         let mut length_groups: HashMap<usize, Vec<&ChunkRecord>> = HashMap::new();
@@ -625,14 +633,21 @@ impl GroundTruthGenerator {
                 // Relevant: similar length chunks (structural similarity)
                 let relevant_chunks: Vec<_> = length_groups
                     .get(&query_group)
-                    .map(|v| v.iter().filter(|c| c.uuid() != *query_id).cloned().collect())
+                    .map(|v| {
+                        v.iter()
+                            .filter(|c| c.uuid() != *query_id)
+                            .cloned()
+                            .collect()
+                    })
                     .unwrap_or_default();
 
-                let relevant_ids: HashSet<Uuid> = relevant_chunks.iter().map(|c| c.uuid()).collect();
+                let relevant_ids: HashSet<Uuid> =
+                    relevant_chunks.iter().map(|c| c.uuid()).collect();
 
                 let mut relevance_scores = HashMap::new();
                 for chunk in &relevant_chunks {
-                    let length_diff = (chunk.word_count as i32 - query_chunk.word_count as i32).abs() as f64;
+                    let length_diff =
+                        (chunk.word_count as i32 - query_chunk.word_count as i32).abs() as f64;
                     let score = 1.0 / (1.0 + length_diff * 0.01);
                     relevance_scores.insert(chunk.uuid(), score);
                 }
@@ -677,9 +692,9 @@ mod tests {
     use super::*;
     use crate::realdata::config::TemporalInjectionConfig;
     use crate::realdata::temporal_injector::TemporalMetadataInjector;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn create_test_dataset() -> (TempDir, RealDataset) {
         let dir = TempDir::new().unwrap();
@@ -694,7 +709,11 @@ mod tests {
             source: "test".to_string(),
             source_datasets: vec!["test".to_string()],
             dataset_stats: HashMap::new(),
-            top_topics: vec!["science".to_string(), "history".to_string(), "tech".to_string()],
+            top_topics: vec![
+                "science".to_string(),
+                "history".to_string(),
+                "tech".to_string(),
+            ],
             topic_counts: HashMap::new(),
         };
 

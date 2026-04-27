@@ -65,14 +65,17 @@ pub mod validation;
 // Re-export key types for convenience
 pub use config::{BenchmarkConfig, TierConfig};
 pub use datasets::{BenchmarkDataset, DatasetGenerator, GroundTruth};
+pub use datasets::{TemporalBenchmarkDataset, TemporalDatasetConfig, TemporalDatasetGenerator};
 pub use metrics::{
     ClusteringMetrics, PerformanceMetrics, RetrievalMetrics, ScalingMetrics, TemporalMetrics,
 };
-pub use reports::{BenchmarkReport, ReportFormat};
-pub use runners::{BenchmarkHarness, BenchmarkResults, TemporalBenchmarkConfig, TemporalBenchmarkResults, TemporalBenchmarkRunner};
 pub use realdata::{
     ChunkRecord, DatasetLoader, DatasetMetadata, RealDataBenchConfig, RealDataBenchRunner,
     RealDataEmbedder, RealDataResults, RealDataset,
 };
+pub use reports::{BenchmarkReport, ReportFormat};
+pub use runners::{
+    BenchmarkHarness, BenchmarkResults, TemporalBenchmarkConfig, TemporalBenchmarkResults,
+    TemporalBenchmarkRunner,
+};
 pub use scaling::{DegradationAnalysis, ScalingLimits};
-pub use datasets::{TemporalBenchmarkDataset, TemporalDatasetConfig, TemporalDatasetGenerator};

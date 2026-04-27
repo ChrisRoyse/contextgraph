@@ -581,7 +581,9 @@ impl CausalDatasetGenerator {
             let num_vars = self.rng.gen_range(1..=3.min(intervention_vars.len()));
             let mut cause_vars: Vec<String> = Vec::new();
             for _ in 0..num_vars {
-                cause_vars.push(intervention_vars[self.rng.gen_range(0..intervention_vars.len())].to_string());
+                cause_vars.push(
+                    intervention_vars[self.rng.gen_range(0..intervention_vars.len())].to_string(),
+                );
             }
 
             let cause_context = InterventionContext {
@@ -593,7 +595,9 @@ impl CausalDatasetGenerator {
             // Effect context often shares some variables with cause
             let mut effect_vars = cause_vars.clone();
             if self.rng.gen_bool(0.5) && !intervention_vars.is_empty() {
-                effect_vars.push(intervention_vars[self.rng.gen_range(0..intervention_vars.len())].to_string());
+                effect_vars.push(
+                    intervention_vars[self.rng.gen_range(0..intervention_vars.len())].to_string(),
+                );
             }
 
             let effect_context = InterventionContext {
@@ -626,10 +630,7 @@ impl CausalDatasetGenerator {
         let mut pairs_by_domain: std::collections::HashMap<CausalDomain, Vec<&CausalPair>> =
             std::collections::HashMap::new();
         for pair in pairs {
-            pairs_by_domain
-                .entry(pair.domain)
-                .or_default()
-                .push(pair);
+            pairs_by_domain.entry(pair.domain).or_default().push(pair);
         }
 
         for chain_id in 0..self.config.num_chains {
@@ -693,14 +694,20 @@ impl CausalDatasetGenerator {
             ("What happens if {cause}?", CausalDirection::Effect),
             ("What will happen when {cause}?", CausalDirection::Effect),
             ("What are the effects of {cause}?", CausalDirection::Effect),
-            ("What is the consequence of {cause}?", CausalDirection::Effect),
+            (
+                "What is the consequence of {cause}?",
+                CausalDirection::Effect,
+            ),
             ("What is the result of {cause}?", CausalDirection::Effect),
             ("What is the impact of {cause}?", CausalDirection::Effect),
             ("If I {cause}, then what?", CausalDirection::Effect),
             // HARD: These don't match indicators (3 patterns) - reveals detection gaps
             ("Predict the outcome after {cause}", CausalDirection::Effect),
             ("What follows from {cause}?", CausalDirection::Effect),
-            ("Downstream implications of {cause}", CausalDirection::Effect),
+            (
+                "Downstream implications of {cause}",
+                CausalDirection::Effect,
+            ),
         ];
 
         // Unknown/neutral patterns
@@ -718,8 +725,11 @@ impl CausalDatasetGenerator {
             ("Information about {topic}", CausalDirection::Unknown),
         ];
 
-        let num_cause = (self.config.num_direction_queries as f64 * self.config.cause_effect_ratio) as usize;
-        let num_effect = (self.config.num_direction_queries as f64 * (1.0 - self.config.cause_effect_ratio) / 2.0) as usize;
+        let num_cause =
+            (self.config.num_direction_queries as f64 * self.config.cause_effect_ratio) as usize;
+        let num_effect = (self.config.num_direction_queries as f64
+            * (1.0 - self.config.cause_effect_ratio)
+            / 2.0) as usize;
         let num_unknown = self.config.num_direction_queries - num_cause - num_effect;
 
         // Generate cause queries
@@ -763,7 +773,8 @@ impl CausalDatasetGenerator {
         // Generate unknown queries
         for _ in 0..num_unknown {
             let domain = self.random_domain();
-            let (pattern, direction) = unknown_patterns[self.rng.gen_range(0..unknown_patterns.len())];
+            let (pattern, direction) =
+                unknown_patterns[self.rng.gen_range(0..unknown_patterns.len())];
             let topics = domain.intervention_variables();
             let topic = topics[self.rng.gen_range(0..topics.len())];
             let query_text = pattern.replace("{topic}", topic);
@@ -813,25 +824,26 @@ impl CausalDatasetGenerator {
             // Decide question type
             let is_cause_question = self.rng.gen_bool(0.5);
 
-            let (premise, question_type, alternative1, alternative2, correct_answer) = if is_cause_question {
-                // Premise is the effect, asking for the cause
-                (
-                    correct_pair.effect_content.clone(),
-                    "cause".to_string(),
-                    correct_pair.cause_content.clone(),
-                    distractor.cause_content.clone(),
-                    1u8,
-                )
-            } else {
-                // Premise is the cause, asking for the effect
-                (
-                    correct_pair.cause_content.clone(),
-                    "effect".to_string(),
-                    correct_pair.effect_content.clone(),
-                    distractor.effect_content.clone(),
-                    1u8,
-                )
-            };
+            let (premise, question_type, alternative1, alternative2, correct_answer) =
+                if is_cause_question {
+                    // Premise is the effect, asking for the cause
+                    (
+                        correct_pair.effect_content.clone(),
+                        "cause".to_string(),
+                        correct_pair.cause_content.clone(),
+                        distractor.cause_content.clone(),
+                        1u8,
+                    )
+                } else {
+                    // Premise is the cause, asking for the effect
+                    (
+                        correct_pair.cause_content.clone(),
+                        "effect".to_string(),
+                        correct_pair.effect_content.clone(),
+                        distractor.effect_content.clone(),
+                        1u8,
+                    )
+                };
 
             // Randomly swap alternatives
             let (alt1, alt2, answer) = if self.rng.gen_bool(0.5) {
@@ -864,26 +876,106 @@ impl CausalDatasetGenerator {
         // Replace common placeholders with domain-appropriate values
         let replacements: Vec<(&str, Vec<&str>)> = match domain {
             CausalDomain::Programming => vec![
-                ("{component}", vec!["UserService", "AuthModule", "DataCache", "EventHandler"]),
-                ("{module}", vec!["authentication", "database", "networking", "storage"]),
-                ("{function}", vec!["processRequest", "handleEvent", "validateInput", "serializeData"]),
-                ("{buffer}", vec!["inputBuffer", "outputBuffer", "packetBuffer", "frameBuffer"]),
-                ("{thread_a}", vec!["WorkerThread-1", "IOThread", "MainThread", "GCThread"]),
-                ("{thread_b}", vec!["WorkerThread-2", "TimerThread", "EventThread", "PoolThread"]),
-                ("{handler}", vec!["RequestHandler", "ErrorHandler", "EventListener", "Callback"]),
-                ("{calculation}", vec!["array indexing", "hash computation", "size calculation", "offset"]),
-                ("{allocator}", vec!["heap allocator", "pool allocator", "arena allocator", "stack"]),
-                ("{recursive_function}", vec!["parseTree", "traverseGraph", "deepCopy", "factorial"]),
-                ("{endpoint}", vec!["/api/users", "/login", "/data/export", "/admin/settings"]),
-                ("{duration}", vec!["3 seconds", "1 minute", "5 minutes", "prolonged use"]),
-                ("{structure}", vec!["user records", "transaction log", "cache entries", "session data"]),
+                (
+                    "{component}",
+                    vec!["UserService", "AuthModule", "DataCache", "EventHandler"],
+                ),
+                (
+                    "{module}",
+                    vec!["authentication", "database", "networking", "storage"],
+                ),
+                (
+                    "{function}",
+                    vec![
+                        "processRequest",
+                        "handleEvent",
+                        "validateInput",
+                        "serializeData",
+                    ],
+                ),
+                (
+                    "{buffer}",
+                    vec!["inputBuffer", "outputBuffer", "packetBuffer", "frameBuffer"],
+                ),
+                (
+                    "{thread_a}",
+                    vec!["WorkerThread-1", "IOThread", "MainThread", "GCThread"],
+                ),
+                (
+                    "{thread_b}",
+                    vec!["WorkerThread-2", "TimerThread", "EventThread", "PoolThread"],
+                ),
+                (
+                    "{handler}",
+                    vec![
+                        "RequestHandler",
+                        "ErrorHandler",
+                        "EventListener",
+                        "Callback",
+                    ],
+                ),
+                (
+                    "{calculation}",
+                    vec![
+                        "array indexing",
+                        "hash computation",
+                        "size calculation",
+                        "offset",
+                    ],
+                ),
+                (
+                    "{allocator}",
+                    vec![
+                        "heap allocator",
+                        "pool allocator",
+                        "arena allocator",
+                        "stack",
+                    ],
+                ),
+                (
+                    "{recursive_function}",
+                    vec!["parseTree", "traverseGraph", "deepCopy", "factorial"],
+                ),
+                (
+                    "{endpoint}",
+                    vec!["/api/users", "/login", "/data/export", "/admin/settings"],
+                ),
+                (
+                    "{duration}",
+                    vec!["3 seconds", "1 minute", "5 minutes", "prolonged use"],
+                ),
+                (
+                    "{structure}",
+                    vec![
+                        "user records",
+                        "transaction log",
+                        "cache entries",
+                        "session data",
+                    ],
+                ),
                 ("{seconds}", vec!["5", "30", "60", "120"]),
                 ("{operations}", vec!["1000", "10000", "100000", "1 million"]),
                 ("{percent}", vec!["20", "50", "75", "90"]),
                 ("{layer}", vec!["API", "service", "data", "presentation"]),
                 ("{minutes}", vec!["5", "15", "30", "60"]),
-                ("{resource}", vec!["database connection", "file handle", "network socket", "thread pool"]),
-                ("{system}", vec!["microservices", "distributed cache", "message queue", "load balancer"]),
+                (
+                    "{resource}",
+                    vec![
+                        "database connection",
+                        "file handle",
+                        "network socket",
+                        "thread pool",
+                    ],
+                ),
+                (
+                    "{system}",
+                    vec![
+                        "microservices",
+                        "distributed cache",
+                        "message queue",
+                        "load balancer",
+                    ],
+                ),
             ],
             CausalDomain::Physics => vec![
                 ("{degrees}", vec!["10", "50", "100", "500"]),
@@ -899,7 +991,10 @@ impl CausalDatasetGenerator {
                 ("{material}", vec!["metal", "glass", "plastic", "ceramic"]),
                 ("{object}", vec!["particle", "ball", "block", "projectile"]),
                 ("{state}", vec!["liquid", "gas", "plasma", "solid"]),
-                ("{conductor}", vec!["copper wire", "aluminum rod", "silver plate", "coil"]),
+                (
+                    "{conductor}",
+                    vec!["copper wire", "aluminum rod", "silver plate", "coil"],
+                ),
                 ("{medium}", vec!["air", "water", "glass", "vacuum"]),
                 ("{form}", vec!["heat", "sound", "light", "vibration"]),
                 ("{body}", vec!["beam", "plate", "rod", "cylinder"]),
@@ -909,72 +1004,201 @@ impl CausalDatasetGenerator {
             CausalDomain::Economics => vec![
                 ("{rate}", vec!["0.25", "0.5", "1.0", "2.0"]),
                 ("{inflation}", vec!["2", "5", "10", "15"]),
-                ("{commodity}", vec!["oil", "wheat", "copper", "semiconductors"]),
-                ("{product}", vec!["housing", "electric vehicles", "smartphones", "software"]),
+                (
+                    "{commodity}",
+                    vec!["oil", "wheat", "copper", "semiconductors"],
+                ),
+                (
+                    "{product}",
+                    vec!["housing", "electric vehicles", "smartphones", "software"],
+                ),
                 ("{tax_rate}", vec!["5", "10", "15", "20"]),
                 ("{percent}", vec!["10", "20", "30", "50"]),
-                ("{goods}", vec!["steel", "electronics", "textiles", "automobiles"]),
-                ("{amount}", vec!["1 billion", "10 billion", "100 billion", "1 trillion"]),
-                ("{sector}", vec!["technology", "healthcare", "manufacturing", "finance"]),
-                ("{industry}", vec!["retail", "construction", "hospitality", "transportation"]),
-                ("{region}", vec!["urban areas", "midwest", "coastal regions", "rural areas"]),
+                (
+                    "{goods}",
+                    vec!["steel", "electronics", "textiles", "automobiles"],
+                ),
+                (
+                    "{amount}",
+                    vec!["1 billion", "10 billion", "100 billion", "1 trillion"],
+                ),
+                (
+                    "{sector}",
+                    vec!["technology", "healthcare", "manufacturing", "finance"],
+                ),
+                (
+                    "{industry}",
+                    vec!["retail", "construction", "hospitality", "transportation"],
+                ),
+                (
+                    "{region}",
+                    vec!["urban areas", "midwest", "coastal regions", "rural areas"],
+                ),
                 ("{growth}", vec!["1", "2", "3", "4"]),
-                ("{deficit}", vec!["50 billion", "100 billion", "200 billion", "500 billion"]),
+                (
+                    "{deficit}",
+                    vec!["50 billion", "100 billion", "200 billion", "500 billion"],
+                ),
                 ("{points}", vec!["100", "500", "1000", "2000"]),
             ],
             CausalDomain::Biology => vec![
                 ("{gene}", vec!["BRCA1", "p53", "CFTR", "HTT"]),
-                ("{virus}", vec!["influenza", "coronavirus", "rhinovirus", "hepatitis"]),
-                ("{hormone}", vec!["cortisol", "insulin", "thyroid", "estrogen"]),
+                (
+                    "{virus}",
+                    vec!["influenza", "coronavirus", "rhinovirus", "hepatitis"],
+                ),
+                (
+                    "{hormone}",
+                    vec!["cortisol", "insulin", "thyroid", "estrogen"],
+                ),
                 ("{nutrient}", vec!["vitamin D", "iron", "calcium", "B12"]),
-                ("{antibiotic}", vec!["penicillin", "amoxicillin", "ciprofloxacin", "azithromycin"]),
+                (
+                    "{antibiotic}",
+                    vec!["penicillin", "amoxicillin", "ciprofloxacin", "azithromycin"],
+                ),
                 ("{toxin}", vec!["lead", "mercury", "arsenic", "benzene"]),
-                ("{stressor}", vec!["oxidative stress", "heat shock", "hypoxia", "UV radiation"]),
-                ("{antigen}", vec!["bacterial protein", "viral coat", "allergen", "foreign cell"]),
-                ("{enzyme}", vec!["kinase", "protease", "lipase", "polymerase"]),
+                (
+                    "{stressor}",
+                    vec!["oxidative stress", "heat shock", "hypoxia", "UV radiation"],
+                ),
+                (
+                    "{antigen}",
+                    vec![
+                        "bacterial protein",
+                        "viral coat",
+                        "allergen",
+                        "foreign cell",
+                    ],
+                ),
+                (
+                    "{enzyme}",
+                    vec!["kinase", "protease", "lipase", "polymerase"],
+                ),
                 ("{radiation}", vec!["UV", "ionizing", "X-ray", "gamma"]),
-                ("{condition}", vec!["diabetes", "hypertension", "cancer", "autoimmune disease"]),
+                (
+                    "{condition}",
+                    vec!["diabetes", "hypertension", "cancer", "autoimmune disease"],
+                ),
                 ("{tissue}", vec!["liver", "kidney", "brain", "muscle"]),
                 ("{organ}", vec!["heart", "lungs", "liver", "kidney"]),
-                ("{behavior}", vec!["feeding", "sleep", "locomotion", "social"]),
-                ("{protein}", vec!["hemoglobin", "collagen", "keratin", "amyloid"]),
+                (
+                    "{behavior}",
+                    vec!["feeding", "sleep", "locomotion", "social"],
+                ),
+                (
+                    "{protein}",
+                    vec!["hemoglobin", "collagen", "keratin", "amyloid"],
+                ),
                 ("{area}", vec!["joints", "airways", "skin", "gut"]),
-                ("{stage}", vec!["embryonic", "fetal", "neonatal", "pubertal"]),
+                (
+                    "{stage}",
+                    vec!["embryonic", "fetal", "neonatal", "pubertal"],
+                ),
                 ("{type}", vec!["cognitive", "motor", "sensory", "autonomic"]),
             ],
             CausalDomain::Psychology => vec![
-                ("{stressor}", vec!["work deadline", "financial pressure", "relationship conflict", "health concern"]),
+                (
+                    "{stressor}",
+                    vec![
+                        "work deadline",
+                        "financial pressure",
+                        "relationship conflict",
+                        "health concern",
+                    ],
+                ),
                 ("{hours}", vec!["24", "48", "72", "96"]),
                 ("{event}", vec!["accident", "loss", "violence", "disaster"]),
-                ("{duration}", vec!["1 week", "1 month", "3 months", "1 year"]),
-                ("{task}", vec!["multitasking", "complex problem", "information overload", "decision making"]),
-                ("{behavior}", vec!["healthy eating", "exercise", "studying", "socializing"]),
-                ("{performance}", vec!["academic", "athletic", "professional", "creative"]),
+                (
+                    "{duration}",
+                    vec!["1 week", "1 month", "3 months", "1 year"],
+                ),
+                (
+                    "{task}",
+                    vec![
+                        "multitasking",
+                        "complex problem",
+                        "information overload",
+                        "decision making",
+                    ],
+                ),
+                (
+                    "{behavior}",
+                    vec!["healthy eating", "exercise", "studying", "socializing"],
+                ),
+                (
+                    "{performance}",
+                    vec!["academic", "athletic", "professional", "creative"],
+                ),
                 ("{setting}", vec!["classroom", "office", "home", "outdoor"]),
-                ("{topic}", vec!["achievement", "resilience", "growth", "purpose"]),
-                ("{stimulus}", vec!["loud noise", "flashing light", "unexpected touch", "sudden movement"]),
+                (
+                    "{topic}",
+                    vec!["achievement", "resilience", "growth", "purpose"],
+                ),
+                (
+                    "{stimulus}",
+                    vec![
+                        "loud noise",
+                        "flashing light",
+                        "unexpected touch",
+                        "sudden movement",
+                    ],
+                ),
                 ("{level}", vec!["mild", "moderate", "severe", "extreme"]),
                 ("{state}", vec!["euphoric", "depressed", "anxious", "calm"]),
-                ("{bias}", vec!["risk-averse", "risk-seeking", "confirmation", "anchoring"]),
+                (
+                    "{bias}",
+                    vec!["risk-averse", "risk-seeking", "confirmation", "anchoring"],
+                ),
                 ("{emotion}", vec!["fear", "anger", "sadness", "joy"]),
-                ("{habit}", vec!["nail-biting", "procrastination", "checking phone", "overeating"]),
-                ("{direction}", vec!["intrinsic", "extrinsic", "achievement", "avoidance"]),
+                (
+                    "{habit}",
+                    vec![
+                        "nail-biting",
+                        "procrastination",
+                        "checking phone",
+                        "overeating",
+                    ],
+                ),
+                (
+                    "{direction}",
+                    vec!["intrinsic", "extrinsic", "achievement", "avoidance"],
+                ),
             ],
             CausalDomain::Engineering => vec![
                 ("{component}", vec!["bearing", "gear", "shaft", "seal"]),
                 ("{force}", vec!["1000", "5000", "10000", "50000"]),
                 ("{cycles}", vec!["1000", "10000", "100000", "1 million"]),
-                ("{environment}", vec!["marine", "industrial", "chemical", "outdoor"]),
+                (
+                    "{environment}",
+                    vec!["marine", "industrial", "chemical", "outdoor"],
+                ),
                 ("{frequency}", vec!["10", "100", "1000", "10000"]),
                 ("{percent}", vec!["110", "125", "150", "200"]),
                 ("{subsystem}", vec!["control", "power", "cooling", "safety"]),
                 ("{part}", vec!["bracket", "fitting", "connector", "housing"]),
-                ("{condition}", vec!["humidity", "temperature extremes", "dust", "vibration"]),
-                ("{mode}", vec!["intermittent", "complete", "partial", "progressive"]),
+                (
+                    "{condition}",
+                    vec!["humidity", "temperature extremes", "dust", "vibration"],
+                ),
+                (
+                    "{mode}",
+                    vec!["intermittent", "complete", "partial", "progressive"],
+                ),
                 ("{hours}", vec!["8", "24", "48", "168"]),
-                ("{metric}", vec!["throughput", "efficiency", "accuracy", "response time"]),
+                (
+                    "{metric}",
+                    vec!["throughput", "efficiency", "accuracy", "response time"],
+                ),
                 ("{mtbf}", vec!["1000", "5000", "10000", "50000"]),
-                ("{issue}", vec!["premature failure", "manufacturing defect", "design flaw", "wear"]),
+                (
+                    "{issue}",
+                    vec![
+                        "premature failure",
+                        "manufacturing defect",
+                        "design flaw",
+                        "wear",
+                    ],
+                ),
             ],
         };
 
@@ -1338,9 +1562,21 @@ mod tests {
             }
         }
 
-        assert_eq!(has_domain, dataset.pairs.len(), "All pairs should have domain");
-        assert_eq!(has_mechanism, dataset.pairs.len(), "All pairs should have mechanism");
-        assert_eq!(has_variables, dataset.pairs.len(), "All pairs should have variables");
+        assert_eq!(
+            has_domain,
+            dataset.pairs.len(),
+            "All pairs should have domain"
+        );
+        assert_eq!(
+            has_mechanism,
+            dataset.pairs.len(),
+            "All pairs should have mechanism"
+        );
+        assert_eq!(
+            has_variables,
+            dataset.pairs.len(),
+            "All pairs should have variables"
+        );
 
         println!("[VERIFIED] Intervention contexts are fully populated");
     }

@@ -42,7 +42,8 @@ pub fn extract_entity_mentions(text: &str) -> EntityMetadata {
 
         let first_char = clean.chars().next().unwrap_or('a');
         let is_capitalized = first_char.is_uppercase();
-        let is_all_caps = clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
+        let is_all_caps =
+            clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
         let has_special = clean.contains('_') || clean.contains('-');
 
         if (is_capitalized || is_all_caps || has_special) && !is_common_word(clean) {
@@ -59,17 +60,15 @@ pub fn extract_entity_mentions(text: &str) -> EntityMetadata {
 
 fn is_common_word(word: &str) -> bool {
     const COMMON: &[&str] = &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "can", "to", "of", "in", "for", "on",
-        "with", "at", "by", "from", "up", "about", "into", "over", "after",
-        "this", "that", "these", "those", "then", "than", "when", "where",
-        "why", "how", "all", "each", "every", "both", "few", "more", "most",
-        "other", "some", "such", "no", "not", "only", "same", "so", "and",
-        "but", "if", "or", "because", "as", "until", "while", "it", "its",
-        "they", "them", "their", "he", "she", "him", "her", "his", "i", "me",
-        "my", "we", "us", "our", "you", "your", "here", "there", "now", "use",
-        "using", "used", "new", "also", "just", "get", "make", "like", "time",
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "can",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from", "up", "about", "into", "over",
+        "after", "this", "that", "these", "those", "then", "than", "when", "where", "why", "how",
+        "all", "each", "every", "both", "few", "more", "most", "other", "some", "such", "no",
+        "not", "only", "same", "so", "and", "but", "if", "or", "because", "as", "until", "while",
+        "it", "its", "they", "them", "their", "he", "she", "him", "her", "his", "i", "me", "my",
+        "we", "us", "our", "you", "your", "here", "there", "now", "use", "using", "used", "new",
+        "also", "just", "get", "make", "like", "time",
     ];
     COMMON.contains(&word.to_lowercase().as_str())
 }
@@ -189,7 +188,12 @@ pub struct KnowledgeTriple {
 
 impl KnowledgeTriple {
     /// Create a valid triple.
-    pub fn valid(subject: impl Into<String>, predicate: impl Into<String>, object: impl Into<String>, source: impl Into<String>) -> Self {
+    pub fn valid(
+        subject: impl Into<String>,
+        predicate: impl Into<String>,
+        object: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
         Self {
             subject: subject.into(),
             predicate: predicate.into(),
@@ -200,7 +204,12 @@ impl KnowledgeTriple {
     }
 
     /// Create an invalid triple.
-    pub fn invalid(subject: impl Into<String>, predicate: impl Into<String>, object: impl Into<String>, source: impl Into<String>) -> Self {
+    pub fn invalid(
+        subject: impl Into<String>,
+        predicate: impl Into<String>,
+        object: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
         Self {
             subject: subject.into(),
             predicate: predicate.into(),
@@ -325,7 +334,9 @@ impl E11EntityBenchmarkDataset {
             return Err("No documents contain entities".to_string());
         }
 
-        if self.ground_truth.valid_triples.is_empty() && self.ground_truth.invalid_triples.is_empty() {
+        if self.ground_truth.valid_triples.is_empty()
+            && self.ground_truth.invalid_triples.is_empty()
+        {
             return Err("No knowledge triples for TransE validation".to_string());
         }
 
@@ -349,7 +360,10 @@ impl E11EntityDatasetLoader {
     }
 
     /// Load dataset from ChunkRecords.
-    pub fn load_from_chunks(&self, chunks: &[crate::realdata::ChunkRecord]) -> E11EntityBenchmarkDataset {
+    pub fn load_from_chunks(
+        &self,
+        chunks: &[crate::realdata::ChunkRecord],
+    ) -> E11EntityBenchmarkDataset {
         use tracing::{debug, info};
 
         info!(
@@ -392,12 +406,20 @@ impl E11EntityDatasetLoader {
 
             // Update entity type counts and ground truth
             for entity in &entities {
-                *entity_type_counts.entry(entity.entity_type.clone()).or_insert(0) += 1;
+                *entity_type_counts
+                    .entry(entity.entity_type.clone())
+                    .or_insert(0) += 1;
 
                 // Build ground truth from discovered entities
-                ground_truth.known_entities.insert(entity.canonical_id.clone());
-                ground_truth.entity_types.insert(entity.canonical_id.clone(), entity.entity_type.clone());
-                ground_truth.canonicalization.insert(entity.surface_form.clone(), entity.canonical_id.clone());
+                ground_truth
+                    .known_entities
+                    .insert(entity.canonical_id.clone());
+                ground_truth
+                    .entity_types
+                    .insert(entity.canonical_id.clone(), entity.entity_type.clone());
+                ground_truth
+                    .canonicalization
+                    .insert(entity.surface_form.clone(), entity.canonical_id.clone());
 
                 // Track docs by entity
                 ground_truth
@@ -490,9 +512,12 @@ impl E11EntityDatasetLoader {
 
         // Generate invalid triples by corrupting valid triples
         let relations = Self::get_known_relations();
-        let known_invalid_triples = self.generate_corrupted_triples(&known_valid_triples, &relations);
+        let known_invalid_triples =
+            self.generate_corrupted_triples(&known_valid_triples, &relations);
 
-        ground_truth.valid_triples.extend(known_valid_triples.clone());
+        ground_truth
+            .valid_triples
+            .extend(known_valid_triples.clone());
         ground_truth.invalid_triples.extend(known_invalid_triples);
 
         // Add random invalid triples from document entities for generalization testing
@@ -503,7 +528,10 @@ impl E11EntityDatasetLoader {
             .into_iter()
             .collect();
 
-        let target_invalid = self.config.num_invalid_triples.min(ground_truth.invalid_triples.len() + 50);
+        let target_invalid = self
+            .config
+            .num_invalid_triples
+            .min(ground_truth.invalid_triples.len() + 50);
 
         while ground_truth.invalid_triples.len() < target_invalid && all_entities.len() >= 2 {
             let head_idx = rng.gen_range(0..all_entities.len());
@@ -523,7 +551,9 @@ impl E11EntityDatasetLoader {
 
             // Avoid duplicates with valid triples
             let is_duplicate = known_valid_triples.iter().any(|t| {
-                t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
+                t.subject == triple.subject
+                    && t.predicate == triple.predicate
+                    && t.object == triple.object
             });
 
             if !is_duplicate {
@@ -574,8 +604,15 @@ impl E11EntityDatasetLoader {
     /// Get known relation types.
     fn get_known_relations() -> Vec<&'static str> {
         vec![
-            "depends_on", "uses", "extends", "part_of", "created_by",
-            "alternative_to", "works_at", "implements", "is_type",
+            "depends_on",
+            "uses",
+            "extends",
+            "part_of",
+            "created_by",
+            "alternative_to",
+            "works_at",
+            "implements",
+            "is_type",
         ]
     }
 
@@ -636,7 +673,9 @@ impl E11EntityDatasetLoader {
 
             // Avoid duplicates with valid triples
             let is_valid = valid_triples.iter().any(|t| {
-                t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
+                t.subject == triple.subject
+                    && t.predicate == triple.predicate
+                    && t.object == triple.object
             });
 
             if !is_valid {
@@ -648,7 +687,11 @@ impl E11EntityDatasetLoader {
     }
 
     /// Generate entity pairs for relationship inference testing.
-    fn generate_entity_pairs(&self, documents: &[EntityDocument], ground_truth: &mut EntityGroundTruth) {
+    fn generate_entity_pairs(
+        &self,
+        documents: &[EntityDocument],
+        ground_truth: &mut EntityGroundTruth,
+    ) {
         use rand::prelude::*;
         use rand_chacha::ChaCha8Rng;
 
@@ -669,8 +712,12 @@ impl E11EntityDatasetLoader {
                     let tail = &entities[j].canonical_id;
 
                     // Look for known relation
-                    let known_relation = ground_truth.valid_triples.iter()
-                        .find(|t| &t.subject.to_lowercase() == head && &t.object.to_lowercase() == tail)
+                    let known_relation = ground_truth
+                        .valid_triples
+                        .iter()
+                        .find(|t| {
+                            &t.subject.to_lowercase() == head && &t.object.to_lowercase() == tail
+                        })
                         .map(|t| t.predicate.clone());
 
                     if ground_truth.entity_pairs.len() < self.config.num_entity_pairs {
@@ -679,8 +726,13 @@ impl E11EntityDatasetLoader {
                             tail: tail.clone(),
                             expected_relation: known_relation,
                             confidence: if ground_truth.valid_triples.iter().any(|t| {
-                                t.subject.to_lowercase() == *head && t.object.to_lowercase() == *tail
-                            }) { 1.0 } else { 0.5 },
+                                t.subject.to_lowercase() == *head
+                                    && t.object.to_lowercase() == *tail
+                            }) {
+                                1.0
+                            } else {
+                                0.5
+                            },
                             source_doc_id: Some(doc.id),
                         });
                     }
@@ -799,7 +851,10 @@ mod tests {
 
     #[test]
     fn test_entity_type_conversion() {
-        assert_eq!(entity_type_to_string(EntityType::ProgrammingLanguage), "ProgrammingLanguage");
+        assert_eq!(
+            entity_type_to_string(EntityType::ProgrammingLanguage),
+            "ProgrammingLanguage"
+        );
         assert_eq!(entity_type_to_string(EntityType::Database), "Database");
         assert_eq!(entity_type_to_string(EntityType::Framework), "Framework");
         assert_eq!(entity_type_to_string(EntityType::Unknown), "Unknown");

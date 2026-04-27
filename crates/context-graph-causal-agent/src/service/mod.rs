@@ -228,11 +228,8 @@ impl CausalDiscoveryService {
             min_confidence: config.min_confidence,
             ..config.activator_config.clone()
         };
-        let activator = E5EmbedderActivator::with_model(
-            causal_graph.clone(),
-            causal_model,
-            activator_config,
-        );
+        let activator =
+            E5EmbedderActivator::with_model(causal_graph.clone(), causal_model, activator_config);
         let activator = Arc::new(activator);
 
         Self {
@@ -413,13 +410,24 @@ impl CausalDiscoveryService {
             let e1_semantic = Vec::new();
 
             let relationship = CausalRelationship::new(
-                candidate.cause_content.chars().take(500).collect::<String>(),
-                candidate.effect_content.chars().take(500).collect::<String>(),
+                candidate
+                    .cause_content
+                    .chars()
+                    .take(500)
+                    .collect::<String>(),
+                candidate
+                    .effect_content
+                    .chars()
+                    .take(500)
+                    .collect::<String>(),
                 analysis.mechanism.clone(),
                 cause_vec,
                 effect_vec,
                 e1_semantic,
-                format!("{}\n---\n{}", candidate.cause_content, candidate.effect_content),
+                format!(
+                    "{}\n---\n{}",
+                    candidate.cause_content, candidate.effect_content
+                ),
                 candidate.cause_memory_id,
                 analysis.confidence,
                 mechanism_type,
@@ -587,9 +595,7 @@ impl CausalDiscoveryService {
         }
 
         // Phase 2+3+4: Scan + Analyze + Activate + Persist
-        let result = self
-            .run_discovery_cycle(&memories, Some(store))
-            .await?;
+        let result = self.run_discovery_cycle(&memories, Some(store)).await?;
 
         // Phase 5: Emit audit record (non-fatal per ARCH-PROV-01)
         let audit_params = serde_json::json!({
@@ -699,7 +705,10 @@ impl CausalDiscoveryService {
             });
         }
 
-        info!(count = memories.len(), "Harvested memories for causal discovery");
+        info!(
+            count = memories.len(),
+            "Harvested memories for causal discovery"
+        );
         Ok(memories)
     }
 
@@ -745,27 +754,22 @@ impl CausalDiscoveryService {
     }
 
     /// Load the cursor from the store.
-    async fn load_cursor(
-        &self,
-        store: &Arc<dyn TeleologicalMemoryStore>,
-    ) -> DiscoveryCursor {
+    async fn load_cursor(&self, store: &Arc<dyn TeleologicalMemoryStore>) -> DiscoveryCursor {
         match store.get_processing_cursor(CURSOR_KEY).await {
-            Ok(Some(bytes)) => {
-                match serde_json::from_slice::<DiscoveryCursor>(&bytes) {
-                    Ok(cursor) => {
-                        info!(
-                            cycles = cursor.cycles_completed,
-                            relationships = cursor.total_relationships,
-                            "Loaded cursor from store"
-                        );
-                        cursor
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "Failed to parse cursor, starting fresh");
-                        DiscoveryCursor::default()
-                    }
+            Ok(Some(bytes)) => match serde_json::from_slice::<DiscoveryCursor>(&bytes) {
+                Ok(cursor) => {
+                    info!(
+                        cycles = cursor.cycles_completed,
+                        relationships = cursor.total_relationships,
+                        "Loaded cursor from store"
+                    );
+                    cursor
                 }
-            }
+                Err(e) => {
+                    warn!(error = %e, "Failed to parse cursor, starting fresh");
+                    DiscoveryCursor::default()
+                }
+            },
             Ok(None) => {
                 info!("No cursor found, starting fresh");
                 DiscoveryCursor::default()
@@ -808,7 +812,9 @@ impl CausalDiscoveryService {
             match tokio::time::timeout(Duration::from_secs(10), handle).await {
                 Ok(Ok(())) => info!("Causal discovery background task completed normally"),
                 Ok(Err(e)) => error!("Causal discovery background task panicked: {:?}", e),
-                Err(_) => error!("Causal discovery background task did not shut down within 10 seconds"),
+                Err(_) => {
+                    error!("Causal discovery background task did not shut down within 10 seconds")
+                }
             }
         }
 
@@ -850,8 +856,7 @@ mod tests {
 
     fn create_test_config() -> CausalDiscoveryConfig {
         let mut workspace_root = std::env::current_dir().unwrap();
-        while !workspace_root.join("Cargo.toml").exists()
-            || !workspace_root.join("models").exists()
+        while !workspace_root.join("Cargo.toml").exists() || !workspace_root.join("models").exists()
         {
             if !workspace_root.pop() {
                 workspace_root = std::path::PathBuf::from(".");
@@ -937,7 +942,9 @@ mod tests {
     fn default_service() -> CausalDiscoveryService {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            CausalDiscoveryService::new(CausalDiscoveryConfig::default()).await.unwrap()
+            CausalDiscoveryService::new(CausalDiscoveryConfig::default())
+                .await
+                .unwrap()
         })
     }
 
@@ -948,7 +955,10 @@ mod tests {
             memories_harvested: 0,
             ..Default::default()
         };
-        assert_eq!(service.compute_next_interval(&metrics), Duration::from_secs(600));
+        assert_eq!(
+            service.compute_next_interval(&metrics),
+            Duration::from_secs(600)
+        );
     }
 
     #[test]
@@ -959,7 +969,10 @@ mod tests {
             relationships_discovered: 0,
             ..Default::default()
         };
-        assert_eq!(service.compute_next_interval(&metrics), Duration::from_secs(300));
+        assert_eq!(
+            service.compute_next_interval(&metrics),
+            Duration::from_secs(300)
+        );
     }
 
     #[test]
@@ -970,7 +983,10 @@ mod tests {
             relationships_discovered: 10,
             ..Default::default()
         };
-        assert_eq!(service.compute_next_interval(&metrics), Duration::from_secs(30));
+        assert_eq!(
+            service.compute_next_interval(&metrics),
+            Duration::from_secs(30)
+        );
     }
 
     #[test]

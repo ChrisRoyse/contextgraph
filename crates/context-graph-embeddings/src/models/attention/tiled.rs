@@ -91,34 +91,24 @@ impl AttentionStrategy for TiledAttention {
 
             // Initialize accumulators for this Q tile
             // m: row-wise max of scores seen so far [batch, heads, q_len, 1]
-            let mut m_i = Tensor::full(
-                f32::NEG_INFINITY,
-                (batch_size, num_heads, q_len, 1),
-                device,
-            )
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("TiledAttention init m failed: {}", e),
-            })?;
+            let mut m_i =
+                Tensor::full(f32::NEG_INFINITY, (batch_size, num_heads, q_len, 1), device)
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("TiledAttention init m failed: {}", e),
+                    })?;
 
             // l: row-wise sum of exp(scores - m) [batch, heads, q_len, 1]
-            let mut l_i = Tensor::zeros(
-                (batch_size, num_heads, q_len, 1),
-                DType::F32,
-                device,
-            )
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("TiledAttention init l failed: {}", e),
-            })?;
+            let mut l_i = Tensor::zeros((batch_size, num_heads, q_len, 1), DType::F32, device)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("TiledAttention init l failed: {}", e),
+                })?;
 
             // O: accumulated output [batch, heads, q_len, head_dim]
-            let mut o_i = Tensor::zeros(
-                (batch_size, num_heads, q_len, head_dim),
-                DType::F32,
-                device,
-            )
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("TiledAttention init O failed: {}", e),
-            })?;
+            let mut o_i =
+                Tensor::zeros((batch_size, num_heads, q_len, head_dim), DType::F32, device)
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("TiledAttention init O failed: {}", e),
+                    })?;
 
             let num_kv_tiles = seq_len.div_ceil(bc);
 
@@ -127,18 +117,20 @@ impl AttentionStrategy for TiledAttention {
                 let k_len = bc.min(seq_len - k_start);
 
                 // K tile: [batch, heads, k_len, head_dim]
-                let k_tile = k_f32
-                    .narrow(2, k_start, k_len)
-                    .map_err(|e| EmbeddingError::GpuError {
-                        message: format!("TiledAttention K tile narrow failed: {}", e),
-                    })?;
+                let k_tile =
+                    k_f32
+                        .narrow(2, k_start, k_len)
+                        .map_err(|e| EmbeddingError::GpuError {
+                            message: format!("TiledAttention K tile narrow failed: {}", e),
+                        })?;
 
                 // V tile: [batch, heads, k_len, head_dim]
-                let v_tile = v_f32
-                    .narrow(2, k_start, k_len)
-                    .map_err(|e| EmbeddingError::GpuError {
-                        message: format!("TiledAttention V tile narrow failed: {}", e),
-                    })?;
+                let v_tile =
+                    v_f32
+                        .narrow(2, k_start, k_len)
+                        .map_err(|e| EmbeddingError::GpuError {
+                            message: format!("TiledAttention V tile narrow failed: {}", e),
+                        })?;
 
                 // S_ij = Q_i @ K_j^T / scale: [batch, heads, q_len, k_len]
                 let k_tile_t = k_tile
@@ -181,11 +173,11 @@ impl AttentionStrategy for TiledAttention {
                         })?
                 } else {
                     // Mask is [batch, 1, 1, seq_len] — slice last dim only
-                    let mask_tile = mask_f32
-                        .narrow(3, k_start, k_len)
-                        .map_err(|e| EmbeddingError::GpuError {
+                    let mask_tile = mask_f32.narrow(3, k_start, k_len).map_err(|e| {
+                        EmbeddingError::GpuError {
                             message: format!("TiledAttention mask narrow failed: {}", e),
-                        })?;
+                        }
+                    })?;
                     s_ij.broadcast_add(&mask_tile)
                         .map_err(|e| EmbeddingError::GpuError {
                             message: format!("TiledAttention mask add failed: {}", e),
@@ -194,18 +186,16 @@ impl AttentionStrategy for TiledAttention {
 
                 // Online softmax update
                 // m_ij = rowmax(S_ij): [batch, heads, q_len, 1]
-                let m_ij = s_ij
-                    .max_keepdim(candle_core::D::Minus1)
-                    .map_err(|e| EmbeddingError::GpuError {
+                let m_ij = s_ij.max_keepdim(candle_core::D::Minus1).map_err(|e| {
+                    EmbeddingError::GpuError {
                         message: format!("TiledAttention rowmax failed: {}", e),
-                    })?;
+                    }
+                })?;
 
                 // m_new = max(m_old, m_ij)
-                let m_new = m_i
-                    .maximum(&m_ij)
-                    .map_err(|e| EmbeddingError::GpuError {
-                        message: format!("TiledAttention m_new max failed: {}", e),
-                    })?;
+                let m_new = m_i.maximum(&m_ij).map_err(|e| EmbeddingError::GpuError {
+                    message: format!("TiledAttention m_new max failed: {}", e),
+                })?;
 
                 // P_ij = exp(S_ij - m_new): [batch, heads, q_len, k_len]
                 let p_ij = s_ij
@@ -230,11 +220,11 @@ impl AttentionStrategy for TiledAttention {
                     })?;
 
                 // l_new = correction * l_old + rowsum(P_ij)
-                let p_rowsum = p_ij
-                    .sum_keepdim(candle_core::D::Minus1)
-                    .map_err(|e| EmbeddingError::GpuError {
+                let p_rowsum = p_ij.sum_keepdim(candle_core::D::Minus1).map_err(|e| {
+                    EmbeddingError::GpuError {
                         message: format!("TiledAttention P rowsum failed: {}", e),
-                    })?;
+                    }
+                })?;
 
                 let l_new = correction
                     .broadcast_mul(&l_i)

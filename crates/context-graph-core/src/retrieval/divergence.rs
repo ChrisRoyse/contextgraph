@@ -280,15 +280,36 @@ mod tests {
     #[test]
     fn test_severity_from_score_combined() {
         // High: score < 0.10
-        assert_eq!(DivergenceSeverity::from_score(0.05), DivergenceSeverity::High);
-        assert_eq!(DivergenceSeverity::from_score(0.00), DivergenceSeverity::High);
-        assert_eq!(DivergenceSeverity::from_score(0.09), DivergenceSeverity::High);
+        assert_eq!(
+            DivergenceSeverity::from_score(0.05),
+            DivergenceSeverity::High
+        );
+        assert_eq!(
+            DivergenceSeverity::from_score(0.00),
+            DivergenceSeverity::High
+        );
+        assert_eq!(
+            DivergenceSeverity::from_score(0.09),
+            DivergenceSeverity::High
+        );
         // Medium: 0.10..0.20
-        assert_eq!(DivergenceSeverity::from_score(0.10), DivergenceSeverity::Medium);
-        assert_eq!(DivergenceSeverity::from_score(0.15), DivergenceSeverity::Medium);
+        assert_eq!(
+            DivergenceSeverity::from_score(0.10),
+            DivergenceSeverity::Medium
+        );
+        assert_eq!(
+            DivergenceSeverity::from_score(0.15),
+            DivergenceSeverity::Medium
+        );
         // Low: >= 0.20
-        assert_eq!(DivergenceSeverity::from_score(0.20), DivergenceSeverity::Low);
-        assert_eq!(DivergenceSeverity::from_score(0.25), DivergenceSeverity::Low);
+        assert_eq!(
+            DivergenceSeverity::from_score(0.20),
+            DivergenceSeverity::Low
+        );
+        assert_eq!(
+            DivergenceSeverity::from_score(0.25),
+            DivergenceSeverity::Low
+        );
         // Display
         assert_eq!(DivergenceSeverity::High.as_str(), "High");
         assert_eq!(format!("{}", DivergenceSeverity::High), "High");
@@ -330,7 +351,10 @@ mod tests {
         assert_eq!(alert.memory_id, id);
         assert_eq!(alert.space, Embedder::Semantic);
         assert_eq!(alert.similarity_score, 0.15);
-        assert_eq!(alert.memory_summary, "Working on memory consolidation algorithm");
+        assert_eq!(
+            alert.memory_summary,
+            "Working on memory consolidation algorithm"
+        );
 
         // Score clamping
         let alert_high = DivergenceAlert::new(id, Embedder::Code, 1.5, "test");
@@ -360,9 +384,24 @@ mod tests {
         assert!(report.is_empty());
         assert!(report.most_severe().is_none());
 
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, 0.25, "low"));
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.05, "high"));
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Sparse, 0.15, "medium"));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Semantic,
+            0.25,
+            "low",
+        ));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Code,
+            0.05,
+            "high",
+        ));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Sparse,
+            0.15,
+            "medium",
+        ));
 
         let most_severe = report.most_severe().unwrap();
         assert_eq!(most_severe.similarity_score, 0.05);
@@ -372,9 +411,24 @@ mod tests {
     #[test]
     fn test_report_sort_by_severity() {
         let mut report = DivergenceReport::new();
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, 0.25, "a"));
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.05, "b"));
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Sparse, 0.15, "c"));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Semantic,
+            0.25,
+            "a",
+        ));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Code,
+            0.05,
+            "b",
+        ));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Sparse,
+            0.15,
+            "c",
+        ));
 
         report.sort_by_severity();
         assert_eq!(report.alerts[0].similarity_score, 0.05);
@@ -396,9 +450,17 @@ mod tests {
                 continue;
             }
             if cat.used_for_divergence_detection() {
-                assert!(DIVERGENCE_SPACES.contains(&embedder), "{:?} should be in DIVERGENCE_SPACES", embedder);
+                assert!(
+                    DIVERGENCE_SPACES.contains(&embedder),
+                    "{:?} should be in DIVERGENCE_SPACES",
+                    embedder
+                );
             } else {
-                assert!(!DIVERGENCE_SPACES.contains(&embedder), "{:?} should NOT be in DIVERGENCE_SPACES", embedder);
+                assert!(
+                    !DIVERGENCE_SPACES.contains(&embedder),
+                    "{:?} should NOT be in DIVERGENCE_SPACES",
+                    embedder
+                );
             }
         }
     }
@@ -414,7 +476,8 @@ mod tests {
         let exact = "a".repeat(100);
         assert_eq!(truncate_summary(&exact, 100).len(), 100);
         // Long content truncated
-        let long = "This is a long sentence that needs to be truncated at word boundary for readability";
+        let long =
+            "This is a long sentence that needs to be truncated at word boundary for readability";
         let result = truncate_summary(long, 50);
         assert!(result.len() <= 50);
         assert!(result.ends_with("..."));
@@ -437,7 +500,12 @@ mod tests {
 
         // Report roundtrip
         let mut report = DivergenceReport::new();
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.12, "test"));
+        report.add(DivergenceAlert::new(
+            Uuid::new_v4(),
+            Embedder::Code,
+            0.12,
+            "test",
+        ));
         let json = serde_json::to_string(&report).expect("serialize");
         let recovered: DivergenceReport = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(recovered.len(), 1);

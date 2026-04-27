@@ -214,12 +214,12 @@ impl GitFileWatcher {
             .map_err(|_| WatcherError::GitNotFound)?;
 
         if output.status.success() {
-            let root = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .to_string();
+            let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
             Ok(PathBuf::from(root))
         } else {
-            Err(WatcherError::NotGitRepository { path: path.to_path_buf() })
+            Err(WatcherError::NotGitRepository {
+                path: path.to_path_buf(),
+            })
         }
     }
 
@@ -433,7 +433,9 @@ impl GitFileWatcher {
             if full_path.exists() && self.is_markdown(&full_path) {
                 // Check if we already processed this
                 let hashes = self.file_hashes.read().await;
-                let canonical = full_path.canonicalize().unwrap_or_else(|_| full_path.clone());
+                let canonical = full_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| full_path.clone());
                 if hashes.contains_key(&canonical) {
                     continue;
                 }
@@ -469,13 +471,14 @@ impl GitFileWatcher {
                 source: e,
             })?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| WatcherError::ReadFailed {
-                path: dir.to_path_buf(),
-                source: e,
-            })?
+        while let Some(entry) =
+            entries
+                .next_entry()
+                .await
+                .map_err(|e| WatcherError::ReadFailed {
+                    path: dir.to_path_buf(),
+                    source: e,
+                })?
         {
             let path = entry.path();
 
@@ -555,19 +558,22 @@ impl GitFileWatcher {
                 path = %path_str,
                 "File content changed - clearing old embeddings before re-chunking"
             );
-            let deleted_count = self.capture_service.delete_by_file_path(&path_str).await
+            let deleted_count = self
+                .capture_service
+                .delete_by_file_path(&path_str)
+                .await
                 .map_err(|e| {
-                error!(
-                    path = %path_str,
-                    error = %e,
-                    "CRITICAL: Failed to delete old embeddings for modified file. \
-                     Database may contain stale embeddings."
-                );
-                WatcherError::CaptureFailed {
-                    path: path.to_path_buf(),
-                    source: e,
-                }
-            })?;
+                    error!(
+                        path = %path_str,
+                        error = %e,
+                        "CRITICAL: Failed to delete old embeddings for modified file. \
+                         Database may contain stale embeddings."
+                    );
+                    WatcherError::CaptureFailed {
+                        path: path.to_path_buf(),
+                        source: e,
+                    }
+                })?;
             info!(
                 path = %path_str,
                 deleted_count = deleted_count,
@@ -665,7 +671,10 @@ impl GitFileWatcher {
         );
 
         // Delete all embeddings for this file from both stores
-        let deleted_count = self.capture_service.delete_by_file_path(&path_str).await
+        let deleted_count = self
+            .capture_service
+            .delete_by_file_path(&path_str)
+            .await
             .map_err(|e| {
                 error!(
                     path = %path_str,
@@ -682,9 +691,7 @@ impl GitFileWatcher {
         {
             let mut hashes = self.file_hashes.write().await;
             // Try both the original path and reconstructed canonical path
-            hashes.retain(|cached_path, _| {
-                cached_path.file_name() != path.file_name()
-            });
+            hashes.retain(|cached_path, _| cached_path.file_name() != path.file_name());
         }
 
         info!(
@@ -975,35 +982,62 @@ mod tests {
 
         watcher.start().await.expect("start watcher");
         let count_after_create = store.count().expect("count");
-        assert!(count_after_create >= 1, "Should have at least 1 memory after create");
+        assert!(
+            count_after_create >= 1,
+            "Should have at least 1 memory after create"
+        );
 
         // Verify original content was stored
-        let file_path_str = md_path.canonicalize().unwrap().to_string_lossy().to_string();
-        let original_memories = store.get_by_file_path(&file_path_str).expect("get by file path");
-        assert!(!original_memories.is_empty(), "Should have memories for file");
+        let file_path_str = md_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let original_memories = store
+            .get_by_file_path(&file_path_str)
+            .expect("get by file path");
         assert!(
-            original_memories.iter().any(|m| m.content.contains("Version 1")),
+            !original_memories.is_empty(),
+            "Should have memories for file"
+        );
+        assert!(
+            original_memories
+                .iter()
+                .any(|m| m.content.contains("Version 1")),
             "Should contain original content"
         );
 
         // Modify file with new content
-        fs::write(&md_path, "# Modified Content\n\nVersion 2 with significant changes and modifications.").expect("write file");
+        fs::write(
+            &md_path,
+            "# Modified Content\n\nVersion 2 with significant changes and modifications.",
+        )
+        .expect("write file");
 
         // Process events - git should detect modified file
         watcher.process_events().await.expect("process events");
 
         // With our delete-before-rechunk logic, the old memories are deleted
         // and new ones are created. The content should be different.
-        let modified_memories = store.get_by_file_path(&file_path_str).expect("get by file path after modify");
-        assert!(!modified_memories.is_empty(), "Should still have memories for file after modify");
+        let modified_memories = store
+            .get_by_file_path(&file_path_str)
+            .expect("get by file path after modify");
+        assert!(
+            !modified_memories.is_empty(),
+            "Should still have memories for file after modify"
+        );
 
         // Verify the content was actually updated (old content deleted, new content stored)
         assert!(
-            modified_memories.iter().any(|m| m.content.contains("Version 2")),
+            modified_memories
+                .iter()
+                .any(|m| m.content.contains("Version 2")),
             "Should contain modified content"
         );
         assert!(
-            !modified_memories.iter().any(|m| m.content.contains("Version 1")),
+            !modified_memories
+                .iter()
+                .any(|m| m.content.contains("Version 1")),
             "Should NOT contain original content (stale embeddings should be deleted)"
         );
 
@@ -1019,7 +1053,11 @@ mod tests {
 
         // Create a markdown file
         let md_path = watch_dir.path().join("delete_test.md");
-        fs::write(&md_path, "# Delete Test\n\nThis file will be deleted. Content for testing deletion cleanup.").expect("write file");
+        fs::write(
+            &md_path,
+            "# Delete Test\n\nThis file will be deleted. Content for testing deletion cleanup.",
+        )
+        .expect("write file");
 
         // Add and commit to git
         Command::new("git")
@@ -1036,9 +1074,18 @@ mod tests {
         watcher.start().await.expect("start watcher");
 
         // Verify file was processed and stored
-        let file_path_str = md_path.canonicalize().unwrap().to_string_lossy().to_string();
-        let memories_before_delete = store.get_by_file_path(&file_path_str).expect("get by file path");
-        assert!(!memories_before_delete.is_empty(), "Should have memories for file before deletion");
+        let file_path_str = md_path
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let memories_before_delete = store
+            .get_by_file_path(&file_path_str)
+            .expect("get by file path");
+        assert!(
+            !memories_before_delete.is_empty(),
+            "Should have memories for file before deletion"
+        );
         let initial_count = store.count().expect("count");
         assert!(initial_count >= 1, "Should have at least 1 memory");
 
@@ -1049,7 +1096,9 @@ mod tests {
         watcher.process_events().await.expect("process events");
 
         // CRITICAL: Verify all embeddings for the deleted file are removed
-        let memories_after_delete = store.get_by_file_path(&file_path_str).expect("get by file path after delete");
+        let memories_after_delete = store
+            .get_by_file_path(&file_path_str)
+            .expect("get by file path after delete");
         assert!(
             memories_after_delete.is_empty(),
             "Should have NO memories for deleted file, but found {}",
@@ -1058,7 +1107,10 @@ mod tests {
 
         // Verify hash cache is also cleaned
         let cache_count = watcher.cached_file_count().await;
-        assert_eq!(cache_count, 0, "Hash cache should be empty after file deletion");
+        assert_eq!(
+            cache_count, 0,
+            "Hash cache should be empty after file deletion"
+        );
 
         watcher.stop();
     }

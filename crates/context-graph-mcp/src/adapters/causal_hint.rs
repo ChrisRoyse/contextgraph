@@ -83,7 +83,6 @@ impl LlmCausalHintProvider {
             last_status: AtomicU8::new(Self::STATUS_UNKNOWN),
         }
     }
-
 }
 
 #[async_trait]
@@ -96,11 +95,9 @@ impl CausalHintProvider for LlmCausalHintProvider {
         }
 
         // Run analysis with timeout
-        let result = tokio::time::timeout(
-            self.timeout_duration,
-            self.llm.analyze_single_text(content),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(self.timeout_duration, self.llm.analyze_single_text(content))
+                .await;
 
         match result {
             Ok(Ok(hint)) => {
@@ -207,8 +204,7 @@ impl CausalHintProvider for LlmCausalHintProvider {
                     .collect()
             }
             Ok(Err(e)) => {
-                self.last_status
-                    .store(Self::STATUS_ERROR, Ordering::SeqCst);
+                self.last_status.store(Self::STATUS_ERROR, Ordering::SeqCst);
                 warn!(
                     error = %e,
                     "LlmCausalHintProvider: Relationship extraction failed"

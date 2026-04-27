@@ -27,11 +27,13 @@ use async_trait::async_trait;
 use candle_core::Tensor;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
-use crate::gpu::{init_gpu, GpuModelLoader, normalize_gpu};
+use crate::gpu::{init_gpu, normalize_gpu, GpuModelLoader};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 
-use super::constants::{CONTEXTUAL_DIMENSION, CONTEXTUAL_MAX_TOKENS, INTENT_PREFIX, CONTEXT_PREFIX};
+use super::constants::{
+    CONTEXTUAL_DIMENSION, CONTEXTUAL_MAX_TOKENS, CONTEXT_PREFIX, INTENT_PREFIX,
+};
 use super::state::{ContextualModelState, ModelState};
 
 /// Contextual embedding model using intfloat/e5-base-v2.
@@ -328,7 +330,9 @@ impl ContextualModel {
                 let context_vec = gpu_forward(&context_text, weights, tokenizer)?;
 
                 // Validate dimensions (fail fast on implementation error)
-                if intent_vec.len() != CONTEXTUAL_DIMENSION || context_vec.len() != CONTEXTUAL_DIMENSION {
+                if intent_vec.len() != CONTEXTUAL_DIMENSION
+                    || context_vec.len() != CONTEXTUAL_DIMENSION
+                {
                     return Err(EmbeddingError::InternalError {
                         message: format!(
                             "E10 dual embedding dimension error: intent={}, context={}, expected {}",
@@ -665,9 +669,11 @@ fn self_attention(
     let head_dim = config.hidden_size / num_heads;
     let hidden_size = config.hidden_size;
 
-    let (batch, seq_len, _) = hidden_states.dims3().map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel attention dims3 failed: {}", e),
-    })?;
+    let (batch, seq_len, _) = hidden_states
+        .dims3()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel attention dims3 failed: {}", e),
+        })?;
 
     // Flatten to [batch*seq, hidden] for Candle matmul compatibility
     let hidden_flat = hidden_states
@@ -782,27 +788,26 @@ fn self_attention(
             message: format!("ContextualModel key_t contiguous failed: {}", e),
         })?;
 
-    let scores = (query
-        .matmul(&key_t)
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("ContextualModel attention scores matmul failed: {}", e),
-        })?
-        / (head_dim as f64).sqrt())
+    let scores = (query.matmul(&key_t).map_err(|e| EmbeddingError::GpuError {
+        message: format!("ContextualModel attention scores matmul failed: {}", e),
+    })? / (head_dim as f64).sqrt())
     .map_err(|e| EmbeddingError::GpuError {
         message: format!("ContextualModel attention scores scale failed: {}", e),
     })?;
 
     // Add attention mask using broadcast_add for proper shape handling
-    let scores = scores
-        .broadcast_add(extended_attention_mask)
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("ContextualModel attention mask add failed: {}", e),
-        })?;
+    let scores =
+        scores
+            .broadcast_add(extended_attention_mask)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("ContextualModel attention mask add failed: {}", e),
+            })?;
 
     // Softmax
-    let attention_probs = candle_nn::ops::softmax(&scores, 3).map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel attention softmax failed: {}", e),
-    })?;
+    let attention_probs =
+        candle_nn::ops::softmax(&scores, 3).map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel attention softmax failed: {}", e),
+        })?;
 
     // Attention output: probs @ V
     let context = attention_probs
@@ -831,9 +836,16 @@ fn self_attention(
         })?;
 
     context_flat
-        .matmul(&att.output_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!("ContextualModel attention output weight transpose failed: {}", e),
-        })?)
+        .matmul(
+            &att.output_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "ContextualModel attention output weight transpose failed: {}",
+                        e
+                    ),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel attention output matmul failed: {}", e),
         })?
@@ -859,9 +871,11 @@ fn ffn_forward(
     let hidden_size = config.hidden_size;
     let intermediate_size = config.intermediate_size;
 
-    let (batch, seq_len, _) = hidden_states.dims3().map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel ffn dims3 failed: {}", e),
-    })?;
+    let (batch, seq_len, _) = hidden_states
+        .dims3()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel ffn dims3 failed: {}", e),
+        })?;
 
     // Flatten to [batch*seq, hidden] for Candle matmul compatibility
     let hidden_flat = hidden_states
@@ -872,9 +886,16 @@ fn ffn_forward(
 
     // Intermediate: flatten -> matmul -> reshape -> broadcast_add bias
     let intermediate = hidden_flat
-        .matmul(&ffn.intermediate_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!("ContextualModel ffn intermediate weight transpose failed: {}", e),
-        })?)
+        .matmul(
+            &ffn.intermediate_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "ContextualModel ffn intermediate weight transpose failed: {}",
+                        e
+                    ),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel ffn intermediate matmul failed: {}", e),
         })?
@@ -900,9 +921,13 @@ fn ffn_forward(
         })?;
 
     activated_flat
-        .matmul(&ffn.output_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!("ContextualModel ffn output weight transpose failed: {}", e),
-        })?)
+        .matmul(
+            &ffn.output_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("ContextualModel ffn output weight transpose failed: {}", e),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel ffn output matmul failed: {}", e),
         })?
@@ -1053,8 +1078,7 @@ mod tests {
         let device = Device::Cpu;
 
         for batch_size in [1, 2, 4] {
-            let hidden_states =
-                Tensor::randn(0.0f32, 1.0, (batch_size, 64, 768), &device).unwrap();
+            let hidden_states = Tensor::randn(0.0f32, 1.0, (batch_size, 64, 768), &device).unwrap();
             let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
             let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
 
@@ -1083,9 +1107,7 @@ mod tests {
         let output = layer_norm(&hidden_states, &weight, &bias, 1e-12).unwrap();
 
         // Check that output mean is close to 0 (per position in the sequence)
-        let output_mean = output
-            .mean_keepdim(candle_core::D::Minus1)
-            .unwrap();
+        let output_mean = output.mean_keepdim(candle_core::D::Minus1).unwrap();
         let mean_vals: Vec<f32> = output_mean.flatten_all().unwrap().to_vec1().unwrap();
 
         for (i, m) in mean_vals.iter().enumerate() {
@@ -1104,8 +1126,7 @@ mod tests {
 
         // Test various sequence lengths that might occur in practice
         for seq_len in [1, 16, 128, 384] {
-            let hidden_states =
-                Tensor::randn(0.0f32, 1.0, (1, seq_len, 768), &device).unwrap();
+            let hidden_states = Tensor::randn(0.0f32, 1.0, (1, seq_len, 768), &device).unwrap();
             let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
             let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
 

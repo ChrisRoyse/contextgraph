@@ -484,7 +484,13 @@ fn benchmark_capture_memory(c: &mut Criterion) {
             BenchmarkId::new("memories", memory_count),
             memory_count,
             |b, _| {
-                b.iter(|| black_box(runner.run_capture_memory("Benchmark capture content for testing performance")));
+                b.iter(|| {
+                    black_box(
+                        runner.run_capture_memory(
+                            "Benchmark capture content for testing performance",
+                        ),
+                    )
+                });
             },
         );
     }
@@ -946,7 +952,10 @@ mod performance_tests {
         let (avg, min, max, p95, _) = calculate_stats(&times);
 
         println!("\n=== Empty Database Edge Case ===");
-        println!("Min: {}ms, Max: {}ms, Avg: {}ms, P95: {}ms", min, max, avg, p95);
+        println!(
+            "Min: {}ms, Max: {}ms, Avg: {}ms, P95: {}ms",
+            min, max, avg, p95
+        );
 
         // Should be faster than with 100 memories
         assert!(
@@ -976,7 +985,10 @@ mod performance_tests {
         let (avg, min, max, p95, _) = calculate_stats(&times);
 
         println!("\n=== Max Memories (500) Edge Case ===");
-        println!("Min: {}ms, Max: {}ms, Avg: {}ms, P95: {}ms", min, max, avg, p95);
+        println!(
+            "Min: {}ms, Max: {}ms, Avg: {}ms, P95: {}ms",
+            min, max, avg, p95
+        );
 
         // Should still be within budget
         assert!(

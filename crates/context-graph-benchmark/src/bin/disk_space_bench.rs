@@ -142,10 +142,7 @@ fn check_cleanup_script(project_root: &Path) -> Vec<CheckResult> {
         ));
         return results;
     }
-    results.push(CheckResult::pass(
-        "cleanup_script_exists",
-        "Script exists",
-    ));
+    results.push(CheckResult::pass("cleanup_script_exists", "Script exists"));
 
     // Check executable permission
     match fs::metadata(&script_path) {
@@ -448,7 +445,10 @@ fn main() {
 
     let all_pass = total_passed == total_checks;
     if all_pass {
-        println!("All disk space management checks PASSED ({}/{})", total_passed, total_checks);
+        println!(
+            "All disk space management checks PASSED ({}/{})",
+            total_passed, total_checks
+        );
         std::process::exit(0);
     } else {
         println!(

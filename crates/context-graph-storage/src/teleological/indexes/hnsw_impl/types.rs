@@ -287,8 +287,12 @@ impl HnswEmbedderIndex {
         }
         let len = idx.serialized_length();
         let mut buf = vec![0u8; len];
-        idx.save_to_buffer(&mut buf)
-            .map_err(|e| format!("usearch save_to_buffer failed for {:?}: {}", self.embedder, e))?;
+        idx.save_to_buffer(&mut buf).map_err(|e| {
+            format!(
+                "usearch save_to_buffer failed for {:?}: {}",
+                self.embedder, e
+            )
+        })?;
         Ok(Some(buf))
     }
 
@@ -322,13 +326,21 @@ impl HnswEmbedderIndex {
         meta_data: &[u8],
     ) -> Result<usize, String> {
         // Deserialize metadata first (cheaper, validates before touching index)
-        let meta: HnswPersistMetadata = serde_json::from_slice(meta_data)
-            .map_err(|e| format!("metadata deserialization failed for {:?}: {}", self.embedder, e))?;
+        let meta: HnswPersistMetadata = serde_json::from_slice(meta_data).map_err(|e| {
+            format!(
+                "metadata deserialization failed for {:?}: {}",
+                self.embedder, e
+            )
+        })?;
 
         // Load graph into usearch index
         let idx = self.index.write();
-        idx.load_from_buffer(graph_data)
-            .map_err(|e| format!("usearch load_from_buffer failed for {:?}: {}", self.embedder, e))?;
+        idx.load_from_buffer(graph_data).map_err(|e| {
+            format!(
+                "usearch load_from_buffer failed for {:?}: {}",
+                self.embedder, e
+            )
+        })?;
 
         // Rebuild UUID mappings
         let mut id_to_key = self.id_to_key.write();

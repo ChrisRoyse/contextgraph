@@ -122,8 +122,9 @@ fn fresh_store_dir() -> (TempDir, PathBuf) {
 /// Write N synthetic records into the store at `path` and return their ids +
 /// records (records kept for equality checks).
 async fn seed_store(path: &std::path::Path, n: usize) -> Vec<(Uuid, TrainingRecord)> {
-    let store = RocksDbTeleologicalStore::open_with_config(path, TeleologicalStoreConfig::default())
-        .expect("open store for seeding");
+    let store =
+        RocksDbTeleologicalStore::open_with_config(path, TeleologicalStoreConfig::default())
+            .expect("open store for seeding");
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let rec = synthetic_record(
@@ -145,18 +146,17 @@ async fn seed_store(path: &std::path::Path, n: usize) -> Vec<(Uuid, TrainingReco
 
 /// Open the store once and return an Arc so multiple operations share it.
 async fn open_shared_store(path: &std::path::Path) -> Arc<RocksDbTeleologicalStore> {
-    let store = RocksDbTeleologicalStore::open_with_config(path, TeleologicalStoreConfig::default())
-        .expect("open store");
+    let store =
+        RocksDbTeleologicalStore::open_with_config(path, TeleologicalStoreConfig::default())
+            .expect("open store");
     Arc::new(store)
 }
 
 /// Read all (memory_id, record_bytes) rows back from a Parquet file.
-fn read_parquet_rows(
-    path: &std::path::Path,
-) -> (Vec<String>, Vec<Vec<u8>>, Vec<usize>) {
+fn read_parquet_rows(path: &std::path::Path) -> (Vec<String>, Vec<Vec<u8>>, Vec<usize>) {
     let file = File::open(path).expect("open parquet file for read");
-    let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-        .expect("ParquetRecordBatchReaderBuilder");
+    let builder =
+        ParquetRecordBatchReaderBuilder::try_new(file).expect("ParquetRecordBatchReaderBuilder");
     // Keep the row-group count BEFORE consuming the reader (try_new parsed
     // the metadata upfront).
     let row_group_count = builder.metadata().num_row_groups();
@@ -373,7 +373,9 @@ async fn invalid_output_dir_fails_fast() {
         limit: None,
     };
 
-    let err = run(args).await.expect_err("should reject missing parent dir");
+    let err = run(args)
+        .await
+        .expect_err("should reject missing parent dir");
     let msg = format!("{:#}", err);
     assert!(
         msg.contains("parent directory does not exist"),

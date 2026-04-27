@@ -89,7 +89,10 @@ async fn test_search_semantic() {
     let query = SemanticFingerprint::zeroed();
     let options = TeleologicalSearchOptions::quick(10);
     let results = store.search_semantic(&query, options).await.unwrap();
-    assert!(!results.is_empty(), "Search after storing 5 items should return results");
+    assert!(
+        !results.is_empty(),
+        "Search after storing 5 items should return results"
+    );
     assert!(results.len() <= 5);
 }
 
@@ -291,17 +294,30 @@ async fn test_file_index_operations() {
     assert_eq!(files[0].fingerprint_count(), 2);
 
     // Test unindex_file_fingerprint
-    let removed = store.unindex_file_fingerprint(file_path, id1).await.unwrap();
+    let removed = store
+        .unindex_file_fingerprint(file_path, id1)
+        .await
+        .unwrap();
     assert!(removed, "Should return true when fingerprint was removed");
 
     let ids_after = store.get_fingerprints_for_file(file_path).await.unwrap();
-    assert_eq!(ids_after.len(), 1, "Should have 1 fingerprint after unindex");
+    assert_eq!(
+        ids_after.len(),
+        1,
+        "Should have 1 fingerprint after unindex"
+    );
     assert!(!ids_after.contains(&id1), "Should NOT contain id1 anymore");
     assert!(ids_after.contains(&id2), "Should still contain id2");
 
     // Test unindex returns false for non-existent
-    let removed_again = store.unindex_file_fingerprint(file_path, id1).await.unwrap();
-    assert!(!removed_again, "Should return false for already-removed fingerprint");
+    let removed_again = store
+        .unindex_file_fingerprint(file_path, id1)
+        .await
+        .unwrap();
+    assert!(
+        !removed_again,
+        "Should return false for already-removed fingerprint"
+    );
 
     // Test clear_file_index
     store.index_file_fingerprint(file_path, id1).await.unwrap(); // Re-add id1
@@ -334,8 +350,14 @@ async fn test_file_index_multiple_files() {
     let id2 = Uuid::new_v4();
 
     // Index to different files
-    store.index_file_fingerprint("/file1.md", id1).await.unwrap();
-    store.index_file_fingerprint("/file2.md", id2).await.unwrap();
+    store
+        .index_file_fingerprint("/file1.md", id1)
+        .await
+        .unwrap();
+    store
+        .index_file_fingerprint("/file2.md", id2)
+        .await
+        .unwrap();
 
     // Verify stats
     let stats = store.get_file_watcher_stats().await.unwrap();
@@ -378,7 +400,10 @@ async fn test_search_text_returns_not_implemented_error() {
     let result = store.search_text("test query", options).await;
 
     // MUST be an error, NOT Ok(empty)
-    assert!(result.is_err(), "search_text MUST return error, not Ok(empty)");
+    assert!(
+        result.is_err(),
+        "search_text MUST return error, not Ok(empty)"
+    );
 
     // Verify it's specifically NotImplemented
     match result {

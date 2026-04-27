@@ -158,8 +158,14 @@ fn check_existing_hooks(settings_path: &Path) -> Result<(), i32> {
 /// Write settings.json, merging with existing non-hook settings if present.
 fn write_settings_json(settings_path: &Path) -> Result<(), i32> {
     let hooks_config: Value = serde_json::from_str(SETTINGS_JSON_TEMPLATE).map_err(|e| {
-        error!("Internal error: Failed to parse SETTINGS_JSON_TEMPLATE: {}", e);
-        eprintln!("Internal error: Failed to parse SETTINGS_JSON_TEMPLATE: {}", e);
+        error!(
+            "Internal error: Failed to parse SETTINGS_JSON_TEMPLATE: {}",
+            e
+        );
+        eprintln!(
+            "Internal error: Failed to parse SETTINGS_JSON_TEMPLATE: {}",
+            e
+        );
         1
     })?;
 
@@ -727,7 +733,10 @@ mod tests {
         // Verify settings.json is valid JSON with hooks
         let settings_content = fs::read_to_string(&settings_path).expect("Read settings.json");
         let settings: Value = serde_json::from_str(&settings_content).expect("Parse settings.json");
-        assert!(settings.get("hooks").is_some(), "settings.json must have hooks key");
+        assert!(
+            settings.get("hooks").is_some(),
+            "settings.json must have hooks key"
+        );
 
         println!("EVIDENCE: All 5 scripts + settings.json created");
         println!("RESULT: PASS - Fresh setup creates all files");
@@ -764,7 +773,10 @@ mod tests {
         let exit_code = handle_setup(args).await;
 
         println!("AFTER: exit_code={}", exit_code);
-        assert_eq!(exit_code, 1, "Second setup without --force should fail with exit code 1");
+        assert_eq!(
+            exit_code, 1,
+            "Second setup without --force should fail with exit code 1"
+        );
 
         println!("EVIDENCE: Exit code 1 returned");
         println!("RESULT: PASS - Existing hooks without --force fails");
@@ -896,7 +908,12 @@ mod tests {
             let metadata = fs::metadata(&script_path).expect("Get metadata");
             let mode = metadata.permissions().mode();
             let is_executable = mode & 0o111 != 0;
-            println!("  {}: mode={:o}, executable={}", script, mode & 0o777, is_executable);
+            println!(
+                "  {}: mode={:o}, executable={}",
+                script,
+                mode & 0o777,
+                is_executable
+            );
             assert!(is_executable, "{} must be executable", script);
         }
 
@@ -930,7 +947,13 @@ mod tests {
         let hooks = settings.get("hooks").expect("hooks key must exist");
 
         // Check all hook types exist
-        let expected_hooks = ["SessionStart", "SessionEnd", "PreToolUse", "PostToolUse", "UserPromptSubmit"];
+        let expected_hooks = [
+            "SessionStart",
+            "SessionEnd",
+            "PreToolUse",
+            "PostToolUse",
+            "UserPromptSubmit",
+        ];
         for hook_type in &expected_hooks {
             assert!(hooks.get(*hook_type).is_some(), "{} must exist", hook_type);
             println!("  {}: present", hook_type);
@@ -939,7 +962,10 @@ mod tests {
         // Verify SessionStart structure
         let session_start = &hooks["SessionStart"][0]["hooks"][0];
         assert_eq!(session_start["type"].as_str(), Some("command"));
-        assert_eq!(session_start["command"].as_str(), Some(".claude/hooks/session_start.sh"));
+        assert_eq!(
+            session_start["command"].as_str(),
+            Some(".claude/hooks/session_start.sh")
+        );
         assert_eq!(session_start["timeout"].as_i64(), Some(5000));
 
         // Verify PreToolUse has matcher
@@ -982,7 +1008,11 @@ mod tests {
             let script_path = hooks_dir.join(script);
             let content = fs::read_to_string(&script_path).expect("Read script");
             let first_line = content.lines().next().expect("Script must have content");
-            assert_eq!(first_line, "#!/bin/bash", "{} must start with #!/bin/bash", script);
+            assert_eq!(
+                first_line, "#!/bin/bash",
+                "{} must start with #!/bin/bash",
+                script
+            );
             println!("  {}: #!/bin/bash", script);
         }
 
@@ -1099,14 +1129,17 @@ mod tests {
         handle_setup(args).await;
 
         // Add custom setting to existing settings.json
-        let mut settings: Value = serde_json::from_str(
-            &fs::read_to_string(&settings_path).unwrap()
-        ).unwrap();
+        let mut settings: Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
         settings.as_object_mut().unwrap().insert(
             "myCustomSetting".to_string(),
-            Value::String("preserved".to_string())
+            Value::String("preserved".to_string()),
         );
-        fs::write(&settings_path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+        fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
 
         println!("BEFORE: settings.json with myCustomSetting=preserved");
 
@@ -1122,9 +1155,8 @@ mod tests {
         assert_eq!(exit_code, 0);
 
         // Verify custom setting preserved
-        let settings: Value = serde_json::from_str(
-            &fs::read_to_string(&settings_path).unwrap()
-        ).unwrap();
+        let settings: Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
         assert_eq!(
             settings.get("myCustomSetting").and_then(|v| v.as_str()),
             Some("preserved"),

@@ -110,7 +110,10 @@ mod tests {
     fn test_session_signature_deterministic() {
         let sig1 = compute_session_signature("session-123");
         let sig2 = compute_session_signature("session-123");
-        assert_eq!(sig1, sig2, "Same session should produce identical signature");
+        assert_eq!(
+            sig1, sig2,
+            "Same session should produce identical signature"
+        );
     }
 
     #[test]
@@ -210,6 +213,10 @@ mod tests {
         assert_eq!(sig2.len(), SESSION_SIGNATURE_DIMENSION);
 
         let sim = signature_similarity(&sig1, &sig2);
-        assert!(sim.abs() < 0.3, "UUID sessions should be orthogonal: {}", sim);
+        assert!(
+            sim.abs() < 0.3,
+            "UUID sessions should be orthogonal: {}",
+            sim
+        );
     }
 }

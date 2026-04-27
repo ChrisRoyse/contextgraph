@@ -48,12 +48,12 @@ pub enum TransportMode {
 use context_graph_core::config::Config;
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
 
+#[cfg(feature = "llm")]
+use context_graph_embeddings::{get_warm_causal_model, get_warm_graph_model};
 use context_graph_embeddings::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
     GpuConfig, ProductionMultiArrayProvider,
 };
-#[cfg(feature = "llm")]
-use context_graph_embeddings::{get_warm_causal_model, get_warm_graph_model};
 
 // REAL implementations - NO STUBS
 use crate::adapters::LazyMultiArrayProvider;
@@ -91,7 +91,8 @@ pub struct McpServer {
     pub(in crate::server) teleological_store: Arc<dyn TeleologicalMemoryStore>,
     /// Multi-array embedding provider - generates all 14 embeddings.
     /// Wrapped in RwLock<Option<...>> for lazy loading - None while models are loading.
-    pub(in crate::server) multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
+    pub(in crate::server) multi_array_provider:
+        Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
     /// Flag indicating whether models are currently loading.
     pub(in crate::server) models_loading: Arc<AtomicBool>,
     /// Flag indicating whether model loading failed.
@@ -108,7 +109,8 @@ pub struct McpServer {
     pub(in crate::server) code_watcher_running: Arc<AtomicBool>,
     /// CRIT-06 FIX: File watcher shutdown flag and thread handle.
     pub(in crate::server) file_watcher_running: Arc<AtomicBool>,
-    pub(in crate::server) file_watcher_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    pub(in crate::server) file_watcher_thread:
+        Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// TASK-GRAPHLINK-PHASE1: Background graph builder for K-NN edge computation.
     pub(in crate::server) graph_builder: Option<Arc<BackgroundGraphBuilder>>,
     /// TASK-GRAPHLINK-PHASE1: Background graph builder worker task handle.
@@ -633,7 +635,12 @@ impl McpServer {
             }.await;
 
             match llm_result {
-                Ok((graph_discovery_service, causal_hint_provider, causal_llm_for_inline, causal_model)) => {
+                Ok((
+                    graph_discovery_service,
+                    causal_hint_provider,
+                    causal_llm_for_inline,
+                    causal_model,
+                )) => {
                     info!("Creating Handlers with graph discovery, causal hints, and inline causal extraction");
                     Handlers::with_graph_discovery(
                         Arc::clone(&teleological_store),
@@ -696,16 +703,14 @@ impl McpServer {
 
         // Inject daemon state into handlers for daemon_status tool
         let mut handlers = handlers;
-        handlers.set_daemon_state(
-            crate::handlers::DaemonState {
-                active_connections: Arc::clone(&active_connections),
-                max_connections,
-                models_loading: Arc::clone(&models_loading),
-                models_failed: Arc::clone(&models_failed),
-                background_shutdown: Arc::clone(&background_shutdown),
-                start_time: std::time::Instant::now(),
-            },
-        );
+        handlers.set_daemon_state(crate::handlers::DaemonState {
+            active_connections: Arc::clone(&active_connections),
+            max_connections,
+            models_loading: Arc::clone(&models_loading),
+            models_failed: Arc::clone(&models_failed),
+            background_shutdown: Arc::clone(&background_shutdown),
+            start_time: std::time::Instant::now(),
+        });
 
         Ok(Self {
             config,
@@ -773,7 +778,9 @@ impl McpServer {
         // This blocks the server for 1-5s (acceptable for 260 fingerprints) but guarantees
         // graph link tools have edges ready when the first request arrives.
         if let Some(ref builder) = self.graph_builder {
-            let needs_rebuild = self.handlers.edge_repository()
+            let needs_rebuild = self
+                .handlers
+                .edge_repository()
                 .map(|repo| repo.is_empty().unwrap_or(true))
                 .unwrap_or(false);
             if needs_rebuild {
@@ -808,12 +815,13 @@ impl McpServer {
 
             // AGT-04 FIX: Use bounded read_line to prevent OOM from unbounded input.
             // read_line() allocates until newline; a malicious/broken client can OOM the process.
-            let bytes_read = transport::read_line_bounded(&mut reader, &mut line, transport::MAX_LINE_BYTES)
-                .await
-                .map_err(|e| {
-                    error!("FATAL: Failed to read from stdin: {}", e);
-                    anyhow::anyhow!("stdin read error: {}", e)
-                })?;
+            let bytes_read =
+                transport::read_line_bounded(&mut reader, &mut line, transport::MAX_LINE_BYTES)
+                    .await
+                    .map_err(|e| {
+                        error!("FATAL: Failed to read from stdin: {}", e);
+                        anyhow::anyhow!("stdin read error: {}", e)
+                    })?;
 
             // EOF - client closed connection
             if bytes_read == 0 {
@@ -914,32 +922,23 @@ impl McpServer {
                     {
                         Ok(result) => result,
                         Err(_) => {
-                            error!(
-                                "Batch sub-request timed out after {}s",
-                                request_timeout
-                            );
+                            error!("Batch sub-request timed out after {}s", request_timeout);
                             // Extract request id for the timeout error response
                             let request_id: Option<crate::protocol::JsonRpcId> = req_value
                                 .get("id")
                                 .cloned()
                                 .and_then(|id_val| serde_json::from_value(id_val).ok());
                             // Check if this is a notification (no "id" field)
-                            let is_notification = !req_value
-                                .as_object()
-                                .is_some_and(|o| o.contains_key("id"));
+                            let is_notification =
+                                !req_value.as_object().is_some_and(|o| o.contains_key("id"));
                             if is_notification {
-                                warn!(
-                                    "Batch notification timed out -- suppressing (JSON-RPC 2.0)"
-                                );
+                                warn!("Batch notification timed out -- suppressing (JSON-RPC 2.0)");
                                 continue;
                             }
                             JsonRpcResponse::error(
                                 request_id,
                                 crate::protocol::error_codes::LAYER_TIMEOUT,
-                                format!(
-                                    "Batch sub-request timed out after {}s",
-                                    request_timeout
-                                ),
+                                format!("Batch sub-request timed out after {}s", request_timeout),
                             )
                         }
                     };
@@ -957,7 +956,10 @@ impl McpServer {
                 // JSON-RPC 2.0 spec: if all requests are notifications, send nothing
                 if !batch_responses.is_empty() {
                     let response_json = serde_json::to_string(&batch_responses)?;
-                    debug!("Sending batch response with {} items", batch_responses.len());
+                    debug!(
+                        "Sending batch response with {} items",
+                        batch_responses.len()
+                    );
                     writer.write_all(response_json.as_bytes()).await?;
                     writer.write_all(b"\n").await?;
                     writer.flush().await?;
@@ -1032,10 +1034,13 @@ impl McpServer {
 
             // MCP requires newline-delimited JSON on stdout
             // Use async write to avoid blocking
-            writer.write_all(response_json.as_bytes()).await.map_err(|e| {
-                error!("FATAL: Failed to write to stdout: {}", e);
-                anyhow::anyhow!("stdout write error: {}", e)
-            })?;
+            writer
+                .write_all(response_json.as_bytes())
+                .await
+                .map_err(|e| {
+                    error!("FATAL: Failed to write to stdout: {}", e);
+                    anyhow::anyhow!("stdout write error: {}", e)
+                })?;
             writer.write_all(b"\n").await?;
             writer.flush().await.map_err(|e| {
                 error!("FATAL: Failed to flush stdout: {}", e);

@@ -409,10 +409,7 @@ impl MemoryCaptureService {
     ///
     /// * `Ok(Vec<Memory>)` - All memories for the file (may be empty)
     /// * `Err(CaptureError)` - If retrieval fails
-    pub fn get_by_file_path(
-        &self,
-        file_path: &str,
-    ) -> Result<Vec<super::Memory>, CaptureError> {
+    pub fn get_by_file_path(&self, file_path: &str) -> Result<Vec<super::Memory>, CaptureError> {
         self.store.get_by_file_path(file_path).map_err(|e| e.into())
     }
 
@@ -519,7 +516,10 @@ impl MemoryCaptureService {
 
                 // Store source metadata
                 let source_metadata = Self::memory_source_to_metadata(&source, &chunk_metadata);
-                if let Err(e) = tele_store.store_source_metadata(memory_id, &source_metadata).await {
+                if let Err(e) = tele_store
+                    .store_source_metadata(memory_id, &source_metadata)
+                    .await
+                {
                     error!(
                         memory_id = %memory_id,
                         error = %e,
@@ -536,7 +536,10 @@ impl MemoryCaptureService {
                 // FILE INDEX INTEGRATION: Index MDFileChunk memories for O(1) file path lookups
                 // Per plan: This enables list_watched_files, delete_file_content, reconcile_files tools
                 if let MemorySource::MDFileChunk { ref file_path, .. } = source {
-                    if let Err(e) = tele_store.index_file_fingerprint(file_path, memory_id).await {
+                    if let Err(e) = tele_store
+                        .index_file_fingerprint(file_path, memory_id)
+                        .await
+                    {
                         // Non-fatal: fingerprint is stored, index can be rebuilt
                         error!(
                             memory_id = %memory_id,
@@ -561,9 +564,16 @@ impl MemoryCaptureService {
     /// Convert MemorySource to SourceMetadata for TeleologicalMemoryStore.
     ///
     /// For MDFileChunk sources, extracts line numbers from chunk_metadata if available.
-    fn memory_source_to_metadata(source: &MemorySource, chunk_metadata: &Option<ChunkMetadata>) -> SourceMetadata {
+    fn memory_source_to_metadata(
+        source: &MemorySource,
+        chunk_metadata: &Option<ChunkMetadata>,
+    ) -> SourceMetadata {
         match source {
-            MemorySource::MDFileChunk { file_path, chunk_index, total_chunks } => {
+            MemorySource::MDFileChunk {
+                file_path,
+                chunk_index,
+                total_chunks,
+            } => {
                 // Extract line numbers from chunk_metadata if available
                 if let Some(meta) = chunk_metadata {
                     SourceMetadata::md_file_chunk_with_lines(
@@ -577,28 +587,22 @@ impl MemoryCaptureService {
                     SourceMetadata::md_file_chunk(file_path.clone(), *chunk_index, *total_chunks)
                 }
             }
-            MemorySource::HookDescription { hook_type, tool_name } => {
-                SourceMetadata::hook_description(
-                    format!("{}", hook_type),
-                    tool_name.clone(),
-                )
-            }
-            MemorySource::ClaudeResponse { response_type: _ } => {
-                SourceMetadata::claude_response()
-            }
+            MemorySource::HookDescription {
+                hook_type,
+                tool_name,
+            } => SourceMetadata::hook_description(format!("{}", hook_type), tool_name.clone()),
+            MemorySource::ClaudeResponse { response_type: _ } => SourceMetadata::claude_response(),
             MemorySource::CausalExplanation {
                 source_fingerprint_id,
                 causal_relationship_id,
                 mechanism_type,
                 confidence,
-            } => {
-                SourceMetadata::causal_explanation(
-                    *source_fingerprint_id,
-                    *causal_relationship_id,
-                    mechanism_type.clone(),
-                    *confidence,
-                )
-            }
+            } => SourceMetadata::causal_explanation(
+                *source_fingerprint_id,
+                *causal_relationship_id,
+                mechanism_type.clone(),
+                *confidence,
+            ),
         }
     }
 }
@@ -639,13 +643,11 @@ impl MultiArrayEmbeddingAdapter {
 #[async_trait]
 impl EmbeddingProvider for MultiArrayEmbeddingAdapter {
     async fn embed_all(&self, content: &str) -> Result<TeleologicalArray, EmbedderError> {
-        let output = self
-            .provider
-            .embed_all(content)
-            .await
-            .map_err(|e| EmbedderError::ComputationFailed {
+        let output = self.provider.embed_all(content).await.map_err(|e| {
+            EmbedderError::ComputationFailed {
                 message: e.to_string(),
-            })?;
+            }
+        })?;
 
         Ok(output.fingerprint)
     }

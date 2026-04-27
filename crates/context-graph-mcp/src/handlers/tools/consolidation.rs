@@ -7,13 +7,11 @@ use serde_json::json;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::causal::asymmetric::{
-    infer_direction_from_fingerprint, CausalDirection,
-};
+use context_graph_core::causal::asymmetric::{infer_direction_from_fingerprint, CausalDirection};
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
-use crate::handlers::Handlers;
 use crate::handlers::tools::helpers::cosine_similarity;
+use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 /// Configuration for automatic background consolidation.
@@ -28,7 +26,12 @@ pub struct AutoConsolidationConfig {
 
 impl Default for AutoConsolidationConfig {
     fn default() -> Self {
-        Self { enabled: false, interval_secs: 3600, similarity_threshold: 0.92, max_merges_per_cycle: 10 }
+        Self {
+            enabled: false,
+            interval_secs: 3600,
+            similarity_threshold: 0.92,
+            max_merges_per_cycle: 10,
+        }
     }
 }
 
@@ -341,13 +344,17 @@ impl Handlers {
                 );
                 return self.tool_error(
                     id,
-                    &format!("Content fetch failed — cannot consolidate without content: {}", e),
+                    &format!(
+                        "Content fetch failed — cannot consolidate without content: {}",
+                        e
+                    ),
                 );
             }
         };
 
         // Convert TeleologicalFingerprint to MemoryContent
-        let mut memory_contents: Vec<MemoryContent> = Vec::with_capacity(unbiased_fingerprints.len());
+        let mut memory_contents: Vec<MemoryContent> =
+            Vec::with_capacity(unbiased_fingerprints.len());
         let mut fingerprints: Vec<(Uuid, chrono::DateTime<chrono::Utc>)> = Vec::new();
 
         for (idx, fp) in unbiased_fingerprints.iter().enumerate() {
@@ -483,7 +490,11 @@ impl Handlers {
                 "pairs_evaluated": pairs.len(),
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "trigger_consolidation: Failed to write ConsolidationAnalyzed audit record");
                 // Non-fatal - continue with response
             }

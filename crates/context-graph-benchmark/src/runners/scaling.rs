@@ -53,7 +53,8 @@ impl ScalingRunner {
                 components: crate::scaling::memory_profiler::estimate_single_embedder_memory(
                     tier_config.memory_count,
                 ),
-                per_document_bytes: tier_results.memory_bytes as f64 / tier_config.memory_count as f64,
+                per_document_bytes: tier_results.memory_bytes as f64
+                    / tier_config.memory_count as f64,
             });
         }
 
@@ -80,7 +81,8 @@ impl ScalingRunner {
                 components: crate::scaling::memory_profiler::estimate_multispace_memory(
                     tier_config.memory_count,
                 ),
-                per_document_bytes: tier_results.memory_bytes as f64 / tier_config.memory_count as f64,
+                per_document_bytes: tier_results.memory_bytes as f64
+                    / tier_config.memory_count as f64,
             });
         }
 

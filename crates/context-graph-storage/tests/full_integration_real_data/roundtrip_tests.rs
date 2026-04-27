@@ -49,9 +49,20 @@ async fn test_rocksdb_store_roundtrip_real_data() {
         // Verify fingerprint has correct dimensions before storage
         assert_eq!(fp.semantic.e1_semantic.len(), 1024, "E1 should be 1024D");
         // E5 uses dual vectors (cause + effect) for asymmetric causal similarity
-        assert_eq!(fp.semantic.e5_causal_as_cause.len(), 768, "E5 cause should be 768D");
-        assert_eq!(fp.semantic.e5_causal_as_effect.len(), 768, "E5 effect should be 768D");
-        assert!(fp.semantic.e5_causal.is_empty(), "Legacy e5_causal should be empty");
+        assert_eq!(
+            fp.semantic.e5_causal_as_cause.len(),
+            768,
+            "E5 cause should be 768D"
+        );
+        assert_eq!(
+            fp.semantic.e5_causal_as_effect.len(),
+            768,
+            "E5 effect should be 768D"
+        );
+        assert!(
+            fp.semantic.e5_causal.is_empty(),
+            "Legacy e5_causal should be empty"
+        );
         assert_eq!(
             fp.semantic.e9_hdc.len(),
             1024,
@@ -187,8 +198,8 @@ fn test_serialization_size_verification() {
     );
 
     // Deserialize
-    let restored = deserialize_teleological_fingerprint(&bytes)
-        .expect("Failed to deserialize fingerprint");
+    let restored =
+        deserialize_teleological_fingerprint(&bytes).expect("Failed to deserialize fingerprint");
 
     // Verify integrity
     assert_eq!(restored.id, id, "ID mismatch after roundtrip");

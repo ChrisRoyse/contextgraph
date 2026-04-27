@@ -233,7 +233,10 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         ("compiler", 7),
         ("security", 8),
         ("algo", 9),
-    ].iter().cloned().collect();
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let num_topics = topic_map.len();
 
@@ -264,7 +267,10 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         layer_status_provider,
     );
 
-    println!("  Handlers initialized in {:.1}s", init_start.elapsed().as_secs_f32());
+    println!(
+        "  Handlers initialized in {:.1}s",
+        init_start.elapsed().as_secs_f32()
+    );
     println!();
 
     // ========================================================================
@@ -272,7 +278,11 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     // ========================================================================
     println!("PHASE 2: Injecting corpus via MCP inject_context");
     println!("{}", "-".repeat(70));
-    println!("  Corpus: {} documents across {} topics", CORPUS.len(), num_topics);
+    println!(
+        "  Corpus: {} documents across {} topics",
+        CORPUS.len(),
+        num_topics
+    );
     println!();
 
     let inject_start = Instant::now();
@@ -308,7 +318,8 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         // Extract fingerprint ID from response
         let result = response.result.ok_or("No result from inject_context")?;
         let data = extract_mcp_tool_data(&result);
-        let fingerprint_id_str = data.get("fingerprintId")
+        let fingerprint_id_str = data
+            .get("fingerprintId")
             .and_then(|v| v.as_str())
             .ok_or("No fingerprintId in response")?;
         let fingerprint_id = Uuid::parse_str(fingerprint_id_str)?;
@@ -317,17 +328,27 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         injection_latencies.push(doc_start.elapsed().as_millis());
 
         if (i + 1) % 10 == 0 || i == CORPUS.len() - 1 {
-            let avg_ms = injection_latencies.iter().sum::<u128>() as f64 / injection_latencies.len() as f64;
-            print!("\r  Injected {}/{} documents ({:.0}ms avg)", i + 1, CORPUS.len(), avg_ms);
+            let avg_ms =
+                injection_latencies.iter().sum::<u128>() as f64 / injection_latencies.len() as f64;
+            print!(
+                "\r  Injected {}/{} documents ({:.0}ms avg)",
+                i + 1,
+                CORPUS.len(),
+                avg_ms
+            );
             std::io::stdout().flush()?;
         }
     }
 
     let total_injection_time = inject_start.elapsed();
-    let avg_embedding_ms = injection_latencies.iter().sum::<u128>() as f64 / injection_latencies.len() as f64;
+    let avg_embedding_ms =
+        injection_latencies.iter().sum::<u128>() as f64 / injection_latencies.len() as f64;
     println!();
-    println!("  Total injection time: {:.1}s ({:.0}ms/doc)",
-        total_injection_time.as_secs_f32(), avg_embedding_ms);
+    println!(
+        "  Total injection time: {:.1}s ({:.0}ms/doc)",
+        total_injection_time.as_secs_f32(),
+        avg_embedding_ms
+    );
     println!();
 
     // ========================================================================
@@ -366,7 +387,8 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
         let (query_fp_id, _) = doc_uuids[query_idx];
 
         // Relevant docs are same topic (excluding query itself)
-        let relevant: Vec<Uuid> = doc_uuids.iter()
+        let relevant: Vec<Uuid> = doc_uuids
+            .iter()
             .filter(|(uuid, topic)| *topic == query_topic_idx && *uuid != query_fp_id)
             .map(|(uuid, _)| *uuid)
             .collect();
@@ -391,18 +413,23 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
 
         let mcp_response = handlers.dispatch(mcp_request).await;
         if let Some(error) = mcp_response.error {
-            println!("\n  Warning: search_graph failed for query {}: {}", query_idx, error.message);
+            println!(
+                "\n  Warning: search_graph failed for query {}: {}",
+                query_idx, error.message
+            );
             continue;
         }
 
         let mcp_result = mcp_response.result.ok_or("No result from search_graph")?;
         let mcp_data = extract_mcp_tool_data(&mcp_result);
-        let mcp_results_array = mcp_data.get("results")
+        let mcp_results_array = mcp_data
+            .get("results")
             .and_then(|v| v.as_array())
             .ok_or("No results array")?;
 
         // Extract fingerprint IDs from search results (excluding query itself)
-        let mcp_top_results: Vec<Uuid> = mcp_results_array.iter()
+        let mcp_top_results: Vec<Uuid> = mcp_results_array
+            .iter()
             .filter_map(|r| r.get("fingerprintId").and_then(|v| v.as_str()))
             .filter_map(|s| Uuid::parse_str(s).ok())
             .filter(|uuid| *uuid != query_fp_id)
@@ -447,7 +474,10 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let total_search_time = search_start.elapsed();
-    println!("  Search complete in {:.1}s", total_search_time.as_secs_f32());
+    println!(
+        "  Search complete in {:.1}s",
+        total_search_time.as_secs_f32()
+    );
     println!();
 
     // ========================================================================
@@ -497,29 +527,59 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("Configuration:");
     println!("  Corpus: {} documents", results.corpus_size);
-    println!("  Topics: {} (overlapping semantic domains)", results.num_topics);
+    println!(
+        "  Topics: {} (overlapping semantic domains)",
+        results.num_topics
+    );
     println!("  Queries: {}", results.num_queries);
     println!();
 
     println!("RETRIEVAL METRICS (MCP search_graph vs E1 cosine similarity)");
     println!("{}", "-".repeat(70));
-    println!("{:<20} {:>15} {:>15} {:>15}", "Metric", "E1 Baseline", "MCP Multi-Space", "Improvement");
-    println!("{:<20} {:>15.3} {:>15.3} {:>+14.1}%", "MRR",
-        e1_metrics.mrr, mcp_metrics.mrr, improvements.mrr_pct);
-    println!("{:<20} {:>15.3} {:>15.3} {:>+14.1}%", "Precision@5",
-        e1_metrics.precision_at_5, mcp_metrics.precision_at_5, improvements.precision_5_pct);
-    println!("{:<20} {:>15.3} {:>15.3} {:>+14.1}%", "Precision@10",
-        e1_metrics.precision_at_10, mcp_metrics.precision_at_10, improvements.precision_10_pct);
-    println!("{:<20} {:>15.3} {:>15.3} {:>+14.1}%", "Recall@10",
-        e1_metrics.recall_at_10, mcp_metrics.recall_at_10, improvements.recall_10_pct);
+    println!(
+        "{:<20} {:>15} {:>15} {:>15}",
+        "Metric", "E1 Baseline", "MCP Multi-Space", "Improvement"
+    );
+    println!(
+        "{:<20} {:>15.3} {:>15.3} {:>+14.1}%",
+        "MRR", e1_metrics.mrr, mcp_metrics.mrr, improvements.mrr_pct
+    );
+    println!(
+        "{:<20} {:>15.3} {:>15.3} {:>+14.1}%",
+        "Precision@5",
+        e1_metrics.precision_at_5,
+        mcp_metrics.precision_at_5,
+        improvements.precision_5_pct
+    );
+    println!(
+        "{:<20} {:>15.3} {:>15.3} {:>+14.1}%",
+        "Precision@10",
+        e1_metrics.precision_at_10,
+        mcp_metrics.precision_at_10,
+        improvements.precision_10_pct
+    );
+    println!(
+        "{:<20} {:>15.3} {:>15.3} {:>+14.1}%",
+        "Recall@10", e1_metrics.recall_at_10, mcp_metrics.recall_at_10, improvements.recall_10_pct
+    );
     println!();
 
-    let avg_improvement = (improvements.mrr_pct + improvements.precision_5_pct +
-        improvements.precision_10_pct + improvements.recall_10_pct) / 4.0;
-    let winner = if avg_improvement > 0.0 { "MCP MULTI-SPACE" } else { "E1 BASELINE" };
+    let avg_improvement = (improvements.mrr_pct
+        + improvements.precision_5_pct
+        + improvements.precision_10_pct
+        + improvements.recall_10_pct)
+        / 4.0;
+    let winner = if avg_improvement > 0.0 {
+        "MCP MULTI-SPACE"
+    } else {
+        "E1 BASELINE"
+    };
 
     println!("=======================================================================");
-    println!("  WINNER: {} (average improvement: {:+.1}%)", winner, avg_improvement);
+    println!(
+        "  WINNER: {} (average improvement: {:+.1}%)",
+        winner, avg_improvement
+    );
     println!("=======================================================================");
     println!();
 
@@ -580,11 +640,19 @@ fn recall_at_k(results: &[Uuid], relevant: &[Uuid], total_relevant: usize) -> f6
 }
 
 fn mean(values: &[f64]) -> f64 {
-    if values.is_empty() { 0.0 } else { values.iter().sum::<f64>() / values.len() as f64 }
+    if values.is_empty() {
+        0.0
+    } else {
+        values.iter().sum::<f64>() / values.len() as f64
+    }
 }
 
 fn pct_improvement(baseline: f64, improved: f64) -> f64 {
-    if baseline.abs() < 0.001 { 0.0 } else { (improved - baseline) / baseline * 100.0 }
+    if baseline.abs() < 0.001 {
+        0.0
+    } else {
+        (improved - baseline) / baseline * 100.0
+    }
 }
 
 fn save_reports(results: &BenchmarkResults) -> Result<(), Box<dyn std::error::Error>> {
@@ -609,11 +677,19 @@ fn save_reports(results: &BenchmarkResults) -> Result<(), Box<dyn std::error::Er
 }
 
 fn generate_markdown_report(results: &BenchmarkResults) -> String {
-    let avg_improvement = (results.improvements.mrr_pct + results.improvements.precision_5_pct +
-        results.improvements.precision_10_pct + results.improvements.recall_10_pct) / 4.0;
-    let winner = if avg_improvement > 0.0 { "MCP Multi-Space" } else { "E1 Baseline" };
+    let avg_improvement = (results.improvements.mrr_pct
+        + results.improvements.precision_5_pct
+        + results.improvements.precision_10_pct
+        + results.improvements.recall_10_pct)
+        / 4.0;
+    let winner = if avg_improvement > 0.0 {
+        "MCP Multi-Space"
+    } else {
+        "E1 Baseline"
+    };
 
-    format!(r#"# Context Graph MCP Benchmark Report
+    format!(
+        r#"# Context Graph MCP Benchmark Report
 
 ## TRUE MCP Benchmark: inject_context + search_graph
 
@@ -704,18 +780,31 @@ The corpus deliberately includes semantically similar topics to challenge single
 *Report generated by Context Graph TRUE MCP Benchmark*
 "#,
         results.timestamp,
-        winner, avg_improvement,
+        winner,
+        avg_improvement,
         results.corpus_size,
         results.num_topics,
         results.num_queries,
         results.total_injection_time_secs,
         results.total_search_time_secs,
         results.avg_embedding_ms,
-        results.e1_baseline.mrr, results.mcp_multispace.mrr, results.improvements.mrr_pct,
-        results.e1_baseline.precision_at_5, results.mcp_multispace.precision_at_5, results.improvements.precision_5_pct,
-        results.e1_baseline.precision_at_10, results.mcp_multispace.precision_at_10, results.improvements.precision_10_pct,
-        results.e1_baseline.recall_at_10, results.mcp_multispace.recall_at_10, results.improvements.recall_10_pct,
-        if avg_improvement > 0.0 { "Wins" } else { "Loses" },
+        results.e1_baseline.mrr,
+        results.mcp_multispace.mrr,
+        results.improvements.mrr_pct,
+        results.e1_baseline.precision_at_5,
+        results.mcp_multispace.precision_at_5,
+        results.improvements.precision_5_pct,
+        results.e1_baseline.precision_at_10,
+        results.mcp_multispace.precision_at_10,
+        results.improvements.precision_10_pct,
+        results.e1_baseline.recall_at_10,
+        results.mcp_multispace.recall_at_10,
+        results.improvements.recall_10_pct,
+        if avg_improvement > 0.0 {
+            "Wins"
+        } else {
+            "Loses"
+        },
         if avg_improvement > 0.0 {
             "The multi-space similarity combines signals from E1 (semantic), E5 (causal), E7 (code), and E10 (multimodal) to distinguish between semantically similar but different topics.\n\nWhen documents about \"neural network optimization\" and \"statistical optimization\" have similar E1 embeddings, the other embedders help differentiate them."
         } else {

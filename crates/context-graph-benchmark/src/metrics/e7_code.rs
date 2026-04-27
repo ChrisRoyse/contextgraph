@@ -202,7 +202,8 @@ impl E7BenchmarkMetrics {
 
         let latency_p50 = latencies[latencies.len() / 2];
         let latency_p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
-        let latency_p99 = latencies[(latencies.len() as f64 * 0.99).min(latencies.len() as f64 - 1.0) as usize];
+        let latency_p99 =
+            latencies[(latencies.len() as f64 * 0.99).min(latencies.len() as f64 - 1.0) as usize];
 
         // Aggregate precision/recall/NDCG
         let mut mean_precision_at: HashMap<usize, f64> = HashMap::new();
@@ -211,18 +212,10 @@ impl E7BenchmarkMetrics {
         let mut mean_iou_at: HashMap<usize, f64> = HashMap::new();
 
         for k in [1, 3, 5, 10] {
-            let p_sum: f64 = results.iter()
-                .filter_map(|r| r.precision_at.get(&k))
-                .sum();
-            let r_sum: f64 = results.iter()
-                .filter_map(|r| r.recall_at.get(&k))
-                .sum();
-            let n_sum: f64 = results.iter()
-                .filter_map(|r| r.ndcg_at.get(&k))
-                .sum();
-            let i_sum: f64 = results.iter()
-                .filter_map(|r| r.iou_at.get(&k))
-                .sum();
+            let p_sum: f64 = results.iter().filter_map(|r| r.precision_at.get(&k)).sum();
+            let r_sum: f64 = results.iter().filter_map(|r| r.recall_at.get(&k)).sum();
+            let n_sum: f64 = results.iter().filter_map(|r| r.ndcg_at.get(&k)).sum();
+            let i_sum: f64 = results.iter().filter_map(|r| r.iou_at.get(&k)).sum();
 
             mean_precision_at.insert(k, p_sum / query_count as f64);
             mean_recall_at.insert(k, r_sum / query_count as f64);
@@ -233,12 +226,19 @@ impl E7BenchmarkMetrics {
         let mean_mrr = results.iter().map(|r| r.mrr).sum::<f64>() / query_count as f64;
 
         // Calculate E7 unique find rate
-        let total_unique_finds: usize = results.iter()
-            .map(|r| r.e7_unique_finds.len())
-            .sum();
-        let total_relevant: usize = results.iter()
-            .map(|r| r.e7_unique_finds.len() + r.e1_unique_finds.len() +
-                 r.retrieved_docs.iter().filter(|d| !r.e7_unique_finds.contains(d) && !r.e1_unique_finds.contains(d)).count())
+        let total_unique_finds: usize = results.iter().map(|r| r.e7_unique_finds.len()).sum();
+        let total_relevant: usize = results
+            .iter()
+            .map(|r| {
+                r.e7_unique_finds.len()
+                    + r.e1_unique_finds.len()
+                    + r.retrieved_docs
+                        .iter()
+                        .filter(|d| {
+                            !r.e7_unique_finds.contains(d) && !r.e1_unique_finds.contains(d)
+                        })
+                        .count()
+            })
             .sum();
         let e7_unique_find_rate = if total_relevant > 0 {
             total_unique_finds as f64 / total_relevant as f64
@@ -261,40 +261,44 @@ impl E7BenchmarkMetrics {
             E7QueryType::ConstSearch,
             E7QueryType::SemanticSearch,
         ] {
-            let type_results: Vec<_> = results.iter()
-                .filter(|r| r.query_type == qt)
-                .collect();
+            let type_results: Vec<_> = results.iter().filter(|r| r.query_type == qt).collect();
 
             if !type_results.is_empty() {
                 let count = type_results.len();
-                let mean_p10 = type_results.iter()
+                let mean_p10 = type_results
+                    .iter()
                     .filter_map(|r| r.precision_at.get(&10))
-                    .sum::<f64>() / count as f64;
-                let mean_mrr_t = type_results.iter()
-                    .map(|r| r.mrr)
-                    .sum::<f64>() / count as f64;
-                let mean_ndcg10 = type_results.iter()
+                    .sum::<f64>()
+                    / count as f64;
+                let mean_mrr_t = type_results.iter().map(|r| r.mrr).sum::<f64>() / count as f64;
+                let mean_ndcg10 = type_results
+                    .iter()
                     .filter_map(|r| r.ndcg_at.get(&10))
-                    .sum::<f64>() / count as f64;
-                let unique_finds: usize = type_results.iter()
-                    .map(|r| r.e7_unique_finds.len())
-                    .sum();
-                let type_relevant: usize = type_results.iter()
+                    .sum::<f64>()
+                    / count as f64;
+                let unique_finds: usize =
+                    type_results.iter().map(|r| r.e7_unique_finds.len()).sum();
+                let type_relevant: usize = type_results
+                    .iter()
                     .map(|r| r.retrieved_docs.len().max(1))
                     .sum();
 
-                by_query_type.insert(qt, E7QueryTypeMetrics {
-                    count,
-                    mean_precision_at_10: mean_p10,
-                    mean_mrr: mean_mrr_t,
-                    mean_ndcg_at_10: mean_ndcg10,
-                    e7_unique_find_rate: unique_finds as f64 / type_relevant as f64,
-                });
+                by_query_type.insert(
+                    qt,
+                    E7QueryTypeMetrics {
+                        count,
+                        mean_precision_at_10: mean_p10,
+                        mean_mrr: mean_mrr_t,
+                        mean_ndcg_at_10: mean_ndcg10,
+                        e7_unique_find_rate: unique_finds as f64 / type_relevant as f64,
+                    },
+                );
             }
         }
 
         // Entity type accuracy
-        let correct_entity_types: usize = results.iter()
+        let correct_entity_types: usize = results
+            .iter()
             .filter(|r| !r.retrieved_entity_types.is_empty())
             .count();
         let entity_type_accuracy = correct_entity_types as f64 / query_count as f64;
@@ -321,10 +325,7 @@ impl E7BenchmarkMetrics {
         let ndcg10 = self.mean_ndcg_at.get(&10).copied().unwrap_or(0.0);
 
         // Weight: 30% MRR, 25% P@10, 25% NDCG@10, 20% E7 unique finds
-        0.30 * self.mean_mrr
-            + 0.25 * p10
-            + 0.25 * ndcg10
-            + 0.20 * self.e7_unique_find_rate
+        0.30 * self.mean_mrr + 0.25 * p10 + 0.25 * ndcg10 + 0.20 * self.e7_unique_find_rate
     }
 
     /// Check if E7 is providing value over E1.
@@ -384,7 +385,8 @@ pub fn ndcg_at_k(retrieved: &[String], relevant: &HashSet<String>, k: usize) -> 
     }
 
     // DCG: sum of relevance / log2(rank + 1)
-    let dcg: f64 = retrieved.iter()
+    let dcg: f64 = retrieved
+        .iter()
         .take(k)
         .enumerate()
         .map(|(i, doc)| {
@@ -415,7 +417,8 @@ pub fn e7_unique_finds(
 ) -> Vec<String> {
     let e1_set: HashSet<_> = e1_retrieved.iter().collect();
 
-    e7_retrieved.iter()
+    e7_retrieved
+        .iter()
         .filter(|doc| relevant.contains(*doc) && !e1_set.contains(doc))
         .cloned()
         .collect()
@@ -429,7 +432,8 @@ pub fn e1_unique_finds(
 ) -> Vec<String> {
     let e7_set: HashSet<_> = e7_retrieved.iter().collect();
 
-    e1_retrieved.iter()
+    e1_retrieved
+        .iter()
         .filter(|doc| relevant.contains(*doc) && !e7_set.contains(doc))
         .cloned()
         .collect()
@@ -446,7 +450,8 @@ mod tests {
 
         assert!((precision_at_k(&retrieved, &relevant, 1) - 1.0).abs() < 0.001); // a is relevant
         assert!((precision_at_k(&retrieved, &relevant, 2) - 0.5).abs() < 0.001); // 1/2 relevant
-        assert!((precision_at_k(&retrieved, &relevant, 3) - 0.666).abs() < 0.01); // 2/3 relevant
+        assert!((precision_at_k(&retrieved, &relevant, 3) - 0.666).abs() < 0.01);
+        // 2/3 relevant
     }
 
     #[test]
@@ -472,7 +477,11 @@ mod tests {
         let relevant: HashSet<_> = ["a", "c"].iter().map(|s| s.to_string()).collect();
 
         let ndcg = ndcg_at_k(&retrieved, &relevant, 3);
-        assert!(ndcg > 0.0 && ndcg <= 1.0, "NDCG should be between 0 and 1: {}", ndcg);
+        assert!(
+            ndcg > 0.0 && ndcg <= 1.0,
+            "NDCG should be between 0 and 1: {}",
+            ndcg
+        );
     }
 
     #[test]
@@ -487,31 +496,35 @@ mod tests {
 
     #[test]
     fn test_query_type_parsing() {
-        assert_eq!(E7QueryType::parse_from("function_search"), Some(E7QueryType::FunctionSearch));
-        assert_eq!(E7QueryType::parse_from("pattern"), Some(E7QueryType::PatternSearch));
+        assert_eq!(
+            E7QueryType::parse_from("function_search"),
+            Some(E7QueryType::FunctionSearch)
+        );
+        assert_eq!(
+            E7QueryType::parse_from("pattern"),
+            Some(E7QueryType::PatternSearch)
+        );
         assert_eq!(E7QueryType::parse_from("unknown"), None);
     }
 
     #[test]
     fn test_benchmark_metrics_from_results() {
-        let results = vec![
-            E7QueryResult {
-                query_id: "q1".to_string(),
-                query_type: E7QueryType::FunctionSearch,
-                retrieved_docs: vec!["a".to_string(), "b".to_string()],
-                retrieved_entity_types: vec!["Function".to_string()],
-                e7_scores: vec![0.9, 0.8],
-                e1_scores: vec![0.7, 0.6],
-                latency: Duration::from_millis(10),
-                precision_at: [(10, 0.8)].into_iter().collect(),
-                recall_at: [(10, 0.6)].into_iter().collect(),
-                mrr: 0.9,
-                ndcg_at: [(10, 0.85)].into_iter().collect(),
-                iou_at: [(10, 0.7)].into_iter().collect(),
-                e7_unique_finds: vec!["b".to_string()],
-                e1_unique_finds: vec![],
-            },
-        ];
+        let results = vec![E7QueryResult {
+            query_id: "q1".to_string(),
+            query_type: E7QueryType::FunctionSearch,
+            retrieved_docs: vec!["a".to_string(), "b".to_string()],
+            retrieved_entity_types: vec!["Function".to_string()],
+            e7_scores: vec![0.9, 0.8],
+            e1_scores: vec![0.7, 0.6],
+            latency: Duration::from_millis(10),
+            precision_at: [(10, 0.8)].into_iter().collect(),
+            recall_at: [(10, 0.6)].into_iter().collect(),
+            mrr: 0.9,
+            ndcg_at: [(10, 0.85)].into_iter().collect(),
+            iou_at: [(10, 0.7)].into_iter().collect(),
+            e7_unique_finds: vec!["b".to_string()],
+            e1_unique_finds: vec![],
+        }];
 
         let metrics = E7BenchmarkMetrics::from_results(&results);
         assert_eq!(metrics.query_count, 1);

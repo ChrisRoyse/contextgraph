@@ -60,10 +60,7 @@ fn test_error_on_truncated_memory_id_list() {
     let serialized = serialize_memory_id_list(&ids);
     let truncated = &serialized[..serialized.len() - 10]; // Remove 10 bytes
     let result = deserialize_memory_id_list(truncated);
-    assert!(
-        result.is_err(),
-        "Expected Err for truncated memory ID list"
-    );
+    assert!(result.is_err(), "Expected Err for truncated memory ID list");
 }
 
 #[test]

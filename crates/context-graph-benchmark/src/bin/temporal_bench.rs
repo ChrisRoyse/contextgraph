@@ -34,11 +34,11 @@ use context_graph_benchmark::datasets::temporal::{
     PeriodicPatternConfig, RecencyDistributionConfig, SequenceChainConfig, TemporalDatasetConfig,
 };
 use context_graph_benchmark::runners::temporal::{
-    generate_temporal_report, PeriodicBenchmarkSettings, RecencyBenchmarkSettings,
-    SequenceBenchmarkSettings, TemporalBenchmarkConfig, TemporalBenchmarkRunner,
-    run_e2_recency_benchmark, run_e3_periodic_benchmark, run_e4_sequence_benchmark,
-    run_ablation_benchmark, run_scaling_benchmark, run_regression_benchmark,
-    AblationConfig, ScalingConfig, RegressionConfig,
+    generate_temporal_report, run_ablation_benchmark, run_e2_recency_benchmark,
+    run_e3_periodic_benchmark, run_e4_sequence_benchmark, run_regression_benchmark,
+    run_scaling_benchmark, AblationConfig, PeriodicBenchmarkSettings, RecencyBenchmarkSettings,
+    RegressionConfig, ScalingConfig, SequenceBenchmarkSettings, TemporalBenchmarkConfig,
+    TemporalBenchmarkRunner,
 };
 
 /// Benchmark modes for targeted testing.
@@ -233,7 +233,8 @@ fn parse_args() -> CliConfig {
             "--decay-functions" => {
                 i += 1;
                 if i < args.len() {
-                    config.decay_functions = args[i].split(',').map(|s| s.trim().to_string()).collect();
+                    config.decay_functions =
+                        args[i].split(',').map(|s| s.trim().to_string()).collect();
                 }
             }
             "--adaptive-half-life" => {
@@ -559,7 +560,10 @@ fn run_e2_mode(args: &CliConfig) -> String {
     eprintln!();
     eprintln!("Core Metrics:");
     eprintln!("  Decay accuracy: {:.3}", results.decay_accuracy);
-    eprintln!("  Recency-weighted MRR: {:.3}", results.recency_weighted_mrr);
+    eprintln!(
+        "  Recency-weighted MRR: {:.3}",
+        results.recency_weighted_mrr
+    );
     if let Some(adaptive) = &results.adaptive_half_life_results {
         eprintln!();
         eprintln!("Adaptive Half-Life Results:");
@@ -610,14 +614,30 @@ fn run_e3_mode(args: &CliConfig) -> String {
     eprintln!("=== E3 Periodic Benchmark Results ===");
     eprintln!();
     eprintln!("Silhouette Validation:");
-    eprintln!("  Hourly variance: {:.4}", results.silhouette_validation.hourly_variance);
-    eprintln!("  Daily variance: {:.4}", results.silhouette_validation.daily_variance);
-    eprintln!("  Variance check: {}", if results.silhouette_validation.is_valid { "PASS" } else { "FAIL" });
+    eprintln!(
+        "  Hourly variance: {:.4}",
+        results.silhouette_validation.hourly_variance
+    );
+    eprintln!(
+        "  Daily variance: {:.4}",
+        results.silhouette_validation.daily_variance
+    );
+    eprintln!(
+        "  Variance check: {}",
+        if results.silhouette_validation.is_valid {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
     eprintln!();
     eprintln!("Pattern Detection:");
     eprintln!("  Hourly pattern F1: {:.3}", results.hourly_pattern_f1);
     eprintln!("  Weekly pattern F1: {:.3}", results.weekly_pattern_f1);
-    eprintln!("  Overall periodic score: {:.3}", results.overall_periodic_score);
+    eprintln!(
+        "  Overall periodic score: {:.3}",
+        results.overall_periodic_score
+    );
 
     // Write report if requested
     if let Some(report_path) = &args.report {
@@ -739,10 +759,22 @@ fn run_ablation_mode(args: &CliConfig) -> String {
     }
     eprintln!();
     eprintln!("Interference Analysis:");
-    eprintln!("  Max individual score: {:.3}", results.interference.max_individual_score);
-    eprintln!("  Best combined score: {:.3}", results.interference.best_combined_score);
-    eprintln!("  Interference score: {:+.3}", results.interference.interference_score);
-    eprintln!("  Has negative interference: {}", results.interference.has_negative_interference);
+    eprintln!(
+        "  Max individual score: {:.3}",
+        results.interference.max_individual_score
+    );
+    eprintln!(
+        "  Best combined score: {:.3}",
+        results.interference.best_combined_score
+    );
+    eprintln!(
+        "  Interference score: {:+.3}",
+        results.interference.interference_score
+    );
+    eprintln!(
+        "  Has negative interference: {}",
+        results.interference.has_negative_interference
+    );
     if results.interference.has_negative_interference {
         eprintln!("  Recommendation: {}", results.interference.recommendation);
     }
@@ -773,8 +805,10 @@ fn run_scaling_mode(args: &CliConfig) -> String {
     eprintln!("=== Scaling Benchmark Results ===");
     eprintln!();
     eprintln!("Performance by Corpus Size:");
-    eprintln!("{:>10} {:>12} {:>12} {:>12} {:>10} {:>10}",
-              "Corpus", "Decay Acc", "Seq Acc", "Silhouette", "P50 ms", "P95 ms");
+    eprintln!(
+        "{:>10} {:>12} {:>12} {:>12} {:>10} {:>10}",
+        "Corpus", "Decay Acc", "Seq Acc", "Silhouette", "P50 ms", "P95 ms"
+    );
     for point in &results.scaling_points {
         eprintln!(
             "{:>10} {:>12.3} {:>12.3} {:>12.3} {:>10.1} {:>10.1}",
@@ -788,9 +822,18 @@ fn run_scaling_mode(args: &CliConfig) -> String {
     }
     eprintln!();
     eprintln!("Degradation Analysis:");
-    eprintln!("  Decay accuracy rate: {:.4}/10x", results.degradation.decay_accuracy_rate);
-    eprintln!("  Sequence accuracy rate: {:.4}/10x", results.degradation.sequence_accuracy_rate);
-    eprintln!("  Latency growth rate: {:.4}/10x", results.degradation.latency_growth_rate);
+    eprintln!(
+        "  Decay accuracy rate: {:.4}/10x",
+        results.degradation.decay_accuracy_rate
+    );
+    eprintln!(
+        "  Sequence accuracy rate: {:.4}/10x",
+        results.degradation.sequence_accuracy_rate
+    );
+    eprintln!(
+        "  Latency growth rate: {:.4}/10x",
+        results.degradation.latency_growth_rate
+    );
 
     // Write report if requested
     if let Some(report_path) = &args.report {
@@ -854,7 +897,9 @@ fn run_regression_mode(args: &CliConfig) -> String {
     serde_json::to_string_pretty(&results).expect("Failed to serialize results")
 }
 
-fn print_full_summary(results: &context_graph_benchmark::runners::temporal::TemporalBenchmarkResults) {
+fn print_full_summary(
+    results: &context_graph_benchmark::runners::temporal::TemporalBenchmarkResults,
+) {
     eprintln!();
     eprintln!("=== Temporal Benchmark Summary ===");
     eprintln!();
@@ -907,7 +952,8 @@ fn print_full_summary(results: &context_graph_benchmark::runners::temporal::Temp
     if let Some(ablation) = &results.ablation {
         eprintln!(
             "  Improvement over baseline: {:+.1}%",
-            (ablation.full_score - ablation.baseline_score) / ablation.baseline_score.max(0.01) * 100.0
+            (ablation.full_score - ablation.baseline_score) / ablation.baseline_score.max(0.01)
+                * 100.0
         );
     }
     eprintln!();

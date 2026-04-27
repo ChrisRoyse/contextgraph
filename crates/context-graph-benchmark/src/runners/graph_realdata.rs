@@ -155,14 +155,17 @@ impl DocumentGraph {
                 hub_nodes.insert(id);
             }
 
-            node_info.insert(id, NodeInfo {
-                chunk_id: id,
-                doc_id: chunk.doc_id.clone(),
-                topic: chunk.topic_hint.clone(),
-                chunk_idx: chunk.chunk_idx,
-                in_degree,
-                out_degree,
-            });
+            node_info.insert(
+                id,
+                NodeInfo {
+                    chunk_id: id,
+                    doc_id: chunk.doc_id.clone(),
+                    topic: chunk.topic_hint.clone(),
+                    chunk_idx: chunk.chunk_idx,
+                    in_degree,
+                    out_degree,
+                },
+            );
         }
 
         Self {
@@ -183,10 +186,7 @@ impl DocumentGraph {
 
     /// Get neighbors weighted by edge strength.
     pub fn get_weighted_neighbors(&self, node: &Uuid) -> Vec<(Uuid, f64)> {
-        self.neighbors
-            .get(node)
-            .cloned()
-            .unwrap_or_default()
+        self.neighbors.get(node).cloned().unwrap_or_default()
     }
 
     /// Check if node is a hub.
@@ -317,7 +317,10 @@ impl E8GraphRealdataRunner {
 
     /// Build document graph from dataset.
     pub fn build_graph(&mut self, dataset: &RealDataset) {
-        self.graph = Some(DocumentGraph::from_dataset(dataset, self.config.hub_threshold));
+        self.graph = Some(DocumentGraph::from_dataset(
+            dataset,
+            self.config.hub_threshold,
+        ));
     }
 
     /// Set fingerprints.
@@ -383,7 +386,9 @@ impl E8GraphRealdataRunner {
             } else {
                 0.0
             },
-            num_documents: graph.node_info.values()
+            num_documents: graph
+                .node_info
+                .values()
                 .map(|n| &n.doc_id)
                 .collect::<HashSet<_>>()
                 .len(),
@@ -408,10 +413,16 @@ impl E8GraphRealdataRunner {
             // Synthetic mode
             return E8OverallMetrics {
                 mrr: 0.65 + self.rng.gen_range(0.0..0.1),
-                precision_at_k: self.config.k_values.iter()
+                precision_at_k: self
+                    .config
+                    .k_values
+                    .iter()
                     .map(|&k| (k, 0.5 + self.rng.gen_range(0.0..0.2)))
                     .collect(),
-                recall_at_k: self.config.k_values.iter()
+                recall_at_k: self
+                    .config
+                    .k_values
+                    .iter()
                     .map(|&k| (k, 0.4 + self.rng.gen_range(0.0..0.3)))
                     .collect(),
                 map: 0.55 + self.rng.gen_range(0.0..0.15),
@@ -421,11 +432,16 @@ impl E8GraphRealdataRunner {
         let e8_idx = EmbedderName::E8Graph.index();
 
         // Sample query nodes
-        let query_nodes: Vec<Uuid> = graph.node_info.keys()
+        let query_nodes: Vec<Uuid> = graph
+            .node_info
+            .keys()
             .cloned()
             .filter(|id| !graph.get_neighbors(id).is_empty())
             .collect::<Vec<_>>()
-            .choose_multiple(&mut self.rng, self.config.num_queries.min(graph.node_count()))
+            .choose_multiple(
+                &mut self.rng,
+                self.config.num_queries.min(graph.node_count()),
+            )
             .cloned()
             .collect();
 
@@ -445,7 +461,8 @@ impl E8GraphRealdataRunner {
                 None => continue,
             };
 
-            let mut similarities: Vec<(Uuid, f64)> = self.fingerprints
+            let mut similarities: Vec<(Uuid, f64)> = self
+                .fingerprints
                 .iter()
                 .filter(|(id, _)| *id != query_id)
                 .map(|(id, fp)| {
@@ -479,10 +496,21 @@ impl E8GraphRealdataRunner {
         let n = query_nodes.len() as f64;
         E8OverallMetrics {
             mrr: if n > 0.0 { mrr_sum / n } else { 0.0 },
-            precision_at_k: self.config.k_values.iter()
-                .map(|&k| (k, precision_sums.get(&k).copied().unwrap_or(0.0) / n.max(1.0)))
+            precision_at_k: self
+                .config
+                .k_values
+                .iter()
+                .map(|&k| {
+                    (
+                        k,
+                        precision_sums.get(&k).copied().unwrap_or(0.0) / n.max(1.0),
+                    )
+                })
                 .collect(),
-            recall_at_k: self.config.k_values.iter()
+            recall_at_k: self
+                .config
+                .k_values
+                .iter()
                 .map(|&k| (k, recall_sums.get(&k).copied().unwrap_or(0.0) / n.max(1.0)))
                 .collect(),
             map: if n > 0.0 { mrr_sum / n * 0.9 } else { 0.0 }, // Approximation
@@ -496,7 +524,10 @@ impl E8GraphRealdataRunner {
         // Sample pairs from graph edges
         let edges: Vec<_> = graph.edges.keys().cloned().collect();
         let sample_size = 100.min(edges.len());
-        let sample: Vec<_> = edges.choose_multiple(&mut self.rng, sample_size).cloned().collect();
+        let sample: Vec<_> = edges
+            .choose_multiple(&mut self.rng, sample_size)
+            .cloned()
+            .collect();
 
         let mut forward_sum = 0.0;
         let mut reverse_sum = 0.0;
@@ -513,9 +544,21 @@ impl E8GraphRealdataRunner {
             }
         }
 
-        let forward_mean = if pairs_tested > 0 { forward_sum / pairs_tested as f64 } else { 0.0 };
-        let reverse_mean = if pairs_tested > 0 { reverse_sum / pairs_tested as f64 } else { 0.0 };
-        let ratio = if reverse_mean > 0.01 { forward_mean / reverse_mean } else { 1.5 };
+        let forward_mean = if pairs_tested > 0 {
+            forward_sum / pairs_tested as f64
+        } else {
+            0.0
+        };
+        let reverse_mean = if pairs_tested > 0 {
+            reverse_sum / pairs_tested as f64
+        } else {
+            0.0
+        };
+        let ratio = if reverse_mean > 0.01 {
+            forward_mean / reverse_mean
+        } else {
+            1.5
+        };
 
         AsymmetricResults {
             forward_similarity_mean: forward_mean,
@@ -545,11 +588,13 @@ impl E8GraphRealdataRunner {
         let mut hub_scores: Vec<(Uuid, f64)> = Vec::new();
 
         for (id, fp) in &self.fingerprints {
-            let avg_sim: f64 = self.fingerprints
+            let avg_sim: f64 = self
+                .fingerprints
                 .iter()
                 .filter(|(other_id, _)| *other_id != id)
                 .map(|(_, other_fp)| compute_e8_similarity(fp, other_fp, e8_idx))
-                .sum::<f64>() / (self.fingerprints.len() - 1).max(1) as f64;
+                .sum::<f64>()
+                / (self.fingerprints.len() - 1).max(1) as f64;
 
             hub_scores.push((*id, avg_sim));
         }
@@ -615,9 +660,9 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs::File;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn create_test_dataset() -> (TempDir, RealDataset) {
         let dir = TempDir::new().unwrap();
@@ -683,7 +728,11 @@ mod tests {
             let neighbors = graph.get_neighbors(&chunk.uuid());
             // Adjacent chunks should be neighbors
             if chunk.chunk_idx > 0 || chunk.chunk_idx < 3 {
-                assert!(!neighbors.is_empty(), "Chunk {} should have neighbors", chunk.id);
+                assert!(
+                    !neighbors.is_empty(),
+                    "Chunk {} should have neighbors",
+                    chunk.id
+                );
             }
         }
     }

@@ -58,18 +58,16 @@ impl AttentionStrategy for DenseAttention {
             })?;
 
         // Softmax over last dimension
-        let attn_probs = candle_nn::ops::softmax(&scores, candle_core::D::Minus1).map_err(
-            |e| EmbeddingError::GpuError {
+        let attn_probs = candle_nn::ops::softmax(&scores, candle_core::D::Minus1).map_err(|e| {
+            EmbeddingError::GpuError {
                 message: format!("DenseAttention softmax failed: {}", e),
-            },
-        )?;
+            }
+        })?;
 
         // Weighted sum: [batch, heads, seq_len, head_dim]
-        attn_probs
-            .matmul(v)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("DenseAttention context matmul failed: {}", e),
-            })
+        attn_probs.matmul(v).map_err(|e| EmbeddingError::GpuError {
+            message: format!("DenseAttention context matmul failed: {}", e),
+        })
     }
 
     fn name(&self) -> &str {

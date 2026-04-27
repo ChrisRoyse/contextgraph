@@ -88,7 +88,10 @@ pub use builder::PipelineBuilder;
 pub use execution::RetrievalPipeline;
 pub use traits::{
     // Token and SPLADE storage for pipeline stages
-    InMemorySpladeIndex, InMemoryTokenStorage, SpladeIndex, TokenStorage,
+    InMemorySpladeIndex,
+    InMemoryTokenStorage,
+    SpladeIndex,
+    TokenStorage,
 };
 #[allow(unused_imports)]
 pub use types::{

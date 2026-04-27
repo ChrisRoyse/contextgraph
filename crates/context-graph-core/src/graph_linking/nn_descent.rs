@@ -23,12 +23,12 @@
 //!
 //! [NN-Descent Paper](https://www.cs.princeton.edu/cass/papers/www11.pdf)
 
+use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use rand::prelude::*;
 
-use super::{EmbedderEdge, EdgeResult, KnnGraph, DirectedRelation};
-use super::{KNN_K, NN_DESCENT_ITERATIONS, NN_DESCENT_SAMPLE_RATE, MIN_KNN_SIMILARITY};
+use super::{DirectedRelation, EdgeResult, EmbedderEdge, KnnGraph};
+use super::{KNN_K, MIN_KNN_SIMILARITY, NN_DESCENT_ITERATIONS, NN_DESCENT_SAMPLE_RATE};
 
 /// A similarity function that computes similarity between two vectors.
 pub type SimilarityFn<'a> = &'a dyn Fn(&[f32], &[f32]) -> f32;
@@ -156,11 +156,7 @@ impl NnDescent {
     /// # Returns
     ///
     /// A K-NN graph with k nearest neighbors per node.
-    pub fn build<F>(
-        &self,
-        get_embedding: F,
-        similarity: SimilarityFn<'_>,
-    ) -> EdgeResult<KnnGraph>
+    pub fn build<F>(&self, get_embedding: F, similarity: SimilarityFn<'_>) -> EdgeResult<KnnGraph>
     where
         F: Fn(Uuid) -> Option<Vec<f32>>,
     {
@@ -175,7 +171,8 @@ impl NnDescent {
         }
 
         // Create index mapping
-        let id_to_idx: HashMap<Uuid, usize> = self.nodes
+        let id_to_idx: HashMap<Uuid, usize> = self
+            .nodes
             .iter()
             .enumerate()
             .map(|(i, id)| (*id, i))
@@ -191,19 +188,13 @@ impl NnDescent {
         let mut neighbors: Vec<Vec<(usize, f32)>> = self.initialize_random(&mut rng);
 
         // Cache embeddings for efficiency
-        let embeddings: Vec<Option<Vec<f32>>> = self.nodes
-            .iter()
-            .map(|id| get_embedding(*id))
-            .collect();
+        let embeddings: Vec<Option<Vec<f32>>> =
+            self.nodes.iter().map(|id| get_embedding(*id)).collect();
 
         // Iteratively improve
         for _iteration in 0..self.config.iterations {
-            let updates = self.nn_descent_iteration(
-                &mut neighbors,
-                &embeddings,
-                similarity,
-                &mut rng,
-            );
+            let updates =
+                self.nn_descent_iteration(&mut neighbors, &embeddings, similarity, &mut rng);
 
             let update_rate = updates as f32 / (n * self.config.k) as f32;
 
@@ -229,7 +220,8 @@ impl NnDescent {
         let mut graph = KnnGraph::new(self.embedder_id, self.config.k);
 
         // Cache embeddings
-        let embeddings: Vec<(Uuid, Option<Vec<f32>>)> = self.nodes
+        let embeddings: Vec<(Uuid, Option<Vec<f32>>)> = self
+            .nodes
             .iter()
             .map(|id| (*id, get_embedding(*id)))
             .collect();
@@ -260,7 +252,10 @@ impl NnDescent {
             for (target, sim) in candidates.into_iter().take(self.config.k) {
                 let edge = if is_asymmetric {
                     EmbedderEdge::with_direction(
-                        *id_i, target, self.embedder_id, sim,
+                        *id_i,
+                        target,
+                        self.embedder_id,
+                        sim,
                         DirectedRelation::Forward,
                     )?
                 } else {
@@ -310,7 +305,9 @@ impl NnDescent {
 
         // For each node, explore neighbors-of-neighbors
         for i in 0..n {
-            let Some(emb_i) = &embeddings[i] else { continue };
+            let Some(emb_i) = &embeddings[i] else {
+                continue;
+            };
 
             // Collect candidates from neighbors-of-neighbors
             let mut candidates: HashSet<usize> = HashSet::new();
@@ -339,7 +336,9 @@ impl NnDescent {
             let mut new_neighbors: Vec<(usize, f32)> = neighbors[i].clone();
 
             for j in candidates {
-                let Some(emb_j) = &embeddings[j] else { continue };
+                let Some(emb_j) = &embeddings[j] else {
+                    continue;
+                };
 
                 let sim = similarity(emb_i, emb_j);
                 if sim >= self.config.min_similarity {
@@ -354,7 +353,9 @@ impl NnDescent {
             // Also recompute similarities for existing neighbors (in case they were 0.0)
             for neighbor in &mut new_neighbors {
                 if neighbor.1 == 0.0 {
-                    let Some(emb_j) = &embeddings[neighbor.0] else { continue };
+                    let Some(emb_j) = &embeddings[neighbor.0] else {
+                        continue;
+                    };
                     neighbor.1 = similarity(emb_i, emb_j);
                 }
             }
@@ -408,11 +409,7 @@ impl NnDescent {
         neighbors: Vec<Vec<(usize, f32)>>,
         _id_to_idx: &HashMap<Uuid, usize>,
     ) -> EdgeResult<KnnGraph> {
-        let mut graph = KnnGraph::with_capacity(
-            self.embedder_id,
-            self.config.k,
-            self.nodes.len(),
-        );
+        let mut graph = KnnGraph::with_capacity(self.embedder_id, self.config.k, self.nodes.len());
 
         // Asymmetric embedders (E5=4, E8=7) require with_direction() instead of new()
         let is_asymmetric = self.embedder_id == 4 || self.embedder_id == 7;
@@ -425,7 +422,10 @@ impl NnDescent {
                     let target = self.nodes[j];
                     let edge = if is_asymmetric {
                         EmbedderEdge::with_direction(
-                            source, target, self.embedder_id, similarity,
+                            source,
+                            target,
+                            self.embedder_id,
+                            similarity,
                             DirectedRelation::Forward,
                         )?
                     } else {
@@ -576,15 +576,12 @@ mod tests {
             })
             .collect();
 
-        let config = NnDescentConfig::default()
-            .with_k(3)
-            .with_seed(42);
+        let config = NnDescentConfig::default().with_k(3).with_seed(42);
 
         let nn = NnDescent::new(0, &nodes, config);
-        let graph = nn.build(
-            |id| embeddings.get(&id).cloned(),
-            &cosine_similarity,
-        ).unwrap();
+        let graph = nn
+            .build(|id| embeddings.get(&id).cloned(), &cosine_similarity)
+            .unwrap();
 
         // Each node should have up to 3 neighbors (k=3, but only 4 other nodes)
         assert_eq!(graph.node_count(), 5);
@@ -618,10 +615,9 @@ mod tests {
             .with_sample_rate(0.5);
 
         let nn = NnDescent::new(0, &nodes, config);
-        let graph = nn.build(
-            |id| embeddings.get(&id).cloned(),
-            &cosine_similarity,
-        ).unwrap();
+        let graph = nn
+            .build(|id| embeddings.get(&id).cloned(), &cosine_similarity)
+            .unwrap();
 
         assert_eq!(graph.node_count(), 100);
         // Most nodes should have k neighbors
@@ -685,10 +681,15 @@ mod tests {
             |id| target_embs.get(&id).cloned(),
             &cosine_similarity,
             config,
-        ).unwrap();
+        )
+        .unwrap();
 
         // With overlapping embeddings, most nodes should have neighbors
-        assert!(graph.node_count() >= 9, "Expected at least 9 nodes with edges, got {}", graph.node_count());
+        assert!(
+            graph.node_count() >= 9,
+            "Expected at least 9 nodes with edges, got {}",
+            graph.node_count()
+        );
 
         // Edges should have Forward direction
         for edge in graph.edges() {

@@ -88,10 +88,7 @@ impl BgeM3DenseModel {
     }
 
     /// Embed a single input (internal).
-    pub(crate) async fn embed_single(
-        &self,
-        input: &ModelInput,
-    ) -> EmbeddingResult<ModelEmbedding> {
+    pub(crate) async fn embed_single(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         let prepared = self.prepare_input(input)?;
         let start = std::time::Instant::now();
 

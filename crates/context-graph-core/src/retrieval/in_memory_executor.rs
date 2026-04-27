@@ -418,19 +418,19 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
 
     fn available_spaces(&self) -> Vec<SpaceInfo> {
         vec![
-            SpaceInfo::dense_hnsw(0, 1024, 0, true), // E1 Semantic
-            SpaceInfo::dense_hnsw(1, 512, 0, true),  // E2 Temporal-Recent
-            SpaceInfo::dense_hnsw(2, 512, 0, true),  // E3 Temporal-Periodic
-            SpaceInfo::dense_hnsw(3, 512, 0, true),  // E4 Temporal-Positional
-            SpaceInfo::dense_hnsw(4, 768, 0, true),  // E5 Causal
-            SpaceInfo::sparse_inverted(5, 0, true),  // E6 Sparse
-            SpaceInfo::dense_hnsw(6, 1536, 0, true), // E7 Code (Qodo-Embed)
-            SpaceInfo::dense_hnsw(7, 1024, 0, true), // E8 Graph (e5-large-v2)
-            SpaceInfo::dense_hnsw(8, 1024, 0, true), // E9 HDC (projected)
-            SpaceInfo::dense_hnsw(9, 768, 0, true),  // E10 Multimodal
-            SpaceInfo::dense_hnsw(10, 768, 0, true), // E11 Entity (KEPLER)
-            SpaceInfo::dense_hnsw(11, 128, 0, true), // E12 Late-Interaction
-            SpaceInfo::sparse_inverted(12, 0, true), // E13 SPLADE
+            SpaceInfo::dense_hnsw(0, 1024, 0, true),  // E1 Semantic
+            SpaceInfo::dense_hnsw(1, 512, 0, true),   // E2 Temporal-Recent
+            SpaceInfo::dense_hnsw(2, 512, 0, true),   // E3 Temporal-Periodic
+            SpaceInfo::dense_hnsw(3, 512, 0, true),   // E4 Temporal-Positional
+            SpaceInfo::dense_hnsw(4, 768, 0, true),   // E5 Causal
+            SpaceInfo::sparse_inverted(5, 0, true),   // E6 Sparse
+            SpaceInfo::dense_hnsw(6, 1536, 0, true),  // E7 Code (Qodo-Embed)
+            SpaceInfo::dense_hnsw(7, 1024, 0, true),  // E8 Graph (e5-large-v2)
+            SpaceInfo::dense_hnsw(8, 1024, 0, true),  // E9 HDC (projected)
+            SpaceInfo::dense_hnsw(9, 768, 0, true),   // E10 Multimodal
+            SpaceInfo::dense_hnsw(10, 768, 0, true),  // E11 Entity (KEPLER)
+            SpaceInfo::dense_hnsw(11, 128, 0, true),  // E12 Late-Interaction
+            SpaceInfo::sparse_inverted(12, 0, true),  // E13 SPLADE
             SpaceInfo::dense_hnsw(13, 1024, 0, true), // E14 BGE-M3 Dense
         ]
     }

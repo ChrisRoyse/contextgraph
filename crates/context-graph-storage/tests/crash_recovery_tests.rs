@@ -102,8 +102,7 @@ async fn test_wal_replay_after_unclean_drop() {
     // Phase 1: Store data, do NOT flush, just drop (simulates crash)
     println!("[PHASE 1] Storing 3 fingerprints WITHOUT flush (simulating crash)...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         store.store(fp1).await.expect("Store fp1 failed");
         store.store(fp2).await.expect("Store fp2 failed");
@@ -119,8 +118,7 @@ async fn test_wal_replay_after_unclean_drop() {
     // Phase 2: Reopen — WAL replay should recover data
     println!("[PHASE 2] Reopening database — WAL replay should recover data...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         let count = store.count().await.expect("Count failed after reopen");
         assert_eq!(
@@ -179,8 +177,7 @@ async fn test_hnsw_rebuild_after_crash() {
     // Phase 1: Store 5 fingerprints and flush (data on disk)
     println!("[PHASE 1] Storing 5 fingerprints with flush...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         for seed in 10..15u8 {
             let fp = create_identifiable_fingerprint(seed);
@@ -201,8 +198,7 @@ async fn test_hnsw_rebuild_after_crash() {
     // Phase 2: Store 3 MORE fingerprints, do NOT persist HNSW, crash
     println!("[PHASE 2] Storing 3 more WITHOUT HNSW persist (simulating crash)...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         for seed in 20..23u8 {
             let fp = create_identifiable_fingerprint(seed);
@@ -218,8 +214,7 @@ async fn test_hnsw_rebuild_after_crash() {
     // Phase 3: Reopen — HNSW should rebuild from CF_FINGERPRINTS
     println!("[PHASE 3] Reopening — HNSW must rebuild to include all 8 fingerprints...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         let count = store.count().await.expect("Count failed");
         assert_eq!(
@@ -234,7 +229,9 @@ async fn test_hnsw_rebuild_after_crash() {
                 .retrieve(id)
                 .await
                 .expect("Retrieve failed")
-                .unwrap_or_else(|| panic!("Fingerprint {} (index {}) not found after rebuild", id, i));
+                .unwrap_or_else(|| {
+                    panic!("Fingerprint {} (index {}) not found after rebuild", id, i)
+                });
             assert_eq!(retrieved.id, id, "ID mismatch at index {}", i);
         }
         println!("  [OK] All 8 fingerprints verified after HNSW rebuild");
@@ -260,8 +257,7 @@ async fn test_checkpoint_creates_valid_recovery_point() {
     println!("[PHASE 1] Storing 4 fingerprints and creating checkpoint...");
     let checkpoint_path: PathBuf;
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         for seed in 30..34u8 {
             let fp = create_identifiable_fingerprint(seed);
@@ -307,9 +303,7 @@ async fn test_checkpoint_creates_valid_recovery_point() {
                 .retrieve(id)
                 .await
                 .expect("Retrieve from checkpoint failed")
-                .unwrap_or_else(|| {
-                    panic!("Fingerprint {} (index {}) not in checkpoint", id, i)
-                });
+                .unwrap_or_else(|| panic!("Fingerprint {} (index {}) not in checkpoint", id, i));
             assert_eq!(retrieved.id, id, "ID mismatch in checkpoint at index {}", i);
             assert_eq!(
                 retrieved.semantic.e1_semantic.len(),
@@ -337,8 +331,7 @@ async fn test_corruption_detected_on_tampered_sst() {
     // Phase 1: Store data and force compaction to create SST files
     println!("[PHASE 1] Storing data and forcing compaction...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         for seed in 40..50u8 {
             let fp = create_identifiable_fingerprint(seed);
@@ -385,7 +378,10 @@ async fn test_corruption_detected_on_tampered_sst() {
         }
     }
     std::fs::write(target_sst, &corrupted).expect("Failed to write corrupted SST");
-    println!("  Corrupted {} bytes in the middle of the file", 64.min(corrupted.len()));
+    println!(
+        "  Corrupted {} bytes in the middle of the file",
+        64.min(corrupted.len())
+    );
 
     // Phase 3: Try to open — paranoid_checks should detect corruption
     println!("[PHASE 3] Reopening with corrupted SST — expecting error...");
@@ -400,7 +396,10 @@ async fn test_corruption_detected_on_tampered_sst() {
                     Ok(Some(_)) => {}
                     Ok(None) => {
                         read_errors += 1;
-                        println!("  [DETECTED] Fingerprint {} missing (corruption effect)", fp.id);
+                        println!(
+                            "  [DETECTED] Fingerprint {} missing (corruption effect)",
+                            fp.id
+                        );
                     }
                     Err(e) => {
                         read_errors += 1;
@@ -443,8 +442,7 @@ async fn test_flush_guarantees_durability() {
     // Phase 1: Store, flush, close
     println!("[PHASE 1] Store, flush, close...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         store.store(fp).await.expect("Store failed");
         store.flush().await.expect("Flush failed");
@@ -460,8 +458,7 @@ async fn test_flush_guarantees_durability() {
     // Phase 2: Reopen and verify exact vector values
     println!("[PHASE 2] Reopen and verify exact values...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         let retrieved = store
             .retrieve(id)
@@ -518,8 +515,7 @@ async fn test_soft_delete_persists_across_crash() {
     // Phase 1: Store 3, soft-delete 1, then crash
     println!("[PHASE 1] Store 3 fingerprints, soft-delete one, crash...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         store.store(fp1).await.expect("Store fp1 failed");
         store.store(fp2).await.expect("Store fp2 failed");
@@ -539,8 +535,7 @@ async fn test_soft_delete_persists_across_crash() {
     // Phase 2: Reopen — soft-delete marker must persist
     println!("[PHASE 2] Reopening — soft-delete markers must persist...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         let count = store.count().await.expect("Count failed");
         assert_eq!(
@@ -582,8 +577,7 @@ async fn test_checkpoint_rotation() {
     let db_path: PathBuf = temp_dir.path().to_path_buf();
 
     // Store some data
-    let store =
-        RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+    let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
     let fp = create_identifiable_fingerprint(50);
     store.store(fp).await.expect("Store failed");
@@ -674,8 +668,7 @@ async fn test_content_storage_persists() {
     // Phase 1: Store fingerprint + content, flush
     println!("[PHASE 1] Storing fingerprint and content...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to open store");
 
         store.store(fp).await.expect("Store fingerprint failed");
         store
@@ -689,8 +682,7 @@ async fn test_content_storage_persists() {
     // Phase 2: Reopen and verify content
     println!("[PHASE 2] Reopening and verifying content...");
     {
-        let store =
-            RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&db_path).expect("Failed to reopen store");
 
         let retrieved_content = store
             .get_content(id)
@@ -698,10 +690,7 @@ async fn test_content_storage_persists() {
             .expect("Get content failed")
             .expect("Content not found after reopen");
 
-        assert_eq!(
-            retrieved_content, content,
-            "Content mismatch after reopen"
-        );
+        assert_eq!(retrieved_content, content, "Content mismatch after reopen");
         println!("  [OK] Content matches exactly ({} bytes)", content.len());
     }
 

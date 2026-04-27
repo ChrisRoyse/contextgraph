@@ -152,19 +152,16 @@ pub fn gqa_forward(
 
     // Dispatch to attention strategy (scale = sqrt(head_dim), strategy divides by it)
     let scale = (head_dim as f64).sqrt();
-    let context = strategy.forward(
-        &query_f32,
-        &key_f32,
-        &value_f32,
-        &attention_mask_f32,
-        scale,
-    )?;
+    let context = strategy.forward(&query_f32, &key_f32, &value_f32, &attention_mask_f32, scale)?;
 
     // Convert context back to original dtype (FP16)
     let context = context
         .to_dtype(original_dtype)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("Qwen2 layer {} context to original dtype failed: {}", layer_idx, e),
+            message: format!(
+                "Qwen2 layer {} context to original dtype failed: {}",
+                layer_idx, e
+            ),
         })?;
 
     // Reshape back: [batch, seq_len, hidden_size]

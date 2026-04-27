@@ -168,40 +168,188 @@ struct TestCase {
 fn test_corpus() -> Vec<TestCase> {
     vec![
         // === CAUSE direction (text describes something CAUSING other things) ===
-        TestCase { text: "Chronic stress elevates cortisol levels in the bloodstream", expected_direction: "cause", expected_causal: true, domain: "biomedical" },
-        TestCase { text: "Deforestation causes soil erosion and downstream flooding", expected_direction: "cause", expected_causal: true, domain: "environmental" },
-        TestCase { text: "High interest rates drive housing prices downward", expected_direction: "cause", expected_causal: true, domain: "economics" },
-        TestCase { text: "Smoking causes lung cancer through DNA damage mechanisms", expected_direction: "cause", expected_causal: true, domain: "health" },
-        TestCase { text: "Poverty leads to poor educational outcomes for children", expected_direction: "cause", expected_causal: true, domain: "sociology" },
-        TestCase { text: "Heat causes thermal expansion in metal structures", expected_direction: "cause", expected_causal: true, domain: "physics" },
-        TestCase { text: "SQL injection vulnerabilities lead to data breaches", expected_direction: "cause", expected_causal: true, domain: "cybersecurity" },
-        TestCase { text: "Memory leaks cause application crashes over time", expected_direction: "cause", expected_causal: true, domain: "software" },
-        TestCase { text: "UV radiation triggers DNA mutations in skin cells", expected_direction: "cause", expected_causal: true, domain: "biology" },
-        TestCase { text: "Inflation erodes purchasing power of consumers", expected_direction: "cause", expected_causal: true, domain: "economics" },
-
+        TestCase {
+            text: "Chronic stress elevates cortisol levels in the bloodstream",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "biomedical",
+        },
+        TestCase {
+            text: "Deforestation causes soil erosion and downstream flooding",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "environmental",
+        },
+        TestCase {
+            text: "High interest rates drive housing prices downward",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "economics",
+        },
+        TestCase {
+            text: "Smoking causes lung cancer through DNA damage mechanisms",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "health",
+        },
+        TestCase {
+            text: "Poverty leads to poor educational outcomes for children",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "sociology",
+        },
+        TestCase {
+            text: "Heat causes thermal expansion in metal structures",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "physics",
+        },
+        TestCase {
+            text: "SQL injection vulnerabilities lead to data breaches",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "cybersecurity",
+        },
+        TestCase {
+            text: "Memory leaks cause application crashes over time",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "software",
+        },
+        TestCase {
+            text: "UV radiation triggers DNA mutations in skin cells",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "biology",
+        },
+        TestCase {
+            text: "Inflation erodes purchasing power of consumers",
+            expected_direction: "cause",
+            expected_causal: true,
+            domain: "economics",
+        },
         // === EFFECT direction (text describes something BEING CAUSED) ===
-        TestCase { text: "Memory impairment results from chronic stress exposure", expected_direction: "effect", expected_causal: true, domain: "biomedical" },
-        TestCase { text: "Downstream flooding is caused by deforestation upstream", expected_direction: "effect", expected_causal: true, domain: "environmental" },
-        TestCase { text: "The housing crash was driven by speculative lending", expected_direction: "effect", expected_causal: true, domain: "economics" },
-        TestCase { text: "Lung cancer is primarily caused by tobacco smoking", expected_direction: "effect", expected_causal: true, domain: "health" },
-        TestCase { text: "Poor educational outcomes are driven by poverty", expected_direction: "effect", expected_causal: true, domain: "sociology" },
-        TestCase { text: "Bridge expansion resulted from extreme heat waves", expected_direction: "effect", expected_causal: true, domain: "physics" },
-        TestCase { text: "The data breach resulted from SQL injection attacks", expected_direction: "effect", expected_causal: true, domain: "cybersecurity" },
-        TestCase { text: "Application crashes are due to memory management bugs", expected_direction: "effect", expected_causal: true, domain: "software" },
-        TestCase { text: "Skin cancer is triggered by prolonged UV exposure", expected_direction: "effect", expected_causal: true, domain: "biology" },
-        TestCase { text: "Purchasing power decline stems from persistent inflation", expected_direction: "effect", expected_causal: true, domain: "economics" },
-
+        TestCase {
+            text: "Memory impairment results from chronic stress exposure",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "biomedical",
+        },
+        TestCase {
+            text: "Downstream flooding is caused by deforestation upstream",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "environmental",
+        },
+        TestCase {
+            text: "The housing crash was driven by speculative lending",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "economics",
+        },
+        TestCase {
+            text: "Lung cancer is primarily caused by tobacco smoking",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "health",
+        },
+        TestCase {
+            text: "Poor educational outcomes are driven by poverty",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "sociology",
+        },
+        TestCase {
+            text: "Bridge expansion resulted from extreme heat waves",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "physics",
+        },
+        TestCase {
+            text: "The data breach resulted from SQL injection attacks",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "cybersecurity",
+        },
+        TestCase {
+            text: "Application crashes are due to memory management bugs",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "software",
+        },
+        TestCase {
+            text: "Skin cancer is triggered by prolonged UV exposure",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "biology",
+        },
+        TestCase {
+            text: "Purchasing power decline stems from persistent inflation",
+            expected_direction: "effect",
+            expected_causal: true,
+            domain: "economics",
+        },
         // === NEUTRAL direction (no causal content) ===
-        TestCase { text: "The library has over two million books in its collection", expected_direction: "neutral", expected_causal: false, domain: "factual" },
-        TestCase { text: "Python is an interpreted programming language", expected_direction: "neutral", expected_causal: false, domain: "technical" },
-        TestCase { text: "The annual conference takes place in March", expected_direction: "neutral", expected_causal: false, domain: "event" },
-        TestCase { text: "The REST API returns JSON formatted responses", expected_direction: "neutral", expected_causal: false, domain: "technical" },
-        TestCase { text: "Water boils at 100 degrees Celsius at sea level", expected_direction: "neutral", expected_causal: false, domain: "factual" },
-        TestCase { text: "The development team consists of fifteen engineers", expected_direction: "neutral", expected_causal: false, domain: "descriptive" },
-        TestCase { text: "SSH uses port 22 by default for connections", expected_direction: "neutral", expected_causal: false, domain: "technical" },
-        TestCase { text: "The Earth completes one orbit around the Sun per year", expected_direction: "neutral", expected_causal: false, domain: "factual" },
-        TestCase { text: "JavaScript is widely used for web development", expected_direction: "neutral", expected_causal: false, domain: "technical" },
-        TestCase { text: "The quarterly meeting is scheduled for three o'clock", expected_direction: "neutral", expected_causal: false, domain: "event" },
+        TestCase {
+            text: "The library has over two million books in its collection",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "factual",
+        },
+        TestCase {
+            text: "Python is an interpreted programming language",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "technical",
+        },
+        TestCase {
+            text: "The annual conference takes place in March",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "event",
+        },
+        TestCase {
+            text: "The REST API returns JSON formatted responses",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "technical",
+        },
+        TestCase {
+            text: "Water boils at 100 degrees Celsius at sea level",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "factual",
+        },
+        TestCase {
+            text: "The development team consists of fifteen engineers",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "descriptive",
+        },
+        TestCase {
+            text: "SSH uses port 22 by default for connections",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "technical",
+        },
+        TestCase {
+            text: "The Earth completes one orbit around the Sun per year",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "factual",
+        },
+        TestCase {
+            text: "JavaScript is widely used for web development",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "technical",
+        },
+        TestCase {
+            text: "The quarterly meeting is scheduled for three o'clock",
+            expected_direction: "neutral",
+            expected_causal: false,
+            domain: "event",
+        },
     ]
 }
 
@@ -317,8 +465,8 @@ async fn main() {
     // Phase 1: Load LLM
     println!("Phase 1: Loading Hermes 2 Pro Mistral 7B...");
     let load_start = Instant::now();
-    let llm = CausalDiscoveryLLM::with_config(LlmConfig::default())
-        .expect("Failed to create LLM config");
+    let llm =
+        CausalDiscoveryLLM::with_config(LlmConfig::default()).expect("Failed to create LLM config");
     llm.load().await.expect("Failed to load LLM into GPU");
     let load_time = load_start.elapsed().as_secs_f64();
     println!("  Loaded in {:.2}s\n", load_time);
@@ -326,17 +474,24 @@ async fn main() {
     // Phase 2: Prepare corpus and prompts
     let corpus = test_corpus();
     let prompts = variant_system_prompts();
-    println!("Phase 2: {} test cases × {} variants = {} LLM calls\n",
-        corpus.len(), VARIANT_NAMES.len(), corpus.len() * VARIANT_NAMES.len());
+    println!(
+        "Phase 2: {} test cases × {} variants = {} LLM calls\n",
+        corpus.len(),
+        VARIANT_NAMES.len(),
+        corpus.len() * VARIANT_NAMES.len()
+    );
 
     // Phase 3: Run each variant
     let mut variant_results: Vec<VariantResult> = Vec::new();
 
-    for (vi, (variant_name, system_prompt)) in
-        VARIANT_NAMES.iter().zip(prompts.iter()).enumerate()
+    for (vi, (variant_name, system_prompt)) in VARIANT_NAMES.iter().zip(prompts.iter()).enumerate()
     {
-        println!("═══ Variant {}: {} ({} chars) ═══",
-            vi + 1, variant_name, system_prompt.len());
+        println!(
+            "═══ Variant {}: {} ({} chars) ═══",
+            vi + 1,
+            variant_name,
+            system_prompt.len()
+        );
 
         let mut case_results: Vec<CaseResult> = Vec::new();
         let mut parse_failures = 0u32;
@@ -364,10 +519,8 @@ async fn main() {
                     match serde_json::from_str::<SingleTextResponse>(&response) {
                         Ok(parsed) => {
                             let correct = parsed.direction == case.expected_direction;
-                            let desc_len = parsed.description
-                                .as_ref()
-                                .map(|d| d.len())
-                                .unwrap_or(0);
+                            let desc_len =
+                                parsed.description.as_ref().map(|d| d.len()).unwrap_or(0);
 
                             case_results.push(CaseResult {
                                 text_preview: case.text.chars().take(60).collect(),
@@ -424,12 +577,26 @@ async fn main() {
         println!();
 
         // Compute variant-level metrics
-        let vr = compute_variant_metrics(variant_name, system_prompt, &case_results, &corpus, parse_failures);
-        println!("  Direction accuracy: {:.1}%  |  Cause: {:.1}%  Effect: {:.1}%  Neutral: {:.1}%",
-            vr.direction_accuracy * 100.0, vr.cause_accuracy * 100.0,
-            vr.effect_accuracy * 100.0, vr.neutral_accuracy * 100.0);
-        println!("  Confidence sep: {:.3}  |  Avg latency: {:.0}ms  |  Desc rate: {:.0}%",
-            vr.confidence_separation, vr.avg_latency_ms, vr.descriptions_nonempty_rate * 100.0);
+        let vr = compute_variant_metrics(
+            variant_name,
+            system_prompt,
+            &case_results,
+            &corpus,
+            parse_failures,
+        );
+        println!(
+            "  Direction accuracy: {:.1}%  |  Cause: {:.1}%  Effect: {:.1}%  Neutral: {:.1}%",
+            vr.direction_accuracy * 100.0,
+            vr.cause_accuracy * 100.0,
+            vr.effect_accuracy * 100.0,
+            vr.neutral_accuracy * 100.0
+        );
+        println!(
+            "  Confidence sep: {:.3}  |  Avg latency: {:.0}ms  |  Desc rate: {:.0}%",
+            vr.confidence_separation,
+            vr.avg_latency_ms,
+            vr.descriptions_nonempty_rate * 100.0
+        );
         println!();
 
         variant_results.push(vr);
@@ -475,23 +642,35 @@ fn compute_variant_metrics(
     let (neutral_correct, neutral_total) = class_accuracy(cases, corpus, "neutral");
 
     // is_causal accuracy
-    let is_causal_correct: f64 = cases.iter().zip(corpus.iter())
+    let is_causal_correct: f64 = cases
+        .iter()
+        .zip(corpus.iter())
         .filter(|(c, tc)| c.is_causal == tc.expected_causal)
         .count() as f64;
 
     // Confidence metrics
-    let causal_confs: Vec<f32> = cases.iter().zip(corpus.iter())
+    let causal_confs: Vec<f32> = cases
+        .iter()
+        .zip(corpus.iter())
         .filter(|(_, tc)| tc.expected_causal)
         .map(|(c, _)| c.confidence)
         .collect();
-    let neutral_confs: Vec<f32> = cases.iter().zip(corpus.iter())
+    let neutral_confs: Vec<f32> = cases
+        .iter()
+        .zip(corpus.iter())
         .filter(|(_, tc)| !tc.expected_causal)
         .map(|(c, _)| c.confidence)
         .collect();
-    let avg_conf_causal = if causal_confs.is_empty() { 0.0 }
-        else { causal_confs.iter().sum::<f32>() as f64 / causal_confs.len() as f64 };
-    let avg_conf_neutral = if neutral_confs.is_empty() { 0.0 }
-        else { neutral_confs.iter().sum::<f32>() as f64 / neutral_confs.len() as f64 };
+    let avg_conf_causal = if causal_confs.is_empty() {
+        0.0
+    } else {
+        causal_confs.iter().sum::<f32>() as f64 / causal_confs.len() as f64
+    };
+    let avg_conf_neutral = if neutral_confs.is_empty() {
+        0.0
+    } else {
+        neutral_confs.iter().sum::<f32>() as f64 / neutral_confs.len() as f64
+    };
 
     // Quality metrics
     let desc_lens: Vec<usize> = cases.iter().map(|c| c.description_len).collect();
@@ -512,9 +691,21 @@ fn compute_variant_metrics(
         name: name.to_string(),
         prompt_length_chars: system_prompt.len(),
         direction_accuracy: correct_dir / total,
-        cause_accuracy: if cause_total > 0 { cause_correct as f64 / cause_total as f64 } else { 0.0 },
-        effect_accuracy: if effect_total > 0 { effect_correct as f64 / effect_total as f64 } else { 0.0 },
-        neutral_accuracy: if neutral_total > 0 { neutral_correct as f64 / neutral_total as f64 } else { 0.0 },
+        cause_accuracy: if cause_total > 0 {
+            cause_correct as f64 / cause_total as f64
+        } else {
+            0.0
+        },
+        effect_accuracy: if effect_total > 0 {
+            effect_correct as f64 / effect_total as f64
+        } else {
+            0.0
+        },
+        neutral_accuracy: if neutral_total > 0 {
+            neutral_correct as f64 / neutral_total as f64
+        } else {
+            0.0
+        },
         is_causal_accuracy: is_causal_correct / total,
         avg_confidence_causal: avg_conf_causal,
         avg_confidence_neutral: avg_conf_neutral,
@@ -536,7 +727,9 @@ fn class_accuracy(cases: &[CaseResult], corpus: &[TestCase], class: &str) -> (us
     for (c, tc) in cases.iter().zip(corpus.iter()) {
         if tc.expected_direction == class {
             total += 1;
-            if c.correct { correct += 1; }
+            if c.correct {
+                correct += 1;
+            }
         }
     }
     (correct, total)
@@ -547,61 +740,113 @@ fn class_accuracy(cases: &[CaseResult], corpus: &[TestCase], class: &str) -> (us
 // ============================================================================
 
 fn build_comparative_analysis(variants: &[VariantResult]) -> ComparativeAnalysis {
-    let best_overall = variants.iter()
-        .max_by(|a, b| a.direction_accuracy.partial_cmp(&b.direction_accuracy).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let best_cause = variants.iter()
+    let best_overall = variants
+        .iter()
+        .max_by(|a, b| {
+            a.direction_accuracy
+                .partial_cmp(&b.direction_accuracy)
+                .unwrap()
+        })
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let best_cause = variants
+        .iter()
         .max_by(|a, b| a.cause_accuracy.partial_cmp(&b.cause_accuracy).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let best_effect = variants.iter()
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let best_effect = variants
+        .iter()
         .max_by(|a, b| a.effect_accuracy.partial_cmp(&b.effect_accuracy).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let best_neutral = variants.iter()
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let best_neutral = variants
+        .iter()
         .max_by(|a, b| a.neutral_accuracy.partial_cmp(&b.neutral_accuracy).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let best_conf = variants.iter()
-        .max_by(|a, b| a.confidence_separation.partial_cmp(&b.confidence_separation).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let fastest = variants.iter()
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let best_conf = variants
+        .iter()
+        .max_by(|a, b| {
+            a.confidence_separation
+                .partial_cmp(&b.confidence_separation)
+                .unwrap()
+        })
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let fastest = variants
+        .iter()
         .min_by(|a, b| a.avg_latency_ms.partial_cmp(&b.avg_latency_ms).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
-    let most_desc = variants.iter()
-        .max_by(|a, b| a.avg_description_length.partial_cmp(&b.avg_description_length).unwrap())
-        .map(|v| v.name.clone()).unwrap_or_default();
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
+    let most_desc = variants
+        .iter()
+        .max_by(|a, b| {
+            a.avg_description_length
+                .partial_cmp(&b.avg_description_length)
+                .unwrap()
+        })
+        .map(|v| v.name.clone())
+        .unwrap_or_default();
 
     // Composite scoring: 50% direction accuracy + 25% confidence separation + 25% latency efficiency
-    let max_lat = variants.iter().map(|v| v.avg_latency_ms).fold(0.0f64, f64::max);
-    let mut ranking: Vec<RankEntry> = variants.iter().map(|v| {
-        let lat_score = if max_lat > 0.0 { 1.0 - (v.avg_latency_ms / max_lat) } else { 1.0 };
-        let conf_score = v.confidence_separation.max(0.0).min(1.0);
-        let composite = 0.50 * v.direction_accuracy + 0.25 * conf_score + 0.25 * lat_score;
-        RankEntry {
-            rank: 0,
-            name: v.name.clone(),
-            direction_accuracy: v.direction_accuracy,
-            confidence_separation: v.confidence_separation,
-            avg_latency_ms: v.avg_latency_ms,
-            composite_score: composite,
-        }
-    }).collect();
+    let max_lat = variants
+        .iter()
+        .map(|v| v.avg_latency_ms)
+        .fold(0.0f64, f64::max);
+    let mut ranking: Vec<RankEntry> = variants
+        .iter()
+        .map(|v| {
+            let lat_score = if max_lat > 0.0 {
+                1.0 - (v.avg_latency_ms / max_lat)
+            } else {
+                1.0
+            };
+            let conf_score = v.confidence_separation.max(0.0).min(1.0);
+            let composite = 0.50 * v.direction_accuracy + 0.25 * conf_score + 0.25 * lat_score;
+            RankEntry {
+                rank: 0,
+                name: v.name.clone(),
+                direction_accuracy: v.direction_accuracy,
+                confidence_separation: v.confidence_separation,
+                avg_latency_ms: v.avg_latency_ms,
+                composite_score: composite,
+            }
+        })
+        .collect();
     ranking.sort_by(|a, b| b.composite_score.partial_cmp(&a.composite_score).unwrap());
-    for (i, r) in ranking.iter_mut().enumerate() { r.rank = i + 1; }
+    for (i, r) in ranking.iter_mut().enumerate() {
+        r.rank = i + 1;
+    }
 
     // Generate insights
     let mut insights = Vec::new();
     if let Some(best) = ranking.first() {
-        insights.push(format!("Best overall: {} (composite={:.3})", best.name, best.composite_score));
+        insights.push(format!(
+            "Best overall: {} (composite={:.3})",
+            best.name, best.composite_score
+        ));
     }
     if let Some(worst) = ranking.last() {
-        insights.push(format!("Worst overall: {} (composite={:.3})", worst.name, worst.composite_score));
+        insights.push(format!(
+            "Worst overall: {} (composite={:.3})",
+            worst.name, worst.composite_score
+        ));
     }
 
-    let min_prompt = variants.iter().min_by_key(|v| v.prompt_length_chars).unwrap();
-    let max_prompt = variants.iter().max_by_key(|v| v.prompt_length_chars).unwrap();
+    let min_prompt = variants
+        .iter()
+        .min_by_key(|v| v.prompt_length_chars)
+        .unwrap();
+    let max_prompt = variants
+        .iter()
+        .max_by_key(|v| v.prompt_length_chars)
+        .unwrap();
     insights.push(format!(
         "Prompt length range: {} ({}) to {} ({}) chars",
-        min_prompt.prompt_length_chars, min_prompt.name,
-        max_prompt.prompt_length_chars, max_prompt.name
+        min_prompt.prompt_length_chars,
+        min_prompt.name,
+        max_prompt.prompt_length_chars,
+        max_prompt.name
     ));
 
     if best_cause != best_effect {
@@ -611,11 +856,19 @@ fn build_comparative_analysis(variants: &[VariantResult]) -> ComparativeAnalysis
         ));
     }
 
-    let avg_parse_fail: f64 = variants.iter().map(|v| v.parse_failures as f64).sum::<f64>() / variants.len() as f64;
+    let avg_parse_fail: f64 = variants
+        .iter()
+        .map(|v| v.parse_failures as f64)
+        .sum::<f64>()
+        / variants.len() as f64;
     if avg_parse_fail > 0.0 {
-        insights.push(format!("Average parse failures per variant: {:.1}", avg_parse_fail));
+        insights.push(format!(
+            "Average parse failures per variant: {:.1}",
+            avg_parse_fail
+        ));
     } else {
-        insights.push("Zero parse failures across all variants (GBNF grammar reliable)".to_string());
+        insights
+            .push("Zero parse failures across all variants (GBNF grammar reliable)".to_string());
     }
 
     ComparativeAnalysis {
@@ -632,13 +885,16 @@ fn build_comparative_analysis(variants: &[VariantResult]) -> ComparativeAnalysis
 }
 
 fn print_comparative_table(variants: &[VariantResult], analysis: &ComparativeAnalysis) {
-    println!("\n{:<25} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9}",
-        "Variant", "Dir%", "Cause%", "Effect%", "Neut%", "ConfSep", "Lat(ms)", "Composite");
+    println!(
+        "\n{:<25} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>9}",
+        "Variant", "Dir%", "Cause%", "Effect%", "Neut%", "ConfSep", "Lat(ms)", "Composite"
+    );
     println!("{}", "-".repeat(95));
 
     for r in &analysis.ranking {
         let v = variants.iter().find(|v| v.name == r.name).unwrap();
-        println!("{:<25} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>8.3} {:>8.0} {:>9.3}",
+        println!(
+            "{:<25} {:>7.1} {:>7.1} {:>7.1} {:>7.1} {:>8.3} {:>8.0} {:>9.3}",
             v.name,
             v.direction_accuracy * 100.0,
             v.cause_accuracy * 100.0,
@@ -646,7 +902,8 @@ fn print_comparative_table(variants: &[VariantResult], analysis: &ComparativeAna
             v.neutral_accuracy * 100.0,
             v.confidence_separation,
             v.avg_latency_ms,
-            r.composite_score);
+            r.composite_score
+        );
     }
     println!();
 
@@ -655,7 +912,10 @@ fn print_comparative_table(variants: &[VariantResult], analysis: &ComparativeAna
     println!("  Cause Detection:   {}", analysis.best_cause);
     println!("  Effect Detection:  {}", analysis.best_effect);
     println!("  Neutral Rejection: {}", analysis.best_neutral);
-    println!("  Confidence Gap:    {}", analysis.best_confidence_separation);
+    println!(
+        "  Confidence Gap:    {}",
+        analysis.best_confidence_separation
+    );
     println!("  Fastest:           {}", analysis.fastest);
     println!("  Most Descriptive:  {}", analysis.most_descriptive);
     println!();

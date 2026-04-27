@@ -85,7 +85,10 @@ async fn main() -> Result<()> {
     let causal_model_time = causal_model_start.elapsed();
 
     println!("  ✓ CausalModel obtained in {:?}", causal_model_time);
-    println!("  ✓ Model is initialized: {}", causal_model.is_initialized());
+    println!(
+        "  ✓ Model is initialized: {}",
+        causal_model.is_initialized()
+    );
     println!();
 
     // Step 4: Test GraphModel embeddings directly
@@ -100,9 +103,20 @@ async fn main() -> Result<()> {
     let embed_time = embed_start.elapsed();
 
     println!("  Test content: \"{}\"", test_content);
-    println!("  ✓ Source vector: {}D, norm={:.4}", source_vec.len(), vector_norm(&source_vec));
-    println!("  ✓ Target vector: {}D, norm={:.4}", target_vec.len(), vector_norm(&target_vec));
-    println!("  ✓ Asymmetric diff: {:.4}", vector_diff(&source_vec, &target_vec));
+    println!(
+        "  ✓ Source vector: {}D, norm={:.4}",
+        source_vec.len(),
+        vector_norm(&source_vec)
+    );
+    println!(
+        "  ✓ Target vector: {}D, norm={:.4}",
+        target_vec.len(),
+        vector_norm(&target_vec)
+    );
+    println!(
+        "  ✓ Asymmetric diff: {:.4}",
+        vector_diff(&source_vec, &target_vec)
+    );
     println!("  ✓ Embedding time: {:?}", embed_time);
 
     // Validate embeddings are real (not zeros or placeholders)
@@ -135,9 +149,20 @@ async fn main() -> Result<()> {
     let causal_embed_time = causal_embed_start.elapsed();
 
     println!("  Test content: \"{}\"", causal_content);
-    println!("  ✓ Cause vector: {}D, norm={:.4}", cause_vec.len(), vector_norm(&cause_vec));
-    println!("  ✓ Effect vector: {}D, norm={:.4}", effect_vec.len(), vector_norm(&effect_vec));
-    println!("  ✓ Asymmetric diff: {:.4}", vector_diff(&cause_vec, &effect_vec));
+    println!(
+        "  ✓ Cause vector: {}D, norm={:.4}",
+        cause_vec.len(),
+        vector_norm(&cause_vec)
+    );
+    println!(
+        "  ✓ Effect vector: {}D, norm={:.4}",
+        effect_vec.len(),
+        vector_norm(&effect_vec)
+    );
+    println!(
+        "  ✓ Asymmetric diff: {:.4}",
+        vector_diff(&cause_vec, &effect_vec)
+    );
     println!("  ✓ Embedding time: {:?}", causal_embed_time);
 
     let is_cause_real = cause_vec.iter().any(|&v| v.abs() > 0.001);
@@ -176,11 +201,8 @@ async fn main() -> Result<()> {
 
     println!("  Creating GraphDiscoveryService::with_models()...");
     let service_start = Instant::now();
-    let _ = GraphDiscoveryService::with_models(
-        Arc::new(llm),
-        graph_model_for_service,
-        graph_config,
-    );
+    let _ =
+        GraphDiscoveryService::with_models(Arc::new(llm), graph_model_for_service, graph_config);
     let service_time = service_start.elapsed();
 
     println!("  ✓ Service created in {:?}", service_time);
@@ -195,12 +217,30 @@ async fn main() -> Result<()> {
     println!("  ┌─────────────────────────────────┬─────────────┬─────────────┐");
     println!("  │ Component                       │ Status      │ Time        │");
     println!("  ├─────────────────────────────────┼─────────────┼─────────────┤");
-    println!("  │ Warm Provider Init              │ ✓ PASS      │ {:>9.2?} │", warmup_time);
-    println!("  │ GraphModel Accessor             │ ✓ PASS      │ {:>9.2?} │", graph_model_time);
-    println!("  │ CausalModel Accessor            │ ✓ PASS      │ {:>9.2?} │", causal_model_time);
-    println!("  │ E8 Dual Embedding (GPU)         │ ✓ PASS      │ {:>9.2?} │", embed_time);
-    println!("  │ E5 Dual Embedding (GPU)         │ ✓ PASS      │ {:>9.2?} │", causal_embed_time);
-    println!("  │ GraphDiscoveryService Creation  │ ✓ PASS      │ {:>9.2?} │", service_time);
+    println!(
+        "  │ Warm Provider Init              │ ✓ PASS      │ {:>9.2?} │",
+        warmup_time
+    );
+    println!(
+        "  │ GraphModel Accessor             │ ✓ PASS      │ {:>9.2?} │",
+        graph_model_time
+    );
+    println!(
+        "  │ CausalModel Accessor            │ ✓ PASS      │ {:>9.2?} │",
+        causal_model_time
+    );
+    println!(
+        "  │ E8 Dual Embedding (GPU)         │ ✓ PASS      │ {:>9.2?} │",
+        embed_time
+    );
+    println!(
+        "  │ E5 Dual Embedding (GPU)         │ ✓ PASS      │ {:>9.2?} │",
+        causal_embed_time
+    );
+    println!(
+        "  │ GraphDiscoveryService Creation  │ ✓ PASS      │ {:>9.2?} │",
+        service_time
+    );
     println!("  └─────────────────────────────────┴─────────────┴─────────────┘");
     println!();
     println!("  ✓ ALL TESTS PASSED: Model injection working correctly!");

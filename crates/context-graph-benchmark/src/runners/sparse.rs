@@ -23,7 +23,7 @@ use crate::metrics::sparse::{
     compute_e6_ablation_metrics, compute_keyword_precision_metrics,
     compute_retrieval_quality_metrics, compute_sparsity_analysis_metrics, E6AblationMetrics,
     E6SparseMetrics, KeywordPrecisionMetrics, KeywordQueryResult, RetrievalQualityMetrics,
-    SparsityAnalysisMetrics, SparseVectorStats,
+    SparseVectorStats, SparsityAnalysisMetrics,
 };
 
 /// Configuration for E6 sparse benchmarks.
@@ -431,10 +431,7 @@ impl E6SparseBenchmarkRunner {
         } else if best_threshold <= 0.02 {
             "Use threshold 0.02 for moderate sparsity with good recall".to_string()
         } else {
-            format!(
-                "Consider threshold {:.3} for your workload",
-                best_threshold
-            )
+            format!("Consider threshold {:.3} for your workload", best_threshold)
         };
 
         ThresholdSweepResults {
@@ -475,7 +472,8 @@ impl E6SparseBenchmarkRunner {
         let search_latency_ms = 1.0 + (active_terms / 1000.0) * 0.5;
 
         // Quality score: balance between MRR and efficiency
-        let quality_score = 0.6 * mrr_at_10 + 0.2 * precision_at_10 + 0.2 * (1.0 - embed_latency_ms / 20.0);
+        let quality_score =
+            0.6 * mrr_at_10 + 0.2 * precision_at_10 + 0.2 * (1.0 - embed_latency_ms / 20.0);
 
         ThresholdMetrics {
             threshold,
@@ -511,7 +509,10 @@ impl E6SparseBenchmarkResults {
         }
 
         s.push_str("\n## Retrieval Quality\n");
-        s.push_str(&format!("- MRR: {:.4}\n", self.metrics.retrieval_quality.mrr));
+        s.push_str(&format!(
+            "- MRR: {:.4}\n",
+            self.metrics.retrieval_quality.mrr
+        ));
         s.push_str(&format!(
             "- NDCG@10: {:.4}\n",
             self.metrics.retrieval_quality.ndcg_at_10
@@ -599,7 +600,10 @@ impl E6SparseBenchmarkResults {
             "- Documents: {}\n",
             self.dataset_stats.total_documents
         ));
-        s.push_str(&format!("- Queries: {}\n", self.dataset_stats.total_queries));
+        s.push_str(&format!(
+            "- Queries: {}\n",
+            self.dataset_stats.total_queries
+        ));
         s.push_str(&format!(
             "- Anti-Examples: {}\n",
             self.dataset_stats.anti_example_count

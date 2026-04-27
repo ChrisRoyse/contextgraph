@@ -89,12 +89,19 @@ pub fn generate_real_content_hash() -> [u8; 32] {
 
 /// Create a `TeleologicalFingerprint` with a new random ID.
 pub fn create_real_fingerprint() -> TeleologicalFingerprint {
-    TeleologicalFingerprint::new(generate_real_semantic_fingerprint(), generate_real_content_hash())
+    TeleologicalFingerprint::new(
+        generate_real_semantic_fingerprint(),
+        generate_real_content_hash(),
+    )
 }
 
 /// Create a `TeleologicalFingerprint` with a specific UUID.
 pub fn create_real_fingerprint_with_id(id: Uuid) -> TeleologicalFingerprint {
-    TeleologicalFingerprint::with_id(id, generate_real_semantic_fingerprint(), generate_real_content_hash())
+    TeleologicalFingerprint::with_id(
+        id,
+        generate_real_semantic_fingerprint(),
+        generate_real_content_hash(),
+    )
 }
 
 /// Create a `TeleologicalFingerprint` with the specified UUID and real content hash.

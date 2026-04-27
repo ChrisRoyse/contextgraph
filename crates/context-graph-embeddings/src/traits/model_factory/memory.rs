@@ -7,20 +7,20 @@ use crate::types::ModelId;
 /// Memory estimates for each model (in bytes, FP32).
 /// These are conservative overestimates.
 pub const MEMORY_ESTIMATES: [(ModelId, usize); 14] = [
-    (ModelId::Semantic, 1_400_000_000),        // 1.3 GB + buffer (e5-large-v2, 335M params)
-    (ModelId::TemporalRecent, 15_000_000),     // 10 MB + buffer
-    (ModelId::TemporalPeriodic, 15_000_000),   // 10 MB + buffer
+    (ModelId::Semantic, 1_400_000_000), // 1.3 GB + buffer (e5-large-v2, 335M params)
+    (ModelId::TemporalRecent, 15_000_000), // 10 MB + buffer
+    (ModelId::TemporalPeriodic, 15_000_000), // 10 MB + buffer
     (ModelId::TemporalPositional, 15_000_000), // 10 MB + buffer
-    (ModelId::Causal, 650_000_000),            // 600 MB + buffer (nomic-embed-v1.5)
-    (ModelId::Sparse, 550_000_000),            // 500 MB + buffer
-    (ModelId::Code, 550_000_000),              // 500 MB + buffer
-    (ModelId::Graph, 1_400_000_000),           // 1.3 GB + buffer (loads e5-large-v2, 335M params)
-    (ModelId::Hdc, 60_000_000),                // 50 MB + buffer
-    (ModelId::Contextual, 500_000_000),        // ~440 MB + buffer (e5-base-v2, 110M params)
-    (ModelId::Entity, 120_000_000),            // 100 MB + buffer (legacy MiniLM 384D)
-    (ModelId::LateInteraction, 450_000_000),   // 400 MB + buffer
-    (ModelId::Splade, 550_000_000),            // 500 MB + buffer (similar to E6 Sparse)
-    (ModelId::Kepler, 350_000_000),            // ~300 MB + buffer (KEPLER RoBERTa-base 768D)
+    (ModelId::Causal, 650_000_000),     // 600 MB + buffer (nomic-embed-v1.5)
+    (ModelId::Sparse, 550_000_000),     // 500 MB + buffer
+    (ModelId::Code, 550_000_000),       // 500 MB + buffer
+    (ModelId::Graph, 1_400_000_000),    // 1.3 GB + buffer (loads e5-large-v2, 335M params)
+    (ModelId::Hdc, 60_000_000),         // 50 MB + buffer
+    (ModelId::Contextual, 500_000_000), // ~440 MB + buffer (e5-base-v2, 110M params)
+    (ModelId::Entity, 120_000_000),     // 100 MB + buffer (legacy MiniLM 384D)
+    (ModelId::LateInteraction, 450_000_000), // 400 MB + buffer
+    (ModelId::Splade, 550_000_000),     // 500 MB + buffer (similar to E6 Sparse)
+    (ModelId::Kepler, 350_000_000),     // ~300 MB + buffer (KEPLER RoBERTa-base 768D)
 ];
 
 /// Get memory estimate for a ModelId.
@@ -85,7 +85,10 @@ mod tests {
         // Semantic (e5-large-v2) and Graph (also e5-large-v2) should be largest at 1.4GB
         let semantic = get_memory_estimate(ModelId::Semantic);
         let graph = get_memory_estimate(ModelId::Graph);
-        assert_eq!(semantic, graph, "Semantic and Graph both load e5-large-v2, should match");
+        assert_eq!(
+            semantic, graph,
+            "Semantic and Graph both load e5-large-v2, should match"
+        );
         for model_id in ModelId::all() {
             let other = get_memory_estimate(*model_id);
             assert!(

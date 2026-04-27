@@ -303,7 +303,13 @@ impl PeriodicOptions {
     /// Get effective target hour (auto-detect if needed).
     pub fn effective_hour(&self) -> Option<u8> {
         if self.auto_detect {
-            Some(chrono::Utc::now().format("%H").to_string().parse().unwrap_or(12))
+            Some(
+                chrono::Utc::now()
+                    .format("%H")
+                    .to_string()
+                    .parse()
+                    .unwrap_or(12),
+            )
         } else {
             self.target_hour
         }
@@ -313,7 +319,11 @@ impl PeriodicOptions {
     pub fn effective_day_of_week(&self) -> Option<u8> {
         if self.auto_detect {
             // chrono weekday: Mon=0, Sun=6, but we use Sun=0, Sat=6
-            let weekday = chrono::Utc::now().format("%w").to_string().parse().unwrap_or(0);
+            let weekday = chrono::Utc::now()
+                .format("%w")
+                .to_string()
+                .parse()
+                .unwrap_or(0);
             Some(weekday)
         } else {
             self.target_day_of_week
@@ -590,10 +600,10 @@ impl TemporalScale {
     /// Get the typical time horizon in seconds for this scale.
     pub fn horizon_seconds(&self) -> u64 {
         match self {
-            TemporalScale::Micro => 300,          // 5 minutes
-            TemporalScale::Meso => 3600,          // 1 hour
-            TemporalScale::Macro => 86400 * 7,    // 1 week
-            TemporalScale::Long => 86400 * 30,    // 1 month
+            TemporalScale::Micro => 300,            // 5 minutes
+            TemporalScale::Meso => 3600,            // 1 hour
+            TemporalScale::Macro => 86400 * 7,      // 1 week
+            TemporalScale::Long => 86400 * 30,      // 1 month
             TemporalScale::Archival => 86400 * 365, // 1 year
         }
     }
@@ -601,10 +611,10 @@ impl TemporalScale {
     /// Get the decay half-life in seconds appropriate for this scale.
     pub fn decay_half_life(&self) -> u64 {
         match self {
-            TemporalScale::Micro => 60,           // 1 minute
-            TemporalScale::Meso => 1800,          // 30 minutes
-            TemporalScale::Macro => 43200,        // 12 hours
-            TemporalScale::Long => 86400 * 3,     // 3 days
+            TemporalScale::Micro => 60,            // 1 minute
+            TemporalScale::Meso => 1800,           // 30 minutes
+            TemporalScale::Macro => 43200,         // 12 hours
+            TemporalScale::Long => 86400 * 3,      // 3 days
             TemporalScale::Archival => 86400 * 30, // 30 days
         }
     }
@@ -621,10 +631,10 @@ impl TemporalScale {
 /// - Older: 0.1
 pub fn default_step_buckets() -> Vec<(u64, f32)> {
     vec![
-        (300, 1.0),      // < 5 min: Fresh
-        (3600, 0.8),     // < 1 hour: Recent
-        (86400, 0.5),    // < 1 day: Today
-        (604800, 0.3),   // < 1 week: This week
+        (300, 1.0),    // < 5 min: Fresh
+        (3600, 0.8),   // < 1 hour: Recent
+        (86400, 0.5),  // < 1 day: Today
+        (604800, 0.3), // < 1 week: This week
     ]
 }
 
@@ -664,7 +674,6 @@ pub struct TemporalSearchOptions {
     // =========================================================================
     // E2 Recency Options
     // =========================================================================
-
     /// Decay function for recency scoring.
     /// Default: Linear (simple and predictable).
     #[serde(default)]
@@ -701,7 +710,6 @@ pub struct TemporalSearchOptions {
     // =========================================================================
     // E3 Periodic Options
     // =========================================================================
-
     /// Periodic pattern matching options.
     /// When set, boosts memories from similar time patterns.
     #[serde(default)]
@@ -710,7 +718,6 @@ pub struct TemporalSearchOptions {
     // =========================================================================
     // E4 Sequence Options
     // =========================================================================
-
     /// Sequence-based retrieval options.
     /// When set, finds memories temporally related to an anchor.
     #[serde(default)]
@@ -719,7 +726,6 @@ pub struct TemporalSearchOptions {
     // =========================================================================
     // Multi-Scale Options
     // =========================================================================
-
     /// Temporal scale for multi-scale reasoning.
     /// Affects decay half-life and time horizon automatically.
     #[serde(default)]
@@ -728,7 +734,6 @@ pub struct TemporalSearchOptions {
     // =========================================================================
     // Master Boost Weight
     // =========================================================================
-
     /// Master weight for all temporal boosts [0.0, 1.0].
     /// Applied as: final = semantic * (1.0 - weight) + temporal_combined * weight.
     /// Default: 0.0 (no temporal boost, pure semantic).
@@ -907,7 +912,6 @@ impl TemporalSearchOptions {
         self.step_buckets = buckets;
         self
     }
-
 }
 
 impl Default for TemporalSearchOptions {
@@ -971,7 +975,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Multi-Space Search Options (TASK-MULTISPACE)
     // =========================================================================
-
     /// Search strategy: E1Only (default), MultiSpace, or Pipeline.
     ///
     /// - `E1Only`: Backward compatible, uses only E1 Semantic HNSW.
@@ -1061,7 +1064,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Code Query Type Detection (ARCH-16)
     // =========================================================================
-
     /// Original query text for code query type detection.
     ///
     /// When provided, enables E7 Code embedder similarity adjustment
@@ -1086,7 +1088,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Temporal Search Options (ARCH-14)
     // =========================================================================
-
     /// Temporal search options for time-aware retrieval.
     ///
     /// Controls how temporal embedders (E2-E4) are applied POST-retrieval.
@@ -1107,7 +1108,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Causal Search Options (ARCH-15)
     // =========================================================================
-
     /// Causal direction for asymmetric E5 retrieval.
     ///
     /// When set to `Cause` or `Effect`, enables direction-aware E5 similarity
@@ -1130,7 +1130,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Synergy Matrix (Cross-Embedder Correlation Boost)
     // =========================================================================
-
     /// Optional per-embedder synergy weights for cross-embedder correlation boosting.
     /// When present, boosts RRF scores when multiple embedders agree on a candidate.
     /// Only applies to MultiSpace strategy.
@@ -1140,7 +1139,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // Quantized Pre-Filter (PQ-8 Fast Pass)
     // =========================================================================
-
     /// Whether to use PQ-8 quantized vectors for fast approximate pre-filtering.
     /// When enabled, approximate distances from quantized vectors narrow candidates
     /// before full-precision HNSW search.
@@ -1150,7 +1148,6 @@ pub struct TeleologicalSearchOptions {
     // =========================================================================
     // 13D Teleological Vector Pre-Filter
     // =========================================================================
-
     /// Whether to use 13D teleological vector pre-filtering.
     /// When enabled, computes a 13D signature for the query and uses it
     /// to pre-filter candidates before full multi-embedder search.
@@ -1651,7 +1648,10 @@ mod tests {
         assert!(!opts.include_deleted);
         assert!(opts.embedder_indices.is_empty());
         // ARCH-18: Default fusion strategy should be WeightedRRF
-        assert_eq!(opts.fusion_strategy, crate::fusion::FusionStrategy::WeightedRRF);
+        assert_eq!(
+            opts.fusion_strategy,
+            crate::fusion::FusionStrategy::WeightedRRF
+        );
     }
 
     #[test]
@@ -1675,16 +1675,25 @@ mod tests {
     fn test_search_options_fusion_strategy() {
         // Test default is WeightedRRF per ARCH-18
         let opts = TeleologicalSearchOptions::default();
-        assert_eq!(opts.fusion_strategy, crate::fusion::FusionStrategy::WeightedRRF);
+        assert_eq!(
+            opts.fusion_strategy,
+            crate::fusion::FusionStrategy::WeightedRRF
+        );
 
         // Test builder method
         let opts = TeleologicalSearchOptions::quick(10)
             .with_fusion_strategy(crate::fusion::FusionStrategy::WeightedSum);
-        assert_eq!(opts.fusion_strategy, crate::fusion::FusionStrategy::WeightedSum);
+        assert_eq!(
+            opts.fusion_strategy,
+            crate::fusion::FusionStrategy::WeightedSum
+        );
 
         let opts = TeleologicalSearchOptions::quick(10)
             .with_fusion_strategy(crate::fusion::FusionStrategy::WeightedRRF);
-        assert_eq!(opts.fusion_strategy, crate::fusion::FusionStrategy::WeightedRRF);
+        assert_eq!(
+            opts.fusion_strategy,
+            crate::fusion::FusionStrategy::WeightedRRF
+        );
     }
 
     // =========================================================================
@@ -1732,9 +1741,21 @@ mod tests {
     #[test]
     fn test_time_window_is_defined() {
         assert!(!TimeWindow::default().is_defined());
-        assert!(TimeWindow { start_ms: Some(0), end_ms: None }.is_defined());
-        assert!(TimeWindow { start_ms: None, end_ms: Some(100) }.is_defined());
-        assert!(TimeWindow { start_ms: Some(0), end_ms: Some(100) }.is_defined());
+        assert!(TimeWindow {
+            start_ms: Some(0),
+            end_ms: None
+        }
+        .is_defined());
+        assert!(TimeWindow {
+            start_ms: None,
+            end_ms: Some(100)
+        }
+        .is_defined());
+        assert!(TimeWindow {
+            start_ms: Some(0),
+            end_ms: Some(100)
+        }
+        .is_defined());
     }
 
     #[test]
@@ -1797,11 +1818,18 @@ mod tests {
             .with_sequence_before(anchor_id);
 
         assert_eq!(opts.temporal_options.temporal_weight, 0.3);
-        assert_eq!(opts.temporal_options.decay_function, DecayFunction::Exponential);
+        assert_eq!(
+            opts.temporal_options.decay_function,
+            DecayFunction::Exponential
+        );
         assert!(opts.temporal_options.time_window.is_some());
         assert!(opts.temporal_options.sequence_options.is_some());
         assert_eq!(
-            opts.temporal_options.sequence_options.as_ref().unwrap().direction,
+            opts.temporal_options
+                .sequence_options
+                .as_ref()
+                .unwrap()
+                .direction,
             SequenceDirection::Before
         );
         assert!(opts.has_temporal_boost());

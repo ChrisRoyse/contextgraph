@@ -38,7 +38,10 @@ fn fsv_c1_e14_optimized_profiles_are_registered() {
 
     let names: HashSet<&str> = get_profile_names().into_iter().collect();
     let expected_new = ["multilingual_search", "long_context", "translation_finder"];
-    println!("BEFORE expected: {} new profiles available", expected_new.len());
+    println!(
+        "BEFORE expected: {} new profiles available",
+        expected_new.len()
+    );
     println!(
         "AFTER  actual:   {} profiles total. new-profile presence:",
         names.len()
@@ -83,7 +86,10 @@ fn fsv_c2_e14_optimized_profiles_weights_are_valid_and_e14_heavy() {
         let weights = get_weight_profile(name).expect("profile exists");
         let e14 = weights[13];
         let sum: f32 = weights.iter().sum();
-        println!("  E14 weight = {:.4} (expected {:.2} ± {})", e14, expected_e14, tol);
+        println!(
+            "  E14 weight = {:.4} (expected {:.2} ± {})",
+            e14, expected_e14, tol
+        );
         println!("  sum        = {:.4} (must ≈ 1.0)", sum);
         assert!(
             (e14 - expected_e14).abs() < *tol,
@@ -104,10 +110,7 @@ fn fsv_c2_e14_optimized_profiles_weights_are_valid_and_e14_heavy() {
             weights.iter().enumerate().map(|(i, &w)| (i, w)).collect();
         indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         let top_indices: Vec<usize> = indexed.iter().take(2).map(|(i, _)| *i).collect();
-        println!(
-            "  top-2 embedder indices by weight: {:?}",
-            top_indices
-        );
+        println!("  top-2 embedder indices by weight: {:?}", top_indices);
         assert!(
             top_indices.contains(&13),
             "E14 (idx 13) must be in top-2 of {}; ranking was {:?}",
@@ -127,13 +130,13 @@ fn fsv_c3_legacy_profile_weights_preserved() {
     // index, expected value). These were the values at the end of Phase B;
     // Phase C must not have silently modified them.
     let frozen: &[(&str, usize, f32)] = &[
-        ("semantic_search", 0, 0.33),  // E1 primary
-        ("semantic_search", 13, 0.0),  // E14 still 0 in legacy
+        ("semantic_search", 0, 0.33), // E1 primary
+        ("semantic_search", 13, 0.0), // E14 still 0 in legacy
         ("causal_reasoning", 0, 0.40),
         ("causal_reasoning", 13, 0.0),
-        ("code_search", 6, 0.40),      // E7 primary
-        ("fact_checking", 10, 0.40),   // E11 primary
-        ("balanced", 13, 0.071),       // E14 slot small value
+        ("code_search", 6, 0.40),    // E7 primary
+        ("fact_checking", 10, 0.40), // E11 primary
+        ("balanced", 13, 0.071),     // E14 slot small value
     ];
 
     for (name, idx, expected) in frozen {
@@ -435,8 +438,14 @@ fn fsv_c6_provider_source_wired_for_14_embedders() {
     // and `embed_all_with_metadata` paths use `e14_vec`.
     let e14_vec_hits = src.matches("e14_bge_m3_dense: e14_vec,").count();
     let vec_new_hits = src.matches("e14_bge_m3_dense: Vec::new(),").count();
-    println!("  'e14_bge_m3_dense: e14_vec' occurrences = {}", e14_vec_hits);
-    println!("  'e14_bge_m3_dense: Vec::new()' occurrences = {}", vec_new_hits);
+    println!(
+        "  'e14_bge_m3_dense: e14_vec' occurrences = {}",
+        e14_vec_hits
+    );
+    println!(
+        "  'e14_bge_m3_dense: Vec::new()' occurrences = {}",
+        vec_new_hits
+    );
     assert!(
         e14_vec_hits >= 3,
         "expected >=3 fingerprint sites populated from r14 (embed_all, embed_all_with_metadata, batch); got {}",
@@ -452,7 +461,10 @@ fn fsv_c6_provider_source_wired_for_14_embedders() {
         .matches("d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14]")
         .count();
     println!("  per_embedder_latency[...d14] occurrences = {}", d14_hits);
-    assert!(d14_hits >= 3, "latency array must include d14 in all 3 paths");
+    assert!(
+        d14_hits >= 3,
+        "latency array must include d14 in all 3 paths"
+    );
 
     println!("AFTER:  provider wired for 14 embedders across embed_all, embed_all_with_metadata, and batch paths");
 }
@@ -471,7 +483,8 @@ fn fsv_c7_search_rs_slot_13_computes_cosine() {
     let src = std::fs::read_to_string(path).expect("read search.rs");
 
     // The Phase C patch replaced the hardcoded 0.0 with a cosine call.
-    let cosine_site = src.contains("compute_cosine_similarity(&query.e14_bge_m3_dense, &stored.e14_bge_m3_dense)");
+    let cosine_site = src
+        .contains("compute_cosine_similarity(&query.e14_bge_m3_dense, &stored.e14_bge_m3_dense)");
     let hardcode_phrase = src.contains("This routing-path score is 0.0 (neutral)");
 
     println!("BEFORE expected: cosine call present, pre-Phase-C comment absent");
@@ -592,9 +605,5 @@ fn fsv_c10_warmup_registry_registers_bge_m3_dense() {
 
     // Dummy touch to keep the import in use even when tracing happens to
     // not reference it.
-    let _ = (
-        BGE_M3_DENSE_DIMENSION,
-        XLM_R_WEIGHT_PREFIX,
-        PathBuf::new(),
-    );
+    let _ = (BGE_M3_DENSE_DIMENSION, XLM_R_WEIGHT_PREFIX, PathBuf::new());
 }

@@ -409,11 +409,25 @@ mod tests {
 
     #[test]
     fn test_validation_rejects_invalid() {
-        let short = SearchRobustRequest { query: "ab".to_string(), ..Default::default() };
-        assert!(short.validate().unwrap_err().contains("at least 3 characters"));
-        let bad_k = SearchRobustRequest { query: "test query".to_string(), top_k: 100, ..Default::default() };
+        let short = SearchRobustRequest {
+            query: "ab".to_string(),
+            ..Default::default()
+        };
+        assert!(short
+            .validate()
+            .unwrap_err()
+            .contains("at least 3 characters"));
+        let bad_k = SearchRobustRequest {
+            query: "test query".to_string(),
+            top_k: 100,
+            ..Default::default()
+        };
         assert!(bad_k.validate().is_err());
-        let bad_thresh = SearchRobustRequest { query: "test query".to_string(), e9_discovery_threshold: 1.5, ..Default::default() };
+        let bad_thresh = SearchRobustRequest {
+            query: "test query".to_string(),
+            e9_discovery_threshold: 1.5,
+            ..Default::default()
+        };
         assert!(bad_thresh.validate().is_err());
     }
 
@@ -424,9 +438,19 @@ mod tests {
         let e9_json = serde_json::to_string(&ResultSource::E9Discovery).unwrap();
         assert_eq!(e9_json, "\"E9_DISCOVERY\"");
         // BlindSpotCandidate discovery logic
-        let candidate = BlindSpotCandidate { memory_id: Uuid::new_v4(), e9_score: 0.20, e1_score: 0.30, divergence: -0.10 };
+        let candidate = BlindSpotCandidate {
+            memory_id: Uuid::new_v4(),
+            e9_score: 0.20,
+            e1_score: 0.30,
+            divergence: -0.10,
+        };
         assert!(candidate.is_discovery(E9_DISCOVERY_THRESHOLD, E1_WEAKNESS_THRESHOLD));
-        let not_discovery = BlindSpotCandidate { memory_id: Uuid::new_v4(), e9_score: 0.20, e1_score: 0.75, divergence: -0.55 };
+        let not_discovery = BlindSpotCandidate {
+            memory_id: Uuid::new_v4(),
+            e9_score: 0.20,
+            e1_score: 0.75,
+            divergence: -0.55,
+        };
         assert!(!not_discovery.is_discovery(E9_DISCOVERY_THRESHOLD, E1_WEAKNESS_THRESHOLD));
     }
 }

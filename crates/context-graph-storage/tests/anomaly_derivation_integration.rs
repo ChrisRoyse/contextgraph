@@ -108,25 +108,45 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
     let mut e0_scores = [0f32; 14];
     e0_scores[0] = 0.92;
     e0_scores[4] = 0.10;
-    let e0 = synthetic_edge(sources[0], targets[0], GraphLinkEdgeType::SemanticSimilar, e0_scores);
+    let e0 = synthetic_edge(
+        sources[0],
+        targets[0],
+        GraphLinkEdgeType::SemanticSimilar,
+        e0_scores,
+    );
 
     // Edge 1: KeywordButNotParaphrase — E6 high, E10 low.
     let mut e1_scores = [0f32; 14];
     e1_scores[5] = 0.88;
     e1_scores[9] = 0.15;
-    let e1 = synthetic_edge(sources[1], targets[1], GraphLinkEdgeType::KeywordOverlap, e1_scores);
+    let e1 = synthetic_edge(
+        sources[1],
+        targets[1],
+        GraphLinkEdgeType::KeywordOverlap,
+        e1_scores,
+    );
 
     // Edge 2: CodeShapeButDifferentIntent — E7 high, E1 low.
     let mut e2_scores = [0f32; 14];
     e2_scores[6] = 0.85;
     e2_scores[0] = 0.05;
-    let e2 = synthetic_edge(sources[2], targets[2], GraphLinkEdgeType::CodeRelated, e2_scores);
+    let e2 = synthetic_edge(
+        sources[2],
+        targets[2],
+        GraphLinkEdgeType::CodeRelated,
+        e2_scores,
+    );
 
     // Edge 3: EntitySharedButDifferentStructure — E11 high, E8 low.
     let mut e3_scores = [0f32; 14];
     e3_scores[10] = 0.82;
     e3_scores[7] = 0.05;
-    let e3 = synthetic_edge(sources[3], targets[3], GraphLinkEdgeType::EntityShared, e3_scores);
+    let e3 = synthetic_edge(
+        sources[3],
+        targets[3],
+        GraphLinkEdgeType::EntityShared,
+        e3_scores,
+    );
 
     // Edge 4: HdcRobustButSemanticDifferent — E9 high, E1 low on a
     // ParaphraseAligned edge (cross-type fallback).
@@ -174,7 +194,9 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
 
     // Per-kind counts must match exactly.
     assert_eq!(
-        summary.per_kind_counts.get(&AnomalyKind::SemanticButNotCausal),
+        summary
+            .per_kind_counts
+            .get(&AnomalyKind::SemanticButNotCausal),
         Some(&1),
         "missing SemanticButNotCausal in {:?}",
         summary.per_kind_counts
@@ -239,7 +261,10 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
         .await
         .unwrap()
         .expect("HDC pair must exist");
-    assert_eq!(hdc_pair.anomaly_kind, AnomalyKind::HdcRobustButSemanticDifferent);
+    assert_eq!(
+        hdc_pair.anomaly_kind,
+        AnomalyKind::HdcRobustButSemanticDifferent
+    );
     assert_eq!(hdc_pair.generator, "typed_edge_anomaly_derivation_v1");
 
     // The non-matching edge must not have produced any pair.

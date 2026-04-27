@@ -42,7 +42,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::teleological::types::{NUM_EMBEDDERS, TuckerCore};
+use crate::teleological::types::{TuckerCore, NUM_EMBEDDERS};
 
 pub mod computation;
 pub mod edge_signature;

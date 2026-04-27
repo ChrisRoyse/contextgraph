@@ -21,8 +21,8 @@ use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use crate::column_families::cf_names;
 use crate::teleological::column_families::{
-    CF_FINGERPRINTS, CF_TOPIC_PORTFOLIO, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
-    CODE_CFS, CAUSAL_CFS,
+    CAUSAL_CFS, CF_FINGERPRINTS, CF_TOPIC_PORTFOLIO, CODE_CFS, QUANTIZED_EMBEDDER_CFS,
+    TELEOLOGICAL_CFS,
 };
 use crate::teleological::schema::parse_fingerprint_key;
 use crate::teleological::serialization::deserialize_teleological_fingerprint;
@@ -64,7 +64,10 @@ impl RocksDbTeleologicalStore {
                     id = %id,
                     "Batch store: skipping soft-deleted ID — FAIL FAST"
                 );
-                failed.push((id, format!("Cannot store fingerprint {}: ID is soft-deleted", id)));
+                failed.push((
+                    id,
+                    format!("Cannot store fingerprint {}: ID is soft-deleted", id),
+                ));
                 continue;
             }
 
@@ -119,7 +122,10 @@ impl RocksDbTeleologicalStore {
 
         // Log batch result summary
         if failed.is_empty() {
-            info!("Stored batch of {} fingerprints (all succeeded)", succeeded.len());
+            info!(
+                "Stored batch of {} fingerprints (all succeeded)",
+                succeeded.len()
+            );
         } else {
             warn!(
                 succeeded = succeeded.len(),
@@ -159,41 +165,49 @@ impl RocksDbTeleologicalStore {
         let soft_deleted = Arc::clone(&self.soft_deleted);
         let ids_clone: Vec<Uuid> = ids.to_vec();
 
-        let results = tokio::task::spawn_blocking(move || -> CoreResult<Vec<Option<TeleologicalFingerprint>>> {
-            use crate::teleological::schema::fingerprint_key;
+        let results = tokio::task::spawn_blocking(
+            move || -> CoreResult<Vec<Option<TeleologicalFingerprint>>> {
+                use crate::teleological::schema::fingerprint_key;
 
-            let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
-                TeleologicalStoreError::ColumnFamilyNotFound {
-                    name: CF_FINGERPRINTS.to_string(),
-                }
-            })?;
-
-            let mut results = Vec::with_capacity(ids_clone.len());
-
-            for id in ids_clone {
-                // Skip soft-deleted entries (read lock inside spawn_blocking)
-                // FAIL FAST: Panic if lock is poisoned (thread panic elsewhere)
-                let is_deleted = soft_deleted.contains_key(&id);
-                if is_deleted {
-                    results.push(None);
-                    continue;
-                }
-
-                let key = fingerprint_key(&id);
-                match db.get_cf(cf, key) {
-                    Ok(Some(data)) => {
-                        let fp = deserialize_teleological_fingerprint(&data)?;
-                        results.push(Some(fp));
+                let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
+                    TeleologicalStoreError::ColumnFamilyNotFound {
+                        name: CF_FINGERPRINTS.to_string(),
                     }
-                    Ok(None) => results.push(None),
-                    Err(e) => {
-                        return Err(TeleologicalStoreError::rocksdb_op("get", CF_FINGERPRINTS, Some(id), e).into());
+                })?;
+
+                let mut results = Vec::with_capacity(ids_clone.len());
+
+                for id in ids_clone {
+                    // Skip soft-deleted entries (read lock inside spawn_blocking)
+                    // FAIL FAST: Panic if lock is poisoned (thread panic elsewhere)
+                    let is_deleted = soft_deleted.contains_key(&id);
+                    if is_deleted {
+                        results.push(None);
+                        continue;
+                    }
+
+                    let key = fingerprint_key(&id);
+                    match db.get_cf(cf, key) {
+                        Ok(Some(data)) => {
+                            let fp = deserialize_teleological_fingerprint(&data)?;
+                            results.push(Some(fp));
+                        }
+                        Ok(None) => results.push(None),
+                        Err(e) => {
+                            return Err(TeleologicalStoreError::rocksdb_op(
+                                "get",
+                                CF_FINGERPRINTS,
+                                Some(id),
+                                e,
+                            )
+                            .into());
+                        }
                     }
                 }
-            }
 
-            Ok(results)
-        })
+                Ok(results)
+            },
+        )
         .await
         .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
 
@@ -392,7 +406,9 @@ impl RocksDbTeleologicalStore {
         }
 
         let mut entries: Vec<_> = std::fs::read_dir(&checkpoint_dir)
-            .map_err(|e| CoreError::StorageError(format!("Failed to read checkpoint directory: {}", e)))?
+            .map_err(|e| {
+                CoreError::StorageError(format!("Failed to read checkpoint directory: {}", e))
+            })?
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_dir())
             .collect();
@@ -452,7 +468,8 @@ impl RocksDbTeleologicalStore {
         // CRIT-04 FIX: Hard-delete soft-deleted entries from RocksDB first.
         // Collect IDs while holding the read lock, then release before mutation.
         // P5: DashMap - iterate without global read lock
-        let soft_deleted_ids: Vec<Uuid> = self.soft_deleted.iter().map(|entry| *entry.key()).collect();
+        let soft_deleted_ids: Vec<Uuid> =
+            self.soft_deleted.iter().map(|entry| *entry.key()).collect();
 
         if !soft_deleted_ids.is_empty() {
             info!(
@@ -710,60 +727,61 @@ impl RocksDbTeleologicalStore {
         let db = Arc::clone(&self.db);
         let soft_deleted = Arc::clone(&self.soft_deleted);
 
-        let results = tokio::task::spawn_blocking(move || -> CoreResult<Vec<(Uuid, [Vec<f32>; 14])>> {
-            let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
-                TeleologicalStoreError::ColumnFamilyNotFound {
-                    name: CF_FINGERPRINTS.to_string(),
-                }
-            })?;
-            let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
-
-            let mut results = Vec::new();
-
-            for item in iter {
-                let (key, value) = item.map_err(|e| {
-                    TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+        let results =
+            tokio::task::spawn_blocking(move || -> CoreResult<Vec<(Uuid, [Vec<f32>; 14])>> {
+                let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
+                    TeleologicalStoreError::ColumnFamilyNotFound {
+                        name: CF_FINGERPRINTS.to_string(),
+                    }
                 })?;
+                let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
 
-                // Parse fingerprint ID from key
-                let id = parse_fingerprint_key(&key);
+                let mut results = Vec::new();
 
-                // Skip soft-deleted fingerprints (read lock inside spawn_blocking)
-                // FAIL FAST: Panic if lock is poisoned
-                let is_deleted = soft_deleted.contains_key(&id);
-                if is_deleted {
-                    continue;
-                }
+                for item in iter {
+                    let (key, value) = item.map_err(|e| {
+                        TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+                    })?;
 
-                // Deserialize fingerprint using the custom serialization format
-                // (has version prefix, not plain bincode)
-                let fp = match deserialize_teleological_fingerprint(&value) {
-                    Ok(fp) => fp,
-                    Err(e) => {
-                        warn!(
-                            "Skipping corrupted fingerprint {} during clustering scan: {}",
-                            id, e
-                        );
+                    // Parse fingerprint ID from key
+                    let id = parse_fingerprint_key(&key);
+
+                    // Skip soft-deleted fingerprints (read lock inside spawn_blocking)
+                    // FAIL FAST: Panic if lock is poisoned
+                    let is_deleted = soft_deleted.contains_key(&id);
+                    if is_deleted {
                         continue;
                     }
-                };
 
-                // Extract the 13 embeddings as cluster array
-                let cluster_array = fp.semantic.to_cluster_array();
-                results.push((id, cluster_array));
+                    // Deserialize fingerprint using the custom serialization format
+                    // (has version prefix, not plain bincode)
+                    let fp = match deserialize_teleological_fingerprint(&value) {
+                        Ok(fp) => fp,
+                        Err(e) => {
+                            warn!(
+                                "Skipping corrupted fingerprint {} during clustering scan: {}",
+                                id, e
+                            );
+                            continue;
+                        }
+                    };
 
-                // Apply limit if specified
-                if let Some(max) = limit {
-                    if results.len() >= max {
-                        break;
+                    // Extract the 13 embeddings as cluster array
+                    let cluster_array = fp.semantic.to_cluster_array();
+                    results.push((id, cluster_array));
+
+                    // Apply limit if specified
+                    if let Some(max) = limit {
+                        if results.len() >= max {
+                            break;
+                        }
                     }
                 }
-            }
 
-            Ok(results)
-        })
-        .await
-        .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
+                Ok(results)
+            })
+            .await
+            .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
 
         info!(
             count = results.len(),
@@ -780,55 +798,59 @@ impl RocksDbTeleologicalStore {
         &self,
         limit: usize,
     ) -> CoreResult<Vec<TeleologicalFingerprint>> {
-        info!(limit = limit, "Scanning fingerprints (unbiased, no semantic query)");
+        info!(
+            limit = limit,
+            "Scanning fingerprints (unbiased, no semantic query)"
+        );
 
         let db = Arc::clone(&self.db);
         let soft_deleted = Arc::clone(&self.soft_deleted);
 
-        let results = tokio::task::spawn_blocking(move || -> CoreResult<Vec<TeleologicalFingerprint>> {
-            let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
-                TeleologicalStoreError::ColumnFamilyNotFound {
-                    name: CF_FINGERPRINTS.to_string(),
-                }
-            })?;
-            let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
-
-            let mut results = Vec::with_capacity(limit.min(1024));
-
-            for item in iter {
-                let (key, value) = item.map_err(|e| {
-                    TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+        let results =
+            tokio::task::spawn_blocking(move || -> CoreResult<Vec<TeleologicalFingerprint>> {
+                let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
+                    TeleologicalStoreError::ColumnFamilyNotFound {
+                        name: CF_FINGERPRINTS.to_string(),
+                    }
                 })?;
+                let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
 
-                let id = parse_fingerprint_key(&key);
+                let mut results = Vec::with_capacity(limit.min(1024));
 
-                // Skip soft-deleted
-                let is_deleted = soft_deleted.contains_key(&id);
-                if is_deleted {
-                    continue;
-                }
+                for item in iter {
+                    let (key, value) = item.map_err(|e| {
+                        TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+                    })?;
 
-                let fp = match deserialize_teleological_fingerprint(&value) {
-                    Ok(fp) => fp,
-                    Err(e) => {
-                        warn!(
-                            "Skipping corrupted fingerprint {} during unbiased scan: {}",
-                            id, e
-                        );
+                    let id = parse_fingerprint_key(&key);
+
+                    // Skip soft-deleted
+                    let is_deleted = soft_deleted.contains_key(&id);
+                    if is_deleted {
                         continue;
                     }
-                };
-                results.push(fp);
 
-                if results.len() >= limit {
-                    break;
+                    let fp = match deserialize_teleological_fingerprint(&value) {
+                        Ok(fp) => fp,
+                        Err(e) => {
+                            warn!(
+                                "Skipping corrupted fingerprint {} during unbiased scan: {}",
+                                id, e
+                            );
+                            continue;
+                        }
+                    };
+                    results.push(fp);
+
+                    if results.len() >= limit {
+                        break;
+                    }
                 }
-            }
 
-            Ok(results)
-        })
-        .await
-        .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
+                Ok(results)
+            })
+            .await
+            .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
 
         info!(count = results.len(), "Unbiased fingerprint scan complete");
         Ok(results)

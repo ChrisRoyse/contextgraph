@@ -75,7 +75,7 @@ pub struct RecencyBenchmarkSettings {
 impl Default for RecencyBenchmarkSettings {
     fn default() -> Self {
         Self {
-            decay_half_life_ms: 86400 * 1000, // 1 day
+            decay_half_life_ms: 86400 * 1000,        // 1 day
             fresh_threshold_ms: 24 * 60 * 60 * 1000, // 24 hours
             test_decay_functions: vec![
                 "linear".to_string(),
@@ -239,15 +239,24 @@ impl TemporalBenchmarkRunner {
         // Run ablation if enabled
         let (ablation, ablation_time) = if self.config.run_ablation {
             let ablation_start = Instant::now();
-            let ablation = self.run_ablation_study(&dataset, &recency_data, &periodic_data, &sequence_data);
-            (Some(ablation), Some(ablation_start.elapsed().as_millis() as u64))
+            let ablation =
+                self.run_ablation_study(&dataset, &recency_data, &periodic_data, &sequence_data);
+            (
+                Some(ablation),
+                Some(ablation_start.elapsed().as_millis() as u64),
+            )
         } else {
             (None, None)
         };
 
         // Compute metrics
         let baseline_score = ablation.as_ref().map(|a| a.baseline_score).unwrap_or(0.0);
-        let metrics = compute_all_temporal_metrics(&recency_data, &periodic_data, &sequence_data, baseline_score);
+        let metrics = compute_all_temporal_metrics(
+            &recency_data,
+            &periodic_data,
+            &sequence_data,
+            baseline_score,
+        );
 
         let stats = dataset.stats();
 
@@ -265,7 +274,9 @@ impl TemporalBenchmarkRunner {
             config: self.config.clone(),
             dataset_stats: DatasetStats {
                 total_memories: stats.total_memories,
-                total_queries: stats.recency_queries + stats.periodic_queries + stats.sequence_queries,
+                total_queries: stats.recency_queries
+                    + stats.periodic_queries
+                    + stats.sequence_queries,
                 chain_count: stats.chain_count,
                 episode_boundaries: stats.episode_boundaries,
             },
@@ -290,7 +301,8 @@ impl TemporalBenchmarkRunner {
 
                     // Compute decay score using exponential decay
                     let decay_score = if self.config.recency.decay_half_life_ms > 0 {
-                        (-0.693 * age_ms as f64 / self.config.recency.decay_half_life_ms as f64).exp()
+                        (-0.693 * age_ms as f64 / self.config.recency.decay_half_life_ms as f64)
+                            .exp()
                     } else {
                         1.0
                     };
@@ -355,9 +367,9 @@ impl TemporalBenchmarkRunner {
                 .memories
                 .iter()
                 .map(|m| {
-                    let hour_diff = (m.hour as i16 - query.target_hour as i16).unsigned_abs().min(
-                        24 - (m.hour as i16 - query.target_hour as i16).unsigned_abs(),
-                    );
+                    let hour_diff = (m.hour as i16 - query.target_hour as i16)
+                        .unsigned_abs()
+                        .min(24 - (m.hour as i16 - query.target_hour as i16).unsigned_abs());
                     let hour_score = 1.0 - (hour_diff as f64 / 12.0);
                     (m, hour_score)
                 })
@@ -382,11 +394,8 @@ impl TemporalBenchmarkRunner {
         }
 
         // Build assignments for cluster quality
-        let hourly_assignments: Vec<(Uuid, u8)> = dataset
-            .memories
-            .iter()
-            .map(|m| (m.id, m.hour))
-            .collect();
+        let hourly_assignments: Vec<(Uuid, u8)> =
+            dataset.memories.iter().map(|m| (m.id, m.hour)).collect();
         let daily_assignments: Vec<(Uuid, u8)> = dataset
             .memories
             .iter()
@@ -549,9 +558,18 @@ pub fn generate_temporal_report(results: &TemporalBenchmarkResults) -> String {
 
     // Dataset stats
     report.push_str("## Dataset\n\n");
-    report.push_str(&format!("- Memories: {}\n", results.dataset_stats.total_memories));
-    report.push_str(&format!("- Queries: {}\n", results.dataset_stats.total_queries));
-    report.push_str(&format!("- Chains: {}\n", results.dataset_stats.chain_count));
+    report.push_str(&format!(
+        "- Memories: {}\n",
+        results.dataset_stats.total_memories
+    ));
+    report.push_str(&format!(
+        "- Queries: {}\n",
+        results.dataset_stats.total_queries
+    ));
+    report.push_str(&format!(
+        "- Chains: {}\n",
+        results.dataset_stats.chain_count
+    ));
     report.push_str(&format!(
         "- Episode boundaries: {}\n\n",
         results.dataset_stats.episode_boundaries
@@ -695,7 +713,10 @@ impl E2RecencyBenchmarkResults {
         report.push_str(&format!("\nBest: {}\n\n", self.best_decay_function));
         report.push_str("## Core Metrics\n\n");
         report.push_str(&format!("- Decay accuracy: {:.3}\n", self.decay_accuracy));
-        report.push_str(&format!("- Recency-weighted MRR: {:.3}\n", self.recency_weighted_mrr));
+        report.push_str(&format!(
+            "- Recency-weighted MRR: {:.3}\n",
+            self.recency_weighted_mrr
+        ));
         if let Some(adaptive) = &self.adaptive_half_life_results {
             report.push_str("\n## Adaptive Half-Life\n\n");
             for point in &adaptive.scaling_points {
@@ -780,7 +801,11 @@ pub fn run_e2_recency_benchmark(
     // Test adaptive half-life if enabled
     let adaptive_half_life_results = if test_adaptive {
         let sizes = corpus_sizes.unwrap_or_else(|| vec![1000, 5000, 10000, 50000]);
-        Some(run_adaptive_half_life_test(&sizes, settings, dataset_config.seed))
+        Some(run_adaptive_half_life_test(
+            &sizes,
+            settings,
+            dataset_config.seed,
+        ))
     } else {
         None
     };
@@ -870,7 +895,8 @@ fn compute_recency_data(
             .map(|m| {
                 let ts = m.timestamp.timestamp_millis();
                 let age_ms = query_ts - ts;
-                let decay_score = (-0.693 * age_ms as f64 / settings.decay_half_life_ms as f64).exp();
+                let decay_score =
+                    (-0.693 * age_ms as f64 / settings.decay_half_life_ms as f64).exp();
                 decay_predictions.push((decay_score, age_ms));
                 (m, ts, decay_score)
             })
@@ -931,7 +957,8 @@ fn run_adaptive_half_life_test(
 
         // Test with adaptive half-life: base * sqrt(size/5000)
         let adaptive_multiplier = (size as f64 / 5000.0).sqrt();
-        let adaptive_half_life_ms = (settings.decay_half_life_ms as f64 * adaptive_multiplier) as i64;
+        let adaptive_half_life_ms =
+            (settings.decay_half_life_ms as f64 * adaptive_multiplier) as i64;
         let adaptive_settings = RecencyBenchmarkSettings {
             decay_half_life_ms: adaptive_half_life_ms,
             ..settings.clone()
@@ -953,9 +980,7 @@ fn run_adaptive_half_life_test(
         });
     }
 
-    let maintains_threshold = scaling_points
-        .iter()
-        .all(|p| p.adaptive_accuracy >= 0.70);
+    let maintains_threshold = scaling_points.iter().all(|p| p.adaptive_accuracy >= 0.70);
 
     AdaptiveHalfLifeResults {
         scaling_points,
@@ -1082,12 +1107,25 @@ impl E3PeriodicBenchmarkResults {
         ));
         report.push_str(&format!(
             "- Valid (variance > 0.01): {}\n\n",
-            if self.silhouette_validation.is_valid { "YES" } else { "NO" }
+            if self.silhouette_validation.is_valid {
+                "YES"
+            } else {
+                "NO"
+            }
         ));
         report.push_str("## Pattern Detection\n\n");
-        report.push_str(&format!("- Hourly pattern F1: {:.3}\n", self.hourly_pattern_f1));
-        report.push_str(&format!("- Weekly pattern F1: {:.3}\n", self.weekly_pattern_f1));
-        report.push_str(&format!("- Overall score: {:.3}\n", self.overall_periodic_score));
+        report.push_str(&format!(
+            "- Hourly pattern F1: {:.3}\n",
+            self.hourly_pattern_f1
+        ));
+        report.push_str(&format!(
+            "- Weekly pattern F1: {:.3}\n",
+            self.weekly_pattern_f1
+        ));
+        report.push_str(&format!(
+            "- Overall score: {:.3}\n",
+            self.overall_periodic_score
+        ));
         report
     }
 }
@@ -1123,8 +1161,10 @@ pub fn run_e3_periodic_benchmark(
     let is_valid = hourly_variance > 0.01 && daily_variance > 0.01;
 
     // Compute pattern detection F1
-    let hourly_pattern_f1 = compute_hourly_pattern_f1(&dataset, &dataset_config.periodic_config.peak_hours);
-    let weekly_pattern_f1 = compute_weekly_pattern_f1(&dataset, &dataset_config.periodic_config.peak_days);
+    let hourly_pattern_f1 =
+        compute_hourly_pattern_f1(&dataset, &dataset_config.periodic_config.peak_hours);
+    let weekly_pattern_f1 =
+        compute_weekly_pattern_f1(&dataset, &dataset_config.periodic_config.peak_days);
 
     // Compute overall score
     let periodic_data = compute_periodic_data(&dataset);
@@ -1162,11 +1202,7 @@ fn compute_variance(values: &[f64]) -> f64 {
 fn compute_per_hour_silhouette(dataset: &TemporalBenchmarkDataset) -> Vec<f64> {
     let mut scores = Vec::new();
     for hour in 0..24u8 {
-        let memories_in_hour: Vec<_> = dataset
-            .memories
-            .iter()
-            .filter(|m| m.hour == hour)
-            .collect();
+        let memories_in_hour: Vec<_> = dataset.memories.iter().filter(|m| m.hour == hour).collect();
 
         if memories_in_hour.len() < 3 {
             scores.push(0.5);
@@ -1228,7 +1264,11 @@ fn compute_hourly_pattern_f1(dataset: &TemporalBenchmarkDataset, peak_hours: &[u
     let fn_count = peak_set.difference(&predicted_peaks).count() as f64;
 
     let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
-    let recall = if tp + fn_count > 0.0 { tp / (tp + fn_count) } else { 0.0 };
+    let recall = if tp + fn_count > 0.0 {
+        tp / (tp + fn_count)
+    } else {
+        0.0
+    };
 
     if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
@@ -1258,7 +1298,11 @@ fn compute_weekly_pattern_f1(dataset: &TemporalBenchmarkDataset, peak_days: &[u8
     let fn_count = peak_set.difference(&predicted_peaks).count() as f64;
 
     let precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
-    let recall = if tp + fn_count > 0.0 { tp / (tp + fn_count) } else { 0.0 };
+    let recall = if tp + fn_count > 0.0 {
+        tp / (tp + fn_count)
+    } else {
+        0.0
+    };
 
     if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
@@ -1273,7 +1317,10 @@ fn compute_periodic_data(dataset: &TemporalBenchmarkDataset) -> PeriodicBenchmar
 
     let mut memories_by_hour: HashMap<u8, HashSet<Uuid>> = HashMap::new();
     for memory in &dataset.memories {
-        memories_by_hour.entry(memory.hour).or_default().insert(memory.id);
+        memories_by_hour
+            .entry(memory.hour)
+            .or_default()
+            .insert(memory.id);
     }
 
     for query in &dataset.periodic_queries {
@@ -1286,7 +1333,8 @@ fn compute_periodic_data(dataset: &TemporalBenchmarkDataset) -> PeriodicBenchmar
             .memories
             .iter()
             .map(|m| {
-                let hour_diff = (m.hour as i16 - query.target_hour as i16).unsigned_abs()
+                let hour_diff = (m.hour as i16 - query.target_hour as i16)
+                    .unsigned_abs()
                     .min(24 - (m.hour as i16 - query.target_hour as i16).unsigned_abs());
                 let score = 1.0 - (hour_diff as f64 / 12.0);
                 (m, score)
@@ -1298,16 +1346,16 @@ fn compute_periodic_data(dataset: &TemporalBenchmarkDataset) -> PeriodicBenchmar
         let retrieved_ids: Vec<Uuid> = scored.iter().map(|(m, _)| m.id).collect();
         query_results.push((retrieved_ids, same_hour));
 
-        let same_hour_count = memories_by_hour.get(&query.target_hour).map(|s| s.len()).unwrap_or(0);
+        let same_hour_count = memories_by_hour
+            .get(&query.target_hour)
+            .map(|s| s.len())
+            .unwrap_or(0);
         let predicted_peak = same_hour_count > dataset.memories.len() / 24;
         pattern_detection.push((predicted_peak, false));
     }
 
-    let hourly_assignments: Vec<(Uuid, u8)> = dataset
-        .memories
-        .iter()
-        .map(|m| (m.id, m.hour))
-        .collect();
+    let hourly_assignments: Vec<(Uuid, u8)> =
+        dataset.memories.iter().map(|m| (m.id, m.hour)).collect();
     let daily_assignments: Vec<(Uuid, u8)> = dataset
         .memories
         .iter()
@@ -1357,7 +1405,10 @@ impl E4SequenceBenchmarkResults {
         report.push_str("## Direction Accuracy\n\n");
         report.push_str(&format!("- Before: {:.3}\n", self.before_accuracy));
         report.push_str(&format!("- After: {:.3}\n", self.after_accuracy));
-        report.push_str(&format!("- Combined: {:.3}\n\n", self.before_after_accuracy));
+        report.push_str(&format!(
+            "- Combined: {:.3}\n\n",
+            self.before_after_accuracy
+        ));
         report.push_str("## Chain Length Scaling\n\n");
         report.push_str("| Length | Accuracy | Kendall Tau |\n");
         report.push_str("|--------|----------|-------------|\n");
@@ -1484,7 +1535,13 @@ fn compute_direction_accuracy(dataset: &TemporalBenchmarkDataset) -> (f64, f64) 
                     }
                 };
                 let score = 1.0 / (1.0 + distance);
-                (m.id, m.chain_position, m.timestamp.timestamp_millis(), score, seq)
+                (
+                    m.id,
+                    m.chain_position,
+                    m.timestamp.timestamp_millis(),
+                    score,
+                    seq,
+                )
             })
             .collect();
 
@@ -1587,11 +1644,7 @@ fn run_between_query_test(dataset: &TemporalBenchmarkDataset) -> BetweenQueryRes
     let mut count = 0;
 
     // For each chain, pick two anchors and query for memories between them
-    let chain_ids: HashSet<usize> = dataset
-        .memories
-        .iter()
-        .filter_map(|m| m.chain_id)
-        .collect();
+    let chain_ids: HashSet<usize> = dataset.memories.iter().filter_map(|m| m.chain_id).collect();
 
     for chain_id in chain_ids.iter().take(10) {
         let chain_mems: Vec<_> = dataset
@@ -1606,7 +1659,9 @@ fn run_between_query_test(dataset: &TemporalBenchmarkDataset) -> BetweenQueryRes
 
         // Use first and last as anchors
         let anchor1_ts = chain_mems[0].timestamp.timestamp_millis();
-        let anchor2_ts = chain_mems[chain_mems.len() - 1].timestamp.timestamp_millis();
+        let anchor2_ts = chain_mems[chain_mems.len() - 1]
+            .timestamp
+            .timestamp_millis();
         let (min_ts, max_ts) = if anchor1_ts < anchor2_ts {
             (anchor1_ts, anchor2_ts)
         } else {
@@ -1645,8 +1700,16 @@ fn run_between_query_test(dataset: &TemporalBenchmarkDataset) -> BetweenQueryRes
         count += 1;
     }
 
-    let precision = if count > 0 { precision_sum / count as f64 } else { 0.0 };
-    let recall = if count > 0 { recall_sum / count as f64 } else { 0.0 };
+    let precision = if count > 0 {
+        precision_sum / count as f64
+    } else {
+        0.0
+    };
+    let recall = if count > 0 {
+        recall_sum / count as f64
+    } else {
+        0.0
+    };
     let f1 = if precision + recall > 0.0 {
         2.0 * precision * recall / (precision + recall)
     } else {
@@ -1702,8 +1765,10 @@ fn run_fallback_comparison(dataset: &TemporalBenchmarkDataset) -> FallbackCompar
         / far_indices.len().max(1) as f64;
 
     FallbackComparison {
-        exponential_score: exp_scores.iter().map(|(_, s)| *s).sum::<f64>() / exp_scores.len().max(1) as f64,
-        linear_score: lin_scores.iter().map(|(_, s)| *s).sum::<f64>() / lin_scores.len().max(1) as f64,
+        exponential_score: exp_scores.iter().map(|(_, s)| *s).sum::<f64>()
+            / exp_scores.len().max(1) as f64,
+        linear_score: lin_scores.iter().map(|(_, s)| *s).sum::<f64>()
+            / lin_scores.len().max(1) as f64,
         exponential_better_at_distance: exp_far_avg > lin_far_avg,
     }
 }
@@ -1922,7 +1987,11 @@ pub fn run_ablation_benchmark(
     // Find best configuration
     let best_config = config_results
         .iter()
-        .max_by(|a, b| a.combined_score.partial_cmp(&b.combined_score).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.combined_score
+                .partial_cmp(&b.combined_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map(|r| (r.e2_weight, r.e3_weight, r.e4_weight))
         .unwrap_or((0.5, 0.15, 0.35));
 
@@ -1990,8 +2059,10 @@ impl ScalingBenchmarkResults {
         let mut report = String::new();
         report.push_str("# Scaling Benchmark Report\n\n");
         report.push_str("## Performance by Corpus Size\n\n");
-        report.push_str("| Corpus | Decay Acc | Seq Acc | Silhouette | P50 ms | P95 ms | P99 ms |\n");
-        report.push_str("|--------|-----------|---------|------------|--------|--------|--------|\n");
+        report
+            .push_str("| Corpus | Decay Acc | Seq Acc | Silhouette | P50 ms | P95 ms | P99 ms |\n");
+        report
+            .push_str("|--------|-----------|---------|------------|--------|--------|--------|\n");
         for p in &self.scaling_points {
             report.push_str(&format!(
                 "| {} | {:.3} | {:.3} | {:.3} | {:.1} | {:.1} | {:.1} |\n",
@@ -2229,7 +2300,10 @@ impl RegressionBenchmarkResults {
     pub fn generate_report(&self) -> String {
         let mut report = String::new();
         report.push_str("# Regression Test Report\n\n");
-        report.push_str(&format!("## Result: {}\n\n", if self.passed { "PASS" } else { "FAIL" }));
+        report.push_str(&format!(
+            "## Result: {}\n\n",
+            if self.passed { "PASS" } else { "FAIL" }
+        ));
 
         if !self.failures.is_empty() {
             report.push_str("## Failures\n\n");
@@ -2255,25 +2329,33 @@ impl RegressionBenchmarkResults {
             "| Decay Accuracy | {:.3} | {:.3} | {:+.1}% |\n",
             self.baseline_metrics.decay_accuracy_10k,
             self.current_metrics.decay_accuracy_10k,
-            (self.current_metrics.decay_accuracy_10k - self.baseline_metrics.decay_accuracy_10k) / self.baseline_metrics.decay_accuracy_10k * 100.0
+            (self.current_metrics.decay_accuracy_10k - self.baseline_metrics.decay_accuracy_10k)
+                / self.baseline_metrics.decay_accuracy_10k
+                * 100.0
         ));
         report.push_str(&format!(
             "| Sequence Accuracy | {:.3} | {:.3} | {:+.1}% |\n",
             self.baseline_metrics.sequence_accuracy,
             self.current_metrics.sequence_accuracy,
-            (self.current_metrics.sequence_accuracy - self.baseline_metrics.sequence_accuracy) / self.baseline_metrics.sequence_accuracy * 100.0
+            (self.current_metrics.sequence_accuracy - self.baseline_metrics.sequence_accuracy)
+                / self.baseline_metrics.sequence_accuracy
+                * 100.0
         ));
         report.push_str(&format!(
             "| Kendall's Tau | {:.3} | {:.3} | {:+.1}% |\n",
             self.baseline_metrics.kendall_tau,
             self.current_metrics.kendall_tau,
-            (self.current_metrics.kendall_tau - self.baseline_metrics.kendall_tau) / self.baseline_metrics.kendall_tau * 100.0
+            (self.current_metrics.kendall_tau - self.baseline_metrics.kendall_tau)
+                / self.baseline_metrics.kendall_tau
+                * 100.0
         ));
         report.push_str(&format!(
             "| P95 Latency | {:.1}ms | {:.1}ms | {:+.1}% |\n",
             self.baseline_metrics.p95_latency_ms,
             self.current_metrics.p95_latency_ms,
-            (self.current_metrics.p95_latency_ms - self.baseline_metrics.p95_latency_ms) / self.baseline_metrics.p95_latency_ms * 100.0
+            (self.current_metrics.p95_latency_ms - self.baseline_metrics.p95_latency_ms)
+                / self.baseline_metrics.p95_latency_ms
+                * 100.0
         ));
         report
     }
@@ -2295,8 +2377,8 @@ pub fn run_regression_benchmark(config: &RegressionConfig) -> RegressionBenchmar
 
     // Load baseline
     let baseline = if config.baseline_path.exists() {
-        let content = std::fs::read_to_string(&config.baseline_path)
-            .unwrap_or_else(|_| "{}".to_string());
+        let content =
+            std::fs::read_to_string(&config.baseline_path).unwrap_or_else(|_| "{}".to_string());
         serde_json::from_str(&content).unwrap_or_default()
     } else {
         TemporalBaseline::default()
@@ -2357,7 +2439,8 @@ pub fn run_regression_benchmark(config: &RegressionConfig) -> RegressionBenchmar
     let mut warnings = Vec::new();
 
     // Decay accuracy
-    let decay_delta = (current.decay_accuracy_10k - baseline.decay_accuracy_10k) / baseline.decay_accuracy_10k;
+    let decay_delta =
+        (current.decay_accuracy_10k - baseline.decay_accuracy_10k) / baseline.decay_accuracy_10k;
     if decay_delta < -config.tolerance_accuracy {
         failures.push(RegressionFailure {
             metric_name: "decay_accuracy".to_string(),
@@ -2375,7 +2458,8 @@ pub fn run_regression_benchmark(config: &RegressionConfig) -> RegressionBenchmar
     }
 
     // Sequence accuracy
-    let seq_delta = (current.sequence_accuracy - baseline.sequence_accuracy) / baseline.sequence_accuracy;
+    let seq_delta =
+        (current.sequence_accuracy - baseline.sequence_accuracy) / baseline.sequence_accuracy;
     if seq_delta < -config.tolerance_accuracy {
         failures.push(RegressionFailure {
             metric_name: "sequence_accuracy".to_string(),
@@ -2411,7 +2495,8 @@ pub fn run_regression_benchmark(config: &RegressionConfig) -> RegressionBenchmar
     }
 
     // Latency
-    let latency_delta = (current.p95_latency_ms - baseline.p95_latency_ms) / baseline.p95_latency_ms;
+    let latency_delta =
+        (current.p95_latency_ms - baseline.p95_latency_ms) / baseline.p95_latency_ms;
     if latency_delta > config.tolerance_latency {
         failures.push(RegressionFailure {
             metric_name: "p95_latency".to_string(),
@@ -2590,10 +2675,7 @@ mod tests {
             ..Default::default()
         };
         let config = AblationConfig {
-            weight_configs: vec![
-                (0.5, 0.15, 0.35),
-                (1.0, 0.0, 0.0),
-            ],
+            weight_configs: vec![(0.5, 0.15, 0.35), (1.0, 0.0, 0.0)],
             num_memories: 50,
             num_queries: 15,
             seed: 42,

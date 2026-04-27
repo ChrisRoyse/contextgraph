@@ -384,9 +384,9 @@ impl ExtractedCausalRelationship {
         if self.source_spans.is_empty() {
             return false;
         }
-        self.source_spans.iter().all(|span| {
-            span.is_valid_for(source_text.len()) && span.matches_source(source_text)
-        })
+        self.source_spans
+            .iter()
+            .all(|span| span.is_valid_for(source_text.len()) && span.matches_source(source_text))
     }
 }
 
@@ -447,7 +447,9 @@ impl CausalLinkDirection {
         let lower = s.to_lowercase();
         if lower.contains("a_causes_b") || lower.contains("a causes b") || lower == "forward" {
             Self::ACausesB
-        } else if lower.contains("b_causes_a") || lower.contains("b causes a") || lower == "backward"
+        } else if lower.contains("b_causes_a")
+            || lower.contains("b causes a")
+            || lower == "backward"
         {
             Self::BCausesA
         } else if lower.contains("bidirectional") || lower.contains("mutual") || lower == "both" {
@@ -623,13 +625,12 @@ mod tests {
 
     #[test]
     fn test_causal_markers() {
-        assert!(CausalMarkers::has_cause_marker("This happened because of X"));
+        assert!(CausalMarkers::has_cause_marker(
+            "This happened because of X"
+        ));
         assert!(CausalMarkers::has_effect_marker("Therefore, Y occurred"));
         assert!(!CausalMarkers::has_cause_marker("Hello world"));
-        assert_eq!(
-            CausalMarkers::count_markers("Because of X, therefore Y"),
-            2
-        );
+        assert_eq!(CausalMarkers::count_markers("Because of X, therefore Y"), 2);
     }
 
     // =========================================================================
@@ -675,12 +676,7 @@ mod tests {
         assert!(useful_hint.is_useful());
 
         // Low confidence causal hint is not useful
-        let low_conf_hint = CausalHint::new(
-            true,
-            CausalDirectionHint::Cause,
-            0.3,
-            vec![],
-        );
+        let low_conf_hint = CausalHint::new(true, CausalDirectionHint::Cause, 0.3, vec![]);
         assert!(!low_conf_hint.is_useful());
 
         // Non-causal hint is not useful even with high confidence

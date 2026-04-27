@@ -318,7 +318,10 @@ fn build_previous_session_context(
 
     for mem in cached.iter().take(5) {
         let truncated = if mem.content.len() > 200 {
-            format!("{}...", &mem.content[..mem.content.floor_char_boundary(200)])
+            format!(
+                "{}...",
+                &mem.content[..mem.content.floor_char_boundary(200)]
+            )
         } else {
             mem.content.clone()
         };
@@ -391,7 +394,6 @@ fn cosine_distance(current: &[f32; NUM_EMBEDDERS], previous: &[f32; NUM_EMBEDDER
     distance as f32
 }
 
-
 /// Compute comprehensive drift metrics between current and previous session snapshots.
 ///
 /// # Arguments
@@ -408,10 +410,7 @@ fn cosine_distance(current: &[f32; NUM_EMBEDDERS], previous: &[f32; NUM_EMBEDDER
 /// # Note on Topic Stability
 /// Per PRD v6 Section 14, stability delta measures change in the average
 /// of integration, reflection, and differentiation.
-fn compute_drift_metrics(
-    current: &SessionSnapshot,
-    previous: &SessionSnapshot,
-) -> DriftMetrics {
+fn compute_drift_metrics(current: &SessionSnapshot, previous: &SessionSnapshot) -> DriftMetrics {
     let current_stability = compute_coherence(current);
     let previous_stability = compute_coherence(previous);
 
@@ -428,7 +427,8 @@ fn compute_drift_metrics(
     let integration_diff = (current.integration - previous.integration).abs();
     let reflection_diff = (current.reflection - previous.reflection).abs();
     let differentiation_diff = (current.differentiation - previous.differentiation).abs();
-    let coherence_phase_drift = ((integration_diff + reflection_diff + differentiation_diff) / 3.0) as f64;
+    let coherence_phase_drift =
+        ((integration_diff + reflection_diff + differentiation_diff) / 3.0) as f64;
 
     let metrics = DriftMetrics {
         stability_delta,
@@ -828,7 +828,10 @@ mod tests {
         );
 
         println!("PASS: Drift metrics computed with valid values");
-        println!("  stability_delta: {} (MUST be ~0.0)", drift.stability_delta);
+        println!(
+            "  stability_delta: {} (MUST be ~0.0)",
+            drift.stability_delta
+        );
         println!("  purpose_drift: {} (MUST be ~0.0)", drift.purpose_drift);
         println!("  time_since_snapshot_ms: {}", drift.time_since_snapshot_ms);
         println!(
@@ -1311,7 +1314,10 @@ mod tests {
         );
 
         println!("PASS: Stability delta is ~0.0 after restoration");
-        println!("  stability_delta: {} (MUST be ~0.0)", drift.stability_delta);
+        println!(
+            "  stability_delta: {} (MUST be ~0.0)",
+            drift.stability_delta
+        );
         println!("  is_crisis_drift: false");
         println!("  is_warning_drift: false");
     }

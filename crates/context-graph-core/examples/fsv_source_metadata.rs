@@ -16,7 +16,10 @@ fn main() {
     if display1.contains(expected1) && display1.contains("2/5") {
         println!("  PASS: Contains path:lines and chunk info");
     } else {
-        println!("  FAIL: Expected '{}' and '2/5', got: {}", expected1, display1);
+        println!(
+            "  FAIL: Expected '{}' and '2/5', got: {}",
+            expected1, display1
+        );
     }
 
     // Test 2: MDFileChunk without line numbers (backwards compatibility)
@@ -64,8 +67,14 @@ fn main() {
     // Test 5: Verify all source types
     println!("\nTest 5: All source types");
     let sources = vec![
-        ("MDFileChunk", SourceMetadata::md_file_chunk_with_lines("file.md", 0, 1, 1, 10)),
-        ("HookDescription", SourceMetadata::hook_description("SessionStart", None)),
+        (
+            "MDFileChunk",
+            SourceMetadata::md_file_chunk_with_lines("file.md", 0, 1, 1, 10),
+        ),
+        (
+            "HookDescription",
+            SourceMetadata::hook_description("SessionStart", None),
+        ),
         ("ClaudeResponse", SourceMetadata::claude_response()),
         ("Manual", SourceMetadata::manual()),
     ];

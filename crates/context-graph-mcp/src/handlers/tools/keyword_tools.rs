@@ -18,7 +18,9 @@
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
-use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalSearchResult};
+use context_graph_core::traits::{
+    SearchStrategy, TeleologicalSearchOptions, TeleologicalSearchResult,
+};
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
@@ -28,8 +30,8 @@ use super::keyword_dtos::{
     SearchByKeywordsResponse,
 };
 
-use super::helpers::{ToolErrorKind, cosine_similarity};
 use super::super::Handlers;
+use super::helpers::{cosine_similarity, ToolErrorKind};
 
 impl Handlers {
     /// search_by_keywords tool implementation.
@@ -60,10 +62,11 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let request: SearchByKeywordsRequest = match self.parse_request(id.clone(), args, "search_by_keywords") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchByKeywordsRequest =
+            match self.parse_request(id.clone(), args, "search_by_keywords") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let query = &request.query;
         let top_k = request.top_k;
@@ -81,7 +84,10 @@ impl Handlers {
         );
 
         // Step 1: Embed the keyword query
-        let query_embedding = match self.embed_query(id.clone(), query, "search_by_keywords").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), query, "search_by_keywords")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -202,7 +208,8 @@ impl Handlers {
             None
         };
 
-        let mut scored_results: Vec<(Uuid, f32, f32, f32, u32)> = Vec::with_capacity(e1_candidates.len());
+        let mut scored_results: Vec<(Uuid, f32, f32, f32, u32)> =
+            Vec::with_capacity(e1_candidates.len());
 
         // Score E1 candidates (they have full fingerprints)
         for candidate in &e1_candidates {
@@ -231,7 +238,13 @@ impl Handlers {
             let blended_score = e1_weight * e1_sim + e6_blend * e6_with_expansion;
 
             if blended_score >= min_score {
-                scored_results.push((cand_id, blended_score, e1_sim, e6_with_expansion, matching_count));
+                scored_results.push((
+                    cand_id,
+                    blended_score,
+                    e1_sim,
+                    e6_with_expansion,
+                    matching_count,
+                ));
             }
         }
 
@@ -371,7 +384,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_by_keywords: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -446,18 +463,16 @@ fn sparse_keyword_similarity(
 fn extract_keywords(query: &str) -> Vec<String> {
     // Simple stop words list
     const STOP_WORDS: &[&str] = &[
-        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "shall", "can", "need", "to", "of",
-        "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
-        "during", "before", "after", "above", "below", "between", "under", "over",
-        "again", "further", "then", "once", "here", "there", "when", "where",
-        "why", "how", "all", "each", "few", "more", "most", "other", "some",
-        "such", "no", "nor", "not", "only", "own", "same", "so", "than", "too",
-        "very", "just", "and", "but", "if", "or", "because", "until", "while",
-        "about", "against", "this", "that", "these", "those", "what", "which",
-        "who", "whom", "i", "me", "my", "we", "our", "you", "your", "he", "him",
-        "his", "she", "her", "it", "its", "they", "them", "their",
+        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+        "can", "need", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
+        "through", "during", "before", "after", "above", "below", "between", "under", "over",
+        "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
+        "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+        "same", "so", "than", "too", "very", "just", "and", "but", "if", "or", "because", "until",
+        "while", "about", "against", "this", "that", "these", "those", "what", "which", "who",
+        "whom", "i", "me", "my", "we", "our", "you", "your", "he", "him", "his", "she", "her",
+        "it", "its", "they", "them", "their",
     ];
 
     let stop_set: std::collections::HashSet<&str> = STOP_WORDS.iter().copied().collect();
@@ -513,6 +528,12 @@ mod tests {
         assert!(keywords.contains(&"quick".to_string()));
         let keywords = extract_keywords("user_id session_token");
         assert!(keywords.contains(&"user_id".to_string()));
-        assert_eq!(extract_keywords("test test test unique").iter().filter(|&k| k == "test").count(), 1);
+        assert_eq!(
+            extract_keywords("test test test unique")
+                .iter()
+                .filter(|&k| k == "test")
+                .count(),
+            1
+        );
     }
 }

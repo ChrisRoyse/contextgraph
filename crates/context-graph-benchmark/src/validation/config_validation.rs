@@ -6,8 +6,8 @@
 //! - Topic weights per ARCH-09
 //! - Max weighted_agreement = 8.5
 
+use super::{CheckPriority, PhaseResult, ValidationCheck, ValidationPhase};
 use crate::realdata::config::{EmbedderName, FusionStrategy};
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase};
 
 /// Config validation results.
 #[derive(Debug, Clone)]
@@ -177,10 +177,8 @@ impl ConfigValidator {
 
     fn test_all_embedders_count() -> ValidationCheck {
         let count = EmbedderName::all().len();
-        let check = ValidationCheck::new(
-            "all_embedders_count",
-            "All 13 embedders exist",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("all_embedders_count", "All 13 embedders exist")
+            .with_priority(CheckPriority::Critical);
 
         if count == 13 {
             check.pass(&count.to_string(), "13")
@@ -195,7 +193,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "semantic_embedders_count",
             "Semantic embedders = 7 (E1, E5, E6, E7, E10, E12, E13)",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // Verify correct embedders
         let expected = [
@@ -211,7 +210,8 @@ impl ConfigValidator {
         let all_correct = expected.iter().all(|e| semantic.contains(e));
 
         if count == 7 && all_correct {
-            check.pass(&count.to_string(), "7")
+            check
+                .pass(&count.to_string(), "7")
                 .with_details("E1, E5, E6, E7, E10, E12, E13")
         } else {
             check.fail(&count.to_string(), "7")
@@ -224,7 +224,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "temporal_embedders_count",
             "Temporal embedders = 3 (E2, E3, E4)",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let expected = [
             EmbedderName::E2Recency,
@@ -235,7 +236,8 @@ impl ConfigValidator {
         let all_correct = expected.iter().all(|e| temporal.contains(e));
 
         if count == 3 && all_correct {
-            check.pass(&count.to_string(), "3")
+            check
+                .pass(&count.to_string(), "3")
                 .with_details("E2, E3, E4")
         } else {
             check.fail(&count.to_string(), "3")
@@ -248,14 +250,14 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "relational_embedders_count",
             "Relational embedders = 2 (E8, E11)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let expected = [EmbedderName::E8Graph, EmbedderName::E11Entity];
         let all_correct = expected.iter().all(|e| relational.contains(e));
 
         if count == 2 && all_correct {
-            check.pass(&count.to_string(), "2")
-                .with_details("E8, E11")
+            check.pass(&count.to_string(), "2").with_details("E8, E11")
         } else {
             check.fail(&count.to_string(), "2")
         }
@@ -267,14 +269,14 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "structural_embedders_count",
             "Structural embedders = 1 (E9)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let expected = [EmbedderName::E9HDC];
         let all_correct = expected.iter().all(|e| structural.contains(e));
 
         if count == 1 && all_correct {
-            check.pass(&count.to_string(), "1")
-                .with_details("E9")
+            check.pass(&count.to_string(), "1").with_details("E9")
         } else {
             check.fail(&count.to_string(), "1")
         }
@@ -286,7 +288,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "asymmetric_embedders_count",
             "Asymmetric embedders = 3 (E5, E8, E10)",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let expected = [
             EmbedderName::E5Causal,
@@ -297,7 +300,8 @@ impl ConfigValidator {
         let all_correct = expected.iter().all(|e| asymmetric.contains(e));
 
         if count == 3 && all_correct {
-            check.pass(&count.to_string(), "3")
+            check
+                .pass(&count.to_string(), "3")
                 .with_details("E5, E8, E10")
         } else {
             check.fail(&count.to_string(), "3")
@@ -311,14 +315,14 @@ impl ConfigValidator {
         let structural = EmbedderName::structural().len();
 
         let sum = semantic + temporal + relational + structural;
-        let check = ValidationCheck::new(
-            "category_sum",
-            "Category sum = 13 (7 + 3 + 2 + 1)",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("category_sum", "Category sum = 13 (7 + 3 + 2 + 1)")
+            .with_priority(CheckPriority::Critical);
 
         if sum == 13 {
-            check.pass(&sum.to_string(), "13")
-                .with_details(&format!("{} + {} + {} + {} = {}", semantic, temporal, relational, structural, sum))
+            check.pass(&sum.to_string(), "13").with_details(&format!(
+                "{} + {} + {} + {} = {}",
+                semantic, temporal, relational, structural, sum
+            ))
         } else {
             check.fail(&sum.to_string(), "13")
         }
@@ -329,14 +333,19 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "semantic_weights",
             "All semantic embedders have topic_weight = 1.0",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
-        let all_correct = semantic.iter().all(|e| (e.topic_weight() - 1.0).abs() < f64::EPSILON);
-        let weights: Vec<_> = semantic.iter().map(|e| format!("{}={}", e.as_str(), e.topic_weight())).collect();
+        let all_correct = semantic
+            .iter()
+            .all(|e| (e.topic_weight() - 1.0).abs() < f64::EPSILON);
+        let weights: Vec<_> = semantic
+            .iter()
+            .map(|e| format!("{}={}", e.as_str(), e.topic_weight()))
+            .collect();
 
         if all_correct {
-            check.pass("1.0", "1.0")
-                .with_details(&weights.join(", "))
+            check.pass("1.0", "1.0").with_details(&weights.join(", "))
         } else {
             check.fail(&weights.join(", "), "all 1.0")
         }
@@ -347,14 +356,19 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "temporal_weights",
             "[ARCH-14] Temporal embedders have topic_weight = 0.0",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
-        let all_correct = temporal.iter().all(|e| e.topic_weight().abs() < f64::EPSILON);
-        let weights: Vec<_> = temporal.iter().map(|e| format!("{}={}", e.as_str(), e.topic_weight())).collect();
+        let all_correct = temporal
+            .iter()
+            .all(|e| e.topic_weight().abs() < f64::EPSILON);
+        let weights: Vec<_> = temporal
+            .iter()
+            .map(|e| format!("{}={}", e.as_str(), e.topic_weight()))
+            .collect();
 
         if all_correct {
-            check.pass("0.0", "0.0")
-                .with_details(&weights.join(", "))
+            check.pass("0.0", "0.0").with_details(&weights.join(", "))
         } else {
             check.fail(&weights.join(", "), "all 0.0")
         }
@@ -366,27 +380,42 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "relational_structural_weights",
             "Relational and structural embedders have topic_weight = 0.5",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
-        let all_relational_correct = relational.iter().all(|e| (e.topic_weight() - 0.5).abs() < f64::EPSILON);
-        let all_structural_correct = structural.iter().all(|e| (e.topic_weight() - 0.5).abs() < f64::EPSILON);
+        let all_relational_correct = relational
+            .iter()
+            .all(|e| (e.topic_weight() - 0.5).abs() < f64::EPSILON);
+        let all_structural_correct = structural
+            .iter()
+            .all(|e| (e.topic_weight() - 0.5).abs() < f64::EPSILON);
 
-        let weights: Vec<_> = relational.iter().chain(structural.iter())
+        let weights: Vec<_> = relational
+            .iter()
+            .chain(structural.iter())
             .map(|e| format!("{}={}", e.as_str(), e.topic_weight()))
             .collect();
 
         if all_relational_correct && all_structural_correct {
-            check.pass("0.5", "0.5")
-                .with_details(&weights.join(", "))
+            check.pass("0.5", "0.5").with_details(&weights.join(", "))
         } else {
             check.fail(&weights.join(", "), "all 0.5")
         }
     }
 
     fn compute_max_weighted_agreement() -> f64 {
-        let semantic_contribution: f64 = EmbedderName::semantic().iter().map(|e| e.topic_weight()).sum();
-        let relational_contribution: f64 = EmbedderName::relational().iter().map(|e| e.topic_weight()).sum();
-        let structural_contribution: f64 = EmbedderName::structural().iter().map(|e| e.topic_weight()).sum();
+        let semantic_contribution: f64 = EmbedderName::semantic()
+            .iter()
+            .map(|e| e.topic_weight())
+            .sum();
+        let relational_contribution: f64 = EmbedderName::relational()
+            .iter()
+            .map(|e| e.topic_weight())
+            .sum();
+        let structural_contribution: f64 = EmbedderName::structural()
+            .iter()
+            .map(|e| e.topic_weight())
+            .sum();
         // Temporal = 0.0
 
         semantic_contribution + relational_contribution + structural_contribution
@@ -398,10 +427,12 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "max_weighted_agreement",
             "[ARCH-09] Max weighted_agreement = 8.5",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         if (max_wa - expected).abs() < f64::EPSILON {
-            check.pass(&format!("{:.1}", max_wa), "8.5")
+            check
+                .pass(&format!("{:.1}", max_wa), "8.5")
                 .with_details("7*1.0 (semantic) + 2*0.5 (relational) + 1*0.5 (structural) = 8.5")
         } else {
             check.fail(&format!("{:.2}", max_wa), "8.5")
@@ -413,7 +444,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "e1_is_foundation",
             "[ARCH-12] E1 is in semantic embedders (foundation)",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let e1_in_semantic = semantic.contains(&EmbedderName::E1Semantic);
 
@@ -429,7 +461,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "default_fusion_strategy",
             "[ARCH-13] Default fusion strategy is E1Only",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         if default == FusionStrategy::E1Only {
             check.pass("E1Only", "E1Only")
@@ -440,10 +473,8 @@ impl ConfigValidator {
 
     fn test_embedder_indices() -> ValidationCheck {
         let all = EmbedderName::all();
-        let check = ValidationCheck::new(
-            "embedder_indices",
-            "Embedder indices are unique 0-12",
-        ).with_priority(CheckPriority::High);
+        let check = ValidationCheck::new("embedder_indices", "Embedder indices are unique 0-12")
+            .with_priority(CheckPriority::High);
 
         let mut indices: Vec<usize> = all.iter().map(|e| e.index()).collect();
         indices.sort();
@@ -461,7 +492,8 @@ impl ConfigValidator {
         let check = ValidationCheck::new(
             "divergence_embedders",
             "[ARCH-10] Divergence detection uses semantic embedders only",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let semantic = EmbedderName::semantic();
         let divergence_embedders: Vec<_> = EmbedderName::all()
@@ -474,10 +506,23 @@ impl ConfigValidator {
             && divergence_embedders.iter().all(|e| semantic.contains(e));
 
         if all_match {
-            check.pass(&format!("{} embedders", divergence_embedders.len()), "7 semantic")
+            check.pass(
+                &format!("{} embedders", divergence_embedders.len()),
+                "7 semantic",
+            )
         } else {
-            check.fail(&format!("{} embedders", divergence_embedders.len()), "7 semantic")
-                .with_details(&format!("Got: {:?}", divergence_embedders.iter().map(|e| e.as_str()).collect::<Vec<_>>()))
+            check
+                .fail(
+                    &format!("{} embedders", divergence_embedders.len()),
+                    "7 semantic",
+                )
+                .with_details(&format!(
+                    "Got: {:?}",
+                    divergence_embedders
+                        .iter()
+                        .map(|e| e.as_str())
+                        .collect::<Vec<_>>()
+                ))
         }
     }
 }

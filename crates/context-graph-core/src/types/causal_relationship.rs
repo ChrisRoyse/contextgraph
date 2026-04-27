@@ -254,7 +254,6 @@ pub struct CausalRelationship {
     pub id: Uuid,
 
     // ===== CAUSAL CONTENT =====
-
     /// Brief statement of the cause (e.g., "Chronic stress elevates cortisol")
     pub cause_statement: String,
 
@@ -269,7 +268,6 @@ pub struct CausalRelationship {
     pub explanation: String,
 
     // ===== E5 DUAL EMBEDDINGS (768D each) =====
-
     /// E5 embedding of explanation as a CAUSE (768D).
     ///
     /// Used when searching for effects: "What does X cause?"
@@ -287,7 +285,6 @@ pub struct CausalRelationship {
     // that share similar prompt structure but come from different documents.
     //
     // Format: source_content + cause_statement + effect_statement
-
     /// E5 embedding of source-anchored text as a CAUSE (768D).
     ///
     /// Source-anchored text = source_content + cause/effect statements.
@@ -303,7 +300,6 @@ pub struct CausalRelationship {
     pub e5_source_effect: Vec<f32>,
 
     // ===== E1 SEMANTIC EMBEDDING (1024D) =====
-
     /// E1 semantic embedding of the explanation (1024D).
     ///
     /// Provides fallback for general semantic search.
@@ -315,7 +311,6 @@ pub struct CausalRelationship {
     // These use the same directional approach as E5 (asymmetric similarity):
     // - e8_graph_source: "What does this cause?" (relationship as source)
     // - e8_graph_target: "What causes this?" (relationship as target)
-
     /// E8 embedding of causal structure as a SOURCE (1024D).
     ///
     /// Used when searching for targets: "What does X cause?"
@@ -333,7 +328,6 @@ pub struct CausalRelationship {
     // E11 KEPLER embeddings enable entity-based search using TransE knowledge
     // graph operations. KEPLER is RoBERTa-base trained with TransE on Wikidata5M.
     // Unlike E1, KEPLER knows that "Diesel" is a Rust database ORM, not fuel.
-
     /// E11 KEPLER entity embedding (768D).
     ///
     /// Uses concatenated cause|effect|explanation for entity context.
@@ -342,7 +336,6 @@ pub struct CausalRelationship {
     pub e11_entity: Vec<f32>,
 
     // ===== METADATA =====
-
     /// LLM confidence score [0.0, 1.0].
     pub confidence: f32,
 
@@ -350,7 +343,6 @@ pub struct CausalRelationship {
     pub mechanism_type: String,
 
     // ===== PROVENANCE =====
-
     /// Original source content this was derived from.
     pub source_content: String,
 
@@ -715,9 +707,9 @@ impl CausalRelationship {
             return false;
         }
         let source_len = self.source_content.len();
-        self.source_spans.iter().all(|span| {
-            span.is_valid_for(source_len) && span.matches_source(&self.source_content)
-        })
+        self.source_spans
+            .iter()
+            .all(|span| span.is_valid_for(source_len) && span.matches_source(&self.source_content))
     }
 
     /// Get spans of a specific type.
@@ -824,7 +816,6 @@ pub struct CausalSearchResult {
     pub relationship: Option<CausalRelationship>,
 
     // ===== PER-EMBEDDER SCORES =====
-
     /// E1 semantic similarity score [0.0, 1.0].
     pub e1_score: f32,
 
@@ -838,7 +829,6 @@ pub struct CausalSearchResult {
     pub e11_score: f32,
 
     // ===== FUSION SCORES =====
-
     /// Weighted RRF fusion score (per ARCH-21).
     pub rrf_score: f32,
 
@@ -847,13 +837,11 @@ pub struct CausalSearchResult {
     pub maxsim_score: Option<f32>,
 
     // ===== VALIDATION SCORES =====
-
     /// TransE knowledge graph validation score.
     /// More negative = more valid relationship.
     pub transe_confidence: f32,
 
     // ===== CONSENSUS METRICS =====
-
     /// Consensus score: fraction of embedders that agree this is a good match.
     /// Range [0.0, 1.0] where 1.0 = all 4 embedders agree.
     pub consensus_score: f32,

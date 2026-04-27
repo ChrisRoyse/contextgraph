@@ -54,8 +54,7 @@ async fn test_update_and_delete_operations() {
         .expect("Fingerprint not found after update");
 
     assert_eq!(
-        after_update.content_hash,
-        [0xAB; 32],
+        after_update.content_hash, [0xAB; 32],
         "Content hash should be updated"
     );
     println!("[UPDATED] Fingerprint {} content hash updated", id);

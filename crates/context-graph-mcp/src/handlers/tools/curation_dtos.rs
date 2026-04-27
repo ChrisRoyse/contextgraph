@@ -253,7 +253,12 @@ impl BoostImportanceResponse {
     ///
     /// MCP-L1: Accepts the handler's real `new_importance` and `clamped` flag
     /// instead of recomputing from delta (which could diverge from the store).
-    pub fn from_result(node_id: Uuid, old_importance: f32, new_importance: f32, clamped: bool) -> Self {
+    pub fn from_result(
+        node_id: Uuid,
+        old_importance: f32,
+        new_importance: f32,
+        clamped: bool,
+    ) -> Self {
         Self {
             node_id,
             old_importance,
@@ -495,7 +500,9 @@ mod tests {
         let expected = Utc::now() + Duration::days(SOFT_DELETE_RECOVERY_DAYS);
         let diff = (recovery - expected).num_seconds().abs();
         assert!(diff < 5, "Recovery time should be ~7 days from now");
-        println!("[PASS] ForgetConceptResponse::soft_deleted sets 7-day recovery (matches GC retention)");
+        println!(
+            "[PASS] ForgetConceptResponse::soft_deleted sets 7-day recovery (matches GC retention)"
+        );
     }
 
     #[test]

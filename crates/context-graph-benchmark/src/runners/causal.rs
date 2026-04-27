@@ -19,9 +19,9 @@ use crate::datasets::causal::{
     CausalBenchmarkDataset, CausalDatasetConfig, CausalDatasetGenerator,
 };
 use crate::metrics::causal::{
-    compute_all_causal_metrics, AsymmetricBenchmarkData, AsymmetricRetrievalResult,
-    CausalMetrics, CausalOrderingResult, ChainTraversalResult, CopaResult,
-    DirectionBenchmarkData, ReasoningBenchmarkData,
+    compute_all_causal_metrics, AsymmetricBenchmarkData, AsymmetricRetrievalResult, CausalMetrics,
+    CausalOrderingResult, ChainTraversalResult, CopaResult, DirectionBenchmarkData,
+    ReasoningBenchmarkData,
 };
 
 use context_graph_core::causal::asymmetric::{
@@ -243,8 +243,16 @@ impl CausalBenchmarkRunner {
         // Run ablation if enabled
         let (ablation, ablation_time) = if self.config.run_ablation {
             let ablation_start = Instant::now();
-            let ablation = self.run_ablation_study(&dataset, &direction_data, &asymmetric_data, &reasoning_data);
-            (Some(ablation), Some(ablation_start.elapsed().as_millis() as u64))
+            let ablation = self.run_ablation_study(
+                &dataset,
+                &direction_data,
+                &asymmetric_data,
+                &reasoning_data,
+            );
+            (
+                Some(ablation),
+                Some(ablation_start.elapsed().as_millis() as u64),
+            )
         } else {
             (None, None)
         };
@@ -364,15 +372,27 @@ impl CausalBenchmarkRunner {
             let (_result_content, result_direction, result_context) = match query_direction {
                 CausalDirection::Cause => {
                     // Query is cause, we want effects
-                    (&pair.effect_content, CausalDirection::Effect, &pair.effect_context)
+                    (
+                        &pair.effect_content,
+                        CausalDirection::Effect,
+                        &pair.effect_context,
+                    )
                 }
                 CausalDirection::Effect => {
                     // Query is effect, we want causes
-                    (&pair.cause_content, CausalDirection::Cause, &pair.cause_context)
+                    (
+                        &pair.cause_content,
+                        CausalDirection::Cause,
+                        &pair.cause_context,
+                    )
                 }
                 CausalDirection::Unknown => {
                     // Unknown direction, use effect as default
-                    (&pair.effect_content, CausalDirection::Unknown, &pair.effect_context)
+                    (
+                        &pair.effect_content,
+                        CausalDirection::Unknown,
+                        &pair.effect_context,
+                    )
                 }
             };
 
@@ -380,7 +400,9 @@ impl CausalBenchmarkRunner {
             // Target gets higher base but NOT guaranteed highest
             // Other same-domain pairs can sometimes beat target
             // Use sin for proper noise distribution instead of modulo
-            let noise = (idx as f32 * std::f32::consts::E + pair.strength * std::f32::consts::PI).sin() * 0.15;
+            let noise = (idx as f32 * std::f32::consts::E + pair.strength * std::f32::consts::PI)
+                .sin()
+                * 0.15;
             let base_sim = if pair.domain == target_pair.domain {
                 if pair.id == target_pair.id {
                     // Target: 0.70-0.85 (competitive with same-domain)
@@ -411,7 +433,8 @@ impl CausalBenchmarkRunner {
 
         // Sort by asymmetric score
         let mut asymmetric_ranked = candidates.clone();
-        asymmetric_ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        asymmetric_ranked
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Sort by symmetric score
         let mut symmetric_ranked = candidates.clone();
@@ -474,11 +497,12 @@ impl CausalBenchmarkRunner {
         let ordering_results = self.evaluate_causal_ordering(dataset);
 
         // Counterfactual evaluation (simplified)
-        let (counterfactual_correct, counterfactual_total) = if self.config.reasoning.include_counterfactuals {
-            self.evaluate_counterfactuals(dataset)
-        } else {
-            (0, 0)
-        };
+        let (counterfactual_correct, counterfactual_total) =
+            if self.config.reasoning.include_counterfactuals {
+                self.evaluate_counterfactuals(dataset)
+            } else {
+                (0, 0)
+            };
 
         ReasoningBenchmarkData {
             copa_results,
@@ -522,33 +546,59 @@ impl CausalBenchmarkRunner {
                 match question.question_type.as_str() {
                     "cause" => {
                         // alt is cause, premise is effect => forward is cause->effect
-                        (CausalDirection::Cause, CausalDirection::Effect,
-                         CausalDirection::Effect, CausalDirection::Cause)
+                        (
+                            CausalDirection::Cause,
+                            CausalDirection::Effect,
+                            CausalDirection::Effect,
+                            CausalDirection::Cause,
+                        )
                     }
                     "effect" => {
                         // premise is cause, alt is effect => forward is cause->effect
-                        (CausalDirection::Cause, CausalDirection::Effect,
-                         CausalDirection::Effect, CausalDirection::Cause)
+                        (
+                            CausalDirection::Cause,
+                            CausalDirection::Effect,
+                            CausalDirection::Effect,
+                            CausalDirection::Cause,
+                        )
                     }
-                    _ => {
-                        (CausalDirection::Unknown, CausalDirection::Unknown,
-                         CausalDirection::Unknown, CausalDirection::Unknown)
-                    }
+                    _ => (
+                        CausalDirection::Unknown,
+                        CausalDirection::Unknown,
+                        CausalDirection::Unknown,
+                        CausalDirection::Unknown,
+                    ),
                 };
 
             let forward_alt1 = compute_asymmetric_similarity(
-                base_sim_alt1, forward_dir_query, forward_dir_result, None, None,
+                base_sim_alt1,
+                forward_dir_query,
+                forward_dir_result,
+                None,
+                None,
             );
             let reverse_alt1 = compute_asymmetric_similarity(
-                base_sim_alt1, reverse_dir_query, reverse_dir_result, None, None,
+                base_sim_alt1,
+                reverse_dir_query,
+                reverse_dir_result,
+                None,
+                None,
             );
             let contrast_alt1 = forward_alt1 - reverse_alt1;
 
             let forward_alt2 = compute_asymmetric_similarity(
-                base_sim_alt2, forward_dir_query, forward_dir_result, None, None,
+                base_sim_alt2,
+                forward_dir_query,
+                forward_dir_result,
+                None,
+                None,
             );
             let reverse_alt2 = compute_asymmetric_similarity(
-                base_sim_alt2, reverse_dir_query, reverse_dir_result, None, None,
+                base_sim_alt2,
+                reverse_dir_query,
+                reverse_dir_result,
+                None,
+                None,
             );
             let contrast_alt2 = forward_alt2 - reverse_alt2;
 
@@ -565,7 +615,10 @@ impl CausalBenchmarkRunner {
         results
     }
 
-    fn evaluate_chain_traversal(&self, dataset: &CausalBenchmarkDataset) -> Vec<ChainTraversalResult> {
+    fn evaluate_chain_traversal(
+        &self,
+        dataset: &CausalBenchmarkDataset,
+    ) -> Vec<ChainTraversalResult> {
         let mut results = Vec::new();
 
         for chain in &dataset.chains {
@@ -586,13 +639,15 @@ impl CausalBenchmarkRunner {
                 // Simulate retrieval: for each hop, we need to find the next effect
                 // Score correct next pair vs random distractors
                 // Use sin for proper noise distribution
-                let noise = (hop_idx as f32 * std::f32::consts::E + chain.id as f32 * 1.414).sin() * 0.25;
+                let noise =
+                    (hop_idx as f32 * std::f32::consts::E + chain.id as f32 * 1.414).sin() * 0.25;
 
                 // Correct next hop gets higher similarity (but not guaranteed)
                 let sim_correct = 0.65 + (current_pair.strength + next_pair.strength) * 0.1 + noise;
 
                 // Random distractor similarity varies more
-                let distractor_noise = (hop_idx as f32 * 1.732 + chain.id as f32 * 2.236).cos() * 0.2;
+                let distractor_noise =
+                    (hop_idx as f32 * 1.732 + chain.id as f32 * 2.236).cos() * 0.2;
                 let sim_distractor = 0.45 + distractor_noise.abs();
 
                 // Apply asymmetric similarity boost for cause→effect direction
@@ -622,7 +677,10 @@ impl CausalBenchmarkRunner {
         results
     }
 
-    fn evaluate_causal_ordering(&self, dataset: &CausalBenchmarkDataset) -> Vec<CausalOrderingResult> {
+    fn evaluate_causal_ordering(
+        &self,
+        dataset: &CausalBenchmarkDataset,
+    ) -> Vec<CausalOrderingResult> {
         let mut results = Vec::new();
 
         for chain in &dataset.chains {
@@ -647,7 +705,9 @@ impl CausalBenchmarkRunner {
                     // Earlier causes should have higher "causal potential"
                     // based on their content and context
                     // Use sin/cos for proper noise distribution
-                    let seed = (idx as f32 * std::f32::consts::E + chain.id as f32 * std::f32::consts::PI).sin();
+                    let seed = (idx as f32 * std::f32::consts::E
+                        + chain.id as f32 * std::f32::consts::PI)
+                        .sin();
                     let noise = seed * 0.25; // Noise range: -0.25 to +0.25
 
                     // Score based on position in chain (earlier = more causal)
@@ -662,7 +722,8 @@ impl CausalBenchmarkRunner {
                 .collect();
 
             // Sort by causal score (descending) to get predicted order
-            causal_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            causal_scores
+                .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let predicted_order: Vec<usize> = causal_scores.iter().map(|(idx, _)| *idx).collect();
 
@@ -747,11 +808,13 @@ impl CausalBenchmarkRunner {
         if symmetric_baseline_score > 0.0 {
             improvements.insert(
                 "direction_modifiers".to_string(),
-                (direction_modifiers_only_score - symmetric_baseline_score) / symmetric_baseline_score,
+                (direction_modifiers_only_score - symmetric_baseline_score)
+                    / symmetric_baseline_score,
             );
             improvements.insert(
                 "intervention_overlap".to_string(),
-                (intervention_overlap_only_score - symmetric_baseline_score) / symmetric_baseline_score,
+                (intervention_overlap_only_score - symmetric_baseline_score)
+                    / symmetric_baseline_score,
             );
             improvements.insert(
                 "full_e5".to_string(),
@@ -799,7 +862,11 @@ impl CausalBenchmarkRunner {
             count += 1;
         }
 
-        if count > 0 { total_mrr / count as f64 } else { 0.0 }
+        if count > 0 {
+            total_mrr / count as f64
+        } else {
+            0.0
+        }
     }
 
     fn compute_direction_only(&self, dataset: &CausalBenchmarkDataset) -> f64 {
@@ -821,7 +888,11 @@ impl CausalBenchmarkRunner {
             count += 1;
         }
 
-        if count > 0 { total_mrr / count as f64 } else { 0.0 }
+        if count > 0 {
+            total_mrr / count as f64
+        } else {
+            0.0
+        }
     }
 
     fn compute_intervention_only(&self, dataset: &CausalBenchmarkDataset) -> f64 {
@@ -848,7 +919,11 @@ impl CausalBenchmarkRunner {
             count += 1;
         }
 
-        if count > 0 { total_mrr / count as f64 } else { 0.0 }
+        if count > 0 {
+            total_mrr / count as f64
+        } else {
+            0.0
+        }
     }
 
     fn compute_without_e5(&self, dataset: &CausalBenchmarkDataset) -> f64 {
@@ -865,7 +940,11 @@ impl CausalBenchmarkRunner {
             count += 1;
         }
 
-        if count > 0 { total_mrr / count as f64 } else { 0.0 }
+        if count > 0 {
+            total_mrr / count as f64
+        } else {
+            0.0
+        }
     }
 }
 
@@ -884,12 +963,14 @@ impl CausalBenchmarkResults {
         s.push_str(&format!(
             "- Cause F1: {:.2}\n",
             2.0 * self.metrics.direction.cause_precision * self.metrics.direction.cause_recall
-                / (self.metrics.direction.cause_precision + self.metrics.direction.cause_recall).max(0.001)
+                / (self.metrics.direction.cause_precision + self.metrics.direction.cause_recall)
+                    .max(0.001)
         ));
         s.push_str(&format!(
             "- Effect F1: {:.2}\n",
             2.0 * self.metrics.direction.effect_precision * self.metrics.direction.effect_recall
-                / (self.metrics.direction.effect_precision + self.metrics.direction.effect_recall).max(0.001)
+                / (self.metrics.direction.effect_precision + self.metrics.direction.effect_recall)
+                    .max(0.001)
         ));
 
         s.push_str("\n## Asymmetric Retrieval\n");
@@ -1006,7 +1087,9 @@ impl CausalBenchmarkResults {
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
     use super::*;
-    use crate::metrics::causal::{compute_asymmetric_retrieval_metrics, compute_direction_detection_metrics};
+    use crate::metrics::causal::{
+        compute_asymmetric_retrieval_metrics, compute_direction_detection_metrics,
+    };
 
     #[test]
     fn test_runner_creation() {
@@ -1046,9 +1129,18 @@ mod tests {
         assert!(results.ablation.is_some());
 
         println!("[VERIFIED] Small benchmark run completes successfully");
-        println!("  Direction accuracy: {:.2}%", results.metrics.direction.accuracy * 100.0);
-        println!("  COPA accuracy: {:.2}%", results.metrics.reasoning.copa_accuracy * 100.0);
-        println!("  Asymmetry ratio: {:.2}", results.metrics.asymmetric.asymmetry_ratio);
+        println!(
+            "  Direction accuracy: {:.2}%",
+            results.metrics.direction.accuracy * 100.0
+        );
+        println!(
+            "  COPA accuracy: {:.2}%",
+            results.metrics.reasoning.copa_accuracy * 100.0
+        );
+        println!(
+            "  Asymmetry ratio: {:.2}",
+            results.metrics.asymmetric.asymmetry_ratio
+        );
     }
 
     #[test]

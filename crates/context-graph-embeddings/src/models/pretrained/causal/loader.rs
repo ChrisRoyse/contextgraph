@@ -126,11 +126,21 @@ pub fn load_config(model_path: &Path) -> EmbeddingResult<NomicConfig> {
         mlp_fc2_bias: bool,
     }
 
-    fn default_vocab() -> usize { 30528 }
-    fn default_type_vocab() -> usize { 2 }
-    fn default_layer_norm_eps() -> f64 { 1e-12 }
-    fn default_rotary_base() -> f64 { 1000.0 }
-    fn default_rotary_fraction() -> f64 { 1.0 }
+    fn default_vocab() -> usize {
+        30528
+    }
+    fn default_type_vocab() -> usize {
+        2
+    }
+    fn default_layer_norm_eps() -> f64 {
+        1e-12
+    }
+    fn default_rotary_base() -> f64 {
+        1000.0
+    }
+    fn default_rotary_fraction() -> f64 {
+        1.0
+    }
 
     let raw: RawConfig =
         serde_json::from_str(&config_content).map_err(|e| EmbeddingError::ConfigError {
@@ -212,11 +222,11 @@ fn load_embeddings(
             message: format!("CausalModel emb_ln weight load failed: {}", e),
         })?;
 
-    let layer_norm_bias = vb
-        .get((config.hidden_size,), "emb_ln.bias")
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!("CausalModel emb_ln bias load failed: {}", e),
-        })?;
+    let layer_norm_bias =
+        vb.get((config.hidden_size,), "emb_ln.bias")
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("CausalModel emb_ln bias load failed: {}", e),
+            })?;
 
     Ok(NomicEmbeddingWeights {
         word_embeddings,
@@ -260,10 +270,7 @@ fn load_encoder_layer(
         })?;
 
     let norm1_weight = vb
-        .get(
-            (config.hidden_size,),
-            &format!("{}.norm1.weight", prefix),
-        )
+        .get((config.hidden_size,), &format!("{}.norm1.weight", prefix))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} norm1 weight load failed: {}",
@@ -272,10 +279,7 @@ fn load_encoder_layer(
         })?;
 
     let norm1_bias = vb
-        .get(
-            (config.hidden_size,),
-            &format!("{}.norm1.bias", prefix),
-        )
+        .get((config.hidden_size,), &format!("{}.norm1.bias", prefix))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} norm1 bias load failed: {}",
@@ -321,10 +325,7 @@ fn load_encoder_layer(
         })?;
 
     let norm2_weight = vb
-        .get(
-            (config.hidden_size,),
-            &format!("{}.norm2.weight", prefix),
-        )
+        .get((config.hidden_size,), &format!("{}.norm2.weight", prefix))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} norm2 weight load failed: {}",
@@ -333,10 +334,7 @@ fn load_encoder_layer(
         })?;
 
     let norm2_bias = vb
-        .get(
-            (config.hidden_size,),
-            &format!("{}.norm2.bias", prefix),
-        )
+        .get((config.hidden_size,), &format!("{}.norm2.bias", prefix))
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "CausalModel layer {} norm2 bias load failed: {}",

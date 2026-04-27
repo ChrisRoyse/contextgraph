@@ -8,9 +8,12 @@
 
 use std::collections::HashMap;
 
+use super::{
+    CheckPriority, PhaseResult, Recommendation, RecommendationCategory, ValidationCheck,
+    ValidationPhase,
+};
 use crate::realdata::config::{EmbedderName, FusionStrategy};
 use crate::realdata::results::FusionResults;
-use super::{ValidationCheck, CheckPriority, PhaseResult, ValidationPhase, Recommendation, RecommendationCategory};
 
 /// Fusion validation results.
 #[derive(Debug, Clone)]
@@ -94,11 +97,14 @@ impl FusionValidator {
         if let Some(fusion) = fusion_results {
             // Populate strategy metrics
             for (strategy, strategy_results) in &fusion.by_strategy {
-                result.strategy_metrics.insert(*strategy, FusionStrategyMetrics {
-                    mrr_at_10: strategy_results.mrr_at_10,
-                    embedders_used: strategy_results.embedders_used.clone(),
-                    latency_ms: strategy_results.latency_ms,
-                });
+                result.strategy_metrics.insert(
+                    *strategy,
+                    FusionStrategyMetrics {
+                        mrr_at_10: strategy_results.mrr_at_10,
+                        embedders_used: strategy_results.embedders_used.clone(),
+                        latency_ms: strategy_results.latency_ms,
+                    },
+                );
             }
 
             result.best_strategy = Some(fusion.best_strategy);
@@ -153,7 +159,8 @@ impl FusionValidator {
         let check = ValidationCheck::new(
             "fusion_strategies_defined",
             "[ARCH-13] Fusion strategies: E1Only, MultiSpace, Pipeline",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // Verify all strategies are accessible
         let strategies = [
@@ -168,10 +175,8 @@ impl FusionValidator {
     }
 
     fn test_default_is_e1only() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "default_is_e1only",
-            "Default fusion strategy is E1Only",
-        ).with_priority(CheckPriority::Critical);
+        let check = ValidationCheck::new("default_is_e1only", "Default fusion strategy is E1Only")
+            .with_priority(CheckPriority::Critical);
 
         let default = FusionStrategy::default();
 
@@ -183,15 +188,14 @@ impl FusionValidator {
     }
 
     fn test_e1only_semantics() -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e1only_semantics",
-            "E1Only strategy uses only E1 embedder",
-        ).with_priority(CheckPriority::Critical);
+        let check =
+            ValidationCheck::new("e1only_semantics", "E1Only strategy uses only E1 embedder")
+                .with_priority(CheckPriority::Critical);
 
         // E1Only should use only E1 - this is a design constraint
         // Verify E1 exists and is the foundation
-        let e1_is_foundation = EmbedderName::E1Semantic.index() == 0
-            && EmbedderName::E1Semantic.topic_weight() == 1.0;
+        let e1_is_foundation =
+            EmbedderName::E1Semantic.index() == 0 && EmbedderName::E1Semantic.topic_weight() == 1.0;
 
         if e1_is_foundation {
             check.pass("E1 is foundation (index=0, weight=1.0)", "E1 only")
@@ -204,12 +208,15 @@ impl FusionValidator {
         let check = ValidationCheck::new(
             "multispace_excludes_temporal",
             "[AP-73] MultiSpace MUST exclude temporal embedders (E2-E4)",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         // MultiSpace should use semantic embedders, not temporal
         // Verify temporal embedders have weight 0.0 (excluded from scoring)
         let temporal = EmbedderName::temporal();
-        let all_zero_weight = temporal.iter().all(|e| e.topic_weight().abs() < f64::EPSILON);
+        let all_zero_weight = temporal
+            .iter()
+            .all(|e| e.topic_weight().abs() < f64::EPSILON);
 
         if all_zero_weight {
             check.pass("E2-E4 weight=0.0", "temporal excluded")
@@ -230,18 +237,19 @@ impl FusionValidator {
         let e12_exists = EmbedderName::all().contains(&EmbedderName::E12LateInteraction);
 
         if e13_exists && e1_exists && e12_exists {
-            check.pass("E13 → E1 → E12", "3-stage pipeline")
-                .with_details("Stage 1: E13 SPLADE recall, Stage 2: E1 dense scoring, Stage 3: E12 rerank")
+            check
+                .pass("E13 → E1 → E12", "3-stage pipeline")
+                .with_details(
+                    "Stage 1: E13 SPLADE recall, Stage 2: E1 dense scoring, Stage 3: E12 rerank",
+                )
         } else {
             check.fail("missing components", "E13, E1, E12 exist")
         }
     }
 
     fn test_e1only_embedders(embedders: &[EmbedderName]) -> ValidationCheck {
-        let check = ValidationCheck::new(
-            "e1only_embedders",
-            "E1Only strategy uses exactly [E1]",
-        ).with_priority(CheckPriority::High);
+        let check = ValidationCheck::new("e1only_embedders", "E1Only strategy uses exactly [E1]")
+            .with_priority(CheckPriority::High);
 
         let only_e1 = embedders.len() == 1 && embedders.contains(&EmbedderName::E1Semantic);
 
@@ -257,16 +265,17 @@ impl FusionValidator {
         let check = ValidationCheck::new(
             "multispace_actual",
             "MultiSpace actually excludes temporal embedders",
-        ).with_priority(CheckPriority::Critical);
+        )
+        .with_priority(CheckPriority::Critical);
 
         let temporal = EmbedderName::temporal();
-        let temporal_in_fusion: Vec<_> = embedders.iter()
-            .filter(|e| temporal.contains(e))
-            .collect();
+        let temporal_in_fusion: Vec<_> =
+            embedders.iter().filter(|e| temporal.contains(e)).collect();
 
         if temporal_in_fusion.is_empty() {
             let names: Vec<_> = embedders.iter().map(|e| e.as_str()).collect();
-            check.pass(&format!("{} embedders", embedders.len()), "no temporal")
+            check
+                .pass(&format!("{} embedders", embedders.len()), "no temporal")
                 .with_details(&names.join(", "))
         } else {
             let temporal_names: Vec<_> = temporal_in_fusion.iter().map(|e| e.as_str()).collect();
@@ -281,28 +290,39 @@ impl FusionValidator {
         let check = ValidationCheck::new(
             "best_improves_baseline",
             "Best strategy improves over E1Only baseline",
-        ).with_priority(CheckPriority::High);
+        )
+        .with_priority(CheckPriority::High);
 
         let improves = improvement >= 0.0;
 
         if improves {
-            (check.pass(
-                &format!("{:?} +{:.1}%", best, improvement * 100.0),
-                ">= 0% improvement",
-            ), None)
+            (
+                check.pass(
+                    &format!("{:?} +{:.1}%", best, improvement * 100.0),
+                    ">= 0% improvement",
+                ),
+                None,
+            )
         } else {
             let rec = Recommendation {
                 category: RecommendationCategory::Performance,
-                description: format!("Multi-space fusion ({:?}) underperforms E1Only by {:.1}%", best, improvement.abs() * 100.0),
+                description: format!(
+                    "Multi-space fusion ({:?}) underperforms E1Only by {:.1}%",
+                    best,
+                    improvement.abs() * 100.0
+                ),
                 component: "FusionStrategy".to_string(),
                 current: Some(format!("{:?}", best)),
                 recommended: Some("E1Only or tune weights".to_string()),
                 reason: "Fusion should not degrade baseline performance".to_string(),
             };
-            (check.warning(
-                &format!("{:?} {:.1}%", best, improvement * 100.0),
-                ">= 0% improvement",
-            ), Some(rec))
+            (
+                check.warning(
+                    &format!("{:?} {:.1}%", best, improvement * 100.0),
+                    ">= 0% improvement",
+                ),
+                Some(rec),
+            )
         }
     }
 
@@ -312,14 +332,15 @@ impl FusionValidator {
             FusionStrategy::E1Only => vec![EmbedderName::E1Semantic],
             FusionStrategy::MultiSpace => {
                 // All semantic embedders except those for specific pipeline stages
-                EmbedderName::semantic().into_iter()
+                EmbedderName::semantic()
+                    .into_iter()
                     .filter(|e| *e != EmbedderName::E12LateInteraction) // E12 is rerank only
                     .collect()
             }
             FusionStrategy::Pipeline => {
                 vec![
-                    EmbedderName::E13SPLADE, // Stage 1: recall
-                    EmbedderName::E1Semantic, // Stage 2: dense scoring
+                    EmbedderName::E13SPLADE,          // Stage 1: recall
+                    EmbedderName::E1Semantic,         // Stage 2: dense scoring
                     EmbedderName::E12LateInteraction, // Stage 3: rerank
                 ]
             }
@@ -365,7 +386,9 @@ mod tests {
 
         let multispace = FusionValidator::get_strategy_embedders(FusionStrategy::MultiSpace);
         assert!(multispace.contains(&EmbedderName::E1Semantic));
-        assert!(!multispace.iter().any(|e| EmbedderName::temporal().contains(e)));
+        assert!(!multispace
+            .iter()
+            .any(|e| EmbedderName::temporal().contains(e)));
 
         let pipeline = FusionValidator::get_strategy_embedders(FusionStrategy::Pipeline);
         assert!(pipeline.contains(&EmbedderName::E13SPLADE));

@@ -14,22 +14,18 @@ mod tests {
     fn create_test_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         let mut map = HashMap::new();
         for i in 0..14u8 {
-            // EMB-3/EMB-5 FIX: Correct dimensions per constitution.yaml embedder specs.
-            // E8 and E11 moved to PQ8 group with correct dimensions (were Float8E4M3 with wrong dims).
             let (method, dim, data_len) = match i {
-                0 => (QuantizationMethod::PQ8, 1024, 8),              // E1 Semantic (e5-large-v2)
+                0 => (QuantizationMethod::PQ8, 1024, 8), // E1 Semantic (e5-large-v2)
                 1..=3 => (QuantizationMethod::Float8E4M3, 512, 512), // E2-E4 Temporal (custom 512D)
-                4 => (QuantizationMethod::PQ8, 768, 8),               // E5 Causal (nomic-embed 768D)
+                4 => (QuantizationMethod::PQ8, 768, 8),  // E5 Causal (nomic-embed 768D)
                 5 | 12 => (QuantizationMethod::SparseNative, 30522, 100), // E6, E13 Sparse
-                6 => (QuantizationMethod::PQ8, 1536, 8),              // E7 Code (Qodo-Embed 1536D)
-                7 => (QuantizationMethod::Float8E4M3, 1024, 1024),    // E8 Graph (e5-large-v2 1024D)
-                8 => (QuantizationMethod::Binary, 10000, 1250),       // E9 HDC (10K-bit)
-                9 => (QuantizationMethod::PQ8, 768, 8),               // E10 Multimodal (e5-base-v2 768D)
-                // EMB-5: idx 10 maps to ModelId::Entity (legacy 384D, Float8E4M3).
-                // Production E11 uses Kepler (768D, PQ8) at ModelId idx 13.
-                10 => (QuantizationMethod::Float8E4M3, 384, 384),     // E11 Entity (legacy MiniLM 384D)
-                11 => (QuantizationMethod::TokenPruning, 128, 64),    // E12 ColBERT (128D/token)
-                13 => (QuantizationMethod::PQ8, 1024, 8),             // E14 BGE-M3 Dense (1024D, PQ8)
+                6 => (QuantizationMethod::PQ8, 1536, 8), // E7 Code (Qodo-Embed 1536D)
+                7 => (QuantizationMethod::Float8E4M3, 1024, 1024), // E8 Graph (e5-large-v2 1024D)
+                8 => (QuantizationMethod::Binary, 10000, 1250), // E9 HDC (10K-bit)
+                9 => (QuantizationMethod::PQ8, 768, 8),  // E10 Multimodal (e5-base-v2 768D)
+                10 => (QuantizationMethod::PQ8, 768, 8), // E11 Kepler (production 768D)
+                11 => (QuantizationMethod::TokenPruning, 128, 64), // E12 ColBERT (128D/token)
+                13 => (QuantizationMethod::PQ8, 1024, 8), // E14 BGE-M3 Dense (1024D, PQ8)
                 _ => unreachable!(),
             };
 
@@ -88,12 +84,8 @@ mod tests {
         let mut embeddings = create_test_embeddings();
         embeddings.remove(&5); // Remove one embedder
 
-        let _ = StoredQuantizedFingerprint::new(
-            Uuid::new_v4(),
-            embeddings,
-            [0.5f32; 14],
-            [0u8; 32],
-        );
+        let _ =
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
     }
 
     #[test]
@@ -195,12 +187,8 @@ mod tests {
         embeddings.remove(&5); // Remove E6
 
         // This MUST panic with "CONSTRUCTION ERROR"
-        let _ = StoredQuantizedFingerprint::new(
-            Uuid::new_v4(),
-            embeddings,
-            [0.5f32; 14],
-            [0u8; 32],
-        );
+        let _ =
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
     }
 
     /// Edge Case 2: Zero-norm vector in IndexEntry
@@ -281,12 +269,8 @@ mod tests {
             },
         );
 
-        let _ = StoredQuantizedFingerprint::new(
-            Uuid::new_v4(),
-            embeddings,
-            [0.5f32; 14],
-            [0u8; 32],
-        );
+        let _ =
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0u8; 32]);
     }
 
     /// Test get_embedding panics for missing index

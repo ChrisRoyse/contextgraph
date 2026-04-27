@@ -348,11 +348,7 @@ impl DomainCoverageMetrics {
             return 0.0;
         }
 
-        let mrrs: Vec<f64> = self
-            .per_domain_metrics
-            .values()
-            .map(|m| m.mrr)
-            .collect();
+        let mrrs: Vec<f64> = self.per_domain_metrics.values().map(|m| m.mrr).collect();
 
         let avg_mrr = mrrs.iter().sum::<f64>() / mrrs.len() as f64;
 
@@ -615,8 +611,12 @@ pub fn compute_e1_semantic_metrics(
     noise_robustness: NoiseRobustnessMetrics,
     domain_coverage: DomainCoverageMetrics,
 ) -> E1SemanticMetrics {
-    let composite =
-        CompositeE1Metrics::compute(&retrieval, &topic_separation, &noise_robustness, &domain_coverage);
+    let composite = CompositeE1Metrics::compute(
+        &retrieval,
+        &topic_separation,
+        &noise_robustness,
+        &domain_coverage,
+    );
 
     E1SemanticMetrics {
         retrieval,

@@ -3,12 +3,12 @@
 //! This test verifies that storing and retrieving a fingerprint preserves
 //! the uniqueness of E1 and E9 vectors.
 
+use chrono::Utc;
 use context_graph_core::types::fingerprint::SemanticFingerprint;
+use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_storage::teleological::{
     deserialize_teleological_fingerprint, serialize_teleological_fingerprint,
 };
-use context_graph_core::types::fingerprint::TeleologicalFingerprint;
-use chrono::Utc;
 use uuid::Uuid;
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -106,19 +106,31 @@ fn test_e1_e9_preserved_after_serialization() {
     // Create fingerprint with unique E1 and E9
     let original = create_test_fingerprint_with_unique_vectors();
 
-    println!("Original E1 first 5 values: {:?}", &original.semantic.e1_semantic[..5]);
-    println!("Original E9 first 5 values: {:?}", &original.semantic.e9_hdc[..5]);
+    println!(
+        "Original E1 first 5 values: {:?}",
+        &original.semantic.e1_semantic[..5]
+    );
+    println!(
+        "Original E9 first 5 values: {:?}",
+        &original.semantic.e9_hdc[..5]
+    );
 
     // Serialize
     let bytes = serialize_teleological_fingerprint(&original);
     println!("\nSerialized to {} bytes", bytes.len());
 
     // Deserialize
-    let restored = deserialize_teleological_fingerprint(&bytes)
-        .expect("Failed to deserialize fingerprint");
+    let restored =
+        deserialize_teleological_fingerprint(&bytes).expect("Failed to deserialize fingerprint");
 
-    println!("Restored E1 first 5 values: {:?}", &restored.semantic.e1_semantic[..5]);
-    println!("Restored E9 first 5 values: {:?}", &restored.semantic.e9_hdc[..5]);
+    println!(
+        "Restored E1 first 5 values: {:?}",
+        &restored.semantic.e1_semantic[..5]
+    );
+    println!(
+        "Restored E9 first 5 values: {:?}",
+        &restored.semantic.e9_hdc[..5]
+    );
 
     // Verify E1 was preserved exactly
     assert_eq!(
@@ -126,8 +138,14 @@ fn test_e1_e9_preserved_after_serialization() {
         restored.semantic.e1_semantic.len(),
         "E1 dimension mismatch"
     );
-    let e1_identical = vectors_are_identical(&original.semantic.e1_semantic, &restored.semantic.e1_semantic);
-    assert!(e1_identical, "E1 vectors should be identical after roundtrip");
+    let e1_identical = vectors_are_identical(
+        &original.semantic.e1_semantic,
+        &restored.semantic.e1_semantic,
+    );
+    assert!(
+        e1_identical,
+        "E1 vectors should be identical after roundtrip"
+    );
     println!("✓ E1 preserved exactly");
 
     // Verify E9 was preserved exactly
@@ -137,11 +155,15 @@ fn test_e1_e9_preserved_after_serialization() {
         "E9 dimension mismatch"
     );
     let e9_identical = vectors_are_identical(&original.semantic.e9_hdc, &restored.semantic.e9_hdc);
-    assert!(e9_identical, "E9 vectors should be identical after roundtrip");
+    assert!(
+        e9_identical,
+        "E9 vectors should be identical after roundtrip"
+    );
     println!("✓ E9 preserved exactly");
 
     // CRITICAL: Verify E1 and E9 are STILL different after roundtrip
-    let e1_e9_identical = vectors_are_identical(&restored.semantic.e1_semantic, &restored.semantic.e9_hdc);
+    let e1_e9_identical =
+        vectors_are_identical(&restored.semantic.e1_semantic, &restored.semantic.e9_hdc);
     let restored_sim = cosine_similarity(&restored.semantic.e1_semantic, &restored.semantic.e9_hdc);
 
     println!("\n========================================");
@@ -157,5 +179,8 @@ fn test_e1_e9_preserved_after_serialization() {
     }
     println!("========================================\n");
 
-    assert!(!e1_e9_identical, "E1 and E9 must remain different after serialization");
+    assert!(
+        !e1_e9_identical,
+        "E1 and E9 must remain different after serialization"
+    );
 }

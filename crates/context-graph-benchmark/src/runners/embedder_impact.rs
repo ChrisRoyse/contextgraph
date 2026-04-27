@@ -27,7 +27,9 @@ use context_graph_core::types::fingerprint::SemanticFingerprint;
 use context_graph_storage::teleological::indexes::EmbedderIndex;
 
 use crate::ablation::{ablation_weights, all_core_embedders, single_embedder_weights};
-use crate::datasets::embedder_impact::{EmbedderImpactDataset, EmbedderImpactDatasetConfig, EmbedderImpactDatasetStats};
+use crate::datasets::embedder_impact::{
+    EmbedderImpactDataset, EmbedderImpactDatasetConfig, EmbedderImpactDatasetStats,
+};
 use crate::datasets::graph_linking::ScaleTier;
 use crate::metrics::causal::{
     DirectionDistributionMetrics, DirectionMRRBreakdown, E5ImpactAnalysis,
@@ -102,7 +104,11 @@ impl EmbedderImpactConfig {
     /// Create config for comprehensive benchmark (tiers 1-3).
     pub fn comprehensive() -> Self {
         Self {
-            tiers: vec![ScaleTier::Tier1_100, ScaleTier::Tier2_1K, ScaleTier::Tier3_10K],
+            tiers: vec![
+                ScaleTier::Tier1_100,
+                ScaleTier::Tier2_1K,
+                ScaleTier::Tier3_10K,
+            ],
             run_graph_impact: true,
             run_resource_analysis: true,
             ..Self::default()
@@ -270,7 +276,10 @@ impl RetrievalImpactAnalysis {
 
         for results in tier_results.values() {
             for (embedder, delta) in &results.ablation_deltas {
-                mrr_impacts.entry(*embedder).or_default().push(delta.mrr_delta);
+                mrr_impacts
+                    .entry(*embedder)
+                    .or_default()
+                    .push(delta.mrr_delta);
             }
             for (embedder, contrib) in &results.contributions.embedder_contributions {
                 contrib_pcts.entry(*embedder).or_default().push(*contrib);
@@ -290,7 +299,8 @@ impl RetrievalImpactAnalysis {
 
         // Rank by MRR impact
         let mut importance_ranking: Vec<_> = avg_mrr_impact.iter().map(|(&e, &v)| (e, v)).collect();
-        importance_ranking.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        importance_ranking
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         let importance_ranking: Vec<_> = importance_ranking.into_iter().map(|(e, _)| e).collect();
 
         // Critical vs redundant
@@ -698,7 +708,11 @@ impl EmbedderImpactRunner {
             }
 
             // Fuse rankings
-            let fused = fuse_rankings(&embedder_rankings, FusionStrategy::WeightedRRF, self.config.top_k);
+            let fused = fuse_rankings(
+                &embedder_rankings,
+                FusionStrategy::WeightedRRF,
+                self.config.top_k,
+            );
 
             // Build result contributions
             for (rank, result) in fused.iter().enumerate() {
@@ -708,7 +722,11 @@ impl EmbedderImpactRunner {
                 // Calculate per-embedder contribution
                 for embedder in &self.config.embedders {
                     if let Some(results) = per_embedder_results.get(embedder) {
-                        if let Some((idx, (_, _score))) = results.iter().enumerate().find(|(_, (id, _))| *id == result.doc_id) {
+                        if let Some((idx, (_, _score))) = results
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (id, _))| *id == result.doc_id)
+                        {
                             // RRF contribution formula
                             let rrf_contrib = 1.0 / (idx as f32 + 1.0 + 60.0);
                             let pct = (rrf_contrib / result.fused_score) * 100.0;
@@ -788,13 +806,20 @@ impl EmbedderImpactRunner {
             total_docs_checked: total,
             distinct_vector_pct: (distinct_count as f64 / total.max(1) as f64) * 100.0,
             avg_cause_effect_distance: avg_distance as f64,
-            min_cause_effect_distance: if min_distance.is_finite() { min_distance as f64 } else { 0.0 },
+            min_cause_effect_distance: if min_distance.is_finite() {
+                min_distance as f64
+            } else {
+                0.0
+            },
             threshold_violations: total - distinct_count,
         }
     }
 
     /// Verify query direction distribution is approximately 40/40/20.
-    fn verify_direction_distribution(&self, dataset: &EmbedderImpactDataset) -> DirectionDistributionMetrics {
+    fn verify_direction_distribution(
+        &self,
+        dataset: &EmbedderImpactDataset,
+    ) -> DirectionDistributionMetrics {
         let mut metrics = DirectionDistributionMetrics {
             cause_query_count: 0,
             effect_query_count: 0,
@@ -820,7 +845,10 @@ impl EmbedderImpactRunner {
     /// Compare symmetric vs asymmetric E5 retrieval.
     ///
     /// Symmetric uses plain cosine similarity; asymmetric uses direction modifiers.
-    fn compare_symmetric_asymmetric(&self, dataset: &EmbedderImpactDataset) -> SymmetricVsAsymmetricComparison {
+    fn compare_symmetric_asymmetric(
+        &self,
+        dataset: &EmbedderImpactDataset,
+    ) -> SymmetricVsAsymmetricComparison {
         let mut symmetric_rrs = Vec::new();
         let mut asymmetric_rrs = Vec::new();
         let mut asymmetric_wins = 0;
@@ -840,11 +868,20 @@ impl EmbedderImpactRunner {
 
             // Find rank of first relevant doc for symmetric
             let sym_rank = self.find_first_relevant_rank(&symmetric_results, &query.relevant_docs);
-            let asym_rank = self.find_first_relevant_rank(&asymmetric_results, &query.relevant_docs);
+            let asym_rank =
+                self.find_first_relevant_rank(&asymmetric_results, &query.relevant_docs);
 
             // Compute reciprocal ranks
-            let sym_rr = if sym_rank > 0 { 1.0 / sym_rank as f64 } else { 0.0 };
-            let asym_rr = if asym_rank > 0 { 1.0 / asym_rank as f64 } else { 0.0 };
+            let sym_rr = if sym_rank > 0 {
+                1.0 / sym_rank as f64
+            } else {
+                0.0
+            };
+            let asym_rr = if asym_rank > 0 {
+                1.0 / asym_rank as f64
+            } else {
+                0.0
+            };
 
             symmetric_rrs.push(sym_rr);
             asymmetric_rrs.push(asym_rr);
@@ -937,8 +974,8 @@ impl EmbedderImpactRunner {
             cause_mrr,
             effect_mrr,
             unknown_mrr,
-            cause_to_effect_ratio: 0.0,  // Computed by compute_ratio()
-            ratio_in_target_range: false,  // Computed by compute_ratio()
+            cause_to_effect_ratio: 0.0,   // Computed by compute_ratio()
+            ratio_in_target_range: false, // Computed by compute_ratio()
         }
     }
 
@@ -974,10 +1011,10 @@ impl EmbedderImpactRunner {
     fn find_first_relevant_rank(&self, results: &[(Uuid, f32)], relevant: &HashSet<Uuid>) -> usize {
         for (rank, (id, _)) in results.iter().enumerate() {
             if relevant.contains(id) {
-                return rank + 1;  // 1-indexed rank
+                return rank + 1; // 1-indexed rank
             }
         }
-        0  // Not found
+        0 // Not found
     }
 
     /// Phase 7: Graph structure impact.
@@ -1000,9 +1037,7 @@ impl EmbedderImpactRunner {
         let mut resource = ResourceImpact::new();
 
         // Use the largest tier's corpus size as the vector count estimate
-        let actual_vector_count = self.config.tiers.last()
-            .map(|t| t.size())
-            .unwrap_or(0);
+        let actual_vector_count = self.config.tiers.last().map(|t| t.size()).unwrap_or(0);
 
         // Compute real memory estimates from dimension × vector count × sizeof(f32)
         let embedder_dims: [(EmbedderIndex, usize); 14] = [
@@ -1018,8 +1053,8 @@ impl EmbedderImpactRunner {
             (EmbedderIndex::E10Multimodal, 768),
             (EmbedderIndex::E11Entity, 768),
             (EmbedderIndex::E12LateInteraction, 128), // Per token
-            (EmbedderIndex::E13Splade, 30000), // Sparse
-            (EmbedderIndex::E14BgeM3Dense, 1024), // BGE-M3 dense
+            (EmbedderIndex::E13Splade, 30000),        // Sparse
+            (EmbedderIndex::E14BgeM3Dense, 1024),     // BGE-M3 dense
         ];
 
         for (embedder, dim) in embedder_dims {
@@ -1067,7 +1102,11 @@ impl EmbedderImpactRunner {
             }
 
             // Fuse rankings
-            let fused = fuse_rankings(&embedder_rankings, FusionStrategy::WeightedRRF, self.config.top_k);
+            let fused = fuse_rankings(
+                &embedder_rankings,
+                FusionStrategy::WeightedRRF,
+                self.config.top_k,
+            );
             let retrieved: Vec<Uuid> = fused.iter().map(|r| r.doc_id).collect();
 
             query_results.push((retrieved, query.relevant_docs.clone()));
@@ -1131,7 +1170,8 @@ impl EmbedderImpactRunner {
         let query_is_cause = matches!(query_direction, CausalDirection::Cause);
 
         // Base asymmetric similarity using dual vectors
-        let base_sim = compute_e5_asymmetric_fingerprint_similarity(query_fp, doc_fp, query_is_cause);
+        let base_sim =
+            compute_e5_asymmetric_fingerprint_similarity(query_fp, doc_fp, query_is_cause);
 
         // Infer document direction from vector magnitudes
         let doc_direction = self.infer_doc_direction(doc_fp);
@@ -1157,11 +1197,7 @@ impl EmbedderImpactRunner {
         }
     }
 
-    fn get_embedding(
-        &self,
-        fp: &SemanticFingerprint,
-        embedder: EmbedderIndex,
-    ) -> Vec<f32> {
+    fn get_embedding(&self, fp: &SemanticFingerprint, embedder: EmbedderIndex) -> Vec<f32> {
         match embedder {
             EmbedderIndex::E1Semantic | EmbedderIndex::E1Matryoshka128 => fp.e1_semantic.clone(),
             EmbedderIndex::E2TemporalRecent => fp.e2_temporal_recent.clone(),
@@ -1173,14 +1209,14 @@ impl EmbedderImpactRunner {
             EmbedderIndex::E7Code => fp.e7_code.clone(),
             EmbedderIndex::E8Graph => fp.e8_graph_as_source.clone(),
             EmbedderIndex::E9HDC => fp.e9_hdc.clone(),
-            EmbedderIndex::E10Multimodal | EmbedderIndex::E10MultimodalParaphrase | EmbedderIndex::E10MultimodalContext => {
-                fp.e10_multimodal_paraphrase.clone()
-            }
+            EmbedderIndex::E10Multimodal
+            | EmbedderIndex::E10MultimodalParaphrase
+            | EmbedderIndex::E10MultimodalContext => fp.e10_multimodal_paraphrase.clone(),
             EmbedderIndex::E11Entity => fp.e11_entity.clone(),
             // Sparse embedders - return empty (handled separately)
-            EmbedderIndex::E6Sparse | EmbedderIndex::E12LateInteraction | EmbedderIndex::E13Splade => {
-                Vec::new()
-            }
+            EmbedderIndex::E6Sparse
+            | EmbedderIndex::E12LateInteraction
+            | EmbedderIndex::E13Splade => Vec::new(),
             // E14 BGE-M3 Dense lives in sibling CF, not in SemanticFingerprint
             EmbedderIndex::E14BgeM3Dense => Vec::new(),
         }

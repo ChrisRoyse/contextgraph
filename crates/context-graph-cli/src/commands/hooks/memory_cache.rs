@@ -102,7 +102,10 @@ pub fn cache_memories(session_id: &str, memories: Vec<CachedMemory>) {
 
     // Limit memories per session
     let memories = if memories.len() > MAX_MEMORIES_PER_SESSION {
-        memories.into_iter().take(MAX_MEMORIES_PER_SESSION).collect()
+        memories
+            .into_iter()
+            .take(MAX_MEMORIES_PER_SESSION)
+            .collect()
     } else {
         memories
     };

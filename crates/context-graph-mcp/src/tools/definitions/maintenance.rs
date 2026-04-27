@@ -33,10 +33,16 @@ mod tests {
     fn test_definitions_exist_with_required_fields() {
         let tools = definitions();
         assert_eq!(tools.len(), 1);
-        let repair = tools.iter().find(|t| t.name == "repair_causal_relationships").unwrap();
+        let repair = tools
+            .iter()
+            .find(|t| t.name == "repair_causal_relationships")
+            .unwrap();
         assert!(repair.description.contains("corrupted"));
         assert!(repair.description.contains("deserialization"));
-        assert_eq!(repair.input_schema.get("type").unwrap().as_str().unwrap(), "object");
+        assert_eq!(
+            repair.input_schema.get("type").unwrap().as_str().unwrap(),
+            "object"
+        );
         let props = repair.input_schema.get("properties").unwrap();
         assert!(props.as_object().unwrap().is_empty());
     }

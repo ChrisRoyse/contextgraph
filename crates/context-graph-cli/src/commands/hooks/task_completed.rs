@@ -70,7 +70,12 @@ pub async fn execute(args: TaskCompletedArgs) -> HookResult<HookOutput> {
     );
 
     // 2. Build task summary
-    let summary = build_task_summary(&args.session_id, &task_subject, &task_id, task_result.as_deref());
+    let summary = build_task_summary(
+        &args.session_id,
+        &task_subject,
+        &task_id,
+        task_result.as_deref(),
+    );
 
     // 3. Store the summary via MCP
     let client = McpClient::new();
@@ -195,16 +200,16 @@ fn build_task_summary(
     task_id: &str,
     task_result: Option<&str>,
 ) -> String {
-    let mut summary = format!(
-        "[TaskCompleted: {} (session: {})]\n",
-        task_id, session_id
-    );
+    let mut summary = format!("[TaskCompleted: {} (session: {})]\n", task_id, session_id);
 
     summary.push_str(&format!("Subject: {}\n", task_subject));
 
     if let Some(result) = task_result {
         let truncated = if result.len() > MAX_TASK_RESULT_LEN {
-            format!("{}...", &result[..result.floor_char_boundary(MAX_TASK_RESULT_LEN)])
+            format!(
+                "{}...",
+                &result[..result.floor_char_boundary(MAX_TASK_RESULT_LEN)]
+            )
         } else {
             result.to_string()
         };

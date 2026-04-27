@@ -227,23 +227,44 @@ mod tests {
         assert_eq!(tools.len(), 4);
         #[cfg(not(feature = "llm"))]
         assert_eq!(tools.len(), 2);
-        let search = tools.iter().find(|t| t.name == "search_connections").unwrap();
+        let search = tools
+            .iter()
+            .find(|t| t.name == "search_connections")
+            .unwrap();
         assert!(search.description.contains("asymmetric") || search.description.contains("E8"));
-        assert!(search.input_schema["required"].as_array().unwrap().contains(&json!("query")));
+        assert!(search.input_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("query")));
         let path = tools.iter().find(|t| t.name == "get_graph_path").unwrap();
         assert!(path.description.contains("attenuation") || path.description.contains("0.9"));
-        assert!(path.input_schema["required"].as_array().unwrap().contains(&json!("anchorId")));
+        assert!(path.input_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("anchorId")));
     }
 
     #[test]
     fn test_schema_defaults_and_enums() {
         let tools = definitions();
-        let search_props = tools.iter().find(|t| t.name == "search_connections").unwrap()
-            .input_schema["properties"].as_object().unwrap().clone();
+        let search_props = tools
+            .iter()
+            .find(|t| t.name == "search_connections")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap()
+            .clone();
         assert_eq!(search_props["direction"]["default"], "both");
         assert_eq!(search_props["topK"]["default"], 10);
-        let path_props = tools.iter().find(|t| t.name == "get_graph_path").unwrap()
-            .input_schema["properties"].as_object().unwrap().clone();
+        let path_props = tools
+            .iter()
+            .find(|t| t.name == "get_graph_path")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap()
+            .clone();
         assert_eq!(path_props["direction"]["default"], "forward");
         assert_eq!(path_props["maxHops"]["default"], 5);
     }

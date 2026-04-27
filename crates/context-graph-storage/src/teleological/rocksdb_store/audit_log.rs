@@ -45,10 +45,7 @@ impl RocksDbTeleologicalStore {
     /// - Column family handles are missing (database corruption)
     /// - Serialization fails (should never happen with valid types)
     /// - RocksDB write fails (disk error, etc.)
-    pub fn append_audit_record(
-        &self,
-        record: &AuditRecord,
-    ) -> TeleologicalStoreResult<()> {
+    pub fn append_audit_record(&self, record: &AuditRecord) -> TeleologicalStoreResult<()> {
         let primary_key = record.primary_key();
         let target_key = record.target_index_key();
 
@@ -79,12 +76,7 @@ impl RocksDbTeleologicalStore {
                 "FAIL FAST: Failed to write audit record {} to RocksDB: {}",
                 record.id, e
             );
-            TeleologicalStoreError::rocksdb_op(
-                "write_batch",
-                CF_AUDIT_LOG,
-                Some(record.id),
-                e,
-            )
+            TeleologicalStoreError::rocksdb_op("write_batch", CF_AUDIT_LOG, Some(record.id), e)
         })?;
 
         debug!(
@@ -138,12 +130,7 @@ impl RocksDbTeleologicalStore {
                     "FAIL FAST: RocksDB iteration failed on CF '{}' for target {}: {}",
                     CF_AUDIT_BY_TARGET, target_id, e
                 );
-                TeleologicalStoreError::rocksdb_op(
-                    "prefix_iterate",
-                    CF_AUDIT_BY_TARGET,
-                    None,
-                    e,
-                )
+                TeleologicalStoreError::rocksdb_op("prefix_iterate", CF_AUDIT_BY_TARGET, None, e)
             })?;
 
             // Verify key prefix matches (prefix_iterator may overshoot)

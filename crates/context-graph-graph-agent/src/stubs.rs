@@ -18,10 +18,10 @@
 //!
 //! This module is only available with the `test-utils` feature.
 
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use context_graph_causal_agent::{CausalDiscoveryLLM, llm::LlmConfig};
+use context_graph_causal_agent::{llm::LlmConfig, CausalDiscoveryLLM};
 
 use crate::service::{GraphDiscoveryConfig, GraphDiscoveryService};
 
@@ -56,7 +56,7 @@ pub fn create_stub_graph_discovery_service() -> Arc<GraphDiscoveryService> {
         causal_grammar_path: PathBuf::from("/nonexistent/causal.gbnf"),
         graph_grammar_path: PathBuf::from("/nonexistent/graph.gbnf"),
         validation_grammar_path: PathBuf::from("/nonexistent/validation.gbnf"),
-        n_gpu_layers: 0, // CPU mode for stub
+        n_gpu_layers: 0,   // CPU mode for stub
         context_size: 512, // Small context for stub
         ..Default::default()
     };
@@ -67,10 +67,8 @@ pub fn create_stub_graph_discovery_service() -> Arc<GraphDiscoveryService> {
 
     // Create service with unloaded LLM
     // NOTE: LLM is NOT loaded - any analysis calls will return Err(LlmNotInitialized)
-    let service = GraphDiscoveryService::with_config(
-        Arc::new(llm),
-        GraphDiscoveryConfig::default(),
-    );
+    let service =
+        GraphDiscoveryService::with_config(Arc::new(llm), GraphDiscoveryConfig::default());
 
     Arc::new(service)
 }

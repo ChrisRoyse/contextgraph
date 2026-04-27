@@ -3,7 +3,7 @@
 //! Test Suite 2 from CAUSAL_HINT_INTEGRATION_TESTING.md
 //! These tests require the Hermes 2 Pro model to be loaded.
 
-use context_graph_causal_agent::{CausalDiscoveryLLM, CausalDirectionHint, LlmConfig};
+use context_graph_causal_agent::{CausalDirectionHint, CausalDiscoveryLLM, LlmConfig};
 use serial_test::serial;
 use std::path::PathBuf;
 
@@ -57,7 +57,8 @@ async fn test_2_1_causal_content_analysis() {
     let content = "High cortisol levels cause memory impairment in the hippocampus.";
 
     println!("Analyzing: {}", content);
-    let hint = llm.analyze_single_text(content)
+    let hint = llm
+        .analyze_single_text(content)
         .await
         .expect("FATAL: analyze_single_text failed");
 
@@ -69,10 +70,16 @@ async fn test_2_1_causal_content_analysis() {
 
     // Verification per test document
     assert!(hint.is_causal, "Expected is_causal=true for causal content");
-    assert_eq!(hint.direction_hint, CausalDirectionHint::Cause,
-        "Expected direction=Cause for content about what CAUSES something");
-    assert!(hint.confidence >= 0.5,
-        "Expected confidence >= 0.5, got {}", hint.confidence);
+    assert_eq!(
+        hint.direction_hint,
+        CausalDirectionHint::Cause,
+        "Expected direction=Cause for content about what CAUSES something"
+    );
+    assert!(
+        hint.confidence >= 0.5,
+        "Expected confidence >= 0.5, got {}",
+        hint.confidence
+    );
 
     println!("[PASS] Test 2.1: Causal content analyzed correctly");
 }
@@ -87,19 +94,17 @@ async fn test_2_2_non_causal_content_analysis() {
     println!("\n=== Test 2.2: Non-Causal Content Analysis ===");
 
     let config = create_llm_config();
-    let llm = CausalDiscoveryLLM::with_config(config)
-        .expect("FATAL: Failed to create LLM");
+    let llm = CausalDiscoveryLLM::with_config(config).expect("FATAL: Failed to create LLM");
 
     println!("Loading LLM model...");
-    llm.load()
-        .await
-        .expect("FATAL: Failed to load LLM model");
+    llm.load().await.expect("FATAL: Failed to load LLM model");
 
     // Non-causal synthetic input
     let content = "The weather in Paris is pleasant during spring.";
 
     println!("Analyzing: {}", content);
-    let hint = llm.analyze_single_text(content)
+    let hint = llm
+        .analyze_single_text(content)
         .await
         .expect("FATAL: analyze_single_text failed");
 
@@ -113,9 +118,12 @@ async fn test_2_2_non_causal_content_analysis() {
     // 1. is_causal=false, OR
     // 2. is_causal=true with low confidence (<0.5)
     let is_correctly_classified = !hint.is_causal || hint.confidence < 0.5;
-    assert!(is_correctly_classified,
+    assert!(
+        is_correctly_classified,
         "Non-causal content should be detected as non-causal or low confidence. \
-        Got is_causal={}, confidence={}", hint.is_causal, hint.confidence);
+        Got is_causal={}, confidence={}",
+        hint.is_causal, hint.confidence
+    );
 
     println!("[PASS] Test 2.2: Non-causal content analyzed correctly");
 }
@@ -130,19 +138,17 @@ async fn test_2_3_effect_direction_content() {
     println!("\n=== Test 2.3: Effect-Direction Content ===");
 
     let config = create_llm_config();
-    let llm = CausalDiscoveryLLM::with_config(config)
-        .expect("FATAL: Failed to create LLM");
+    let llm = CausalDiscoveryLLM::with_config(config).expect("FATAL: Failed to create LLM");
 
     println!("Loading LLM model...");
-    llm.load()
-        .await
-        .expect("FATAL: Failed to load LLM model");
+    llm.load().await.expect("FATAL: Failed to load LLM model");
 
     // Effect-direction synthetic input
     let content = "Memory impairment results from prolonged stress exposure.";
 
     println!("Analyzing: {}", content);
-    let hint = llm.analyze_single_text(content)
+    let hint = llm
+        .analyze_single_text(content)
         .await
         .expect("FATAL: analyze_single_text failed");
 
@@ -155,10 +161,16 @@ async fn test_2_3_effect_direction_content() {
     // Verification per test document
     assert!(hint.is_causal, "Expected is_causal=true for causal content");
     // "results from" describes what the EFFECT is, so direction should be Effect
-    assert_eq!(hint.direction_hint, CausalDirectionHint::Effect,
-        "Expected direction=Effect for content describing what results FROM something");
-    assert!(hint.confidence >= 0.5,
-        "Expected confidence >= 0.5, got {}", hint.confidence);
+    assert_eq!(
+        hint.direction_hint,
+        CausalDirectionHint::Effect,
+        "Expected direction=Effect for content describing what results FROM something"
+    );
+    assert!(
+        hint.confidence >= 0.5,
+        "Expected confidence >= 0.5, got {}",
+        hint.confidence
+    );
 
     println!("[PASS] Test 2.3: Effect-direction content analyzed correctly");
 }
@@ -172,21 +184,54 @@ fn test_2_4_bias_factors() {
 
     // Cause direction: boost cause (1.3), dampen effect (0.8)
     let (cause_bias, effect_bias) = CausalDirectionHint::Cause.bias_factors();
-    assert!((cause_bias - 1.3).abs() < 0.01, "Cause bias should be 1.3, got {}", cause_bias);
-    assert!((effect_bias - 0.8).abs() < 0.01, "Effect bias should be 0.8, got {}", effect_bias);
-    println!("  Cause: cause_bias={}, effect_bias={}", cause_bias, effect_bias);
+    assert!(
+        (cause_bias - 1.3).abs() < 0.01,
+        "Cause bias should be 1.3, got {}",
+        cause_bias
+    );
+    assert!(
+        (effect_bias - 0.8).abs() < 0.01,
+        "Effect bias should be 0.8, got {}",
+        effect_bias
+    );
+    println!(
+        "  Cause: cause_bias={}, effect_bias={}",
+        cause_bias, effect_bias
+    );
 
     // Effect direction: dampen cause (0.8), boost effect (1.3)
     let (cause_bias, effect_bias) = CausalDirectionHint::Effect.bias_factors();
-    assert!((cause_bias - 0.8).abs() < 0.01, "Cause bias should be 0.8, got {}", cause_bias);
-    assert!((effect_bias - 1.3).abs() < 0.01, "Effect bias should be 1.3, got {}", effect_bias);
-    println!("  Effect: cause_bias={}, effect_bias={}", cause_bias, effect_bias);
+    assert!(
+        (cause_bias - 0.8).abs() < 0.01,
+        "Cause bias should be 0.8, got {}",
+        cause_bias
+    );
+    assert!(
+        (effect_bias - 1.3).abs() < 0.01,
+        "Effect bias should be 1.3, got {}",
+        effect_bias
+    );
+    println!(
+        "  Effect: cause_bias={}, effect_bias={}",
+        cause_bias, effect_bias
+    );
 
     // Neutral direction: no bias (1.0, 1.0)
     let (cause_bias, effect_bias) = CausalDirectionHint::Neutral.bias_factors();
-    assert!((cause_bias - 1.0).abs() < 0.01, "Cause bias should be 1.0, got {}", cause_bias);
-    assert!((effect_bias - 1.0).abs() < 0.01, "Effect bias should be 1.0, got {}", effect_bias);
-    println!("  Neutral: cause_bias={}, effect_bias={}", cause_bias, effect_bias);
+    assert!(
+        (cause_bias - 1.0).abs() < 0.01,
+        "Cause bias should be 1.0, got {}",
+        cause_bias
+    );
+    assert!(
+        (effect_bias - 1.0).abs() < 0.01,
+        "Effect bias should be 1.0, got {}",
+        effect_bias
+    );
+    println!(
+        "  Neutral: cause_bias={}, effect_bias={}",
+        cause_bias, effect_bias
+    );
 
     println!("[PASS] Test 2.4: All bias factors correct");
 }
@@ -200,8 +245,7 @@ async fn test_2_5_llm_not_loaded_error() {
     println!("\n=== Test 2.5: LLM Not Loaded Error ===");
 
     let config = create_llm_config();
-    let llm = CausalDiscoveryLLM::with_config(config)
-        .expect("FATAL: Failed to create LLM");
+    let llm = CausalDiscoveryLLM::with_config(config).expect("FATAL: Failed to create LLM");
 
     // DO NOT load the model
     assert!(!llm.is_loaded(), "LLM should not be loaded before load()");
@@ -215,8 +259,8 @@ async fn test_2_5_llm_not_loaded_error() {
 
     // Verify error type
     assert!(
-        format!("{}", err).contains("not initialized") ||
-        format!("{:?}", err).contains("LlmNotInitialized"),
+        format!("{}", err).contains("not initialized")
+            || format!("{:?}", err).contains("LlmNotInitialized"),
         "Error should indicate LLM not initialized"
     );
 

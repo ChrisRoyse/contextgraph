@@ -326,19 +326,33 @@ mod tests {
     #[test]
     fn test_validation_rejects_invalid() {
         assert!(SearchByKeywordsRequest::default().validate().is_err());
-        let bad_blend = SearchByKeywordsRequest { query: "test".to_string(), blend_with_semantic: 1.5, ..Default::default() };
+        let bad_blend = SearchByKeywordsRequest {
+            query: "test".to_string(),
+            blend_with_semantic: 1.5,
+            ..Default::default()
+        };
         assert!(bad_blend.validate().is_err());
-        let bad_k = SearchByKeywordsRequest { query: "test".to_string(), top_k: 100, ..Default::default() };
+        let bad_k = SearchByKeywordsRequest {
+            query: "test".to_string(),
+            top_k: 100,
+            ..Default::default()
+        };
         assert!(bad_k.validate().is_err());
     }
 
     #[test]
     fn test_response_serialization() {
         let resp = SearchByKeywordsResponse {
-            query: "test".to_string(), results: vec![], count: 0,
+            query: "test".to_string(),
+            results: vec![],
+            count: 0,
             metadata: KeywordSearchMetadata {
-                candidates_evaluated: 0, filtered_by_score: 0, e6_blend_weight: 0.3,
-                e1_weight: 0.7, used_splade_expansion: true, extracted_keywords: vec![],
+                candidates_evaluated: 0,
+                filtered_by_score: 0,
+                e6_blend_weight: 0.3,
+                e1_weight: 0.7,
+                used_splade_expansion: true,
+                extracted_keywords: vec![],
             },
         };
         let json = serde_json::to_string(&resp).unwrap();

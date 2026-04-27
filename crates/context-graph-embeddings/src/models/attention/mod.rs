@@ -136,10 +136,7 @@ mod tests {
     #[test]
     fn test_default_attention_mode() {
         let mode = AttentionMode::default();
-        assert_eq!(
-            mode,
-            AttentionMode::MemoryEfficient { tile_size: 256 }
-        );
+        assert_eq!(mode, AttentionMode::MemoryEfficient { tile_size: 256 });
     }
 
     #[test]
@@ -152,10 +149,7 @@ mod tests {
     #[test]
     fn test_resolve_flash_attention_true() {
         let resolved = resolve_attention_mode(None, true);
-        assert_eq!(
-            resolved,
-            AttentionMode::MemoryEfficient { tile_size: 256 }
-        );
+        assert_eq!(resolved, AttentionMode::MemoryEfficient { tile_size: 256 });
     }
 
     #[test]

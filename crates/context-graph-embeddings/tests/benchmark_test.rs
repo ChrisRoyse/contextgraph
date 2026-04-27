@@ -85,7 +85,10 @@ fn test_total_dimension_benchmark() {
 fn test_model_count_benchmark() {
     assert_eq!(MODEL_COUNT, 14);
     assert_eq!(NUM_EMBEDDERS, 13);
-    eprintln!("[BENCHMARK] Model count: {}, Embedder weight slots: {}", MODEL_COUNT, NUM_EMBEDDERS);
+    eprintln!(
+        "[BENCHMARK] Model count: {}, Embedder weight slots: {}",
+        MODEL_COUNT, NUM_EMBEDDERS
+    );
 }
 
 /// Test: Projected dimensions sum to TOTAL_DIMENSION
@@ -265,7 +268,7 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         (3, QuantizationMethod::Float8E4M3, 512, 512), // E4: Float8
         (4, QuantizationMethod::PQ8, 768, 8),  // E5: PQ8
         (5, QuantizationMethod::SparseNative, 30522, 500), // E6: Sparse (~500 nnz * 2)
-        (6, QuantizationMethod::PQ8, 1536, 8),  // E7: PQ8 (Qodo-Embed 1536D)
+        (6, QuantizationMethod::PQ8, 1536, 8), // E7: PQ8 (Qodo-Embed 1536D)
         (7, QuantizationMethod::Float8E4M3, 1024, 1024), // E8: Float8 (e5-large-v2 1024D)
         (8, QuantizationMethod::Binary, 10000, 1250), // E9: Binary (10K bits / 8)
         (9, QuantizationMethod::PQ8, 768, 8),  // E10: PQ8
@@ -316,12 +319,8 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
 #[test]
 fn test_fingerprint_estimated_size() {
     let embeddings = create_benchmark_embeddings();
-    let fp = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        [0.5f32; 14],
-        [0x42u8; 32],
-    );
+    let fp =
+        StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
 
     let size = fp.estimated_size_bytes();
 
@@ -406,12 +405,8 @@ fn test_fingerprint_creation_timing() {
     let start = Instant::now();
     for _ in 0..iterations {
         let embeddings = create_benchmark_embeddings();
-        let _fp = StoredQuantizedFingerprint::new(
-            Uuid::new_v4(),
-            embeddings,
-            [0.5f32; 14],
-            [0x42u8; 32],
-        );
+        let _fp =
+            StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
     }
     let elapsed = start.elapsed();
 
@@ -519,12 +514,8 @@ fn test_edge_case_maximum_size_fingerprint() {
         );
     }
 
-    let fp = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        [0.5f32; 14],
-        [0x42u8; 32],
-    );
+    let fp =
+        StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
 
     let size = fp.estimated_size_bytes();
     assert!(
@@ -561,12 +552,8 @@ fn test_edge_case_minimum_size_fingerprint() {
         );
     }
 
-    let fp = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        [0.5f32; 14],
-        [0x42u8; 32],
-    );
+    let fp =
+        StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
 
     let size = fp.estimated_size_bytes();
     // Note: Even with minimal embeddings, metadata adds overhead

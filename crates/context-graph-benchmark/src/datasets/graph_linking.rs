@@ -314,7 +314,10 @@ impl GraphLinkingDataset {
     }
 
     /// Get sample candidate sets for graph expansion benchmarking.
-    pub fn sample_candidate_sets(&self, count: usize) -> impl Iterator<Item = Vec<CandidateData>> + '_ {
+    pub fn sample_candidate_sets(
+        &self,
+        count: usize,
+    ) -> impl Iterator<Item = Vec<CandidateData>> + '_ {
         let mut rng = ChaCha8Rng::seed_from_u64(self.config.seed + 400);
         let memories = &self.memories;
 
@@ -393,10 +396,8 @@ impl GraphLinkingDatasetGenerator {
         let memories = self.generate_memories(&topic_clusters);
 
         // Build topic assignment map
-        let topic_assignments: HashMap<Uuid, usize> = memories
-            .iter()
-            .map(|m| (m.id, m.topic_id))
-            .collect();
+        let topic_assignments: HashMap<Uuid, usize> =
+            memories.iter().map(|m| (m.id, m.topic_id)).collect();
 
         // Generate expected edges
         let expected_edges = self.generate_expected_edges(&memories);
@@ -505,10 +506,7 @@ impl GraphLinkingDatasetGenerator {
         // Build topic index
         let mut topic_members: HashMap<usize, Vec<usize>> = HashMap::new();
         for (idx, memory) in memories.iter().enumerate() {
-            topic_members
-                .entry(memory.topic_id)
-                .or_default()
-                .push(idx);
+            topic_members.entry(memory.topic_id).or_default().push(idx);
         }
 
         // Generate edges within topics (high probability)

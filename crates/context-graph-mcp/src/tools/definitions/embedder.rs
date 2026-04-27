@@ -393,14 +393,28 @@ mod tests {
         for tool in &tools {
             assert!(
                 tool.description.contains("embedder") || tool.description.contains("E1"),
-                "Tool {} should mention embedder concepts", tool.name
+                "Tool {} should mention embedder concepts",
+                tool.name
             );
         }
-        let search = tools.iter().find(|t| t.name == "search_by_embedder").unwrap();
-        let required = search.input_schema.get("required").unwrap().as_array().unwrap();
+        let search = tools
+            .iter()
+            .find(|t| t.name == "search_by_embedder")
+            .unwrap();
+        let required = search
+            .input_schema
+            .get("required")
+            .unwrap()
+            .as_array()
+            .unwrap();
         assert!(required.contains(&json!("embedder")));
         assert!(required.contains(&json!("query")));
-        let props = search.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = search
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         let embedder_enum = props["embedder"]["enum"].as_array().unwrap();
         // CD-M1 FIX: E6/E12/E13 removed from search_by_embedder (non-HNSW)
         // E14 added post-Phase-C (HNSW-capable 1024-D BGE-M3 Dense)
@@ -410,12 +424,22 @@ mod tests {
     #[test]
     fn test_schema_defaults_and_constraints() {
         let tools = definitions();
-        let clusters_props = tools.iter().find(|t| t.name == "get_embedder_clusters").unwrap()
-            .input_schema["properties"].as_object().unwrap();
+        let clusters_props = tools
+            .iter()
+            .find(|t| t.name == "get_embedder_clusters")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap();
         assert_eq!(clusters_props["minClusterSize"]["default"], 3);
         assert_eq!(clusters_props["topClusters"]["default"], 10);
-        let compare_props = tools.iter().find(|t| t.name == "compare_embedder_views").unwrap()
-            .input_schema["properties"].as_object().unwrap();
+        let compare_props = tools
+            .iter()
+            .find(|t| t.name == "compare_embedder_views")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap();
         assert_eq!(compare_props["embedders"]["minItems"], 2);
         assert_eq!(compare_props["embedders"]["maxItems"], 5);
     }

@@ -231,11 +231,8 @@ impl FingerprintMatrix {
 
             if !values.is_empty() {
                 let mean = values.iter().sum::<f32>() / values.len() as f32;
-                let variance = values
-                    .iter()
-                    .map(|v| (v - mean).powi(2))
-                    .sum::<f32>()
-                    / values.len() as f32;
+                let variance =
+                    values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
                 contributions[embedder_idx] = variance;
             }
         }
@@ -276,11 +273,7 @@ impl FingerprintMatrix {
         let min = values.iter().cloned().fold(f32::INFINITY, f32::min);
         let max = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let mean = values.iter().sum::<f32>() / values.len() as f32;
-        let variance = values
-            .iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f32>()
-            / values.len() as f32;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
         let std_dev = variance.sqrt();
 
         // Find gap (largest jump in sorted similarities)
@@ -460,11 +453,8 @@ pub fn build_fingerprint_matrix(
             }
 
             // Aggregate per-embedder scores using helper
-            let aggregated_sim = aggregate_similarity(
-                &result.per_embedder,
-                result.overall,
-                config.aggregation,
-            );
+            let aggregated_sim =
+                aggregate_similarity(&result.per_embedder, result.overall, config.aggregation);
 
             // Apply minimum threshold
             let final_sim = if aggregated_sim >= config.min_similarity_threshold {
@@ -664,10 +654,7 @@ mod tests {
         );
 
         // Matrix should be symmetric
-        assert_eq!(
-            matrix.get_similarity(0, 1),
-            matrix.get_similarity(1, 0)
-        );
+        assert_eq!(matrix.get_similarity(0, 1), matrix.get_similarity(1, 0));
 
         println!(
             "[PASS] test_build_two_fingerprints_identical - similarity={}",
@@ -739,5 +726,4 @@ mod tests {
 
         println!("[PASS] test_incremental_update");
     }
-
 }

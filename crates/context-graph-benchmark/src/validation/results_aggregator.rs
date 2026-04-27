@@ -274,19 +274,23 @@ impl BenchmarkResultsAggregator {
         let metrics_root = json.get("metrics").unwrap_or(&json);
 
         // Extract E2 metrics from metrics.recency or top-level
-        let e2 = metrics_root.get("recency")
+        let e2 = metrics_root
+            .get("recency")
             .or(json.get("e2_recency"))
             .or(json.get("recency"));
         if let Some(e2) = e2 {
-            metrics.e2_recency_mrr = e2.get("recency_weighted_mrr")
+            metrics.e2_recency_mrr = e2
+                .get("recency_weighted_mrr")
                 .or(e2.get("mrr"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            metrics.e2_decay_accuracy = e2.get("decay_accuracy")
+            metrics.e2_decay_accuracy = e2
+                .get("decay_accuracy")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
             // Try fresh_retrieval_rate_at.10 first
-            metrics.e2_fresh_retrieval_rate = e2.get("fresh_retrieval_rate_at")
+            metrics.e2_fresh_retrieval_rate = e2
+                .get("fresh_retrieval_rate_at")
                 .and_then(|v| v.get("10"))
                 .and_then(|v| v.as_f64())
                 .or_else(|| e2.get("fresh_retrieval_rate").and_then(|v| v.as_f64()))
@@ -294,62 +298,75 @@ impl BenchmarkResultsAggregator {
         }
 
         // Extract E3 metrics from metrics.periodic or top-level
-        let e3 = metrics_root.get("periodic")
+        let e3 = metrics_root
+            .get("periodic")
             .or(json.get("e3_periodic"))
             .or(json.get("periodic"));
         if let Some(e3) = e3 {
             // Try periodic_recall_at.10 first
-            metrics.e3_periodic_recall = e3.get("periodic_recall_at")
+            metrics.e3_periodic_recall = e3
+                .get("periodic_recall_at")
                 .and_then(|v| v.get("10"))
                 .and_then(|v| v.as_f64())
                 .or_else(|| e3.get("periodic_recall_at_10").and_then(|v| v.as_f64()))
                 .or_else(|| e3.get("recall").and_then(|v| v.as_f64()))
                 .unwrap_or(0.0);
-            metrics.e3_hourly_quality = e3.get("hourly_cluster_quality")
+            metrics.e3_hourly_quality = e3
+                .get("hourly_cluster_quality")
                 .or(e3.get("hourly_quality"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            metrics.e3_daily_quality = e3.get("daily_cluster_quality")
+            metrics.e3_daily_quality = e3
+                .get("daily_cluster_quality")
                 .or(e3.get("daily_quality"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
         }
 
         // Extract E4 metrics from metrics.sequence or top-level
-        let e4 = metrics_root.get("sequence")
+        let e4 = metrics_root
+            .get("sequence")
             .or(json.get("e4_sequence"))
             .or(json.get("sequence"));
         if let Some(e4) = e4 {
-            metrics.e4_sequence_accuracy = e4.get("sequence_accuracy")
+            metrics.e4_sequence_accuracy = e4
+                .get("sequence_accuracy")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            metrics.e4_before_after_accuracy = e4.get("before_after_accuracy")
+            metrics.e4_before_after_accuracy = e4
+                .get("before_after_accuracy")
                 .or(e4.get("direction_accuracy"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            metrics.e4_ordering_precision = e4.get("temporal_ordering_precision")
+            metrics.e4_ordering_precision = e4
+                .get("temporal_ordering_precision")
                 .or(e4.get("ordering_precision"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            metrics.e4_boundary_f1 = e4.get("episode_boundary_f1")
+            metrics.e4_boundary_f1 = e4
+                .get("episode_boundary_f1")
                 .or(e4.get("boundary_f1"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
         }
 
         // Check symmetry validation from symmetry_check or top-level
-        let symmetry = json.get("symmetry_check")
+        let symmetry = json
+            .get("symmetry_check")
             .or(metrics_root.get("symmetry"))
             .or(json.get("symmetry"));
         if let Some(symmetry) = symmetry {
-            metrics.symmetry_validated = symmetry.get("passed")
+            metrics.symmetry_validated = symmetry
+                .get("passed")
                 .or(symmetry.get("symmetric"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
         }
 
         self.results.temporal = Some(metrics);
-        self.results.loaded_files.push(file_path.file_name().unwrap().to_string_lossy().to_string());
+        self.results
+            .loaded_files
+            .push(file_path.file_name().unwrap().to_string_lossy().to_string());
 
         Ok(())
     }
@@ -372,7 +389,8 @@ impl BenchmarkResultsAggregator {
             }
         }
 
-        let file_path = file_path.ok_or_else(|| AggregatorError::MissingFile("causal_*.json".to_string()))?;
+        let file_path =
+            file_path.ok_or_else(|| AggregatorError::MissingFile("causal_*.json".to_string()))?;
 
         let file = File::open(&file_path)?;
         let reader = BufReader::new(file);
@@ -383,60 +401,75 @@ impl BenchmarkResultsAggregator {
         // Extract from various possible structures
         let results = json.get("results").unwrap_or(&json);
 
-        metrics.direction_accuracy = results.get("direction_accuracy")
+        metrics.direction_accuracy = results
+            .get("direction_accuracy")
             .or(results.get("direction_detection_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
         // Extract accuracy_e5_asymmetric from copa_reasoning section or top-level
-        metrics.e5_asymmetric_accuracy = json.get("copa_reasoning")
+        metrics.e5_asymmetric_accuracy = json
+            .get("copa_reasoning")
             .and_then(|v| v.get("accuracy_e5_asymmetric"))
             .and_then(|v| v.as_f64())
-            .or_else(|| results.get("accuracy_e5_asymmetric").and_then(|v| v.as_f64()))
+            .or_else(|| {
+                results
+                    .get("accuracy_e5_asymmetric")
+                    .and_then(|v| v.as_f64())
+            })
             .unwrap_or(0.0);
 
         // Extract e5_contribution_pct from e5_contribution section or top-level
-        metrics.e5_contribution_pct = json.get("e5_contribution")
+        metrics.e5_contribution_pct = json
+            .get("e5_contribution")
             .and_then(|v| v.get("e5_contribution_pct"))
             .and_then(|v| v.as_f64())
             .or_else(|| results.get("e5_contribution_pct").and_then(|v| v.as_f64()))
             .unwrap_or(0.0);
 
-        metrics.asymmetry_ratio = results.get("asymmetry_ratio")
+        metrics.asymmetry_ratio = results
+            .get("asymmetry_ratio")
             .or(results.get("asymmetric_ratio"))
             .and_then(|v| v.as_f64())
             .unwrap_or(1.5);
 
-        metrics.cause_to_effect_mrr = results.get("cause_to_effect_mrr")
+        metrics.cause_to_effect_mrr = results
+            .get("cause_to_effect_mrr")
             .or(results.get("forward_mrr"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.effect_to_cause_mrr = results.get("effect_to_cause_mrr")
+        metrics.effect_to_cause_mrr = results
+            .get("effect_to_cause_mrr")
             .or(results.get("backward_mrr"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.copa_accuracy_real = results.get("copa_accuracy")
+        metrics.copa_accuracy_real = results
+            .get("copa_accuracy")
             .or(results.get("reasoning_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.chain_traversal_accuracy = results.get("chain_traversal_accuracy")
+        metrics.chain_traversal_accuracy = results
+            .get("chain_traversal_accuracy")
             .or(results.get("chain_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
         // Vector distinctness from symmetry check
         if let Some(sym) = results.get("symmetry_check") {
-            metrics.vector_distinctness = sym.get("distinct_pairs_pct")
+            metrics.vector_distinctness = sym
+                .get("distinct_pairs_pct")
                 .or(sym.get("distinctness"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
         }
 
         self.results.causal = Some(metrics);
-        self.results.loaded_files.push(file_path.file_name().unwrap().to_string_lossy().to_string());
+        self.results
+            .loaded_files
+            .push(file_path.file_name().unwrap().to_string_lossy().to_string());
 
         Ok(())
     }
@@ -445,7 +478,9 @@ impl BenchmarkResultsAggregator {
     fn load_sparse(&mut self) -> Result<(), AggregatorError> {
         let path = self.results_dir.join("e6_sparse_benchmark.json");
         if !path.exists() {
-            return Err(AggregatorError::MissingFile("e6_sparse_benchmark.json".to_string()));
+            return Err(AggregatorError::MissingFile(
+                "e6_sparse_benchmark.json".to_string(),
+            ));
         }
 
         let file = File::open(&path)?;
@@ -456,28 +491,34 @@ impl BenchmarkResultsAggregator {
 
         let results = json.get("results").unwrap_or(&json);
 
-        metrics.e6_mrr = results.get("mrr_at_10")
+        metrics.e6_mrr = results
+            .get("mrr_at_10")
             .or(results.get("e6_mrr"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.e6_sparsity = results.get("sparsity_ratio")
+        metrics.e6_sparsity = results
+            .get("sparsity_ratio")
             .or(results.get("sparsity"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.e6_avg_active_terms = results.get("avg_active_terms")
+        metrics.e6_avg_active_terms = results
+            .get("avg_active_terms")
             .or(results.get("active_terms"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.e6_vs_e1_delta = results.get("e6_vs_e1_delta")
+        metrics.e6_vs_e1_delta = results
+            .get("e6_vs_e1_delta")
             .or(results.get("delta_vs_e1"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
         self.results.sparse = Some(metrics);
-        self.results.loaded_files.push("e6_sparse_benchmark.json".to_string());
+        self.results
+            .loaded_files
+            .push("e6_sparse_benchmark.json".to_string());
 
         Ok(())
     }
@@ -495,7 +536,8 @@ impl BenchmarkResultsAggregator {
             }
         }
 
-        let file_path = file_path.ok_or_else(|| AggregatorError::MissingFile("graph_*.json".to_string()))?;
+        let file_path =
+            file_path.ok_or_else(|| AggregatorError::MissingFile("graph_*.json".to_string()))?;
 
         let file = File::open(&file_path)?;
         let reader = BufReader::new(file);
@@ -505,23 +547,27 @@ impl BenchmarkResultsAggregator {
 
         let results = json.get("results").unwrap_or(&json);
 
-        metrics.direction_detection_rate = results.get("direction_detection_rate")
+        metrics.direction_detection_rate = results
+            .get("direction_detection_rate")
             .or(results.get("direction_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.hub_detection_rate = results.get("hub_detection_rate")
+        metrics.hub_detection_rate = results
+            .get("hub_detection_rate")
             .or(results.get("hub_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.asymmetry_ratio = results.get("asymmetry_ratio")
+        metrics.asymmetry_ratio = results
+            .get("asymmetry_ratio")
             .or(results.get("asymmetric_ratio"))
             .and_then(|v| v.as_f64())
             .unwrap_or(1.5);
 
         // Try asymmetric_retrieval.e8_contribution_percentage first
-        metrics.e8_contribution = results.get("asymmetric_retrieval")
+        metrics.e8_contribution = results
+            .get("asymmetric_retrieval")
             .and_then(|v| v.get("e8_contribution_percentage"))
             .and_then(|v| v.as_f64())
             .map(|v| v / 100.0) // Convert percentage to decimal
@@ -529,12 +575,15 @@ impl BenchmarkResultsAggregator {
             .or_else(|| results.get("contribution").and_then(|v| v.as_f64()))
             .unwrap_or(0.0);
 
-        metrics.centrality_correlation = results.get("centrality_correlation")
+        metrics.centrality_correlation = results
+            .get("centrality_correlation")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
         self.results.graph = Some(metrics);
-        self.results.loaded_files.push(file_path.file_name().unwrap().to_string_lossy().to_string());
+        self.results
+            .loaded_files
+            .push(file_path.file_name().unwrap().to_string_lossy().to_string());
 
         Ok(())
     }
@@ -543,7 +592,9 @@ impl BenchmarkResultsAggregator {
     fn load_multimodal(&mut self) -> Result<(), AggregatorError> {
         let path = self.results_dir.join("multimodal_benchmark.json");
         if !path.exists() {
-            return Err(AggregatorError::MissingFile("multimodal_benchmark.json".to_string()));
+            return Err(AggregatorError::MissingFile(
+                "multimodal_benchmark.json".to_string(),
+            ));
         }
 
         let file = File::open(&path)?;
@@ -554,49 +605,62 @@ impl BenchmarkResultsAggregator {
 
         let results = json.get("results").unwrap_or(&json);
 
-        metrics.paraphrase_accuracy = results.get("paraphrase_detection_accuracy")
+        metrics.paraphrase_accuracy = results
+            .get("paraphrase_detection_accuracy")
             .or(results.get("paraphrase_accuracy"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.paraphrase_precision = results.get("paraphrase_precision")
+        metrics.paraphrase_precision = results
+            .get("paraphrase_precision")
             .or(results.get("precision"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.paraphrase_recall = results.get("paraphrase_recall")
+        metrics.paraphrase_recall = results
+            .get("paraphrase_recall")
             .or(results.get("recall"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.paraphrase_f1 = results.get("paraphrase_f1")
+        metrics.paraphrase_f1 = results
+            .get("paraphrase_f1")
             .or(results.get("f1"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
 
-        metrics.asymmetry_ratio = results.get("asymmetry_ratio")
+        metrics.asymmetry_ratio = results
+            .get("asymmetry_ratio")
             .or(results.get("asymmetric_ratio"))
             .and_then(|v| v.as_f64())
             .unwrap_or(1.5);
 
         // e10_contribution_percentage is in percent (e.g., 30.76), convert to decimal
         // Try summary first, then results
-        metrics.e10_contribution_pct = json.get("summary")
+        metrics.e10_contribution_pct = json
+            .get("summary")
             .and_then(|v| v.get("e10_contribution_percentage"))
             .and_then(|v| v.as_f64())
-            .or_else(|| results.get("e10_contribution_percentage").and_then(|v| v.as_f64()))
+            .or_else(|| {
+                results
+                    .get("e10_contribution_percentage")
+                    .and_then(|v| v.as_f64())
+            })
             .or_else(|| results.get("e10_contribution_pct").and_then(|v| v.as_f64()))
             .or_else(|| results.get("contribution_pct").and_then(|v| v.as_f64()))
             .map(|v| if v > 1.0 { v / 100.0 } else { v }) // Normalize to decimal
             .unwrap_or(0.0);
 
-        metrics.optimal_blend = results.get("optimal_blend")
+        metrics.optimal_blend = results
+            .get("optimal_blend")
             .or(results.get("blend_weight"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.3);
 
         self.results.multimodal = Some(metrics);
-        self.results.loaded_files.push("multimodal_benchmark.json".to_string());
+        self.results
+            .loaded_files
+            .push("multimodal_benchmark.json".to_string());
 
         Ok(())
     }
@@ -605,7 +669,9 @@ impl BenchmarkResultsAggregator {
     fn load_mcp(&mut self) -> Result<(), AggregatorError> {
         let path = self.results_dir.join("mcp_intent_benchmark.json");
         if !path.exists() {
-            return Err(AggregatorError::MissingFile("mcp_intent_benchmark.json".to_string()));
+            return Err(AggregatorError::MissingFile(
+                "mcp_intent_benchmark.json".to_string(),
+            ));
         }
 
         let file = File::open(&path)?;
@@ -633,15 +699,21 @@ impl BenchmarkResultsAggregator {
 
         // Calculate overall p95
         if !metrics.tool_latencies.is_empty() {
-            metrics.overall_p95_ms = metrics.tool_latencies.values()
+            metrics.overall_p95_ms = metrics
+                .tool_latencies
+                .values()
                 .cloned()
                 .fold(0.0_f64, |a, b| a.max(b));
-            metrics.all_under_target = metrics.tool_latencies.values()
+            metrics.all_under_target = metrics
+                .tool_latencies
+                .values()
                 .all(|&v| v < metrics.target_p95_ms);
         }
 
         self.results.mcp = Some(metrics);
-        self.results.loaded_files.push("mcp_intent_benchmark.json".to_string());
+        self.results
+            .loaded_files
+            .push("mcp_intent_benchmark.json".to_string());
 
         Ok(())
     }
@@ -658,14 +730,17 @@ impl BenchmarkResultsAggregator {
         let json: serde_json::Value = serde_json::from_reader(reader)?;
 
         let mut metrics = SummaryMetrics {
-            overall_status: json.get("overall_status")
+            overall_status: json
+                .get("overall_status")
                 .and_then(|v| v.as_str())
                 .unwrap_or("UNKNOWN")
                 .to_string(),
-            overall_score: json.get("overall_score")
+            overall_score: json
+                .get("overall_score")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
-            constitutional_compliance: json.get("constitutional_compliance")
+            constitutional_compliance: json
+                .get("constitutional_compliance")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0),
             ..Default::default()
@@ -675,12 +750,28 @@ impl BenchmarkResultsAggregator {
         if let Some(embedders) = json.get("embedders").and_then(|v| v.as_object()) {
             for (name, data) in embedders {
                 let status = EmbedderStatus {
-                    role: data.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    status: data.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    target_met: data.get("target_met").and_then(|v| v.as_bool()).unwrap_or(false),
-                    warnings: data.get("warnings")
+                    role: data
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    status: data
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    target_met: data
+                        .get("target_met")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false),
+                    warnings: data
+                        .get("warnings")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
                         .unwrap_or_default(),
                 };
                 metrics.embedder_status.insert(name.clone(), status);
@@ -691,8 +782,16 @@ impl BenchmarkResultsAggregator {
         if let Some(rules) = json.get("arch_rules").and_then(|v| v.as_object()) {
             for (name, data) in rules {
                 let status = RuleStatus {
-                    status: data.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    description: data.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    status: data
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    description: data
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 };
                 metrics.arch_rules.insert(name.clone(), status);
             }
@@ -702,8 +801,16 @@ impl BenchmarkResultsAggregator {
         if let Some(patterns) = json.get("anti_patterns").and_then(|v| v.as_object()) {
             for (name, data) in patterns {
                 let status = RuleStatus {
-                    status: data.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    description: data.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    status: data
+                        .get("status")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    description: data
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                 };
                 metrics.anti_patterns.insert(name.clone(), status);
             }
@@ -724,7 +831,9 @@ impl BenchmarkResultsAggregator {
         match embedder {
             EmbedderName::E5Causal => self.results.causal.as_ref().map(|c| c.asymmetry_ratio),
             EmbedderName::E8Graph => self.results.graph.as_ref().map(|g| g.asymmetry_ratio),
-            EmbedderName::E10Multimodal => self.results.multimodal.as_ref().map(|m| m.asymmetry_ratio),
+            EmbedderName::E10Multimodal => {
+                self.results.multimodal.as_ref().map(|m| m.asymmetry_ratio)
+            }
             _ => None,
         }
     }
@@ -753,7 +862,11 @@ impl BenchmarkResultsAggregator {
 
     /// Check if all MCP tools are under latency target.
     pub fn mcp_latencies_under_target(&self) -> bool {
-        self.results.mcp.as_ref().map(|m| m.all_under_target).unwrap_or(false)
+        self.results
+            .mcp
+            .as_ref()
+            .map(|m| m.all_under_target)
+            .unwrap_or(false)
     }
 
     /// Get temporal metrics.
@@ -786,7 +899,10 @@ impl BenchmarkResultsAggregator {
 
     /// Get overall constitutional compliance.
     pub fn get_constitutional_compliance(&self) -> Option<f64> {
-        self.results.summary.as_ref().map(|s| s.constitutional_compliance)
+        self.results
+            .summary
+            .as_ref()
+            .map(|s| s.constitutional_compliance)
     }
 
     /// Check if results are available.
@@ -824,7 +940,10 @@ mod tests {
             let ratios = aggregator.get_all_asymmetric_ratios();
             for (embedder, ratio) in &ratios {
                 println!("{:?}: {:.2}", embedder, ratio);
-                assert!(ratio >= &1.0 && ratio <= &2.0, "Ratio should be in reasonable range");
+                assert!(
+                    ratio >= &1.0 && ratio <= &2.0,
+                    "Ratio should be in reasonable range"
+                );
             }
         }
     }

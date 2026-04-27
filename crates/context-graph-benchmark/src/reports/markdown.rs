@@ -10,7 +10,10 @@ pub fn generate_markdown(results: &BenchmarkResults) -> String {
 
     // Title and summary
     md.push_str("# Benchmark Results: 13-Embedder Multi-Space vs Single-Embedder RAG\n\n");
-    md.push_str(&format!("**Generated:** {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
+    md.push_str(&format!(
+        "**Generated:** {}\n\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    ));
 
     // Executive summary
     md.push_str("## Executive Summary\n\n");
@@ -299,7 +302,9 @@ fn write_recommendations(md: &mut String, results: &BenchmarkResults) {
         md.push_str("- Corpus size is small (<1,000 documents)\n");
         md.push_str("- Embedding latency is critical\n");
     } else {
-        md.push_str("Based on the benchmark results, the systems perform comparably. Consider:\n\n");
+        md.push_str(
+            "Based on the benchmark results, the systems perform comparably. Consider:\n\n",
+        );
         md.push_str("- Single-embedder for simpler deployment\n");
         md.push_str("- Multi-space for additional robustness at scale\n");
     }
@@ -333,10 +338,7 @@ fn write_methodology(md: &mut String, results: &BenchmarkResults) {
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    md.push_str(&format!(
-        "- **K Values:** {:?}\n",
-        results.config.k_values
-    ));
+    md.push_str(&format!("- **K Values:** {:?}\n", results.config.k_values));
     md.push_str(&format!(
         "- **Warmup Iterations:** {}\n",
         results.config.warmup_iterations

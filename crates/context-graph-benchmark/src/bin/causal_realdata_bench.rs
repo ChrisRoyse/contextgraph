@@ -131,8 +131,9 @@ fn parse_args() -> Args {
                     .expect("--seed must be a number");
             }
             "--checkpoint-dir" => {
-                args.checkpoint_dir =
-                    Some(PathBuf::from(argv.next().expect("--checkpoint-dir requires a value")));
+                args.checkpoint_dir = Some(PathBuf::from(
+                    argv.next().expect("--checkpoint-dir requires a value"),
+                ));
             }
             "--no-checkpoint" => {
                 args.checkpoint_dir = None;
@@ -410,20 +411,34 @@ async fn main() {
 
     println!("    Total E5 vector pairs: {}", total_e5_pairs);
     println!("    Identical vectors (sim > 0.999): {}", identical_count);
-    println!("    High similarity vectors (sim > 0.95): {}", high_similarity_count);
-    println!("    Vector distinctness: {:.1}% different", vector_distinctness);
-    println!("    Avg cause-effect similarity: {:.4}", avg_cause_effect_similarity);
+    println!(
+        "    High similarity vectors (sim > 0.95): {}",
+        high_similarity_count
+    );
+    println!(
+        "    Vector distinctness: {:.1}% different",
+        vector_distinctness
+    );
+    println!(
+        "    Avg cause-effect similarity: {:.4}",
+        avg_cause_effect_similarity
+    );
 
     // Fail fast if asymmetry is broken
     if identical_count > total_e5_pairs / 2 {
-        eprintln!("\n[CRITICAL] >50% of E5 vectors are identical ({}/{})!",
-            identical_count, total_e5_pairs);
+        eprintln!(
+            "\n[CRITICAL] >50% of E5 vectors are identical ({}/{})!",
+            identical_count, total_e5_pairs
+        );
         eprintln!("CausalModel.embed_dual() is not producing different embeddings.");
         std::process::exit(1);
     }
 
     if vector_distinctness < 80.0 && total_e5_pairs > 0 {
-        eprintln!("\n[WARNING] E5 vector distinctness is low: {:.1}% (target: >95%)", vector_distinctness);
+        eprintln!(
+            "\n[WARNING] E5 vector distinctness is low: {:.1}% (target: >95%)",
+            vector_distinctness
+        );
     }
 
     // Phase 3: Run causal benchmarks
@@ -432,7 +447,8 @@ async fn main() {
 
     // 3.1 Direction Detection
     println!("  3.1 Direction Detection...");
-    let direction_results = run_direction_detection(&dataset, args.num_direction_samples, args.seed);
+    let direction_results =
+        run_direction_detection(&dataset, args.num_direction_samples, args.seed);
     println!(
         "    Detection rate: {:.1}% ({}/{} with direction)",
         direction_results.detection_rate * 100.0,
@@ -442,7 +458,8 @@ async fn main() {
 
     // 3.2 Asymmetric Retrieval
     println!("  3.2 Asymmetric Retrieval with E5...");
-    let asymmetric_results = run_asymmetric_retrieval(&dataset, &embedded, args.num_asymmetric_queries, args.seed);
+    let asymmetric_results =
+        run_asymmetric_retrieval(&dataset, &embedded, args.num_asymmetric_queries, args.seed);
     println!(
         "    MRR cause→effect: {:.4}, effect→cause: {:.4}",
         asymmetric_results.mrr_cause_to_effect, asymmetric_results.mrr_effect_to_cause
@@ -463,21 +480,25 @@ async fn main() {
 
     // 3.4 E5 Contribution Analysis
     println!("  3.4 E5 Contribution Analysis...");
-    let e5_contribution = run_e5_contribution_analysis(&dataset, &embedded, args.num_queries, args.seed);
+    let e5_contribution =
+        run_e5_contribution_analysis(&dataset, &embedded, args.num_queries, args.seed);
     println!(
         "    E5 contribution: {:.1}% improvement",
         e5_contribution.e5_contribution_pct * 100.0
     );
 
     // Phase 4: Compile results
-    let source_datasets: Vec<String> = dataset.chunks.iter()
+    let source_datasets: Vec<String> = dataset
+        .chunks
+        .iter()
         .filter_map(|c| c.source_dataset.clone())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect();
 
     // Generate recommendations before moving results into struct
-    let recommendations = generate_recommendations(&asymmetric_results, &copa_results, &e5_contribution);
+    let recommendations =
+        generate_recommendations(&asymmetric_results, &copa_results, &e5_contribution);
 
     let results = CausalRealDataResults {
         timestamp: Utc::now().to_rfc3339(),
@@ -634,7 +655,10 @@ fn run_asymmetric_retrieval(
     }
 
     // Sample query indices
-    let query_ids: Vec<Uuid> = ids.choose_multiple(&mut rng, num_queries.min(ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = ids
+        .choose_multiple(&mut rng, num_queries.min(ids.len()))
+        .copied()
+        .collect();
 
     let mut mrr_c2e_sum = 0.0;
     let mut mrr_e2c_sum = 0.0;
@@ -647,12 +671,20 @@ fn run_asymmetric_retrieval(
     let mut neutral_count = 0usize;
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
-        let query_topic = embedded.topic_assignments.get(query_id).copied().unwrap_or(0);
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
+        let query_topic = embedded
+            .topic_assignments
+            .get(query_id)
+            .copied()
+            .unwrap_or(0);
 
         // Detect direction from query chunk text
         let empty_string = String::new();
-        let query_text = embedded.chunk_info.get(query_id)
+        let query_text = embedded
+            .chunk_info
+            .get(query_id)
             .map(|info| &info.topic_hint)
             .unwrap_or(&empty_string);
         let detected_direction = detect_causal_query_intent(query_text);
@@ -736,12 +768,32 @@ fn run_asymmetric_retrieval(
         mrr_cause_to_effect: mrr_c2e,
         mrr_effect_to_cause: mrr_e2c,
         mrr_symmetric_e1: mrr_e1,
-        asymmetry_ratio: if mrr_e2c > 0.0 { mrr_c2e / mrr_e2c } else { 1.0 },
-        improvement_over_symmetric: if mrr_e1 > 0.0 { (mrr_c2e - mrr_e1) / mrr_e1 } else { 0.0 },
+        asymmetry_ratio: if mrr_e2c > 0.0 {
+            mrr_c2e / mrr_e2c
+        } else {
+            1.0
+        },
+        improvement_over_symmetric: if mrr_e1 > 0.0 {
+            (mrr_c2e - mrr_e1) / mrr_e1
+        } else {
+            0.0
+        },
         direction_breakdown: DirectionBreakdown {
-            cause_queries_mrr: if cause_count > 0 { cause_mrr_sum / cause_count as f64 } else { 0.0 },
-            effect_queries_mrr: if effect_count > 0 { effect_mrr_sum / effect_count as f64 } else { 0.0 },
-            neutral_queries_mrr: if neutral_count > 0 { neutral_mrr_sum / neutral_count as f64 } else { 0.0 },
+            cause_queries_mrr: if cause_count > 0 {
+                cause_mrr_sum / cause_count as f64
+            } else {
+                0.0
+            },
+            effect_queries_mrr: if effect_count > 0 {
+                effect_mrr_sum / effect_count as f64
+            } else {
+                0.0
+            },
+            neutral_queries_mrr: if neutral_count > 0 {
+                neutral_mrr_sum / neutral_count as f64
+            } else {
+                0.0
+            },
         },
     }
 }
@@ -816,17 +868,28 @@ fn run_copa_reasoning(
         };
 
         // Get fingerprints
-        let Some(premise_fp) = embedded.fingerprints.get(&premise_id) else { continue };
-        let Some(correct_fp) = embedded.fingerprints.get(&correct_id) else { continue };
-        let Some(distractor_fp) = embedded.fingerprints.get(&distractor_id) else { continue };
+        let Some(premise_fp) = embedded.fingerprints.get(&premise_id) else {
+            continue;
+        };
+        let Some(correct_fp) = embedded.fingerprints.get(&correct_id) else {
+            continue;
+        };
+        let Some(distractor_fp) = embedded.fingerprints.get(&distractor_id) else {
+            continue;
+        };
 
         // E5 asymmetric: use cause→effect similarity
-        let sim_e5_correct = cosine_similarity(premise_fp.get_e5_as_cause(), correct_fp.get_e5_as_effect());
-        let sim_e5_distractor = cosine_similarity(premise_fp.get_e5_as_cause(), distractor_fp.get_e5_as_effect());
+        let sim_e5_correct =
+            cosine_similarity(premise_fp.get_e5_as_cause(), correct_fp.get_e5_as_effect());
+        let sim_e5_distractor = cosine_similarity(
+            premise_fp.get_e5_as_cause(),
+            distractor_fp.get_e5_as_effect(),
+        );
 
         // E1 symmetric baseline
         let sim_e1_correct = cosine_similarity(&premise_fp.e1_semantic, &correct_fp.e1_semantic);
-        let sim_e1_distractor = cosine_similarity(&premise_fp.e1_semantic, &distractor_fp.e1_semantic);
+        let sim_e1_distractor =
+            cosine_similarity(&premise_fp.e1_semantic, &distractor_fp.e1_semantic);
 
         // Check if correct answer is ranked higher
         if sim_e5_correct > sim_e5_distractor {
@@ -847,7 +910,11 @@ fn run_copa_reasoning(
         accuracy_e5_asymmetric: acc_e5,
         accuracy_e1_symmetric: acc_e1,
         accuracy_random: 0.5,
-        improvement_over_e1: if acc_e1 > 0.0 { (acc_e5 - acc_e1) / acc_e1 } else { 0.0 },
+        improvement_over_e1: if acc_e1 > 0.0 {
+            (acc_e5 - acc_e1) / acc_e1
+        } else {
+            0.0
+        },
         improvement_over_random: (acc_e5 - 0.5) / 0.5,
     }
 }
@@ -864,16 +931,27 @@ fn run_e5_contribution_analysis(
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
     let ids: Vec<Uuid> = embedded.fingerprints.keys().copied().collect();
-    let query_ids: Vec<Uuid> = ids.choose_multiple(&mut rng, num_queries.min(ids.len())).copied().collect();
+    let query_ids: Vec<Uuid> = ids
+        .choose_multiple(&mut rng, num_queries.min(ids.len()))
+        .copied()
+        .collect();
 
     let mut mrr_with_e5 = 0.0;
     let mut mrr_without_e5 = 0.0;
     let mut per_source: HashMap<String, (f64, usize)> = HashMap::new();
 
     for query_id in &query_ids {
-        let Some(query_fp) = embedded.fingerprints.get(query_id) else { continue };
-        let query_topic = embedded.topic_assignments.get(query_id).copied().unwrap_or(0);
-        let query_source = embedded.chunk_info.get(query_id)
+        let Some(query_fp) = embedded.fingerprints.get(query_id) else {
+            continue;
+        };
+        let query_topic = embedded
+            .topic_assignments
+            .get(query_id)
+            .copied()
+            .unwrap_or(0);
+        let query_source = embedded
+            .chunk_info
+            .get(query_id)
             .and_then(|info| dataset.chunks.iter().find(|c| c.title == info.title))
             .and_then(|c| c.source_dataset.clone())
             .unwrap_or_default();
@@ -937,7 +1015,11 @@ fn run_e5_contribution_analysis(
     E5ContributionAnalysis {
         mrr_with_e5: mrr_e5,
         mrr_without_e5: mrr_e1,
-        e5_contribution_pct: if mrr_e1 > 0.0 { (mrr_e5 - mrr_e1) / mrr_e1 } else { 0.0 },
+        e5_contribution_pct: if mrr_e1 > 0.0 {
+            (mrr_e5 - mrr_e1) / mrr_e1
+        } else {
+            0.0
+        },
         asymmetric_vs_symmetric: mrr_e5 / mrr_e1.max(0.001),
         per_source_contribution,
     }
@@ -975,7 +1057,12 @@ fn verify_e5_asymmetry(embedded: &EmbeddedDataset) -> (usize, usize, usize, f64)
         }
     }
 
-    (identical_count, high_similarity_count, total_e5_pairs, similarity_sum)
+    (
+        identical_count,
+        high_similarity_count,
+        total_e5_pairs,
+        similarity_sum,
+    )
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -999,19 +1086,31 @@ fn generate_recommendations(
     let mut recs = Vec::new();
 
     if asymmetric.asymmetry_ratio < 1.2 {
-        recs.push("Asymmetry ratio below target (1.5). Consider tuning E5 direction modifiers.".to_string());
+        recs.push(
+            "Asymmetry ratio below target (1.5). Consider tuning E5 direction modifiers."
+                .to_string(),
+        );
     }
 
     if copa.accuracy_e5_asymmetric < 0.7 {
-        recs.push("COPA accuracy below 70%. E5 embedder may need domain-specific fine-tuning.".to_string());
+        recs.push(
+            "COPA accuracy below 70%. E5 embedder may need domain-specific fine-tuning."
+                .to_string(),
+        );
     }
 
     if e5.e5_contribution_pct < 0.05 {
-        recs.push("E5 contribution below 5%. Consider increasing E5 weight in fusion formula.".to_string());
+        recs.push(
+            "E5 contribution below 5%. Consider increasing E5 weight in fusion formula."
+                .to_string(),
+        );
     }
 
     if asymmetric.improvement_over_symmetric < 0.0 {
-        recs.push("E5 asymmetric performing worse than E1 symmetric. Check E5 embedding quality.".to_string());
+        recs.push(
+            "E5 asymmetric performing worse than E1 symmetric. Check E5 embedding quality."
+                .to_string(),
+        );
     }
 
     if recs.is_empty() {
@@ -1040,51 +1139,131 @@ fn save_markdown_report(results: &CausalRealDataResults, path: &Path) -> std::io
     writeln!(f)?;
     writeln!(f, "| Parameter | Value |")?;
     writeln!(f, "|-----------|-------|")?;
-    writeln!(f, "| Total Chunks | {} |", results.dataset_info.total_chunks)?;
-    writeln!(f, "| Documents | {} |", results.dataset_info.total_documents)?;
+    writeln!(
+        f,
+        "| Total Chunks | {} |",
+        results.dataset_info.total_chunks
+    )?;
+    writeln!(
+        f,
+        "| Documents | {} |",
+        results.dataset_info.total_documents
+    )?;
     writeln!(f, "| Topics | {} |", results.dataset_info.topic_count)?;
-    writeln!(f, "| E5 Coverage | {:.1}% |", results.dataset_info.e5_coverage * 100.0)?;
-    writeln!(f, "| Asymmetric E5 | {} |", results.dataset_info.has_asymmetric_e5)?;
+    writeln!(
+        f,
+        "| E5 Coverage | {:.1}% |",
+        results.dataset_info.e5_coverage * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Asymmetric E5 | {} |",
+        results.dataset_info.has_asymmetric_e5
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Direction Detection")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value |")?;
     writeln!(f, "|--------|-------|")?;
-    writeln!(f, "| Total Samples | {} |", results.direction_detection.total_samples)?;
-    writeln!(f, "| Cause Detected | {} |", results.direction_detection.cause_detected)?;
-    writeln!(f, "| Effect Detected | {} |", results.direction_detection.effect_detected)?;
-    writeln!(f, "| Detection Rate | {:.1}% |", results.direction_detection.detection_rate * 100.0)?;
+    writeln!(
+        f,
+        "| Total Samples | {} |",
+        results.direction_detection.total_samples
+    )?;
+    writeln!(
+        f,
+        "| Cause Detected | {} |",
+        results.direction_detection.cause_detected
+    )?;
+    writeln!(
+        f,
+        "| Effect Detected | {} |",
+        results.direction_detection.effect_detected
+    )?;
+    writeln!(
+        f,
+        "| Detection Rate | {:.1}% |",
+        results.direction_detection.detection_rate * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Asymmetric Retrieval")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| MRR Cause→Effect | {:.4} | - |", results.asymmetric_retrieval.mrr_cause_to_effect)?;
-    writeln!(f, "| MRR Effect→Cause | {:.4} | - |", results.asymmetric_retrieval.mrr_effect_to_cause)?;
-    writeln!(f, "| MRR Symmetric (E1) | {:.4} | - |", results.asymmetric_retrieval.mrr_symmetric_e1)?;
-    writeln!(f, "| **Asymmetry Ratio** | **{:.2}** | ~1.5 |", results.asymmetric_retrieval.asymmetry_ratio)?;
-    writeln!(f, "| Improvement over E1 | {:.1}% | >0% |", results.asymmetric_retrieval.improvement_over_symmetric * 100.0)?;
+    writeln!(
+        f,
+        "| MRR Cause→Effect | {:.4} | - |",
+        results.asymmetric_retrieval.mrr_cause_to_effect
+    )?;
+    writeln!(
+        f,
+        "| MRR Effect→Cause | {:.4} | - |",
+        results.asymmetric_retrieval.mrr_effect_to_cause
+    )?;
+    writeln!(
+        f,
+        "| MRR Symmetric (E1) | {:.4} | - |",
+        results.asymmetric_retrieval.mrr_symmetric_e1
+    )?;
+    writeln!(
+        f,
+        "| **Asymmetry Ratio** | **{:.2}** | ~1.5 |",
+        results.asymmetric_retrieval.asymmetry_ratio
+    )?;
+    writeln!(
+        f,
+        "| Improvement over E1 | {:.1}% | >0% |",
+        results.asymmetric_retrieval.improvement_over_symmetric * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## COPA-Style Reasoning")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| **E5 Asymmetric Accuracy** | **{:.1}%** | >70% |", results.copa_reasoning.accuracy_e5_asymmetric * 100.0)?;
-    writeln!(f, "| E1 Symmetric Accuracy | {:.1}% | - |", results.copa_reasoning.accuracy_e1_symmetric * 100.0)?;
-    writeln!(f, "| Random Baseline | {:.1}% | - |", results.copa_reasoning.accuracy_random * 100.0)?;
-    writeln!(f, "| Improvement over E1 | {:.1}% | >0% |", results.copa_reasoning.improvement_over_e1 * 100.0)?;
+    writeln!(
+        f,
+        "| **E5 Asymmetric Accuracy** | **{:.1}%** | >70% |",
+        results.copa_reasoning.accuracy_e5_asymmetric * 100.0
+    )?;
+    writeln!(
+        f,
+        "| E1 Symmetric Accuracy | {:.1}% | - |",
+        results.copa_reasoning.accuracy_e1_symmetric * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Random Baseline | {:.1}% | - |",
+        results.copa_reasoning.accuracy_random * 100.0
+    )?;
+    writeln!(
+        f,
+        "| Improvement over E1 | {:.1}% | >0% |",
+        results.copa_reasoning.improvement_over_e1 * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## E5 Contribution Analysis")?;
     writeln!(f)?;
     writeln!(f, "| Metric | Value | Target |")?;
     writeln!(f, "|--------|-------|--------|")?;
-    writeln!(f, "| MRR with E5 | {:.4} | - |", results.e5_contribution.mrr_with_e5)?;
-    writeln!(f, "| MRR without E5 | {:.4} | - |", results.e5_contribution.mrr_without_e5)?;
-    writeln!(f, "| **E5 Contribution** | **{:.1}%** | >5% |", results.e5_contribution.e5_contribution_pct * 100.0)?;
+    writeln!(
+        f,
+        "| MRR with E5 | {:.4} | - |",
+        results.e5_contribution.mrr_with_e5
+    )?;
+    writeln!(
+        f,
+        "| MRR without E5 | {:.4} | - |",
+        results.e5_contribution.mrr_without_e5
+    )?;
+    writeln!(
+        f,
+        "| **E5 Contribution** | **{:.1}%** | >5% |",
+        results.e5_contribution.e5_contribution_pct * 100.0
+    )?;
     writeln!(f)?;
 
     writeln!(f, "## Recommendations")?;
@@ -1098,12 +1277,23 @@ fn save_markdown_report(results: &CausalRealDataResults, path: &Path) -> std::io
 }
 
 fn print_summary(results: &CausalRealDataResults) {
-    println!("Direction Detection: {:.1}% detection rate", results.direction_detection.detection_rate * 100.0);
-    println!("Asymmetry Ratio: {:.2} (target: ~1.5)", results.asymmetric_retrieval.asymmetry_ratio);
-    println!("COPA Accuracy: {:.1}% (E5) vs {:.1}% (E1)",
+    println!(
+        "Direction Detection: {:.1}% detection rate",
+        results.direction_detection.detection_rate * 100.0
+    );
+    println!(
+        "Asymmetry Ratio: {:.2} (target: ~1.5)",
+        results.asymmetric_retrieval.asymmetry_ratio
+    );
+    println!(
+        "COPA Accuracy: {:.1}% (E5) vs {:.1}% (E1)",
         results.copa_reasoning.accuracy_e5_asymmetric * 100.0,
-        results.copa_reasoning.accuracy_e1_symmetric * 100.0);
-    println!("E5 Contribution: {:.1}%", results.e5_contribution.e5_contribution_pct * 100.0);
+        results.copa_reasoning.accuracy_e1_symmetric * 100.0
+    );
+    println!(
+        "E5 Contribution: {:.1}%",
+        results.e5_contribution.e5_contribution_pct * 100.0
+    );
 }
 
 fn print_target_evaluation(results: &CausalRealDataResults) -> bool {
@@ -1112,26 +1302,44 @@ fn print_target_evaluation(results: &CausalRealDataResults) -> bool {
     // Asymmetry ratio target: ~1.5
     let asymmetry_pass = results.asymmetric_retrieval.asymmetry_ratio >= 1.2
         && results.asymmetric_retrieval.asymmetry_ratio <= 2.0;
-    println!("  Asymmetry Ratio: {:.2} (target: 1.2-2.0)", results.asymmetric_retrieval.asymmetry_ratio);
-    println!("    Status: {}", if asymmetry_pass { "PASS" } else { "FAIL" });
+    println!(
+        "  Asymmetry Ratio: {:.2} (target: 1.2-2.0)",
+        results.asymmetric_retrieval.asymmetry_ratio
+    );
+    println!(
+        "    Status: {}",
+        if asymmetry_pass { "PASS" } else { "FAIL" }
+    );
     all_pass &= asymmetry_pass;
 
     // COPA accuracy target: >70%
     let copa_pass = results.copa_reasoning.accuracy_e5_asymmetric >= 0.7;
-    println!("  COPA Accuracy: {:.1}% (target: >70%)", results.copa_reasoning.accuracy_e5_asymmetric * 100.0);
+    println!(
+        "  COPA Accuracy: {:.1}% (target: >70%)",
+        results.copa_reasoning.accuracy_e5_asymmetric * 100.0
+    );
     println!("    Status: {}", if copa_pass { "PASS" } else { "FAIL" });
     all_pass &= copa_pass;
 
     // E5 contribution target: >5%
     let e5_pass = results.e5_contribution.e5_contribution_pct >= 0.05;
-    println!("  E5 Contribution: {:.1}% (target: >5%)", results.e5_contribution.e5_contribution_pct * 100.0);
+    println!(
+        "  E5 Contribution: {:.1}% (target: >5%)",
+        results.e5_contribution.e5_contribution_pct * 100.0
+    );
     println!("    Status: {}", if e5_pass { "PASS" } else { "FAIL" });
     all_pass &= e5_pass;
 
     // Improvement over E1
     let improvement_pass = results.asymmetric_retrieval.improvement_over_symmetric >= 0.0;
-    println!("  E5 vs E1 Improvement: {:.1}% (target: >0%)", results.asymmetric_retrieval.improvement_over_symmetric * 100.0);
-    println!("    Status: {}", if improvement_pass { "PASS" } else { "FAIL" });
+    println!(
+        "  E5 vs E1 Improvement: {:.1}% (target: >0%)",
+        results.asymmetric_retrieval.improvement_over_symmetric * 100.0
+    );
+    println!(
+        "    Status: {}",
+        if improvement_pass { "PASS" } else { "FAIL" }
+    );
     all_pass &= improvement_pass;
 
     all_pass

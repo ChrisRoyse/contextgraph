@@ -93,10 +93,7 @@ pub async fn persist_identity_command(args: PersistIdentityArgs) -> i32 {
         .session_id
         .unwrap_or_else(|| snapshot.session_id.clone());
 
-    info!(
-        "persist-identity: Persisting session {}",
-        final_session_id
-    );
+    info!("persist-identity: Persisting session {}", final_session_id);
 
     // Log DB path for debugging (not used for in-memory cache)
     let db_path = args.db_path.clone().unwrap_or_else(|| {
@@ -104,7 +101,10 @@ pub async fn persist_identity_command(args: PersistIdentityArgs) -> i32 {
             .map(|h| h.join(".context-graph").join("db"))
             .unwrap_or_else(|| PathBuf::from(".context-graph/db"))
     });
-    debug!("persist-identity: db_path={:?} (for reference only - using in-memory cache)", db_path);
+    debug!(
+        "persist-identity: db_path={:?} (for reference only - using in-memory cache)",
+        db_path
+    );
 
     // Create snapshot with current state from cache
     // Per PRD v6 Section 14, we use in-memory SessionCache instead of RocksDB
@@ -153,8 +153,8 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::test_utils::GLOBAL_IDENTITY_LOCK;
     use crate::commands::hooks::session_state::store_in_cache;
+    use crate::commands::test_utils::GLOBAL_IDENTITY_LOCK;
 
     // =========================================================================
     // TC-SESSION-17: Success Path (Silent Output)

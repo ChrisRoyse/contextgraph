@@ -77,7 +77,7 @@ pub mod stubs;
 pub mod types;
 
 // Re-exports for convenience
-pub use activator::{ActivatorConfig, ActivationStats, E8Activator, GraphEdge, GraphStorage};
+pub use activator::{ActivationStats, ActivatorConfig, E8Activator, GraphEdge, GraphStorage};
 pub use error::{GraphAgentError, GraphAgentResult};
 #[cfg(feature = "llm")]
 pub use llm::{prompt::GraphPromptBuilder, GraphRelationshipLLM};

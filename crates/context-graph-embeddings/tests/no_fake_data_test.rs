@@ -414,12 +414,8 @@ fn test_valid_fingerprint_creation() {
     let topic_profile = [0.5f32; 14];
     let content_hash: [u8; 32] = [0x42; 32]; // Non-zero
 
-    let fp = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        topic_profile,
-        content_hash,
-    );
+    let fp =
+        StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, topic_profile, content_hash);
 
     assert_eq!(fp.embeddings.len(), NUM_EMBEDDERS);
     assert!(validate_checksum(&fp.content_hash));
@@ -435,12 +431,7 @@ fn test_missing_embedder_panics() {
     embeddings.remove(&5); // Remove one embedder
 
     // This MUST panic
-    let _ = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        [0.5f32; 14],
-        [0x42u8; 32],
-    );
+    let _ = StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
 }
 
 /// Test: Invalid embedder index causes panic (AP-007 compliance)
@@ -463,12 +454,7 @@ fn test_invalid_embedder_index_panics() {
     );
 
     // This MUST panic
-    let _ = StoredQuantizedFingerprint::new(
-        Uuid::new_v4(),
-        embeddings,
-        [0.5f32; 14],
-        [0x42u8; 32],
-    );
+    let _ = StoredQuantizedFingerprint::new(Uuid::new_v4(), embeddings, [0.5f32; 14], [0x42u8; 32]);
 }
 
 // =============================================================================

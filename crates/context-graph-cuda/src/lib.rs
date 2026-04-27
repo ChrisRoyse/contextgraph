@@ -49,6 +49,8 @@ pub mod stub;
 
 pub use error::{CudaError, CudaResult};
 pub use ffi::{
+    compute_core_distances_gpu,
+    compute_pairwise_distances_gpu,
     // CUDA Driver API exports
     cuCtxCreate_v2,
     cuCtxDestroy_v2,
@@ -62,9 +64,15 @@ pub use ffi::{
     cuDriverGetVersion,
     cuInit,
     cuMemGetInfo_v2,
+    // Custom k-NN kernel
+    cuda_available,
+    cuda_device_count,
     cuda_result_to_string,
     decode_driver_version,
+    faiss_status,
     is_cuda_success,
+    // FAISS GPU status
+    is_faiss_gpu_available,
     CUcontext,
     CUdevice,
     CUdevice_attribute,
@@ -78,19 +86,11 @@ pub use ffi::{
     CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X,
     CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
     CU_DEVICE_ATTRIBUTE_WARP_SIZE,
-    // Custom k-NN kernel
-    cuda_available,
-    cuda_device_count,
-    compute_core_distances_gpu,
-    compute_pairwise_distances_gpu,
-    // FAISS GPU status
-    is_faiss_gpu_available,
-    faiss_status,
 };
 // Re-export FAISS types when faiss-working feature is enabled
 #[cfg(feature = "faiss-working")]
 pub use ffi::{
-    check_faiss_result, faiss_gpu_available, FaissGpuResourcesProvider, FaissGpuResources,
+    check_faiss_result, faiss_gpu_available, FaissGpuResources, FaissGpuResourcesProvider,
     FaissIndex, FaissStandardGpuResources, MetricType, FAISS_OK,
 };
 // Safe RAII wrappers (TASK-04)
@@ -106,9 +106,9 @@ pub use ops::VectorOps;
 // GPU-batched similarity (ARCH-GPU-06: batch operations preferred)
 // Note: Currently using optimized CPU implementation until candle-core supports CUDA 13.1
 pub use similarity::{
-    compute_batch_cosine_similarity, compute_batch_cosine_similarity_chunked,
-    embedder_to_group, should_use_gpu_batch, BatchedQueryContext, DimensionGroup,
-    DENSE_EMBEDDER_INDICES, GPU_BATCH_THRESHOLD,
+    compute_batch_cosine_similarity, compute_batch_cosine_similarity_chunked, embedder_to_group,
+    should_use_gpu_batch, BatchedQueryContext, DimensionGroup, DENSE_EMBEDDER_INDICES,
+    GPU_BATCH_THRESHOLD,
 };
 // GPU HDBSCAN clustering (ARCH-GPU-05)
 pub use hdbscan::{

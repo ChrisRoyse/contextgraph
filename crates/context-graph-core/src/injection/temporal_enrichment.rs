@@ -16,9 +16,9 @@ use crate::similarity::cosine_similarity;
 use crate::types::fingerprint::SemanticFingerprint;
 
 /// Default thresholds for temporal badges (from constitution.yaml temporal_enrichment)
-pub const DEFAULT_SAME_SESSION_THRESHOLD: f32 = 0.8;  // E2 similarity > 0.8
-pub const DEFAULT_SAME_DAY_THRESHOLD: f32 = 0.7;      // E3 similarity > 0.7
-pub const DEFAULT_SAME_PERIOD_THRESHOLD: f32 = 0.6;   // E3 similarity > 0.6
+pub const DEFAULT_SAME_SESSION_THRESHOLD: f32 = 0.8; // E2 similarity > 0.8
+pub const DEFAULT_SAME_DAY_THRESHOLD: f32 = 0.7; // E3 similarity > 0.7
+pub const DEFAULT_SAME_PERIOD_THRESHOLD: f32 = 0.6; // E3 similarity > 0.6
 pub const DEFAULT_SAME_SEQUENCE_THRESHOLD: f32 = 0.6; // E4 similarity > 0.6
 
 /// Type of temporal enrichment badge.
@@ -80,7 +80,10 @@ impl TemporalBadge {
     /// * `badge_type` - Type of badge to create
     /// * `similarity` - Similarity score (must be in [0.0, 1.0])
     pub fn new(badge_type: TemporalBadgeType, similarity: f32) -> Self {
-        Self { badge_type, similarity }
+        Self {
+            badge_type,
+            similarity,
+        }
     }
 
     /// Get emoji for display.
@@ -325,11 +328,15 @@ mod tests {
         let badges = provider.compute_badges(&current, &candidate);
 
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameSession),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameSession),
             "Should have SameSession badge with high E2 similarity"
         );
         assert!(
-            !badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameDay),
+            !badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameDay),
             "Should NOT have SameDay badge"
         );
         println!("[PASS] SameSession badge triggered correctly");
@@ -354,7 +361,9 @@ mod tests {
         let badges = provider.compute_badges(&current, &candidate);
 
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameDay),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameDay),
             "Should have SameDay badge"
         );
         println!("[PASS] SameDay badge triggered correctly");
@@ -399,15 +408,17 @@ mod tests {
         );
 
         let candidate = make_test_fingerprint(
-            &[0.0, 1.0, 0.0], // E2: orthogonal
-            &[1.0, 0.0, 0.0], // E3: orthogonal
+            &[0.0, 1.0, 0.0],   // E2: orthogonal
+            &[1.0, 0.0, 0.0],   // E3: orthogonal
             &[0.95, 0.05, 0.0], // E4: ~0.99 similarity
         );
 
         let badges = provider.compute_badges(&current, &candidate);
 
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameSequence),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameSequence),
             "Should have SameSequence badge"
         );
         println!("[PASS] SameSequence badge triggered correctly");
@@ -417,22 +428,17 @@ mod tests {
     fn test_no_badges_below_threshold() {
         let provider = TemporalEnrichmentProvider::new();
 
-        let current = make_test_fingerprint(
-            &[1.0, 0.0, 0.0],
-            &[0.0, 1.0, 0.0],
-            &[0.0, 0.0, 1.0],
-        );
+        let current = make_test_fingerprint(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0], &[0.0, 0.0, 1.0]);
 
         // All orthogonal - no similarity
-        let candidate = make_test_fingerprint(
-            &[0.0, 1.0, 0.0],
-            &[1.0, 0.0, 0.0],
-            &[1.0, 0.0, 0.0],
-        );
+        let candidate = make_test_fingerprint(&[0.0, 1.0, 0.0], &[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]);
 
         let badges = provider.compute_badges(&current, &candidate);
 
-        assert!(badges.is_empty(), "Should have no badges when all below threshold");
+        assert!(
+            badges.is_empty(),
+            "Should have no badges when all below threshold"
+        );
         println!("[PASS] No badges returned when all below threshold");
     }
 
@@ -505,11 +511,7 @@ mod tests {
         let provider = TemporalEnrichmentProvider::new();
 
         // Create fingerprints where ALL temporal embeddings are similar
-        let current = make_test_fingerprint(
-            &[1.0, 0.0, 0.0],
-            &[1.0, 0.0, 0.0],
-            &[1.0, 0.0, 0.0],
-        );
+        let current = make_test_fingerprint(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]);
 
         let candidate = make_test_fingerprint(
             &[0.95, 0.05, 0.0], // High E2 sim
@@ -521,15 +523,21 @@ mod tests {
 
         // Should have all 3 badges
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameSession),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameSession),
             "Should have SameSession"
         );
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameDay),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameDay),
             "Should have SameDay (E3 > 0.7)"
         );
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameSequence),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameSequence),
             "Should have SameSequence"
         );
         println!("[PASS] Multiple badges can be assigned to same candidate");
@@ -542,11 +550,7 @@ mod tests {
 
         // We need similarity > 0.8, not >= 0.8
         // This tests that the comparison is strictly greater-than
-        let current = make_test_fingerprint(
-            &[1.0, 0.0, 0.0],
-            &[0.0, 1.0, 0.0],
-            &[0.0, 0.0, 1.0],
-        );
+        let current = make_test_fingerprint(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0], &[0.0, 0.0, 1.0]);
 
         // 0.8 similarity with [1,0,0] requires vector at specific angle
         // cos(theta) = 0.8 => vector approximately [0.8, 0.6, 0.0] normalized
@@ -559,7 +563,9 @@ mod tests {
         let badges = provider.compute_badges(&current, &candidate);
         // Similarity should be ~0.81, which is > 0.8
         assert!(
-            badges.iter().any(|b| b.badge_type == TemporalBadgeType::SameSession),
+            badges
+                .iter()
+                .any(|b| b.badge_type == TemporalBadgeType::SameSession),
             "Should trigger at similarity > threshold"
         );
         println!("[PASS] Threshold boundary behavior correct");

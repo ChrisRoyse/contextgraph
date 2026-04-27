@@ -147,28 +147,33 @@ pub struct TrainableProjection {
 
 impl TrainableProjection {
     /// Create from existing (static) projection weights by wrapping in Var.
-    pub fn from_inference(weights: &CausalProjectionWeights) -> crate::error::EmbeddingResult<Self> {
-        let hidden_size = weights.cause_projection.dim(0)
-            .map_err(|e| crate::error::EmbeddingError::GpuError {
+    pub fn from_inference(
+        weights: &CausalProjectionWeights,
+    ) -> crate::error::EmbeddingResult<Self> {
+        let hidden_size = weights.cause_projection.dim(0).map_err(|e| {
+            crate::error::EmbeddingError::GpuError {
                 message: format!("Failed to get projection dim: {}", e),
-            })?;
+            }
+        })?;
 
         let cause_projection_var = candle_core::Var::from_tensor(&weights.cause_projection)
             .map_err(|e| crate::error::EmbeddingError::GpuError {
                 message: format!("Failed to create trainable cause projection: {}", e),
             })?;
-        let cause_bias_var = candle_core::Var::from_tensor(&weights.cause_bias)
-            .map_err(|e| crate::error::EmbeddingError::GpuError {
+        let cause_bias_var = candle_core::Var::from_tensor(&weights.cause_bias).map_err(|e| {
+            crate::error::EmbeddingError::GpuError {
                 message: format!("Failed to create trainable cause bias: {}", e),
-            })?;
+            }
+        })?;
         let effect_projection_var = candle_core::Var::from_tensor(&weights.effect_projection)
             .map_err(|e| crate::error::EmbeddingError::GpuError {
                 message: format!("Failed to create trainable effect projection: {}", e),
             })?;
-        let effect_bias_var = candle_core::Var::from_tensor(&weights.effect_bias)
-            .map_err(|e| crate::error::EmbeddingError::GpuError {
+        let effect_bias_var = candle_core::Var::from_tensor(&weights.effect_bias).map_err(|e| {
+            crate::error::EmbeddingError::GpuError {
                 message: format!("Failed to create trainable effect bias: {}", e),
-            })?;
+            }
+        })?;
 
         Ok(Self {
             cause_projection_var,
@@ -181,7 +186,8 @@ impl TrainableProjection {
 
     /// Create a new trainable projection with perturbed identity initialization.
     pub fn new(hidden_size: usize, device: &Device) -> crate::error::EmbeddingResult<Self> {
-        let weights = CausalProjectionWeights::initialize(hidden_size, device, CAUSAL_PROJECTION_SEED)?;
+        let weights =
+            CausalProjectionWeights::initialize(hidden_size, device, CAUSAL_PROJECTION_SEED)?;
         Self::from_inference(&weights)
     }
 
@@ -228,8 +234,10 @@ impl TrainableProjection {
         );
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| crate::error::EmbeddingError::InternalError {
-                message: format!("Failed to create checkpoint dir: {}", e),
+            std::fs::create_dir_all(parent).map_err(|e| {
+                crate::error::EmbeddingError::InternalError {
+                    message: format!("Failed to create checkpoint dir: {}", e),
+                }
             })?;
         }
 
@@ -283,14 +291,16 @@ impl TrainableProjection {
         path: &std::path::Path,
         device: &Device,
     ) -> crate::error::EmbeddingResult<Self> {
-        let data = std::fs::read(path).map_err(|e| crate::error::EmbeddingError::InternalError {
-            message: format!("Failed to read checkpoint: {}", e),
-        })?;
-
-        let safetensors = safetensors::SafeTensors::deserialize(&data)
-            .map_err(|e| crate::error::EmbeddingError::InternalError {
-                message: format!("Failed to deserialize checkpoint: {}", e),
+        let data =
+            std::fs::read(path).map_err(|e| crate::error::EmbeddingError::InternalError {
+                message: format!("Failed to read checkpoint: {}", e),
             })?;
+
+        let safetensors = safetensors::SafeTensors::deserialize(&data).map_err(|e| {
+            crate::error::EmbeddingError::InternalError {
+                message: format!("Failed to deserialize checkpoint: {}", e),
+            }
+        })?;
 
         let load_tensor = |name: &str| -> crate::error::EmbeddingResult<Tensor> {
             let view = safetensors.tensor(name).map_err(|e| {
@@ -312,11 +322,12 @@ impl TrainableProjection {
         let effect_proj = load_tensor("effect_projection")?;
         let effect_bias = load_tensor("effect_bias")?;
 
-        let hidden_size = cause_proj.dim(0).map_err(|e| {
-            crate::error::EmbeddingError::GpuError {
-                message: format!("Failed to get dim: {}", e),
-            }
-        })?;
+        let hidden_size =
+            cause_proj
+                .dim(0)
+                .map_err(|e| crate::error::EmbeddingError::GpuError {
+                    message: format!("Failed to get dim: {}", e),
+                })?;
 
         Ok(Self {
             cause_projection_var: candle_core::Var::from_tensor(&cause_proj).map_err(|e| {
@@ -344,15 +355,16 @@ impl TrainableProjection {
     }
 
     /// Apply cause projection using trainable Var (gradients flow through).
-    pub fn project_cause_trainable(&self, embedding: &Tensor) -> crate::error::EmbeddingResult<Tensor> {
+    pub fn project_cause_trainable(
+        &self,
+        embedding: &Tensor,
+    ) -> crate::error::EmbeddingResult<Tensor> {
         let projected = embedding
-            .matmul(
-                &self.cause_projection_var.as_tensor()
-                    .t()
-                    .map_err(|e| crate::error::EmbeddingError::GpuError {
-                        message: format!("Cause projection transpose: {}", e),
-                    })?,
-            )
+            .matmul(&self.cause_projection_var.as_tensor().t().map_err(|e| {
+                crate::error::EmbeddingError::GpuError {
+                    message: format!("Cause projection transpose: {}", e),
+                }
+            })?)
             .map_err(|e| crate::error::EmbeddingError::GpuError {
                 message: format!("Cause projection matmul: {}", e),
             })?;
@@ -365,15 +377,16 @@ impl TrainableProjection {
     }
 
     /// Apply effect projection using trainable Var (gradients flow through).
-    pub fn project_effect_trainable(&self, embedding: &Tensor) -> crate::error::EmbeddingResult<Tensor> {
+    pub fn project_effect_trainable(
+        &self,
+        embedding: &Tensor,
+    ) -> crate::error::EmbeddingResult<Tensor> {
         let projected = embedding
-            .matmul(
-                &self.effect_projection_var.as_tensor()
-                    .t()
-                    .map_err(|e| crate::error::EmbeddingError::GpuError {
-                        message: format!("Effect projection transpose: {}", e),
-                    })?,
-            )
+            .matmul(&self.effect_projection_var.as_tensor().t().map_err(|e| {
+                crate::error::EmbeddingError::GpuError {
+                    message: format!("Effect projection transpose: {}", e),
+                }
+            })?)
             .map_err(|e| crate::error::EmbeddingError::GpuError {
                 message: format!("Effect projection matmul: {}", e),
             })?;
@@ -388,24 +401,19 @@ impl TrainableProjection {
 
 impl CausalProjectionWeights {
     /// Initialize projection weights as perturbed identity matrices.
-    pub fn initialize(
-        hidden_size: usize,
-        device: &Device,
-        seed: u64,
-    ) -> EmbeddingResult<Self> {
+    pub fn initialize(hidden_size: usize, device: &Device, seed: u64) -> EmbeddingResult<Self> {
         use rand::SeedableRng;
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
 
         let cause_data = create_perturbed_identity(hidden_size, &mut rng, PROJECTION_INIT_STD);
-        let cause_projection =
-            Tensor::from_slice(&cause_data, (hidden_size, hidden_size), device)
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!("Failed to create cause projection: {}", e),
-                })?
-                .to_dtype(DType::F32)
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!("Failed to convert cause projection dtype: {}", e),
-                })?;
+        let cause_projection = Tensor::from_slice(&cause_data, (hidden_size, hidden_size), device)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Failed to create cause projection: {}", e),
+            })?
+            .to_dtype(DType::F32)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Failed to convert cause projection dtype: {}", e),
+            })?;
 
         let effect_data = create_perturbed_identity(hidden_size, &mut rng, PROJECTION_INIT_STD);
         let effect_projection =
@@ -501,7 +509,8 @@ fn create_perturbed_identity<R: Rng>(size: usize, rng: &mut R, std: f64) -> Vec<
             let identity: f32 = if i == j { 1.0 } else { 0.0 };
             let u1: f64 = rng.gen_range(0.0001f64..1.0f64);
             let u2: f64 = rng.gen_range(0.0f64..1.0f64);
-            let normal: f64 = (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
+            let normal: f64 =
+                (-2.0_f64 * u1.ln()).sqrt() * (2.0_f64 * std::f64::consts::PI * u2).cos();
             let perturbation = (normal * std) as f32;
 
             data[idx] = identity + perturbation;

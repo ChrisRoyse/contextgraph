@@ -644,16 +644,14 @@ impl MemoryStore {
         }
 
         // Clear file index entry
-        self.db
-            .delete_cf(cf_file_index, file_key)
-            .map_err(|e| {
-                error!(
-                    file_path = %file_path,
-                    error = %e,
-                    "Failed to delete file index entry"
-                );
-                StorageError::WriteFailed(format!("file_index delete for '{}': {}", file_path, e))
-            })?;
+        self.db.delete_cf(cf_file_index, file_key).map_err(|e| {
+            error!(
+                file_path = %file_path,
+                error = %e,
+                "Failed to delete file index entry"
+            );
+            StorageError::WriteFailed(format!("file_index delete for '{}': {}", file_path, e))
+        })?;
 
         Ok(deleted)
     }

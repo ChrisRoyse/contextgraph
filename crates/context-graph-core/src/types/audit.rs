@@ -494,8 +494,16 @@ impl std::fmt::Display for AuditOperation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AuditOperation::MemoryCreated => write!(f, "MemoryCreated"),
-            AuditOperation::MemoryMerged { source_ids, strategy } => {
-                write!(f, "MemoryMerged({} sources, {})", source_ids.len(), strategy)
+            AuditOperation::MemoryMerged {
+                source_ids,
+                strategy,
+            } => {
+                write!(
+                    f,
+                    "MemoryMerged({} sources, {})",
+                    source_ids.len(),
+                    strategy
+                )
             }
             AuditOperation::MemoryDeleted { soft, .. } => {
                 write!(f, "MemoryDeleted(soft={})", soft)
@@ -518,11 +526,7 @@ impl std::fmt::Display for AuditOperation {
                 )
             }
             AuditOperation::ConsolidationAnalyzed { candidates_found } => {
-                write!(
-                    f,
-                    "ConsolidationAnalyzed({} candidates)",
-                    candidates_found
-                )
+                write!(f, "ConsolidationAnalyzed({} candidates)", candidates_found)
             }
             AuditOperation::TopicDetected { topic_id, members } => {
                 write!(f, "TopicDetected({}, {} members)", topic_id, members)
@@ -635,8 +639,7 @@ mod tests {
         .with_rationale("duplicate content");
 
         let json = serde_json::to_string(&original).expect("serialize to JSON");
-        let deserialized: AuditRecord =
-            serde_json::from_str(&json).expect("deserialize from JSON");
+        let deserialized: AuditRecord = serde_json::from_str(&json).expect("deserialize from JSON");
 
         assert_eq!(original.id, deserialized.id);
         assert_eq!(original.target_id, deserialized.target_id);

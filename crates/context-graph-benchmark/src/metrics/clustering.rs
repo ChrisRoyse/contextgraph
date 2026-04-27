@@ -197,10 +197,7 @@ pub fn compute_ari(cluster_labels: &[usize], true_labels: &[usize]) -> f64 {
     }
 
     // Compute sum of C(n_ij, 2) for contingency values
-    let sum_comb_ij: f64 = contingency
-        .values()
-        .map(|&x| comb2(x))
-        .sum();
+    let sum_comb_ij: f64 = contingency.values().map(|&x| comb2(x)).sum();
 
     // Compute sum of C(a_i, 2) for row sums
     let sum_comb_a: f64 = row_sums.values().map(|&x| comb2(x)).sum();
@@ -329,7 +326,10 @@ pub fn compute_all_metrics(
 
     let sizes: Vec<usize> = cluster_sizes.values().copied().collect();
     let cluster_count = sizes.len();
-    let topic_count = true_labels.iter().collect::<std::collections::HashSet<_>>().len();
+    let topic_count = true_labels
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len();
 
     let size_stats = if sizes.is_empty() {
         ClusterSizeStats::default()
@@ -337,11 +337,19 @@ pub fn compute_all_metrics(
         let min = *sizes.iter().min().unwrap();
         let max = *sizes.iter().max().unwrap();
         let mean = sizes.iter().sum::<usize>() as f64 / sizes.len() as f64;
-        let variance: f64 = sizes.iter().map(|&s| (s as f64 - mean).powi(2)).sum::<f64>()
+        let variance: f64 = sizes
+            .iter()
+            .map(|&s| (s as f64 - mean).powi(2))
+            .sum::<f64>()
             / sizes.len() as f64;
         let std = variance.sqrt();
 
-        ClusterSizeStats { min, max, mean, std }
+        ClusterSizeStats {
+            min,
+            max,
+            mean,
+            std,
+        }
     };
 
     ClusteringMetrics {

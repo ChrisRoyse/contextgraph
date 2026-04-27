@@ -180,11 +180,7 @@ pub fn compute_positional_encoding_with_dim(
 ///
 /// # Returns
 /// A 256-dimensional L2-normalized vector
-pub fn compute_positional_encoding_hybrid(
-    position: i64,
-    base: f32,
-    is_sequence: bool,
-) -> Vec<f32> {
+pub fn compute_positional_encoding_hybrid(position: i64, base: f32, is_sequence: bool) -> Vec<f32> {
     compute_positional_encoding_with_dim(position, base, POSITION_ENCODING_DIMENSION, is_sequence)
 }
 
@@ -236,8 +232,14 @@ mod tests {
         let norm_seq: f32 = enc_seq.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_ts: f32 = enc_ts.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-        assert!((norm_seq - 1.0).abs() < 1e-5, "Sequence encoding should be normalized");
-        assert!((norm_ts - 1.0).abs() < 1e-5, "Timestamp encoding should be normalized");
+        assert!(
+            (norm_seq - 1.0).abs() < 1e-5,
+            "Sequence encoding should be normalized"
+        );
+        assert!(
+            (norm_ts - 1.0).abs() < 1e-5,
+            "Timestamp encoding should be normalized"
+        );
     }
 
     #[test]
@@ -275,7 +277,10 @@ mod tests {
         let sim_010: f32 = enc0.iter().zip(&enc10).map(|(a, b)| a * b).sum();
 
         // Adjacent positions should be more similar than distant
-        assert!(sim_01 > sim_010, "Adjacent positions should be more similar");
+        assert!(
+            sim_01 > sim_010,
+            "Adjacent positions should be more similar"
+        );
         // But all should be distinct
         assert!(sim_01 < 0.999, "Consecutive positions should be distinct");
     }

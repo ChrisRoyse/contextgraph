@@ -499,61 +499,193 @@ impl E10MultimodalDatasetGenerator {
 
     fn fill_template(&mut self, template: &str) -> String {
         let placeholders = [
-            ("{component}", &["AuthService", "CacheLayer", "DatabasePool", "APIHandler", "MessageQueue"][..]),
+            (
+                "{component}",
+                &[
+                    "AuthService",
+                    "CacheLayer",
+                    "DatabasePool",
+                    "APIHandler",
+                    "MessageQueue",
+                ][..],
+            ),
             ("{module}", &["auth", "cache", "database", "api", "queue"]),
-            ("{operation}", &["batch processing", "query execution", "request handling", "data sync"]),
-            ("{service}", &["user service", "order service", "payment service", "notification service"]),
-            ("{feature}", &["search", "filtering", "pagination", "sorting"]),
-            ("{endpoint}", &["/api/users", "/api/orders", "/api/search", "/api/health"]),
+            (
+                "{operation}",
+                &[
+                    "batch processing",
+                    "query execution",
+                    "request handling",
+                    "data sync",
+                ],
+            ),
+            (
+                "{service}",
+                &[
+                    "user service",
+                    "order service",
+                    "payment service",
+                    "notification service",
+                ],
+            ),
+            (
+                "{feature}",
+                &["search", "filtering", "pagination", "sorting"],
+            ),
+            (
+                "{endpoint}",
+                &["/api/users", "/api/orders", "/api/search", "/api/health"],
+            ),
             ("{table}", &["users", "orders", "products", "sessions"]),
             ("{system}", &["backend", "frontend", "database", "cache"]),
-            ("{bug_type}", &["null pointer", "race condition", "memory leak", "overflow"]),
-            ("{action}", &["processing large files", "concurrent updates", "network timeout"]),
-            ("{error_type}", &["validation error", "connection error", "timeout", "parse error"]),
-            ("{concurrent_code}", &["thread pool", "async handler", "mutex", "channel"]),
-            ("{allocator}", &["memory pool", "buffer allocator", "object pool"]),
-            ("{input}", &["user input", "API request", "file upload", "form data"]),
-            ("{handler}", &["request handler", "event handler", "error handler"]),
-            ("{user_type}", &["admin users", "regular users", "API consumers"]),
+            (
+                "{bug_type}",
+                &["null pointer", "race condition", "memory leak", "overflow"],
+            ),
+            (
+                "{action}",
+                &[
+                    "processing large files",
+                    "concurrent updates",
+                    "network timeout",
+                ],
+            ),
+            (
+                "{error_type}",
+                &[
+                    "validation error",
+                    "connection error",
+                    "timeout",
+                    "parse error",
+                ],
+            ),
+            (
+                "{concurrent_code}",
+                &["thread pool", "async handler", "mutex", "channel"],
+            ),
+            (
+                "{allocator}",
+                &["memory pool", "buffer allocator", "object pool"],
+            ),
+            (
+                "{input}",
+                &["user input", "API request", "file upload", "form data"],
+            ),
+            (
+                "{handler}",
+                &["request handler", "event handler", "error handler"],
+            ),
+            (
+                "{user_type}",
+                &["admin users", "regular users", "API consumers"],
+            ),
             ("{capability}", &["export", "import", "search", "analytics"]),
-            ("{purpose}", &["data analysis", "user management", "reporting"]),
-            ("{integration}", &["OAuth", "webhook", "SSO", "payment gateway"]),
+            (
+                "{purpose}",
+                &["data analysis", "user management", "reporting"],
+            ),
+            (
+                "{integration}",
+                &["OAuth", "webhook", "SSO", "payment gateway"],
+            ),
             ("{api}", &["REST", "GraphQL", "gRPC", "WebSocket"]),
             ("{format}", &["JSON", "CSV", "XML", "Protobuf"]),
             ("{parser}", &["JSON parser", "XML parser", "config parser"]),
-            ("{pattern}", &["repository pattern", "factory pattern", "observer pattern"]),
+            (
+                "{pattern}",
+                &["repository pattern", "factory pattern", "observer pattern"],
+            ),
             ("{codebase}", &["backend", "frontend", "shared library"]),
             ("{widget}", &["data table", "chart", "form", "modal"]),
             ("{ui}", &["dashboard", "admin panel", "user profile"]),
-            ("{logic}", &["validation logic", "business logic", "rendering logic"]),
-            ("{complex_code}", &["legacy handler", "monolithic function", "nested callbacks"]),
+            (
+                "{logic}",
+                &["validation logic", "business logic", "rendering logic"],
+            ),
+            (
+                "{complex_code}",
+                &["legacy handler", "monolithic function", "nested callbacks"],
+            ),
             ("{area}", &["authentication", "authorization", "validation"]),
             ("{old_name}", &["processData", "handleRequest", "doStuff"]),
-            ("{new_name}", &["processUserData", "handleApiRequest", "executeOperation"]),
-            ("{structure}", &["project structure", "module organization", "package layout"]),
-            ("{legacy_code}", &["deprecated handlers", "old API", "legacy adapters"]),
+            (
+                "{new_name}",
+                &["processUserData", "handleApiRequest", "executeOperation"],
+            ),
+            (
+                "{structure}",
+                &["project structure", "module organization", "package layout"],
+            ),
+            (
+                "{legacy_code}",
+                &["deprecated handlers", "old API", "legacy adapters"],
+            ),
             ("{package}", &["core", "utils", "common"]),
-            ("{bug_fix}", &["null check fix", "race condition fix", "validation fix"]),
+            (
+                "{bug_fix}",
+                &["null check fix", "race condition fix", "validation fix"],
+            ),
             ("{code}", &["critical path", "hot path", "startup code"]),
-            ("{validation}", &["input validation", "schema validation", "boundary checks"]),
-            ("{deployment}", &["staging deployment", "production deployment"]),
+            (
+                "{validation}",
+                &["input validation", "schema validation", "boundary checks"],
+            ),
+            (
+                "{deployment}",
+                &["staging deployment", "production deployment"],
+            ),
             ("{project}", &["main service", "shared library", "CLI tool"]),
             ("{release}", &["v1.0", "v2.0", "latest release"]),
-            ("{issue}", &["common errors", "deployment failures", "configuration problems"]),
-            ("{vulnerability}", &["SQL injection", "XSS", "CSRF", "auth bypass"]),
+            (
+                "{issue}",
+                &[
+                    "common errors",
+                    "deployment failures",
+                    "configuration problems",
+                ],
+            ),
+            (
+                "{vulnerability}",
+                &["SQL injection", "XSS", "CSRF", "auth bypass"],
+            ),
             ("{auth_type}", &["JWT", "OAuth2", "API key", "session"]),
-            ("{sensitive_data}", &["passwords", "tokens", "PII", "credentials"]),
+            (
+                "{sensitive_data}",
+                &["passwords", "tokens", "PII", "credentials"],
+            ),
             ("{data}", &["user data", "session data", "API keys"]),
             ("{response}", &["API responses", "HTTP responses"]),
             ("{environment}", &["production", "staging", "development"]),
-            ("{pipeline}", &["CI/CD pipeline", "data pipeline", "build pipeline"]),
+            (
+                "{pipeline}",
+                &["CI/CD pipeline", "data pipeline", "build pipeline"],
+            ),
             ("{application}", &["web app", "API server", "worker"]),
             ("{platform}", &["Kubernetes", "AWS", "GCP", "Azure"]),
-            ("{caching_solution}", &["Redis", "Memcached", "in-memory cache"]),
-            ("{use_case}", &["session storage", "rate limiting", "query caching"]),
-            ("{bottleneck}", &["database queries", "network I/O", "CPU-bound computation"]),
-            ("{change}", &["recent deployment", "dependency update", "config change"]),
-            ("{exception}", &["NullPointerException", "OutOfMemoryError", "TimeoutException"]),
+            (
+                "{caching_solution}",
+                &["Redis", "Memcached", "in-memory cache"],
+            ),
+            (
+                "{use_case}",
+                &["session storage", "rate limiting", "query caching"],
+            ),
+            (
+                "{bottleneck}",
+                &["database queries", "network I/O", "CPU-bound computation"],
+            ),
+            (
+                "{change}",
+                &["recent deployment", "dependency update", "config change"],
+            ),
+            (
+                "{exception}",
+                &[
+                    "NullPointerException",
+                    "OutOfMemoryError",
+                    "TimeoutException",
+                ],
+            ),
             ("{commit}", &["commit abc123", "last merge", "hotfix"]),
         ];
 
@@ -571,28 +703,68 @@ impl E10MultimodalDatasetGenerator {
         // Return domain-specific paraphrase keywords
         match domain {
             IntentDomain::PerformanceOptimization => {
-                vec!["optimize".into(), "faster".into(), "speed".into(), "performance".into()]
+                vec![
+                    "optimize".into(),
+                    "faster".into(),
+                    "speed".into(),
+                    "performance".into(),
+                ]
             }
             IntentDomain::BugFixing => {
-                vec!["fix".into(), "resolve".into(), "debug".into(), "repair".into()]
+                vec![
+                    "fix".into(),
+                    "resolve".into(),
+                    "debug".into(),
+                    "repair".into(),
+                ]
             }
             IntentDomain::FeatureDevelopment => {
-                vec!["implement".into(), "add".into(), "create".into(), "build".into()]
+                vec![
+                    "implement".into(),
+                    "add".into(),
+                    "create".into(),
+                    "build".into(),
+                ]
             }
             IntentDomain::Refactoring => {
-                vec!["refactor".into(), "simplify".into(), "clean".into(), "reorganize".into()]
+                vec![
+                    "refactor".into(),
+                    "simplify".into(),
+                    "clean".into(),
+                    "reorganize".into(),
+                ]
             }
             IntentDomain::Testing => {
-                vec!["test".into(), "verify".into(), "validate".into(), "check".into()]
+                vec![
+                    "test".into(),
+                    "verify".into(),
+                    "validate".into(),
+                    "check".into(),
+                ]
             }
             IntentDomain::Documentation => {
-                vec!["document".into(), "describe".into(), "explain".into(), "write".into()]
+                vec![
+                    "document".into(),
+                    "describe".into(),
+                    "explain".into(),
+                    "write".into(),
+                ]
             }
             IntentDomain::Security => {
-                vec!["secure".into(), "protect".into(), "encrypt".into(), "authenticate".into()]
+                vec![
+                    "secure".into(),
+                    "protect".into(),
+                    "encrypt".into(),
+                    "authenticate".into(),
+                ]
             }
             IntentDomain::Infrastructure => {
-                vec!["configure".into(), "deploy".into(), "setup".into(), "provision".into()]
+                vec![
+                    "configure".into(),
+                    "deploy".into(),
+                    "setup".into(),
+                    "provision".into(),
+                ]
             }
         }
     }
@@ -601,33 +773,76 @@ impl E10MultimodalDatasetGenerator {
         // Return domain-specific context keywords
         match domain {
             IntentDomain::PerformanceOptimization => {
-                vec!["slow".into(), "bottleneck".into(), "timeout".into(), "latency".into()]
+                vec![
+                    "slow".into(),
+                    "bottleneck".into(),
+                    "timeout".into(),
+                    "latency".into(),
+                ]
             }
             IntentDomain::BugFixing => {
-                vec!["error".into(), "crash".into(), "failure".into(), "exception".into()]
+                vec![
+                    "error".into(),
+                    "crash".into(),
+                    "failure".into(),
+                    "exception".into(),
+                ]
             }
             IntentDomain::FeatureDevelopment => {
-                vec!["requirement".into(), "request".into(), "need".into(), "demand".into()]
+                vec![
+                    "requirement".into(),
+                    "request".into(),
+                    "need".into(),
+                    "demand".into(),
+                ]
             }
             IntentDomain::Refactoring => {
-                vec!["debt".into(), "messy".into(), "complex".into(), "duplicate".into()]
+                vec![
+                    "debt".into(),
+                    "messy".into(),
+                    "complex".into(),
+                    "duplicate".into(),
+                ]
             }
             IntentDomain::Testing => {
-                vec!["coverage".into(), "regression".into(), "flaky".into(), "broken".into()]
+                vec![
+                    "coverage".into(),
+                    "regression".into(),
+                    "flaky".into(),
+                    "broken".into(),
+                ]
             }
             IntentDomain::Documentation => {
-                vec!["unclear".into(), "missing".into(), "outdated".into(), "confusing".into()]
+                vec![
+                    "unclear".into(),
+                    "missing".into(),
+                    "outdated".into(),
+                    "confusing".into(),
+                ]
             }
             IntentDomain::Security => {
-                vec!["vulnerability".into(), "breach".into(), "risk".into(), "exploit".into()]
+                vec![
+                    "vulnerability".into(),
+                    "breach".into(),
+                    "risk".into(),
+                    "exploit".into(),
+                ]
             }
             IntentDomain::Infrastructure => {
-                vec!["scaling".into(), "outage".into(), "capacity".into(), "failure".into()]
+                vec![
+                    "scaling".into(),
+                    "outage".into(),
+                    "capacity".into(),
+                    "failure".into(),
+                ]
             }
         }
     }
 
-    fn generate_paraphrase_queries(&mut self, documents: &[ParaphraseDocument]) -> Vec<ParaphraseQuery> {
+    fn generate_paraphrase_queries(
+        &mut self,
+        documents: &[ParaphraseDocument],
+    ) -> Vec<ParaphraseQuery> {
         let mut queries = Vec::with_capacity(self.config.num_paraphrase_queries);
 
         // Group documents by domain and direction
@@ -659,18 +874,10 @@ impl E10MultimodalDatasetGenerator {
                 IntentDomain::Refactoring => {
                     "what refactoring work was done to clean up code".to_string()
                 }
-                IntentDomain::Testing => {
-                    "find work to improve test coverage".to_string()
-                }
-                IntentDomain::Documentation => {
-                    "what documentation work was completed".to_string()
-                }
-                IntentDomain::Security => {
-                    "find security improvements and fixes".to_string()
-                }
-                IntentDomain::Infrastructure => {
-                    "what infrastructure work was done".to_string()
-                }
+                IntentDomain::Testing => "find work to improve test coverage".to_string(),
+                IntentDomain::Documentation => "what documentation work was completed".to_string(),
+                IntentDomain::Security => "find security improvements and fixes".to_string(),
+                IntentDomain::Infrastructure => "what infrastructure work was done".to_string(),
             };
 
             // Expected: context documents from same domain (paraphrase→context)
@@ -705,7 +912,10 @@ impl E10MultimodalDatasetGenerator {
         queries
     }
 
-    fn generate_context_queries(&mut self, documents: &[ParaphraseDocument]) -> Vec<ParaphraseQuery> {
+    fn generate_context_queries(
+        &mut self,
+        documents: &[ParaphraseDocument],
+    ) -> Vec<ParaphraseQuery> {
         let mut queries = Vec::with_capacity(self.config.num_context_queries);
 
         let paraphrase_docs: Vec<_> = documents
@@ -735,15 +945,9 @@ impl E10MultimodalDatasetGenerator {
                 IntentDomain::Refactoring => {
                     "code is messy and hard to maintain, what to do".to_string()
                 }
-                IntentDomain::Testing => {
-                    "test coverage is low, need improvements".to_string()
-                }
-                IntentDomain::Documentation => {
-                    "developers confused, need better docs".to_string()
-                }
-                IntentDomain::Security => {
-                    "security audit found issues, need fixes".to_string()
-                }
+                IntentDomain::Testing => "test coverage is low, need improvements".to_string(),
+                IntentDomain::Documentation => "developers confused, need better docs".to_string(),
+                IntentDomain::Security => "security audit found issues, need fixes".to_string(),
                 IntentDomain::Infrastructure => {
                     "infrastructure struggling with load, need changes".to_string()
                 }
@@ -818,27 +1022,40 @@ mod tests {
         assert!(paraphrase_count > 0);
         assert!(context_count > 0);
 
-        println!("[VERIFIED] Dataset generated with {} docs, {} paraphrase, {} context",
-            dataset.documents.len(), paraphrase_count, context_count);
+        println!(
+            "[VERIFIED] Dataset generated with {} docs, {} paraphrase, {} context",
+            dataset.documents.len(),
+            paraphrase_count,
+            context_count
+        );
     }
 
     #[test]
     fn test_direction_modifiers() {
         // paraphrase→context: 1.0 (E5-base-v2 handles asymmetry via prefixes)
         assert_eq!(
-            ParaphraseDirection::direction_modifier(ParaphraseDirection::Paraphrase, ParaphraseDirection::Context),
+            ParaphraseDirection::direction_modifier(
+                ParaphraseDirection::Paraphrase,
+                ParaphraseDirection::Context
+            ),
             1.0
         );
 
         // context→paraphrase: 1.0 (neutral - E5-base-v2 handles asymmetry via prefixes)
         assert_eq!(
-            ParaphraseDirection::direction_modifier(ParaphraseDirection::Context, ParaphraseDirection::Paraphrase),
+            ParaphraseDirection::direction_modifier(
+                ParaphraseDirection::Context,
+                ParaphraseDirection::Paraphrase
+            ),
             1.0
         );
 
         // same direction: 1.0
         assert_eq!(
-            ParaphraseDirection::direction_modifier(ParaphraseDirection::Paraphrase, ParaphraseDirection::Paraphrase),
+            ParaphraseDirection::direction_modifier(
+                ParaphraseDirection::Paraphrase,
+                ParaphraseDirection::Paraphrase
+            ),
             1.0
         );
 
@@ -855,7 +1072,10 @@ mod tests {
         let stats = dataset.stats();
         assert_eq!(stats.documents_per_domain.len(), IntentDomain::all().len());
 
-        println!("[VERIFIED] All {} domains have documents", stats.documents_per_domain.len());
+        println!(
+            "[VERIFIED] All {} domains have documents",
+            stats.documents_per_domain.len()
+        );
     }
 
     #[test]

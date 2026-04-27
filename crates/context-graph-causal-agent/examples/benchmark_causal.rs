@@ -124,7 +124,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("  Created {} claim-evidence pairs for benchmarking", pairs.len());
+    println!(
+        "  Created {} claim-evidence pairs for benchmarking",
+        pairs.len()
+    );
     println!();
 
     // Limit pairs for benchmarking (full dataset takes too long)
@@ -134,7 +137,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(20);
 
     let pairs = &pairs[..pairs.len().min(max_pairs)];
-    println!("Running benchmark on {} pairs (set BENCHMARK_PAIRS env to change)\n", pairs.len());
+    println!(
+        "Running benchmark on {} pairs (set BENCHMARK_PAIRS env to change)\n",
+        pairs.len()
+    );
 
     // Initialize LLM with Hermes 2 Pro and GBNF grammar constraints
     let config = LlmConfig {
@@ -143,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         graph_grammar_path: model_dir.join("graph_relationship.gbnf"),
         validation_grammar_path: model_dir.join("validation.gbnf"),
         n_gpu_layers: u32::MAX, // Full GPU offload
-        temperature: 0.0, // Deterministic
+        temperature: 0.0,       // Deterministic
         max_tokens: 256,
         ..Default::default()
     };
@@ -179,7 +185,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let direction_str = format!("{:?}", analysis.direction);
                 *direction_counts.entry(direction_str.clone()).or_insert(0) += 1;
 
-                let symbol = if analysis.has_causal_link { "✓" } else { "✗" };
+                let symbol = if analysis.has_causal_link {
+                    "✓"
+                } else {
+                    "✗"
+                };
                 let conf = format!("{:.2}", analysis.confidence);
 
                 println!(
@@ -217,7 +227,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Calculate statistics
     let pairs_with_causal = results.iter().filter(|r| r.has_causal_link).count();
     let pairs_without_causal = results.len() - pairs_with_causal;
-    let avg_confidence: f32 = results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
+    let avg_confidence: f32 =
+        results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
     let inference_times: Vec<u64> = results.iter().map(|r| r.inference_time_ms).collect();
     let avg_time = inference_times.iter().sum::<u64>() as f64 / inference_times.len() as f64;
     let min_time = *inference_times.iter().min().unwrap_or(&0);
@@ -244,11 +255,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╠═══════════════════════════════════════════════════════════════╣");
     println!("║ Total Pairs Analyzed: {:>40} ║", results.len());
     println!("║ Pairs with Causal Link: {:>38} ║", pairs_with_causal);
-    println!("║ Pairs without Causal Link: {:>35} ║", pairs_without_causal);
+    println!(
+        "║ Pairs without Causal Link: {:>35} ║",
+        pairs_without_causal
+    );
     println!("║ Average Confidence: {:>41.2} ║", avg_confidence);
     println!("╠═══════════════════════════════════════════════════════════════╣");
-    println!("║ Model Load Time: {:>40.2}s ║", model_load_time.as_secs_f64());
-    println!("║ Total Benchmark Time: {:>36.2}s ║", total_time.as_secs_f64());
+    println!(
+        "║ Model Load Time: {:>40.2}s ║",
+        model_load_time.as_secs_f64()
+    );
+    println!(
+        "║ Total Benchmark Time: {:>36.2}s ║",
+        total_time.as_secs_f64()
+    );
     println!("║ Average Inference Time: {:>34.0}ms ║", avg_time);
     println!("║ Min Inference Time: {:>38}ms ║", min_time);
     println!("║ Max Inference Time: {:>38}ms ║", max_time);
@@ -302,7 +322,9 @@ fn load_chunks(path: &PathBuf) -> Result<Vec<Chunk>, Box<dyn std::error::Error>>
     Ok(chunks)
 }
 
-fn load_qrels(path: &PathBuf) -> Result<HashMap<String, HashMap<String, i32>>, Box<dyn std::error::Error>> {
+fn load_qrels(
+    path: &PathBuf,
+) -> Result<HashMap<String, HashMap<String, i32>>, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let qrels: HashMap<String, HashMap<String, i32>> = serde_json::from_reader(file)?;
     Ok(qrels)

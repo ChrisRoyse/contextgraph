@@ -16,9 +16,9 @@
 use crate::error::{CudaError, CudaResult};
 use crate::ffi::cuda_driver::{
     cuCtxCreate_v2, cuCtxDestroy_v2, cuCtxSetCurrent, cuDeviceGet, cuDeviceGetAttribute,
-    cuDeviceGetName, cuInit, cuMemGetInfo_v2, CUcontext, CUdevice,
-    CUDA_ERROR_INVALID_DEVICE, CUDA_ERROR_NO_DEVICE, CUDA_SUCCESS,
-    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+    cuDeviceGetName, cuInit, cuMemGetInfo_v2, CUcontext, CUdevice, CUDA_ERROR_INVALID_DEVICE,
+    CUDA_ERROR_NO_DEVICE, CUDA_SUCCESS, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+    CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
 };
 use std::ffi::CStr;
 use std::ptr;
@@ -267,7 +267,6 @@ impl GpuDevice {
             _ => 0.0, // Return 0 if we can't get memory info
         }
     }
-
 }
 
 impl Drop for GpuDevice {

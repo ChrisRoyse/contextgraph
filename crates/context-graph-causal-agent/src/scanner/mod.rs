@@ -47,8 +47,8 @@ pub struct ScannerConfig {
 impl Default for ScannerConfig {
     fn default() -> Self {
         Self {
-            similarity_threshold: 0.5,  // Related but not too similar
-            max_similarity: 0.9,        // Avoid duplicates
+            similarity_threshold: 0.5, // Related but not too similar
+            max_similarity: 0.9,       // Avoid duplicates
             max_candidates: 100,
             min_time_gap: Duration::seconds(10),
             max_time_gap: Duration::hours(24),
@@ -110,10 +110,7 @@ impl MemoryScanner {
         // Cluster memories by E1 similarity
         let clusters = self.cluster_by_similarity(memories);
 
-        debug!(
-            cluster_count = clusters.len(),
-            "Created semantic clusters"
-        );
+        debug!(cluster_count = clusters.len(), "Created semantic clusters");
 
         // Find candidate pairs within clusters
         let mut candidates = Vec::new();
@@ -251,11 +248,7 @@ impl MemoryScanner {
     }
 
     /// Score a candidate pair based on heuristics.
-    fn score_candidate_pair(
-        &self,
-        earlier: &MemoryForAnalysis,
-        later: &MemoryForAnalysis,
-    ) -> f32 {
+    fn score_candidate_pair(&self, earlier: &MemoryForAnalysis, later: &MemoryForAnalysis) -> f32 {
         let mut score = 0.0;
 
         // 1. Causal markers in text (+0.3 each)
@@ -345,7 +338,12 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
-    fn create_test_memory(id: u128, content: &str, hours_ago: i64, embedding: Vec<f32>) -> MemoryForAnalysis {
+    fn create_test_memory(
+        id: u128,
+        content: &str,
+        hours_ago: i64,
+        embedding: Vec<f32>,
+    ) -> MemoryForAnalysis {
         MemoryForAnalysis {
             id: Uuid::from_u128(id),
             content: content.to_string(),
@@ -381,12 +379,16 @@ mod tests {
 
         // Create similar (but not identical) memories with temporal ordering
         // These vectors have cosine similarity ≈ 0.7 (between 0.5 and 0.95)
-        let embedding1 = vec![1.0, 0.0, 0.0];  // norm = 1.0
+        let embedding1 = vec![1.0, 0.0, 0.0]; // norm = 1.0
         let embedding2 = vec![0.7, 0.7, 0.1]; // Different but related
 
         // Verify similarity is in range
         let sim = cosine_similarity(&embedding1, &embedding2);
-        assert!(sim > 0.5 && sim < 0.95, "Similarity {} not in range (0.5, 0.95)", sim);
+        assert!(
+            sim > 0.5 && sim < 0.95,
+            "Similarity {} not in range (0.5, 0.95)",
+            sim
+        );
 
         let memories = vec![
             create_test_memory(1, "Because of the bug, users complained", 2, embedding1),
@@ -403,7 +405,8 @@ mod tests {
         let scanner = MemoryScanner::new();
 
         let embedding = vec![0.7, 0.7, 0.1];
-        let earlier = create_test_memory(1, "Because of X, something happened", 2, embedding.clone());
+        let earlier =
+            create_test_memory(1, "Because of X, something happened", 2, embedding.clone());
         let later = create_test_memory(2, "Therefore Y occurred as a result", 1, embedding.clone());
 
         let score = scanner.score_candidate_pair(&earlier, &later);

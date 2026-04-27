@@ -58,7 +58,10 @@ fn resolve_bge_m3_tokenizer_path() -> PathBuf {
         PathBuf::from(cache)
     } else {
         let home = std::env::var("HOME").expect("HOME env must be set");
-        PathBuf::from(home).join(".cache").join("huggingface").join("hub")
+        PathBuf::from(home)
+            .join(".cache")
+            .join("huggingface")
+            .join("hub")
     };
 
     let model_dir = hub_root.join(BGE_M3_HUB_DIR);
@@ -175,12 +178,7 @@ fn bge_m3_xlm_roberta_sentencepiece_loads_and_tokenizes() {
         let ids = enc.get_ids();
         let tokens = enc.get_tokens();
 
-        println!(
-            "[{}] {:?} -> {} tokens",
-            label,
-            text,
-            ids.len()
-        );
+        println!("[{}] {:?} -> {} tokens", label, text, ids.len());
         if i == 0 {
             // First input: print every token as evidence.
             println!("  ids:    {:?}", ids);
@@ -299,9 +297,15 @@ fn bge_m3_xlm_roberta_sentencepiece_loads_and_tokenizes() {
 #[test]
 fn resolve_path_finds_existing_snapshot() {
     let path = resolve_bge_m3_tokenizer_path();
-    assert!(path.is_file(), "resolved path must be an existing file: {}", path.display());
     assert!(
-        path.file_name().map(|n| n == "tokenizer.json").unwrap_or(false),
+        path.is_file(),
+        "resolved path must be an existing file: {}",
+        path.display()
+    );
+    assert!(
+        path.file_name()
+            .map(|n| n == "tokenizer.json")
+            .unwrap_or(false),
         "resolved path must end in tokenizer.json: {}",
         path.display()
     );

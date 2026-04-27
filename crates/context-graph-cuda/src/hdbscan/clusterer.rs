@@ -171,7 +171,11 @@ impl GpuHdbscanClusterer {
         let start = Instant::now();
         let n = embeddings.len();
 
-        info!(n_points = n, min_cluster_size = self.params.min_cluster_size, "Starting GPU HDBSCAN");
+        info!(
+            n_points = n,
+            min_cluster_size = self.params.min_cluster_size,
+            "Starting GPU HDBSCAN"
+        );
 
         // Validate parameters
         self.params.validate()?;
@@ -219,10 +223,8 @@ impl GpuHdbscanClusterer {
         let mut knn_index = GpuKnnIndex::new(dimension)?;
         knn_index.add(embeddings)?;
 
-        let core_distances = knn_index.compute_core_distances_with_vectors(
-            embeddings,
-            self.params.min_samples,
-        )?;
+        let core_distances =
+            knn_index.compute_core_distances_with_vectors(embeddings, self.params.min_samples)?;
 
         let knn_elapsed = knn_start.elapsed();
         debug!(
@@ -235,19 +237,29 @@ impl GpuHdbscanClusterer {
         let mr_start = Instant::now();
         let mutual_reach = self.compute_mutual_reachability(embeddings, &core_distances);
         let mr_elapsed = mr_start.elapsed();
-        debug!(mr_elapsed_us = mr_elapsed.as_micros(), "Mutual reachability complete");
+        debug!(
+            mr_elapsed_us = mr_elapsed.as_micros(),
+            "Mutual reachability complete"
+        );
 
         // === STEP 3: MST (CPU - Prim's algorithm) ===
         let mst_start = Instant::now();
         let mst = self.build_mst(&mutual_reach);
         let mst_elapsed = mst_start.elapsed();
-        debug!(mst_elapsed_us = mst_elapsed.as_micros(), mst_edges = mst.len(), "MST complete");
+        debug!(
+            mst_elapsed_us = mst_elapsed.as_micros(),
+            mst_edges = mst.len(),
+            "MST complete"
+        );
 
         // === STEP 4: Cluster extraction (CPU - Union-Find) ===
         let cluster_start = Instant::now();
         let (labels, probabilities) = self.extract_clusters(&mst, n);
         let cluster_elapsed = cluster_start.elapsed();
-        debug!(cluster_elapsed_us = cluster_elapsed.as_micros(), "Cluster extraction complete");
+        debug!(
+            cluster_elapsed_us = cluster_elapsed.as_micros(),
+            "Cluster extraction complete"
+        );
 
         // === STEP 5: Identify core points (CUDA-H1 FIX: use GPU k-NN core distances) ===
         let core_points = self.identify_core_points(&labels, &core_distances);
@@ -264,7 +276,11 @@ impl GpuHdbscanClusterer {
             .collect();
 
         let total_elapsed = start.elapsed();
-        let n_clusters = labels.iter().filter(|&&l| l >= 0).collect::<HashSet<_>>().len();
+        let n_clusters = labels
+            .iter()
+            .filter(|&&l| l >= 0)
+            .collect::<HashSet<_>>()
+            .len();
         let n_noise = labels.iter().filter(|&&l| l == -1).count();
 
         info!(
@@ -362,7 +378,11 @@ impl GpuHdbscanClusterer {
     }
 
     /// Extract clusters from MST hierarchy using Union-Find.
-    fn extract_clusters(&self, mst: &[(usize, usize, f32)], n_points: usize) -> (Vec<i32>, Vec<f32>) {
+    fn extract_clusters(
+        &self,
+        mst: &[(usize, usize, f32)],
+        n_points: usize,
+    ) -> (Vec<i32>, Vec<f32>) {
         if n_points == 0 {
             return (vec![], vec![]);
         }
@@ -558,38 +578,62 @@ impl GpuHdbscanClusterer {
             }
 
             // a(i) = mean distance to same cluster
-            let (same_sum, same_count) = (0..n)
-                .filter(|&j| j != i && labels[j] == labels[i])
-                .fold((0.0f32, 0usize), |(sum, cnt), j| {
-                    (sum + self.euclidean_distance(&embeddings[i], &embeddings[j]), cnt + 1)
-                });
+            let (same_sum, same_count) = (0..n).filter(|&j| j != i && labels[j] == labels[i]).fold(
+                (0.0f32, 0usize),
+                |(sum, cnt), j| {
+                    (
+                        sum + self.euclidean_distance(&embeddings[i], &embeddings[j]),
+                        cnt + 1,
+                    )
+                },
+            );
 
-            let a_i = if same_count > 0 { same_sum / same_count as f32 } else { 0.0 };
+            let a_i = if same_count > 0 {
+                same_sum / same_count as f32
+            } else {
+                0.0
+            };
 
             // b(i) = min mean distance to other clusters
             let b_i = clusters
                 .iter()
                 .filter(|&&c| c != labels[i])
                 .filter_map(|&cluster| {
-                    let (sum, cnt) = (0..n)
-                        .filter(|&j| labels[j] == cluster)
-                        .fold((0.0f32, 0usize), |(sum, cnt), j| {
-                            (sum + self.euclidean_distance(&embeddings[i], &embeddings[j]), cnt + 1)
-                        });
-                    if cnt > 0 { Some(sum / cnt as f32) } else { None }
+                    let (sum, cnt) = (0..n).filter(|&j| labels[j] == cluster).fold(
+                        (0.0f32, 0usize),
+                        |(sum, cnt), j| {
+                            (
+                                sum + self.euclidean_distance(&embeddings[i], &embeddings[j]),
+                                cnt + 1,
+                            )
+                        },
+                    );
+                    if cnt > 0 {
+                        Some(sum / cnt as f32)
+                    } else {
+                        None
+                    }
                 })
                 .fold(f32::MAX, f32::min);
 
             let b_i = if b_i == f32::MAX { 0.0 } else { b_i };
 
             let max_ab = a_i.max(b_i);
-            let s_i = if max_ab > 0.0 { (b_i - a_i) / max_ab } else { 0.0 };
+            let s_i = if max_ab > 0.0 {
+                (b_i - a_i) / max_ab
+            } else {
+                0.0
+            };
 
             total_silhouette += s_i;
             count += 1;
         }
 
-        if count > 0 { total_silhouette / count as f32 } else { 0.0 }
+        if count > 0 {
+            total_silhouette / count as f32
+        } else {
+            0.0
+        }
     }
 }
 

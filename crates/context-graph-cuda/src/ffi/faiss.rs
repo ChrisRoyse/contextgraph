@@ -409,7 +409,10 @@ int main() {
     // Priority: HOME/.local/lib (user-built), then /usr/local/lib
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home/cabdru".to_string());
     let user_lib = format!("{}/.local/lib", home);
-    let lib_path = if std::path::Path::new(&user_lib).join("libfaiss_c.so").exists() {
+    let lib_path = if std::path::Path::new(&user_lib)
+        .join("libfaiss_c.so")
+        .exists()
+    {
         user_lib
     } else {
         "/usr/local/lib".to_string()

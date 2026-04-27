@@ -62,7 +62,11 @@ fn test_real_hnsw_add_and_search() {
     // The query vector itself should always be the top result
     assert_eq!(results[0].0, id1);
     // Self-similarity should be ~1.0 for cosine
-    assert!(results[0].1 > 0.99, "Self-similarity should be ~1.0, got {}", results[0].1);
+    assert!(
+        results[0].1 > 0.99,
+        "Self-similarity should be ~1.0, got {}",
+        results[0].1
+    );
 
     println!("[VERIFIED] Add and search work correctly");
 }

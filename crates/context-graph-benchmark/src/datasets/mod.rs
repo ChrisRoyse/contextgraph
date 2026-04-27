@@ -5,8 +5,8 @@
 
 pub mod beir_loader;
 pub mod causal;
-pub mod e1_semantic;
 pub mod e11_entity;
+pub mod e1_semantic;
 pub mod embedder_impact;
 pub mod generator;
 pub mod graph_linking;
@@ -17,13 +17,32 @@ pub mod temporal;
 pub mod temporal_sessions;
 pub mod topic_clusters;
 
-pub use causal::{CausalBenchmarkDataset, CausalDatasetConfig, CausalDatasetGenerator, CausalDomain};
-pub use multimodal::{
-    E10DatasetStats, E10MultimodalBenchmarkDataset, E10MultimodalDatasetConfig,
-    E10MultimodalDatasetGenerator, ParaphraseDirection, ParaphraseDocument, IntentDomain, ParaphraseQuery,
+pub use beir_loader::{
+    BeirChunk, BeirDataset, BeirLoadError, BeirLoader, BeirMetadata, BeirQrels, BeirQuery,
+};
+pub use causal::{
+    CausalBenchmarkDataset, CausalDatasetConfig, CausalDatasetGenerator, CausalDomain,
+};
+pub use e11_entity::{
+    E11EntityBenchmarkDataset, E11EntityDatasetConfig, E11EntityDatasetLoader,
+    E11EntityDatasetStats, EntityDocument, EntityGroundTruth, EntityLinkSerializable, EntityPair,
+    KnowledgeTriple,
+};
+pub use embedder_impact::{
+    EmbedderImpactDataset, EmbedderImpactDatasetConfig, EmbedderImpactDatasetStats,
+    ImpactQueryData, KnnGraph,
 };
 pub use generator::{DatasetGenerator, GeneratorConfig};
+pub use graph_linking::{
+    CandidateData, ExpectedEdge, GraphLinkingDataset, GraphLinkingDatasetConfig, MemoryData,
+    MemoryPair, ScaleTier, SubgraphData,
+};
 pub use ground_truth::GroundTruth;
+pub use multimodal::{
+    E10DatasetStats, E10MultimodalBenchmarkDataset, E10MultimodalDatasetConfig,
+    E10MultimodalDatasetGenerator, IntentDomain, ParaphraseDirection, ParaphraseDocument,
+    ParaphraseQuery,
+};
 pub use sparse::{
     E6SparseBenchmarkDataset, E6SparseDatasetConfig, E6SparseDatasetGenerator,
     E6SparseDatasetStats, KeywordDomain, SparseDocument, SparseQuery,
@@ -34,22 +53,6 @@ pub use temporal_sessions::{
     SessionChunk, SessionGenerator, SessionGeneratorConfig, TemporalSession,
 };
 pub use topic_clusters::{TopicCluster, TopicGenerator};
-pub use e11_entity::{
-    E11EntityBenchmarkDataset, E11EntityDatasetConfig, E11EntityDatasetLoader,
-    E11EntityDatasetStats, EntityDocument, EntityGroundTruth, EntityLinkSerializable,
-    EntityPair, KnowledgeTriple,
-};
-pub use graph_linking::{
-    CandidateData, ExpectedEdge, GraphLinkingDataset, GraphLinkingDatasetConfig,
-    MemoryData, MemoryPair, ScaleTier, SubgraphData,
-};
-pub use embedder_impact::{
-    EmbedderImpactDataset, EmbedderImpactDatasetConfig, EmbedderImpactDatasetStats,
-    ImpactQueryData, KnnGraph,
-};
-pub use beir_loader::{
-    BeirChunk, BeirDataset, BeirLoader, BeirLoadError, BeirMetadata, BeirQrels, BeirQuery,
-};
 
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;

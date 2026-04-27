@@ -533,7 +533,7 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
                 let base = 0.40 / (NUM_EMBEDDERS as f32 - 2.0); // 0.40/11 ≈ 0.03636
                 let mut weights = [base; NUM_EMBEDDERS];
                 weights[11] = 0.40; // E12 ColBERT
-                weights[0] = 0.20;  // E1 Semantic
+                weights[0] = 0.20; // E1 Semantic
                 weights
             }
         }
@@ -657,5 +657,4 @@ mod tests {
         );
         println!("[PASS] Constant scores variance: {}", variance);
     }
-
 }

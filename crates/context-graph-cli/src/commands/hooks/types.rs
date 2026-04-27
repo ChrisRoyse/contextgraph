@@ -385,10 +385,7 @@ mod tests {
             (HookEventType::SessionStart, "hooks session-start"),
             (HookEventType::PreToolUse, "hooks pre-tool"),
             (HookEventType::PostToolUse, "hooks post-tool"),
-            (
-                HookEventType::UserPromptSubmit,
-                "hooks prompt-submit",
-            ),
+            (HookEventType::UserPromptSubmit, "hooks prompt-submit"),
             (HookEventType::SessionEnd, "hooks session-end"),
         ];
 
@@ -512,7 +509,6 @@ impl StabilityLevel {
             Self::Critical
         }
     }
-
 }
 
 #[cfg(test)]
@@ -538,7 +534,6 @@ impl std::fmt::Display for StabilityLevel {
         }
     }
 }
-
 
 // =============================================================================
 // Coherence State
@@ -1076,7 +1071,10 @@ impl HookOutput {
     }
 
     /// Add stability classification to output (builder pattern)
-    pub fn with_stability_classification(mut self, classification: StabilityClassification) -> Self {
+    pub fn with_stability_classification(
+        mut self,
+        classification: StabilityClassification,
+    ) -> Self {
         self.stability_classification = Some(classification);
         self
     }
@@ -1138,9 +1136,17 @@ mod hook_io_tests {
             (0.9_f32, StabilityLevel::Healthy, "healthy boundary (>=0.9)"),
             (0.899_f32, StabilityLevel::Normal, "just below healthy"),
             (0.7_f32, StabilityLevel::Normal, "normal lower boundary"),
-            (0.699_f32, StabilityLevel::Warning, "warning boundary (<0.7)"),
+            (
+                0.699_f32,
+                StabilityLevel::Warning,
+                "warning boundary (<0.7)",
+            ),
             (0.5_f32, StabilityLevel::Warning, "warning lower boundary"),
-            (0.499_f32, StabilityLevel::Critical, "critical boundary (<0.5)"),
+            (
+                0.499_f32,
+                StabilityLevel::Critical,
+                "critical boundary (<0.5)",
+            ),
             (0.0_f32, StabilityLevel::Critical, "min value"),
         ];
 
@@ -1228,10 +1234,22 @@ mod hook_io_tests {
         println!("\n=== TC-HOOKS-IO-004: StabilityLevel Crisis Detection ===");
         println!("SOURCE: constitution.yaml critical: \"<0.5\"");
 
-        assert!(StabilityLevel::Critical.is_crisis(), "Critical MUST be crisis");
-        assert!(!StabilityLevel::Warning.is_crisis(), "Warning MUST NOT be crisis");
-        assert!(!StabilityLevel::Normal.is_crisis(), "Normal MUST NOT be crisis");
-        assert!(!StabilityLevel::Healthy.is_crisis(), "Healthy MUST NOT be crisis");
+        assert!(
+            StabilityLevel::Critical.is_crisis(),
+            "Critical MUST be crisis"
+        );
+        assert!(
+            !StabilityLevel::Warning.is_crisis(),
+            "Warning MUST NOT be crisis"
+        );
+        assert!(
+            !StabilityLevel::Normal.is_crisis(),
+            "Normal MUST NOT be crisis"
+        );
+        assert!(
+            !StabilityLevel::Healthy.is_crisis(),
+            "Healthy MUST NOT be crisis"
+        );
 
         assert!(
             StabilityLevel::Critical.needs_attention(),
@@ -1309,21 +1327,33 @@ mod hook_io_tests {
 
         let crisis = StabilityClassification::new(0.45, 0.5);
         assert!(crisis.crisis_triggered, "0.45 < 0.5 MUST trigger crisis");
-        assert_eq!(crisis.level, StabilityLevel::Critical, "0.45 MUST be Critical");
+        assert_eq!(
+            crisis.level,
+            StabilityLevel::Critical,
+            "0.45 MUST be Critical"
+        );
 
         let no_crisis = StabilityClassification::new(0.55, 0.5);
         assert!(
             !no_crisis.crisis_triggered,
             "0.55 >= 0.5 MUST NOT trigger crisis"
         );
-        assert_eq!(no_crisis.level, StabilityLevel::Warning, "0.55 MUST be Warning");
+        assert_eq!(
+            no_crisis.level,
+            StabilityLevel::Warning,
+            "0.55 MUST be Warning"
+        );
 
         let boundary = StabilityClassification::new(0.5, 0.5);
         assert!(
             !boundary.crisis_triggered,
             "0.5 >= 0.5 MUST NOT trigger crisis"
         );
-        assert_eq!(boundary.level, StabilityLevel::Warning, "0.5 MUST be Warning");
+        assert_eq!(
+            boundary.level,
+            StabilityLevel::Warning,
+            "0.5 MUST be Warning"
+        );
 
         println!("RESULT: PASS - Crisis trigger matches constitution threshold");
     }

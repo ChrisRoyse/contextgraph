@@ -209,7 +209,6 @@ impl CausalDataLoader {
 
         Some(TrainingBatch { pairs, batch_idx })
     }
-
 }
 
 /// Seed causal training pairs spanning multiple domains.
@@ -2648,9 +2647,8 @@ pub fn save_pairs_jsonl(
     let file = std::fs::File::create(path)?;
     let mut writer = std::io::BufWriter::new(file);
     for pair in pairs {
-        let json = serde_json::to_string(pair).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-        })?;
+        let json = serde_json::to_string(pair)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         writeln!(writer, "{}", json)?;
     }
     Ok(())
@@ -2667,9 +2665,8 @@ pub fn load_pairs_jsonl(path: &std::path::Path) -> std::io::Result<Vec<CausalTra
         if line.trim().is_empty() {
             continue;
         }
-        let pair: CausalTrainingPair = serde_json::from_str(&line).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
-        })?;
+        let pair: CausalTrainingPair = serde_json::from_str(&line)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         pairs.push(pair);
     }
     Ok(pairs)
@@ -2708,10 +2705,7 @@ pub fn expand_seed_pairs(pairs: &[CausalTrainingPair]) -> Vec<CausalTrainingPair
 
     // 3. Cross-domain hard negatives: pair cause from one relationship
     //    with effect from a different relationship in the same domain
-    let causal_pairs: Vec<&CausalTrainingPair> = pairs
-        .iter()
-        .filter(|p| p.is_causal())
-        .collect();
+    let causal_pairs: Vec<&CausalTrainingPair> = pairs.iter().filter(|p| p.is_causal()).collect();
 
     for i in 0..causal_pairs.len() {
         for j in (i + 1)..causal_pairs.len() {
@@ -2750,7 +2744,10 @@ pub fn generate_non_causal_pairs(pairs: &[CausalTrainingPair]) -> Vec<CausalTrai
     let mut by_domain: std::collections::HashMap<&str, Vec<&CausalTrainingPair>> =
         std::collections::HashMap::new();
     for pair in pairs.iter().filter(|p| p.is_causal()) {
-        by_domain.entry(pair.domain.as_str()).or_default().push(pair);
+        by_domain
+            .entry(pair.domain.as_str())
+            .or_default()
+            .push(pair);
     }
 
     let domains: Vec<&str> = by_domain.keys().copied().collect();
@@ -2789,44 +2786,96 @@ mod tests {
     #[test]
     fn test_seed_pairs_coverage() {
         let pairs = seed_training_pairs();
-        assert!(pairs.len() >= 250, "Should have at least 250 seed pairs, got {}", pairs.len());
+        assert!(
+            pairs.len() >= 250,
+            "Should have at least 250 seed pairs, got {}",
+            pairs.len()
+        );
 
         // Check all 12 domain coverage
-        let domains: std::collections::HashSet<_> = pairs.iter().map(|p| p.domain.as_str()).collect();
+        let domains: std::collections::HashSet<_> =
+            pairs.iter().map(|p| p.domain.as_str()).collect();
         assert!(domains.contains("health"), "Missing health domain");
-        assert!(domains.contains("environment"), "Missing environment domain");
+        assert!(
+            domains.contains("environment"),
+            "Missing environment domain"
+        );
         assert!(domains.contains("economics"), "Missing economics domain");
         assert!(domains.contains("technology"), "Missing technology domain");
         assert!(domains.contains("social"), "Missing social domain");
         assert!(domains.contains("physics"), "Missing physics domain");
         assert!(domains.contains("nutrition"), "Missing nutrition domain");
-        assert!(domains.contains("cybersecurity"), "Missing cybersecurity domain");
+        assert!(
+            domains.contains("cybersecurity"),
+            "Missing cybersecurity domain"
+        );
         assert!(domains.contains("psychology"), "Missing psychology domain");
         assert!(domains.contains("history"), "Missing history domain");
         assert!(domains.contains("legal"), "Missing legal domain");
-        assert!(domains.contains("engineering"), "Missing engineering domain");
+        assert!(
+            domains.contains("engineering"),
+            "Missing engineering domain"
+        );
 
         // Verify each domain has at least 4 pairs
-        for domain in &["health", "environment", "economics", "technology", "social",
-                         "physics", "nutrition", "cybersecurity", "psychology", "history",
-                         "legal", "engineering"] {
+        for domain in &[
+            "health",
+            "environment",
+            "economics",
+            "technology",
+            "social",
+            "physics",
+            "nutrition",
+            "cybersecurity",
+            "psychology",
+            "history",
+            "legal",
+            "engineering",
+        ] {
             let count = pairs.iter().filter(|p| p.domain == *domain).count();
-            assert!(count >= 4, "Domain '{}' should have >= 4 pairs, got {}", domain, count);
+            assert!(
+                count >= 4,
+                "Domain '{}' should have >= 4 pairs, got {}",
+                domain,
+                count
+            );
         }
 
         // Verify legal and engineering have at least 15 pairs each
         let legal_count = pairs.iter().filter(|p| p.domain == "legal").count();
-        assert!(legal_count >= 15, "Legal domain should have >= 15 pairs, got {}", legal_count);
+        assert!(
+            legal_count >= 15,
+            "Legal domain should have >= 15 pairs, got {}",
+            legal_count
+        );
         let eng_count = pairs.iter().filter(|p| p.domain == "engineering").count();
-        assert!(eng_count >= 15, "Engineering domain should have >= 15 pairs, got {}", eng_count);
+        assert!(
+            eng_count >= 15,
+            "Engineering domain should have >= 15 pairs, got {}",
+            eng_count
+        );
 
         // Verify non-causal pairs ratio (~20%)
-        let none_count = pairs.iter().filter(|p| matches!(p.direction, TrainingDirection::None)).count();
-        assert!(none_count >= 40, "Should have >= 40 non-causal pairs, got {}", none_count);
+        let none_count = pairs
+            .iter()
+            .filter(|p| matches!(p.direction, TrainingDirection::None))
+            .count();
+        assert!(
+            none_count >= 40,
+            "Should have >= 40 non-causal pairs, got {}",
+            none_count
+        );
 
         // Verify bidirectional pairs
-        let bidir_count = pairs.iter().filter(|p| matches!(p.direction, TrainingDirection::Bidirectional)).count();
-        assert!(bidir_count >= 5, "Should have >= 5 bidirectional pairs, got {}", bidir_count);
+        let bidir_count = pairs
+            .iter()
+            .filter(|p| matches!(p.direction, TrainingDirection::Bidirectional))
+            .count();
+        assert!(
+            bidir_count >= 5,
+            "Should have >= 5 bidirectional pairs, got {}",
+            bidir_count
+        );
     }
 
     #[test]
@@ -2842,12 +2891,27 @@ mod tests {
 
     #[test]
     fn test_training_direction_parsing() {
-        assert_eq!(TrainingDirection::from_str("forward"), TrainingDirection::Forward);
-        assert_eq!(TrainingDirection::from_str("A_causes_B"), TrainingDirection::Forward);
-        assert_eq!(TrainingDirection::from_str("backward"), TrainingDirection::Backward);
-        assert_eq!(TrainingDirection::from_str("bidirectional"), TrainingDirection::Bidirectional);
+        assert_eq!(
+            TrainingDirection::from_str("forward"),
+            TrainingDirection::Forward
+        );
+        assert_eq!(
+            TrainingDirection::from_str("A_causes_B"),
+            TrainingDirection::Forward
+        );
+        assert_eq!(
+            TrainingDirection::from_str("backward"),
+            TrainingDirection::Backward
+        );
+        assert_eq!(
+            TrainingDirection::from_str("bidirectional"),
+            TrainingDirection::Bidirectional
+        );
         assert_eq!(TrainingDirection::from_str("none"), TrainingDirection::None);
-        assert_eq!(TrainingDirection::from_str("garbage"), TrainingDirection::None);
+        assert_eq!(
+            TrainingDirection::from_str("garbage"),
+            TrainingDirection::None
+        );
     }
 
     #[test]
@@ -2866,7 +2930,11 @@ mod tests {
             TrainingDirection::None,
             0.1,
         );
-        assert_eq!(non_causal.difficulty(), 0.0, "Non-causal should be difficulty 0");
+        assert_eq!(
+            non_causal.difficulty(),
+            0.0,
+            "Non-causal should be difficulty 0"
+        );
     }
 
     #[test]
@@ -2888,15 +2956,13 @@ mod tests {
 
     #[test]
     fn test_jsonl_round_trip() {
-        let pairs = vec![
-            CausalTrainingPair::new(
-                "A causes B".into(),
-                "B is caused by A".into(),
-                TrainingDirection::Forward,
-                0.9,
-            )
-            .with_domain("test"),
-        ];
+        let pairs = vec![CausalTrainingPair::new(
+            "A causes B".into(),
+            "B is caused by A".into(),
+            TrainingDirection::Forward,
+            0.9,
+        )
+        .with_domain("test")];
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");

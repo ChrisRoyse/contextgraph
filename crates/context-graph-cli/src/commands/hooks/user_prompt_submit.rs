@@ -22,7 +22,8 @@ use super::args::PromptSubmitArgs;
 use super::error::{HookError, HookResult};
 use super::memory_cache::{cache_memories, CachedMemory};
 use super::types::{
-    CoherenceState, ConversationMessage, HookInput, HookOutput, HookPayload, StabilityClassification,
+    CoherenceState, ConversationMessage, HookInput, HookOutput, HookPayload,
+    StabilityClassification,
 };
 use crate::mcp_client::McpClient;
 
@@ -213,7 +214,10 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     let mcp_available = match client.is_server_running().await {
         Ok(running) => {
             if running {
-                debug!("PROMPT_SUBMIT: MCP server available at {}", client.server_address());
+                debug!(
+                    "PROMPT_SUBMIT: MCP server available at {}",
+                    client.server_address()
+                );
             } else {
                 warn!(
                     "PROMPT_SUBMIT: MCP server not running at {} - memory operations will be skipped",
@@ -239,7 +243,8 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     // 7b. Search knowledge graph for relevant memories via MCP
     //    Also cache them for pre_tool_use to access without network calls
     let retrieved_memories = if mcp_available {
-        search_memories_for_prompt_with_client(&client, &args.session_id, &prompt, search_strategy).await
+        search_memories_for_prompt_with_client(&client, &args.session_id, &prompt, search_strategy)
+            .await
     } else {
         Vec::new()
     };
@@ -318,8 +323,7 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     let divergence_alerts = if mcp_available && time_budget_remaining > MIN_TIME_FOR_DIVERGENCE_MS {
         debug!(
             elapsed_so_far_ms,
-            time_budget_remaining,
-            "PROMPT_SUBMIT: Fetching divergence alerts"
+            time_budget_remaining, "PROMPT_SUBMIT: Fetching divergence alerts"
         );
         fetch_divergence_alerts_with_client(&client).await
     } else {
@@ -343,10 +347,8 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     // 11. R10: Merge causal memories into retrieved memories (deduplicated)
     let mut retrieved_memories = retrieved_memories;
     if !causal_memories.is_empty() {
-        let existing_ids: std::collections::HashSet<String> = retrieved_memories
-            .iter()
-            .map(|m| m.id.clone())
-            .collect();
+        let existing_ids: std::collections::HashSet<String> =
+            retrieved_memories.iter().map(|m| m.id.clone()).collect();
         for cm in causal_memories {
             if !existing_ids.contains(&cm.id) {
                 retrieved_memories.push(cm);
@@ -355,10 +357,8 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     }
 
     // 11b. R9: Deduplicate E11 results against E1+causal by fingerprintId
-    let e1_ids: std::collections::HashSet<&str> = retrieved_memories
-        .iter()
-        .map(|m| m.id.as_str())
-        .collect();
+    let e1_ids: std::collections::HashSet<&str> =
+        retrieved_memories.iter().map(|m| m.id.as_str()).collect();
     let e11_deduped: Vec<&E11DiscoveredMemory> = e11_discovered_memories
         .iter()
         .filter(|m| !e1_ids.contains(m.id.as_str()))
@@ -507,10 +507,25 @@ fn load_snapshot_from_cache(session_id: &str) -> SessionSnapshot {
 /// When a prompt contains code, the pipeline strategy (E13→E1→E12) provides
 /// better precision than the default multi_space strategy.
 const CODE_INDICATORS: &[&str] = &[
-    "::", "fn ", "def ", "function ", "class ", "impl ", "struct ",
-    "pub fn", "async fn", "pub struct", "pub enum",
-    "import ", "from ", "require(", "use ",
-    "->", "=>", "||", "&&",
+    "::",
+    "fn ",
+    "def ",
+    "function ",
+    "class ",
+    "impl ",
+    "struct ",
+    "pub fn",
+    "async fn",
+    "pub struct",
+    "pub enum",
+    "import ",
+    "from ",
+    "require(",
+    "use ",
+    "->",
+    "=>",
+    "||",
+    "&&",
 ];
 
 /// R8: Detect if a prompt contains significant code patterns.
@@ -549,9 +564,17 @@ fn looks_like_code(prompt: &str) -> bool {
 
 /// Causal intent keywords that trigger E5 causal search.
 const CAUSAL_KEYWORDS: &[&str] = &[
-    "why", "because", "caused by", "root cause", "leads to",
-    "resulted in", "due to", "reason for", "consequence",
-    "what caused", "what led to",
+    "why",
+    "because",
+    "caused by",
+    "root cause",
+    "leads to",
+    "resulted in",
+    "due to",
+    "reason for",
+    "consequence",
+    "what caused",
+    "what led to",
 ];
 
 /// R10: Detect causal intent in user prompt.
@@ -592,7 +615,6 @@ pub fn detect_identity_marker(prompt: &str) -> IdentityMarkerType {
 
     IdentityMarkerType::None
 }
-
 
 // ============================================================================
 // Memory Retrieval via MCP
@@ -644,13 +666,11 @@ impl SourceInfo {
                     "Source: MDFileChunk".to_string()
                 }
             }
-            "HookDescription" => {
-                match (&self.hook_type, &self.tool_name) {
-                    (Some(hook), Some(tool)) => format!("Source: {} hook ({})", hook, tool),
-                    (Some(hook), None) => format!("Source: {} hook", hook),
-                    _ => "Source: HookDescription".to_string(),
-                }
-            }
+            "HookDescription" => match (&self.hook_type, &self.tool_name) {
+                (Some(hook), Some(tool)) => format!("Source: {} hook ({})", hook, tool),
+                (Some(hook), None) => format!("Source: {} hook", hook),
+                _ => "Source: HookDescription".to_string(),
+            },
             "ClaudeResponse" => "Source: Claude response".to_string(),
             "Manual" => "Source: Manual entry".to_string(),
             other => format!("Source: {}", other),
@@ -693,7 +713,6 @@ pub struct DivergenceAlert {
     /// Description of the divergence
     pub description: String,
 }
-
 
 /// Search the knowledge graph for memories relevant to the user's prompt.
 ///
@@ -785,7 +804,10 @@ fn parse_search_results(result: &serde_json::Value) -> Vec<RetrievedMemory> {
             break;
         }
 
-        let content = item.get("content").and_then(|v| v.as_str()).map(String::from);
+        let content = item
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         // Track content size for budget
         if let Some(ref c) = content {
@@ -794,14 +816,33 @@ fn parse_search_results(result: &serde_json::Value) -> Vec<RetrievedMemory> {
 
         // Parse source metadata if available
         let source = item.get("source").map(|s| {
-            let source_type = s.get("type").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+            let source_type = s
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string();
             SourceInfo {
                 source_type,
-                file_path: s.get("file_path").and_then(|v| v.as_str()).map(String::from),
-                chunk_index: s.get("chunk_index").and_then(|v| v.as_u64()).map(|n| n as u32),
-                total_chunks: s.get("total_chunks").and_then(|v| v.as_u64()).map(|n| n as u32),
-                hook_type: s.get("hook_type").and_then(|v| v.as_str()).map(String::from),
-                tool_name: s.get("tool_name").and_then(|v| v.as_str()).map(String::from),
+                file_path: s
+                    .get("file_path")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                chunk_index: s
+                    .get("chunk_index")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                total_chunks: s
+                    .get("total_chunks")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32),
+                hook_type: s
+                    .get("hook_type")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                tool_name: s
+                    .get("tool_name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
             }
         });
 
@@ -994,7 +1035,10 @@ fn parse_e11_search_results(result: &serde_json::Value) -> Vec<E11DiscoveredMemo
             .unwrap_or("unknown")
             .to_string();
 
-        let content = item.get("content").and_then(|v| v.as_str()).map(String::from);
+        let content = item
+            .get("content")
+            .and_then(|v| v.as_str())
+            .map(String::from);
 
         let score = item
             .get("score")
@@ -1066,7 +1110,6 @@ async fn fetch_divergence_alerts_with_client(client: &McpClient) -> Vec<Divergen
         }
     }
 }
-
 
 /// Parse MCP get_divergence_alerts results into DivergenceAlert structs.
 fn parse_divergence_alerts(result: &serde_json::Value) -> Vec<DivergenceAlert> {
@@ -1232,10 +1275,8 @@ fn generate_context_injection(
                     .unwrap_or_default();
 
                 if source_hint.is_empty() {
-                    injection.push_str(&format!(
-                        "- [sim={:.2}] {}\n",
-                        memory.similarity, truncated
-                    ));
+                    injection
+                        .push_str(&format!("- [sim={:.2}] {}\n", memory.similarity, truncated));
                 } else {
                     injection.push_str(&format!(
                         "- [sim={:.2}, {}] {}\n",
@@ -1258,7 +1299,10 @@ fn generate_context_injection(
                 .iter()
                 .map(|e| e.surface_form.as_str())
                 .collect();
-            injection.push_str(&format!("E11 Entity Discoveries ({}):\n", entity_list.join(", ")));
+            injection.push_str(&format!(
+                "E11 Entity Discoveries ({}):\n",
+                entity_list.join(", ")
+            ));
         } else {
             injection.push_str("E11 Entity Discoveries:\n");
         }

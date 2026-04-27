@@ -76,15 +76,17 @@ pub(crate) fn compute_semantic_scores(
     scores[6] = cosine_similarity(&query.e7_code, &target.e7_code);
 
     // E8: STOR-H1 FIX: Asymmetric — max of both cross-directions
-    scores[7] = cosine_similarity(query.get_e8_as_source(), target.get_e8_as_target())
-        .max(cosine_similarity(query.get_e8_as_target(), target.get_e8_as_source()));
+    scores[7] = cosine_similarity(query.get_e8_as_source(), target.get_e8_as_target()).max(
+        cosine_similarity(query.get_e8_as_target(), target.get_e8_as_source()),
+    );
 
     // E9: HDC
     scores[8] = cosine_similarity(&query.e9_hdc, &target.e9_hdc);
 
     // E10: STOR-H1 FIX: Asymmetric — max of both cross-directions
-    scores[9] = cosine_similarity(query.get_e10_as_paraphrase(), target.get_e10_as_context())
-        .max(cosine_similarity(query.get_e10_as_context(), target.get_e10_as_paraphrase()));
+    scores[9] = cosine_similarity(query.get_e10_as_paraphrase(), target.get_e10_as_context()).max(
+        cosine_similarity(query.get_e10_as_context(), target.get_e10_as_paraphrase()),
+    );
 
     // E11: Entity
     scores[10] = cosine_similarity(&query.e11_entity, &target.e11_entity);

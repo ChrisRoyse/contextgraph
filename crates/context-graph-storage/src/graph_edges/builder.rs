@@ -398,7 +398,11 @@ impl BackgroundGraphBuilder {
                 "warning_count": warnings.len(),
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 warn!(error = %e, "BackgroundGraphBuilder: Failed to write audit record (non-fatal)");
             }
         }
@@ -484,15 +488,16 @@ impl BackgroundGraphBuilder {
             error!(
                 "build_graphs_for_fingerprints: ZERO embeddings extracted from {} fingerprints. \
                  Active embedders: {:?}. This means fingerprints have no embedding data.",
-                fingerprints.len(), self.config.active_embedders,
+                fingerprints.len(),
+                self.config.active_embedders,
             );
             return Ok((0, Vec::new()));
         }
 
         // Configure graph link service
         let nn_config = NnDescentConfig::default().with_k(self.config.k);
-        let edge_config =
-            EdgeBuilderConfig::default().with_min_weighted_agreement(self.config.min_weighted_agreement);
+        let edge_config = EdgeBuilderConfig::default()
+            .with_min_weighted_agreement(self.config.min_weighted_agreement);
 
         let service_config = GraphLinkServiceConfig::default()
             .with_active_embedders(self.config.active_embedders.clone())
@@ -541,8 +546,11 @@ impl BackgroundGraphBuilder {
             for source_id in graph.nodes() {
                 let neighbors = graph.get_neighbors(source_id);
                 if !neighbors.is_empty() {
-                    self.edge_repository
-                        .store_embedder_edges(*embedder_id, source_id, neighbors)?;
+                    self.edge_repository.store_embedder_edges(
+                        *embedder_id,
+                        source_id,
+                        neighbors,
+                    )?;
                     knn_edges_created += neighbors.len();
                     sources_stored += 1;
                 }
@@ -583,7 +591,10 @@ impl BackgroundGraphBuilder {
             })?;
 
         let total_count = all_fingerprints.len();
-        info!("rebuild_all: scanned {} fingerprints from store", total_count);
+        info!(
+            "rebuild_all: scanned {} fingerprints from store",
+            total_count
+        );
 
         if total_count == 0 {
             return Ok(RebuildResult {
@@ -683,8 +694,7 @@ impl BackgroundGraphBuilder {
         let processed_count = fingerprint_ids.len();
         info!(
             queued_count = processed_count,
-            "process_batch_internal: drained {} fingerprint IDs from queue",
-            processed_count
+            "process_batch_internal: drained {} fingerprint IDs from queue", processed_count
         );
 
         // Retrieve fingerprints from store

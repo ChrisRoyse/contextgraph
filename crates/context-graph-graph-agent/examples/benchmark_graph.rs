@@ -235,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         graph_grammar_path: model_dir.join("graph_relationship.gbnf"),
         validation_grammar_path: model_dir.join("validation.gbnf"),
         n_gpu_layers: u32::MAX, // Full GPU offload
-        temperature: 0.0, // Deterministic
+        temperature: 0.0,       // Deterministic
         max_tokens: 256,
         ..Default::default()
     };
@@ -260,9 +260,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run benchmark
     println!("Running graph discovery benchmark...\n");
-    println!("┌────┬──────────────────────────────────────────────────────────────────────────────┐");
-    println!("│ #  │ Memory A → Memory B                               │ Result                  │");
-    println!("├────┼──────────────────────────────────────────────────────────────────────────────┤");
+    println!(
+        "┌────┬──────────────────────────────────────────────────────────────────────────────┐"
+    );
+    println!(
+        "│ #  │ Memory A → Memory B                               │ Result                  │"
+    );
+    println!(
+        "├────┼──────────────────────────────────────────────────────────────────────────────┤"
+    );
 
     let benchmark_start = Instant::now();
     let mut results: Vec<PairResult> = Vec::new();
@@ -278,10 +284,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = service.llm();
 
     // Create pairs from consecutive memories (simple pairing strategy)
-    let pairs: Vec<(&MemoryForGraphAnalysis, &MemoryForGraphAnalysis)> = memories
-        .windows(2)
-        .map(|w| (&w[0], &w[1]))
-        .collect();
+    let pairs: Vec<(&MemoryForGraphAnalysis, &MemoryForGraphAnalysis)> =
+        memories.windows(2).map(|w| (&w[0], &w[1])).collect();
 
     let max_pairs = std::env::var("BENCHMARK_PAIRS")
         .ok()
@@ -301,7 +305,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let start = Instant::now();
-        let analysis = llm.analyze_relationship(&mem_a.content, &mem_b.content).await;
+        let analysis = llm
+            .analyze_relationship(&mem_a.content, &mem_b.content)
+            .await;
         let elapsed = start.elapsed();
 
         match analysis {
@@ -313,9 +319,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 *direction_counts.entry(direction_str.clone()).or_insert(0) += 1;
 
                 // Update relationship stats
-                let stats = relationship_stats
-                    .entry(rel_type_str.clone())
-                    .or_default();
+                let stats = relationship_stats.entry(rel_type_str.clone()).or_default();
                 stats.count += 1;
                 stats.confidences.push(result.confidence);
 
@@ -371,7 +375,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("└────┴──────────────────────────────────────────────────────────────────────────────┘\n");
+    println!(
+        "└────┴──────────────────────────────────────────────────────────────────────────────┘\n"
+    );
 
     let total_time = benchmark_start.elapsed();
 
@@ -473,32 +479,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
     println!("║                           BENCHMARK RESULTS                                    ║");
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
-    println!(
-        "║ Total Pairs Analyzed:       {:>50} ║",
-        results.len()
-    );
-    println!(
-        "║ Pairs with Connection:      {:>50} ║",
-        pairs_with_conn
-    );
-    println!(
-        "║ Pairs without Connection:   {:>50} ║",
-        pairs_without_conn
-    );
+    println!("║ Total Pairs Analyzed:       {:>50} ║", results.len());
+    println!("║ Pairs with Connection:      {:>50} ║", pairs_with_conn);
+    println!("║ Pairs without Connection:   {:>50} ║", pairs_without_conn);
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ CONFIDENCE METRICS                                                            ║");
-    println!(
-        "║   Average Confidence:       {:>50.3} ║",
-        avg_confidence
-    );
-    println!(
-        "║   Min Confidence:           {:>50.3} ║",
-        min_confidence
-    );
-    println!(
-        "║   Max Confidence:           {:>50.3} ║",
-        max_confidence
-    );
+    println!("║   Average Confidence:       {:>50.3} ║", avg_confidence);
+    println!("║   Min Confidence:           {:>50.3} ║", min_confidence);
+    println!("║   Max Confidence:           {:>50.3} ║", max_confidence);
     println!(
         "║   Median Confidence:        {:>50.3} ║",
         median_confidence
@@ -513,30 +501,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "║   Total Benchmark Time:     {:>48.2}s ║",
         total_time.as_secs_f64()
     );
-    println!(
-        "║   Avg Inference Time:       {:>47.0}ms ║",
-        avg_time
-    );
-    println!(
-        "║   Min Inference Time:       {:>47}ms ║",
-        min_time
-    );
-    println!(
-        "║   Max Inference Time:       {:>47}ms ║",
-        max_time
-    );
-    println!(
-        "║   Median Inference Time:    {:>47}ms ║",
-        median_time
-    );
-    println!(
-        "║   P95 Inference Time:       {:>47}ms ║",
-        p95_time
-    );
-    println!(
-        "║   P99 Inference Time:       {:>47}ms ║",
-        p99_time
-    );
+    println!("║   Avg Inference Time:       {:>47.0}ms ║", avg_time);
+    println!("║   Min Inference Time:       {:>47}ms ║", min_time);
+    println!("║   Max Inference Time:       {:>47}ms ║", max_time);
+    println!("║   Median Inference Time:    {:>47}ms ║", median_time);
+    println!("║   P95 Inference Time:       {:>47}ms ║", p95_time);
+    println!("║   P99 Inference Time:       {:>47}ms ║", p99_time);
     println!(
         "║   Throughput:               {:>44.2} pairs/sec ║",
         throughput
@@ -554,10 +524,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ DIRECTION DISTRIBUTION                                                        ║");
     for (direction, count) in &benchmark_results.direction_distribution {
-        println!(
-            "║   {:20}: {:>55} ║",
-            direction, count
-        );
+        println!("║   {:20}: {:>55} ║", direction, count);
     }
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ HEURISTIC ACCURACY (Scanner vs LLM)                                           ║");

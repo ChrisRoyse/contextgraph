@@ -18,8 +18,8 @@
 pub mod asymmetric;
 
 pub use asymmetric::{
-    compute_e8_asymmetric_fingerprint_similarity, compute_e8_asymmetric_full,
-    compute_graph_asymmetric_similarity, compute_graph_asymmetric_similarity_simple,
-    detect_graph_query_intent, adjust_batch_graph_similarities,
-    ConnectivityContext, GraphDirection,
+    adjust_batch_graph_similarities, compute_e8_asymmetric_fingerprint_similarity,
+    compute_e8_asymmetric_full, compute_graph_asymmetric_similarity,
+    compute_graph_asymmetric_similarity_simple, detect_graph_query_intent, ConnectivityContext,
+    GraphDirection,
 };

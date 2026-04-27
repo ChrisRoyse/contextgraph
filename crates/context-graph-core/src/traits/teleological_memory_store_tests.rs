@@ -19,16 +19,11 @@ use crate::traits::{
     TeleologicalMemoryStore, TeleologicalMemoryStoreExt, TeleologicalSearchOptions,
     TeleologicalStorageBackend,
 };
-use crate::types::fingerprint::{
-    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
-};
+use crate::types::fingerprint::{SemanticFingerprint, SparseVector, TeleologicalFingerprint};
 
 /// Create a real test fingerprint with meaningful data.
 fn create_real_fingerprint() -> TeleologicalFingerprint {
-    TeleologicalFingerprint::new(
-        SemanticFingerprint::zeroed(),
-        [0u8; 32],
-    )
+    TeleologicalFingerprint::new(SemanticFingerprint::zeroed(), [0u8; 32])
 }
 
 /// Create a fingerprint with sparse embeddings for E13.
@@ -409,7 +404,6 @@ async fn test_storage_size_tracking() {
         after_store
     );
 }
-
 
 #[tokio::test]
 async fn test_search_with_embedder_filter() {

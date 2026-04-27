@@ -16,7 +16,10 @@ use crate::types::fingerprint::SparseVector;
 #[test]
 fn test_semantic_fingerprint_validate_zeroed_passes() {
     let fp = SemanticFingerprint::zeroed();
-    assert!(fp.validate().is_ok(), "Zeroed fingerprint should pass validation");
+    assert!(
+        fp.validate().is_ok(),
+        "Zeroed fingerprint should pass validation"
+    );
 }
 
 /// Test that valid sparse vectors pass validation.
@@ -293,7 +296,7 @@ fn test_semantic_fingerprint_validate_e13_sparse_length_mismatch() {
 fn test_semantic_fingerprint_validate_all_multiple_errors() {
     let mut fp = SemanticFingerprint::zeroed();
     fp.e1_semantic = vec![0.0; 100]; // Wrong E1
-    // E5 now uses dual vectors - set both to wrong dimensions
+                                     // E5 now uses dual vectors - set both to wrong dimensions
     fp.e5_causal_as_cause = vec![0.0; 100]; // Wrong E5 cause
     fp.e5_causal_as_effect = vec![0.0; 100]; // Wrong E5 effect
     fp.e7_code = vec![0.0; 100]; // Wrong E7
@@ -302,7 +305,12 @@ fn test_semantic_fingerprint_validate_all_multiple_errors() {
     assert!(result.is_err(), "Should have errors");
 
     let errors = result.unwrap_err();
-    assert_eq!(errors.len(), 3, "Should have 3 errors, got {}", errors.len());
+    assert_eq!(
+        errors.len(),
+        3,
+        "Should have 3 errors, got {}",
+        errors.len()
+    );
 
     // Verify each error is present
     let embedders: Vec<Embedder> = errors
@@ -361,8 +369,16 @@ fn test_validation_error_display() {
         "Message should mention dimension mismatch: {}",
         msg
     );
-    assert!(msg.contains("1024"), "Message should contain expected: {}", msg);
-    assert!(msg.contains("100"), "Message should contain actual: {}", msg);
+    assert!(
+        msg.contains("1024"),
+        "Message should contain expected: {}",
+        msg
+    );
+    assert!(
+        msg.contains("100"),
+        "Message should contain actual: {}",
+        msg
+    );
 
     // Test TokenDimensionMismatch display
     let err2 = ValidationError::TokenDimensionMismatch {

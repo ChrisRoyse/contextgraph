@@ -352,8 +352,14 @@ pub fn compute_paraphrase_detection_metrics(
         .collect();
 
     // Precision/Recall/F1 for paraphrase class
-    let predicted_paraphrase = results.iter().filter(|r| r.detected == "paraphrase").count();
-    let actual_paraphrase = results.iter().filter(|r| r.expected == "paraphrase").count();
+    let predicted_paraphrase = results
+        .iter()
+        .filter(|r| r.detected == "paraphrase")
+        .count();
+    let actual_paraphrase = results
+        .iter()
+        .filter(|r| r.expected == "paraphrase")
+        .count();
     let true_positive_paraphrase = results
         .iter()
         .filter(|r| r.detected == "paraphrase" && r.expected == "paraphrase")
@@ -404,7 +410,10 @@ pub fn compute_context_matching_metrics(
     let mrr = results.iter().map(|r| r.reciprocal_rank).sum::<f64>() / total as f64;
 
     // Hits at various K
-    let hits_at_1 = results.iter().filter(|r| r.first_relevant_rank == 1).count();
+    let hits_at_1 = results
+        .iter()
+        .filter(|r| r.first_relevant_rank == 1)
+        .count();
     let hits_at_5 = results
         .iter()
         .filter(|r| r.first_relevant_rank > 0 && r.first_relevant_rank <= 5)
@@ -625,6 +634,9 @@ mod tests {
         assert_eq!(metrics.misclassified, 1);
         assert!((metrics.accuracy - 2.0 / 3.0).abs() < 1e-6);
 
-        println!("[VERIFIED] Paraphrase detection metrics: accuracy={:.2}", metrics.accuracy);
+        println!(
+            "[VERIFIED] Paraphrase detection metrics: accuracy={:.2}",
+            metrics.accuracy
+        );
     }
 }

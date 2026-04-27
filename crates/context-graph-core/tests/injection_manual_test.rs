@@ -38,7 +38,10 @@ fn fsv_edge_case_empty_content() {
     println!("  - token_count: {}", c.token_count);
     println!("  - content.len(): {}", c.content.len());
 
-    assert_eq!(c.token_count, 0, "Empty content should have token_count = 0");
+    assert_eq!(
+        c.token_count, 0,
+        "Empty content should have token_count = 0"
+    );
     assert_eq!(c.content.len(), 0, "Empty content length should be 0");
 
     println!("✓ PASS: Empty content results in token_count = 0");
@@ -82,10 +85,7 @@ fn fsv_edge_case_max_weighted_agreement() {
         (c.weighted_agreement - 9.5).abs() < f32::EPSILON,
         "Max weighted_agreement should be 9.5"
     );
-    assert_eq!(
-        c.relevance_score, 1.0,
-        "Max relevance_score should be 1.0"
-    );
+    assert_eq!(c.relevance_score, 1.0, "Max relevance_score should be 1.0");
     assert_eq!(c.matching_spaces.len(), 14, "Should have all 14 embedders");
 
     // Verify the constant
@@ -274,7 +274,10 @@ fn fsv_edge_case_temporal_exclusion() {
     println!("AFTER: semantic_space_count() called");
     println!("  - semantic_space_count: {}", semantic_count);
 
-    assert_eq!(semantic_count, 0, "Temporal embedders should not be counted");
+    assert_eq!(
+        semantic_count, 0,
+        "Temporal embedders should not be counted"
+    );
 
     // Now test with mixed embedders
     let c2 = InjectionCandidate::new(
@@ -283,12 +286,12 @@ fn fsv_edge_case_temporal_exclusion() {
         0.5,
         3.5, // 2 semantic (2.0) + 1 relational (0.5) + 2 temporal (0.0) + 1 structural (0.5) = 3.0
         vec![
-            Embedder::Semantic,       // Semantic - counts (1.0)
-            Embedder::Code,           // Semantic - counts (1.0)
-            Embedder::TemporalRecent, // Temporal - excluded (0.0)
+            Embedder::Semantic,         // Semantic - counts (1.0)
+            Embedder::Code,             // Semantic - counts (1.0)
+            Embedder::TemporalRecent,   // Temporal - excluded (0.0)
             Embedder::TemporalPeriodic, // Temporal - excluded (0.0)
-            Embedder::Graph,      // Relational - counts (0.5)
-            Embedder::Hdc,            // Structural - counts (0.5)
+            Embedder::Graph,            // Relational - counts (0.5)
+            Embedder::Hdc,              // Structural - counts (0.5)
         ],
         InjectionCategory::HighRelevanceCluster,
         Utc::now(),
@@ -322,9 +325,9 @@ fn fsv_edge_case_token_estimation() {
 
     let test_cases = [
         ("", 0),
-        ("one", 2),         // 1 * 1.3 = 1.3 -> ceil = 2
-        ("one two", 3),     // 2 * 1.3 = 2.6 -> ceil = 3
-        ("one two three", 4), // 3 * 1.3 = 3.9 -> ceil = 4
+        ("one", 2),                  // 1 * 1.3 = 1.3 -> ceil = 2
+        ("one two", 3),              // 2 * 1.3 = 2.6 -> ceil = 3
+        ("one two three", 4),        // 3 * 1.3 = 3.9 -> ceil = 4
         ("a b c d e f g h i j", 13), // 10 * 1.3 = 13.0 -> ceil = 13
     ];
 
@@ -383,7 +386,7 @@ fn fsv_edge_case_category_thresholds() {
         (2.0, Some(InjectionCategory::SingleSpaceMatch)),
         (1.5, Some(InjectionCategory::SingleSpaceMatch)),
         (1.0, Some(InjectionCategory::SingleSpaceMatch)), // Boundary
-        (0.99, None),                                      // Below threshold
+        (0.99, None),                                     // Below threshold
         (0.5, None),
         (0.0, None), // Min
     ];
@@ -442,10 +445,7 @@ fn fsv_edge_case_fits_budget_boundaries() {
         !c.fits_budget(129),
         "Should not fit when remaining is one less"
     );
-    assert!(
-        c.fits_budget(131),
-        "Should fit when remaining is one more"
-    );
+    assert!(c.fits_budget(131), "Should fit when remaining is one more");
     assert!(!c.fits_budget(0), "Should not fit in zero budget");
 
     println!("✓ PASS: fits_budget boundary conditions work correctly");
@@ -466,7 +466,10 @@ fn fsv_summary_verification() {
     println!("  - Exported via: crates/context-graph-core/src/lib.rs");
     println!();
     println!("CONSTANTS VERIFIED:");
-    println!("  - TOKEN_MULTIPLIER = {} (expected: 1.3)", TOKEN_MULTIPLIER);
+    println!(
+        "  - TOKEN_MULTIPLIER = {} (expected: 1.3)",
+        TOKEN_MULTIPLIER
+    );
     println!(
         "  - MIN_RECENCY_FACTOR = {} (expected: 0.8)",
         MIN_RECENCY_FACTOR

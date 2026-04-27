@@ -77,14 +77,22 @@ impl ResourceImpact {
 
     /// Get embedders sorted by index size (largest first).
     pub fn sorted_by_size(&self) -> Vec<(EmbedderIndex, usize)> {
-        let mut sorted: Vec<_> = self.index_stats.iter().map(|(&e, s)| (e, s.size_bytes)).collect();
+        let mut sorted: Vec<_> = self
+            .index_stats
+            .iter()
+            .map(|(&e, s)| (e, s.size_bytes))
+            .collect();
         sorted.sort_by(|a, b| b.1.cmp(&a.1));
         sorted
     }
 
     /// Get embedders sorted by query latency (slowest first).
     pub fn sorted_by_query_latency(&self) -> Vec<(EmbedderIndex, u64)> {
-        let mut sorted: Vec<_> = self.query_latency.iter().map(|(&e, l)| (e, l.avg_us)).collect();
+        let mut sorted: Vec<_> = self
+            .query_latency
+            .iter()
+            .map(|(&e, l)| (e, l.avg_us))
+            .collect();
         sorted.sort_by(|a, b| b.1.cmp(&a.1));
         sorted
     }
@@ -118,7 +126,6 @@ pub enum IndexType {
     /// Unknown/custom index type.
     Unknown,
 }
-
 
 /// Statistics for a single embedder's index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,9 +289,12 @@ impl LatencyStats {
 
         // Standard deviation
         let mean = self.avg_us as f64;
-        let variance: f64 = self.samples.iter()
+        let variance: f64 = self
+            .samples
+            .iter()
             .map(|&v| (v as f64 - mean).powi(2))
-            .sum::<f64>() / self.count as f64;
+            .sum::<f64>()
+            / self.count as f64;
         self.std_dev_us = variance.sqrt() as u64;
 
         // Clear samples to save memory
@@ -343,7 +353,8 @@ impl MemoryFootprint {
 
     /// Get memory for an embedder in MB.
     pub fn embedder_mb(&self, embedder: EmbedderIndex) -> f64 {
-        embedder.to_index()
+        embedder
+            .to_index()
             .map(|idx| self.per_embedder_bytes[idx] as f64 / (1024.0 * 1024.0))
             .unwrap_or(0.0)
     }
@@ -353,7 +364,8 @@ impl MemoryFootprint {
         if self.total_bytes == 0 {
             return 0.0;
         }
-        embedder.to_index()
+        embedder
+            .to_index()
             .map(|idx| (self.per_embedder_bytes[idx] as f64 / self.total_bytes as f64) * 100.0)
             .unwrap_or(0.0)
     }
@@ -414,7 +426,8 @@ impl StorageEfficiency {
 
         // Overhead = (stored - raw) / stored
         if total_stored > total_raw {
-            self.overhead_percentage = ((total_stored - total_raw) as f64 / total_stored as f64) * 100.0;
+            self.overhead_percentage =
+                ((total_stored - total_raw) as f64 / total_stored as f64) * 100.0;
         }
     }
 }

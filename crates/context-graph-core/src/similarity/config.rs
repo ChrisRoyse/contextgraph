@@ -358,7 +358,10 @@ mod tests {
         let weights = WeightingStrategy::code_search_weights();
         // Canonical: E8=0.0 in code_search (WEIGHT_PROFILES), E7=0.40 primary
         assert_eq!(weights[7], 0.0, "E8 Graph should be 0.0 in code_search");
-        assert!(weights[6] > weights[7], "E7 Code should be higher than E8 in code_search");
+        assert!(
+            weights[6] > weights[7],
+            "E7 Code should be higher than E8 in code_search"
+        );
         assert_eq!(weights[6], 0.40, "E7 Code should be 0.40 in code_search");
         println!(
             "[PASS] Code search weights: E7={:.2}, E1={:.2}, E8={:.2}",

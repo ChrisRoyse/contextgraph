@@ -8,9 +8,7 @@
 //! 3. Edge Cases: Empty init, double init, concurrent access
 //! 4. Evidence of Success: Detailed logging of state transitions
 
-use context_graph_embeddings::{
-    get_warm_provider, is_warm_initialized, warm_status_message,
-};
+use context_graph_embeddings::{get_warm_provider, is_warm_initialized, warm_status_message};
 
 /// FSV-1: Test status message returns expected values before initialization
 #[test]
@@ -216,10 +214,7 @@ fn fsv_state_observability() {
     println!("INITIAL STATE:");
     println!("  is_warm_initialized: {}", init_state);
     println!("  warm_status_message: {}", init_status);
-    println!(
-        "  get_warm_provider: {}",
-        init_result.is_ok()
-    );
+    println!("  get_warm_provider: {}", init_result.is_ok());
 
     // State should be consistent
     if init_state {

@@ -312,11 +312,7 @@ impl Default for GraphEdge {
     /// - source_id/target_id: Uuid::nil()
     /// - edge_type: EdgeType::Semantic (default)
     fn default() -> Self {
-        Self::new(
-            Uuid::nil(),
-            Uuid::nil(),
-            EdgeType::default(),
-        )
+        Self::new(Uuid::nil(), Uuid::nil(), EdgeType::default())
     }
 }
 

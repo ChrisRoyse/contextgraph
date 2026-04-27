@@ -382,7 +382,6 @@ mod tests {
         println!("RESULT: PASS - exit_code_for_error works with generic errors");
     }
 
-
     // =========================================================================
     // Test Serialization with corruption indicator in message
     // =========================================================================

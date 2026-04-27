@@ -115,9 +115,15 @@ mod tests {
         assert!(names.contains(&"detect_topics"));
         assert!(names.contains(&"get_divergence_alerts"));
         // Key schema checks
-        let portfolio = tools.iter().find(|t| t.name == "get_topic_portfolio").unwrap();
+        let portfolio = tools
+            .iter()
+            .find(|t| t.name == "get_topic_portfolio")
+            .unwrap();
         assert!(portfolio.description.contains("2.5"));
-        let alerts = tools.iter().find(|t| t.name == "get_divergence_alerts").unwrap();
+        let alerts = tools
+            .iter()
+            .find(|t| t.name == "get_divergence_alerts")
+            .unwrap();
         assert!(alerts.description.contains("AP-62"));
     }
 
@@ -125,18 +131,30 @@ mod tests {
     fn test_synthetic_valid_input() {
         let tools = definitions();
         // Portfolio format enum
-        let portfolio = tools.iter().find(|t| t.name == "get_topic_portfolio").unwrap();
-        let formats: Vec<&str> = portfolio.input_schema["properties"]["format"]["enum"].as_array().unwrap()
-            .iter().map(|v| v.as_str().unwrap()).collect();
+        let portfolio = tools
+            .iter()
+            .find(|t| t.name == "get_topic_portfolio")
+            .unwrap();
+        let formats: Vec<&str> = portfolio.input_schema["properties"]["format"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert_eq!(formats.len(), 3);
         assert!(formats.contains(&"verbose"));
         // Stability hours range
-        let stability = tools.iter().find(|t| t.name == "get_topic_stability").unwrap();
+        let stability = tools
+            .iter()
+            .find(|t| t.name == "get_topic_stability")
+            .unwrap();
         let hours = &stability.input_schema["properties"]["hours"];
         assert_eq!(hours["minimum"], 1);
         assert_eq!(hours["maximum"], 168);
         // detect_topics force default
         let detect = tools.iter().find(|t| t.name == "detect_topics").unwrap();
-        assert!(!detect.input_schema["properties"]["force"]["default"].as_bool().unwrap());
+        assert!(!detect.input_schema["properties"]["force"]["default"]
+            .as_bool()
+            .unwrap());
     }
 }

@@ -198,12 +198,7 @@ impl MomentumProjection {
     /// Apply cause projection using momentum weights (no gradients).
     pub fn project_cause(&self, embedding: &Tensor) -> EmbeddingResult<Tensor> {
         let projected = embedding
-            .matmul(
-                &self
-                    .cause_projection
-                    .t()
-                    .map_err(map_candle)?,
-            )
+            .matmul(&self.cause_projection.t().map_err(map_candle)?)
             .map_err(map_candle)?;
         projected
             .broadcast_add(&self.cause_bias)
@@ -213,12 +208,7 @@ impl MomentumProjection {
     /// Apply effect projection using momentum weights (no gradients).
     pub fn project_effect(&self, embedding: &Tensor) -> EmbeddingResult<Tensor> {
         let projected = embedding
-            .matmul(
-                &self
-                    .effect_projection
-                    .t()
-                    .map_err(map_candle)?,
-            )
+            .matmul(&self.effect_projection.t().map_err(map_candle)?)
             .map_err(map_candle)?;
         projected
             .broadcast_add(&self.effect_bias)
@@ -259,8 +249,7 @@ impl CausalTrainer {
         config: TrainingConfig,
         device: Device,
     ) -> EmbeddingResult<Self> {
-        let momentum =
-            MomentumProjection::from_trainable(&projection, config.momentum_tau)?;
+        let momentum = MomentumProjection::from_trainable(&projection, config.momentum_tau)?;
         let loss_fn = DirectionalContrastiveLoss::new(config.loss_config.clone());
 
         let optimizer = AdamW::new(config.optimizer_config.clone());
@@ -279,7 +268,8 @@ impl CausalTrainer {
     /// Register trainable parameters with the optimizer.
     pub fn register_params(&mut self) -> EmbeddingResult<()> {
         for var in self.projection.trainable_vars() {
-            self.optimizer.add_param(var.clone(), ParamGroup::Projection)?;
+            self.optimizer
+                .add_param(var.clone(), ParamGroup::Projection)?;
         }
         Ok(())
     }
@@ -340,7 +330,10 @@ impl CausalTrainer {
 
     /// Save the best checkpoint to the configured checkpoint directory.
     pub fn save_best(&self) -> EmbeddingResult<()> {
-        let path = self.config.checkpoint_dir.join("projection_best.safetensors");
+        let path = self
+            .config
+            .checkpoint_dir
+            .join("projection_best.safetensors");
         self.save_checkpoint(&path)
     }
 
@@ -370,7 +363,8 @@ impl CausalTrainer {
         confidences: &Tensor,
         auxiliary_loss: Option<&Tensor>,
     ) -> EmbeddingResult<LossComponents> {
-        let (total_loss, components) = self.loss_fn.compute(cause_vecs, effect_vecs, confidences)?;
+        let (total_loss, components) =
+            self.loss_fn.compute(cause_vecs, effect_vecs, confidences)?;
 
         let combined_loss = if let Some(aux) = auxiliary_loss {
             (&total_loss + aux).map_err(map_candle)?

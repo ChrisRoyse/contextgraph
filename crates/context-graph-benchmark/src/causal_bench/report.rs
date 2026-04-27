@@ -65,7 +65,10 @@ pub fn generate_markdown(report: &FullBenchmarkReport) -> String {
 
     out.push_str("\n## Detailed Metrics\n\n");
     for phase in &report.phases {
-        out.push_str(&format!("### Phase {}: {}\n\n", phase.phase, phase.phase_name));
+        out.push_str(&format!(
+            "### Phase {}: {}\n\n",
+            phase.phase, phase.phase_name
+        ));
         out.push_str(&format!("Duration: {}ms\n\n", phase.duration_ms));
 
         out.push_str("| Metric | Value | Target | Status |\n");

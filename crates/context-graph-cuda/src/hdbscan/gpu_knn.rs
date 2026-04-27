@@ -79,7 +79,11 @@ impl GpuKnnIndex {
         }
 
         let n = vectors.len();
-        debug!(n_vectors = n, dimension = self.dimension, "Adding vectors to index");
+        debug!(
+            n_vectors = n,
+            dimension = self.dimension,
+            "Adding vectors to index"
+        );
 
         // Validate dimensions and values
         for (i, vec) in vectors.iter().enumerate() {
@@ -93,7 +97,10 @@ impl GpuKnnIndex {
 
             for (j, &val) in vec.iter().enumerate() {
                 if !val.is_finite() {
-                    return Err(GpuHdbscanError::non_finite_value(i * self.dimension + j, val));
+                    return Err(GpuHdbscanError::non_finite_value(
+                        i * self.dimension + j,
+                        val,
+                    ));
                 }
             }
         }
@@ -136,7 +143,10 @@ impl GpuKnnIndex {
         let k_search = k.min(self.vector_count - 1) + 1;
 
         if self.vector_count < k_search {
-            return Err(GpuHdbscanError::insufficient_data(k_search, self.vector_count));
+            return Err(GpuHdbscanError::insufficient_data(
+                k_search,
+                self.vector_count,
+            ));
         }
 
         let start = Instant::now();
@@ -148,13 +158,11 @@ impl GpuKnnIndex {
         );
 
         // Run GPU k-NN kernel
-        let core_distances = compute_core_distances_gpu(
-            &self.vectors,
-            self.vector_count,
-            self.dimension,
-            k,
-        )
-        .map_err(|e| GpuHdbscanError::internal("compute_core_distances_gpu", e.to_string()))?;
+        let core_distances =
+            compute_core_distances_gpu(&self.vectors, self.vector_count, self.dimension, k)
+                .map_err(|e| {
+                    GpuHdbscanError::internal("compute_core_distances_gpu", e.to_string())
+                })?;
 
         let elapsed = start.elapsed();
         info!(

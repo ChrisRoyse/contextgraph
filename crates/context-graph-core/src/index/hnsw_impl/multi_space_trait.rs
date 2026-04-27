@@ -154,14 +154,22 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
             &fingerprint.e4_temporal_positional,
         )
         .await?;
-        self.add_vector(EmbedderIndex::E5Causal, memory_id, fingerprint.e5_active_vector())
-            .await?;
+        self.add_vector(
+            EmbedderIndex::E5Causal,
+            memory_id,
+            fingerprint.e5_active_vector(),
+        )
+        .await?;
 
         // E7-E11
         self.add_vector(EmbedderIndex::E7Code, memory_id, &fingerprint.e7_code)
             .await?;
-        self.add_vector(EmbedderIndex::E8Graph, memory_id, fingerprint.e8_active_vector())
-            .await?;
+        self.add_vector(
+            EmbedderIndex::E8Graph,
+            memory_id,
+            fingerprint.e8_active_vector(),
+        )
+        .await?;
         self.add_vector(EmbedderIndex::E9HDC, memory_id, &fingerprint.e9_hdc)
             .await?;
         self.add_vector(
@@ -185,7 +193,6 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
 
         Ok(())
     }
-
 
     async fn add_splade(&mut self, memory_id: Uuid, sparse: &[(usize, f32)]) -> IndexResult<()> {
         self.add_splade_internal(memory_id, sparse)
@@ -264,7 +271,6 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         self.search(EmbedderIndex::E1Matryoshka128, query_128d, k)
             .await
     }
-
 
     async fn remove(&mut self, memory_id: Uuid) -> IndexResult<()> {
         let mut found = false;

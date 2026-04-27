@@ -49,12 +49,12 @@ use super::graph_dtos::{
 };
 #[cfg(feature = "llm")]
 use super::graph_dtos::{
-    DiscoveredRelationship, DiscoverGraphRelationshipsRequest, DiscoverGraphRelationshipsResponse,
+    DiscoverGraphRelationshipsRequest, DiscoverGraphRelationshipsResponse, DiscoveredRelationship,
     DiscoveryMetadata, ValidateGraphLinkRequest, ValidateGraphLinkResponse,
 };
 
-use super::helpers::ToolErrorKind;
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// search_connections tool implementation.
@@ -83,10 +83,11 @@ impl Handlers {
     ) -> JsonRpcResponse {
         // Parse and validate request
         // MCP-6 FIX: includeProvenance is now modeled in DTO — no need for raw args clone
-        let request: SearchConnectionsRequest = match self.parse_request(id.clone(), args, "search_connections") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchConnectionsRequest =
+            match self.parse_request(id.clone(), args, "search_connections") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let query = &request.query;
         let top_k = request.top_k;
@@ -104,7 +105,10 @@ impl Handlers {
         );
 
         // Step 1: Embed the query
-        let query_embedding = match self.embed_query(id.clone(), query, "search_connections").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), query, "search_connections")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -183,7 +187,8 @@ impl Handlers {
             .collect();
 
         // Sort by adjusted score descending
-        scored_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_candidates
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Step 4: Filter by minScore and prepare response
         let mut filtered_count = 0;
@@ -236,7 +241,11 @@ impl Handlers {
 
         // Get content if requested - FAIL FAST on error
         let contents: Vec<Option<String>> = if request.include_content && !connections.is_empty() {
-            match self.teleological_store.get_content_batch(&connection_ids).await {
+            match self
+                .teleological_store
+                .get_content_batch(&connection_ids)
+                .await
+            {
                 Ok(c) => c,
                 Err(e) => {
                     error!(
@@ -260,7 +269,8 @@ impl Handlers {
 
         // Populate metadata and content, filter by graph direction if specified
         let filter_direction = request.filter_graph_direction.as_deref();
-        let mut final_connections: Vec<ConnectionSearchResult> = Vec::with_capacity(connections.len());
+        let mut final_connections: Vec<ConnectionSearchResult> =
+            Vec::with_capacity(connections.len());
 
         for (i, mut conn) in connections.into_iter().enumerate() {
             // Populate source metadata (graph_direction is inferred, not stored)
@@ -338,7 +348,11 @@ impl Handlers {
             Ok(v) => v,
             Err(e) => {
                 error!(error = %e, "search_connections: Response serialization failed");
-                return self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e));
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                );
             }
         };
         if include_provenance {
@@ -387,7 +401,11 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let (request, anchor_uuid) = match self.parse_request_validated::<GetGraphPathRequest>(id.clone(), args, "get_graph_path") {
+        let (request, anchor_uuid) = match self.parse_request_validated::<GetGraphPathRequest>(
+            id.clone(),
+            args,
+            "get_graph_path",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -406,18 +424,11 @@ impl Handlers {
         );
 
         // Step 1: Verify anchor exists and get its fingerprint
-        let anchor_fingerprint = match self
-            .teleological_store
-            .retrieve(anchor_uuid)
-            .await
-        {
+        let anchor_fingerprint = match self.teleological_store.retrieve(anchor_uuid).await {
             Ok(Some(fp)) => fp,
             Ok(None) => {
                 error!(anchor_id = %anchor_uuid, "get_graph_path: Anchor not found");
-                return self.tool_error(
-                    id,
-                    &format!("Anchor memory not found: {}", anchor_uuid),
-                );
+                return self.tool_error(id, &format!("Anchor memory not found: {}", anchor_uuid));
             }
             Err(e) => {
                 error!(error = %e, "get_graph_path: Failed to get anchor");
@@ -459,8 +470,7 @@ impl Handlers {
                         id,
                         &format!(
                             "Failed to search for hop {} candidates: {}. Path traversal aborted.",
-                            hop_index,
-                            e
+                            hop_index, e
                         ),
                     );
                 }
@@ -500,9 +510,7 @@ impl Handlers {
                 let adjusted_sim = asymmetric_sim * direction_mod;
 
                 // Track best candidate
-                if best_candidate.is_none()
-                    || adjusted_sim > best_candidate.as_ref().unwrap().2
-                {
+                if best_candidate.is_none() || adjusted_sim > best_candidate.as_ref().unwrap().2 {
                     // M6 FIX: Move instead of clone — `for candidate in candidates` gives
                     // ownership, so the SemanticFingerprint can be moved without copying
                     // all 14 embedding vectors (~50KB).
@@ -613,7 +621,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_graph_path: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -627,7 +639,10 @@ impl Handlers {
         id: Option<JsonRpcId>,
         _args: serde_json::Value,
     ) -> JsonRpcResponse {
-        self.tool_error(id, "discover_graph_relationships requires the 'llm' feature (GraphDiscoveryService)")
+        self.tool_error(
+            id,
+            "discover_graph_relationships requires the 'llm' feature (GraphDiscoveryService)",
+        )
     }
 
     pub(crate) async fn call_validate_graph_link(
@@ -635,7 +650,10 @@ impl Handlers {
         id: Option<JsonRpcId>,
         _args: serde_json::Value,
     ) -> JsonRpcResponse {
-        self.tool_error(id, "validate_graph_link requires the 'llm' feature (GraphDiscoveryService)")
+        self.tool_error(
+            id,
+            "validate_graph_link requires the 'llm' feature (GraphDiscoveryService)",
+        )
     }
 }
 
@@ -662,7 +680,12 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let (request, memory_uuids) = match self.parse_request_validated::<DiscoverGraphRelationshipsRequest>(id.clone(), args, "discover_graph_relationships") {
+        let (request, memory_uuids) = match self
+            .parse_request_validated::<DiscoverGraphRelationshipsRequest>(
+                id.clone(),
+                args,
+                "discover_graph_relationships",
+            ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -687,7 +710,8 @@ impl Handlers {
         };
 
         // Fetch memory content and metadata for analysis - FAIL FAST on any error
-        let mut memories_for_analysis: Vec<MemoryForGraphAnalysis> = Vec::with_capacity(memory_uuids.len());
+        let mut memories_for_analysis: Vec<MemoryForGraphAnalysis> =
+            Vec::with_capacity(memory_uuids.len());
 
         for uuid in &memory_uuids {
             // Get fingerprint - FAIL FAST on error
@@ -705,14 +729,7 @@ impl Handlers {
                 }
                 Err(e) => {
                     error!(uuid = %uuid, error = %e, "discover_graph_relationships: Failed to fetch memory");
-                    return self.tool_error(
-                        id,
-                        &format!(
-                            "Failed to fetch memory {}: {}",
-                            uuid,
-                            e
-                        ),
-                    );
+                    return self.tool_error(id, &format!("Failed to fetch memory {}: {}", uuid, e));
                 }
             };
 
@@ -733,22 +750,14 @@ impl Handlers {
                     error!(uuid = %uuid, error = %e, "discover_graph_relationships: Failed to fetch content");
                     return self.tool_error(
                         id,
-                        &format!(
-                            "Failed to fetch content for memory {}: {}",
-                            uuid,
-                            e
-                        ),
+                        &format!("Failed to fetch content for memory {}: {}", uuid, e),
                     );
                 }
             };
 
             // Get source metadata (optional - for source_type and file_path)
             // MED-21 FIX: Log errors instead of silently swallowing with .ok()
-            let source_metadata = match self
-                .teleological_store
-                .get_source_metadata(*uuid)
-                .await
-            {
+            let source_metadata = match self.teleological_store.get_source_metadata(*uuid).await {
                 Ok(meta) => meta,
                 Err(e) => {
                     warn!(error = %e, memory_id = %uuid, "discover_graph_relationships: Failed to read source_metadata");
@@ -762,7 +771,9 @@ impl Handlers {
                 created_at: fingerprint.created_at,
                 session_id: source_metadata.as_ref().and_then(|m| m.session_id.clone()),
                 e1_embedding: fingerprint.semantic.e1_semantic.to_vec(),
-                source_type: source_metadata.as_ref().map(|m| format!("{}", m.source_type)),
+                source_type: source_metadata
+                    .as_ref()
+                    .map(|m| format!("{}", m.source_type)),
                 file_path: source_metadata.and_then(|m| m.file_path),
             });
         }
@@ -800,10 +811,13 @@ impl Handlers {
             let all_edges = graph_read.all_edges();
 
             // Filter edges by min_confidence and optionally by relationship types
-            let type_filter: Option<HashSet<RelationshipType>> = request
-                .relationship_types
-                .as_ref()
-                .map(|types| types.iter().map(|t| RelationshipType::from_str(t)).collect());
+            let type_filter: Option<HashSet<RelationshipType>> =
+                request.relationship_types.as_ref().map(|types| {
+                    types
+                        .iter()
+                        .map(|t| RelationshipType::from_str(t))
+                        .collect()
+                });
 
             let rels: Vec<DiscoveredRelationship> = all_edges
                 .iter()
@@ -961,7 +975,11 @@ impl Handlers {
                 "confidence": rel.confidence,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "discover_graph_relationships: Failed to write audit record (non-fatal)");
             }
         }
@@ -970,7 +988,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "discover_graph_relationships: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -993,7 +1015,12 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let (request, (source_uuid, target_uuid)) = match self.parse_request_validated::<ValidateGraphLinkRequest>(id.clone(), args, "validate_graph_link") {
+        let (request, (source_uuid, target_uuid)) = match self
+            .parse_request_validated::<ValidateGraphLinkRequest>(
+                id.clone(),
+                args,
+                "validate_graph_link",
+            ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -1021,7 +1048,10 @@ impl Handlers {
             Ok(Some(c)) => c,
             Ok(None) => {
                 error!(uuid = %source_uuid, "validate_graph_link: Source memory content not found");
-                return self.tool_error(id, &format!("Source memory content not found: {}", source_uuid));
+                return self.tool_error(
+                    id,
+                    &format!("Source memory content not found: {}", source_uuid),
+                );
             }
             Err(e) => {
                 error!(uuid = %source_uuid, error = %e, "validate_graph_link: Failed to fetch source content");
@@ -1034,7 +1064,10 @@ impl Handlers {
             Ok(Some(c)) => c,
             Ok(None) => {
                 error!(uuid = %target_uuid, "validate_graph_link: Target memory content not found");
-                return self.tool_error(id, &format!("Target memory content not found: {}", target_uuid));
+                return self.tool_error(
+                    id,
+                    &format!("Target memory content not found: {}", target_uuid),
+                );
             }
             Err(e) => {
                 error!(uuid = %target_uuid, error = %e, "validate_graph_link: Failed to fetch target content");
@@ -1111,7 +1144,11 @@ impl Handlers {
                             "expected_type": expected_type_str,
                         }));
 
-                        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                        if let Err(e) = self
+                            .teleological_store
+                            .append_audit_record(&audit_record)
+                            .await
+                        {
                             error!(error = %e, "validate_graph_link: Failed to write audit record (non-fatal)");
                         }
                     }
@@ -1120,7 +1157,11 @@ impl Handlers {
                         Ok(v) => self.tool_result(id, v),
                         Err(e) => {
                             error!(error = %e, "validate_graph_link: Response serialization failed");
-                            self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                            self.tool_error_typed(
+                                id,
+                                ToolErrorKind::Execution,
+                                &format!("Response serialization failed: {}", e),
+                            )
                         }
                     }
                 }
@@ -1131,7 +1172,10 @@ impl Handlers {
             }
         } else {
             // No expected type - use general analysis
-            match llm.analyze_relationship(&source_content, &target_content).await {
+            match llm
+                .analyze_relationship(&source_content, &target_content)
+                .await
+            {
                 Ok(analysis) => {
                     let is_valid = analysis.has_connection && analysis.confidence >= 0.5;
 
@@ -1188,7 +1232,11 @@ impl Handlers {
                             "relationship_type": analysis.relationship_type.as_str(),
                         }));
 
-                        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                        if let Err(e) = self
+                            .teleological_store
+                            .append_audit_record(&audit_record)
+                            .await
+                        {
                             error!(error = %e, "validate_graph_link: Failed to write audit record (non-fatal)");
                         }
                     }
@@ -1197,7 +1245,11 @@ impl Handlers {
                         Ok(v) => self.tool_result(id, v),
                         Err(e) => {
                             error!(error = %e, "validate_graph_link: Response serialization failed");
-                            self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                            self.tool_error_typed(
+                                id,
+                                ToolErrorKind::Execution,
+                                &format!("Response serialization failed: {}", e),
+                            )
                         }
                     }
                 }
@@ -1260,6 +1312,9 @@ mod tests {
         fp.e8_graph_as_source = vec![1.0, 0.5, 0.3];
         fp.e8_graph_as_target = vec![1.0, 0.5, 0.3];
         assert_eq!(infer_graph_direction(&fp), GraphDirection::Unknown);
-        assert_eq!(infer_graph_direction(&SemanticFingerprint::zeroed()), GraphDirection::Unknown);
+        assert_eq!(
+            infer_graph_direction(&SemanticFingerprint::zeroed()),
+            GraphDirection::Unknown
+        );
     }
 }

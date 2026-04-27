@@ -18,9 +18,7 @@
 //! operation name, CF name, and key context. No silent fallbacks.
 
 use context_graph_core::error::{CoreError, CoreResult};
-use context_graph_core::llm_edge_validation::{
-    LLMEdgeValidation, LLM_EDGE_VALIDATION_VERSION,
-};
+use context_graph_core::llm_edge_validation::{LLMEdgeValidation, LLM_EDGE_VALIDATION_VERSION};
 use rocksdb::{ColumnFamily, IteratorMode, WriteBatch};
 use tracing::{debug, error};
 use uuid::Uuid;
@@ -123,9 +121,7 @@ impl RocksDbTeleologicalStore {
     ///
     /// Returns keys only (no payloads). Malformed keys (length ≠ 33) trigger
     /// a structured `CoreError::SerializationError`.
-    pub async fn list_llm_edge_validation_keys(
-        &self,
-    ) -> CoreResult<Vec<(Uuid, Uuid, u8)>> {
+    pub async fn list_llm_edge_validation_keys(&self) -> CoreResult<Vec<(Uuid, Uuid, u8)>> {
         let cf = self.cf_typed_edge_validations();
         let iter = self.db.iterator_cf(cf, IteratorMode::Start);
         let mut out = Vec::new();
@@ -195,9 +191,7 @@ impl RocksDbTeleologicalStore {
 
 /// Encode an `LLMEdgeValidation` with the canonical
 /// `[LLM_EDGE_VALIDATION_VERSION][bincode]` layout.
-pub fn encode_llm_edge_validation(
-    validation: &LLMEdgeValidation,
-) -> CoreResult<Vec<u8>> {
+pub fn encode_llm_edge_validation(validation: &LLMEdgeValidation) -> CoreResult<Vec<u8>> {
     encode_versioned(validation, LLM_EDGE_VALIDATION_VERSION, "LLMEdgeValidation")
 }
 

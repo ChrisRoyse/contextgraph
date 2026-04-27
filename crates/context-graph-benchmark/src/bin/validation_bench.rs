@@ -278,7 +278,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "real-embeddings")]
     {
         let args: Vec<String> = std::env::args().collect();
-        let test_tool = args.iter().position(|a| a == "--tool").and_then(|i| args.get(i + 1));
+        let test_tool = args
+            .iter()
+            .position(|a| a == "--tool")
+            .and_then(|i| args.get(i + 1));
         let test_all = args.iter().any(|a| a == "--test-all");
         let test_failfast = args.iter().any(|a| a == "--test-failfast");
 
@@ -327,7 +330,10 @@ async fn run_validation_benchmark(
         layer_status_provider,
     );
 
-    println!("  Handlers initialized in {:.1}s", init_start.elapsed().as_secs_f32());
+    println!(
+        "  Handlers initialized in {:.1}s",
+        init_start.elapsed().as_secs_f32()
+    );
     println!();
 
     // ========================================================================
@@ -410,27 +416,41 @@ async fn run_validation_benchmark(
             (TestExpectation::Success, true, Some(msg)) => {
                 (false, Some(format!("Expected success, got error: {}", msg)))
             }
-            (TestExpectation::Success, true, None) => {
-                (false, Some("Expected success, got error (no message)".to_string()))
-            }
+            (TestExpectation::Success, true, None) => (
+                false,
+                Some("Expected success, got error (no message)".to_string()),
+            ),
             (TestExpectation::Error(expected), true, Some(msg)) => {
                 invalid_latencies.push(latency_ms);
                 if msg.contains(expected) {
                     (true, Some(msg.clone()))
                 } else {
-                    (false, Some(format!(
-                        "Expected error containing '{}', got: {}",
-                        expected, msg
-                    )))
+                    (
+                        false,
+                        Some(format!(
+                            "Expected error containing '{}', got: {}",
+                            expected, msg
+                        )),
+                    )
                 }
             }
             (TestExpectation::Error(expected), true, None) => {
                 invalid_latencies.push(latency_ms);
-                (false, Some(format!("Expected error containing '{}', got error with no message", expected)))
+                (
+                    false,
+                    Some(format!(
+                        "Expected error containing '{}', got error with no message",
+                        expected
+                    )),
+                )
             }
-            (TestExpectation::Error(expected), false, _) => {
-                (false, Some(format!("Expected error containing '{}', got success", expected)))
-            }
+            (TestExpectation::Error(expected), false, _) => (
+                false,
+                Some(format!(
+                    "Expected error containing '{}', got success",
+                    expected
+                )),
+            ),
         };
 
         let expected_error = match &case.expected {
@@ -449,15 +469,19 @@ async fn run_validation_benchmark(
 
         // Print result
         let status = if passed { "PASS" } else { "FAIL" };
-        println!("  [{}] {} / {} ({:.1}ms)",
-            status, case.tool, case.name, latency_ms);
+        println!(
+            "  [{}] {} / {} ({:.1}ms)",
+            status, case.tool, case.name, latency_ms
+        );
 
         // Aggregate by tool
-        let tool_results = results_by_tool.entry(case.tool.clone()).or_insert(ToolTestResults {
-            pass: 0,
-            fail: 0,
-            details: Vec::new(),
-        });
+        let tool_results = results_by_tool
+            .entry(case.tool.clone())
+            .or_insert(ToolTestResults {
+                pass: 0,
+                fail: 0,
+                details: Vec::new(),
+            });
         if passed {
             tool_results.pass += 1;
         } else {
@@ -490,12 +514,15 @@ async fn run_validation_benchmark(
     // PHASE 5: Build results
     // ========================================================================
     let failfast_results: HashMap<String, String> = if test_failfast {
-        results_by_tool.iter().flat_map(|(_, tr)| {
-            tr.details.iter().map(|d| {
-                let status = if d.passed { "PASS" } else { "FAIL" };
-                (d.name.clone(), status.to_string())
+        results_by_tool
+            .iter()
+            .flat_map(|(_, tr)| {
+                tr.details.iter().map(|d| {
+                    let status = if d.passed { "PASS" } else { "FAIL" };
+                    (d.name.clone(), status.to_string())
+                })
             })
-        }).collect()
+            .collect()
     } else {
         HashMap::new()
     };
@@ -513,7 +540,11 @@ async fn run_validation_benchmark(
             },
             failfast_tests: failfast_results,
         },
-        overall: if failed == 0 { "PASS".to_string() } else { "FAIL".to_string() },
+        overall: if failed == 0 {
+            "PASS".to_string()
+        } else {
+            "FAIL".to_string()
+        },
     };
 
     // ========================================================================
@@ -527,7 +558,10 @@ async fn run_validation_benchmark(
     println!("  Total tests: {}", total_tests);
     println!("  Passed: {}", passed);
     println!("  Failed: {}", failed);
-    println!("  Pass rate: {:.1}%", (passed as f64 / total_tests as f64) * 100.0);
+    println!(
+        "  Pass rate: {:.1}%",
+        (passed as f64 / total_tests as f64) * 100.0
+    );
     println!();
 
     println!("Per-Tool Results:");
@@ -595,7 +629,11 @@ async fn create_test_anchor(
 
     // Check for JSON-RPC error
     if let Some(ref err) = response.error {
-        return Err(format!("store_memory MCP error: {} (code: {})", err.message, err.code).into());
+        return Err(format!(
+            "store_memory MCP error: {} (code: {})",
+            err.message, err.code
+        )
+        .into());
     }
 
     // Extract fingerprintId from response
@@ -607,7 +645,9 @@ async fn create_test_anchor(
         .and_then(|c| c.as_array())
         .ok_or("store_memory result has no content array")?;
 
-    let first = content.first().ok_or("store_memory content array is empty")?;
+    let first = content
+        .first()
+        .ok_or("store_memory content array is empty")?;
 
     let text = first
         .get("text")
@@ -615,8 +655,8 @@ async fn create_test_anchor(
         .ok_or("store_memory content has no text field")?;
 
     // Parse the JSON text to extract fingerprintId
-    let parsed: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| format!("Failed to parse store_memory response: {}", e))?;
+    let parsed: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("Failed to parse store_memory response: {}", e))?;
 
     let fingerprint_id = parsed
         .get("fingerprintId")
@@ -672,7 +712,10 @@ async fn verify_anchor_exists(
                 .into());
             }
             // Any other error is acceptable - anchor exists but something else failed
-            println!("    Note: traverse_memory_chain returned error (expected for empty db): {}", msg);
+            println!(
+                "    Note: traverse_memory_chain returned error (expected for empty db): {}",
+                msg
+            );
         }
     }
 
@@ -684,7 +727,9 @@ async fn verify_anchor_exists(
 /// MCP tools return errors as successful JSON-RPC responses with `isError: true` in content.
 /// Returns (is_error, error_message_option).
 #[cfg(feature = "real-embeddings")]
-fn extract_mcp_tool_error(response: &context_graph_mcp::protocol::JsonRpcResponse) -> (bool, Option<String>) {
+fn extract_mcp_tool_error(
+    response: &context_graph_mcp::protocol::JsonRpcResponse,
+) -> (bool, Option<String>) {
     // Check if there's a JSON-RPC level error first
     if let Some(ref err) = response.error {
         return (true, Some(err.message.clone()));
@@ -693,13 +738,15 @@ fn extract_mcp_tool_error(response: &context_graph_mcp::protocol::JsonRpcRespons
     // Check the MCP tool result for isError flag
     if let Some(ref result) = response.result {
         // Check isError flag
-        let is_error = result.get("isError")
+        let is_error = result
+            .get("isError")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         if is_error {
             // Extract error message from content array
-            let message = result.get("content")
+            let message = result
+                .get("content")
                 .and_then(|c| c.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|item| item.get("text"))
@@ -760,7 +807,11 @@ fn generate_markdown_report(results: &ValidationBenchmarkResults) -> String {
         detail_section.push_str("|------|--------|---------|-------|\n");
         for d in &tr.details {
             let status = if d.passed { "PASS" } else { "FAIL" };
-            let notes = d.error_message.as_ref().map(|s| truncate(s, 50)).unwrap_or_default();
+            let notes = d
+                .error_message
+                .as_ref()
+                .map(|s| truncate(s, 50))
+                .unwrap_or_default();
             detail_section.push_str(&format!(
                 "| {} | {} | {:.1}ms | {} |\n",
                 d.name, status, d.latency_ms, notes
@@ -768,7 +819,8 @@ fn generate_markdown_report(results: &ValidationBenchmarkResults) -> String {
         }
     }
 
-    format!(r#"# Validation Benchmark Report
+    format!(
+        r#"# Validation Benchmark Report
 
 ## Code Simplification Tests
 

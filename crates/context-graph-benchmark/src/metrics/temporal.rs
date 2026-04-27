@@ -143,14 +143,24 @@ impl TemporalMetrics {
     ) -> bool {
         self.recency.recency_weighted_mrr >= min_recency_mrr
             && self.sequence.sequence_accuracy >= min_sequence_accuracy
-            && self.periodic.periodic_recall_at.get(&10).copied().unwrap_or(0.0) >= min_periodic_recall
+            && self
+                .periodic
+                .periodic_recall_at
+                .get(&10)
+                .copied()
+                .unwrap_or(0.0)
+                >= min_periodic_recall
     }
 }
 
 impl RecencyMetrics {
     /// Overall recency score.
     pub fn overall_score(&self) -> f64 {
-        let fresh_rate = self.fresh_retrieval_rate_at.get(&10).copied().unwrap_or(0.0);
+        let fresh_rate = self
+            .fresh_retrieval_rate_at
+            .get(&10)
+            .copied()
+            .unwrap_or(0.0);
         0.4 * self.recency_weighted_mrr + 0.3 * self.decay_accuracy + 0.3 * fresh_rate
     }
 }
@@ -234,7 +244,10 @@ pub fn recency_weighted_mrr(
         .map(|(retrieved, relevant, query_ts)| {
             // Find first relevant item, weighted by recency
             for (pos, &ret_ts) in retrieved.iter().enumerate() {
-                if relevant.iter().any(|&rel_ts| (ret_ts - rel_ts).abs() < 1000) {
+                if relevant
+                    .iter()
+                    .any(|&rel_ts| (ret_ts - rel_ts).abs() < 1000)
+                {
                     // Apply exponential decay based on age
                     let age_ms = query_ts - ret_ts;
                     let decay = if decay_half_life_ms > 0 && age_ms > 0 {
@@ -330,10 +343,7 @@ pub fn periodic_recall_at_k(
 /// # Arguments
 /// * `retrieved_timestamps` - Timestamps of retrieved items
 /// * `expected_order` - Expected temporal order (list of indices)
-pub fn sequence_ordering_accuracy(
-    retrieved_timestamps: &[i64],
-    expected_order: &[usize],
-) -> f64 {
+pub fn sequence_ordering_accuracy(retrieved_timestamps: &[i64], expected_order: &[usize]) -> f64 {
     if expected_order.len() < 2 || retrieved_timestamps.len() < expected_order.len() {
         return 0.0;
     }
@@ -418,7 +428,11 @@ pub fn episode_boundary_f1(
     tolerance: usize,
 ) -> f64 {
     if actual_boundaries.is_empty() {
-        return if predicted_boundaries.is_empty() { 1.0 } else { 0.0 };
+        return if predicted_boundaries.is_empty() {
+            1.0
+        } else {
+            0.0
+        };
     }
 
     // Count true positives (predicted boundaries within tolerance of actual)
@@ -773,8 +787,16 @@ fn compute_periodic_metrics(data: &PeriodicBenchmarkData) -> PeriodicMetrics {
             (false, false) => {}
         }
     }
-    let precision = if tp + fp > 0 { tp as f64 / (tp + fp) as f64 } else { 0.0 };
-    let recall = if tp + fn_count > 0 { tp as f64 / (tp + fn_count) as f64 } else { 0.0 };
+    let precision = if tp + fp > 0 {
+        tp as f64 / (tp + fp) as f64
+    } else {
+        0.0
+    };
+    let recall = if tp + fn_count > 0 {
+        tp as f64 / (tp + fn_count) as f64
+    } else {
+        0.0
+    };
 
     // Compute silhouette scores for hourly and daily clustering
     let hourly_cluster_quality = compute_hourly_silhouette(&data.hourly_assignments);
@@ -803,8 +825,16 @@ fn compute_sequence_metrics(data: &SequenceBenchmarkData) -> SequenceMetrics {
         ordering_count += 1;
     }
 
-    let sequence_accuracy = if ordering_count > 0 { seq_acc_sum / ordering_count as f64 } else { 0.0 };
-    let temporal_ordering_precision = if ordering_count > 0 { tau_sum / ordering_count as f64 } else { 0.0 };
+    let sequence_accuracy = if ordering_count > 0 {
+        seq_acc_sum / ordering_count as f64
+    } else {
+        0.0
+    };
+    let temporal_ordering_precision = if ordering_count > 0 {
+        tau_sum / ordering_count as f64
+    } else {
+        0.0
+    };
 
     // Episode boundary F1
     let mut boundary_f1_sum = 0.0;

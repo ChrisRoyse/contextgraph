@@ -93,9 +93,7 @@ impl Constellation {
     /// trustworthiness should prefer this helper over raw `.iter().any(...)`
     /// so the intent is obvious at the call site.
     pub fn has_topic_profile_signal(&self) -> bool {
-        self.topic_profile_centroid
-            .iter()
-            .any(|&x| x != 0.0)
+        self.topic_profile_centroid.iter().any(|&x| x != 0.0)
     }
 }
 

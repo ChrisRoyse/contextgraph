@@ -342,7 +342,9 @@ async fn main() {
 }
 
 #[cfg(feature = "real-embeddings")]
-async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<dyn std::error::Error>> {
+async fn run_benchmark(
+    args: &Args,
+) -> Result<CausalDiscoveryBenchResults, Box<dyn std::error::Error>> {
     use context_graph_causal_agent::llm::CausalDiscoveryLLM;
     use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
     use context_graph_core::traits::TeleologicalMemoryStore;
@@ -389,7 +391,10 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
         graph_discovery_service,
     );
 
-    println!("  Handlers initialized in {:.2}s", init_start.elapsed().as_secs_f64());
+    println!(
+        "  Handlers initialized in {:.2}s",
+        init_start.elapsed().as_secs_f64()
+    );
 
     // ========================================================================
     // Phase 2: Inject Test Corpus
@@ -435,8 +440,11 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
         }
     }
     println!();
-    println!("  Injection complete in {:.2}s ({} docs)",
-        inject_start.elapsed().as_secs_f64(), doc_ids.len());
+    println!(
+        "  Injection complete in {:.2}s ({} docs)",
+        inject_start.elapsed().as_secs_f64(),
+        doc_ids.len()
+    );
 
     // ========================================================================
     // Phase 3: Benchmark get_causal_discovery_status
@@ -492,9 +500,10 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
         fields_returned: status_fields,
     };
 
-    println!("  Status latency: avg={:.2}ms, p95={:.2}ms",
-        get_status_metrics.latency_ms.avg_ms,
-        get_status_metrics.latency_ms.p95_ms);
+    println!(
+        "  Status latency: avg={:.2}ms, p95={:.2}ms",
+        get_status_metrics.latency_ms.avg_ms, get_status_metrics.latency_ms.p95_ms
+    );
 
     // ========================================================================
     // Phase 4: Benchmark trigger_causal_discovery (Dry Run)
@@ -528,9 +537,11 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
         dry_run_latencies.push(elapsed);
     }
 
-    println!("  Dry run latency: avg={:.2}ms, p95={:.2}ms",
+    println!(
+        "  Dry run latency: avg={:.2}ms, p95={:.2}ms",
         LatencyStats::from_samples(&dry_run_latencies).avg_ms,
-        LatencyStats::from_samples(&dry_run_latencies).p95_ms);
+        LatencyStats::from_samples(&dry_run_latencies).p95_ms
+    );
 
     // ========================================================================
     // Phase 5: Benchmark trigger_causal_discovery (Full Execution)
@@ -577,7 +588,9 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
                             if let Some(pa) = data.get("pairsAnalyzed").and_then(|v| v.as_u64()) {
                                 pairs_analyzed.push(pa as usize);
                             }
-                            if let Some(rf) = data.get("relationshipsFound").and_then(|v| v.as_u64()) {
+                            if let Some(rf) =
+                                data.get("relationshipsFound").and_then(|v| v.as_u64())
+                            {
                                 relationships_found.push(rf as usize);
                             }
                             if let Some(errs) = data.get("errors").and_then(|v| v.as_u64()) {
@@ -588,10 +601,13 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
                 }
             }
 
-            println!("  Iteration {}: {:.0}ms, {} pairs, {} relationships",
-                i + 1, elapsed,
+            println!(
+                "  Iteration {}: {:.0}ms, {} pairs, {} relationships",
+                i + 1,
+                elapsed,
                 pairs_analyzed.last().unwrap_or(&0),
-                relationships_found.last().unwrap_or(&0));
+                relationships_found.last().unwrap_or(&0)
+            );
         }
     } else {
         println!("\nPhase 5: Skipped (--dry-run-only)");
@@ -611,7 +627,9 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
     let trigger_metrics = TriggerDiscoveryMetrics {
         dry_run_latency_ms: LatencyStats::from_samples(&dry_run_latencies),
         full_execution_latency_ms: LatencyStats::from_samples(&full_latencies),
-        memory_fetch_overhead_ms: if memory_fetch_times.is_empty() { 0.0 } else {
+        memory_fetch_overhead_ms: if memory_fetch_times.is_empty() {
+            0.0
+        } else {
             memory_fetch_times.iter().sum::<f64>() / memory_fetch_times.len() as f64
         },
         pairs_analyzed,
@@ -628,7 +646,8 @@ async fn run_benchmark(args: &Args) -> Result<CausalDiscoveryBenchResults, Box<d
     let graph_metrics = GraphServiceMetrics {
         cycle_duration_ms: LatencyStats::from_samples(&full_latencies),
         llm_inference_per_pair_ms: if total_pairs > 0 && !full_latencies.is_empty() {
-            let per_pair: Vec<f64> = full_latencies.iter()
+            let per_pair: Vec<f64> = full_latencies
+                .iter()
                 .zip(trigger_metrics.pairs_analyzed.iter())
                 .filter(|(_, &pairs)| pairs > 0)
                 .map(|(&time, &pairs)| time / pairs as f64)
@@ -737,42 +756,100 @@ fn save_results(results: &CausalDiscoveryBenchResults, path: &PathBuf) -> std::i
     writeln!(md_file)?;
     writeln!(md_file, "| Parameter | Value |")?;
     writeln!(md_file, "|-----------|-------|")?;
-    writeln!(md_file, "| Max Memories | {} |", results.config.max_memories)?;
+    writeln!(
+        md_file,
+        "| Max Memories | {} |",
+        results.config.max_memories
+    )?;
     writeln!(md_file, "| Max Pairs | {} |", results.config.max_pairs)?;
-    writeln!(md_file, "| Min Confidence | {} |", results.config.min_confidence)?;
-    writeln!(md_file, "| Iterations | {} |", results.config.num_iterations)?;
+    writeln!(
+        md_file,
+        "| Min Confidence | {} |",
+        results.config.min_confidence
+    )?;
+    writeln!(
+        md_file,
+        "| Iterations | {} |",
+        results.config.num_iterations
+    )?;
     writeln!(md_file)?;
     writeln!(md_file, "## trigger_causal_discovery Performance")?;
     writeln!(md_file)?;
     writeln!(md_file, "| Metric | Dry Run | Full Execution | Target |")?;
     writeln!(md_file, "|--------|---------|----------------|--------|")?;
-    writeln!(md_file, "| Avg Latency | {:.1}ms | {:.1}ms | <5000ms |",
+    writeln!(
+        md_file,
+        "| Avg Latency | {:.1}ms | {:.1}ms | <5000ms |",
         results.trigger_discovery.dry_run_latency_ms.avg_ms,
-        results.trigger_discovery.full_execution_latency_ms.avg_ms)?;
-    writeln!(md_file, "| P95 Latency | {:.1}ms | {:.1}ms | - |",
+        results.trigger_discovery.full_execution_latency_ms.avg_ms
+    )?;
+    writeln!(
+        md_file,
+        "| P95 Latency | {:.1}ms | {:.1}ms | - |",
         results.trigger_discovery.dry_run_latency_ms.p95_ms,
-        results.trigger_discovery.full_execution_latency_ms.p95_ms)?;
+        results.trigger_discovery.full_execution_latency_ms.p95_ms
+    )?;
     writeln!(md_file)?;
     writeln!(md_file, "## get_causal_discovery_status Performance")?;
     writeln!(md_file)?;
     writeln!(md_file, "| Metric | Value | Target |")?;
     writeln!(md_file, "|--------|-------|--------|")?;
-    writeln!(md_file, "| Avg Latency | {:.1}ms | <10ms |", results.get_status.latency_ms.avg_ms)?;
-    writeln!(md_file, "| P95 Latency | {:.1}ms | - |", results.get_status.latency_ms.p95_ms)?;
-    writeln!(md_file, "| Response Size | {} bytes | - |", results.get_status.response_size_bytes)?;
+    writeln!(
+        md_file,
+        "| Avg Latency | {:.1}ms | <10ms |",
+        results.get_status.latency_ms.avg_ms
+    )?;
+    writeln!(
+        md_file,
+        "| P95 Latency | {:.1}ms | - |",
+        results.get_status.latency_ms.p95_ms
+    )?;
+    writeln!(
+        md_file,
+        "| Response Size | {} bytes | - |",
+        results.get_status.response_size_bytes
+    )?;
     writeln!(md_file)?;
     writeln!(md_file, "## Performance Targets")?;
     writeln!(md_file)?;
     writeln!(md_file, "| Target | Status |")?;
     writeln!(md_file, "|--------|--------|")?;
-    writeln!(md_file, "| Dry Run < 50ms | {} |",
-        if results.performance_targets.dry_run_target_met { "PASS" } else { "FAIL" })?;
-    writeln!(md_file, "| Get Status < 10ms | {} |",
-        if results.performance_targets.get_status_target_met { "PASS" } else { "FAIL" })?;
-    writeln!(md_file, "| Full Execution < 5000ms | {} |",
-        if results.performance_targets.full_execution_target_met { "PASS" } else { "FAIL" })?;
-    writeln!(md_file, "| LLM Inference < 500ms/pair | {} |",
-        if results.performance_targets.llm_inference_target_met { "PASS" } else { "FAIL" })?;
+    writeln!(
+        md_file,
+        "| Dry Run < 50ms | {} |",
+        if results.performance_targets.dry_run_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        md_file,
+        "| Get Status < 10ms | {} |",
+        if results.performance_targets.get_status_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        md_file,
+        "| Full Execution < 5000ms | {} |",
+        if results.performance_targets.full_execution_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
+    writeln!(
+        md_file,
+        "| LLM Inference < 500ms/pair | {} |",
+        if results.performance_targets.llm_inference_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    )?;
     writeln!(md_file)?;
     writeln!(md_file, "## Recommendations")?;
     writeln!(md_file)?;
@@ -789,31 +866,48 @@ fn print_summary(results: &CausalDiscoveryBenchResults) {
     println!("║                           BENCHMARK RESULTS                                    ║");
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ TRIGGER_CAUSAL_DISCOVERY                                                      ║");
-    println!("║   Dry Run:        avg={:>6.1}ms  p95={:>6.1}ms  (target: <50ms)               ║",
+    println!(
+        "║   Dry Run:        avg={:>6.1}ms  p95={:>6.1}ms  (target: <50ms)               ║",
         results.trigger_discovery.dry_run_latency_ms.avg_ms,
-        results.trigger_discovery.dry_run_latency_ms.p95_ms);
-    println!("║   Full Execution: avg={:>6.1}ms  p95={:>6.1}ms  (target: <5000ms)             ║",
+        results.trigger_discovery.dry_run_latency_ms.p95_ms
+    );
+    println!(
+        "║   Full Execution: avg={:>6.1}ms  p95={:>6.1}ms  (target: <5000ms)             ║",
         results.trigger_discovery.full_execution_latency_ms.avg_ms,
-        results.trigger_discovery.full_execution_latency_ms.p95_ms);
-    println!("║   Pairs Analyzed: {:?}                                                        ║",
-        results.trigger_discovery.pairs_analyzed);
-    println!("║   Relationships:  {:?}                                                        ║",
-        results.trigger_discovery.relationships_found);
+        results.trigger_discovery.full_execution_latency_ms.p95_ms
+    );
+    println!(
+        "║   Pairs Analyzed: {:?}                                                        ║",
+        results.trigger_discovery.pairs_analyzed
+    );
+    println!(
+        "║   Relationships:  {:?}                                                        ║",
+        results.trigger_discovery.relationships_found
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ GET_CAUSAL_DISCOVERY_STATUS                                                   ║");
-    println!("║   Latency:        avg={:>6.1}ms  p95={:>6.1}ms  (target: <10ms)               ║",
-        results.get_status.latency_ms.avg_ms,
-        results.get_status.latency_ms.p95_ms);
-    println!("║   Response Size:  {} bytes                                                    ║",
-        results.get_status.response_size_bytes);
+    println!(
+        "║   Latency:        avg={:>6.1}ms  p95={:>6.1}ms  (target: <10ms)               ║",
+        results.get_status.latency_ms.avg_ms, results.get_status.latency_ms.p95_ms
+    );
+    println!(
+        "║   Response Size:  {} bytes                                                    ║",
+        results.get_status.response_size_bytes
+    );
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
     println!("║ GRAPH SERVICE                                                                 ║");
-    println!("║   LLM per pair:   avg={:>6.1}ms  (target: <500ms)                             ║",
-        results.graph_service.llm_inference_per_pair_ms.avg_ms);
-    println!("║   Edge rate:      {:.2} edges/sec                                             ║",
-        results.graph_service.edge_creation_rate);
-    println!("║   Confirmation:   {:.1}%                                                      ║",
-        results.graph_service.activator_confirmation_rate * 100.0);
+    println!(
+        "║   LLM per pair:   avg={:>6.1}ms  (target: <500ms)                             ║",
+        results.graph_service.llm_inference_per_pair_ms.avg_ms
+    );
+    println!(
+        "║   Edge rate:      {:.2} edges/sec                                             ║",
+        results.graph_service.edge_creation_rate
+    );
+    println!(
+        "║   Confirmation:   {:.1}%                                                      ║",
+        results.graph_service.activator_confirmation_rate * 100.0
+    );
     println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
 }
 
@@ -824,14 +918,38 @@ fn check_performance_targets(results: &CausalDiscoveryBenchResults) -> bool {
 
     let targets = &results.performance_targets;
 
-    println!("║   Dry Run < 50ms:           {}                                                ║",
-        if targets.dry_run_target_met { "PASS" } else { "FAIL" });
-    println!("║   Get Status < 10ms:        {}                                                ║",
-        if targets.get_status_target_met { "PASS" } else { "FAIL" });
-    println!("║   Full Execution < 5000ms:  {}                                                ║",
-        if targets.full_execution_target_met { "PASS" } else { "FAIL" });
-    println!("║   LLM Inference < 500ms:    {}                                                ║",
-        if targets.llm_inference_target_met { "PASS" } else { "FAIL" });
+    println!(
+        "║   Dry Run < 50ms:           {}                                                ║",
+        if targets.dry_run_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
+    println!(
+        "║   Get Status < 10ms:        {}                                                ║",
+        if targets.get_status_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
+    println!(
+        "║   Full Execution < 5000ms:  {}                                                ║",
+        if targets.full_execution_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
+    println!(
+        "║   LLM Inference < 500ms:    {}                                                ║",
+        if targets.llm_inference_target_met {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
 
     println!("╚═══════════════════════════════════════════════════════════════════════════════╝");
 

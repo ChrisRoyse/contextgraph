@@ -93,12 +93,11 @@ impl EdgeStorageKey {
         }
 
         let embedder_id = bytes[0];
-        let source_uuid = Uuid::from_slice(&bytes[1..17]).map_err(|e| {
-            EdgeError::KeyDeserializationError {
+        let source_uuid =
+            Uuid::from_slice(&bytes[1..17]).map_err(|e| EdgeError::KeyDeserializationError {
                 bytes_len: bytes.len(),
                 reason: format!("Invalid UUID: {}", e),
-            }
-        })?;
+            })?;
 
         Ok(Self {
             embedder_id,
@@ -186,19 +185,17 @@ impl TypedEdgeStorageKey {
             });
         }
 
-        let source_uuid = Uuid::from_slice(&bytes[0..16]).map_err(|e| {
-            EdgeError::KeyDeserializationError {
+        let source_uuid =
+            Uuid::from_slice(&bytes[0..16]).map_err(|e| EdgeError::KeyDeserializationError {
                 bytes_len: bytes.len(),
                 reason: format!("Invalid source UUID: {}", e),
-            }
-        })?;
+            })?;
 
-        let target_uuid = Uuid::from_slice(&bytes[16..32]).map_err(|e| {
-            EdgeError::KeyDeserializationError {
+        let target_uuid =
+            Uuid::from_slice(&bytes[16..32]).map_err(|e| EdgeError::KeyDeserializationError {
                 bytes_len: bytes.len(),
                 reason: format!("Invalid target UUID: {}", e),
-            }
-        })?;
+            })?;
 
         Ok(Self {
             source_uuid,

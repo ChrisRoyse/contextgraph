@@ -75,7 +75,10 @@ async fn main() -> anyhow::Result<()> {
         results.push(TestResult::pass("E2 Dimension", format!("{}", dimension)));
     } else {
         warn!("E2 dimension: {} (expected: 512)", dimension);
-        results.push(TestResult::fail("E2 Dimension", format!("Expected 512, got {}", dimension)));
+        results.push(TestResult::fail(
+            "E2 Dimension",
+            format!("Expected 512, got {}", dimension),
+        ));
     }
 
     // Test 2: E2 Embedding Generation
@@ -94,19 +97,31 @@ async fn main() -> anyhow::Result<()> {
 
     let embedding_now = model.embed(&input_now).await?;
 
-    info!("E2 embedding for now: {} dimensions, latency={}us",
+    info!(
+        "E2 embedding for now: {} dimensions, latency={}us",
         embedding_now.vector.len(),
         embedding_now.latency_us
     );
 
     // Verify L2 normalized
-    let norm: f32 = embedding_now.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm: f32 = embedding_now
+        .vector
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
     if (norm - 1.0).abs() < 0.001 {
         info!("L2 norm: {:.4} (expected: 1.0)", norm);
-        results.push(TestResult::pass("E2 L2 Normalization", format!("norm={:.4}", norm)));
+        results.push(TestResult::pass(
+            "E2 L2 Normalization",
+            format!("norm={:.4}", norm),
+        ));
     } else {
         warn!("L2 norm: {:.4} (expected: 1.0)", norm);
-        results.push(TestResult::fail("E2 L2 Normalization", format!("Expected 1.0, got {:.4}", norm)));
+        results.push(TestResult::fail(
+            "E2 L2 Normalization",
+            format!("Expected 1.0, got {:.4}", norm),
+        ));
     }
 
     // Test 3: E2 Timestamp Sensitivity
@@ -150,13 +165,18 @@ async fn main() -> anyhow::Result<()> {
     if timestamp_order_correct {
         results.push(TestResult::pass(
             "E2 Timestamp Order",
-            format!("1h({:.3}) > 24h({:.3}) > 7d({:.3})", sim_now_1h, sim_now_24h, sim_now_7d),
+            format!(
+                "1h({:.3}) > 24h({:.3}) > 7d({:.3})",
+                sim_now_1h, sim_now_24h, sim_now_7d
+            ),
         ));
     } else {
         results.push(TestResult::fail(
             "E2 Timestamp Order",
-            format!("Expected decreasing similarity: 1h({:.3}), 24h({:.3}), 7d({:.3})",
-                sim_now_1h, sim_now_24h, sim_now_7d),
+            format!(
+                "Expected decreasing similarity: 1h({:.3}), 24h({:.3}), 7d({:.3})",
+                sim_now_1h, sim_now_24h, sim_now_7d
+            ),
         ));
     }
 
@@ -189,20 +209,28 @@ async fn main() -> anyhow::Result<()> {
         &options_linear,
     );
 
-    info!("Linear decay scores (Macro scale, 7d horizon): 1h={:.3}, 24h={:.3}, 7d={:.3}",
-        score_1h_linear, score_24h_linear, score_7d_linear);
+    info!(
+        "Linear decay scores (Macro scale, 7d horizon): 1h={:.3}, 24h={:.3}, 7d={:.3}",
+        score_1h_linear, score_24h_linear, score_7d_linear
+    );
 
-    let linear_order_correct = score_1h_linear > score_24h_linear && score_24h_linear > score_7d_linear;
+    let linear_order_correct =
+        score_1h_linear > score_24h_linear && score_24h_linear > score_7d_linear;
     if linear_order_correct {
         results.push(TestResult::pass(
             "Linear Decay Order",
-            format!("1h({:.3}) > 24h({:.3}) > 7d({:.3})", score_1h_linear, score_24h_linear, score_7d_linear),
+            format!(
+                "1h({:.3}) > 24h({:.3}) > 7d({:.3})",
+                score_1h_linear, score_24h_linear, score_7d_linear
+            ),
         ));
     } else {
         results.push(TestResult::fail(
             "Linear Decay Order",
-            format!("Expected decreasing: 1h({:.3}), 24h({:.3}), 7d({:.3})",
-                score_1h_linear, score_24h_linear, score_7d_linear),
+            format!(
+                "Expected decreasing: 1h({:.3}), 24h({:.3}), 7d({:.3})",
+                score_1h_linear, score_24h_linear, score_7d_linear
+            ),
         ));
     }
 
@@ -212,7 +240,7 @@ async fn main() -> anyhow::Result<()> {
     let options_exp = TemporalSearchOptions::default()
         .with_temporal_weight(0.3)
         .with_decay_function(DecayFunction::Exponential)
-        .with_temporal_scale(TemporalScale::Macro)  // Use Macro to test with 12h half-life
+        .with_temporal_scale(TemporalScale::Macro) // Use Macro to test with 12h half-life
         .with_decay_half_life(43201); // 12h + 1s to avoid default fallback
 
     let score_1h_exp = temporal_boost::compute_e2_recency_score(
@@ -231,14 +259,19 @@ async fn main() -> anyhow::Result<()> {
         &options_exp,
     );
 
-    info!("Exponential decay scores (half_life=12h): 1h={:.3}, 12h={:.3}, 24h={:.3}",
-        score_1h_exp, score_12h_exp, score_24h_exp);
+    info!(
+        "Exponential decay scores (half_life=12h): 1h={:.3}, 12h={:.3}, 24h={:.3}",
+        score_1h_exp, score_12h_exp, score_24h_exp
+    );
 
     // At 12h (half-life), score should be ~0.5
     if (score_12h_exp - 0.5).abs() < 0.1 {
         results.push(TestResult::pass(
             "Exponential Half-Life",
-            format!("At 12h (half-life), score={:.3} (expected ~0.5)", score_12h_exp),
+            format!(
+                "At 12h (half-life), score={:.3} (expected ~0.5)",
+                score_12h_exp
+            ),
         ));
     } else {
         results.push(TestResult::fail(
@@ -268,20 +301,28 @@ async fn main() -> anyhow::Result<()> {
         &options_step,
     );
 
-    info!("Step decay scores: 1m={:.3}, 30m={:.3}, 12h={:.3}",
-        score_1m_step, score_30m_step, score_12h_step);
+    info!(
+        "Step decay scores: 1m={:.3}, 30m={:.3}, 12h={:.3}",
+        score_1m_step, score_30m_step, score_12h_step
+    );
 
     // Step function should have discrete jumps
     let step_has_discrete_levels = score_1m_step == 1.0 && score_30m_step == 0.8;
     if step_has_discrete_levels {
         results.push(TestResult::pass(
             "Step Decay Buckets",
-            format!("<5m={:.1} (1.0), <1h={:.1} (0.8)", score_1m_step, score_30m_step),
+            format!(
+                "<5m={:.1} (1.0), <1h={:.1} (0.8)",
+                score_1m_step, score_30m_step
+            ),
         ));
     } else {
         results.push(TestResult::fail(
             "Step Decay Buckets",
-            format!("Expected <5m=1.0, <1h=0.8, got {:.1}, {:.1}", score_1m_step, score_30m_step),
+            format!(
+                "Expected <5m=1.0, <1h=0.8, got {:.1}, {:.1}",
+                score_1m_step, score_30m_step
+            ),
         ));
     }
 
@@ -290,14 +331,21 @@ async fn main() -> anyhow::Result<()> {
     info!("=== Test 5: has_any_boost() Logic ===");
 
     let temporal_default = TemporalSearchOptions::default();
-    let temporal_with_weight = TemporalSearchOptions::default()
-        .with_temporal_weight(0.3);
-    let temporal_weight_zero = TemporalSearchOptions::default()
-        .with_temporal_weight(0.0);
+    let temporal_with_weight = TemporalSearchOptions::default().with_temporal_weight(0.3);
+    let temporal_weight_zero = TemporalSearchOptions::default().with_temporal_weight(0.0);
 
-    info!("default (weight=0.0):        has_any_boost() = {}", temporal_default.has_any_boost());
-    info!("with_weight(0.3):            has_any_boost() = {}", temporal_with_weight.has_any_boost());
-    info!("with_weight(0.0):            has_any_boost() = {}", temporal_weight_zero.has_any_boost());
+    info!(
+        "default (weight=0.0):        has_any_boost() = {}",
+        temporal_default.has_any_boost()
+    );
+    info!(
+        "with_weight(0.3):            has_any_boost() = {}",
+        temporal_with_weight.has_any_boost()
+    );
+    info!(
+        "with_weight(0.0):            has_any_boost() = {}",
+        temporal_weight_zero.has_any_boost()
+    );
 
     if !temporal_default.has_any_boost()
         && temporal_with_weight.has_any_boost()
@@ -310,7 +358,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         results.push(TestResult::fail(
             "has_any_boost Logic",
-            format!("Unexpected: default={}, 0.3={}, 0.0={}",
+            format!(
+                "Unexpected: default={}, 0.3={}, 0.0={}",
                 temporal_default.has_any_boost(),
                 temporal_with_weight.has_any_boost(),
                 temporal_weight_zero.has_any_boost()
@@ -337,7 +386,10 @@ async fn main() -> anyhow::Result<()> {
     let avg_latency_us = total_latency_us / runs as u64;
     let avg_latency_ms = avg_latency_us as f64 / 1000.0;
 
-    info!("Average E2 latency over {} runs: {:.2}ms", runs, avg_latency_ms);
+    info!(
+        "Average E2 latency over {} runs: {:.2}ms",
+        runs, avg_latency_ms
+    );
 
     // Constitution budget: <2ms
     if avg_latency_ms < 2.0 {

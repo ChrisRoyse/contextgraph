@@ -11,9 +11,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use context_graph_causal_agent::llm::{CausalDiscoveryLLM, LlmConfig};
-use context_graph_graph_agent::{
-    GraphDiscoveryConfig, GraphDiscoveryService, RelationshipType,
-};
+use context_graph_graph_agent::{GraphDiscoveryConfig, GraphDiscoveryService, RelationshipType};
 use serde::Serialize;
 
 /// A code pair with known relationship for ground truth comparison.
@@ -435,7 +433,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get code pairs
     let pairs = get_code_pairs();
-    println!("Loaded {} code pairs with known relationships\n", pairs.len());
+    println!(
+        "Loaded {} code pairs with known relationships\n",
+        pairs.len()
+    );
 
     // Initialize LLM with Hermes 2 Pro and GBNF grammar constraints
     let config = LlmConfig {
@@ -444,7 +445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         graph_grammar_path: model_dir.join("graph_relationship.gbnf"),
         validation_grammar_path: model_dir.join("validation.gbnf"),
         n_gpu_layers: u32::MAX, // Full GPU offload
-        temperature: 0.0, // Deterministic for reliable JSON output
+        temperature: 0.0,       // Deterministic for reliable JSON output
         max_tokens: 256,
         ..Default::default()
     };
@@ -469,9 +470,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run benchmark
     println!("Running code relationship benchmark...\n");
-    println!("┌────┬──────────────────────────────────────────────────────────────────────────────┐");
+    println!(
+        "┌────┬──────────────────────────────────────────────────────────────────────────────┐"
+    );
     println!("│ #  │ Pair Name                    │ Expected    │ Actual      │ Conf │ Time │ ✓ │");
-    println!("├────┼──────────────────────────────────────────────────────────────────────────────┤");
+    println!(
+        "├────┼──────────────────────────────────────────────────────────────────────────────┤"
+    );
 
     let benchmark_start = Instant::now();
     let mut results: Vec<PairResult> = Vec::new();
@@ -569,15 +574,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("└────┴──────────────────────────────────────────────────────────────────────────────┘\n");
+    println!(
+        "└────┴──────────────────────────────────────────────────────────────────────────────┘\n"
+    );
 
     let total_time = benchmark_start.elapsed();
 
     // Calculate statistics
     let accuracy = correct_count as f64 / results.len() as f64;
-    let avg_confidence: f32 = results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
-    let avg_inference_time: f64 =
-        results.iter().map(|r| r.inference_time_ms as f64).sum::<f64>() / results.len() as f64;
+    let avg_confidence: f32 =
+        results.iter().map(|r| r.confidence).sum::<f32>() / results.len() as f32;
+    let avg_inference_time: f64 = results
+        .iter()
+        .map(|r| r.inference_time_ms as f64)
+        .sum::<f64>()
+        / results.len() as f64;
 
     let benchmark_results = BenchmarkResults {
         total_pairs: results.len(),
@@ -594,22 +605,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔═══════════════════════════════════════════════════════════════════════════════╗");
     println!("║                           BENCHMARK RESULTS                                    ║");
     println!("╠═══════════════════════════════════════════════════════════════════════════════╣");
-    println!(
-        "║ Total Pairs:                {:>50} ║",
-        results.len()
-    );
-    println!(
-        "║ Correct Predictions:        {:>50} ║",
-        correct_count
-    );
+    println!("║ Total Pairs:                {:>50} ║", results.len());
+    println!("║ Correct Predictions:        {:>50} ║", correct_count);
     println!(
         "║ Accuracy:                   {:>49.1}% ║",
         accuracy * 100.0
     );
-    println!(
-        "║ Average Confidence:         {:>50.3} ║",
-        avg_confidence
-    );
+    println!("║ Average Confidence:         {:>50.3} ║", avg_confidence);
     println!(
         "║ Average Inference Time:     {:>47.0}ms ║",
         avg_inference_time

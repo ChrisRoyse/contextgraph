@@ -43,8 +43,8 @@ use super::robustness_dtos::{
     SearchRobustRequest, SearchRobustResponse,
 };
 
-use super::helpers::{ToolErrorKind, cosine_similarity};
 use super::super::Handlers;
+use super::helpers::{cosine_similarity, ToolErrorKind};
 
 impl Handlers {
     /// search_robust tool implementation.
@@ -76,10 +76,11 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         // Parse and validate request
-        let request: SearchRobustRequest = match self.parse_request(id.clone(), args, "search_robust") {
-            Ok(req) => req,
-            Err(resp) => return resp,
-        };
+        let request: SearchRobustRequest =
+            match self.parse_request(id.clone(), args, "search_robust") {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
 
         let query = &request.query;
         let top_k = request.top_k;
@@ -178,10 +179,8 @@ impl Handlers {
         }
 
         // Build score maps for each embedder
-        let mut e1_scores: std::collections::HashMap<Uuid, f32> =
-            std::collections::HashMap::new();
-        let mut e9_scores: std::collections::HashMap<Uuid, f32> =
-            std::collections::HashMap::new();
+        let mut e1_scores: std::collections::HashMap<Uuid, f32> = std::collections::HashMap::new();
+        let mut e9_scores: std::collections::HashMap<Uuid, f32> = std::collections::HashMap::new();
 
         // Compute E1 scores (cosine similarity in E1 space)
         for cand in &e1_candidates {
@@ -247,8 +246,7 @@ impl Handlers {
         let discoveries_count = blind_spot_candidates.len();
         debug!(
             discoveries = discoveries_count,
-            "search_robust: Found {} E9 blind-spot discoveries",
-            discoveries_count
+            "search_robust: Found {} E9 blind-spot discoveries", discoveries_count
         );
 
         // Step 5: Combine E1 results + E9 discoveries with reserved slots
@@ -264,7 +262,8 @@ impl Handlers {
                 (c.fingerprint.id, e1_score)
             })
             .collect();
-        e1_results_sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        e1_results_sorted
+            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Take top E1 results (capped at e1_max_slots), excluding blind spots
         let e1_result_ids: Vec<Uuid> = e1_results_sorted
@@ -309,29 +308,33 @@ impl Handlers {
 
         // Step 6: Build response with provenance
         // Get content if requested - FAIL FAST on error
-        let contents: Vec<Option<String>> =
-            if request.include_content && !all_result_ids.is_empty() {
-                match self.teleological_store.get_content_batch(&all_result_ids).await {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!(
-                            error = %e,
-                            result_count = all_result_ids.len(),
-                            "search_robust: Content retrieval FAILED"
-                        );
-                        return self.tool_error(
-                            id,
-                            &format!(
-                                "Failed to retrieve content for {} results: {}",
-                                all_result_ids.len(),
-                                e
-                            ),
-                        );
-                    }
+        let contents: Vec<Option<String>> = if request.include_content && !all_result_ids.is_empty()
+        {
+            match self
+                .teleological_store
+                .get_content_batch(&all_result_ids)
+                .await
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        result_count = all_result_ids.len(),
+                        "search_robust: Content retrieval FAILED"
+                    );
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "Failed to retrieve content for {} results: {}",
+                            all_result_ids.len(),
+                            e
+                        ),
+                    );
                 }
-            } else {
-                vec![None; all_result_ids.len()]
-            };
+            }
+        } else {
+            vec![None; all_result_ids.len()]
+        };
 
         // Get source metadata - FAIL FAST on error
         let source_metadata = match self
@@ -498,7 +501,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "search_robust: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -508,8 +515,8 @@ impl Handlers {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::robustness_dtos::{E1_WEAKNESS_THRESHOLD, E9_DISCOVERY_THRESHOLD};
+    use super::*;
 
     #[test]
     fn test_cosine_similarity() {
@@ -525,7 +532,10 @@ mod tests {
     #[allow(clippy::assertions_on_constants)]
     fn test_threshold_constants() {
         assert!(E9_DISCOVERY_THRESHOLD < E1_WEAKNESS_THRESHOLD);
-        assert!(E9_DISCOVERY_THRESHOLD >= 0.05, "E9 threshold should be at least 0.05 to filter noise");
+        assert!(
+            E9_DISCOVERY_THRESHOLD >= 0.05,
+            "E9 threshold should be at least 0.05 to filter noise"
+        );
         assert!(E1_WEAKNESS_THRESHOLD <= 0.6);
     }
 }

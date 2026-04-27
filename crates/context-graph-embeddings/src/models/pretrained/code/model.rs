@@ -11,7 +11,7 @@ use tokenizers::Tokenizer;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::gpu::init_gpu;
-use crate::models::attention::{self, AttentionStrategy, resolve_attention_mode};
+use crate::models::attention::{self, resolve_attention_mode, AttentionStrategy};
 use crate::traits::{EmbeddingModel, SingleModelConfig};
 use crate::types::{InputType, ModelEmbedding, ModelId, ModelInput};
 

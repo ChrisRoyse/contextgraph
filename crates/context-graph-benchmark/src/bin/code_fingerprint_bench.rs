@@ -19,8 +19,8 @@
 
 use clap::Parser;
 use context_graph_benchmark::metrics::e7_code::{
-    mrr, ndcg_at_k, precision_at_k, recall_at_k, E7BenchmarkMetrics,
-    E7GroundTruth, E7QueryResult, E7QueryType,
+    mrr, ndcg_at_k, precision_at_k, recall_at_k, E7BenchmarkMetrics, E7GroundTruth, E7QueryResult,
+    E7QueryType,
 };
 use context_graph_core::memory::CodeEmbeddingProvider;
 use context_graph_core::traits::MultiArrayEmbeddingProvider;
@@ -129,7 +129,11 @@ struct BenchmarkResults {
 // =============================================================================
 
 /// Scan crates directory and extract all code entities.
-fn scan_codebase(crates_dir: &Path, max_files: usize, min_code_size: usize) -> Vec<ExtractedEntity> {
+fn scan_codebase(
+    crates_dir: &Path,
+    max_files: usize,
+    min_code_size: usize,
+) -> Vec<ExtractedEntity> {
     let mut entities = Vec::new();
     let mut file_count = 0;
 
@@ -169,8 +173,18 @@ fn scan_codebase(crates_dir: &Path, max_files: usize, min_code_size: usize) -> V
         }
     }
 
-    visit_dir(crates_dir, &mut entities, &mut file_count, max_files, min_code_size);
-    println!("  Scanned {} files, extracted {} entities", file_count, entities.len());
+    visit_dir(
+        crates_dir,
+        &mut entities,
+        &mut file_count,
+        max_files,
+        min_code_size,
+    );
+    println!(
+        "  Scanned {} files, extracted {} entities",
+        file_count,
+        entities.len()
+    );
     entities
 }
 
@@ -213,7 +227,14 @@ fn extract_entities(
 
         // Look for entity definitions
         for keyword in &[
-            "pub fn", "fn ", "pub struct", "struct ", "pub enum", "enum ", "pub trait", "trait ",
+            "pub fn",
+            "fn ",
+            "pub struct",
+            "struct ",
+            "pub enum",
+            "enum ",
+            "pub trait",
+            "trait ",
             "impl ",
         ] {
             if line.contains(keyword) {
@@ -309,7 +330,11 @@ fn extract_entity_name(line: &str, keyword: &str) -> Option<String> {
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
 
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 /// Extract impl type name.
@@ -531,7 +556,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wrap in E7CodeEmbeddingProvider adapter
     let code_provider = E7CodeEmbeddingProvider::new(provider.clone());
-    println!("  E7CodeEmbeddingProvider ready: {}", code_provider.is_ready());
+    println!(
+        "  E7CodeEmbeddingProvider ready: {}",
+        code_provider.is_ready()
+    );
 
     // Phase 1: Scan Codebase
     println!("\n▶ Phase 1: Scanning Codebase\n");
@@ -562,7 +590,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Phase 2: Generate Full 13-Embedding Fingerprints
     println!("\n▶ Phase 2: Generating 13-Embedding Fingerprints\n");
-    println!("  Embedding {} entities with REAL 13-embedder pipeline...", entities_to_embed.len());
+    println!(
+        "  Embedding {} entities with REAL 13-embedder pipeline...",
+        entities_to_embed.len()
+    );
 
     let embed_start = Instant::now();
     let mut fingerprints = Vec::with_capacity(entities_to_embed.len());
@@ -585,7 +616,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let entity_start = Instant::now();
         let context = extracted.entity.module_path.as_deref();
 
-        match code_provider.embed_code(&extracted.entity.code, context).await {
+        match code_provider
+            .embed_code(&extracted.entity.code, context)
+            .await
+        {
             Ok(fingerprint) => {
                 let latency = entity_start.elapsed();
                 latencies.push(latency);
@@ -646,11 +680,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     latencies.sort();
     if !latencies.is_empty() {
         results.embedding_latency_p50 = latencies[latencies.len() / 2];
-        results.embedding_latency_p95 =
-            latencies[(latencies.len() as f64 * 0.95) as usize];
+        results.embedding_latency_p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
     }
 
-    println!("  Embedding completed in {:?}", results.total_embedding_time);
+    println!(
+        "  Embedding completed in {:?}",
+        results.total_embedding_time
+    );
     println!(
         "  Throughput: {:.1} entities/sec",
         fingerprints.len() as f64 / results.total_embedding_time.as_secs_f64()
@@ -681,11 +717,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     results.storage_roundtrip_success = retrieved_count == stored_count;
     results.fingerprints_retrieved = retrieved_count;
-    println!("  Retrieved {} fingerprints (round-trip: {})", retrieved_count, results.storage_roundtrip_success);
+    println!(
+        "  Retrieved {} fingerprints (round-trip: {})",
+        retrieved_count, results.storage_roundtrip_success
+    );
 
     // Phase 4: Generate Ground Truth Queries
     println!("\n▶ Phase 4: Generating Ground Truth Queries\n");
-    let entities_for_gt: Vec<ExtractedEntity> = fingerprints.iter().map(|(e, _)| (*e).clone()).collect();
+    let entities_for_gt: Vec<ExtractedEntity> =
+        fingerprints.iter().map(|(e, _)| (*e).clone()).collect();
     let ground_truth = generate_ground_truth(&entities_for_gt);
     results.queries_run = ground_truth.len();
     println!("  Generated {} query-document pairs", ground_truth.len());
@@ -709,8 +749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (gt, query_fp) in &query_fingerprints {
         let search_start = Instant::now();
-        let results_e7 =
-            store.search_by_fingerprint(query_fp, 20, 0.0, true)?;
+        let results_e7 = store.search_by_fingerprint(query_fp, 20, 0.0, true)?;
         search_latencies.push(search_start.elapsed());
 
         let retrieved_docs: Vec<String> = results_e7
@@ -738,9 +777,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|&k| (k, recall_at_k(&retrieved_docs, &relevant, k)))
                 .collect(),
             mrr: mrr(&retrieved_docs, &relevant),
-            ndcg_at: [(5, ndcg_at_k(&retrieved_docs, &relevant, 5)), (10, ndcg_at_k(&retrieved_docs, &relevant, 10))]
-                .into_iter()
-                .collect(),
+            ndcg_at: [
+                (5, ndcg_at_k(&retrieved_docs, &relevant, 5)),
+                (10, ndcg_at_k(&retrieved_docs, &relevant, 10)),
+            ]
+            .into_iter()
+            .collect(),
             iou_at: HashMap::new(),
             e7_unique_finds: vec![],
             e1_unique_finds: vec![],
@@ -760,8 +802,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (gt, query_fp) in &query_fingerprints {
         let search_start = Instant::now();
-        let results_e1 =
-            store.search_by_fingerprint(query_fp, 20, 0.0, false)?;
+        let results_e1 = store.search_by_fingerprint(query_fp, 20, 0.0, false)?;
 
         let retrieved_docs: Vec<String> = results_e1
             .iter()
@@ -788,9 +829,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|&k| (k, recall_at_k(&retrieved_docs, &relevant, k)))
                 .collect(),
             mrr: mrr(&retrieved_docs, &relevant),
-            ndcg_at: [(5, ndcg_at_k(&retrieved_docs, &relevant, 5)), (10, ndcg_at_k(&retrieved_docs, &relevant, 10))]
-                .into_iter()
-                .collect(),
+            ndcg_at: [
+                (5, ndcg_at_k(&retrieved_docs, &relevant, 5)),
+                (10, ndcg_at_k(&retrieved_docs, &relevant, 10)),
+            ]
+            .into_iter()
+            .collect(),
             iou_at: HashMap::new(),
             e7_unique_finds: vec![],
             e1_unique_finds: vec![],
@@ -836,19 +880,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     println!("  Constitution Compliance:");
-    let arch01_status = if results.arch_01_all_complete { "✓" } else { "✗" };
+    let arch01_status = if results.arch_01_all_complete {
+        "✓"
+    } else {
+        "✗"
+    };
     println!(
         "    {} ARCH-01: All fingerprints complete (13/13 embeddings)",
         arch01_status
     );
-    let arch05_status = if results.arch_05_all_dimensions_valid { "✓" } else { "✗" };
+    let arch05_status = if results.arch_05_all_dimensions_valid {
+        "✓"
+    } else {
+        "✗"
+    };
     println!(
         "    {} ARCH-05: All embedder dimensions verified",
         arch05_status
     );
-    let e7_status = if results.e7_dimension_correct { "✓" } else { "✗" };
+    let e7_status = if results.e7_dimension_correct {
+        "✓"
+    } else {
+        "✗"
+    };
     println!("    {} E7 dimension: 1536 (100% correct)", e7_status);
-    let e1_status = if results.e1_dimension_correct { "✓" } else { "✗" };
+    let e1_status = if results.e1_dimension_correct {
+        "✓"
+    } else {
+        "✗"
+    };
     println!("    {} E1 dimension: 1024 (100% correct)", e1_status);
     println!();
 
@@ -879,8 +939,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     println!("  E7 Advantage:");
-    let p1_sign = if results.e7_advantage_p1 >= 0.0 { "+" } else { "" };
-    let mrr_sign = if results.e7_advantage_mrr >= 0.0 { "+" } else { "" };
+    let p1_sign = if results.e7_advantage_p1 >= 0.0 {
+        "+"
+    } else {
+        ""
+    };
+    let mrr_sign = if results.e7_advantage_mrr >= 0.0 {
+        "+"
+    } else {
+        ""
+    };
     println!(
         "    P@1:  {}{}% | MRR: {}{}%",
         p1_sign,
@@ -891,13 +959,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     println!("  Storage Verification:");
-    let storage_status = if results.storage_roundtrip_success { "✓" } else { "✗" };
+    let storage_status = if results.storage_roundtrip_success {
+        "✓"
+    } else {
+        "✗"
+    };
     println!("    {} Round-trip integrity: 100%", storage_status);
     println!(
         "    {} Fingerprint deserialization: {}/{}",
-        storage_status,
-        results.fingerprints_retrieved,
-        results.entities_embedded
+        storage_status, results.fingerprints_retrieved, results.entities_embedded
     );
     println!();
 

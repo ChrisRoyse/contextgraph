@@ -16,8 +16,8 @@ pub mod types;
 pub use accuracy::{compute_nrmse, compute_rmse, AccuracyReport};
 pub use batch::{batch_dequantize, batch_quantize};
 pub use fingerprint::{
-    dequantize_fingerprint, quantize_fingerprint, FingerprintQuantizeError,
-    QuantizedFloat8, QuantizedPQ8, QuantizedSemanticFingerprint, QuantizedSparse,
+    dequantize_fingerprint, quantize_fingerprint, FingerprintQuantizeError, QuantizedFloat8,
+    QuantizedPQ8, QuantizedSemanticFingerprint, QuantizedSparse,
 };
 pub use traits::Quantizable;
 pub use types::{Precision, QuantizationError, QuantizedEmbedding};

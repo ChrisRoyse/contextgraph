@@ -38,7 +38,6 @@ pub(crate) mod helpers;
 mod keyword_tools;
 // Intentionally placed here (alphabetical within private modules is not required;
 // this sits next to helpers which consumes it).
-pub(crate) mod validate;
 mod maintenance_tools;
 mod memory_tools;
 mod provenance_tools;
@@ -49,6 +48,7 @@ mod temporal_tools;
 mod topic_tools;
 mod training_tools;
 mod typed_edges_tools;
+pub(crate) mod validate;
 
 // DTOs for PRD v6 gap tools (TASK-GAP-005)
 pub mod causal_dtos;

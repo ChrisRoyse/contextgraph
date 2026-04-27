@@ -143,10 +143,7 @@ impl Handlers {
             Ok(entries) => entries,
             Err(e) => {
                 error!(error = %e, "list_watched_files: Failed to list indexed files");
-                return self.tool_error(
-                    id,
-                    &format!("Storage error: Failed to list files: {}", e),
-                );
+                return self.tool_error(id, &format!("Storage error: Failed to list files: {}", e));
             }
         };
 
@@ -156,10 +153,8 @@ impl Handlers {
                 Ok(p) => Some(p),
                 Err(e) => {
                     error!(error = %e, pattern = filter, "list_watched_files: Invalid glob pattern");
-                    return self.tool_error(
-                        id,
-                        &format!("Invalid glob pattern '{}': {}", filter, e),
-                    );
+                    return self
+                        .tool_error(id, &format!("Invalid glob pattern '{}': {}", filter, e));
                 }
             }
         } else {
@@ -229,10 +224,7 @@ impl Handlers {
             Ok(s) => s,
             Err(e) => {
                 error!(error = %e, "get_file_watcher_stats: Failed to get stats");
-                return self.tool_error(
-                    id,
-                    &format!("Storage error: Failed to get stats: {}", e),
-                );
+                return self.tool_error(id, &format!("Storage error: Failed to get stats: {}", e));
             }
         };
 
@@ -352,7 +344,10 @@ impl Handlers {
                     );
                     return self.tool_error(
                         id,
-                        &format!("Storage error: Failed to delete fingerprint {}: {}", fp_id, e),
+                        &format!(
+                            "Storage error: Failed to delete fingerprint {}: {}",
+                            fp_id, e
+                        ),
                     );
                 }
             }
@@ -402,7 +397,11 @@ impl Handlers {
         // Emit FileWatcherEvent audit record for this destructive operation
         let audit_record = AuditRecord::new(
             AuditOperation::FileWatcherEvent {
-                event_type: if request.soft_delete { "soft_delete".to_string() } else { "hard_delete".to_string() },
+                event_type: if request.soft_delete {
+                    "soft_delete".to_string()
+                } else {
+                    "hard_delete".to_string()
+                },
                 file_path: request.file_path.clone(),
                 memories_affected: deleted_count,
             },
@@ -412,7 +411,11 @@ impl Handlers {
         .with_operator("delete_file_content")
         .with_rationale(format!(
             "{} {} embeddings for '{}'",
-            if request.soft_delete { "Soft-deleted" } else { "Hard-deleted" },
+            if request.soft_delete {
+                "Soft-deleted"
+            } else {
+                "Hard-deleted"
+            },
             deleted_count,
             request.file_path
         ))
@@ -422,7 +425,11 @@ impl Handlers {
             "deleted_count": deleted_count,
         }));
 
-        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+        if let Err(e) = self
+            .teleological_store
+            .append_audit_record(&audit_record)
+            .await
+        {
             error!(error = %e, "delete_file_content: Failed to write audit record (non-fatal)");
         }
 
@@ -471,10 +478,7 @@ impl Handlers {
             Ok(entries) => entries,
             Err(e) => {
                 error!(error = %e, "reconcile_files: Failed to list indexed files");
-                return self.tool_error(
-                    id,
-                    &format!("Storage error: Failed to list files: {}", e),
-                );
+                return self.tool_error(id, &format!("Storage error: Failed to list files: {}", e));
             }
         };
 
@@ -583,7 +587,9 @@ impl Handlers {
             .with_operator("reconcile_files")
             .with_rationale(format!(
                 "Reconciled {} orphaned files ({} fingerprints deleted, {} skipped)",
-                orphans.len(), fingerprints_deleted, skipped
+                orphans.len(),
+                fingerprints_deleted,
+                skipped
             ))
             .with_parameters(json!({
                 "orphan_count": orphans.len(),
@@ -594,7 +600,11 @@ impl Handlers {
                 "orphaned_files": &orphans,
             }));
 
-            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            if let Err(e) = self
+                .teleological_store
+                .append_audit_record(&audit_record)
+                .await
+            {
                 error!(error = %e, "reconcile_files: Failed to write audit record (non-fatal)");
             }
         }
@@ -624,7 +634,8 @@ mod tests {
         let req: ListWatchedFilesRequest = serde_json::from_str("{}").unwrap();
         assert!(req.include_counts);
         assert!(req.path_filter.is_none());
-        let req: DeleteFileContentRequest = serde_json::from_str(r#"{"file_path": "/test/path.md"}"#).unwrap();
+        let req: DeleteFileContentRequest =
+            serde_json::from_str(r#"{"file_path": "/test/path.md"}"#).unwrap();
         assert_eq!(req.file_path, "/test/path.md");
         assert!(req.soft_delete);
         let req: ReconcileFilesRequest = serde_json::from_str("{}").unwrap();
@@ -633,10 +644,18 @@ mod tests {
 
     #[test]
     fn test_response_serialization() {
-        let info = WatchedFileInfo { file_path: "/test/path.md".to_string(), chunk_count: Some(5), last_updated: Some("2024-01-15T10:30:00Z".to_string()) };
+        let info = WatchedFileInfo {
+            file_path: "/test/path.md".to_string(),
+            chunk_count: Some(5),
+            last_updated: Some("2024-01-15T10:30:00Z".to_string()),
+        };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("file_path") && json.contains("chunk_count"));
-        let info_none = WatchedFileInfo { file_path: "/test/path.md".to_string(), chunk_count: None, last_updated: None };
+        let info_none = WatchedFileInfo {
+            file_path: "/test/path.md".to_string(),
+            chunk_count: None,
+            last_updated: None,
+        };
         let json_none = serde_json::to_string(&info_none).unwrap();
         assert!(!json_none.contains("chunk_count"));
     }

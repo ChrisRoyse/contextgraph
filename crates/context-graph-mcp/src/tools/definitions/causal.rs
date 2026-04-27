@@ -296,12 +296,24 @@ mod tests {
     #[test]
     fn test_schema_defaults_and_enums() {
         let tools = definitions();
-        let causes_props = tools.iter().find(|t| t.name == "search_causes").unwrap()
-            .input_schema["properties"].as_object().unwrap().clone();
+        let causes_props = tools
+            .iter()
+            .find(|t| t.name == "search_causes")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap()
+            .clone();
         assert_eq!(causes_props["topK"]["default"], 10);
         assert_eq!(causes_props["minScore"]["default"], 0.1);
-        let chain_props = tools.iter().find(|t| t.name == "get_causal_chain").unwrap()
-            .input_schema["properties"].as_object().unwrap().clone();
+        let chain_props = tools
+            .iter()
+            .find(|t| t.name == "get_causal_chain")
+            .unwrap()
+            .input_schema["properties"]
+            .as_object()
+            .unwrap()
+            .clone();
         assert_eq!(chain_props["direction"]["default"], "forward");
         assert_eq!(chain_props["maxHops"]["default"], 5);
     }

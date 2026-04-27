@@ -164,7 +164,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         self.delete_source_metadata_async(id).await
     }
 
-    async fn get_source_metadata_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<SourceMetadata>>> {
+    async fn get_source_metadata_batch(
+        &self,
+        ids: &[Uuid],
+    ) -> CoreResult<Vec<Option<SourceMetadata>>> {
         self.get_source_metadata_batch_async(ids).await
     }
 
@@ -174,7 +177,9 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
     // ==================== File Index Storage ====================
 
-    async fn list_indexed_files(&self) -> CoreResult<Vec<context_graph_core::types::file_index::FileIndexEntry>> {
+    async fn list_indexed_files(
+        &self,
+    ) -> CoreResult<Vec<context_graph_core::types::file_index::FileIndexEntry>> {
         self.list_indexed_files_async().await
     }
 
@@ -182,19 +187,31 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         self.get_fingerprints_for_file_async(file_path).await
     }
 
-    async fn index_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<()> {
-        self.index_file_fingerprint_async(file_path, fingerprint_id).await
+    async fn index_file_fingerprint(
+        &self,
+        file_path: &str,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<()> {
+        self.index_file_fingerprint_async(file_path, fingerprint_id)
+            .await
     }
 
-    async fn unindex_file_fingerprint(&self, file_path: &str, fingerprint_id: Uuid) -> CoreResult<bool> {
-        self.unindex_file_fingerprint_async(file_path, fingerprint_id).await
+    async fn unindex_file_fingerprint(
+        &self,
+        file_path: &str,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<bool> {
+        self.unindex_file_fingerprint_async(file_path, fingerprint_id)
+            .await
     }
 
     async fn clear_file_index(&self, file_path: &str) -> CoreResult<usize> {
         self.clear_file_index_async(file_path).await
     }
 
-    async fn get_file_watcher_stats(&self) -> CoreResult<context_graph_core::types::file_index::FileWatcherStats> {
+    async fn get_file_watcher_stats(
+        &self,
+    ) -> CoreResult<context_graph_core::types::file_index::FileWatcherStats> {
         self.get_file_watcher_stats_async().await
     }
 
@@ -205,7 +222,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         session_id: &str,
         portfolio: &context_graph_core::clustering::PersistedTopicPortfolio,
     ) -> CoreResult<()> {
-        self.persist_topic_portfolio_async(session_id, portfolio).await
+        self.persist_topic_portfolio_async(session_id, portfolio)
+            .await
     }
 
     async fn load_topic_portfolio(
@@ -270,7 +288,13 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         top_k: usize,
         direction_filter: Option<&str>,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
-        RocksDbTeleologicalStore::search_causal_relationships(self, query_embedding, top_k, direction_filter).await
+        RocksDbTeleologicalStore::search_causal_relationships(
+            self,
+            query_embedding,
+            top_k,
+            direction_filter,
+        )
+        .await
     }
 
     async fn search_causal_e5(
@@ -279,7 +303,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         search_causes: bool,
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
-        RocksDbTeleologicalStore::search_causal_e5(self, query_embedding, search_causes, top_k).await
+        RocksDbTeleologicalStore::search_causal_e5(self, query_embedding, search_causes, top_k)
+            .await
     }
 
     async fn search_causal_e5_hybrid(
@@ -297,7 +322,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             top_k,
             source_weight,
             explanation_weight,
-        ).await
+        )
+        .await
     }
 
     async fn search_causal_e8(
@@ -306,7 +332,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         search_sources: bool,
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
-        RocksDbTeleologicalStore::search_causal_e8(self, query_embedding, search_sources, top_k).await
+        RocksDbTeleologicalStore::search_causal_e8(self, query_embedding, search_sources, top_k)
+            .await
     }
 
     async fn search_causal_e11(
@@ -336,12 +363,16 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             search_causes,
             top_k,
             config,
-        ).await
+        )
+        .await
     }
 
     // ==================== Audit Log (Phase 1.1) ====================
 
-    async fn append_audit_record(&self, record: &context_graph_core::types::audit::AuditRecord) -> CoreResult<()> {
+    async fn append_audit_record(
+        &self,
+        record: &context_graph_core::types::audit::AuditRecord,
+    ) -> CoreResult<()> {
         self.append_audit_record(record).map_err(Into::into)
     }
 
@@ -350,7 +381,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         target_id: uuid::Uuid,
         limit: usize,
     ) -> CoreResult<Vec<context_graph_core::types::audit::AuditRecord>> {
-        self.get_audit_by_target(target_id, limit).map_err(Into::into)
+        self.get_audit_by_target(target_id, limit)
+            .map_err(Into::into)
     }
 
     async fn get_audit_by_time_range(
@@ -359,7 +391,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         end: chrono::DateTime<chrono::Utc>,
         limit: usize,
     ) -> CoreResult<Vec<context_graph_core::types::audit::AuditRecord>> {
-        self.get_audit_by_time_range(start, end, limit).map_err(Into::into)
+        self.get_audit_by_time_range(start, end, limit)
+            .map_err(Into::into)
     }
 
     async fn count_audit_records(&self) -> CoreResult<usize> {
@@ -368,7 +401,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
     // ==================== Merge History (Phase 4) ====================
 
-    async fn append_merge_record(&self, record: &context_graph_core::types::audit::MergeRecord) -> CoreResult<()> {
+    async fn append_merge_record(
+        &self,
+        record: &context_graph_core::types::audit::MergeRecord,
+    ) -> CoreResult<()> {
         self.append_merge_record(record).map_err(Into::into)
     }
 
@@ -382,7 +418,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
     // ==================== Importance History (Phase 4) ====================
 
-    async fn append_importance_change(&self, record: &context_graph_core::types::audit::ImportanceChangeRecord) -> CoreResult<()> {
+    async fn append_importance_change(
+        &self,
+        record: &context_graph_core::types::audit::ImportanceChangeRecord,
+    ) -> CoreResult<()> {
         self.append_importance_change(record).map_err(Into::into)
     }
 
@@ -391,12 +430,16 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         memory_id: uuid::Uuid,
         limit: usize,
     ) -> CoreResult<Vec<context_graph_core::types::audit::ImportanceChangeRecord>> {
-        self.get_importance_history(memory_id, limit).map_err(Into::into)
+        self.get_importance_history(memory_id, limit)
+            .map_err(Into::into)
     }
 
     // ==================== Embedding Version Registry (Phase 6) ====================
 
-    async fn store_embedding_version(&self, record: &context_graph_core::types::audit::EmbeddingVersionRecord) -> CoreResult<()> {
+    async fn store_embedding_version(
+        &self,
+        record: &context_graph_core::types::audit::EmbeddingVersionRecord,
+    ) -> CoreResult<()> {
         self.store_embedding_version(record).map_err(Into::into)
     }
 
@@ -404,13 +447,15 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         &self,
         fingerprint_id: uuid::Uuid,
     ) -> CoreResult<Option<context_graph_core::types::audit::EmbeddingVersionRecord>> {
-        self.get_embedding_version(fingerprint_id).map_err(Into::into)
+        self.get_embedding_version(fingerprint_id)
+            .map_err(Into::into)
     }
 
     // ==================== Custom Weight Profile Persistence ====================
 
     async fn store_custom_weight_profile(&self, name: &str, weights: &[f32; 14]) -> CoreResult<()> {
-        self.store_custom_weight_profile(name, weights).map_err(Into::into)
+        self.store_custom_weight_profile(name, weights)
+            .map_err(Into::into)
     }
 
     async fn get_custom_weight_profile(&self, name: &str) -> CoreResult<Option<[f32; 14]>> {

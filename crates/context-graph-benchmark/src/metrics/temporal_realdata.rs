@@ -244,7 +244,10 @@ pub struct DirectionQueryResult {
 }
 
 /// Compute direction filtering metrics.
-pub fn compute_direction_metrics(results: &[DirectionQueryResult], k_values: &[usize]) -> DirectionFilteringMetrics {
+pub fn compute_direction_metrics(
+    results: &[DirectionQueryResult],
+    k_values: &[usize],
+) -> DirectionFilteringMetrics {
     if results.is_empty() {
         return DirectionFilteringMetrics::default();
     }
@@ -288,10 +291,7 @@ pub fn compute_direction_metrics(results: &[DirectionQueryResult], k_values: &[u
     let mut recall_at = HashMap::new();
 
     for &k in k_values {
-        let precision_sum: f64 = results
-            .iter()
-            .map(|r| compute_precision_at_k(r, k))
-            .sum();
+        let precision_sum: f64 = results.iter().map(|r| compute_precision_at_k(r, k)).sum();
         let recall_sum: f64 = results.iter().map(|r| compute_recall_at_k(r, k)).sum();
 
         let n = results.len() as f64;
@@ -391,22 +391,27 @@ pub fn compute_ordering_metrics(results: &[OrderingResult]) -> SequenceOrderingM
 
     // Compute Kendall's tau for each direction
     let before_tau = if !before_results.is_empty() {
-        before_results.iter().map(|r| compute_kendalls_tau(r)).sum::<f64>()
+        before_results
+            .iter()
+            .map(|r| compute_kendalls_tau(r))
+            .sum::<f64>()
             / before_results.len() as f64
     } else {
         0.0
     };
 
     let after_tau = if !after_results.is_empty() {
-        after_results.iter().map(|r| compute_kendalls_tau(r)).sum::<f64>()
+        after_results
+            .iter()
+            .map(|r| compute_kendalls_tau(r))
+            .sum::<f64>()
             / after_results.len() as f64
     } else {
         0.0
     };
 
     // Average tau across all results
-    let avg_tau = results.iter().map(compute_kendalls_tau).sum::<f64>()
-        / results.len() as f64;
+    let avg_tau = results.iter().map(compute_kendalls_tau).sum::<f64>() / results.len() as f64;
 
     // Compute ordering MRR
     let mrr = compute_ordering_mrr(results);
@@ -530,7 +535,10 @@ pub fn compute_chain_metrics(results: &[ChainResult]) -> ChainTraversalMetrics {
     // Group by chain length
     let mut by_length: HashMap<usize, Vec<&ChainResult>> = HashMap::new();
     for result in results {
-        by_length.entry(result.chain_length).or_default().push(result);
+        by_length
+            .entry(result.chain_length)
+            .or_default()
+            .push(result);
     }
 
     // Compute accuracy by length
@@ -729,10 +737,8 @@ pub fn compute_all_realdata_metrics(
         },
     };
 
-    let total_queries = direction.query_count
-        + ordering.query_count
-        + chain.chain_count
-        + boundary.query_count;
+    let total_queries =
+        direction.query_count + ordering.query_count + chain.chain_count + boundary.query_count;
 
     TemporalRealdataMetrics {
         direction,
@@ -827,35 +833,22 @@ mod tests {
         let result = OrderingResult {
             query_id: Uuid::new_v4(),
             direction: SequenceDirection::After,
-            retrieved_order: vec![
-                Uuid::from_u128(1),
-                Uuid::from_u128(2),
-                Uuid::from_u128(3),
-            ],
-            expected_order: vec![
-                Uuid::from_u128(1),
-                Uuid::from_u128(2),
-                Uuid::from_u128(3),
-            ],
+            retrieved_order: vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)],
+            expected_order: vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)],
         };
 
         let tau = compute_kendalls_tau(&result);
-        assert!((tau - 1.0).abs() < 0.01, "Perfect order should have tau=1.0");
+        assert!(
+            (tau - 1.0).abs() < 0.01,
+            "Perfect order should have tau=1.0"
+        );
 
         // Reversed order
         let reversed = OrderingResult {
             query_id: Uuid::new_v4(),
             direction: SequenceDirection::After,
-            retrieved_order: vec![
-                Uuid::from_u128(3),
-                Uuid::from_u128(2),
-                Uuid::from_u128(1),
-            ],
-            expected_order: vec![
-                Uuid::from_u128(1),
-                Uuid::from_u128(2),
-                Uuid::from_u128(3),
-            ],
+            retrieved_order: vec![Uuid::from_u128(3), Uuid::from_u128(2), Uuid::from_u128(1)],
+            expected_order: vec![Uuid::from_u128(1), Uuid::from_u128(2), Uuid::from_u128(3)],
         };
 
         let tau_reversed = compute_kendalls_tau(&reversed);

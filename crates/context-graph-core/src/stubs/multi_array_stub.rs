@@ -246,7 +246,8 @@ impl StubMultiArrayProvider {
             })
             .collect();
 
-        SparseVector::new(indices, values).expect("Stub sparse vector generation should always produce valid data")
+        SparseVector::new(indices, values)
+            .expect("Stub sparse vector generation should always produce valid data")
     }
 
     /// Generate deterministic token embeddings for E12 (late-interaction).
@@ -299,7 +300,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         // Legacy field uses source vector for backward compatibility
         fingerprint.e8_graph = fingerprint.e8_graph_as_source.clone();
         fingerprint.e9_hdc = Self::fill_dense_embedding(content, 1024, 8); // HDC projected
-        // E10: CORE-01 FIX: Generate DISTINCT vectors for asymmetric paraphrase/context fields.
+                                                                           // E10: CORE-01 FIX: Generate DISTINCT vectors for asymmetric paraphrase/context fields.
         fingerprint.e10_multimodal_paraphrase = Self::fill_dense_embedding(content, 768, 9);
         fingerprint.e10_multimodal_as_context = Self::fill_dense_embedding(content, 768, 21);
         fingerprint.e11_entity = Self::fill_dense_embedding(content, 768, 10); // KEPLER
@@ -560,7 +561,10 @@ mod tests {
         assert_eq!(fp.e2_temporal_recent.len(), 512);
         assert_eq!(fp.e3_temporal_periodic.len(), 512);
         assert_eq!(fp.e4_temporal_positional.len(), 512);
-        assert!(fp.e5_causal.is_empty(), "Legacy e5_causal should be empty in new format");
+        assert!(
+            fp.e5_causal.is_empty(),
+            "Legacy e5_causal should be empty in new format"
+        );
         assert_eq!(fp.e5_causal_as_cause.len(), 768);
         assert_eq!(fp.e5_causal_as_effect.len(), 768);
         assert_eq!(fp.e7_code.len(), 1536);

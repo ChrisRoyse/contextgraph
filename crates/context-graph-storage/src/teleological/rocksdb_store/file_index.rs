@@ -174,18 +174,16 @@ impl RocksDbTeleologicalStore {
 
         // Get existing entry or create new one
         let mut entry = match self.db.get_cf(cf, key) {
-            Ok(Some(bytes)) => {
-                serde_json::from_slice::<FileIndexEntry>(&bytes).map_err(|e| {
-                    error!(
-                        "FILE_INDEX ERROR: Failed to deserialize entry for '{}': {}",
-                        file_path, e
-                    );
-                    CoreError::Internal(format!(
-                        "Failed to deserialize file index entry for '{}': {}",
-                        file_path, e
-                    ))
-                })?
-            }
+            Ok(Some(bytes)) => serde_json::from_slice::<FileIndexEntry>(&bytes).map_err(|e| {
+                error!(
+                    "FILE_INDEX ERROR: Failed to deserialize entry for '{}': {}",
+                    file_path, e
+                );
+                CoreError::Internal(format!(
+                    "Failed to deserialize file index entry for '{}': {}",
+                    file_path, e
+                ))
+            })?,
             Ok(None) => FileIndexEntry::new(file_path.to_string()),
             Err(e) => {
                 error!(
@@ -254,18 +252,16 @@ impl RocksDbTeleologicalStore {
 
         // Get existing entry
         let mut entry = match self.db.get_cf(cf, key) {
-            Ok(Some(bytes)) => {
-                serde_json::from_slice::<FileIndexEntry>(&bytes).map_err(|e| {
-                    error!(
-                        "FILE_INDEX ERROR: Failed to deserialize entry for '{}': {}",
-                        file_path, e
-                    );
-                    CoreError::Internal(format!(
-                        "Failed to deserialize file index entry for '{}': {}",
-                        file_path, e
-                    ))
-                })?
-            }
+            Ok(Some(bytes)) => serde_json::from_slice::<FileIndexEntry>(&bytes).map_err(|e| {
+                error!(
+                    "FILE_INDEX ERROR: Failed to deserialize entry for '{}': {}",
+                    file_path, e
+                );
+                CoreError::Internal(format!(
+                    "Failed to deserialize file index entry for '{}': {}",
+                    file_path, e
+                ))
+            })?,
             Ok(None) => {
                 debug!(
                     "No index entry for file '{}', nothing to unindex",
@@ -436,7 +432,6 @@ impl RocksDbTeleologicalStore {
             max_chunks,
         })
     }
-
 }
 
 #[cfg(test)]

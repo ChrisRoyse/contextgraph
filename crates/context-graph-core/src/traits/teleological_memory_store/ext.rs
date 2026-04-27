@@ -60,7 +60,6 @@ pub trait TeleologicalMemoryStoreExt: TeleologicalMemoryStore {
                 message: err.to_string(),
             })
     }
-
 }
 
 // Blanket implementation for all TeleologicalMemoryStore implementations

@@ -58,7 +58,9 @@ pub async fn handle_warmup(args: WarmupArgs) -> i32 {
         // Verify we can actually get the provider
         match get_warm_provider() {
             Ok(_provider) => {
-                info!("Already warm, skipping. All 14 production embedding models are warm and ready");
+                info!(
+                    "Already warm, skipping. All 14 production embedding models are warm and ready"
+                );
                 return 0; // Success - already warm is still success
             }
             Err(e) => {
@@ -98,10 +100,7 @@ pub async fn handle_warmup(args: WarmupArgs) -> i32 {
                     0 // Success
                 }
                 Err(e) => {
-                    error!(
-                        "Provider initialized but get_warm_provider failed: {}",
-                        e
-                    );
+                    error!("Provider initialized but get_warm_provider failed: {}", e);
                     error!("Status: {}", warm_status_message());
                     1 // Failure
                 }

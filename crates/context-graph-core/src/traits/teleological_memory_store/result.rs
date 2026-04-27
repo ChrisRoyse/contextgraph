@@ -90,9 +90,9 @@ impl TeleologicalSearchResult {
             fingerprint,
             similarity,
             embedder_scores,
-            stage_scores: [0.0; 5],    // Populated by pipeline stages
-            content: None,              // Populated by content hydration
-            temporal_breakdown: None,   // Populated by apply_temporal_boosts
+            stage_scores: [0.0; 5],   // Populated by pipeline stages
+            content: None,            // Populated by content hydration
+            temporal_breakdown: None, // Populated by apply_temporal_boosts
         }
     }
 
@@ -141,10 +141,7 @@ mod tests {
         scores[5] = 0.9; // E6 (Sparse/Semantic) is dominant
 
         let result = TeleologicalSearchResult {
-            fingerprint: TeleologicalFingerprint::new(
-                SemanticFingerprint::zeroed(),
-                [0u8; 32],
-            ),
+            fingerprint: TeleologicalFingerprint::new(SemanticFingerprint::zeroed(), [0u8; 32]),
             similarity: 0.8,
             embedder_scores: scores,
             stage_scores: [0.0; 5],
@@ -161,13 +158,10 @@ mod tests {
         // because temporal embedders have weight 0.0 per AP-60
         let mut scores = [0.1; 14];
         scores[1] = 0.95; // E2_TemporalRecent has highest raw score
-        scores[0] = 0.5;  // E1_Semantic has lower raw score but weight 1.0
+        scores[0] = 0.5; // E1_Semantic has lower raw score but weight 1.0
 
         let result = TeleologicalSearchResult {
-            fingerprint: TeleologicalFingerprint::new(
-                SemanticFingerprint::zeroed(),
-                [0u8; 32],
-            ),
+            fingerprint: TeleologicalFingerprint::new(SemanticFingerprint::zeroed(), [0u8; 32]),
             similarity: 0.8,
             embedder_scores: scores,
             stage_scores: [0.0; 5],
@@ -178,7 +172,10 @@ mod tests {
         // E1 (index 0) should be dominant, NOT E2 (index 1)
         // E2 weighted score: 0.95 * 0.0 = 0.0
         // E1 weighted score: 0.5 * 1.0 = 0.5
-        assert_eq!(result.dominant_embedder(), 0,
-            "Temporal embedder E2 should never be dominant (weight 0.0 per AP-60)");
+        assert_eq!(
+            result.dominant_embedder(),
+            0,
+            "Temporal embedder E2 should never be dominant (weight 0.0 per AP-60)"
+        );
     }
 }

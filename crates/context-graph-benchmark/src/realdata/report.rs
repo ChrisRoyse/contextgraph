@@ -54,13 +54,18 @@ impl ReportGenerator {
         writeln!(
             out,
             "**Generated:** {}",
-            self.results.metadata.end_time.format("%Y-%m-%d %H:%M:%S UTC")
-        ).unwrap();
+            self.results
+                .metadata
+                .end_time
+                .format("%Y-%m-%d %H:%M:%S UTC")
+        )
+        .unwrap();
         writeln!(
             out,
             "**Duration:** {:.1}s",
             self.results.metadata.duration_secs
-        ).unwrap();
+        )
+        .unwrap();
         if let Some(ref commit) = self.results.metadata.git_commit {
             writeln!(out, "**Git Commit:** `{}`", &commit[..8.min(commit.len())]).unwrap();
         }
@@ -72,17 +77,33 @@ impl ReportGenerator {
         writeln!(out).unwrap();
 
         // Find best embedder
-        let best = self.results.per_embedder_results
+        let best = self
+            .results
+            .per_embedder_results
             .iter()
             .max_by(|a, b| a.1.mrr_at_10.partial_cmp(&b.1.mrr_at_10).unwrap());
 
         if let Some((embedder, results)) = best {
-            writeln!(out, "- **Best Single Embedder:** {} (MRR@10: {:.3})", embedder, results.mrr_at_10).unwrap();
+            writeln!(
+                out,
+                "- **Best Single Embedder:** {} (MRR@10: {:.3})",
+                embedder, results.mrr_at_10
+            )
+            .unwrap();
         }
 
         // E1 baseline
-        if let Some(e1) = self.results.per_embedder_results.get(&EmbedderName::E1Semantic) {
-            writeln!(out, "- **E1 Foundation Baseline:** MRR@10: {:.3}", e1.mrr_at_10).unwrap();
+        if let Some(e1) = self
+            .results
+            .per_embedder_results
+            .get(&EmbedderName::E1Semantic)
+        {
+            writeln!(
+                out,
+                "- **E1 Foundation Baseline:** MRR@10: {:.3}",
+                e1.mrr_at_10
+            )
+            .unwrap();
         }
 
         // Best fusion
@@ -91,20 +112,32 @@ impl ReportGenerator {
                 out,
                 "- **Best Fusion Strategy:** {:?} (MRR@10: {:.3}, +{:.1}% over E1)",
                 fusion.best_strategy,
-                fusion.by_strategy.get(&fusion.best_strategy).map(|r| r.mrr_at_10).unwrap_or(0.0),
+                fusion
+                    .by_strategy
+                    .get(&fusion.best_strategy)
+                    .map(|r| r.mrr_at_10)
+                    .unwrap_or(0.0),
                 fusion.improvement_over_baseline * 100.0
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // Constitutional compliance
         let compliance = &self.results.constitutional_compliance;
-        let status = if compliance.all_passed { "PASS" } else { "FAIL" };
+        let status = if compliance.all_passed {
+            "PASS"
+        } else {
+            "FAIL"
+        };
         let passed_count = compliance.rules.iter().filter(|r| r.passed).count();
         writeln!(
             out,
             "- **Constitutional Compliance:** {} ({}/{} rules)",
-            status, passed_count, compliance.rules.len()
-        ).unwrap();
+            status,
+            passed_count,
+            compliance.rules.len()
+        )
+        .unwrap();
 
         writeln!(out).unwrap();
     }
@@ -121,7 +154,12 @@ impl ReportGenerator {
         writeln!(out, "| Total Documents | {} |", info.total_documents).unwrap();
         writeln!(out, "| Unique Topics | {} |", info.num_topics).unwrap();
         writeln!(out, "| Queries Generated | {} |", info.queries_generated).unwrap();
-        writeln!(out, "| Source Datasets | {} |", info.source_datasets.join(", ")).unwrap();
+        writeln!(
+            out,
+            "| Source Datasets | {} |",
+            info.source_datasets.join(", ")
+        )
+        .unwrap();
         writeln!(out).unwrap();
 
         if !info.top_topics.is_empty() {
@@ -134,7 +172,8 @@ impl ReportGenerator {
                     out,
                     "| {} | {} | {:.1}% |",
                     topic.name, topic.chunk_count, topic.percentage
-                ).unwrap();
+                )
+                .unwrap();
             }
             writeln!(out).unwrap();
         }
@@ -150,8 +189,16 @@ impl ReportGenerator {
 
         writeln!(out, "### Retrieval Quality").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "| Embedder | Category | MRR@10 | P@5 | P@10 | R@20 | MAP |").unwrap();
-        writeln!(out, "|----------|----------|--------|-----|------|------|-----|").unwrap();
+        writeln!(
+            out,
+            "| Embedder | Category | MRR@10 | P@5 | P@10 | R@20 | MAP |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "|----------|----------|--------|-----|------|------|-----|"
+        )
+        .unwrap();
 
         for (name, results) in &embedders {
             let p5 = results.precision_at_k.get(&5).copied().unwrap_or(0.0);
@@ -161,7 +208,8 @@ impl ReportGenerator {
                 out,
                 "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} |",
                 name, results.category, results.mrr_at_10, p5, p10, r20, results.map
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
@@ -183,7 +231,8 @@ impl ReportGenerator {
                 name,
                 improvement * 100.0,
                 if is_enhancement { "Yes" } else { "No" }
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
@@ -203,12 +252,17 @@ impl ReportGenerator {
                 if let Some(ratio) = results.asymmetric_ratio {
                     let target = 1.5;
                     let tolerance = 0.15;
-                    let status = if (ratio - target).abs() <= tolerance { "PASS" } else { "WARN" };
+                    let status = if (ratio - target).abs() <= tolerance {
+                        "PASS"
+                    } else {
+                        "WARN"
+                    };
                     writeln!(
                         out,
                         "| {} | {:.3} | {:.2}+/-{:.2} | {} |",
                         name, ratio, target, tolerance, status
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
             }
             writeln!(out).unwrap();
@@ -223,8 +277,16 @@ impl ReportGenerator {
         writeln!(out, "## Fusion Strategy Comparison").unwrap();
         writeln!(out).unwrap();
 
-        writeln!(out, "| Strategy | MRR@10 | P@10 | R@20 | Latency (ms) | Quality/Latency |").unwrap();
-        writeln!(out, "|----------|--------|------|------|--------------|-----------------|").unwrap();
+        writeln!(
+            out,
+            "| Strategy | MRR@10 | P@10 | R@20 | Latency (ms) | Quality/Latency |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "|----------|--------|------|------|--------------|-----------------|"
+        )
+        .unwrap();
 
         for (strategy, results) in &fusion.by_strategy {
             let is_best = *strategy == fusion.best_strategy;
@@ -232,13 +294,15 @@ impl ReportGenerator {
             writeln!(
                 out,
                 "| {:?}{} | {:.3} | {:.3} | {:.3} | {:.1} | {:.4} |",
-                strategy, marker,
+                strategy,
+                marker,
                 results.mrr_at_10,
                 results.precision_at_10,
                 results.recall_at_20,
                 results.latency_ms,
                 results.quality_latency_ratio
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
@@ -278,7 +342,11 @@ impl ReportGenerator {
         if !analysis.redundancy_pairs.is_empty() {
             writeln!(out, "### Redundancy Warnings").unwrap();
             writeln!(out).unwrap();
-            writeln!(out, "These pairs have high MRR proximity but limited complementarity:").unwrap();
+            writeln!(
+                out,
+                "These pairs have high MRR proximity but limited complementarity:"
+            )
+            .unwrap();
             writeln!(out).unwrap();
 
             for (a, b, proximity) in &analysis.redundancy_pairs {
@@ -299,8 +367,16 @@ impl ReportGenerator {
         // Addition impact
         writeln!(out, "### Impact of Adding Each Embedder to E1").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "| Embedder | MRR Change | P@10 Change | Significant? |").unwrap();
-        writeln!(out, "|----------|------------|-------------|--------------|").unwrap();
+        writeln!(
+            out,
+            "| Embedder | MRR Change | P@10 Change | Significant? |"
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "|----------|------------|-------------|--------------|"
+        )
+        .unwrap();
 
         let mut addition_impacts: Vec<_> = ablation.addition_impact.iter().collect();
         addition_impacts.sort_by(|a, b| b.1.mrr_change.partial_cmp(&a.1.mrr_change).unwrap());
@@ -313,7 +389,8 @@ impl ReportGenerator {
                 impact.mrr_change * 100.0,
                 impact.precision_change * 100.0,
                 if impact.is_significant { "Yes" } else { "No" }
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
@@ -345,7 +422,11 @@ impl ReportGenerator {
         writeln!(out).unwrap();
 
         let compliance = &self.results.constitutional_compliance;
-        let status = if compliance.all_passed { "PASSED" } else { "FAILED" };
+        let status = if compliance.all_passed {
+            "PASSED"
+        } else {
+            "FAILED"
+        };
         writeln!(out, "**Overall Status:** {}", status).unwrap();
         writeln!(out).unwrap();
 
@@ -361,7 +442,8 @@ impl ReportGenerator {
                 rule.description,
                 status_emoji,
                 &rule.details[..rule.details.len().min(50)]
-            ).unwrap();
+            )
+            .unwrap();
         }
         writeln!(out).unwrap();
 
@@ -401,7 +483,11 @@ impl ReportGenerator {
     fn write_footer(&self, out: &mut String) {
         writeln!(out, "---").unwrap();
         writeln!(out).unwrap();
-        writeln!(out, "*Report generated by context-graph-benchmark unified-realdata-bench*").unwrap();
+        writeln!(
+            out,
+            "*Report generated by context-graph-benchmark unified-realdata-bench*"
+        )
+        .unwrap();
         writeln!(out, "*Version: {}*", self.results.metadata.version).unwrap();
     }
 }
@@ -433,11 +519,17 @@ pub fn generate_console_summary(results: &UnifiedBenchmarkResults) -> String {
             "\nBest Fusion: {:?} (+{:.1}% over E1)",
             fusion.best_strategy,
             fusion.improvement_over_baseline * 100.0
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     // Compliance
-    let passed = results.constitutional_compliance.rules.iter().filter(|r| r.passed).count();
+    let passed = results
+        .constitutional_compliance
+        .rules
+        .iter()
+        .filter(|r| r.passed)
+        .count();
     let total = results.constitutional_compliance.rules.len();
     writeln!(out, "\nConstitutional Compliance: {}/{}", passed, total).unwrap();
 
@@ -446,9 +538,9 @@ pub fn generate_console_summary(results: &UnifiedBenchmarkResults) -> String {
 
 #[cfg(all(test, feature = "benchmark-tests"))]
 mod tests {
-    use super::*;
     use super::super::config::UnifiedBenchmarkConfig;
     use super::super::results::*;
+    use super::*;
     use chrono::Utc;
     use std::collections::HashMap;
 
@@ -484,8 +576,16 @@ mod tests {
                 total_documents: 2437,
                 num_topics: 120,
                 top_topics: vec![
-                    TopicInfo { name: "science".to_string(), chunk_count: 5000, percentage: 8.5 },
-                    TopicInfo { name: "history".to_string(), chunk_count: 4000, percentage: 6.8 },
+                    TopicInfo {
+                        name: "science".to_string(),
+                        chunk_count: 5000,
+                        percentage: 8.5,
+                    },
+                    TopicInfo {
+                        name: "history".to_string(),
+                        chunk_count: 4000,
+                        percentage: 6.8,
+                    },
                 ],
                 source_datasets: vec!["wikipedia".to_string()],
                 chunks_used: 10000,

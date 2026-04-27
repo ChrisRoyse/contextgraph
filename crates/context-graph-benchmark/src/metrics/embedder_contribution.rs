@@ -48,7 +48,12 @@ impl ResultContribution {
     }
 
     /// Add contribution from an embedder.
-    pub fn add_contribution(&mut self, embedder: EmbedderIndex, rank: usize, contribution_pct: f32) {
+    pub fn add_contribution(
+        &mut self,
+        embedder: EmbedderIndex,
+        rank: usize,
+        contribution_pct: f32,
+    ) {
         if let Some(idx) = embedder.to_index() {
             self.embedder_contributions[idx] = contribution_pct;
             if !self.contributing_embedders.contains(&embedder) {
@@ -60,7 +65,10 @@ impl ResultContribution {
 
     /// Get contribution from a specific embedder.
     pub fn contribution_from(&self, embedder: EmbedderIndex) -> f32 {
-        embedder.to_index().map(|idx| self.embedder_contributions[idx]).unwrap_or(0.0)
+        embedder
+            .to_index()
+            .map(|idx| self.embedder_contributions[idx])
+            .unwrap_or(0.0)
     }
 
     /// Number of embedders that contributed to this result.
@@ -176,15 +184,15 @@ impl AgreementPatternAnalysis {
                     // Low agreement
                     let emb_i = EmbedderIndex::from_index(i);
                     let emb_j = EmbedderIndex::from_index(j);
-                    self.disagreement_hotspots.push((emb_i, emb_j, agreement_ratio));
+                    self.disagreement_hotspots
+                        .push((emb_i, emb_j, agreement_ratio));
                 }
             }
         }
 
         // Sort hotspots by disagreement (lowest agreement first)
-        self.disagreement_hotspots.sort_by(|a, b| {
-            a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        self.disagreement_hotspots
+            .sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
     }
 }
 
@@ -231,12 +239,14 @@ impl ContributionAttribution {
         }
 
         // Record agreement
-        self.agreement_patterns.record_result(&result.contributing_embedders);
+        self.agreement_patterns
+            .record_result(&result.contributing_embedders);
 
         // Record RRF stats
         for embedder in &result.contributing_embedders {
             if let Some(&rank) = result.embedder_ranks.get(embedder) {
-                self.rrf_rank_stats.record(*embedder, rank, result.is_relevant);
+                self.rrf_rank_stats
+                    .record(*embedder, rank, result.is_relevant);
             }
         }
 
@@ -262,7 +272,9 @@ impl ContributionAttribution {
 
     /// Get sorted contributions (highest first).
     pub fn sorted_contributions(&self) -> Vec<(EmbedderIndex, f64)> {
-        let mut sorted: Vec<_> = self.embedder_contributions.iter()
+        let mut sorted: Vec<_> = self
+            .embedder_contributions
+            .iter()
             .map(|(&e, &c)| (e, c))
             .collect();
         sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -435,9 +447,19 @@ impl BlindSpotAnalysis {
 
             let mut unique = UniqueFinds::new(*embedder);
 
-            for (rank, (doc_id, score)) in per_embedder_results.get(embedder).unwrap().iter().take(k).enumerate() {
+            for (rank, (doc_id, score)) in per_embedder_results
+                .get(embedder)
+                .unwrap()
+                .iter()
+                .take(k)
+                .enumerate()
+            {
                 if !e1_results.contains(doc_id) {
-                    let relevance = if relevant_docs.contains(doc_id) { 1.0 } else { 0.0 };
+                    let relevance = if relevant_docs.contains(doc_id) {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     let example = BlindSpotExample {
                         doc_id: *doc_id,
                         found_by: *embedder,
@@ -552,18 +574,24 @@ mod tests {
         let mut per_embedder = HashMap::new();
 
         // E1 finds docs 1, 2, 3
-        per_embedder.insert(EmbedderIndex::E1Semantic, vec![
-            (make_uuid(1), 0.9),
-            (make_uuid(2), 0.8),
-            (make_uuid(3), 0.7),
-        ]);
+        per_embedder.insert(
+            EmbedderIndex::E1Semantic,
+            vec![
+                (make_uuid(1), 0.9),
+                (make_uuid(2), 0.8),
+                (make_uuid(3), 0.7),
+            ],
+        );
 
         // E7 finds docs 2, 4, 5 (4 and 5 are blind spots)
-        per_embedder.insert(EmbedderIndex::E7Code, vec![
-            (make_uuid(2), 0.95),
-            (make_uuid(4), 0.85),  // Blind spot
-            (make_uuid(5), 0.75),  // Blind spot
-        ]);
+        per_embedder.insert(
+            EmbedderIndex::E7Code,
+            vec![
+                (make_uuid(2), 0.95),
+                (make_uuid(4), 0.85), // Blind spot
+                (make_uuid(5), 0.75), // Blind spot
+            ],
+        );
 
         // Relevant docs: 1, 2, 4 (so 4 is a relevant blind spot)
         let relevant: HashSet<Uuid> = [make_uuid(1), make_uuid(2), make_uuid(4)].into();
@@ -574,7 +602,10 @@ mod tests {
         assert_eq!(analysis.e1_found_count, 3);
 
         // E7 should have 1 relevant unique find (doc 4)
-        let e7_unique = analysis.enhancer_unique_finds.get(&EmbedderIndex::E7Code).unwrap();
+        let e7_unique = analysis
+            .enhancer_unique_finds
+            .get(&EmbedderIndex::E7Code)
+            .unwrap();
         assert_eq!(e7_unique.count, 1);
     }
 

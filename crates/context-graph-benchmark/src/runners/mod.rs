@@ -5,9 +5,9 @@
 
 pub mod causal;
 pub mod comparative;
+pub mod e11_entity;
 pub mod e1_semantic;
 pub mod e4_hybrid_session;
-pub mod e11_entity;
 pub mod embedder_impact;
 pub mod failfast;
 pub mod graph_linking;
@@ -22,15 +22,44 @@ pub mod topic;
 pub mod unified_realdata;
 
 pub use causal::{
-    CausalBenchmarkConfig, CausalBenchmarkResults, CausalBenchmarkRunner,
-    CausalAblationResults, CausalBenchmarkTimings, CausalDatasetStats,
-    DirectionBenchmarkSettings, AsymmetricBenchmarkSettings, ReasoningBenchmarkSettings,
+    AsymmetricBenchmarkSettings, CausalAblationResults, CausalBenchmarkConfig,
+    CausalBenchmarkResults, CausalBenchmarkRunner, CausalBenchmarkTimings, CausalDatasetStats,
+    DirectionBenchmarkSettings, ReasoningBenchmarkSettings,
+};
+pub use comparative::{BenchmarkHarness, BenchmarkResults, ComparativeResults};
+pub use e11_entity::{
+    ConfusionMatrix, E11EntityBenchmarkConfig, E11EntityBenchmarkResults, E11EntityBenchmarkRunner,
+    E11EntityBenchmarkTimings, E11EntityDatasetStats as E11RunnerDatasetStats,
+    ExtractionBenchmarkResults, GraphBenchmarkResults, QueryResult, RelationshipInferenceResult,
+    RetrievalBenchmarkResults, SampleExtraction, TransEBenchmarkResults, TripleScoreResult,
+    ValidationBenchmarkResults,
+};
+pub use e4_hybrid_session::{
+    E4HybridBenchmarkTimings, E4HybridDatasetStats, E4HybridSessionBenchmarkConfig,
+    E4HybridSessionBenchmarkResults, E4HybridSessionBenchmarkRunner, LegacyComparisonResults,
+    TimestampBaselineResults as E4TimestampBaselineResults,
+    ValidationSummary as E4ValidationSummary,
+};
+pub use embedder_impact::{
+    AblationDelta, BenchmarkMetadata, ConstitutionalCompliance, EmbedderImpactConfig,
+    EmbedderImpactResults, EmbedderImpactRunner, EnhancementDelta, ImpactRecommendation,
+    RecommendationType, RetrievalImpactAnalysis, TierImpactResults,
+};
+pub use failfast::{
+    analyze_error_message_quality, build_sequence_tool_scenarios, verify_failfast_behavior,
+    ErrorMessageQuality, ExpectedBehavior, FailFastResult, FailFastScenario, FailFastSummary,
+    FailFastTrigger,
+};
+pub use graph_linking::{
+    run_quick_benchmark, run_tier_benchmark, GraphLinkingBenchmarkConfig,
+    GraphLinkingBenchmarkResults, GraphLinkingBenchmarkRunner, GraphLinkingDatasetStats,
+    ValidationCheck as GraphLinkingValidationCheck,
+    ValidationSummary as GraphLinkingValidationSummary,
 };
 pub use multimodal::{
     E10BenchmarkTimings, E10MultimodalBenchmarkConfig, E10MultimodalBenchmarkResults,
     E10MultimodalBenchmarkRunner,
 };
-pub use comparative::{BenchmarkHarness, BenchmarkResults, ComparativeResults};
 pub use retrieval::RetrievalRunner;
 pub use scaling::ScalingRunner;
 pub use sparse::{
@@ -38,52 +67,47 @@ pub use sparse::{
     E6SparseBenchmarkRunner, ThresholdMetrics, ThresholdSweepResults,
 };
 pub use temporal::{
-    TemporalBenchmarkConfig, TemporalBenchmarkResults, TemporalBenchmarkRunner,
+    run_ablation_benchmark,
     // Mode-specific benchmark functions
-    run_e2_recency_benchmark, run_e3_periodic_benchmark, run_e4_sequence_benchmark,
-    run_ablation_benchmark, run_scaling_benchmark, run_regression_benchmark,
-    // E2 types
-    E2RecencyBenchmarkResults, AdaptiveHalfLifeResults, AdaptiveScalingPoint, TimeWindowResults,
-    // E3 types
-    E3PeriodicBenchmarkResults, SilhouetteValidation,
-    // E4 types
-    E4SequenceBenchmarkResults, ChainLengthPoint, BetweenQueryResults, FallbackComparison,
+    run_e2_recency_benchmark,
+    run_e3_periodic_benchmark,
+    run_e4_sequence_benchmark,
+    run_regression_benchmark,
+    run_scaling_benchmark,
+    AblationBenchmarkResults,
     // Ablation types
-    AblationConfig, AblationBenchmarkResults, AblationConfigResult, InterferenceReport,
-    // Scaling types
-    ScalingConfig, ScalingBenchmarkResults, ScalingPoint, DegradationCurves,
+    AblationConfig,
+    AblationConfigResult,
+    AdaptiveHalfLifeResults,
+    AdaptiveScalingPoint,
+    BetweenQueryResults,
+    ChainLengthPoint,
+    DegradationCurves,
+    // E2 types
+    E2RecencyBenchmarkResults,
+    // E3 types
+    E3PeriodicBenchmarkResults,
+    // E4 types
+    E4SequenceBenchmarkResults,
+    FallbackComparison,
+    InterferenceReport,
+    RegressionBenchmarkResults,
     // Regression types
-    RegressionConfig, RegressionBenchmarkResults, RegressionFailure, TemporalBaseline,
+    RegressionConfig,
+    RegressionFailure,
+    ScalingBenchmarkResults,
+    // Scaling types
+    ScalingConfig,
+    ScalingPoint,
+    SilhouetteValidation,
+    TemporalBaseline,
+    TemporalBenchmarkConfig,
+    TemporalBenchmarkResults,
+    TemporalBenchmarkRunner,
+    TimeWindowResults,
 };
 pub use temporal_realdata::{
-    TemporalRealdataBenchmarkConfig, TemporalRealdataBenchmarkResults, TemporalRealdataBenchmarkRunner,
-    TimestampBaselineResults, TemporalBenchmarkTimings, TemporalDatasetStats,
+    TemporalBenchmarkTimings, TemporalDatasetStats, TemporalRealdataBenchmarkConfig,
+    TemporalRealdataBenchmarkResults, TemporalRealdataBenchmarkRunner, TimestampBaselineResults,
 };
 pub use topic::TopicRunner;
-pub use failfast::{
-    FailFastScenario, FailFastTrigger, ExpectedBehavior, FailFastResult,
-    FailFastSummary, ErrorMessageQuality,
-    build_sequence_tool_scenarios, analyze_error_message_quality, verify_failfast_behavior,
-};
-pub use e4_hybrid_session::{
-    E4HybridSessionBenchmarkConfig, E4HybridSessionBenchmarkResults, E4HybridSessionBenchmarkRunner,
-    E4HybridBenchmarkTimings, E4HybridDatasetStats, LegacyComparisonResults,
-    TimestampBaselineResults as E4TimestampBaselineResults, ValidationSummary as E4ValidationSummary,
-};
-pub use e11_entity::{
-    E11EntityBenchmarkConfig, E11EntityBenchmarkResults, E11EntityBenchmarkRunner,
-    E11EntityBenchmarkTimings, E11EntityDatasetStats as E11RunnerDatasetStats,
-    ExtractionBenchmarkResults, RetrievalBenchmarkResults, TransEBenchmarkResults,
-    ValidationBenchmarkResults, GraphBenchmarkResults, QueryResult, TripleScoreResult,
-    RelationshipInferenceResult, SampleExtraction, ConfusionMatrix,
-};
-pub use graph_linking::{
-    GraphLinkingBenchmarkConfig, GraphLinkingBenchmarkResults, GraphLinkingBenchmarkRunner,
-    GraphLinkingDatasetStats, ValidationCheck as GraphLinkingValidationCheck,
-    ValidationSummary as GraphLinkingValidationSummary, run_tier_benchmark, run_quick_benchmark,
-};
-pub use embedder_impact::{
-    EmbedderImpactConfig, EmbedderImpactResults, EmbedderImpactRunner,
-    TierImpactResults, AblationDelta, EnhancementDelta, RetrievalImpactAnalysis,
-    ConstitutionalCompliance, ImpactRecommendation, RecommendationType, BenchmarkMetadata,
-};

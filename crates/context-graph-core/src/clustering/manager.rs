@@ -55,7 +55,9 @@ use crate::types::SemanticFingerprint;
 use super::birch::{birch_defaults, BIRCHParams, BIRCHTree};
 use super::cluster::Cluster;
 use super::error::ClusterError;
-use super::fingerprint_matrix::{build_fingerprint_matrix, FingerprintMatrixConfig, SimilarityStats};
+use super::fingerprint_matrix::{
+    build_fingerprint_matrix, FingerprintMatrixConfig, SimilarityStats,
+};
 use super::hdbscan::{hdbscan_defaults, HDBSCANClusterer, HDBSCANParams};
 use super::membership::ClusterMembership;
 use super::stability::TopicStabilityTracker;
@@ -378,7 +380,10 @@ impl MultiSpaceClusterManager {
 
             // Validate dimension
             if embedding.len() != expected_dim {
-                return Err(ClusterError::dimension_mismatch(expected_dim, embedding.len()));
+                return Err(ClusterError::dimension_mismatch(
+                    expected_dim,
+                    embedding.len(),
+                ));
             }
 
             // Validate finite values (AP-10)
@@ -467,8 +472,7 @@ impl MultiSpaceClusterManager {
 
             // Create space-specific clusterer and run HDBSCAN
             let clusterer = HDBSCANClusterer::for_space(embedder);
-            let memberships =
-                clusterer.fit(&state.embeddings, &state.memory_ids, embedder)?;
+            let memberships = clusterer.fit(&state.embeddings, &state.memory_ids, embedder)?;
 
             // Update memberships and build clusters
             state.memberships.clear();
@@ -478,7 +482,9 @@ impl MultiSpaceClusterManager {
             let mut cluster_indices: HashMap<i32, Vec<usize>> = HashMap::new();
 
             for (j, membership) in memberships.iter().enumerate() {
-                state.memberships.insert(membership.memory_id, membership.clone());
+                state
+                    .memberships
+                    .insert(membership.memory_id, membership.clone());
 
                 if membership.cluster_id >= 0 {
                     cluster_indices
@@ -507,7 +513,12 @@ impl MultiSpaceClusterManager {
         self.synthesize_topics()?;
 
         // --- Provenance: mega-topic detection ---
-        let max_space_size = self.spaces.iter().map(|s| s.memory_ids.len()).max().unwrap_or(0);
+        let max_space_size = self
+            .spaces
+            .iter()
+            .map(|s| s.memory_ids.len())
+            .max()
+            .unwrap_or(0);
         if max_space_size > 10 {
             for topic in self.topics.values() {
                 if topic.member_count() > max_space_size / 2 {
@@ -631,10 +642,7 @@ impl MultiSpaceClusterManager {
         let labels: Vec<i32> = memberships.iter().map(|m| m.cluster_id).collect();
         let silhouette = clusterer.compute_silhouette_precomputed(&distances, &labels);
 
-        tracing::debug!(
-            silhouette = silhouette,
-            "FDMC clustering quality"
-        );
+        tracing::debug!(silhouette = silhouette, "FDMC clustering quality");
 
         // Build topics from cluster assignments
         self.topics.clear();
@@ -814,7 +822,8 @@ impl MultiSpaceClusterManager {
         // Compute per-space cluster counts once (reused for both discriminating filter and split ordering).
         // Spaces with only 1 cluster provide zero discriminative information —
         // saying "everything is the same" is not evidence of topical agreement.
-        let space_cluster_counts: HashMap<Embedder, usize> = Embedder::all().enumerate()
+        let space_cluster_counts: HashMap<Embedder, usize> = Embedder::all()
+            .enumerate()
             .map(|(i, embedder)| {
                 let non_noise_clusters: HashSet<i32> = self.spaces[i]
                     .memberships
@@ -827,7 +836,8 @@ impl MultiSpaceClusterManager {
             .collect();
 
         // Discriminating = has 2+ non-noise clusters AND non-zero topic weight (excludes temporal E2-E4)
-        let discriminating_spaces: HashSet<Embedder> = space_cluster_counts.iter()
+        let discriminating_spaces: HashSet<Embedder> = space_cluster_counts
+            .iter()
             .filter(|(e, &count)| count >= 2 && category_for(**e).topic_weight() > 0.0)
             .map(|(e, _)| *e)
             .collect();
@@ -897,16 +907,24 @@ impl MultiSpaceClusterManager {
         let mut next_root = n;
 
         // Build member_id -> embedding index lookup for each space
-        let space_id_to_idx: Vec<HashMap<&Uuid, usize>> = self.spaces.iter()
+        let space_id_to_idx: Vec<HashMap<&Uuid, usize>> = self
+            .spaces
+            .iter()
             .map(|state| {
-                state.memory_ids.iter().enumerate().map(|(i, id)| (id, i)).collect()
+                state
+                    .memory_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(i, id)| (id, i))
+                    .collect()
             })
             .collect();
 
         // Ordered list of spaces to try for splitting (most discriminating first).
         // Temporal embedders already excluded from discriminating_spaces above.
         let split_spaces: Vec<Embedder> = {
-            let mut spaces: Vec<(Embedder, usize)> = discriminating_spaces.iter()
+            let mut spaces: Vec<(Embedder, usize)> = discriminating_spaces
+                .iter()
                 .map(|&e| (e, *space_cluster_counts.get(&e).unwrap_or(&0)))
                 .collect();
             spaces.sort_by(|a, b| b.1.cmp(&a.1)); // most clusters first
@@ -956,7 +974,10 @@ impl MultiSpaceClusterManager {
                             Ok(memberships) => {
                                 let mut sub_groups: HashMap<i32, Vec<Uuid>> = HashMap::new();
                                 for m in &memberships {
-                                    sub_groups.entry(m.cluster_id).or_default().push(m.memory_id);
+                                    sub_groups
+                                        .entry(m.cluster_id)
+                                        .or_default()
+                                        .push(m.memory_id);
                                 }
                                 let noise = sub_groups.remove(&-1).unwrap_or_default();
                                 if sub_groups.len() >= 2 {
@@ -1407,7 +1428,10 @@ impl MultiSpaceClusterManager {
     /// let count = manager.import_portfolio(&portfolio);
     /// println!("Imported {} topics", count);
     /// ```
-    pub fn import_portfolio(&mut self, portfolio: &crate::clustering::PersistedTopicPortfolio) -> usize {
+    pub fn import_portfolio(
+        &mut self,
+        portfolio: &crate::clustering::PersistedTopicPortfolio,
+    ) -> usize {
         // Clear existing topics
         self.topics.clear();
 
@@ -1660,7 +1684,10 @@ impl FdmcResult {
 
     /// Get noise point count (memories not assigned to any cluster).
     pub fn noise_count(&self) -> usize {
-        self.memberships.iter().filter(|m| m.cluster_id == -1).count()
+        self.memberships
+            .iter()
+            .filter(|m| m.cluster_id == -1)
+            .count()
     }
 
     /// Get cluster quality rating.
@@ -1720,8 +1747,7 @@ mod tests {
         let params = manager_defaults();
 
         assert_eq!(
-            params.recluster_threshold,
-            DEFAULT_RECLUSTER_THRESHOLD,
+            params.recluster_threshold, DEFAULT_RECLUSTER_THRESHOLD,
             "Default recluster threshold should match constant"
         );
         assert!(params.validate().is_ok(), "Default params must be valid");
@@ -1878,10 +1904,7 @@ mod tests {
             "Error must indicate dimension mismatch"
         );
 
-        println!(
-            "[PASS] test_insert_dimension_mismatch - error: {}",
-            err
-        );
+        println!("[PASS] test_insert_dimension_mismatch - error: {}", err);
     }
 
     #[test]
@@ -2016,7 +2039,10 @@ mod tests {
         assert!(result.is_ok());
 
         let stats = result.unwrap();
-        assert_eq!(stats.total_clusters, 0, "No clusters with insufficient data");
+        assert_eq!(
+            stats.total_clusters, 0,
+            "No clusters with insufficient data"
+        );
 
         println!("[PASS] test_recluster_insufficient_data - gracefully handles small data");
     }
@@ -2055,7 +2081,10 @@ mod tests {
     #[test]
     fn test_needs_recluster_false_initially() {
         let manager = MultiSpaceClusterManager::with_defaults().unwrap();
-        assert!(!manager.needs_recluster(), "Should not need recluster initially");
+        assert!(
+            !manager.needs_recluster(),
+            "Should not need recluster initially"
+        );
 
         println!("[PASS] test_needs_recluster_false_initially");
     }
@@ -2072,7 +2101,10 @@ mod tests {
             manager.insert(memory_id, &embeddings).unwrap();
         }
 
-        assert!(manager.needs_recluster(), "Should need recluster after threshold");
+        assert!(
+            manager.needs_recluster(),
+            "Should need recluster after threshold"
+        );
 
         println!("[PASS] test_needs_recluster_after_threshold");
     }
@@ -2095,7 +2127,10 @@ mod tests {
         manager.recluster().unwrap();
 
         // Should no longer need reclustering
-        assert!(!manager.needs_recluster(), "Should not need recluster after reclustering");
+        assert!(
+            !manager.needs_recluster(),
+            "Should not need recluster after reclustering"
+        );
 
         println!("[PASS] test_needs_recluster_reset_after_recluster");
     }
@@ -2228,13 +2263,19 @@ mod tests {
         let memory_id = Uuid::new_v4();
         let embeddings = create_test_embeddings(0.5);
         let result1 = manager.insert(memory_id, &embeddings).unwrap();
-        assert!(!result1.needs_recluster, "First insert should not trigger recluster");
+        assert!(
+            !result1.needs_recluster,
+            "First insert should not trigger recluster"
+        );
 
         // Second insert should trigger (threshold is 2)
         let memory_id = Uuid::new_v4();
         let embeddings = create_test_embeddings(0.6);
         let result2 = manager.insert(memory_id, &embeddings).unwrap();
-        assert!(result2.needs_recluster, "Second insert should trigger recluster");
+        assert!(
+            result2.needs_recluster,
+            "Second insert should trigger recluster"
+        );
 
         println!("[PASS] test_insert_result_needs_recluster");
     }
@@ -2491,7 +2532,11 @@ mod tests {
         // Import should replace existing
         manager.import_portfolio(&new_portfolio);
 
-        assert_eq!(manager.topic_count(), 0, "Import should replace existing topics");
+        assert_eq!(
+            manager.topic_count(),
+            0,
+            "Import should replace existing topics"
+        );
 
         println!(
             "[PASS] test_import_replaces_existing_topics - before={}, after=0",
@@ -2516,14 +2561,19 @@ mod tests {
 
         /// Generate a non-uniform vector with domain-specific pattern and noise.
         /// Creates distinct angular signatures for cosine similarity.
-        fn generate_domain_embedding(dim: usize, domain: &str, variation: f32, seed: u64) -> Vec<f32> {
+        fn generate_domain_embedding(
+            dim: usize,
+            domain: &str,
+            variation: f32,
+            seed: u64,
+        ) -> Vec<f32> {
             let mut embedding = vec![0.1f32; dim]; // Low baseline
 
             // Domain-specific high-activation regions
             let (start_ratio, end_ratio) = match domain {
-                "ml" => (0.0, 0.33),       // ML: first third
+                "ml" => (0.0, 0.33),        // ML: first third
                 "database" => (0.33, 0.66), // DB: middle third
-                "devops" => (0.66, 1.0),   // DevOps: last third
+                "devops" => (0.66, 1.0),    // DevOps: last third
                 _ => (0.0, 1.0),
             };
 
@@ -2559,27 +2609,95 @@ mod tests {
         // Use variation as seed modifier for reproducible but varied embeddings
         let seed = (variation * 1000.0) as u64;
 
-        let e5_vec = generate_domain_embedding(get_dimension(Embedder::Causal), domain, variation, seed + 400);
+        let e5_vec = generate_domain_embedding(
+            get_dimension(Embedder::Causal),
+            domain,
+            variation,
+            seed + 400,
+        );
         SemanticFingerprint {
-            e1_semantic: generate_domain_embedding(get_dimension(Embedder::Semantic), domain, variation, seed),
-            e2_temporal_recent: generate_domain_embedding(get_dimension(Embedder::TemporalRecent), "all", 0.5, seed + 100),
-            e3_temporal_periodic: generate_domain_embedding(get_dimension(Embedder::TemporalPeriodic), "all", 0.5, seed + 200),
-            e4_temporal_positional: generate_domain_embedding(get_dimension(Embedder::TemporalPositional), "all", 0.5, seed + 300),
+            e1_semantic: generate_domain_embedding(
+                get_dimension(Embedder::Semantic),
+                domain,
+                variation,
+                seed,
+            ),
+            e2_temporal_recent: generate_domain_embedding(
+                get_dimension(Embedder::TemporalRecent),
+                "all",
+                0.5,
+                seed + 100,
+            ),
+            e3_temporal_periodic: generate_domain_embedding(
+                get_dimension(Embedder::TemporalPeriodic),
+                "all",
+                0.5,
+                seed + 200,
+            ),
+            e4_temporal_positional: generate_domain_embedding(
+                get_dimension(Embedder::TemporalPositional),
+                "all",
+                0.5,
+                seed + 300,
+            ),
             e5_causal_as_cause: e5_vec.clone(),
             e5_causal_as_effect: e5_vec,
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
-            e7_code: generate_domain_embedding(get_dimension(Embedder::Code), domain, variation, seed + 500),
-            e8_graph_as_source: generate_domain_embedding(get_dimension(Embedder::Graph), "all", 0.5, seed + 600),
-            e8_graph_as_target: generate_domain_embedding(get_dimension(Embedder::Graph), "all", 0.5, seed + 601),
+            e7_code: generate_domain_embedding(
+                get_dimension(Embedder::Code),
+                domain,
+                variation,
+                seed + 500,
+            ),
+            e8_graph_as_source: generate_domain_embedding(
+                get_dimension(Embedder::Graph),
+                "all",
+                0.5,
+                seed + 600,
+            ),
+            e8_graph_as_target: generate_domain_embedding(
+                get_dimension(Embedder::Graph),
+                "all",
+                0.5,
+                seed + 601,
+            ),
             e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_domain_embedding(get_dimension(Embedder::Hdc), "all", 0.5, seed + 700),
-            e10_multimodal_paraphrase: generate_domain_embedding(get_dimension(Embedder::Contextual), domain, variation, seed + 800),
-            e10_multimodal_as_context: generate_domain_embedding(get_dimension(Embedder::Contextual), domain, variation, seed + 801),
-            e11_entity: generate_domain_embedding(get_dimension(Embedder::Entity), domain, variation, seed + 900),
-            e12_late_interaction: vec![generate_domain_embedding(128, domain, variation, seed + 1000); 10],
+            e10_multimodal_paraphrase: generate_domain_embedding(
+                get_dimension(Embedder::Contextual),
+                domain,
+                variation,
+                seed + 800,
+            ),
+            e10_multimodal_as_context: generate_domain_embedding(
+                get_dimension(Embedder::Contextual),
+                domain,
+                variation,
+                seed + 801,
+            ),
+            e11_entity: generate_domain_embedding(
+                get_dimension(Embedder::Entity),
+                domain,
+                variation,
+                seed + 900,
+            ),
+            e12_late_interaction: vec![
+                generate_domain_embedding(
+                    128,
+                    domain,
+                    variation,
+                    seed + 1000
+                );
+                10
+            ],
             e13_splade: SparseVector::empty(),
-            e14_bge_m3_dense: generate_domain_embedding(get_dimension(Embedder::BgeM3Dense), domain, variation, seed + 1100),
+            e14_bge_m3_dense: generate_domain_embedding(
+                get_dimension(Embedder::BgeM3Dense),
+                domain,
+                variation,
+                seed + 1100,
+            ),
         }
     }
 
@@ -2614,7 +2732,9 @@ mod tests {
         let fdmc_result = result.unwrap();
         assert!(fdmc_result.is_empty());
 
-        println!("[PASS] test_fdmc_insufficient_fingerprints - correctly handles < min_cluster_size");
+        println!(
+            "[PASS] test_fdmc_insufficient_fingerprints - correctly handles < min_cluster_size"
+        );
     }
 
     #[test]
@@ -2640,7 +2760,11 @@ mod tests {
 
         // LOW-1 FIX: Assert non_noise is non-empty before checking cluster consistency.
         // Previously this silently passed with zero assertions if all points were noise.
-        let cluster_ids: Vec<i32> = fdmc_result.memberships.iter().map(|m| m.cluster_id).collect();
+        let cluster_ids: Vec<i32> = fdmc_result
+            .memberships
+            .iter()
+            .map(|m| m.cluster_id)
+            .collect();
         let non_noise: Vec<i32> = cluster_ids.iter().filter(|&&c| c >= 0).cloned().collect();
         assert!(
             !non_noise.is_empty(),
@@ -2929,18 +3053,26 @@ mod tests {
                     b_i = b_i.min(mean);
                 }
             }
-            if b_i == f32::MAX { b_i = 0.0; }
+            if b_i == f32::MAX {
+                b_i = 0.0;
+            }
 
             // s(i) = (b(i) - a(i)) / max(a(i), b(i))
             let max_ab = a_i.max(b_i);
-            let s_i = if max_ab > 0.0 { (b_i - a_i) / max_ab } else { 0.0 };
+            let s_i = if max_ab > 0.0 {
+                (b_i - a_i) / max_ab
+            } else {
+                0.0
+            };
 
             println!("\n=== MANUAL SILHOUETTE FOR POINT 0 (ML) ===");
             println!("  same_cluster_distances: {:?}", same_cluster);
             println!("  a(0) = mean intra-cluster distance = {:.4}", a_i);
             println!("  b(0) = min mean inter-cluster distance = {:.4}", b_i);
-            println!("  s(0) = (b - a) / max(a, b) = ({:.4} - {:.4}) / {:.4} = {:.4}",
-                     b_i, a_i, max_ab, s_i);
+            println!(
+                "  s(0) = (b - a) / max(a, b) = ({:.4} - {:.4}) / {:.4} = {:.4}",
+                b_i, a_i, max_ab, s_i
+            );
         }
 
         println!("\n=== COMPUTED SILHOUETTE ===");
@@ -2985,7 +3117,12 @@ mod tests {
 
         /// Generate embedding with domain-specific activation region.
         /// Divides dimension space into 15 regions (6.67% each).
-        fn generate_15domain_embedding(dim: usize, domain_idx: usize, variation: f32, seed: u64) -> Vec<f32> {
+        fn generate_15domain_embedding(
+            dim: usize,
+            domain_idx: usize,
+            variation: f32,
+            seed: u64,
+        ) -> Vec<f32> {
             let mut embedding = vec![0.05f32; dim]; // Very low baseline
 
             // Each domain gets ~6.67% of the dimension space
@@ -3032,28 +3169,96 @@ mod tests {
         }
 
         let seed = (domain_idx as u64 * 1000) + (variation * 100.0) as u64;
-        let e5_vec = generate_15domain_embedding(get_dimension(Embedder::Causal), domain_idx, variation, seed + 400);
+        let e5_vec = generate_15domain_embedding(
+            get_dimension(Embedder::Causal),
+            domain_idx,
+            variation,
+            seed + 400,
+        );
 
         SemanticFingerprint {
-            e1_semantic: generate_15domain_embedding(get_dimension(Embedder::Semantic), domain_idx, variation, seed),
-            e2_temporal_recent: generate_15domain_embedding(get_dimension(Embedder::TemporalRecent), 7, 0.5, seed + 100),
-            e3_temporal_periodic: generate_15domain_embedding(get_dimension(Embedder::TemporalPeriodic), 7, 0.5, seed + 200),
-            e4_temporal_positional: generate_15domain_embedding(get_dimension(Embedder::TemporalPositional), 7, 0.5, seed + 300),
+            e1_semantic: generate_15domain_embedding(
+                get_dimension(Embedder::Semantic),
+                domain_idx,
+                variation,
+                seed,
+            ),
+            e2_temporal_recent: generate_15domain_embedding(
+                get_dimension(Embedder::TemporalRecent),
+                7,
+                0.5,
+                seed + 100,
+            ),
+            e3_temporal_periodic: generate_15domain_embedding(
+                get_dimension(Embedder::TemporalPeriodic),
+                7,
+                0.5,
+                seed + 200,
+            ),
+            e4_temporal_positional: generate_15domain_embedding(
+                get_dimension(Embedder::TemporalPositional),
+                7,
+                0.5,
+                seed + 300,
+            ),
             e5_causal_as_cause: e5_vec.clone(),
             e5_causal_as_effect: e5_vec,
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
-            e7_code: generate_15domain_embedding(get_dimension(Embedder::Code), domain_idx, variation, seed + 500),
-            e8_graph_as_source: generate_15domain_embedding(get_dimension(Embedder::Graph), 7, 0.5, seed + 600),
-            e8_graph_as_target: generate_15domain_embedding(get_dimension(Embedder::Graph), 7, 0.5, seed + 601),
+            e7_code: generate_15domain_embedding(
+                get_dimension(Embedder::Code),
+                domain_idx,
+                variation,
+                seed + 500,
+            ),
+            e8_graph_as_source: generate_15domain_embedding(
+                get_dimension(Embedder::Graph),
+                7,
+                0.5,
+                seed + 600,
+            ),
+            e8_graph_as_target: generate_15domain_embedding(
+                get_dimension(Embedder::Graph),
+                7,
+                0.5,
+                seed + 601,
+            ),
             e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_15domain_embedding(get_dimension(Embedder::Hdc), 7, 0.5, seed + 700),
-            e10_multimodal_paraphrase: generate_15domain_embedding(get_dimension(Embedder::Contextual), domain_idx, variation, seed + 800),
-            e10_multimodal_as_context: generate_15domain_embedding(get_dimension(Embedder::Contextual), domain_idx, variation, seed + 801),
-            e11_entity: generate_15domain_embedding(get_dimension(Embedder::Entity), domain_idx, variation, seed + 900),
-            e12_late_interaction: vec![generate_15domain_embedding(128, domain_idx, variation, seed + 1000); 10],
+            e10_multimodal_paraphrase: generate_15domain_embedding(
+                get_dimension(Embedder::Contextual),
+                domain_idx,
+                variation,
+                seed + 800,
+            ),
+            e10_multimodal_as_context: generate_15domain_embedding(
+                get_dimension(Embedder::Contextual),
+                domain_idx,
+                variation,
+                seed + 801,
+            ),
+            e11_entity: generate_15domain_embedding(
+                get_dimension(Embedder::Entity),
+                domain_idx,
+                variation,
+                seed + 900,
+            ),
+            e12_late_interaction: vec![
+                generate_15domain_embedding(
+                    128,
+                    domain_idx,
+                    variation,
+                    seed + 1000
+                );
+                10
+            ],
             e13_splade: SparseVector::empty(),
-            e14_bge_m3_dense: generate_15domain_embedding(get_dimension(Embedder::BgeM3Dense), domain_idx, variation, seed + 1100),
+            e14_bge_m3_dense: generate_15domain_embedding(
+                get_dimension(Embedder::BgeM3Dense),
+                domain_idx,
+                variation,
+                seed + 1100,
+            ),
         }
     }
 
@@ -3070,10 +3275,17 @@ mod tests {
                 let fp = create_15domain_fingerprint(domain_idx, i as f32 * 0.1);
                 fingerprints.push((Uuid::new_v4(), fp));
             }
-            println!("Created 3 fingerprints for domain {}: {}", domain_idx, domain_name);
+            println!(
+                "Created 3 fingerprints for domain {}: {}",
+                domain_idx, domain_name
+            );
         }
 
-        assert_eq!(fingerprints.len(), 45, "Should have 45 fingerprints (15 domains × 3)");
+        assert_eq!(
+            fingerprints.len(),
+            45,
+            "Should have 45 fingerprints (15 domains × 3)"
+        );
 
         // Run FDMC clustering
         let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
@@ -3083,17 +3295,24 @@ mod tests {
         println!("Total clusters: {}", result.total_clusters);
         println!("Topics discovered: {}", result.topics_discovered);
         println!("Noise points: {}", result.noise_count());
-        println!("Silhouette: {:.4} ({})", result.silhouette_score, result.quality_rating());
+        println!(
+            "Silhouette: {:.4} ({})",
+            result.silhouette_score,
+            result.quality_rating()
+        );
 
         // Print similarity stats
         let stats = &result.similarity_stats;
         println!("\nSimilarity distribution:");
-        println!("  min={:.4}, max={:.4}, mean={:.4}, std={:.4}",
-                 stats.min, stats.max, stats.mean, stats.std_dev);
+        println!(
+            "  min={:.4}, max={:.4}, mean={:.4}, std={:.4}",
+            stats.min, stats.max, stats.mean, stats.std_dev
+        );
 
         // Analyze cluster assignments
         let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
-        let unique_clusters: std::collections::HashSet<i32> = labels.iter().filter(|&&l| l >= 0).copied().collect();
+        let unique_clusters: std::collections::HashSet<i32> =
+            labels.iter().filter(|&&l| l >= 0).copied().collect();
         println!("\nUnique cluster IDs (non-noise): {:?}", unique_clusters);
 
         // Check each domain's cluster assignment
@@ -3101,9 +3320,15 @@ mod tests {
         for (domain_idx, domain_name) in DOMAINS_15.iter().enumerate() {
             let start = domain_idx * 3;
             let domain_labels: Vec<i32> = labels[start..start + 3].to_vec();
-            let coherent = domain_labels.iter().all(|&l| l == domain_labels[0] && l >= 0);
-            println!("  {}: {:?} {}", domain_name, domain_labels,
-                     if coherent { "✓" } else { "⚠" });
+            let coherent = domain_labels
+                .iter()
+                .all(|&l| l == domain_labels[0] && l >= 0);
+            println!(
+                "  {}: {:?} {}",
+                domain_name,
+                domain_labels,
+                if coherent { "✓" } else { "⚠" }
+            );
         }
 
         // Verify we got a reasonable number of topics
@@ -3114,8 +3339,10 @@ mod tests {
             result.topics_discovered
         );
 
-        println!("\n[PASS] test_fdmc_15_topics_discovery - {} topics from 15 domains",
-                 result.topics_discovered);
+        println!(
+            "\n[PASS] test_fdmc_15_topics_discovery - {} topics from 15 domains",
+            result.topics_discovered
+        );
     }
 
     #[test]
@@ -3138,7 +3365,8 @@ mod tests {
         let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
 
         // Calculate cluster purity: for each cluster, what % comes from the dominant domain?
-        let unique_clusters: std::collections::HashSet<i32> = labels.iter().filter(|&&l| l >= 0).copied().collect();
+        let unique_clusters: std::collections::HashSet<i32> =
+            labels.iter().filter(|&&l| l >= 0).copied().collect();
 
         let mut total_purity = 0.0;
         let mut cluster_count = 0;
@@ -3146,7 +3374,8 @@ mod tests {
         println!("\n=== CLUSTER PURITY ANALYSIS ===");
         for &cluster_id in &unique_clusters {
             // Find which memories are in this cluster
-            let cluster_members: Vec<usize> = labels.iter()
+            let cluster_members: Vec<usize> = labels
+                .iter()
                 .enumerate()
                 .filter(|(_, &l)| l == cluster_id)
                 .map(|(i, _)| i)
@@ -3159,18 +3388,30 @@ mod tests {
             }
 
             let max_count = *domain_counts.iter().max().unwrap_or(&0);
-            let dominant_domain = domain_counts.iter().position(|&c| c == max_count).unwrap_or(0);
+            let dominant_domain = domain_counts
+                .iter()
+                .position(|&c| c == max_count)
+                .unwrap_or(0);
             let purity = max_count as f32 / cluster_members.len() as f32;
 
             total_purity += purity;
             cluster_count += 1;
 
-            println!("  Cluster {}: {} members, dominant={} ({}), purity={:.2}%",
-                     cluster_id, cluster_members.len(), DOMAINS_15[dominant_domain], max_count,
-                     purity * 100.0);
+            println!(
+                "  Cluster {}: {} members, dominant={} ({}), purity={:.2}%",
+                cluster_id,
+                cluster_members.len(),
+                DOMAINS_15[dominant_domain],
+                max_count,
+                purity * 100.0
+            );
         }
 
-        let avg_purity = if cluster_count > 0 { total_purity / cluster_count as f32 } else { 0.0 };
+        let avg_purity = if cluster_count > 0 {
+            total_purity / cluster_count as f32
+        } else {
+            0.0
+        };
         println!("\nAverage cluster purity: {:.2}%", avg_purity * 100.0);
 
         // Expect high purity (each cluster mostly contains one domain)
@@ -3180,8 +3421,10 @@ mod tests {
             avg_purity * 100.0
         );
 
-        println!("\n[PASS] test_fdmc_15_topics_cluster_purity - {:.2}% average purity",
-                 avg_purity * 100.0);
+        println!(
+            "\n[PASS] test_fdmc_15_topics_cluster_purity - {:.2}% average purity",
+            avg_purity * 100.0
+        );
     }
 
     #[test]
@@ -3203,9 +3446,17 @@ mod tests {
         let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
 
         println!("\n=== 15-TOPIC TEST (5 per domain) ===");
-        println!("Memories: {}, Clusters: {}, Topics: {}",
-                 result.memory_count(), result.total_clusters, result.topics_discovered);
-        println!("Silhouette: {:.4} ({})", result.silhouette_score, result.quality_rating());
+        println!(
+            "Memories: {}, Clusters: {}, Topics: {}",
+            result.memory_count(),
+            result.total_clusters,
+            result.topics_discovered
+        );
+        println!(
+            "Silhouette: {:.4} ({})",
+            result.silhouette_score,
+            result.quality_rating()
+        );
         println!("Noise: {}", result.noise_count());
 
         // With more samples per domain, clustering should be more stable
@@ -3215,7 +3466,10 @@ mod tests {
             result.topics_discovered
         );
 
-        println!("\n[PASS] test_fdmc_15_topics_with_5_per_domain - {} topics", result.topics_discovered);
+        println!(
+            "\n[PASS] test_fdmc_15_topics_with_5_per_domain - {} topics",
+            result.topics_discovered
+        );
     }
 
     #[test]
@@ -3247,10 +3501,14 @@ mod tests {
             // Check if they ended up in same cluster (they're related, so might merge)
             let same_cluster = labels_a.iter().any(|&a| labels_b.contains(&a) && a >= 0);
 
-            println!("  {} vs {}: {:?} vs {:?} - {}",
-                     DOMAINS_15[domain_a], DOMAINS_15[domain_b],
-                     labels_a, labels_b,
-                     if same_cluster { "MERGED" } else { "SEPARATE" });
+            println!(
+                "  {} vs {}: {:?} vs {:?} - {}",
+                DOMAINS_15[domain_a],
+                DOMAINS_15[domain_b],
+                labels_a,
+                labels_b,
+                if same_cluster { "MERGED" } else { "SEPARATE" }
+            );
         }
 
         println!("\nTotal topics: {}", result.topics_discovered);
@@ -3266,33 +3524,51 @@ mod tests {
         let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
         for domain_idx in 0..5 {
             for i in 0..3 {
-                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+                fingerprints.push((
+                    Uuid::new_v4(),
+                    create_15domain_fingerprint(domain_idx, i as f32 * 0.1),
+                ));
             }
         }
 
         let result1 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
         println!("\n=== INCREMENTAL TEST ===");
-        println!("Phase 1 (5 domains, 15 memories): {} topics", result1.topics_discovered);
+        println!(
+            "Phase 1 (5 domains, 15 memories): {} topics",
+            result1.topics_discovered
+        );
 
         // Phase 2: Add 5 more domains (30 fingerprints total)
         for domain_idx in 5..10 {
             for i in 0..3 {
-                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+                fingerprints.push((
+                    Uuid::new_v4(),
+                    create_15domain_fingerprint(domain_idx, i as f32 * 0.1),
+                ));
             }
         }
 
         let result2 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
-        println!("Phase 2 (10 domains, 30 memories): {} topics", result2.topics_discovered);
+        println!(
+            "Phase 2 (10 domains, 30 memories): {} topics",
+            result2.topics_discovered
+        );
 
         // Phase 3: Add final 5 domains (45 fingerprints total)
         for domain_idx in 10..15 {
             for i in 0..3 {
-                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+                fingerprints.push((
+                    Uuid::new_v4(),
+                    create_15domain_fingerprint(domain_idx, i as f32 * 0.1),
+                ));
             }
         }
 
         let result3 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
-        println!("Phase 3 (15 domains, 45 memories): {} topics", result3.topics_discovered);
+        println!(
+            "Phase 3 (15 domains, 45 memories): {} topics",
+            result3.topics_discovered
+        );
 
         // Topics should increase as we add more domains
         assert!(
@@ -3317,7 +3593,10 @@ mod tests {
         // Add 10 domains (30 fingerprints)
         for domain_idx in 0..10 {
             for i in 0..3 {
-                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+                fingerprints.push((
+                    Uuid::new_v4(),
+                    create_15domain_fingerprint(domain_idx, i as f32 * 0.1),
+                ));
             }
         }
 
@@ -3332,8 +3611,14 @@ mod tests {
         let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
 
         println!("\n=== NOISE INJECTION TEST ===");
-        println!("Total memories: {} (30 regular + 5 noise)", result.memory_count());
-        println!("Topics: {}, Clusters: {}", result.topics_discovered, result.total_clusters);
+        println!(
+            "Total memories: {} (30 regular + 5 noise)",
+            result.memory_count()
+        );
+        println!(
+            "Topics: {}, Clusters: {}",
+            result.topics_discovered, result.total_clusters
+        );
         println!("Noise points: {}", result.noise_count());
         println!("Silhouette: {:.4}", result.silhouette_score);
 
@@ -3355,7 +3640,10 @@ mod tests {
         let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
         for domain_idx in 0..5 {
             for i in 0..3 {
-                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+                fingerprints.push((
+                    Uuid::new_v4(),
+                    create_15domain_fingerprint(domain_idx, i as f32 * 0.1),
+                ));
             }
         }
 
@@ -3392,15 +3680,25 @@ mod tests {
         intra_domain_avg /= intra_count as f32;
         inter_domain_avg /= inter_count as f32;
 
-        println!("Intra-domain avg similarity: {:.4} ({} pairs)", intra_domain_avg, intra_count);
-        println!("Inter-domain avg similarity: {:.4} ({} pairs)", inter_domain_avg, inter_count);
-        println!("Separation ratio: {:.2}x", intra_domain_avg / inter_domain_avg);
+        println!(
+            "Intra-domain avg similarity: {:.4} ({} pairs)",
+            intra_domain_avg, intra_count
+        );
+        println!(
+            "Inter-domain avg similarity: {:.4} ({} pairs)",
+            inter_domain_avg, inter_count
+        );
+        println!(
+            "Separation ratio: {:.2}x",
+            intra_domain_avg / inter_domain_avg
+        );
 
         // Intra-domain should be significantly higher than inter-domain
         assert!(
             intra_domain_avg > inter_domain_avg * 1.1,
             "Intra-domain similarity ({:.4}) should be > inter-domain ({:.4})",
-            intra_domain_avg, inter_domain_avg
+            intra_domain_avg,
+            inter_domain_avg
         );
 
         println!("\n[PASS] test_fdmc_similarity_matrix_structure");

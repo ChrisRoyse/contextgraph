@@ -59,7 +59,11 @@ impl InMemoryTeleologicalStore {
                 continue;
             }
 
-            results.push(TeleologicalSearchResult::new(fp.clone(), similarity, embedder_scores));
+            results.push(TeleologicalSearchResult::new(
+                fp.clone(),
+                similarity,
+                embedder_scores,
+            ));
         }
 
         results.sort_by(|a, b| {

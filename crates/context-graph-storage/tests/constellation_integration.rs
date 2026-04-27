@@ -10,12 +10,12 @@ use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use context_graph_core::constellation::types::{
-    EmbedderStats, VectorKind, CROSS_CORRELATION_CENTROID_DIM,
-    GROUP_ALIGNMENT_CENTROID_DIM, TOPIC_PROFILE_CENTROID_DIM,
+    EmbedderStats, VectorKind, CROSS_CORRELATION_CENTROID_DIM, GROUP_ALIGNMENT_CENTROID_DIM,
+    TOPIC_PROFILE_CENTROID_DIM,
 };
 use context_graph_core::constellation::{
-    compile_constellation, score_memory_against_constellation, Constellation,
-    ConstellationError, ConstellationSelector, MIN_CONSTELLATION_MEMBERS,
+    compile_constellation, score_memory_against_constellation, Constellation, ConstellationError,
+    ConstellationSelector, MIN_CONSTELLATION_MEMBERS,
 };
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 use context_graph_core::teleological::types::NUM_EMBEDDERS;
@@ -199,7 +199,10 @@ async fn roundtrip_constellation_preserves_all_fields() {
         back.group_alignment_centroid,
         original.group_alignment_centroid
     );
-    assert_eq!(back.cross_correlation_centroid, original.cross_correlation_centroid);
+    assert_eq!(
+        back.cross_correlation_centroid,
+        original.cross_correlation_centroid
+    );
     assert_eq!(back.coherence, original.coherence);
     assert_eq!(back.purity, original.purity);
 }
@@ -253,7 +256,10 @@ async fn delete_cleans_primary_and_secondary() {
         .is_some());
 
     let deleted = store.delete_constellation(c.id).await.unwrap();
-    assert!(deleted, "delete_constellation should report true on first delete");
+    assert!(
+        deleted,
+        "delete_constellation should report true on first delete"
+    );
 
     assert!(store.get_constellation(c.id).await.unwrap().is_none());
     assert!(store
@@ -569,7 +575,10 @@ async fn rebuild_for_same_selector_atomically_deletes_old_primary() {
     // generates a new Uuid::new_v4() inside `finalize`.
     let new = hand_built_constellation(selector.clone());
     let new_id = new.id;
-    assert_ne!(old_id, new_id, "sanity: test fixtures must use different UUIDs");
+    assert_ne!(
+        old_id, new_id,
+        "sanity: test fixtures must use different UUIDs"
+    );
     store.store_constellation(&new).await.unwrap();
 
     // Primary CF must contain ONLY the new record — the old one must have
@@ -615,7 +624,9 @@ async fn rebuild_for_same_selector_atomically_deletes_old_primary() {
 #[tokio::test(flavor = "multi_thread")]
 async fn restore_same_uuid_is_idempotent_and_keeps_the_row() {
     let (_td, store) = open_store();
-    let selector = ConstellationSelector::Tag { tag: "restore-same".into() };
+    let selector = ConstellationSelector::Tag {
+        tag: "restore-same".into(),
+    };
     let c = hand_built_constellation(selector.clone());
     let c_id = c.id;
 

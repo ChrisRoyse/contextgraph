@@ -24,7 +24,9 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, instrument, warn};
 
 use super::ast_chunker::{AstChunkConfig, AstChunkerError, AstCodeChunker};
-use super::code_capture::{CodeCaptureError, CodeCaptureService, CodeEmbeddingProvider, CodeStorage};
+use super::code_capture::{
+    CodeCaptureError, CodeCaptureService, CodeEmbeddingProvider, CodeStorage,
+};
 
 /// Errors from CodeFileWatcher operations.
 #[derive(Debug, Error)]
@@ -170,10 +172,11 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
         };
 
         // Create AST chunker for Rust
-        let chunker = AstCodeChunker::default_rust().map_err(|e| CodeWatcherError::ChunkingFailed {
-            path: PathBuf::from("init"),
-            source: e,
-        })?;
+        let chunker =
+            AstCodeChunker::default_rust().map_err(|e| CodeWatcherError::ChunkingFailed {
+                path: PathBuf::from("init"),
+                source: e,
+            })?;
 
         // Supported extensions
         let mut supported_extensions = HashSet::new();
@@ -200,10 +203,11 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
         config: AstChunkConfig,
     ) -> Result<Self, CodeWatcherError> {
         let mut watcher = Self::new(watch_paths, capture_service, session_id)?;
-        watcher.chunker = AstCodeChunker::new_rust(config).map_err(|e| CodeWatcherError::ChunkingFailed {
-            path: PathBuf::from("init"),
-            source: e,
-        })?;
+        watcher.chunker =
+            AstCodeChunker::new_rust(config).map_err(|e| CodeWatcherError::ChunkingFailed {
+                path: PathBuf::from("init"),
+                source: e,
+            })?;
         Ok(watcher)
     }
 
@@ -384,7 +388,13 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
     /// Scan a directory using git ls-files.
     async fn scan_directory_git(&mut self, dir: &Path) -> Result<usize, CodeWatcherError> {
         let output = Command::new("git")
-            .args(["ls-files", "--cached", "--others", "--exclude-standard", "."])
+            .args([
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                ".",
+            ])
             .current_dir(dir)
             .output()
             .map_err(|e| CodeWatcherError::GitCommandFailed {
@@ -427,12 +437,13 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
     /// Process a single code file.
     async fn process_file(&mut self, path: &Path) -> Result<Vec<uuid::Uuid>, CodeWatcherError> {
         // Read file content
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| CodeWatcherError::ReadFailed {
-                path: path.to_path_buf(),
-                source: e,
-            })?;
+        let content =
+            tokio::fs::read_to_string(path)
+                .await
+                .map_err(|e| CodeWatcherError::ReadFailed {
+                    path: path.to_path_buf(),
+                    source: e,
+                })?;
 
         // Compute hash
         let hash = Self::compute_hash(&content);
@@ -459,13 +470,12 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
             })?;
 
         // Parse file into chunks
-        let chunks = self
-            .chunker
-            .chunk(&content, &path_str)
-            .map_err(|e| CodeWatcherError::ChunkingFailed {
+        let chunks = self.chunker.chunk(&content, &path_str).map_err(|e| {
+            CodeWatcherError::ChunkingFailed {
                 path: path.to_path_buf(),
                 source: e,
-            })?;
+            }
+        })?;
 
         if chunks.is_empty() {
             debug!(path = ?path, "No code entities found in file");
@@ -495,7 +505,8 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeFileWatcher<E, S> {
     /// Handle file deletion by removing entities and cleaning up hash cache.
     async fn handle_file_deletion(&self, path: &Path) -> Result<usize, CodeWatcherError> {
         let path_str = path.to_string_lossy().to_string();
-        let deleted = self.capture_service
+        let deleted = self
+            .capture_service
             .delete_by_file(&path_str)
             .await
             .map_err(|e| CodeWatcherError::CaptureFailed {
@@ -572,22 +583,32 @@ mod tests {
     use uuid::Uuid;
 
     use super::super::code_capture::{CodeEmbedderError, CodeEmbeddingProvider, CodeStorage};
-    use crate::types::CodeLanguage;
     use crate::types::fingerprint::SemanticFingerprint;
     use crate::types::CodeEntity;
+    use crate::types::CodeLanguage;
 
     /// Mock embedding provider for testing.
     struct MockCodeEmbedder;
 
     #[async_trait]
     impl CodeEmbeddingProvider for MockCodeEmbedder {
-        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError> {
+        async fn embed_code(
+            &self,
+            _code: &str,
+            _context: Option<&str>,
+        ) -> Result<SemanticFingerprint, CodeEmbedderError> {
             // Return a complete zeroed fingerprint (all 13 embeddings)
             Ok(SemanticFingerprint::zeroed())
         }
 
-        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
-            Ok(codes.iter().map(|_| SemanticFingerprint::zeroed()).collect())
+        async fn embed_batch(
+            &self,
+            codes: &[(&str, Option<&str>)],
+        ) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
+            Ok(codes
+                .iter()
+                .map(|_| SemanticFingerprint::zeroed())
+                .collect())
         }
 
         fn is_ready(&self) -> bool {
@@ -612,7 +633,11 @@ mod tests {
 
     #[async_trait]
     impl CodeStorage for MockCodeStorage {
-        async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String> {
+        async fn store(
+            &self,
+            entity: &CodeEntity,
+            fingerprint: &SemanticFingerprint,
+        ) -> Result<(), String> {
             let mut entities = self.entities.write().await;
             let mut file_index = self.file_index.write().await;
 
@@ -676,14 +701,15 @@ mod tests {
     fn test_is_supported_code_file() {
         let embedder = Arc::new(MockCodeEmbedder);
         let storage = Arc::new(MockCodeStorage::new());
-        let capture = Arc::new(CodeCaptureService::new(embedder, storage, "test".to_string()));
+        let capture = Arc::new(CodeCaptureService::new(
+            embedder,
+            storage,
+            "test".to_string(),
+        ));
 
         // Create watcher in current directory (likely has git)
-        let watcher_result = CodeFileWatcher::new(
-            vec![PathBuf::from(".")],
-            capture,
-            "test".to_string(),
-        );
+        let watcher_result =
+            CodeFileWatcher::new(vec![PathBuf::from(".")], capture, "test".to_string());
 
         // This test may fail if not in a git repo, which is fine
         if let Ok(watcher) = watcher_result {
@@ -695,25 +721,25 @@ mod tests {
 
     #[test]
     fn test_compute_hash() {
-        let hash1 = CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn main() {}");
-        let hash2 = CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn main() {}");
-        let hash3 = CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn other() {}");
+        let hash1 =
+            CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn main() {}");
+        let hash2 =
+            CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn main() {}");
+        let hash3 =
+            CodeFileWatcher::<MockCodeEmbedder, MockCodeStorage>::compute_hash("fn other() {}");
 
         assert_eq!(hash1, hash2, "Same content should produce same hash");
-        assert_ne!(hash1, hash3, "Different content should produce different hash");
+        assert_ne!(
+            hash1, hash3,
+            "Different content should produce different hash"
+        );
         assert_eq!(hash1.len(), 64, "SHA256 hash should be 64 hex chars");
     }
 
     #[test]
     fn test_detect_language_from_path() {
-        assert_eq!(
-            CodeLanguage::from_path("test.rs"),
-            CodeLanguage::Rust
-        );
-        assert_eq!(
-            CodeLanguage::from_path("test.py"),
-            CodeLanguage::Python
-        );
+        assert_eq!(CodeLanguage::from_path("test.rs"), CodeLanguage::Rust);
+        assert_eq!(CodeLanguage::from_path("test.py"), CodeLanguage::Python);
         assert_eq!(
             CodeLanguage::from_path("test.unknown"),
             CodeLanguage::Unknown

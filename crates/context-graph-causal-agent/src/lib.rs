@@ -69,9 +69,7 @@ pub use scanner::MemoryScanner;
 // Shared types from core (no LLM required).
 pub use context_graph_core::types::{DiscoveryCycleResult, ServiceStatus};
 #[cfg(feature = "llm")]
-pub use service::{
-    CausalDiscoveryConfig, CausalDiscoveryService, CycleMetrics, DiscoveryCursor,
-};
+pub use service::{CausalDiscoveryConfig, CausalDiscoveryService, CycleMetrics, DiscoveryCursor};
 pub use types::{
     CausalAnalysisResult, CausalCandidate, CausalDirectionHint, CausalHint, CausalLinkDirection,
     MemoryForAnalysis,

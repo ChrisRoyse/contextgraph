@@ -35,7 +35,9 @@ pub enum FingerprintQuantizeError {
     InvalidInput { embedder: Embedder, message: String },
 
     /// Dimension mismatch for an embedder.
-    #[error("E_FP_QUANT_002: Dimension mismatch for {embedder:?}: expected {expected}, got {actual}")]
+    #[error(
+        "E_FP_QUANT_002: Dimension mismatch for {embedder:?}: expected {expected}, got {actual}"
+    )]
     DimensionMismatch {
         embedder: Embedder,
         expected: usize,
@@ -250,14 +252,15 @@ impl QuantizedSemanticFingerprint {
             + self.e10_multimodal_paraphrase.estimated_size_bytes()
             + self.e10_multimodal_as_context.estimated_size_bytes();
 
-        // Float8 embeddings (E2-E4, E8 source+target, E9, E11)
+        // Float8 embeddings (E2-E4, E8 source+target, E9, E11, E14)
         let float8_size = self.e2_temporal_recent.estimated_size_bytes()
             + self.e3_temporal_periodic.estimated_size_bytes()
             + self.e4_temporal_positional.estimated_size_bytes()
             + self.e8_graph_as_source.estimated_size_bytes()
             + self.e8_graph_as_target.estimated_size_bytes()
             + self.e9_hdc.estimated_size_bytes()
-            + self.e11_entity.estimated_size_bytes();
+            + self.e11_entity.estimated_size_bytes()
+            + self.e14_bge_m3_dense.estimated_size_bytes();
 
         // Token-level Float8
         let token_size: usize = self
@@ -267,8 +270,8 @@ impl QuantizedSemanticFingerprint {
             .sum();
 
         // Sparse
-        let sparse_size = self.e6_sparse.estimated_size_bytes()
-            + self.e13_splade.estimated_size_bytes();
+        let sparse_size =
+            self.e6_sparse.estimated_size_bytes() + self.e13_splade.estimated_size_bytes();
 
         pq8_size + float8_size + token_size + sparse_size + 64 // overhead estimate
     }
@@ -279,10 +282,7 @@ impl QuantizedSemanticFingerprint {
 // ============================================================================
 
 /// Validate that all values in a slice are finite (no NaN/Infinity). (AP-10)
-fn validate_finite(
-    data: &[f32],
-    embedder: Embedder,
-) -> Result<(), FingerprintQuantizeError> {
+fn validate_finite(data: &[f32], embedder: Embedder) -> Result<(), FingerprintQuantizeError> {
     for (i, &v) in data.iter().enumerate() {
         if !v.is_finite() {
             return Err(FingerprintQuantizeError::InvalidValue { embedder, index: i });
@@ -629,13 +629,21 @@ pub fn quantize_fingerprint(
     // PQ-8 quantization for high-dimensional semantic embeddings
     // Using num_subvectors = dim / 32 for each embedder
     let e1_semantic = quantize_pq8(&fp.e1_semantic, E1_DIM / 32, Embedder::Semantic)?; // 32 subvectors
-    // E5: Quantize BOTH cause and effect vectors (asymmetric dual vectors)
+                                                                                       // E5: Quantize BOTH cause and effect vectors (asymmetric dual vectors)
     let e5_causal_as_cause = quantize_pq8(&fp.e5_causal_as_cause, E5_DIM / 32, Embedder::Causal)?;
     let e5_causal_as_effect = quantize_pq8(&fp.e5_causal_as_effect, E5_DIM / 32, Embedder::Causal)?;
     let e7_code = quantize_pq8(&fp.e7_code, E7_DIM / 32, Embedder::Code)?; // 48 subvectors
-    // E10: Quantize BOTH paraphrase and context vectors (asymmetric dual vectors)
-    let e10_multimodal_paraphrase = quantize_pq8(&fp.e10_multimodal_paraphrase, E10_DIM / 32, Embedder::Contextual)?;
-    let e10_multimodal_as_context = quantize_pq8(&fp.e10_multimodal_as_context, E10_DIM / 32, Embedder::Contextual)?;
+                                                                           // E10: Quantize BOTH paraphrase and context vectors (asymmetric dual vectors)
+    let e10_multimodal_paraphrase = quantize_pq8(
+        &fp.e10_multimodal_paraphrase,
+        E10_DIM / 32,
+        Embedder::Contextual,
+    )?;
+    let e10_multimodal_as_context = quantize_pq8(
+        &fp.e10_multimodal_as_context,
+        E10_DIM / 32,
+        Embedder::Contextual,
+    )?;
 
     // Float8 quantization for temporal and relational embeddings
     let e2_temporal_recent =
@@ -773,9 +781,21 @@ fn validate_fingerprint_dimensions(
     fp: &SemanticFingerprint,
 ) -> Result<(), FingerprintQuantizeError> {
     check_dim(fp.e1_semantic.len(), E1_DIM, Embedder::Semantic)?;
-    check_dim(fp.e2_temporal_recent.len(), E2_DIM, Embedder::TemporalRecent)?;
-    check_dim(fp.e3_temporal_periodic.len(), E3_DIM, Embedder::TemporalPeriodic)?;
-    check_dim(fp.e4_temporal_positional.len(), E4_DIM, Embedder::TemporalPositional)?;
+    check_dim(
+        fp.e2_temporal_recent.len(),
+        E2_DIM,
+        Embedder::TemporalRecent,
+    )?;
+    check_dim(
+        fp.e3_temporal_periodic.len(),
+        E3_DIM,
+        Embedder::TemporalPeriodic,
+    )?;
+    check_dim(
+        fp.e4_temporal_positional.len(),
+        E4_DIM,
+        Embedder::TemporalPositional,
+    )?;
     // Validate BOTH asymmetric dual vectors for E5, E8, E10
     check_dim(fp.e5_causal_as_cause.len(), E5_DIM, Embedder::Causal)?;
     check_dim(fp.e5_causal_as_effect.len(), E5_DIM, Embedder::Causal)?;
@@ -783,8 +803,16 @@ fn validate_fingerprint_dimensions(
     check_dim(fp.e8_graph_as_source.len(), E8_DIM, Embedder::Graph)?;
     check_dim(fp.e8_graph_as_target.len(), E8_DIM, Embedder::Graph)?;
     check_dim(fp.e9_hdc.len(), E9_DIM, Embedder::Hdc)?;
-    check_dim(fp.e10_multimodal_paraphrase.len(), E10_DIM, Embedder::Contextual)?;
-    check_dim(fp.e10_multimodal_as_context.len(), E10_DIM, Embedder::Contextual)?;
+    check_dim(
+        fp.e10_multimodal_paraphrase.len(),
+        E10_DIM,
+        Embedder::Contextual,
+    )?;
+    check_dim(
+        fp.e10_multimodal_as_context.len(),
+        E10_DIM,
+        Embedder::Contextual,
+    )?;
     check_dim(fp.e11_entity.len(), E11_DIM, Embedder::Entity)?;
 
     // Validate E12 token dimensions (NaN/Infinity checked during quantization)
@@ -971,8 +999,16 @@ mod tests {
         let quantized = quantize_pq8(&data, 32, Embedder::Semantic).expect("quantization failed");
 
         // Verify min/max were stored correctly
-        assert!((quantized.min_val - 0.0).abs() < 0.01, "min_val should be ~0.0, got {}", quantized.min_val);
-        assert!((quantized.max_val - 0.8).abs() < 0.01, "max_val should be ~0.8, got {}", quantized.max_val);
+        assert!(
+            (quantized.min_val - 0.0).abs() < 0.01,
+            "min_val should be ~0.0, got {}",
+            quantized.min_val
+        );
+        assert!(
+            (quantized.max_val - 0.8).abs() < 0.01,
+            "max_val should be ~0.8, got {}",
+            quantized.max_val
+        );
 
         let dequantized = dequantize_pq8(&quantized);
 
@@ -1003,24 +1039,38 @@ mod tests {
         let quantized = quantize_pq8(&data, 24, Embedder::Causal).expect("quantization failed");
 
         // Verify stored min/max match the actual data range
-        assert!((quantized.min_val - 0.2).abs() < 0.01,
-            "min_val should be ~0.2, got {}", quantized.min_val);
-        assert!((quantized.max_val - 0.6).abs() < 0.01,
-            "max_val should be ~0.6, got {}", quantized.max_val);
+        assert!(
+            (quantized.min_val - 0.2).abs() < 0.01,
+            "min_val should be ~0.2, got {}",
+            quantized.min_val
+        );
+        assert!(
+            (quantized.max_val - 0.6).abs() < 0.01,
+            "max_val should be ~0.6, got {}",
+            quantized.max_val
+        );
 
         let dequantized = dequantize_pq8(&quantized);
         assert_eq!(dequantized.len(), 768);
 
         // All dequantized values must be within [0.2, 0.6] (with quantization tolerance)
         for (i, &v) in dequantized.iter().enumerate() {
-            assert!((0.15..=0.65).contains(&v),
-                "Dequantized value {} at index {} outside expected range [0.2, 0.6]", v, i);
+            assert!(
+                (0.15..=0.65).contains(&v),
+                "Dequantized value {} at index {} outside expected range [0.2, 0.6]",
+                v,
+                i
+            );
         }
 
         // RMSE should be reasonable
         let rmse = compute_rmse(&data, &dequantized);
         println!("PQ-8 asymmetric range RMSE: {:.6}", rmse);
-        assert!(rmse < 0.1, "PQ-8 asymmetric range RMSE {} is too high", rmse);
+        assert!(
+            rmse < 0.1,
+            "PQ-8 asymmetric range RMSE {} is too high",
+            rmse
+        );
     }
 
     #[test]
@@ -1135,10 +1185,7 @@ mod tests {
         let qfp = quantize_fingerprint(&fp).expect("quantization failed");
 
         let bytes = bincode::serialize(&qfp).expect("serialize failed");
-        println!(
-            "VERIFY: Size = {} bytes (target < 15000)",
-            bytes.len()
-        );
+        println!("VERIFY: Size = {} bytes (target < 15000)", bytes.len());
 
         assert!(
             bytes.len() < 15000,
@@ -1166,8 +1213,16 @@ mod tests {
                 &fp.e4_temporal_positional,
                 &recovered.e4_temporal_positional,
             ),
-            ("E8_source", &fp.e8_graph_as_source, &recovered.e8_graph_as_source),
-            ("E8_target", &fp.e8_graph_as_target, &recovered.e8_graph_as_target),
+            (
+                "E8_source",
+                &fp.e8_graph_as_source,
+                &recovered.e8_graph_as_source,
+            ),
+            (
+                "E8_target",
+                &fp.e8_graph_as_target,
+                &recovered.e8_graph_as_target,
+            ),
             ("E9", &fp.e9_hdc, &recovered.e9_hdc),
             ("E11", &fp.e11_entity, &recovered.e11_entity),
         ];
@@ -1185,7 +1240,10 @@ mod tests {
             );
         }
 
-        println!("Float8 max NRMSE: {:.4}% (threshold < 1%)", max_nrmse * 100.0);
+        println!(
+            "Float8 max NRMSE: {:.4}% (threshold < 1%)",
+            max_nrmse * 100.0
+        );
     }
 
     #[test]
@@ -1198,11 +1256,27 @@ mod tests {
         // Note: PQ-8 with mean-based approximation has higher error
         let pairs: [(&str, &[f32], &[f32]); 6] = [
             ("E1", &fp.e1_semantic, &recovered.e1_semantic),
-            ("E5_cause", &fp.e5_causal_as_cause, &recovered.e5_causal_as_cause),
-            ("E5_effect", &fp.e5_causal_as_effect, &recovered.e5_causal_as_effect),
+            (
+                "E5_cause",
+                &fp.e5_causal_as_cause,
+                &recovered.e5_causal_as_cause,
+            ),
+            (
+                "E5_effect",
+                &fp.e5_causal_as_effect,
+                &recovered.e5_causal_as_effect,
+            ),
             ("E7", &fp.e7_code, &recovered.e7_code),
-            ("E10_paraphrase", &fp.e10_multimodal_paraphrase, &recovered.e10_multimodal_paraphrase),
-            ("E10_context", &fp.e10_multimodal_as_context, &recovered.e10_multimodal_as_context),
+            (
+                "E10_paraphrase",
+                &fp.e10_multimodal_paraphrase,
+                &recovered.e10_multimodal_paraphrase,
+            ),
+            (
+                "E10_context",
+                &fp.e10_multimodal_as_context,
+                &recovered.e10_multimodal_as_context,
+            ),
         ];
 
         for (name, original, recovered) in pairs {
@@ -1246,7 +1320,10 @@ mod tests {
         assert_eq!(qfp.e6_sparse.indices.len(), 1500);
         assert_eq!(qfp.e13_splade.indices.len(), 1500);
 
-        println!("VERIFY: Max sparse indices preserved = {}", qfp.e6_sparse.nnz());
+        println!(
+            "VERIFY: Max sparse indices preserved = {}",
+            qfp.e6_sparse.nnz()
+        );
     }
 
     #[test]
@@ -1263,7 +1340,10 @@ mod tests {
 
         // First value should be approximately 0.5
         let first_val = recovered.e2_temporal_recent[0];
-        println!("VERIFY: Constant vector first value = {:.4} (expect ~0.5)", first_val);
+        println!(
+            "VERIFY: Constant vector first value = {:.4} (expect ~0.5)",
+            first_val
+        );
         assert!(
             (first_val - 0.5).abs() < 0.01,
             "Expected ~0.5, got {}",
@@ -1328,12 +1408,18 @@ mod tests {
         let fp = test_fingerprint();
 
         // Verify the test data itself has DIFFERENT cause/effect vectors
-        assert_ne!(fp.e5_causal_as_cause, fp.e5_causal_as_effect,
-            "Test setup: E5 cause and effect must be different");
-        assert_ne!(fp.e8_graph_as_source, fp.e8_graph_as_target,
-            "Test setup: E8 source and target must be different");
-        assert_ne!(fp.e10_multimodal_paraphrase, fp.e10_multimodal_as_context,
-            "Test setup: E10 paraphrase and context must be different");
+        assert_ne!(
+            fp.e5_causal_as_cause, fp.e5_causal_as_effect,
+            "Test setup: E5 cause and effect must be different"
+        );
+        assert_ne!(
+            fp.e8_graph_as_source, fp.e8_graph_as_target,
+            "Test setup: E8 source and target must be different"
+        );
+        assert_ne!(
+            fp.e10_multimodal_paraphrase, fp.e10_multimodal_as_context,
+            "Test setup: E10 paraphrase and context must be different"
+        );
 
         let qfp = quantize_fingerprint(&fp).expect("quantization failed");
         let recovered = dequantize_fingerprint(&qfp).expect("dequantization failed");
@@ -1348,12 +1434,36 @@ mod tests {
 
         // Check RMSE for each direction independently
         let pairs: [(&str, &[f32], &[f32]); 6] = [
-            ("E5_cause", &fp.e5_causal_as_cause, &recovered.e5_causal_as_cause),
-            ("E5_effect", &fp.e5_causal_as_effect, &recovered.e5_causal_as_effect),
-            ("E8_source", &fp.e8_graph_as_source, &recovered.e8_graph_as_source),
-            ("E8_target", &fp.e8_graph_as_target, &recovered.e8_graph_as_target),
-            ("E10_paraphrase", &fp.e10_multimodal_paraphrase, &recovered.e10_multimodal_paraphrase),
-            ("E10_context", &fp.e10_multimodal_as_context, &recovered.e10_multimodal_as_context),
+            (
+                "E5_cause",
+                &fp.e5_causal_as_cause,
+                &recovered.e5_causal_as_cause,
+            ),
+            (
+                "E5_effect",
+                &fp.e5_causal_as_effect,
+                &recovered.e5_causal_as_effect,
+            ),
+            (
+                "E8_source",
+                &fp.e8_graph_as_source,
+                &recovered.e8_graph_as_source,
+            ),
+            (
+                "E8_target",
+                &fp.e8_graph_as_target,
+                &recovered.e8_graph_as_target,
+            ),
+            (
+                "E10_paraphrase",
+                &fp.e10_multimodal_paraphrase,
+                &recovered.e10_multimodal_paraphrase,
+            ),
+            (
+                "E10_context",
+                &fp.e10_multimodal_as_context,
+                &recovered.e10_multimodal_as_context,
+            ),
         ];
 
         for (name, original, reconstructed) in pairs {
@@ -1431,20 +1541,42 @@ mod tests {
             let cosine_dev = (1.0 - orig.cosine_similarity(&rec)).abs();
             max_cosine_deviation = max_cosine_deviation.max(cosine_dev);
 
-            println!("Fingerprint {}: size={}B, Float8 NRMSE={:.4}%, cos_dev={:.4}%",
-                i, bytes.len(), nrmse_e2 * 100.0, cosine_dev * 100.0);
+            println!(
+                "Fingerprint {}: size={}B, Float8 NRMSE={:.4}%, cos_dev={:.4}%",
+                i,
+                bytes.len(),
+                nrmse_e2 * 100.0,
+                cosine_dev * 100.0
+            );
         }
 
         println!("Fingerprints tested: {}", fps.len());
-        println!("Size range: [{}]B - [{}]B (threshold < 15000B)", min_size, max_size);
-        println!("Float8 NRMSE: max {:.4}% (threshold < 1%)", max_float8_nrmse * 100.0);
-        println!("Cosine deviation: max {:.4}% (threshold < 5%)", max_cosine_deviation * 100.0);
+        println!(
+            "Size range: [{}]B - [{}]B (threshold < 15000B)",
+            min_size, max_size
+        );
+        println!(
+            "Float8 NRMSE: max {:.4}% (threshold < 1%)",
+            max_float8_nrmse * 100.0
+        );
+        println!(
+            "Cosine deviation: max {:.4}% (threshold < 5%)",
+            max_cosine_deviation * 100.0
+        );
         println!("Edge cases: 3/3 PASSED (tested above)");
 
         // Final assertions
         assert!(max_size < 15000, "Size {} exceeds threshold", max_size);
-        assert!(max_float8_nrmse < 0.01, "Float8 NRMSE {} exceeds 1%", max_float8_nrmse * 100.0);
-        assert!(max_cosine_deviation < 0.05, "Cosine deviation {} exceeds 5%", max_cosine_deviation * 100.0);
+        assert!(
+            max_float8_nrmse < 0.01,
+            "Float8 NRMSE {} exceeds 1%",
+            max_float8_nrmse * 100.0
+        );
+        assert!(
+            max_cosine_deviation < 0.05,
+            "Cosine deviation {} exceeds 5%",
+            max_cosine_deviation * 100.0
+        );
 
         println!("ALL VERIFICATIONS PASSED");
     }

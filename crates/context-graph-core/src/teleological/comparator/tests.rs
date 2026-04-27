@@ -3,9 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::teleological::comparator::{BatchComparator, TeleologicalComparator};
-    use crate::teleological::{
-        ComparisonValidationError, MatrixSearchConfig, SearchStrategy,
-    };
+    use crate::teleological::{ComparisonValidationError, MatrixSearchConfig, SearchStrategy};
     use crate::types::fingerprint::{
         SparseVector, E10_DIM, E11_DIM, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E7_DIM,
         E8_DIM, E9_DIM,
@@ -104,7 +102,9 @@ mod tests {
 
         // Orthogonal vectors: raw cosine ~0.0, normalized (0+1)/2 = 0.5 (midpoint)
         assert!(
-            result.per_embedder[0].map(|s| (s - 0.5).abs() < 0.01).unwrap_or(false),
+            result.per_embedder[0]
+                .map(|s| (s - 0.5).abs() < 0.01)
+                .unwrap_or(false),
             "E1 similarity for orthogonal vectors should be ~0.5 (midpoint), got {:?}",
             result.per_embedder[0]
         );

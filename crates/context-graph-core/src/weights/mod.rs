@@ -155,7 +155,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Causal Reasoning: "Why" questions - E1 primary, E5 binary gate signal only
     // E5 demoted from 0.45→0.10: produces degenerate embeddings (0.93-0.98 for all text)
     // E1 promoted to 0.40: proven 3/3 correct top-1, 17x better discrimination than E5
@@ -178,7 +177,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Code Search: Programming queries - E7 primary
     (
         "code_search",
@@ -199,7 +197,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Fact Checking: Entity/fact queries - E11 primary, E6 for keywords
     (
         "fact_checking",
@@ -220,7 +217,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // =========================================================================
     // GRAPH REASONING PROFILE - E8 primary for structural queries
     // =========================================================================
@@ -246,7 +242,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // =========================================================================
     // SPECIAL PROFILES
     // =========================================================================
@@ -273,7 +268,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // =========================================================================
     // SEQUENCE NAVIGATION PROFILES - E4 focused
     // =========================================================================
@@ -298,7 +292,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Conversation History: Balanced E4 + E1 for contextual recall
     (
         "conversation_history",
@@ -319,30 +312,28 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Category-Weighted: Constitution-compliant weights per CLAUDE.md and ARCH-13
     // L8 FIX: Profile normalizer = 6.5 (5 SEMANTIC×1.0 + 2 RELATIONAL×0.5 + 1 STRUCTURAL×0.5)
     // Note: Topic max_weighted_agreement = 8.5 per constitution (includes E12, E13)
     (
         "category_weighted",
         [
-            1.0 / 6.5,   // E1_Semantic (SEMANTIC)
-            0.0,         // E2_Temporal_Recent (TEMPORAL - excluded per AP-60)
-            0.0,         // E3_Temporal_Periodic (TEMPORAL - excluded per AP-60)
-            0.0,         // E4_Temporal_Positional (TEMPORAL - excluded per AP-60)
-            1.0 / 6.5,   // E5_Causal (SEMANTIC)
-            1.0 / 6.5,   // E6_Sparse (SEMANTIC)
-            1.0 / 6.5,   // E7_Code (SEMANTIC)
-            0.5 / 6.5,   // E8_Graph (RELATIONAL)
-            0.5 / 6.5,   // E9_HDC (STRUCTURAL)
-            1.0 / 6.5,   // E10_Multimodal (SEMANTIC)
-            0.5 / 6.5,   // E11_Entity (RELATIONAL)
-            0.0,         // E12_Late_Interaction (PIPELINE-STAGE)
-            0.0,         // E13_SPLADE (PIPELINE-STAGE)
-            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
+            1.0 / 6.5, // E1_Semantic (SEMANTIC)
+            0.0,       // E2_Temporal_Recent (TEMPORAL - excluded per AP-60)
+            0.0,       // E3_Temporal_Periodic (TEMPORAL - excluded per AP-60)
+            0.0,       // E4_Temporal_Positional (TEMPORAL - excluded per AP-60)
+            1.0 / 6.5, // E5_Causal (SEMANTIC)
+            1.0 / 6.5, // E6_Sparse (SEMANTIC)
+            1.0 / 6.5, // E7_Code (SEMANTIC)
+            0.5 / 6.5, // E8_Graph (RELATIONAL)
+            0.5 / 6.5, // E9_HDC (STRUCTURAL)
+            1.0 / 6.5, // E10_Multimodal (SEMANTIC)
+            0.5 / 6.5, // E11_Entity (RELATIONAL)
+            0.0,       // E12_Late_Interaction (PIPELINE-STAGE)
+            0.0,       // E13_SPLADE (PIPELINE-STAGE)
+            0.0,       // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // =========================================================================
     // TYPO-TOLERANT PROFILE - E9 primary for noisy queries
     // =========================================================================
@@ -369,7 +360,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // =========================================================================
     // PIPELINE-AWARE PROFILES - Phase 5 E12/E13 Integration
     // =========================================================================
@@ -394,7 +384,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Pipeline Stage 2 Scoring: E1-heavy for dense candidate scoring
     (
         "pipeline_stage2_scoring",
@@ -415,7 +404,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Pipeline Full: Combined profile for complete pipeline execution
     (
         "pipeline_full",
@@ -436,16 +424,14 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
-
     // Balanced: Equal weights across all 14 spaces (for testing/comparison)
     (
         "balanced",
         [
-            0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715,
-            0.0715, 0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 ≈ 1.0 (sum = 0.9995)
+            0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715,
+            0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 ≈ 1.0 (sum = 0.9995)
         ],
     ),
-
     // =========================================================================
     // E14-OPTIMISED PROFILES — multilingual / long-context / translation
     // =========================================================================
@@ -481,7 +467,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.40, // E14_BgeM3Dense (PRIMARY — multilingual semantic manifold)
         ],
     ),
-
     // Long Context: for documents/queries that blow past 512 tokens.
     // E14 sees 8192 tokens; all other dense embedders truncate at 512.
     // This profile gives E14 the plurality so long-doc content actually
@@ -505,7 +490,6 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.45, // E14_BgeM3Dense (PRIMARY — full-document context)
         ],
     ),
-
     // Translation Finder: explicitly find cross-lingual paraphrases /
     // translation pairs / near-duplicates across language boundaries.
     // E14 dominant (0.70), E10 paraphrase backup (0.20), E11 entity
@@ -563,7 +547,9 @@ pub fn get_profile_names() -> Vec<&'static str> {
 /// This is the preferred entry point for production search code. It returns the
 /// same weights as `get_weight_profile` but with E11's weight redistributed to
 /// remaining active embedders when E11 is disabled.
-pub fn get_effective_weight_profile(name: &str) -> Result<[f32; NUM_EMBEDDERS], WeightProfileError> {
+pub fn get_effective_weight_profile(
+    name: &str,
+) -> Result<[f32; NUM_EMBEDDERS], WeightProfileError> {
     let mut weights = get_weight_profile(name)?;
     if !E11_ENTITY_ENABLED {
         apply_e11_disable(&mut weights);
@@ -645,7 +631,10 @@ mod tests {
     #[test]
     fn test_unknown_profile_fails_fast() {
         let result = get_weight_profile("nonexistent");
-        assert!(matches!(result, Err(WeightProfileError::UnknownProfile { .. })));
+        assert!(matches!(
+            result,
+            Err(WeightProfileError::UnknownProfile { .. })
+        ));
 
         if let Err(WeightProfileError::UnknownProfile { name, available }) = result {
             assert_eq!(name, "nonexistent");
@@ -687,7 +676,10 @@ mod tests {
                 NUM_EMBEDDERS
             );
         }
-        println!("[VERIFIED] All profiles have exactly {} weights", NUM_EMBEDDERS);
+        println!(
+            "[VERIFIED] All profiles have exactly {} weights",
+            NUM_EMBEDDERS
+        );
     }
 
     #[test]
@@ -698,14 +690,20 @@ mod tests {
         let weights = weights.unwrap();
         assert!((weights[7] - 0.40).abs() < 0.001, "E8 Graph should be 0.40");
         assert!(weights[7] > weights[0], "E8 > E1 for graph reasoning");
-        println!("[VERIFIED] graph_reasoning has E8={:.2} as primary", weights[7]);
+        println!(
+            "[VERIFIED] graph_reasoning has E8={:.2} as primary",
+            weights[7]
+        );
     }
 
     #[test]
     fn test_temporal_embedders_excluded_from_semantic_profiles() {
         let semantic_profiles = [
-            "semantic_search", "causal_reasoning", "code_search",
-            "fact_checking", "graph_reasoning"
+            "semantic_search",
+            "causal_reasoning",
+            "code_search",
+            "fact_checking",
+            "graph_reasoning",
         ];
 
         for profile_name in semantic_profiles {
@@ -796,7 +794,10 @@ mod tests {
         assert!(names.contains(&"code_search"));
         assert!(names.contains(&"causal_reasoning"));
         assert!(names.contains(&"graph_reasoning"));
-        println!("[VERIFIED] get_profile_names returns {} profiles", names.len());
+        println!(
+            "[VERIFIED] get_profile_names returns {} profiles",
+            names.len()
+        );
     }
 
     #[test]
@@ -824,8 +825,8 @@ mod tests {
     #[test]
     fn test_apply_e11_disable_redistributes() {
         let mut weights = [0.0f32; NUM_EMBEDDERS];
-        weights[0] = 0.5;  // E1
-        weights[6] = 0.3;  // E7
+        weights[0] = 0.5; // E1
+        weights[6] = 0.3; // E7
         weights[10] = 0.2; // E11
         let original_sum: f32 = weights.iter().sum();
 

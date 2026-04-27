@@ -729,7 +729,6 @@ impl EmbeddingMetadata {
     pub fn e3_instruction(&self) -> String {
         self.e2_instruction()
     }
-
 }
 
 /// Multi-Array Embedding Provider trait.
@@ -1343,7 +1342,10 @@ mod tests {
         assert_eq!(dims[4], 768, "E5 causal should be 768D");
         assert_eq!(dims[5], 0, "E6 sparse should be 0 (variable)");
         assert_eq!(dims[6], 1536, "E7 code should be 1536D");
-        assert_eq!(dims[7], 1024, "E8 graph should be 1024D (upgraded from MiniLM)");
+        assert_eq!(
+            dims[7], 1024,
+            "E8 graph should be 1024D (upgraded from MiniLM)"
+        );
         assert_eq!(dims[8], 1024, "E9 HDC should be 1024D (projected)");
         assert_eq!(dims[9], 768, "E10 multimodal should be 768D");
         assert_eq!(dims[10], 768, "E11 entity should be 768D (KEPLER)");
@@ -1463,7 +1465,7 @@ mod tests {
         assert_eq!(fp.e8_graph_as_target.len(), 1024);
         assert!(fp.e8_graph.is_empty()); // Legacy field empty in new format
         assert_eq!(fp.e9_hdc.len(), 1024); // HDC projected
-        // E10 now uses dual vectors for asymmetric paraphrase/context similarity
+                                           // E10 now uses dual vectors for asymmetric paraphrase/context similarity
         assert_eq!(fp.e10_multimodal_paraphrase.len(), 768);
         assert_eq!(fp.e10_multimodal_as_context.len(), 768);
         assert_eq!(fp.e11_entity.len(), 768); // KEPLER

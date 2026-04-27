@@ -348,9 +348,15 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
         ColumnFamilyDescriptor::new(cf_names::SOURCES, index_options(block_cache)),
         ColumnFamilyDescriptor::new(cf_names::SYSTEM, system_options()),
         // Graph linking column families (TASK-GRAPHLINK-010)
-        ColumnFamilyDescriptor::new(cf_names::EMBEDDER_EDGES, embedder_edges_options(block_cache)),
+        ColumnFamilyDescriptor::new(
+            cf_names::EMBEDDER_EDGES,
+            embedder_edges_options(block_cache),
+        ),
         ColumnFamilyDescriptor::new(cf_names::TYPED_EDGES, typed_edges_options(block_cache)),
-        ColumnFamilyDescriptor::new(cf_names::TYPED_EDGES_BY_TYPE, typed_edges_by_type_options(block_cache)),
+        ColumnFamilyDescriptor::new(
+            cf_names::TYPED_EDGES_BY_TYPE,
+            typed_edges_by_type_options(block_cache),
+        ),
     ]
 }
 
@@ -504,7 +510,11 @@ mod tests {
     fn test_get_descriptors_returns_11() {
         let cache = Cache::new_lru_cache(256 * 1024 * 1024);
         let descriptors = get_column_family_descriptors(&cache);
-        assert_eq!(descriptors.len(), 11, "Must return exactly 11 descriptors (8 base + 3 graph linking)");
+        assert_eq!(
+            descriptors.len(),
+            11,
+            "Must return exactly 11 descriptors (8 base + 3 graph linking)"
+        );
     }
 
     #[test]
@@ -753,5 +763,4 @@ mod tests {
             "Missing CF: custom_weight_profiles"
         );
     }
-
 }
