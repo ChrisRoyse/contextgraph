@@ -26,6 +26,7 @@ apply_preimport_cuda_env()
 
 
 DEFAULT_OUTPUT = Path("~/.contextgraph/reports/cuda13_wsl_fsv_latest.json").expanduser()
+DEFAULT_EXPECTED_PYTHON = Path("/home/cabdru/miniconda3/bin/python3")
 
 
 class FsvError(RuntimeError):
@@ -104,6 +105,26 @@ def apt_cuda_policy() -> dict[str, str]:
     return {"cuda-toolkit-13-2": out["stdout"]}
 
 
+def python_runtime(args: argparse.Namespace) -> dict[str, Any]:
+    expected = args.expected_python.expanduser()
+    actual = Path(sys.executable)
+    if actual != expected and actual.resolve() != expected.resolve():
+        raise FsvError(
+            f"wrong Python interpreter: expected {expected} "
+            f"(resolved {expected.resolve()}), got {actual} "
+            f"(resolved {actual.resolve()})"
+        )
+    return {
+        "executable": str(actual),
+        "resolved_executable": str(actual.resolve()),
+        "version": sys.version,
+        "prefix": sys.prefix,
+        "base_prefix": sys.base_prefix,
+        "expected_executable": str(expected),
+        "expected_resolved_executable": str(expected.resolve()),
+    }
+
+
 def cuda_benchmarks(torch: Any, matmul_size: int) -> dict[str, Any]:
     if matmul_size <= 0:
         raise FsvError(f"matmul_size must be positive, got {matmul_size}")
@@ -153,6 +174,8 @@ def cuda_benchmarks(torch: Any, matmul_size: int) -> dict[str, Any]:
 
 
 def build_report(args: argparse.Namespace) -> dict[str, Any]:
+    python_info = python_runtime(args)
+
     import torch
 
     cuda_info = configure_torch_cuda(
@@ -178,7 +201,9 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
         "source_of_truth": {
             "report_path": str(args.output.expanduser()),
             "gpu_runtime": "nvidia-smi + torch.cuda + persisted JSON report",
+            "python_runtime": str(args.expected_python.expanduser()),
         },
+        "python": python_info,
         "host": {
             "uname": run_cmd(["uname", "-a"]),
             "os_release": Path("/etc/os-release").read_text(encoding="utf-8"),
@@ -246,9 +271,13 @@ def readback_verify(path: Path) -> dict[str, Any]:
         raise FsvError(f"readback arch_list missing sm_120: {torch_info}")
     if report.get("python_packages", {}).get("torch") != "2.11.0+cu130":
         raise FsvError("readback torch package version mismatch")
+    python_info = report.get("python", {})
+    if python_info.get("resolved_executable") != python_info.get("expected_resolved_executable"):
+        raise FsvError(f"readback python runtime mismatch: {python_info}")
     return {
         "path": str(path),
         "size_bytes": path.stat().st_size,
+        "python": report["python"]["executable"],
         "torch": report["python_packages"]["torch"],
         "transformers": report["python_packages"]["transformers"],
         "trl": report["python_packages"]["trl"],
@@ -322,6 +351,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     ap.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     ap.add_argument("--matmul-size", type=int, default=4096)
     ap.add_argument("--min-vram-gib", type=float, default=31.0)
+    ap.add_argument("--expected-python", type=Path, default=DEFAULT_EXPECTED_PYTHON)
     return ap.parse_args(argv)
 
 
@@ -334,12 +364,13 @@ def main(argv: list[str] | None = None) -> int:
         print(traceback.format_exc(), file=sys.stderr)
         return 1
     finally:
-        try:
-            import torch
-            release_torch_cuda(torch)
-        except Exception:
-            print(traceback.format_exc(), file=sys.stderr)
-            return 1
+        torch_module = sys.modules.get("torch")
+        if torch_module is not None:
+            try:
+                release_torch_cuda(torch_module)
+            except Exception:
+                print(traceback.format_exc(), file=sys.stderr)
+                return 1
 
 
 if __name__ == "__main__":
