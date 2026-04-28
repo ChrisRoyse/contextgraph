@@ -37,6 +37,8 @@ Prerequisites:
 from __future__ import annotations
 
 import argparse
+import atexit
+import gc
 import json
 import os
 import sys
@@ -54,6 +56,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pairs", type=Path,
                    default=Path("~/.contextgraph/training/v4_2_camd_pairs.jsonl").expanduser(),
                    help="CAMD pairs JSONL from mine_camd_pairs.py.")
+    p.add_argument("--learner-pairs", type=Path, default=None,
+                   help="Optional learner-conditioned DPO pairs JSONL from "
+                        "build_learner_dpo_pairs.py. When provided, these are "
+                        "concatenated with CAMD content pairs into one DPO loss.")
+    p.add_argument("--learner-repeat", type=int, default=1,
+                   help="Integer repeat count for learner pairs in the unified "
+                        "DPO dataset. Must be >= 1 when --learner-pairs is set.")
     p.add_argument("--output-dir", type=Path,
                    default=Path("~/.contextgraph/models/shakespeare_lora_v4_2/dpo").expanduser())
     p.add_argument("--epochs", type=int, default=1)
@@ -89,46 +98,102 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def validate_pairs(pairs_path: Path) -> int:
+def validate_pairs(pairs_path: Path, label: str,
+                   required_meta_source: str | None = None) -> int:
     if not pairs_path.exists():
-        raise FileNotFoundError(f"pairs not found: {pairs_path}")
+        raise FileNotFoundError(f"{label} pairs not found: {pairs_path}")
     n = 0
     with open(pairs_path) as f:
         for line in f:
+            n += 1
             obj = json.loads(line)
             for k in ("prompt", "chosen", "rejected"):
                 if k not in obj or not obj[k]:
-                    raise ValueError(f"pair at line {n+1} missing {k}")
-            n += 1
+                    raise ValueError(f"{label} pair at line {n} missing {k}")
+            if obj["chosen"] == obj["rejected"]:
+                raise ValueError(f"{label} pair at line {n} has identical chosen/rejected")
+            if required_meta_source is not None:
+                meta = obj.get("meta") or {}
+                if meta.get("source") != required_meta_source:
+                    raise ValueError(
+                        f"{label} pair at line {n} meta.source must be "
+                        f"{required_meta_source!r}"
+                    )
     if n == 0:
-        raise ValueError(f"pairs file empty: {pairs_path}")
+        raise ValueError(f"{label} pairs file empty: {pairs_path}")
     return n
+
+
+def load_pair_records(pairs_path: Path, label: str) -> list[dict]:
+    """Load validated DPO pairs into memory without creating HF JSON caches."""
+    records: list[dict] = []
+    with open(pairs_path) as f:
+        for line_no, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            obj = json.loads(line)
+            for k in ("prompt", "chosen", "rejected"):
+                if k not in obj or not obj[k]:
+                    raise ValueError(f"{label} pair at line {line_no} missing {k}")
+            records.append({
+                "prompt": obj["prompt"],
+                "chosen": obj["chosen"],
+                "rejected": obj["rejected"],
+            })
+    if not records:
+        raise ValueError(f"{label} pairs file empty: {pairs_path}")
+    return records
 
 
 def main() -> int:
     args = parse_args()
-
-    # Heavy imports here — fast --help and dry-run without CUDA
-    import torch
-    from datasets import load_dataset
-    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-    from peft import PeftModel, LoraConfig
-    from trl import DPOConfig, DPOTrainer
 
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     print(f"[v4.2-dpo] base={args.base}")
     print(f"[v4.2-dpo] adapter-in={args.adapter_in}")
     print(f"[v4.2-dpo] pairs={args.pairs}")
+    if args.learner_pairs:
+        print(f"[v4.2-dpo] learner-pairs={args.learner_pairs}")
     print(f"[v4.2-dpo] output={args.output_dir}")
-    n_pairs = validate_pairs(args.pairs)
-    print(f"[v4.2-dpo] validated {n_pairs} pairs")
+    n_pairs = validate_pairs(args.pairs, "CAMD")
+    n_learner_pairs = 0
+    if args.learner_pairs:
+        if args.learner_repeat < 1:
+            raise ValueError("--learner-repeat must be >= 1")
+        n_learner_pairs = validate_pairs(
+            args.learner_pairs,
+            "learner",
+            required_meta_source="learning_event_outcome",
+        )
+    print(f"[v4.2-dpo] validated {n_pairs} CAMD pairs")
+    if args.learner_pairs:
+        print(f"[v4.2-dpo] validated {n_learner_pairs} learner pairs "
+              f"(repeat={args.learner_repeat})")
     print(f"[v4.2-dpo] β={args.beta} λ_sft={args.lambda_sft} LR={args.lr} "
           f"epochs={args.epochs} batch={args.batch_size}x{args.grad_accum}")
 
     if args.dry_run:
         print("[v4.2-dpo] --dry-run set, exiting before training.")
         return 0
+
+    # Heavy imports here — fast --help and dry-run without CUDA
+    import torch
+    from datasets import Dataset, concatenate_datasets
+    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from peft import PeftModel
+    from trl import DPOConfig, DPOTrainer
+
+    def release_cuda_cache() -> None:
+        try:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        except Exception:
+            pass
+
+    atexit.register(release_cuda_cache)
 
     # -------- Load base (4-bit) + v2.1 adapter --------
     bnb = BitsAndBytesConfig(
@@ -151,13 +216,22 @@ def main() -> int:
     model.print_trainable_parameters()
 
     # -------- Dataset --------
-    print(f"[v4.2-dpo] loading dataset from {args.pairs}...")
-    ds = load_dataset("json", data_files=str(args.pairs), split="train")
+    print(f"[v4.2-dpo] loading CAMD dataset from {args.pairs}...")
+    ds = Dataset.from_list(load_pair_records(args.pairs, "CAMD"))
     # TRL DPOTrainer expects columns "prompt", "chosen", "rejected"
     # Our JSONL has exactly these; meta is ignored.
-    ds = ds.shuffle(seed=args.seed)
+    if args.learner_pairs:
+        print(f"[v4.2-dpo] loading learner dataset from {args.learner_pairs}...")
+        learner_ds = Dataset.from_list(load_pair_records(args.learner_pairs, "learner"))
+        parts = [ds]
+        for _ in range(args.learner_repeat):
+            parts.append(learner_ds)
+        ds = concatenate_datasets(parts)
+        print(f"[v4.2-dpo] unified dataset = CAMD {n_pairs} + "
+              f"learner {n_learner_pairs}x{args.learner_repeat} = {len(ds)} pairs")
+    ds = ds.shuffle(seed=args.seed, keep_in_memory=True)
     if args.limit_pairs:
-        ds = ds.select(range(min(args.limit_pairs, len(ds))))
+        ds = ds.select(range(min(args.limit_pairs, len(ds))), keep_in_memory=True)
     print(f"[v4.2-dpo] dataset: {len(ds)} pairs")
 
     # -------- DPO Config --------
@@ -220,6 +294,11 @@ def main() -> int:
 
     print(f"[v4.2-dpo] DONE. Adapter saved to {final_dir}")
     print("[v4.2-dpo] NEXT: run browser FSV via Playwright before HF push.")
+    del trainer, model, base, tok, ds
+    if "learner_ds" in locals():
+        del learner_ds
+    release_cuda_cache()
+    print("[v4.2-dpo] CUDA/Python caches released.")
     return 0
 
 

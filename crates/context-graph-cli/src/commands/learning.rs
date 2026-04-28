@@ -141,6 +141,18 @@ pub struct LearningRecordSyntheticArgs {
     /// Delete existing learning events before writing the synthetic row.
     #[arg(long)]
     pub clear_existing: bool,
+
+    /// Outcome label for the deterministic synthetic row.
+    #[arg(
+        long,
+        default_value = "useful",
+        value_parser = ["useful", "neutral", "harmful", "no_learning"]
+    )]
+    pub outcome_label: String,
+
+    /// Signed utility delta in [-1, 1].
+    #[arg(long, default_value_t = 0.4)]
+    pub utility_delta: f32,
 }
 
 pub async fn handle_learning_command(action: LearningCommands) -> i32 {
@@ -222,7 +234,11 @@ async fn run(action: LearningCommands) -> Result<serde_json::Value> {
             } else {
                 0
             };
-            let event = synthetic_event(args.event_id.unwrap_or_else(Uuid::new_v4))?;
+            let event = synthetic_event(
+                args.event_id.unwrap_or_else(Uuid::new_v4),
+                parse_outcome_label(&args.outcome_label)?,
+                args.utility_delta,
+            )?;
             let before_count = store.count_learning_events().await?;
             store.store_learning_event(&event).await?;
             let after_count = store.count_learning_events().await?;
@@ -289,13 +305,7 @@ async fn export_events_jsonl(
         let _ = std::fs::remove_file(&tmp_path);
         return Err(err);
     }
-    std::fs::rename(&tmp_path, &args.out).with_context(|| {
-        format!(
-            "renaming temp output {} to {}",
-            tmp_path.display(),
-            args.out.display()
-        )
-    })?;
+    rename_or_cleanup(&tmp_path, &args.out)?;
     let bytes_written = std::fs::metadata(&args.out)?.len();
     Ok(json!({
         "status": "ok",
@@ -385,13 +395,7 @@ async fn export_dataset_jsonl(
             return Err(err);
         }
     };
-    std::fs::rename(&tmp_path, &args.out).with_context(|| {
-        format!(
-            "renaming temp output {} to {}",
-            tmp_path.display(),
-            args.out.display()
-        )
-    })?;
+    rename_or_cleanup(&tmp_path, &args.out)?;
     let bytes_written = std::fs::metadata(&args.out)?.len();
     Ok(json!({
         "status": "ok",
@@ -472,7 +476,25 @@ fn prepare_output_path(out: &PathBuf, overwrite: bool) -> Result<PathBuf> {
     Ok(tmp)
 }
 
-fn synthetic_event(event_id: Uuid) -> Result<LearningEvent> {
+fn rename_or_cleanup(tmp_path: &PathBuf, out: &PathBuf) -> Result<()> {
+    if let Err(err) = std::fs::rename(tmp_path, out) {
+        let _ = std::fs::remove_file(tmp_path);
+        return Err(err).with_context(|| {
+            format!(
+                "renaming temp output {} to {}",
+                tmp_path.display(),
+                out.display()
+            )
+        });
+    }
+    Ok(())
+}
+
+fn synthetic_event(
+    event_id: Uuid,
+    outcome_label: LearningOutcomeLabel,
+    utility_delta: f32,
+) -> Result<LearningEvent> {
     let mut before_profile = [0.0f32; NUM_EMBEDDERS];
     let mut after_profile = [0.0f32; NUM_EMBEDDERS];
     let mut before_scores = [0.0f32; NUM_EMBEDDERS];
@@ -509,10 +531,10 @@ fn synthetic_event(event_id: Uuid) -> Result<LearningEvent> {
         successful_transfer_count: 3,
     };
     let outcome = LearningOutcome {
-        label: LearningOutcomeLabel::Useful,
-        utility_delta: 0.4,
-        correction_required: false,
-        reuse_observed: true,
+        label: outcome_label,
+        utility_delta,
+        correction_required: utility_delta < 0.0,
+        reuse_observed: utility_delta > 0.0,
     };
     Ok(LearningEvent::new(
         event_id,
@@ -522,7 +544,10 @@ fn synthetic_event(event_id: Uuid) -> Result<LearningEvent> {
         Some("synthetic-task".into()),
         "How does the parser state move after adding a deterministic feature?".into(),
         "Synthetic context with known before and after profiles.".into(),
-        "The feature improves integration and transfers from docs to code.".into(),
+        format!(
+            "Synthetic response with outcome={} utility_delta={utility_delta}.",
+            outcome_label_str(outcome_label)
+        ),
         before,
         after,
         outcome,
@@ -696,5 +721,15 @@ fn outcome_label_str(label: LearningOutcomeLabel) -> &'static str {
         LearningOutcomeLabel::Neutral => "neutral",
         LearningOutcomeLabel::Harmful => "harmful",
         LearningOutcomeLabel::NoLearning => "no_learning",
+    }
+}
+
+fn parse_outcome_label(value: &str) -> Result<LearningOutcomeLabel> {
+    match value {
+        "useful" => Ok(LearningOutcomeLabel::Useful),
+        "neutral" => Ok(LearningOutcomeLabel::Neutral),
+        "harmful" => Ok(LearningOutcomeLabel::Harmful),
+        "no_learning" => Ok(LearningOutcomeLabel::NoLearning),
+        other => Err(anyhow!("unknown outcome label: {other}")),
     }
 }

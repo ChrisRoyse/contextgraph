@@ -30,7 +30,8 @@
 | Command | Status | Notes |
 | --- | --- | --- |
 | python doc generator | passed | Generated docs from checked-out source |
-| cargo test targeted MCP tool-count tests | pending | Run after generation |
+| `cargo test -p context-graph-mcp tools::definitions::tests::test_total_tool_count_and_no_duplicates` | passed | 1 test passed in `src/lib.rs`, 1 test passed in `src/main.rs`; integration target had 0 matching tests |
+| `cargo test -p context-graph-mcp --no-default-features tools::definitions::tests::test_total_tool_count_and_no_duplicates` | failed before test | Compile error E0432 in `crates/context-graph-graph-agent/src/stubs.rs`: imports `context_graph_causal_agent::llm`, `CausalDiscoveryLLM`, and `crate::service` while those items are gated behind `llm` |
 | cargo test --workspace | not run | Full suite not run during doc generation |
 
 ## 3. Notable Constants
