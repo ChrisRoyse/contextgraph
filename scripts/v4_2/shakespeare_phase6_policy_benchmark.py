@@ -84,6 +84,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-k", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260428)
     parser.add_argument("--profiles", nargs="+", default=DEFAULT_PROFILES)
+    parser.add_argument(
+        "--pairable-events",
+        action="store_true",
+        help=(
+            "Record two real retrieval-policy replay events per eligible train case: "
+            "the retrieved target passage as chosen and an actual non-target retrieved "
+            "passage as rejected. This creates within-query contrast for learner DPO mining."
+        ),
+    )
+    parser.add_argument("--min-pairable-groups", type=int, default=10)
     return parser
 
 
@@ -225,6 +235,22 @@ def result_by_id(profile_results: dict[str, list[dict[str, Any]]]) -> dict[str, 
     return out
 
 
+def first_non_target_result(profile_results: dict[str, list[dict[str, Any]]], target_id: str) -> dict[str, Any] | None:
+    for profile in sorted(profile_results):
+        for result in profile_results[profile]:
+            if extract_fingerprint_id(result) != target_id:
+                return result
+    return None
+
+
+def target_result(profile_results: dict[str, list[dict[str, Any]]], target_id: str) -> dict[str, Any] | None:
+    for profile in sorted(profile_results):
+        for result in profile_results[profile]:
+            if extract_fingerprint_id(result) == target_id:
+                return result
+    return None
+
+
 def rerank_ids(profile_results: dict[str, list[dict[str, Any]]], weights: dict[str, float]) -> list[str]:
     scores: dict[str, float] = {}
     for profile, weight in weights.items():
@@ -353,10 +379,84 @@ def utility_for_rank(rank: int | None) -> tuple[str, float]:
 def record_training_events(
     rpc: Rpc,
     search_rows: list[dict[str, Any]],
+    *,
+    pairable_events: bool,
+    min_pairable_groups: int,
 ) -> list[dict[str, Any]]:
     events = []
+    skipped_pairable = []
     for row in search_rows:
         case = row["case"]
+        if pairable_events:
+            chosen_result = target_result(row["results"], case["target_memory_id"])
+            rejected_result = first_non_target_result(row["results"], case["target_memory_id"])
+            if chosen_result is None or rejected_result is None:
+                skipped_pairable.append({
+                    "case_id": case["case_id"],
+                    "target_memory_id": case["target_memory_id"],
+                    "target_found": chosen_result is not None,
+                    "negative_found": rejected_result is not None,
+                })
+                continue
+            context = (
+                "Search policy replay over persisted Shakespeare corpus; "
+                "candidate responses are retrieved corpus passages."
+            )
+            pair_rows = [
+                ("chosen", chosen_result, "useful", 0.85, [case["target_memory_id"]]),
+                (
+                    "rejected",
+                    rejected_result,
+                    "harmful",
+                    -0.60,
+                    [case["target_memory_id"], extract_fingerprint_id(rejected_result)],
+                ),
+            ]
+            group_events = []
+            for role, result, label, utility, memory_ids in pair_rows:
+                before, after = event_snapshots_from_search_result(result, utility)
+                body = rpc.call(
+                    "record_learning_event",
+                    {
+                        "memoryIds": memory_ids,
+                        "sessionId": "bigunlock-phase6-policy-benchmark",
+                        "responseId": f"retrieval-{case['case_id']}-{role}",
+                        "taskId": "shakespeare_policy_benchmark_pairable",
+                        "query": case["query"],
+                        "retrievedContext": context,
+                        "assistantResponse": str(result.get("content") or "")[:8000],
+                        "before": before,
+                        "after": after,
+                        "outcome": {
+                            "label": label,
+                            "utilityDelta": utility,
+                            "correctionRequired": label == "harmful",
+                            "reuseObserved": label == "useful",
+                        },
+                    },
+                    timeout=180.0,
+                )
+                event_id = body["event_id"]
+                readback = rpc.call(
+                    "get_learning_event",
+                    {"eventId": event_id, "includeText": False, "includeSignals": True},
+                    timeout=120.0,
+                )
+                fetched = readback.get("event") or readback
+                if event_id != fetched.get("event_id"):
+                    raise FsvFailure(f"learning event readback id mismatch for {event_id}")
+                group_events.append({
+                    "case_id": case["case_id"],
+                    "event_id": event_id,
+                    "role": role,
+                    "label": label,
+                    "utility_delta": utility,
+                    "memory_ids": memory_ids,
+                    "candidate_memory_id": extract_fingerprint_id(result),
+                })
+            events.extend(group_events)
+            continue
+
         baseline_results = row["results"][BASELINE_PROFILE]
         baseline_rank = rank_for(baseline_results, case["target_memory_id"])
         label, utility = utility_for_rank(baseline_rank)
@@ -399,11 +499,19 @@ def record_training_events(
         events.append({
             "case_id": case["case_id"],
             "event_id": event_id,
+            "role": "single_baseline_replay",
             "baseline_rank": baseline_rank,
             "label": label,
             "utility_delta": utility,
             "memory_ids": memory_ids,
         })
+    if pairable_events:
+        pairable_groups = len(events) // 2
+        if pairable_groups < min_pairable_groups:
+            raise FsvFailure(
+                f"only recorded {pairable_groups} pairable groups, need {min_pairable_groups}; "
+                f"skipped={skipped_pairable[:10]}"
+            )
     return events
 
 
@@ -470,6 +578,8 @@ def main() -> int:
             "candidate_pool": args.candidate_pool,
             "top_k": args.top_k,
             "seed": args.seed,
+            "pairable_events": args.pairable_events,
+            "min_pairable_groups": args.min_pairable_groups,
         },
         "before": {},
         "actions": [],
@@ -557,14 +667,23 @@ def main() -> int:
             for case in heldout_cases
         ]
 
-        event_rows = record_training_events(rpc, train_search_rows)
-        if len(event_rows) != args.train_cases:
+        event_rows = record_training_events(
+            rpc,
+            train_search_rows,
+            pairable_events=args.pairable_events,
+            min_pairable_groups=args.min_pairable_groups,
+        )
+        expected_event_delta = len(event_rows)
+        if args.pairable_events and expected_event_delta % 2 != 0:
+            raise FsvFailure(f"pairable event mode produced odd event count: {expected_event_delta}")
+        if not args.pairable_events and len(event_rows) != args.train_cases:
             raise FsvFailure(f"expected {args.train_cases} training events, got {len(event_rows)}")
         after_events = tool_counts(rpc)
-        if after_events["learningEvents"] - before_counts["learningEvents"] != args.train_cases:
+        if after_events["learningEvents"] - before_counts["learningEvents"] != expected_event_delta:
             raise FsvFailure(f"learning event count mismatch after training events: {after_events}")
         report["readback"]["training_events"] = {
             "count": len(event_rows),
+            "pairable_groups": (len(event_rows) // 2) if args.pairable_events else 0,
             "label_counts": {
                 label: sum(row["label"] == label for row in event_rows)
                 for label in sorted({row["label"] for row in event_rows})
@@ -574,7 +693,7 @@ def main() -> int:
 
         reward_export = rpc.call(
             "export_learner_training_dataset",
-            {"task": "reward_model", "maxRows": args.train_cases, "clearExisting": True},
+            {"task": "reward_model", "maxRows": expected_event_delta, "clearExisting": True},
             timeout=180.0,
         )
         dataset_id = reward_export["dataset_id"]
@@ -583,7 +702,7 @@ def main() -> int:
             {"datasetId": dataset_id, "includeMatrix": False, "previewRows": 5},
             timeout=120.0,
         )
-        if dataset["dataset"]["rows"] != args.train_cases:
+        if dataset["dataset"]["rows"] != expected_event_delta:
             raise FsvFailure(f"training dataset rows mismatch: {dataset}")
         report["readback"]["training_dataset"] = {
             "export": reward_export,
@@ -682,7 +801,7 @@ def main() -> int:
         report["after"]["ldb_learning"] = after_learning
         if after_content != report["before"]["ldb_content"]:
             raise FsvFailure(f"content CFs changed during phase6 benchmark: before={report['before']['ldb_content']} after={after_content}")
-        if after_learning["learning_events"] - report["before"]["ldb_learning"]["learning_events"] != args.train_cases:
+        if after_learning["learning_events"] - report["before"]["ldb_learning"]["learning_events"] != expected_event_delta:
             raise FsvFailure(f"physical learning_events delta mismatch: before={report['before']['ldb_learning']} after={after_learning}")
         if after_learning["learner_training_datasets"] - report["before"]["ldb_learning"]["learner_training_datasets"] != 1:
             raise FsvFailure(f"physical learner_training_datasets delta mismatch: before={report['before']['ldb_learning']} after={after_learning}")

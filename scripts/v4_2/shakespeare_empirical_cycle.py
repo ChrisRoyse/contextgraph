@@ -501,6 +501,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--learner-repeat", type=int, default=2)
     p.add_argument("--limit-pairs", type=int, default=None)
     p.add_argument("--max-steps", type=int, default=-1)
+    p.add_argument("--trainer-batch-size", type=int, default=4)
+    p.add_argument("--trainer-grad-accum", type=int, default=4)
+    p.add_argument("--trainer-optim", default="paged_adamw_8bit")
+    p.add_argument("--trainer-precompute-ref", action="store_true")
     p.add_argument("--baseline-adapter", type=Path, default=DEFAULT_BASELINE_ADAPTER)
     p.add_argument("--candidate-adapter", type=Path, default=None)
     p.add_argument("--eval-suite", type=Path, default=None)
@@ -665,7 +669,15 @@ def main() -> int:
                 str(trainer_output),
                 "--max-steps",
                 str(args.max_steps),
+                "--batch-size",
+                str(args.trainer_batch_size),
+                "--grad-accum",
+                str(args.trainer_grad_accum),
+                "--optim",
+                args.trainer_optim,
             ]
+            if args.trainer_precompute_ref:
+                trainer_cmd.append("--precompute-ref")
             if args.limit_pairs is not None:
                 trainer_cmd += ["--limit-pairs", str(args.limit_pairs)]
             if args.trainer_dry_run and not args.train:

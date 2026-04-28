@@ -38,10 +38,15 @@ from __future__ import annotations
 
 import argparse
 import atexit
+from datetime import datetime, timezone
+import hashlib
 import json
 import os
+import subprocess
 import sys
+import traceback
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from v4_2.cuda13_blackwell import (  # noqa: E402
@@ -102,6 +107,126 @@ def parse_args() -> argparse.Namespace:
                         "training. Avoids per-step ref forward passes "
                         "(memory win + sidesteps some Blackwell driver bugs).")
     return p.parse_args()
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def path_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"path": str(path), "exists": False}
+    if path.is_file():
+        return {
+            "path": str(path),
+            "exists": True,
+            "kind": "file",
+            "size_bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+    if path.is_dir():
+        total = 0
+        files = 0
+        for root, _, names in os.walk(path):
+            for name in names:
+                files += 1
+                total += (Path(root) / name).stat().st_size
+        return {
+            "path": str(path),
+            "exists": True,
+            "kind": "directory",
+            "file_count": files,
+            "size_bytes": total,
+        }
+    return {"path": str(path), "exists": True, "kind": "other"}
+
+
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
+
+
+def command_state(command: list[str], *, timeout_sec: int = 10) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_sec,
+        )
+        return {
+            "command": command,
+            "returncode": proc.returncode,
+            "stdout_tail": proc.stdout.splitlines()[-80:],
+            "stderr_tail": proc.stderr.splitlines()[-80:],
+        }
+    except Exception as exc:
+        return {
+            "command": command,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def torch_cuda_state(torch: Any) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "cuda_available": bool(torch.cuda.is_available()),
+    }
+    if not torch.cuda.is_available():
+        return state
+    device_idx = torch.cuda.current_device()
+    free_bytes, total_bytes = torch.cuda.mem_get_info(device_idx)
+    state.update({
+        "device_index": device_idx,
+        "device_name": torch.cuda.get_device_name(device_idx),
+        "compute_capability": list(torch.cuda.get_device_capability(device_idx)),
+        "allocated_gib": round(torch.cuda.memory_allocated(device_idx) / (1024 ** 3), 3),
+        "reserved_gib": round(torch.cuda.memory_reserved(device_idx) / (1024 ** 3), 3),
+        "max_allocated_gib": round(torch.cuda.max_memory_allocated(device_idx) / (1024 ** 3), 3),
+        "free_mem_get_info_gib": round(free_bytes / (1024 ** 3), 3),
+        "total_mem_get_info_gib": round(total_bytes / (1024 ** 3), 3),
+    })
+    return state
+
+
+def write_failure_diagnostics(
+    *,
+    output_dir: Path,
+    args: argparse.Namespace,
+    exc: BaseException,
+    torch: Any | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Path:
+    payload: dict[str, Any] = {
+        "status": "failed",
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "error": f"{type(exc).__name__}: {exc}",
+        "traceback": traceback.format_exc().splitlines(),
+        "args": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
+        "paths": {
+            "adapter_in": path_state(args.adapter_in),
+            "camd_pairs": path_state(args.pairs),
+            "learner_pairs": path_state(args.learner_pairs) if args.learner_pairs else None,
+            "output_dir": path_state(output_dir),
+        },
+        "nvidia_smi": command_state(["nvidia-smi"]),
+    }
+    if torch is not None:
+        try:
+            payload["torch_cuda_state"] = torch_cuda_state(torch)
+        except Exception as state_exc:
+            payload["torch_cuda_state_error"] = f"{type(state_exc).__name__}: {state_exc}"
+    if extra:
+        payload["extra"] = extra
+    out = output_dir / "failure_diagnostics.json"
+    write_json_atomic(out, payload)
+    return out
 
 
 def validate_pairs(pairs_path: Path, label: str,
@@ -239,6 +364,38 @@ def main() -> int:
 
     # -------- DPO Config --------
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "status": "prepared",
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "base": args.base,
+        "adapter_in": path_state(args.adapter_in),
+        "camd_pairs": path_state(args.pairs),
+        "learner_pairs": path_state(args.learner_pairs) if args.learner_pairs else None,
+        "pair_counts": {
+            "camd": n_pairs,
+            "learner": n_learner_pairs,
+            "learner_repeat": args.learner_repeat if args.learner_pairs else 0,
+            "trainer_dataset_rows": len(ds),
+        },
+        "trainer": {
+            "epochs": args.epochs,
+            "max_steps": args.max_steps,
+            "limit_pairs": args.limit_pairs,
+            "batch_size": args.batch_size,
+            "grad_accum": args.grad_accum,
+            "effective_batch": args.batch_size * args.grad_accum,
+            "lr": args.lr,
+            "beta": args.beta,
+            "lambda_sft": args.lambda_sft,
+            "optim": args.optim,
+            "precompute_ref": args.precompute_ref,
+            "max_length": args.max_length,
+            "max_prompt_length": args.max_prompt_length,
+        },
+        "cuda": cuda_info,
+        "nvidia_smi_before_train": command_state(["nvidia-smi"]),
+    }
+    write_json_atomic(args.output_dir / "training_manifest.json", manifest)
     # TRL 1.1.0: Reg-DPO expressed as multi-loss combination
     #   loss_type=['sigmoid','sft'] + loss_weights=[1.0, lambda_sft]
     # Older TRL used `rpo_alpha` + single loss_type='sigmoid'.
@@ -281,7 +438,22 @@ def main() -> int:
     print(f"[v4.2-dpo] starting training: {len(ds)} pairs, "
           f"effective batch {args.batch_size * args.grad_accum}, "
           f"{args.epochs} epochs")
-    trainer.train()
+    try:
+        trainer.train()
+    except Exception as exc:
+        diagnostics_path = write_failure_diagnostics(
+            output_dir=args.output_dir,
+            args=args,
+            exc=exc,
+            torch=torch,
+            extra={
+                "stage": "trainer.train",
+                "dataset_rows": len(ds),
+                "cuda_info": cuda_info,
+            },
+        )
+        print(f"[v4.2-dpo] FAILURE_DIAGNOSTICS={diagnostics_path}", file=sys.stderr)
+        raise
 
     # -------- Save final adapter --------
     final_dir = args.output_dir / "final"
@@ -297,6 +469,12 @@ def main() -> int:
 
     print(f"[v4.2-dpo] DONE. Adapter saved to {final_dir}")
     print("[v4.2-dpo] NEXT: run browser FSV via Playwright before HF push.")
+    manifest["status"] = "ok"
+    manifest["completed_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    manifest["final_adapter"] = path_state(final_dir / "adapter_model.safetensors")
+    manifest["output_dir_after"] = path_state(args.output_dir)
+    manifest["nvidia_smi_after_train"] = command_state(["nvidia-smi"])
+    write_json_atomic(args.output_dir / "training_manifest.json", manifest)
     del trainer, model, base, tok, ds
     if "learner_ds" in locals():
         del learner_ds
