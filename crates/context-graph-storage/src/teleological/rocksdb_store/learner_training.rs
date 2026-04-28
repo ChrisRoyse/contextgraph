@@ -133,9 +133,7 @@ impl RocksDbTeleologicalStore {
     }
 }
 
-pub fn encode_learner_training_dataset(
-    dataset: &LearnerTrainingDataset,
-) -> CoreResult<Vec<u8>> {
+pub fn encode_learner_training_dataset(dataset: &LearnerTrainingDataset) -> CoreResult<Vec<u8>> {
     dataset.validate()?;
     let mut bytes = bincode::serialize(dataset).map_err(|e| {
         CoreError::SerializationError(format!("bincode serialize LearnerTrainingDataset: {e}"))

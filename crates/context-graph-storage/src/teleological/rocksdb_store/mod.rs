@@ -93,9 +93,7 @@ pub use learner::{
     learner_audit_key, learner_constellation_key, learner_session_key, learner_skill_key,
     learner_trace_key, learner_trace_ts_key,
 };
-pub use learner_training::{
-    decode_learner_training_dataset, encode_learner_training_dataset,
-};
+pub use learner_training::{decode_learner_training_dataset, encode_learner_training_dataset};
 pub use learning::{decode_learning_event, encode_learning_event};
 pub use llm_validation::{decode_llm_edge_validation, encode_llm_edge_validation};
 pub use store::RocksDbTeleologicalStore;

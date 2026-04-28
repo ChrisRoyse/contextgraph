@@ -225,7 +225,8 @@ pub use indexes::{
 pub use rocksdb_store::{
     decode_learner_training_dataset, decode_learning_event, decode_training_record,
     encode_learner_training_dataset, encode_learning_event, encode_training_record,
-    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalStoreResult,
+    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError,
+    TeleologicalStoreResult,
 };
 
 // Re-export search types (TASK-LOGIC-005)

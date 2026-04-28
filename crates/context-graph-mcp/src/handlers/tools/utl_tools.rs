@@ -5,19 +5,19 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use context_graph_core::learner::{
-    compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_transfer_t,
-    compute_utl_l, sha256_bytes, sha256_json, update_m_trace, ComputationEnvelope, GoalCentroid,
-    LearnerAuditEntry, LearnerConstellation, LearnerDeltaLog, LearnerFingerprint,
-    LearnerGoalState, LearnerKSleep, LearnerModality, LearnerModalityCentroid, LearnerProfile,
-    LearnerRetrievalLog, LearnerStateComponents, LearnerStateVector, ModalityEmbedding,
-    ObservationEnvelope, LEARNER_BASELINE_SELECTOR_REGULATED,
+    compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_transfer_t, compute_utl_l,
+    sha256_bytes, sha256_json, update_m_trace, ComputationEnvelope, GoalCentroid,
+    LearnerAuditEntry, LearnerConstellation, LearnerDeltaLog, LearnerFingerprint, LearnerGoalState,
+    LearnerKSleep, LearnerModality, LearnerModalityCentroid, LearnerProfile, LearnerRetrievalLog,
+    LearnerStateComponents, LearnerStateVector, ModalityEmbedding, ObservationEnvelope,
+    LEARNER_BASELINE_SELECTOR_REGULATED,
 };
+use context_graph_embeddings::types::ModelId;
 use context_graph_embeddings::{
     embed_learner_signal, learner_embedder_specs, preflight_learner_assets,
     state_vector_from_outputs, LearnerEmbedderInput, LearnerEmbedderSlot,
     CALIBRATION_DATASET_MANIFEST, LEARNER_EMBEDDER_COUNT, UTL_PLANNED_TOTAL_EMBEDDERS,
 };
-use context_graph_embeddings::types::ModelId;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -429,7 +429,10 @@ impl Handlers {
                 outputs.push(output);
             }
             if outputs.len() == LEARNER_EMBEDDER_COUNT {
-                context.insert("record_session_observation_mode".into(), "full_signal_panel".into());
+                context.insert(
+                    "record_session_observation_mode".into(),
+                    "full_signal_panel".into(),
+                );
                 match state_vector_from_outputs(learner_id, session_ts, &outputs, context) {
                     Ok(v) => v,
                     Err(e) => {
@@ -882,14 +885,15 @@ impl Handlers {
                 return self.tool_error(id, &format!("Invalid preflight_learner_assets args: {e}"))
             }
         };
-        let report = match preflight_learner_assets(&parsed.models_root, &parsed.calibration_root)
-        {
+        let report = match preflight_learner_assets(&parsed.models_root, &parsed.calibration_root) {
             Ok(v) => v,
             Err(e) => return self.tool_error(id, &format!("preflight_learner_assets failed: {e}")),
         };
         let value = match serde_json::to_value(&report) {
             Ok(v) => v,
-            Err(e) => return self.tool_error(id, &format!("serialize preflight report failed: {e}")),
+            Err(e) => {
+                return self.tool_error(id, &format!("serialize preflight report failed: {e}"))
+            }
         };
         if !report.ready && !parsed.allow_missing {
             return self.tool_error(
@@ -903,10 +907,7 @@ impl Handlers {
         self.tool_result(id, value)
     }
 
-    pub(crate) async fn call_count_learner_state(
-        &self,
-        id: Option<JsonRpcId>,
-    ) -> JsonRpcResponse {
+    pub(crate) async fn call_count_learner_state(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
             return self.tool_error(id, "count_learner_state requires RocksDbTeleologicalStore.");
         };
@@ -970,13 +971,19 @@ impl Handlers {
                     return self.tool_error(id, &format!("get_learner_state_vector failed: {e}"))
                 }
             };
-            let delta = match store.get_learner_delta_log(parsed.learner_id, session_ts).await {
+            let delta = match store
+                .get_learner_delta_log(parsed.learner_id, session_ts)
+                .await
+            {
                 Ok(v) => v,
                 Err(e) => {
                     return self.tool_error(id, &format!("get_learner_delta_log failed: {e}"))
                 }
             };
-            let k_sleep = match store.get_learner_k_sleep(parsed.learner_id, session_ts).await {
+            let k_sleep = match store
+                .get_learner_k_sleep(parsed.learner_id, session_ts)
+                .await
+            {
                 Ok(v) => v,
                 Err(e) => return self.tool_error(id, &format!("get_learner_k_sleep failed: {e}")),
             };
@@ -1087,13 +1094,14 @@ impl Handlers {
             );
         };
         let state_at_retrieval = if let Some(session_ts) = parsed.session_ts {
-            match store.get_learner_state_vector(parsed.learner_id, session_ts).await {
+            match store
+                .get_learner_state_vector(parsed.learner_id, session_ts)
+                .await
+            {
                 Ok(Some(state)) => state,
                 Ok(None) => {
-                    return self.tool_error(
-                        id,
-                        "No learner state vector found for learnerId+sessionTs",
-                    )
+                    return self
+                        .tool_error(id, "No learner state vector found for learnerId+sessionTs")
                 }
                 Err(e) => {
                     return self.tool_error(id, &format!("get_learner_state_vector failed: {e}"))
@@ -1157,7 +1165,9 @@ impl Handlers {
     ) -> JsonRpcResponse {
         let parsed: GoalCentroidArgs = match serde_json::from_value(args) {
             Ok(v) => v,
-            Err(e) => return self.tool_error(id, &format!("Invalid upsert_goal_centroid args: {e}")),
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid upsert_goal_centroid args: {e}"))
+            }
         };
         let modality = match LearnerModality::parse(&parsed.modality) {
             Ok(v) => v,
@@ -1172,7 +1182,10 @@ impl Handlers {
             return self.tool_error(id, &format!("GoalCentroid validation failed: {e}"));
         }
         let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
-            return self.tool_error(id, "upsert_goal_centroid requires RocksDbTeleologicalStore.");
+            return self.tool_error(
+                id,
+                "upsert_goal_centroid requires RocksDbTeleologicalStore.",
+            );
         };
         if let Err(e) = store.store_goal_centroid(&centroid).await {
             return self.tool_error(id, &format!("store_goal_centroid failed: {e}"));
@@ -1289,8 +1302,10 @@ impl Handlers {
         let parsed: CompileConstellationArgs = match serde_json::from_value(args) {
             Ok(v) => v,
             Err(e) => {
-                return self
-                    .tool_error(id, &format!("Invalid compile_learner_constellation args: {e}"))
+                return self.tool_error(
+                    id,
+                    &format!("Invalid compile_learner_constellation args: {e}"),
+                )
             }
         };
         if parsed.session_ts_list.is_empty() {
@@ -1323,12 +1338,14 @@ impl Handlers {
                 }
             }
         }
-        let constellation =
-            match compile_constellation_from_fingerprints(parsed.learner_id, &parsed, &fingerprints)
-            {
-                Ok(v) => v,
-                Err(e) => return self.tool_error(id, &e),
-            };
+        let constellation = match compile_constellation_from_fingerprints(
+            parsed.learner_id,
+            &parsed,
+            &fingerprints,
+        ) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
         if let Err(e) = store.store_learner_constellation(&constellation).await {
             return self.tool_error(id, &format!("store_learner_constellation failed: {e}"));
         }
@@ -1457,10 +1474,7 @@ fn render_retrieval_log(log: &LearnerRetrievalLog) -> serde_json::Value {
     })
 }
 
-fn render_goal_centroid(
-    centroid: &GoalCentroid,
-    include_vector: bool,
-) -> serde_json::Value {
+fn render_goal_centroid(centroid: &GoalCentroid, include_vector: bool) -> serde_json::Value {
     let mut out = json!({
         "skill_id": centroid.skill_id.to_string(),
         "modality": centroid.modality.as_str(),
@@ -1676,7 +1690,10 @@ fn compile_constellation_from_fingerprints(
         components,
         context: BTreeMap::from([
             ("source".into(), "compile_learner_constellation".into()),
-            ("aggregation".into(), "mean_of_l2_normalized_modalities".into()),
+            (
+                "aggregation".into(),
+                "mean_of_l2_normalized_modalities".into(),
+            ),
         ]),
     };
     let constellation = LearnerConstellation {

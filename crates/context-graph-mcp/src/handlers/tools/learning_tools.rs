@@ -491,11 +491,13 @@ impl Handlers {
         let mut datasets = Vec::with_capacity(page.len());
         for dataset_id in &page {
             if parsed.include_shape {
-                match rocksdb_store.get_learner_training_dataset(*dataset_id).await {
+                match rocksdb_store
+                    .get_learner_training_dataset(*dataset_id)
+                    .await
+                {
                     Ok(Some(dataset)) => datasets.push(render_training_dataset_summary(&dataset)),
-                    Ok(None) => {
-                        datasets.push(json!({"dataset_id": dataset_id.to_string(), "missing": true}))
-                    }
+                    Ok(None) => datasets
+                        .push(json!({"dataset_id": dataset_id.to_string(), "missing": true})),
                     Err(e) => {
                         return self.tool_error(
                             id,
@@ -590,10 +592,7 @@ impl Handlers {
                     "count": n
                 }),
             ),
-            Err(e) => self.tool_error(
-                id,
-                &format!("count_learner_training_datasets failed: {e}"),
-            ),
+            Err(e) => self.tool_error(id, &format!("count_learner_training_datasets failed: {e}")),
         }
     }
 }
@@ -710,9 +709,7 @@ async fn build_training_matrix(
         | LearnerTrainingTask::EmbedderContrastive => {
             build_learning_event_matrix(store, task, max_rows).await
         }
-        LearnerTrainingTask::DiagnosticClassifier => {
-            build_diagnostic_matrix(store, max_rows).await
-        }
+        LearnerTrainingTask::DiagnosticClassifier => build_diagnostic_matrix(store, max_rows).await,
         LearnerTrainingTask::Scheduler => build_scheduler_matrix(store, max_rows).await,
         LearnerTrainingTask::PersonalPhysiology => {
             build_personal_physiology_matrix(store, max_rows).await
@@ -857,7 +854,9 @@ async fn build_scheduler_matrix(
                 format!("get_learner_retrieval_log failed for {learner_id}/{trace_id}/{ts}: {e}")
             })?
             .ok_or_else(|| {
-                format!("retrieval log key {learner_id}/{trace_id}/{ts} was listed but not readable")
+                format!(
+                    "retrieval log key {learner_id}/{trace_id}/{ts} was listed but not readable"
+                )
             })?;
         let features = scheduler_feature_vector(&log);
         assert_feature_len(&features, &feature_schema, "scheduler")?;
@@ -921,8 +920,9 @@ async fn build_personal_physiology_matrix(
             label_scalar: None,
             label_class: Some("personal_calibration_row".into()),
             split_key: learner_id.to_string(),
-            provenance_sha256: sha256_json(&fingerprint)
-                .map_err(|e| format!("hash learner fingerprint {learner_id}/{session_ts} failed: {e}"))?,
+            provenance_sha256: sha256_json(&fingerprint).map_err(|e| {
+                format!("hash learner fingerprint {learner_id}/{session_ts} failed: {e}")
+            })?,
         });
     }
     Ok(MatrixBuild {
@@ -1136,7 +1136,9 @@ fn assert_feature_len(features: &[f32], schema: &[String], row_kind: &str) -> Re
         ));
     }
     if features.iter().any(|v| !v.is_finite()) {
-        return Err(format!("{row_kind} feature vector contains a non-finite value"));
+        return Err(format!(
+            "{row_kind} feature vector contains a non-finite value"
+        ));
     }
     Ok(())
 }
@@ -1230,4 +1232,224 @@ fn default_preview_rows() -> usize {
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use context_graph_core::learning::{LearningOutcome, LearningOutcomeLabel};
+    use context_graph_core::training::NUM_CROSS_CORRELATIONS;
+    use tempfile::TempDir;
+
+    fn state(value: f32, rank: u32) -> LearningStateSnapshot {
+        LearningStateSnapshot {
+            topic_profile: [value; NUM_EMBEDDERS],
+            cross_correlations: vec![value * 0.5; NUM_CROSS_CORRELATIONS],
+            retrieval_rank: Some(rank),
+            embedder_scores: [value; NUM_EMBEDDERS],
+            contradiction_pressure: 0.1,
+            integration_confidence: 0.7,
+            recurrence_count: 2,
+            stability_score: 0.8,
+            domain: Some("synthetic-fsv-domain".into()),
+            successful_transfer_count: 1,
+        }
+    }
+
+    fn event(event_id: Uuid, before: f32, after: f32, utility_delta: f32) -> LearningEvent {
+        LearningEvent::new(
+            event_id,
+            vec![Uuid::from_u128(0x11111111_2222_4333_8444_555555555555)],
+            Some("fsv-session".into()),
+            Some(format!("response-{event_id}")),
+            Some("reward-model-fsv".into()),
+            "What does controlled FSV prove?".into(),
+            "FSV proves persisted state by separate readback.".into(),
+            "It proves the expected row exists in RocksDB.".into(),
+            state(before, 5),
+            state(after, 2),
+            LearningOutcome {
+                label: LearningOutcomeLabel::Useful,
+                utility_delta,
+                correction_required: false,
+                reuse_observed: true,
+            },
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn learner_training_dataset_fsv_happy_path_and_edges() {
+        let tempdir = TempDir::new().unwrap();
+        let store = RocksDbTeleologicalStore::open(tempdir.path()).unwrap();
+
+        println!("SOURCE OF TRUTH: RocksDB CF_LEARNER_TRAINING_DATASETS");
+        println!(
+            "HAPPY BEFORE count={}",
+            store.count_learner_training_datasets().await.unwrap()
+        );
+
+        let event_id = Uuid::from_u128(0xaaaaaaaa_bbbb_4ccc_8ddd_eeeeeeeeeeee);
+        let first_event = event(event_id, 0.2, 0.4, 0.75);
+        store.store_learning_event(&first_event).await.unwrap();
+
+        let build = build_training_matrix(&store, LearnerTrainingTask::RewardModel, 10)
+            .await
+            .unwrap();
+        let expected_cols = learning_event_feature_schema().len();
+        assert_eq!(build.rows.len(), 1);
+        assert_eq!(build.row_major.len(), expected_cols);
+        assert_eq!(build.row_major[0], 0.2);
+
+        let dataset_id = Uuid::from_u128(0xbbbbbbbb_bbbb_4bbb_8bbb_bbbbbbbbbbbb);
+        let dataset = LearnerTrainingDataset::new(
+            dataset_id,
+            LearnerTrainingTask::RewardModel,
+            build.feature_schema,
+            build.label_schema,
+            build.rows,
+            build.row_major,
+            build.source_counts,
+            BTreeMap::from([("case".into(), "happy".into())]),
+        )
+        .unwrap();
+        store
+            .store_learner_training_dataset(&dataset)
+            .await
+            .unwrap();
+
+        let readback = store
+            .get_learner_training_dataset(dataset_id)
+            .await
+            .unwrap()
+            .expect("dataset must be physically present in CF");
+        println!(
+            "HAPPY AFTER count={} rows={} cols={} first_feature={} label={} sha={}",
+            store.count_learner_training_datasets().await.unwrap(),
+            readback.rows_len,
+            readback.cols_len,
+            readback.row_major[0],
+            readback.rows[0].label_scalar.unwrap(),
+            readback.row_major_sha256
+        );
+        assert_eq!(readback.rows_len, 1);
+        assert_eq!(readback.cols_len as usize, expected_cols);
+        assert_eq!(readback.rows[0].event_id, Some(event_id));
+        assert_eq!(readback.rows[0].label_scalar, Some(0.75));
+
+        println!(
+            "EDGE EMPTY BEFORE count={}",
+            store.count_learner_training_datasets().await.unwrap()
+        );
+        let empty_temp = TempDir::new().unwrap();
+        let empty_store = RocksDbTeleologicalStore::open(empty_temp.path()).unwrap();
+        let empty_build = build_training_matrix(&empty_store, LearnerTrainingTask::RewardModel, 10)
+            .await
+            .unwrap();
+        let empty_dataset_id = Uuid::from_u128(0xcccccccc_cccc_4ccc_8ccc_cccccccccccc);
+        let empty_dataset = LearnerTrainingDataset::new(
+            empty_dataset_id,
+            LearnerTrainingTask::RewardModel,
+            empty_build.feature_schema,
+            empty_build.label_schema,
+            empty_build.rows,
+            empty_build.row_major,
+            empty_build.source_counts,
+            BTreeMap::from([("case".into(), "empty".into())]),
+        )
+        .unwrap();
+        empty_store
+            .store_learner_training_dataset(&empty_dataset)
+            .await
+            .unwrap();
+        let empty_readback = empty_store
+            .get_learner_training_dataset(empty_dataset_id)
+            .await
+            .unwrap()
+            .unwrap();
+        println!(
+            "EDGE EMPTY AFTER count={} rows={} row_major_len={}",
+            empty_store.count_learner_training_datasets().await.unwrap(),
+            empty_readback.rows_len,
+            empty_readback.row_major.len()
+        );
+        assert_eq!(empty_readback.rows_len, 0);
+        assert_eq!(empty_readback.row_major.len(), 0);
+
+        println!(
+            "EDGE LIMIT BEFORE learning_events={} datasets={}",
+            store.count_learning_events().await.unwrap(),
+            store.count_learner_training_datasets().await.unwrap()
+        );
+        store
+            .store_learning_event(&event(
+                Uuid::from_u128(0xdddddddd_dddd_4ddd_8ddd_dddddddddddd),
+                0.3,
+                0.5,
+                0.25,
+            ))
+            .await
+            .unwrap();
+        let limited_build = build_training_matrix(&store, LearnerTrainingTask::RewardModel, 1)
+            .await
+            .unwrap();
+        let limited_dataset_id = Uuid::from_u128(0xeeeeeeee_eeee_4eee_8eee_eeeeeeeeeeee);
+        let limited_dataset = LearnerTrainingDataset::new(
+            limited_dataset_id,
+            LearnerTrainingTask::RewardModel,
+            limited_build.feature_schema,
+            limited_build.label_schema,
+            limited_build.rows,
+            limited_build.row_major,
+            limited_build.source_counts,
+            BTreeMap::from([("case".into(), "limit".into())]),
+        )
+        .unwrap();
+        store
+            .store_learner_training_dataset(&limited_dataset)
+            .await
+            .unwrap();
+        let limited_readback = store
+            .get_learner_training_dataset(limited_dataset_id)
+            .await
+            .unwrap()
+            .unwrap();
+        println!(
+            "EDGE LIMIT AFTER learning_events={} dataset_rows={} expected_rows=1",
+            store.count_learning_events().await.unwrap(),
+            limited_readback.rows_len
+        );
+        assert_eq!(limited_readback.rows_len, 1);
+
+        let invalid_before = store.count_learner_training_datasets().await.unwrap();
+        println!("EDGE INVALID BEFORE datasets={invalid_before}");
+        let invalid = LearnerTrainingDataset::new(
+            Uuid::from_u128(0xffffeeee_dddd_4ccc_8bbb_aaaaaaaaaaaa),
+            LearnerTrainingTask::RewardModel,
+            vec!["x".into(), "y".into()],
+            vec!["label".into()],
+            vec![LearnerTrainingRow {
+                row_id: Uuid::new_v4(),
+                source_cf: "learning_events".into(),
+                source_key: event_id.to_string(),
+                event_id: Some(event_id),
+                learner_id: None,
+                session_ts: None,
+                label_scalar: Some(0.0),
+                label_class: Some("useful".into()),
+                split_key: "invalid".into(),
+                provenance_sha256: readback.rows[0].provenance_sha256.clone(),
+            }],
+            vec![1.0],
+            BTreeMap::new(),
+            BTreeMap::from([("case".into(), "invalid".into())]),
+        );
+        assert!(invalid.is_err());
+        let invalid_after = store.count_learner_training_datasets().await.unwrap();
+        println!(
+            "EDGE INVALID AFTER datasets={invalid_after} error={:?}",
+            invalid.err()
+        );
+        assert_eq!(invalid_after, invalid_before);
+    }
 }
