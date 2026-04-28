@@ -65,7 +65,6 @@ class CommandResult:
         if include_full_logs:
             out["stdout"] = self.stdout
             out["stderr"] = self.stderr
-        }
         return out
 
 
