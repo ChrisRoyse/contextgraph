@@ -1,5 +1,4 @@
 # Directories excluded from repo (kept locally)
-docs/
 benchmarks/
 benchmark_results/
 .github/
