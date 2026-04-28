@@ -177,7 +177,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "enum": ["reward_model", "reranker", "embedder_contrastive", "diagnostic_classifier", "scheduler", "personal_physiology"],
                         "default": "reward_model"
                     },
-                    "maxRows": {"type": "integer", "minimum": 0, "maximum": 1000000, "default": 10000},
+                    "maxRows": {"type": "integer", "minimum": 1, "maximum": 1000000, "default": 10000},
                     "clearExisting": {"type": "boolean", "default": false}
                 },
                 "required": [],

@@ -183,6 +183,58 @@ impl Handlers {
         let after: LearningStateSnapshot = parsed.after.into();
         let event_id = parsed.event_id.unwrap_or_else(Uuid::new_v4);
 
+        let Some(rocksdb_store) = self
+            .teleological_store
+            .as_any()
+            .downcast_ref::<RocksDbTeleologicalStore>()
+        else {
+            return self.tool_error(
+                id,
+                "record_learning_event requires RocksDbTeleologicalStore.",
+            );
+        };
+
+        for memory_id in &parsed.memory_ids {
+            match self.teleological_store.retrieve(*memory_id).await {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    let message = format!(
+                        "record_learning_event memoryIds contains missing fingerprint: {memory_id}"
+                    );
+                    return self.tool_error(id, &message);
+                }
+                Err(e) => {
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "record_learning_event failed to read fingerprint {memory_id}: {e}"
+                        ),
+                    )
+                }
+            }
+            match self.teleological_store.get_content(*memory_id).await {
+                Ok(Some(content)) if !content.is_empty() => {}
+                Ok(Some(_)) => {
+                    let message = format!(
+                        "record_learning_event memoryIds contains empty content row: {memory_id}"
+                    );
+                    return self.tool_error(id, &message);
+                }
+                Ok(None) => {
+                    let message = format!(
+                        "record_learning_event memoryIds contains missing content row: {memory_id}"
+                    );
+                    return self.tool_error(id, &message);
+                }
+                Err(e) => {
+                    return self.tool_error(
+                        id,
+                        &format!("record_learning_event failed to read content {memory_id}: {e}"),
+                    )
+                }
+            }
+        }
+
         let event = match LearningEvent::new(
             event_id,
             parsed.memory_ids,
@@ -200,17 +252,6 @@ impl Handlers {
             Err(e) => {
                 return self.tool_error(id, &format!("Learning event validation failed: {e}"))
             }
-        };
-
-        let Some(rocksdb_store) = self
-            .teleological_store
-            .as_any()
-            .downcast_ref::<RocksDbTeleologicalStore>()
-        else {
-            return self.tool_error(
-                id,
-                "record_learning_event requires RocksDbTeleologicalStore.",
-            );
         };
 
         if let Err(e) = rocksdb_store.store_learning_event(&event).await {
@@ -578,6 +619,12 @@ impl Handlers {
             Ok(v) => v,
             Err(e) => return self.tool_error(id, &format!("{e}")),
         };
+        if parsed.max_rows == 0 {
+            return self.tool_error(
+                id,
+                "export_learner_training_dataset requires maxRows > 0; empty exports are not persisted",
+            );
+        }
         let Some(rocksdb_store) = self
             .teleological_store
             .as_any()
@@ -588,6 +635,22 @@ impl Handlers {
                 "export_learner_training_dataset requires RocksDbTeleologicalStore.",
             );
         };
+
+        let build = match build_training_matrix(rocksdb_store, task, parsed.max_rows).await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        if build.rows.is_empty() {
+            return self.tool_error(
+                id,
+                &format!(
+                    "export_learner_training_dataset found zero eligible rows for task={} with source_counts={:?}; no dataset was written",
+                    task.as_str(),
+                    build.source_counts
+                ),
+            );
+        }
+
         let cleared = if parsed.clear_existing {
             match rocksdb_store.clear_all_learner_training_datasets().await {
                 Ok(v) => v,
@@ -600,11 +663,6 @@ impl Handlers {
             }
         } else {
             0
-        };
-
-        let build = match build_training_matrix(rocksdb_store, task, parsed.max_rows).await {
-            Ok(v) => v,
-            Err(e) => return self.tool_error(id, &e),
         };
         let dataset = match LearnerTrainingDataset::new(
             parsed.dataset_id.unwrap_or_else(Uuid::new_v4),

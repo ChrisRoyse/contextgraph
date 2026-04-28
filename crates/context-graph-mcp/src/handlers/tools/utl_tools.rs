@@ -351,6 +351,12 @@ impl Handlers {
             embeddings: embedding_args,
             signals,
         } = parsed;
+        if consent_state == "revoked" {
+            return self.tool_error(
+                id,
+                "record_session_observation refuses consentState=revoked; no learner observation was written",
+            );
+        }
         let mut context = BTreeMap::new();
         let mut embeddings = Vec::with_capacity(embedding_args.len() + signals.len());
         let mut observation_envelopes = Vec::new();
@@ -534,6 +540,16 @@ impl Handlers {
                 "record_session_observation requires RocksDbTeleologicalStore.",
             );
         };
+        match store.get_learner_profile(fingerprint.learner_id).await {
+            Ok(Some(profile)) if profile.consent_state == "revoked" => {
+                return self.tool_error(
+                    id,
+                    "record_session_observation refuses writes for learner profile with consent_state=revoked",
+                )
+            }
+            Ok(_) => {}
+            Err(e) => return self.tool_error(id, &format!("get_learner_profile failed: {e}")),
+        }
         if let Err(e) = store.store_learner_fingerprint(&fingerprint).await {
             return self.tool_error(id, &format!("store_learner_fingerprint failed: {e}"));
         }
@@ -1405,6 +1421,16 @@ impl Handlers {
                 "resolve_learner_retrieval_policy requires RocksDbTeleologicalStore.",
             );
         };
+        match store.get_learner_profile(parsed.learner_id).await {
+            Ok(Some(profile)) if profile.consent_state == "revoked" => {
+                return self.tool_error(
+                    id,
+                    "resolve_learner_retrieval_policy refuses to use learner state after consent revocation",
+                )
+            }
+            Ok(_) => {}
+            Err(e) => return self.tool_error(id, &format!("get_learner_profile failed: {e}")),
+        }
         let state = match store
             .get_learner_state_vector(parsed.learner_id, parsed.session_ts)
             .await

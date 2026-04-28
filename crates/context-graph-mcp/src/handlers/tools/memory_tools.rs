@@ -1708,6 +1708,14 @@ impl Handlers {
                     "stateConditionedProfile requires RocksDbTeleologicalStore.",
                 );
             };
+            match rocksdb_store.get_learner_profile(learner_id).await {
+                Ok(Some(profile)) if profile.consent_state == "revoked" => return self.tool_error(
+                    id,
+                    "stateConditionedProfile refuses to use learner state after consent revocation",
+                ),
+                Ok(_) => {}
+                Err(e) => return self.tool_error(id, &format!("get_learner_profile failed: {e}")),
+            }
             let state = match rocksdb_store
                 .get_learner_state_vector(learner_id, session_ts)
                 .await
