@@ -12,6 +12,9 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{CoreError, CoreResult};
+use crate::learning::LearningEvent;
+use crate::training::NUM_CROSS_CORRELATIONS;
+use crate::types::fingerprint::NUM_EMBEDDERS;
 
 /// Current on-disk version byte for learner training datasets.
 pub const LEARNER_TRAINING_DATASET_VERSION: u8 = 1;
@@ -242,6 +245,112 @@ pub fn sha256_row_major(values: &[f32]) -> String {
         hasher.update(value.to_le_bytes());
     }
     hex_lower(&hasher.finalize())
+}
+
+/// Canonical feature schema for Learning-as-UTL event tensors.
+///
+/// This is the shared contract used by MCP matrix export, CLI JSONL export,
+/// and downstream DPO/RL trainers. Keep changes append-only and versioned
+/// through `LEARNER_TRAINING_DATASET_VERSION`.
+pub fn learning_event_feature_schema() -> Vec<String> {
+    let mut schema = Vec::new();
+    for i in 1..=NUM_EMBEDDERS {
+        schema.push(format!("before_topic_e{i}"));
+    }
+    for i in 0..NUM_CROSS_CORRELATIONS {
+        schema.push(format!("before_cross_correlation_{i:02}"));
+    }
+    for i in 1..=NUM_EMBEDDERS {
+        schema.push(format!("before_embedder_score_e{i}"));
+    }
+    for i in 1..=NUM_EMBEDDERS {
+        schema.push(format!("delta_topic_e{i}"));
+    }
+    schema.extend([
+        "before_retrieval_rank_norm".into(),
+        "after_retrieval_rank_norm".into(),
+        "before_contradiction_pressure".into(),
+        "after_contradiction_pressure".into(),
+        "before_integration_confidence".into(),
+        "after_integration_confidence".into(),
+        "before_stability_score".into(),
+        "after_stability_score".into(),
+        "surprise_score".into(),
+        "coherence_delta".into(),
+        "contradiction_delta".into(),
+        "consolidation_readiness".into(),
+        "transfer_score".into(),
+        "multi_utl_score".into(),
+        "embedder_disagreement".into(),
+        "retrieval_rank_shift".into(),
+    ]);
+    schema
+}
+
+pub fn learning_event_label_schema() -> Vec<String> {
+    vec![
+        "utility_delta".into(),
+        "outcome_label".into(),
+        "correction_required".into(),
+        "reuse_observed".into(),
+    ]
+}
+
+/// Convert a persisted Learning-as-UTL event into the canonical row-major
+/// tensor row. Validation is strict: malformed event state returns an error
+/// instead of emitting a partially-populated tensor.
+pub fn learning_event_feature_vector(event: &LearningEvent) -> CoreResult<Vec<f32>> {
+    event.validate()?;
+
+    let mut features = Vec::with_capacity(learning_event_feature_schema().len());
+    features.extend_from_slice(&event.before.topic_profile);
+    features.extend_from_slice(&event.before.cross_correlations);
+    features.extend_from_slice(&event.before.embedder_scores);
+    for i in 0..NUM_EMBEDDERS {
+        features.push(event.after.topic_profile[i] - event.before.topic_profile[i]);
+    }
+    features.push(rank_norm(event.before.retrieval_rank));
+    features.push(rank_norm(event.after.retrieval_rank));
+    features.push(event.before.contradiction_pressure);
+    features.push(event.after.contradiction_pressure);
+    features.push(event.before.integration_confidence);
+    features.push(event.after.integration_confidence);
+    features.push(event.before.stability_score);
+    features.push(event.after.stability_score);
+    features.push(event.features.surprise_score);
+    features.push(event.features.coherence_delta);
+    features.push(event.features.contradiction_delta);
+    features.push(event.features.consolidation_readiness);
+    features.push(event.features.transfer_score);
+    features.push(event.features.multi_utl_score);
+    features.push(event.features.embedder_disagreement);
+    features.push(event.features.retrieval_rank_shift);
+
+    let expected = learning_event_feature_schema().len();
+    validate_feature_tensor(&features, expected, "learning_event_feature_vector")?;
+    Ok(features)
+}
+
+pub fn validate_feature_tensor(values: &[f32], expected_len: usize, field: &str) -> CoreResult<()> {
+    if values.len() != expected_len {
+        return Err(CoreError::DimensionMismatch {
+            expected: expected_len,
+            actual: values.len(),
+        });
+    }
+    for (idx, value) in values.iter().enumerate() {
+        if !value.is_finite() {
+            return Err(CoreError::ValidationError {
+                field: format!("{field}[{idx}]"),
+                message: "must be finite".into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn rank_norm(rank: Option<u32>) -> f32 {
+    rank.map(|rank| 1.0 / (1.0 + rank as f32)).unwrap_or(0.0)
 }
 
 fn sha256_manifest(

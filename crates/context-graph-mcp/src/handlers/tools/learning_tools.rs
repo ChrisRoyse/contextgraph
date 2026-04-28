@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use context_graph_core::learner::{sha256_json, LearnerModality};
 use context_graph_core::learner_training::{
+    learning_event_feature_schema, learning_event_feature_vector, learning_event_label_schema,
     LearnerTrainingDataset, LearnerTrainingRow, LearnerTrainingTask,
 };
 use context_graph_core::learning::{
@@ -723,12 +724,7 @@ async fn build_learning_event_matrix(
     max_rows: usize,
 ) -> Result<MatrixBuild, String> {
     let feature_schema = learning_event_feature_schema();
-    let label_schema = vec![
-        "utility_delta".into(),
-        "outcome_label".into(),
-        "correction_required".into(),
-        "reuse_observed".into(),
-    ];
+    let label_schema = learning_event_label_schema();
     let ids = store
         .list_learning_event_ids()
         .await
@@ -741,7 +737,8 @@ async fn build_learning_event_matrix(
             .await
             .map_err(|e| format!("get_learning_event failed for {event_id}: {e}"))?
             .ok_or_else(|| format!("learning event id {event_id} was listed but not readable"))?;
-        let features = learning_event_feature_vector(&event);
+        let features = learning_event_feature_vector(&event)
+            .map_err(|e| format!("learning_event_feature_vector failed for {event_id}: {e}"))?;
         assert_feature_len(&features, &feature_schema, "learning_event")?;
         row_major.extend_from_slice(&features);
         let label_scalar = match task {
@@ -934,68 +931,6 @@ async fn build_personal_physiology_matrix(
     })
 }
 
-fn learning_event_feature_schema() -> Vec<String> {
-    let mut schema = Vec::new();
-    for i in 1..=NUM_EMBEDDERS {
-        schema.push(format!("before_topic_e{i}"));
-    }
-    for i in 0..context_graph_core::training::NUM_CROSS_CORRELATIONS {
-        schema.push(format!("before_cross_correlation_{i:02}"));
-    }
-    for i in 1..=NUM_EMBEDDERS {
-        schema.push(format!("before_embedder_score_e{i}"));
-    }
-    for i in 1..=NUM_EMBEDDERS {
-        schema.push(format!("delta_topic_e{i}"));
-    }
-    schema.extend([
-        "before_retrieval_rank_norm".into(),
-        "after_retrieval_rank_norm".into(),
-        "before_contradiction_pressure".into(),
-        "after_contradiction_pressure".into(),
-        "before_integration_confidence".into(),
-        "after_integration_confidence".into(),
-        "before_stability_score".into(),
-        "after_stability_score".into(),
-        "surprise_score".into(),
-        "coherence_delta".into(),
-        "contradiction_delta".into(),
-        "consolidation_readiness".into(),
-        "transfer_score".into(),
-        "multi_utl_score".into(),
-        "embedder_disagreement".into(),
-        "retrieval_rank_shift".into(),
-    ]);
-    schema
-}
-
-fn learning_event_feature_vector(event: &LearningEvent) -> Vec<f32> {
-    let mut features = Vec::with_capacity(learning_event_feature_schema().len());
-    features.extend_from_slice(&event.before.topic_profile);
-    features.extend_from_slice(&event.before.cross_correlations);
-    features.extend_from_slice(&event.before.embedder_scores);
-    for i in 0..NUM_EMBEDDERS {
-        features.push(event.after.topic_profile[i] - event.before.topic_profile[i]);
-    }
-    features.push(rank_norm(event.before.retrieval_rank));
-    features.push(rank_norm(event.after.retrieval_rank));
-    features.push(event.before.contradiction_pressure);
-    features.push(event.after.contradiction_pressure);
-    features.push(event.before.integration_confidence);
-    features.push(event.after.integration_confidence);
-    features.push(event.before.stability_score);
-    features.push(event.after.stability_score);
-    features.push(event.features.surprise_score);
-    features.push(event.features.coherence_delta);
-    features.push(event.features.contradiction_delta);
-    features.push(event.features.consolidation_readiness);
-    features.push(event.features.transfer_score);
-    features.push(event.features.multi_utl_score);
-    features.push(event.features.embedder_disagreement);
-    features.push(event.features.retrieval_rank_shift);
-    features
-}
-
 fn diagnostic_feature_schema() -> Vec<String> {
     vec![
         "plasticity_window",
@@ -1141,10 +1076,6 @@ fn assert_feature_len(features: &[f32], schema: &[String], row_kind: &str) -> Re
         ));
     }
     Ok(())
-}
-
-fn rank_norm(rank: Option<u32>) -> f32 {
-    rank.map(|rank| 1.0 / (1.0 + rank as f32)).unwrap_or(0.0)
 }
 
 fn vector_norm(values: &[f32]) -> f32 {
