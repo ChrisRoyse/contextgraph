@@ -265,63 +265,63 @@ pub const CALIBRATION_DATASET_MANIFEST: &[CalibrationDatasetSpec] = &[
     CalibrationDatasetSpec {
         name: "WESAD",
         modality: "EDA/ECG/RESP/ACC/TEMP",
-        used_for: "E18 EDA stress baseline and stress-floor calibration",
+        used_for: "E18 PPG alignment and E19 EDA stress-floor calibration",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "MSP-Podcast",
         modality: "speech",
-        used_for: "E14 speech valence/arousal/dominance calibration",
+        used_for: "E15 speech valence/arousal/dominance calibration",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "EmoBank",
         modality: "text",
-        used_for: "E16 text valence/arousal regression calibration",
+        used_for: "E17 text valence/arousal regression calibration",
         access: "public",
         license: "open",
     },
     CalibrationDatasetSpec {
         name: "GoEmotions",
         modality: "text",
-        used_for: "E16 text affect category sanity checks",
+        used_for: "E17 text affect category sanity checks",
         access: "public",
         license: "open",
     },
     CalibrationDatasetSpec {
         name: "DAiSEE",
         modality: "face video",
-        used_for: "E15 engagement/affect face-video calibration",
+        used_for: "E16 engagement/affect face-video calibration",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "AffWild2",
         modality: "audio/video affect",
-        used_for: "E15 and E14 valence/arousal cross-modal calibration",
+        used_for: "E15 and E16 valence/arousal cross-modal calibration",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "DEAP",
         modality: "EEG/peripheral physiology",
-        used_for: "E19 EEG plasticity and affect cross-checks",
+        used_for: "E20 EEG plasticity and affect cross-checks",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "MAHNOB-HCI",
         modality: "EEG/PPG/face",
-        used_for: "E17/E19 multimodal affect-state alignment",
+        used_for: "E18/E20 multimodal affect-state alignment",
         access: "research download",
         license: "research",
     },
     CalibrationDatasetSpec {
         name: "SEED/SEED-IV",
         modality: "EEG",
-        used_for: "E19/E20 EEG emotion and artifact robustness checks",
+        used_for: "E20/E21 EEG emotion and artifact robustness checks",
         access: "research download",
         license: "research",
     },
@@ -480,19 +480,20 @@ const GROUP_WESAD_MANIFEST: LearnerAssetFileGroup = LearnerAssetFileGroup {
     alternatives: &["manifest.json"],
 };
 
-static REQ_E14: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_PREPROCESSOR];
-static REQ_E15: &[LearnerAssetFileGroup] = &[
+static REQ_E15_SPEECH: &[LearnerAssetFileGroup] =
+    &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_PREPROCESSOR];
+static REQ_E16_FACE: &[LearnerAssetFileGroup] = &[
     GROUP_OPENFACE_INTERFACE,
     GROUP_OPENFACE_MULTITASK_MODEL,
     GROUP_OPENFACE_FACE_DETECTOR,
     GROUP_OPENFACE_LANDMARKS,
     GROUP_OPENFACE_MULTITASK_WEIGHTS,
 ];
-static REQ_E16: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_TOKENIZER];
-static REQ_E17: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_PAPAGEI_WEIGHTS];
-static REQ_E18: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_EDA_HEAD];
-static REQ_E19: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
-static REQ_E20: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_E17_TEXT: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_TOKENIZER];
+static REQ_E18_PPG: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_PAPAGEI_WEIGHTS];
+static REQ_E19_EDA: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_EDA_HEAD];
+static REQ_E20_EEG: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_E21_EEG_ROBUST: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
 static REQ_GOEMOTIONS: &[LearnerAssetFileGroup] =
     &[GROUP_GOEMOTIONS_SAMPLE, GROUP_GOEMOTIONS_MANIFEST];
 static REQ_WESAD: &[LearnerAssetFileGroup] = &[GROUP_WESAD_ARCHIVE, GROUP_WESAD_MANIFEST];
@@ -505,43 +506,43 @@ pub fn learner_model_asset_requirements() -> Vec<LearnerModelAssetRequirement> {
             slot: LearnerEmbedderSlot::E15AffectSpeech,
             model_dir: "affect-speech",
             source: HF_AFFECT_SPEECH,
-            required: REQ_E14,
+            required: REQ_E15_SPEECH,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E16AffectFace,
             model_dir: "affect-face",
             source: "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights",
-            required: REQ_E15,
+            required: REQ_E16_FACE,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E17AffectText,
             model_dir: "affect-text",
             source: HF_AFFECT_TEXT,
-            required: REQ_E16,
+            required: REQ_E17_TEXT,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E18Ppg,
             model_dir: "ppg",
             source: "zenodo:10.5281/zenodo.13983110:papagei_s.pt",
-            required: REQ_E17,
+            required: REQ_E18_PPG,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E19Eda,
             model_dir: "eda",
             source: "local-training:official WESAD raw ECG/EDA/RESP/TEMP stress-floor head",
-            required: REQ_E18,
+            required: REQ_E19_EDA,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E20Eeg,
             model_dir: "eeg",
             source: HF_LABRAM,
-            required: REQ_E19,
+            required: REQ_E20_EEG,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E21EegArtifactRobust,
             model_dir: "eeg-robust",
             source: HF_EEGPT,
-            required: REQ_E20,
+            required: REQ_E21_EEG_ROBUST,
         },
     ]
 }
@@ -724,7 +725,7 @@ pub fn state_vector_from_outputs(
     let components = components_from_outputs(outputs)?;
     let values = concatenate_outputs(outputs);
     context.insert("learner_embedder_count".into(), outputs.len().to_string());
-    context.insert("learner_embedder_namespace".into(), "utl_e14_e20".into());
+    context.insert("learner_embedder_namespace".into(), "utl_e15_e21".into());
     let state = LearnerStateVector {
         learner_id,
         session_ts,
@@ -1027,7 +1028,7 @@ fn text_affect_features(
 ) -> EmbeddingResult<(Vec<f32>, BTreeMap<String, f32>)> {
     let LearnerEmbedderInput::Text { content } = input else {
         return Err(EmbeddingError::ConfigError {
-            message: "E16 affect-text requires text input".into(),
+            message: "E17 affect-text requires text input".into(),
         });
     };
     if content.trim().is_empty() {
@@ -1642,7 +1643,7 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_fixture_embeds_all_e14_e20_slots() {
+    fn synthetic_fixture_embeds_all_e15_e21_slots() {
         let fixture = synthetic_calibration_fixture();
         let sample = &fixture.samples[0];
         let outputs = embed_calibration_sample(sample).unwrap();

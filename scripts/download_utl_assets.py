@@ -53,7 +53,14 @@ MODEL_SOURCES: dict[str, dict[str, str]] = {
 }
 
 MANUAL_MODEL_SOURCES: dict[str, str] = {
-    "e19_eda": "WESAD-trained local 1D-CNN checkpoint",
+    "e19_eda": "WESAD-trained local stress-floor head; run scripts/train_utl_eda_stress_head.py",
+}
+
+MANUAL_MODEL_FILES: dict[str, dict[str, Any]] = {
+    "e19_eda": {
+        "local_dir": "eda",
+        "required": ["config.json", "wesad_stress_head.pt"],
+    },
 }
 
 ZENODO_SOURCES: dict[str, dict[str, Any]] = {
@@ -138,7 +145,11 @@ def parse_csv(value: str) -> list[str]:
     if value == "none":
         return []
     if value == "all":
-        return list(MODEL_SOURCES)
+        return [
+            *MODEL_SOURCES,
+            *ZENODO_SOURCES,
+            *MANUAL_MODEL_SOURCES,
+        ]
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
@@ -149,11 +160,32 @@ def download_models(models_root: Path, requested: list[str]) -> dict[str, Any]:
 
     for model_id in requested:
         if model_id in MANUAL_MODEL_SOURCES:
+            spec = MANUAL_MODEL_FILES[model_id]
+            target_dir = models_root / spec["local_dir"]
+            missing = [
+                filename
+                for filename in spec["required"]
+                if not (target_dir / filename).is_file()
+            ]
+            if not missing:
+                summary["downloaded"].append(
+                    {
+                        "id": model_id,
+                        "source": MANUAL_MODEL_SOURCES[model_id],
+                        "path": str(target_dir),
+                        "hashes": {
+                            filename: sha256_file(target_dir / filename)
+                            for filename in spec["required"]
+                        },
+                    }
+                )
+                continue
             summary["failed"].append(
                 {
                     "id": model_id,
                     "reason": "manual_or_local_training_required",
                     "source": MANUAL_MODEL_SOURCES[model_id],
+                    "missing": missing,
                 }
             )
             continue

@@ -12,7 +12,7 @@
     {
       "slot": "E16",
       "name": "affect_face",
-      "model": "OpenFace 3.0 + emotion head",
+      "model": "OpenFace 3.0 + MTL emotion/AU/gaze head",
       "calibration_datasets": ["DAiSEE", "EngageNet", "AffWild2", "CMOSE"]
     },
     {
@@ -30,7 +30,7 @@
     {
       "slot": "E19",
       "name": "eda",
-      "model": "WESAD-trained 1D-CNN",
+      "model": "WESAD chest physiology stress head",
       "calibration_datasets": ["WESAD", "ASCERTAIN", "AMIGOS"]
     },
     {

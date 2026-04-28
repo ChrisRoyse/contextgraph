@@ -13,6 +13,7 @@ use context_graph_core::learner::{
     LearnerModality, LearnerModalityCentroid, LearnerProfile, LearnerRetrievalLog,
     LearnerStateComponents, ObservationEnvelope, LEARNER_BASELINE_SELECTOR_REGULATED,
 };
+use context_graph_embeddings::types::ModelId;
 use context_graph_embeddings::{
     embed_calibration_sample, learner_embedder_specs, preflight_learner_assets,
     state_vector_from_outputs, synthetic_calibration_fixture, LearnerEmbedderSlot,
@@ -135,11 +136,18 @@ async fn run(action: UtlCommands) -> Result<serde_json::Value> {
     match action {
         UtlCommands::ListEmbedders => Ok(json!({
             "source_of_truth": {
-                "registry": "context_graph_embeddings::learner",
+                "content_registry": "context_graph_embeddings::types::ModelId::production",
+                "learner_registry": "context_graph_embeddings::learner::LearnerEmbedderSlot::all",
                 "fixture_manifest": "crates/context-graph-embeddings/fixtures/utl_calibration"
             },
             "planned_total_embedders": UTL_PLANNED_TOTAL_EMBEDDERS,
+            "content_embedder_count": ModelId::production().len(),
             "learner_embedder_count": learner_embedder_specs().len(),
+            "legacy_content_variants_not_counted": [{
+                "id": "Entity",
+                "reason": "legacy E11 MiniLM compatibility variant; production E11 is Kepler"
+            }],
+            "content_embedders": content_embedder_specs_json(),
             "learner_embedders": learner_embedder_specs().iter().map(|spec| json!({
                 "slot": spec.slot_number,
                 "id": spec.slot.as_str(),
@@ -334,6 +342,65 @@ fn open_store(storage: &PathBuf) -> Result<RocksDbTeleologicalStore> {
         .with_context(|| format!("opening RocksDbTeleologicalStore at {}", storage.display()))
 }
 
+fn content_embedder_specs_json() -> Vec<serde_json::Value> {
+    ModelId::production()
+        .iter()
+        .map(|model| {
+            json!({
+                "slot": content_slot_number(*model),
+                "id": model.as_str(),
+                "model_name": content_model_name(*model),
+                "model_repo": model.model_repo(),
+                "model_path": model.directory_name(),
+                "native_dimension": model.dimension(),
+                "projected_dimension": model.projected_dimension(),
+                "max_tokens": model.max_tokens(),
+                "custom": model.is_custom(),
+            })
+        })
+        .collect()
+}
+
+fn content_slot_number(model: ModelId) -> u8 {
+    match model {
+        ModelId::Semantic => 1,
+        ModelId::TemporalRecent => 2,
+        ModelId::TemporalPeriodic => 3,
+        ModelId::TemporalPositional => 4,
+        ModelId::Causal => 5,
+        ModelId::Sparse => 6,
+        ModelId::Code => 7,
+        ModelId::Graph => 8,
+        ModelId::Hdc => 9,
+        ModelId::Contextual => 10,
+        ModelId::Kepler => 11,
+        ModelId::LateInteraction => 12,
+        ModelId::Splade => 13,
+        ModelId::BgeM3Dense => 14,
+        ModelId::Entity => 11,
+    }
+}
+
+fn content_model_name(model: ModelId) -> &'static str {
+    match model {
+        ModelId::Semantic => "intfloat/e5-large-v2",
+        ModelId::TemporalRecent => "exponential recency basis",
+        ModelId::TemporalPeriodic => "Fourier periodic basis",
+        ModelId::TemporalPositional => "sinusoidal positional basis",
+        ModelId::Causal => "nomic-ai/nomic-embed-text-v1.5",
+        ModelId::Sparse => "naver/splade-cocondenser-ensembledistil",
+        ModelId::Code => "Qodo/Qodo-Embed-1-1.5B",
+        ModelId::Graph => "intfloat/e5-large-v2 graph/sentence embedding",
+        ModelId::Hdc => "hyperdimensional computing encoder",
+        ModelId::Contextual => "intfloat/e5-base-v2 contextual paraphrase",
+        ModelId::Entity => "legacy sentence-transformers/all-MiniLM-L6-v2",
+        ModelId::Kepler => "THU-KEG/KEPLER-Wiki5M-KE",
+        ModelId::LateInteraction => "colbert-ir/colbertv2.0",
+        ModelId::Splade => "prithivida/Splade_PP_en_v1",
+        ModelId::BgeM3Dense => "BAAI/bge-m3 dense head",
+    }
+}
+
 async fn counts(store: &RocksDbTeleologicalStore) -> Result<serde_json::Value> {
     Ok(json!({
         "learner_profile": store.count_learner_profiles().await?,
@@ -377,7 +444,7 @@ fn synthetic_records(
         .collect::<BTreeSet<_>>();
     let profile = LearnerProfile::new(
         learner_id,
-        "synthetic-all-e14-e20-learner".into(),
+        "synthetic-all-e15-e21-learner".into(),
         "consented-local-first".into(),
         modalities,
         Some(session_ts),
@@ -398,7 +465,7 @@ fn synthetic_records(
             ("environment".into(), "quiet-dev-workstation".into()),
             ("fixture_id".into(), fixture.fixture_id.into()),
             ("sample_id".into(), sample.sample_id.into()),
-            ("task".into(), "synthetic-all-e14-e20-utl-fsv".into()),
+            ("task".into(), "synthetic-all-e15-e21-utl-fsv".into()),
         ]),
     )?;
     let state_centroid = state_vector.clone();

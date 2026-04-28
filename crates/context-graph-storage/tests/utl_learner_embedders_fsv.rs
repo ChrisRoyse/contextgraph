@@ -60,7 +60,7 @@ async fn counts(
 }
 
 #[tokio::test]
-async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
+async fn happy_path_all_e15_e21_embedders_persist_and_read_back() {
     println!("=== FSV: UTL E15-E21 learner embedders happy path ===");
     println!(
         "SOURCE OF TRUTH: learner embedder registry + synthetic calibration fixture + RocksDB learner CFs"
@@ -127,7 +127,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
 
     let profile = LearnerProfile::new(
         learner_id,
-        "all-e14-e20-fsv-learner".into(),
+        "all-e15-e21-fsv-learner".into(),
         "consented-local-first".into(),
         LearnerEmbedderSlot::all()
             .iter()
@@ -266,7 +266,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
         audit_id: Uuid::from_u128(0x40404040_4040_4040_8040_404040404040),
         learner_id,
         ts: session_ts,
-        action: "fsv_all_e14_e20_learner_embedders".into(),
+        action: "fsv_all_e15_e21_learner_embedders".into(),
         target_cf: "fingerprints_learner".into(),
         result_sha256: sha256_json(&fingerprint).unwrap(),
         parent_audit_id: None,
@@ -377,7 +377,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
 
 #[tokio::test]
 async fn edge_empty_affect_text_rejected_before_persistence() {
-    println!("=== EDGE CASE: empty E16 affect-text input ===");
+    println!("=== EDGE CASE: empty E17 affect-text input ===");
     let dir = TempDir::new().unwrap();
     let store = open_store(&dir);
     let before = counts(&store).await;
@@ -421,7 +421,7 @@ async fn edge_missing_one_slot_rejected_before_persistence() {
 
 #[tokio::test]
 async fn edge_nonfinite_eda_sample_rejected_before_persistence() {
-    println!("=== EDGE CASE: nonfinite E18 EDA sample ===");
+    println!("=== EDGE CASE: nonfinite E19 EDA sample ===");
     let dir = TempDir::new().unwrap();
     let store = open_store(&dir);
     let before = counts(&store).await;
