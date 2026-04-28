@@ -29,6 +29,10 @@ impl EmbeddingModel for LateInteractionModel {
         LateInteractionModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        LateInteractionModel::unload(self).await
+    }
+
     fn dimension(&self) -> usize {
         LATE_INTERACTION_DIMENSION
     }

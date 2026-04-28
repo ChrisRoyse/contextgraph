@@ -4,16 +4,16 @@
 
 use crate::types::ModelId;
 
-/// Memory estimates for each model (in bytes, FP32).
-/// These are conservative overestimates.
-pub const MEMORY_ESTIMATES: [(ModelId, usize); 14] = [
+/// Memory estimates for each model (in bytes).
+/// These are conservative runtime VRAM reservations for weights plus headroom.
+pub const MEMORY_ESTIMATES: [(ModelId, usize); 15] = [
     (ModelId::Semantic, 1_400_000_000), // 1.3 GB + buffer (e5-large-v2, 335M params)
     (ModelId::TemporalRecent, 15_000_000), // 10 MB + buffer
     (ModelId::TemporalPeriodic, 15_000_000), // 10 MB + buffer
     (ModelId::TemporalPositional, 15_000_000), // 10 MB + buffer
     (ModelId::Causal, 650_000_000),     // 600 MB + buffer (nomic-embed-v1.5)
     (ModelId::Sparse, 550_000_000),     // 500 MB + buffer
-    (ModelId::Code, 550_000_000),       // 500 MB + buffer
+    (ModelId::Code, 3_800_000_000),     // Qodo-Embed-1-1.5B in FP16 + activation headroom
     (ModelId::Graph, 1_400_000_000),    // 1.3 GB + buffer (loads e5-large-v2, 335M params)
     (ModelId::Hdc, 60_000_000),         // 50 MB + buffer
     (ModelId::Contextual, 500_000_000), // ~440 MB + buffer (e5-base-v2, 110M params)
@@ -21,6 +21,7 @@ pub const MEMORY_ESTIMATES: [(ModelId, usize); 14] = [
     (ModelId::LateInteraction, 450_000_000), // 400 MB + buffer
     (ModelId::Splade, 550_000_000),     // 500 MB + buffer (similar to E6 Sparse)
     (ModelId::Kepler, 350_000_000),     // ~300 MB + buffer (KEPLER RoBERTa-base 768D)
+    (ModelId::BgeM3Dense, 2_600_000_000), // BGE-M3 / XLM-R large weights + headroom
 ];
 
 /// Get memory estimate for a ModelId.
@@ -42,17 +43,16 @@ pub fn get_memory_estimate(model_id: ModelId) -> usize {
         })
 }
 
-/// Total memory for all 14 models (FP32).
-/// ~6.6 GB without quantization.
-pub const TOTAL_MEMORY_ESTIMATE: usize = 6_625_000_000;
+/// Total memory for all model variants, including legacy Entity and E14 BGE-M3.
+pub const TOTAL_MEMORY_ESTIMATE: usize = 12_475_000_000;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_memory_estimates_array_has_14_entries() {
-        assert_eq!(MEMORY_ESTIMATES.len(), 14);
+    fn test_memory_estimates_array_has_all_model_entries() {
+        assert_eq!(MEMORY_ESTIMATES.len(), ModelId::all().len());
     }
 
     #[test]
@@ -82,19 +82,13 @@ mod tests {
 
     #[test]
     fn test_memory_estimate_largest_model() {
-        // Semantic (e5-large-v2) and Graph (also e5-large-v2) should be largest at 1.4GB
-        let semantic = get_memory_estimate(ModelId::Semantic);
-        let graph = get_memory_estimate(ModelId::Graph);
-        assert_eq!(
-            semantic, graph,
-            "Semantic and Graph both load e5-large-v2, should match"
-        );
+        let largest = get_memory_estimate(ModelId::Code);
         for model_id in ModelId::all() {
             let other = get_memory_estimate(*model_id);
             assert!(
-                semantic >= other,
-                "Semantic ({}) should be >= {:?} ({})",
-                semantic,
+                largest >= other,
+                "Code ({}) should be >= {:?} ({})",
+                largest,
                 model_id,
                 other
             );

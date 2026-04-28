@@ -1007,6 +1007,10 @@ impl EmbeddingModel for ContextualModel {
         ContextualModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        ContextualModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {

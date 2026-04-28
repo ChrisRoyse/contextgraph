@@ -26,6 +26,10 @@ impl EmbeddingModel for BgeM3DenseModel {
         BgeM3DenseModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        BgeM3DenseModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {

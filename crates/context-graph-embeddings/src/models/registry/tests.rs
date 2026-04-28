@@ -24,7 +24,7 @@ impl TestModel {
     pub fn new(model_id: ModelId) -> Self {
         Self {
             model_id,
-            initialized: AtomicBool::new(true),
+            initialized: AtomicBool::new(false),
         }
     }
 }
@@ -55,6 +55,16 @@ impl EmbeddingModel for TestModel {
 
     fn is_initialized(&self) -> bool {
         self.initialized.load(Ordering::SeqCst)
+    }
+
+    async fn load(&self) -> EmbeddingResult<()> {
+        self.initialized.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    async fn unload(&self) -> EmbeddingResult<()> {
+        self.initialized.store(false, Ordering::SeqCst);
+        Ok(())
     }
 }
 
@@ -129,4 +139,9 @@ async fn test_load_model_success() {
 
     assert!(result.is_ok());
     assert!(registry.is_loaded(ModelId::Semantic).await);
+    assert!(registry
+        .get_cached_model(ModelId::Semantic)
+        .await
+        .unwrap()
+        .is_initialized());
 }

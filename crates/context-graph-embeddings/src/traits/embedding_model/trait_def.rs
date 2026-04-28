@@ -172,6 +172,14 @@ pub trait EmbeddingModel: Send + Sync {
         Ok(())
     }
 
+    /// Unload model weights and release runtime resources.
+    ///
+    /// Pretrained models override this to drop GPU tensors/tokenizer state.
+    /// Custom models that keep no external resources use the default no-op.
+    async fn unload(&self) -> EmbeddingResult<()> {
+        Ok(())
+    }
+
     // =========================================================================
     // Default implementations
     // =========================================================================

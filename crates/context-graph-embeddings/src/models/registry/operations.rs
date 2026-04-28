@@ -2,6 +2,8 @@
 //!
 //! This module contains unload, query, and statistics methods for ModelRegistry.
 
+use std::sync::Arc;
+
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::types::ModelId;
 
@@ -17,6 +19,7 @@ impl ModelRegistry {
     /// # Returns
     /// - `Ok(())` if unload succeeds
     /// - `Err(EmbeddingError::ModelNotLoaded)` if model not loaded
+    /// - `Err(EmbeddingError::ModelInUse)` if callers still hold model handles
     ///
     /// # Example
     ///
@@ -35,15 +38,41 @@ impl ModelRegistry {
     /// }
     /// ```
     pub async fn unload_model(&self, model_id: ModelId) -> EmbeddingResult<()> {
-        // Remove from cache
-        let removed = {
+        let lock = self
+            .loading_locks
+            .get(&model_id)
+            .ok_or_else(|| EmbeddingError::ModelNotFound { model_id })?;
+        let _permit = lock
+            .acquire()
+            .await
+            .map_err(|_| EmbeddingError::InternalError {
+                message: format!("Semaphore closed for model {:?}", model_id),
+            })?;
+
+        // Remove from cache only when the registry is the sole owner. If a
+        // caller still holds an Arc from get_model(), unloading would mutate
+        // live inference state out from under that caller.
+        let model = {
             let mut models = self.models.write().await;
-            models.remove(&model_id)
+            let model = models
+                .get(&model_id)
+                .ok_or_else(|| EmbeddingError::ModelNotLoaded { model_id })?;
+            let external_refs = Arc::strong_count(model).saturating_sub(1);
+            if external_refs > 0 {
+                return Err(EmbeddingError::ModelInUse {
+                    model_id,
+                    ref_count: external_refs,
+                });
+            }
+            models
+                .remove(&model_id)
+                .ok_or_else(|| EmbeddingError::ModelNotLoaded { model_id })?
         };
 
-        // FAIL FAST: Model must be loaded
-        if removed.is_none() {
-            return Err(EmbeddingError::ModelNotLoaded { model_id });
+        if let Err(e) = model.unload().await {
+            let mut models = self.models.write().await;
+            models.insert(model_id, model);
+            return Err(e);
         }
 
         // Deallocate memory

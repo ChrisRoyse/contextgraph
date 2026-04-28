@@ -576,6 +576,10 @@ impl EmbeddingModel for CausalModel {
         CausalModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        CausalModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         self.ensure_initialized()?;
         self.validate_input(input)?;

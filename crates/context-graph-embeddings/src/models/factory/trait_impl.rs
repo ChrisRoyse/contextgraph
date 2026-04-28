@@ -41,9 +41,9 @@ impl ModelFactory for DefaultModelFactory {
     /// );
     /// let config = SingleModelConfig::cuda_fp16();
     ///
-    /// // Verify factory supports all 14 models (E1-E13 + Kepler)
+    /// // Verify factory supports every ModelId variant, including legacy Entity and E14.
     /// assert!(factory.supported_models().contains(&ModelId::Semantic));
-    /// assert_eq!(factory.supported_models().len(), 14);
+    /// assert_eq!(factory.supported_models().len(), 15);
     ///
     /// // Estimate memory before creating
     /// let memory = factory.estimate_memory(ModelId::Semantic);

@@ -100,28 +100,6 @@ impl ModelRegistry {
         // Get memory estimate
         let memory_needed = self.factory.estimate_memory(model_id);
 
-        // Check memory budget
-        {
-            let tracker = self.memory_tracker.read().await;
-            if !tracker.can_allocate(memory_needed) {
-                let mut stats = self.stats.write().await;
-                stats.load_failures += 1;
-
-                tracing::warn!(
-                    model_id = ?model_id,
-                    required_bytes = memory_needed,
-                    available_bytes = tracker.remaining(),
-                    "Memory budget check FAILED"
-                );
-
-                return Err(EmbeddingError::MemoryBudgetExceeded {
-                    requested_bytes: memory_needed,
-                    available_bytes: tracker.remaining(),
-                    budget_bytes: tracker.budget(),
-                });
-            }
-        }
-
         // Create model via factory
         let config = SingleModelConfig::default();
         let model = match self.factory.create_model(model_id, &config) {
@@ -138,18 +116,59 @@ impl ModelRegistry {
             }
         };
 
-        // Convert to Arc<dyn EmbeddingModel>
-        let model: Arc<dyn EmbeddingModel> = Arc::from(model);
+        // Limit concurrent GPU weight loads across different models. The
+        // per-model permit above prevents duplicate loads of the same model.
+        let _load_permit =
+            self.load_semaphore
+                .acquire()
+                .await
+                .map_err(|_| EmbeddingError::InternalError {
+                    message: "global model load semaphore closed".to_string(),
+                })?;
 
-        // Allocate memory
+        // Reserve memory before touching GPU state. This prevents concurrent
+        // model loads from temporarily overcommitting VRAM and OOMing outside
+        // the registry's accounting.
         {
             let mut tracker = self.memory_tracker.write().await;
             if let Err(e) = tracker.allocate(model_id, memory_needed) {
                 let mut stats = self.stats.write().await;
                 stats.load_failures += 1;
+                tracing::warn!(
+                    model_id = ?model_id,
+                    required_bytes = memory_needed,
+                    available_bytes = tracker.remaining(),
+                    "Memory budget reservation FAILED"
+                );
                 return Err(e);
             }
         }
+
+        if let Err(e) = model.load().await {
+            let _ = self.memory_tracker.write().await.deallocate(model_id);
+            let _ = model.unload().await;
+            let mut stats = self.stats.write().await;
+            stats.load_failures += 1;
+            tracing::error!(
+                model_id = ?model_id,
+                error = ?e,
+                "Model load FAILED after memory reservation; reservation rolled back"
+            );
+            return Err(e);
+        }
+
+        if !model.is_initialized() {
+            let _ = self.memory_tracker.write().await.deallocate(model_id);
+            let _ = model.unload().await;
+            let mut stats = self.stats.write().await;
+            stats.load_failures += 1;
+            return Err(EmbeddingError::InternalError {
+                message: format!("Model {:?} reported uninitialized after load", model_id),
+            });
+        }
+
+        // Convert to Arc<dyn EmbeddingModel>
+        let model: Arc<dyn EmbeddingModel> = Arc::from(model);
 
         // Insert into cache
         {

@@ -84,6 +84,10 @@ pub enum EmbeddingError {
     #[error("Model not loaded: {model_id:?}")]
     ModelNotLoaded { model_id: ModelId },
 
+    /// Model cannot be unloaded because callers still hold live handles.
+    #[error("Model in use: {model_id:?} has {ref_count} live handle(s) outside the registry")]
+    ModelInUse { model_id: ModelId, ref_count: usize },
+
     /// Memory budget exceeded for loading models.
     #[error("Memory budget exceeded: requested {requested_bytes} bytes, available {available_bytes} bytes (budget: {budget_bytes} bytes)")]
     MemoryBudgetExceeded {

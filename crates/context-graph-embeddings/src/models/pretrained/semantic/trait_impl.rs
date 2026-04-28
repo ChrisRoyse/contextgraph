@@ -26,6 +26,10 @@ impl EmbeddingModel for SemanticModel {
         SemanticModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        SemanticModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         // 1. Check initialized
         if !self.is_initialized() {

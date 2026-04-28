@@ -31,6 +31,10 @@ impl EmbeddingModel for SparseModel {
         SparseModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        SparseModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         // Delegate to the inherent impl
         SparseModel::embed(self, input).await

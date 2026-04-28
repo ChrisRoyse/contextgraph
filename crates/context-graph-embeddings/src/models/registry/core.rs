@@ -48,6 +48,9 @@ pub struct ModelRegistry {
     /// Each semaphore has 1 permit - only one load at a time per model.
     pub(super) loading_locks: HashMap<ModelId, Arc<Semaphore>>,
 
+    /// Global load semaphore limiting concurrent GPU weight loads.
+    pub(super) load_semaphore: Arc<Semaphore>,
+
     /// Memory usage tracking (thread-safe).
     pub(super) memory_tracker: RwLock<MemoryTracker>,
 
@@ -99,13 +102,14 @@ impl ModelRegistry {
         // FAIL FAST: Validate configuration
         config.validate()?;
 
-        // Create per-model loading locks for all 14 models
+        // Create per-model loading locks for all registered model variants.
         let mut loading_locks = HashMap::new();
         for model_id in ModelId::all() {
             loading_locks.insert(*model_id, Arc::new(Semaphore::new(1)));
         }
 
         let memory_tracker = MemoryTracker::new(config.memory_budget_bytes);
+        let load_semaphore = Arc::new(Semaphore::new(config.max_concurrent_loads));
 
         tracing::info!(
             memory_budget_bytes = config.memory_budget_bytes,
@@ -118,6 +122,7 @@ impl ModelRegistry {
             models: RwLock::new(HashMap::new()),
             config,
             loading_locks,
+            load_semaphore,
             memory_tracker: RwLock::new(memory_tracker),
             factory,
             stats: RwLock::new(RegistryStatsInternal::default()),

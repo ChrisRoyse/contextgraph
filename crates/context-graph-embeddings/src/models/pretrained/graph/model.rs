@@ -390,6 +390,10 @@ impl EmbeddingModel for GraphModel {
         GraphModel::load(self).await
     }
 
+    async fn unload(&self) -> EmbeddingResult<()> {
+        GraphModel::unload(self).await
+    }
+
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
