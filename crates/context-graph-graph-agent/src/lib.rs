@@ -72,7 +72,7 @@ pub mod llm;
 pub mod scanner;
 #[cfg(feature = "llm")]
 pub mod service;
-#[cfg(feature = "test-utils")]
+#[cfg(all(feature = "test-utils", feature = "llm"))]
 pub mod stubs;
 pub mod types;
 
@@ -91,8 +91,8 @@ pub use types::{
     GraphMarkers, MemoryForGraphAnalysis, RelationshipCategory, RelationshipType,
 };
 
-// Test utilities (feature-gated)
-#[cfg(feature = "test-utils")]
+// Test utilities require the LLM-backed service type they construct.
+#[cfg(all(feature = "test-utils", feature = "llm"))]
 pub use stubs::create_stub_graph_discovery_service;
 
 /// E8 embedding dimension (upgraded from 384 to 1024).

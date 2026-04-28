@@ -208,10 +208,13 @@ async fn test_e2e_tools_list_all_tools() {
     //   resolve_learner_retrieval_policy
     // 2026-04-28: Bumped 101 → 103 after conceptual capability tools:
     //   estimate_learning_outcome, derive_constellation
+    // 2026-04-28: Bumped 105 → 108 after learning signal embedder MCP tools:
+    //   list_learning_signal_embedders, compute_learning_signals,
+    //   embed_learning_event_signals
     assert_eq!(
         tools.len(),
-        103,
-        "Expected exactly 103 tools with LLM feature, found {}",
+        108,
+        "Expected exactly 108 tools with LLM feature, found {}",
         tools.len()
     );
 
@@ -1162,6 +1165,183 @@ async fn test_e2e_estimate_learning_outcome_fsv() {
         rocksdb_store.count_learning_events().await.unwrap(),
         useful_readback.outcome.utility_delta,
         useful_readback.features.delta_e_scalar
+    );
+
+    let list_embedders = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(660)),
+        Some(json!({
+            "name": "list_learning_signal_embedders",
+            "arguments": {}
+        })),
+    );
+    let list_response = handlers.dispatch(list_embedders).await;
+    assert!(
+        list_response.error.is_none(),
+        "list_learning_signal_embedders JSON-RPC error: {:?}",
+        list_response.error
+    );
+    let list_data = extract_mcp_tool_data(&list_response.result.expect("list result"));
+    assert_eq!(list_data["count"], 5);
+    assert_eq!(list_data["embedders"].as_array().unwrap().len(), 5);
+    println!(
+        "HAPPY LIST_SIGNAL_EMBEDDERS count={} first={}",
+        list_data["count"], list_data["embedders"][0]["signal_id"]
+    );
+
+    let before_compute = rocksdb_store.count_learning_events().await.unwrap();
+    let compute = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(661)),
+        Some(json!({
+            "name": "compute_learning_signals",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "after": learning_state_json(0.80, 1, "math"),
+                "outcome": {
+                    "label": "useful",
+                    "utilityDelta": 0.80,
+                    "correctionRequired": false,
+                    "reuseObserved": true
+                }
+            }
+        })),
+    );
+    let compute_response = handlers.dispatch(compute).await;
+    assert!(
+        compute_response.error.is_none(),
+        "compute_learning_signals JSON-RPC error: {:?}",
+        compute_response.error
+    );
+    let compute_data = extract_mcp_tool_data(&compute_response.result.expect("compute result"));
+    assert_eq!(compute_data["state_mutated"], false);
+    assert_eq!(compute_data["signals"].as_array().unwrap().len(), 5);
+    assert!((compute_data["features"]["delta_e_scalar"].as_f64().unwrap() - 0.60).abs() < 0.0001);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_compute
+    );
+    println!(
+        "HAPPY COMPUTE_SIGNALS before={} after={} signals={} delta_e={}",
+        before_compute,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        compute_data["signals"].as_array().unwrap().len(),
+        compute_data["features"]["delta_e_scalar"]
+    );
+
+    let before_embed = rocksdb_store.count_learning_events().await.unwrap();
+    let embed = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(662)),
+        Some(json!({
+            "name": "embed_learning_event_signals",
+            "arguments": {
+                "eventId": useful_id,
+                "includePersisted": true
+            }
+        })),
+    );
+    let embed_response = handlers.dispatch(embed).await;
+    assert!(
+        embed_response.error.is_none(),
+        "embed_learning_event_signals JSON-RPC error: {:?}",
+        embed_response.error
+    );
+    let embed_data = extract_mcp_tool_data(&embed_response.result.expect("embed result"));
+    assert_eq!(embed_data["before_count"], before_embed);
+    assert_eq!(embed_data["after_count"], before_embed);
+    assert_eq!(embed_data["state_mutated"], false);
+    assert_eq!(embed_data["persisted_all_match"], true);
+    assert_eq!(embed_data["signals"].as_array().unwrap().len(), 5);
+    println!(
+        "HAPPY EMBED_PERSISTED before={} after={} persisted_match={} signals={}",
+        embed_data["before_count"],
+        embed_data["after_count"],
+        embed_data["persisted_all_match"],
+        embed_data["signals"].as_array().unwrap().len()
+    );
+
+    let before_bad_signal = rocksdb_store.count_learning_events().await.unwrap();
+    let bad_signal = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(663)),
+        Some(json!({
+            "name": "compute_learning_signals",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "after": learning_state_json(0.80, 1, "math"),
+                "outcome": {"label": "useful"},
+                "signalIds": ["delta_e", "not_a_signal"]
+            }
+        })),
+    );
+    let bad_signal_response = handlers.dispatch(bad_signal).await;
+    let bad_signal_result = bad_signal_response.result.expect("tool result");
+    assert_eq!(bad_signal_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_bad_signal
+    );
+    println!(
+        "EDGE BAD_SIGNAL before={} after={} isError={}",
+        before_bad_signal,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        bad_signal_result["isError"]
+    );
+
+    let before_missing_embed = rocksdb_store.count_learning_events().await.unwrap();
+    let missing_embed = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(664)),
+        Some(json!({
+            "name": "embed_learning_event_signals",
+            "arguments": {
+                "eventId": "99999999-9999-4999-8999-999999999999"
+            }
+        })),
+    );
+    let missing_embed_response = handlers.dispatch(missing_embed).await;
+    let missing_embed_result = missing_embed_response.result.expect("tool result");
+    assert_eq!(missing_embed_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_missing_embed
+    );
+    println!(
+        "EDGE MISSING_EMBED_EVENT before={} after={} isError={}",
+        before_missing_embed,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        missing_embed_result["isError"]
+    );
+
+    let before_compute_invalid_dims = rocksdb_store.count_learning_events().await.unwrap();
+    let compute_invalid_dims = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(665)),
+        Some(json!({
+            "name": "compute_learning_signals",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "after": {
+                    "topicProfile": vec![0.8; 14],
+                    "crossCorrelations": vec![0.1; 90]
+                },
+                "outcome": {"label": "useful"}
+            }
+        })),
+    );
+    let compute_invalid_dims_response = handlers.dispatch(compute_invalid_dims).await;
+    let compute_invalid_dims_result = compute_invalid_dims_response.result.expect("tool result");
+    assert_eq!(compute_invalid_dims_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_compute_invalid_dims
+    );
+    println!(
+        "EDGE COMPUTE_INVALID_DIMS before={} after={} isError={}",
+        before_compute_invalid_dims,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        compute_invalid_dims_result["isError"]
     );
 
     let estimate = make_request(

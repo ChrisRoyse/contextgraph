@@ -3,7 +3,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 9 Learning-as-UTL tool definitions.
+/// Returns the 12 Learning-as-UTL tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -96,6 +96,97 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {},
                 "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "list_learning_signal_embedders",
+            "List every deterministic Learning-as-UTL signal embedder exposed by MCP. \
+             These are event-level UTL embedders, not E1-E14 content embedders: \
+             delta_e, surprise, coherence, consolidation, and transfer.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "compute_learning_signals",
+            "Compute deterministic Learning-as-UTL features and signal embeddings \
+             from an inline before/after/outcome transition without mutating storage. \
+             Use this to inspect candidate state transitions before recording them.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "before": {"$ref": "#/$defs/state"},
+                    "after": {"$ref": "#/$defs/state"},
+                    "outcome": {"$ref": "#/$defs/outcome"},
+                    "signalIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["delta_e", "surprise", "coherence", "consolidation", "transfer"]
+                        },
+                        "description": "Optional subset. When omitted, all five learning signal embedders run."
+                    },
+                    "includeFeatures": {"type": "boolean", "default": true}
+                },
+                "required": ["before", "after", "outcome"],
+                "additionalProperties": false,
+                "$defs": {
+                    "state": {
+                        "type": "object",
+                        "properties": {
+                            "topicProfile": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"type": "number"}},
+                            "crossCorrelations": {"type": "array", "minItems": 91, "maxItems": 91, "items": {"type": "number"}},
+                            "retrievalRank": {"type": "integer", "minimum": 0},
+                            "embedderScores": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"type": "number"}},
+                            "contradictionPressure": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "integrationConfidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "recurrenceCount": {"type": "integer", "minimum": 0, "default": 0},
+                            "stabilityScore": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "domain": {"type": "string"},
+                            "successfulTransferCount": {"type": "integer", "minimum": 0, "default": 0}
+                        },
+                        "required": ["topicProfile", "crossCorrelations"],
+                        "additionalProperties": false
+                    },
+                    "outcome": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "enum": ["useful", "neutral", "harmful", "no_learning"]},
+                            "utilityDelta": {"type": "number", "minimum": -1.0, "maximum": 1.0, "default": 0.0},
+                            "correctionRequired": {"type": "boolean", "default": false},
+                            "reuseObserved": {"type": "boolean", "default": false}
+                        },
+                        "required": ["label"],
+                        "additionalProperties": false
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            "embed_learning_event_signals",
+            "Read one persisted LearningEvent from CF_LEARNING_EVENTS and run the \
+             deterministic learning signal embedders against it. The tool performs \
+             a separate RocksDB read, returns before/after CF counts, and verifies \
+             whether freshly embedded signals match the persisted event signals.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "eventId": {"type": "string", "format": "uuid"},
+                    "signalIds": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["delta_e", "surprise", "coherence", "consolidation", "transfer"]
+                        },
+                        "description": "Optional subset. When omitted, all five learning signal embedders run."
+                    },
+                    "includePersisted": {"type": "boolean", "default": true}
+                },
+                "required": ["eventId"],
                 "additionalProperties": false
             }),
         ),

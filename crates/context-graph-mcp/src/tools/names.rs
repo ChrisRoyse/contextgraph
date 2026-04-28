@@ -164,6 +164,12 @@ pub const LIST_LEARNING_EVENTS: &str = "list_learning_events";
 pub const GET_LEARNING_EVENT: &str = "get_learning_event";
 /// Count rows currently stored in `CF_LEARNING_EVENTS`.
 pub const COUNT_LEARNING_EVENTS: &str = "count_learning_events";
+/// List deterministic Learning-as-UTL signal embedders.
+pub const LIST_LEARNING_SIGNAL_EMBEDDERS: &str = "list_learning_signal_embedders";
+/// Compute deterministic Learning-as-UTL features and signal embeddings from an inline transition.
+pub const COMPUTE_LEARNING_SIGNALS: &str = "compute_learning_signals";
+/// Embed one persisted LearningEvent with deterministic signal embedders.
+pub const EMBED_LEARNING_EVENT_SIGNALS: &str = "embed_learning_event_signals";
 /// Predict a candidate learning transition's outcome from nearest persisted
 /// LearningEvent cases.
 pub const ESTIMATE_LEARNING_OUTCOME: &str = "estimate_learning_outcome";

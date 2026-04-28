@@ -185,6 +185,75 @@ Verify:
 - event memory IDs are real content IDs
 - text fields are preserved when `includeText=true`
 
+## Workflow F2: inspect learning signal embedders
+
+Call:
+
+```json
+{
+  "name": "list_learning_signal_embedders",
+  "arguments": {}
+}
+```
+
+Verify:
+
+- exactly five embedders are listed
+- IDs are `delta_e`, `surprise`, `coherence`, `consolidation`, `transfer`
+- dimensions are 14 for `delta_e` and 3 for the other four signals
+
+## Workflow F3: compute inline learning signals
+
+Call:
+
+```json
+{
+  "name": "compute_learning_signals",
+  "arguments": {
+    "before": {
+      "topicProfile": [14 numbers],
+      "crossCorrelations": [91 numbers]
+    },
+    "after": {
+      "topicProfile": [14 numbers],
+      "crossCorrelations": [91 numbers]
+    },
+    "outcome": {
+      "label": "useful",
+      "utilityDelta": 0.25
+    }
+  }
+}
+```
+
+Verify:
+
+- response includes five signal vectors
+- response includes computed feature values when `includeFeatures=true`
+- no RocksDB CF count changes
+- invalid dimensions and unknown `signalIds` error without mutation
+
+## Workflow F4: embed persisted learning event signals
+
+Call:
+
+```json
+{
+  "name": "embed_learning_event_signals",
+  "arguments": {
+    "eventId": "learning-event-uuid",
+    "includePersisted": true
+  }
+}
+```
+
+Verify:
+
+- source of truth is `CF_LEARNING_EVENTS`
+- before/after `learning_events` count is unchanged
+- `persisted_all_match=true`
+- missing event IDs error without mutation
+
 ## Workflow G: compute and persist L
 
 Call:
@@ -244,4 +313,3 @@ Verify:
 - `get_learner_training_dataset` returns shape and preview rows
 - row count equals real eligible event/state rows
 - revoked or non-training-consented rows are excluded with explicit counts
-

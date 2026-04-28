@@ -31,8 +31,8 @@ The missing operational step is to attach real learner observations to real retr
 | [07_full_state_verification.md](07_full_state_verification.md) | Required FSV harnesses, physical CF checks, edge cases, and success evidence. |
 | [08_implementation_roadmap.md](08_implementation_roadmap.md) | Ordered implementation plan with file/module ownership and acceptance criteria. |
 | [09_risk_and_policy_gates.md](09_risk_and_policy_gates.md) | Fail-closed, privacy, consent, and scientific validity gates. |
+| [10_agent_workflow_learning.md](10_agent_workflow_learning.md) | Real agent event capture, workflow preference mining, policy benchmarking, promotion, and MCP learning signal tools. |
 
 ## One-sentence target
 
 Build a Shakespeare tutor/generator that retrieves and generates from a proven E1-E14 Shakespeare substrate while conditioning every retrieval, recommendation, learning event, and training export on persisted E15-E21 learner-state observations, with RocksDB and MCP full-state verification at every step.
-

@@ -13,8 +13,8 @@ default = []
 llm = ["context-graph-causal-agent/llm"]
 # Enable CUDA acceleration via llama-cpp-2 (RTX 5090 optimized)
 cuda = ["llm", "context-graph-causal-agent/cuda"]
-# Test utilities - provides stub constructors that panic on usage
-# Use for tests that need Handlers but don't actually call graph discovery
+# Test utilities. Stub constructors are compiled only when both `test-utils`
+# and `llm` are enabled because they construct the LLM-backed service type.
 test-utils = []
 
 [dependencies]

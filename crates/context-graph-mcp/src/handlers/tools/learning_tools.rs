@@ -8,7 +8,8 @@ use context_graph_core::learner_training::{
     LearnerTrainingDataset, LearnerTrainingRow, LearnerTrainingTask,
 };
 use context_graph_core::learning::{
-    LearningEvent, LearningOutcome, LearningOutcomeLabel, LearningStateSnapshot,
+    DeterministicLearningSignalEmbedder, LearningEvent, LearningOutcome, LearningOutcomeLabel,
+    LearningSignal, LearningSignalEmbedder, LearningSignalId, LearningStateSnapshot,
 };
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
@@ -137,6 +138,26 @@ struct EstimateLearningOutcomeArgs {
     domain: Option<String>,
     #[serde(default = "default_true")]
     include_neighbors: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputeLearningSignalsArgs {
+    before: LearningStateArgs,
+    after: LearningStateArgs,
+    outcome: LearningOutcomeArgs,
+    signal_ids: Option<Vec<String>>,
+    #[serde(default = "default_true")]
+    include_features: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EmbedLearningEventSignalsArgs {
+    event_id: Uuid,
+    signal_ids: Option<Vec<String>>,
+    #[serde(default = "default_true")]
+    include_persisted: bool,
 }
 
 impl TryFrom<LearningOutcomeArgs> for LearningOutcome {
@@ -417,6 +438,191 @@ impl Handlers {
             Ok(n) => self.tool_result(id, json!({"count": n})),
             Err(e) => self.tool_error(id, &format!("count_learning_events failed: {e}")),
         }
+    }
+
+    pub(crate) async fn call_list_learning_signal_embedders(
+        &self,
+        id: Option<JsonRpcId>,
+    ) -> JsonRpcResponse {
+        self.tool_result(
+            id,
+            json!({
+                "source_of_truth": {
+                    "crate": "context_graph_core::learning",
+                    "trait": "LearningSignalEmbedder",
+                    "implementation": "DeterministicLearningSignalEmbedder",
+                },
+                "count": all_learning_signal_ids().len(),
+                "embedders": all_learning_signal_ids()
+                    .iter()
+                    .map(|signal_id| render_signal_embedder_metadata(*signal_id))
+                    .collect::<Vec<_>>(),
+            }),
+        )
+    }
+
+    pub(crate) async fn call_compute_learning_signals(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: ComputeLearningSignalsArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid compute_learning_signals args: {e}"))
+            }
+        };
+        let signal_ids = match parse_learning_signal_ids(parsed.signal_ids.as_deref()) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        let outcome = match LearningOutcome::try_from(parsed.outcome) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        let before: LearningStateSnapshot = parsed.before.into();
+        let after: LearningStateSnapshot = parsed.after.into();
+        let event = match LearningEvent::new(
+            Uuid::nil(),
+            Vec::new(),
+            None,
+            None,
+            Some("inline-learning-signal-compute".into()),
+            String::new(),
+            String::new(),
+            String::new(),
+            before,
+            after,
+            outcome,
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(
+                    id,
+                    &format!("compute_learning_signals validation failed: {e}"),
+                )
+            }
+        };
+        let signals = match embed_selected_learning_signals(&event, &signal_ids).await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        let mut result = json!({
+            "source_of_truth": {
+                "input": "request.before + request.after + request.outcome",
+                "crate": "context_graph_core::learning",
+                "implementation": "DeterministicLearningSignalEmbedder",
+                "storage_mutated": false,
+            },
+            "state_mutated": false,
+            "shape": learning_event_shape(&event),
+            "selected_signal_ids": signal_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            "signals": signals.iter().map(render_learning_signal).collect::<Vec<_>>(),
+        });
+        if parsed.include_features {
+            result["features"] = render_learning_features(&event);
+        }
+        self.tool_result(id, result)
+    }
+
+    pub(crate) async fn call_embed_learning_event_signals(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: EmbedLearningEventSignalsArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(
+                    id,
+                    &format!("Invalid embed_learning_event_signals args: {e}"),
+                )
+            }
+        };
+        let signal_ids = match parse_learning_signal_ids(parsed.signal_ids.as_deref()) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        let Some(rocksdb_store) = self
+            .teleological_store
+            .as_any()
+            .downcast_ref::<RocksDbTeleologicalStore>()
+        else {
+            return self.tool_error(
+                id,
+                "embed_learning_event_signals requires RocksDbTeleologicalStore.",
+            );
+        };
+
+        let before_count = match rocksdb_store.count_learning_events().await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("count_learning_events failed: {e}")),
+        };
+        let event = match rocksdb_store.get_learning_event(parsed.event_id).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "LearningEvent {} not found in CF_LEARNING_EVENTS",
+                        parsed.event_id
+                    ),
+                )
+            }
+            Err(e) => return self.tool_error(id, &format!("get_learning_event failed: {e}")),
+        };
+        let signals = match embed_selected_learning_signals(&event, &signal_ids).await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+        let after_count = match rocksdb_store.count_learning_events().await {
+            Ok(v) => v,
+            Err(e) => {
+                return self
+                    .tool_error(id, &format!("post-embed count_learning_events failed: {e}"))
+            }
+        };
+        let comparisons = signals
+            .iter()
+            .map(|signal| {
+                let persisted = event
+                    .signals
+                    .iter()
+                    .find(|candidate| candidate.signal_id == signal.signal_id);
+                let mut value = json!({
+                    "signal_id": signal.signal_id.as_str(),
+                    "persisted_present": persisted.is_some(),
+                    "persisted_match": persisted == Some(signal),
+                });
+                if parsed.include_persisted {
+                    value["persisted"] = json!(persisted.map(render_learning_signal));
+                }
+                value["fresh"] = render_learning_signal(signal);
+                value
+            })
+            .collect::<Vec<_>>();
+
+        self.tool_result(
+            id,
+            json!({
+                "source_of_truth": {
+                    "backend": "rocksdb",
+                    "column_family": "learning_events",
+                    "format": "version_byte + bincode",
+                    "event_id": parsed.event_id.to_string(),
+                },
+                "before_count": before_count,
+                "after_count": after_count,
+                "state_mutated": before_count != after_count,
+                "event_id": parsed.event_id.to_string(),
+                "shape": learning_event_shape(&event),
+                "selected_signal_ids": signal_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                "persisted_all_match": comparisons
+                    .iter()
+                    .all(|entry| entry["persisted_match"].as_bool().unwrap_or(false)),
+                "signals": comparisons,
+            }),
+        )
     }
 
     pub(crate) async fn call_estimate_learning_outcome(
@@ -872,6 +1078,111 @@ fn learning_event_shape(event: &LearningEvent) -> serde_json::Value {
     })
 }
 
+fn all_learning_signal_ids() -> [LearningSignalId; 5] {
+    [
+        LearningSignalId::DeltaE,
+        LearningSignalId::Surprise,
+        LearningSignalId::Coherence,
+        LearningSignalId::Consolidation,
+        LearningSignalId::Transfer,
+    ]
+}
+
+fn parse_learning_signal_id(raw: &str) -> Result<LearningSignalId, String> {
+    match raw {
+        "delta_e" => Ok(LearningSignalId::DeltaE),
+        "surprise" => Ok(LearningSignalId::Surprise),
+        "coherence" => Ok(LearningSignalId::Coherence),
+        "consolidation" => Ok(LearningSignalId::Consolidation),
+        "transfer" => Ok(LearningSignalId::Transfer),
+        other => Err(format!(
+            "signalIds entries must be delta_e, surprise, coherence, consolidation, or transfer; got {other}"
+        )),
+    }
+}
+
+fn parse_learning_signal_ids(raw: Option<&[String]>) -> Result<Vec<LearningSignalId>, String> {
+    let selected = match raw {
+        Some(values) if values.is_empty() => {
+            return Err("signalIds must not be empty when provided".into())
+        }
+        Some(values) => values
+            .iter()
+            .map(|value| parse_learning_signal_id(value.as_str()))
+            .collect::<Result<Vec<_>, _>>()?,
+        None => all_learning_signal_ids().to_vec(),
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for signal_id in &selected {
+        if !seen.insert(signal_id.as_str()) {
+            return Err(format!("duplicate signalIds entry: {}", signal_id.as_str()));
+        }
+    }
+    Ok(selected)
+}
+
+async fn embed_selected_learning_signals(
+    event: &LearningEvent,
+    signal_ids: &[LearningSignalId],
+) -> Result<Vec<LearningSignal>, String> {
+    let mut out = Vec::with_capacity(signal_ids.len());
+    for signal_id in signal_ids {
+        let embedder = DeterministicLearningSignalEmbedder::new(*signal_id);
+        let signal = embedder.embed_event(event).await.map_err(|e| {
+            format!(
+                "learning signal embedder {} failed: {e}",
+                signal_id.as_str()
+            )
+        })?;
+        signal.validate().map_err(|e| {
+            format!(
+                "learning signal {} validation failed: {e}",
+                signal_id.as_str()
+            )
+        })?;
+        out.push(signal);
+    }
+    Ok(out)
+}
+
+fn render_signal_embedder_metadata(signal_id: LearningSignalId) -> serde_json::Value {
+    json!({
+        "signal_id": signal_id.as_str(),
+        "dimension": signal_id.dimension(),
+        "implementation": "DeterministicLearningSignalEmbedder",
+        "input": "LearningEvent",
+        "storage_scope": "event_level_utl_not_e1_e14",
+    })
+}
+
+fn render_learning_signal(signal: &LearningSignal) -> serde_json::Value {
+    json!({
+        "signal_id": signal.signal_id.as_str(),
+        "dimension": signal.signal_id.dimension(),
+        "vector": signal.vector,
+        "scalar": signal.scalar,
+        "label": signal.label,
+        "attribution": signal.attribution,
+    })
+}
+
+fn render_learning_features(event: &LearningEvent) -> serde_json::Value {
+    json!({
+        "delta_e_vector": event.features.delta_e_vector,
+        "delta_e_scalar": event.features.delta_e_scalar,
+        "retrieval_rank_shift": event.features.retrieval_rank_shift,
+        "embedder_disagreement": event.features.embedder_disagreement,
+        "surprise_score": event.features.surprise_score,
+        "productive_surprise": event.features.productive_surprise,
+        "coherence_delta": event.features.coherence_delta,
+        "contradiction_delta": event.features.contradiction_delta,
+        "consolidation_readiness": event.features.consolidation_readiness,
+        "transfer_score": event.features.transfer_score,
+        "multi_utl_score": event.features.multi_utl_score,
+        "attribution": event.features.attribution,
+    })
+}
+
 fn render_learning_event(
     event: &LearningEvent,
     include_text: bool,
@@ -893,20 +1204,7 @@ fn render_learning_event(
             "correction_required": event.outcome.correction_required,
             "reuse_observed": event.outcome.reuse_observed,
         },
-        "features": {
-            "delta_e_vector": event.features.delta_e_vector,
-            "delta_e_scalar": event.features.delta_e_scalar,
-            "retrieval_rank_shift": event.features.retrieval_rank_shift,
-            "embedder_disagreement": event.features.embedder_disagreement,
-            "surprise_score": event.features.surprise_score,
-            "productive_surprise": event.features.productive_surprise,
-            "coherence_delta": event.features.coherence_delta,
-            "contradiction_delta": event.features.contradiction_delta,
-            "consolidation_readiness": event.features.consolidation_readiness,
-            "transfer_score": event.features.transfer_score,
-            "multi_utl_score": event.features.multi_utl_score,
-            "attribution": event.features.attribution,
-        },
+        "features": render_learning_features(event),
         "shape": learning_event_shape(event),
     });
 
@@ -920,13 +1218,7 @@ fn render_learning_event(
         obj["signals"] = json!(event
             .signals
             .iter()
-            .map(|s| json!({
-                "signal_id": s.signal_id.as_str(),
-                "vector": s.vector,
-                "scalar": s.scalar,
-                "label": s.label,
-                "attribution": s.attribution,
-            }))
+            .map(render_learning_signal)
             .collect::<Vec<_>>());
     }
 
