@@ -44,7 +44,7 @@ Context Graph is a Rust workspace that stores memory records as multi-embedding 
 | context-graph-test-utils | 0.1.0 | [] | context_graph_test_utils | crates/context-graph-test-utils/Cargo.toml |
 | context-graph-graph-agent | 0.1.0 | [] | context_graph_graph_agent | crates/context-graph-graph-agent/Cargo.toml |
 | context-graph-cli | 0.1.0 | cuda | context_graph_cli,context-graph-cli | crates/context-graph-cli/Cargo.toml |
-| context-graph-benchmark | 0.1.0 | [] | context_graph_benchmark,benchmark-report,causal-accuracy-bench,causal-discovery-mcp-bench,causal-e2e-bench,causal-embedding-bench,causal-perf-bench,causal-prompt-experiment,causal-provenance-bench,causal-provenance-e2e-bench,causal-provenance-llm-bench,causal-realdata-bench,causal-span-fix-bench,code-fingerprint-bench,disk-space-bench,e1-semantic-bench,e10_modifier_tuning,e11-entity-bench,e2-manual-verification,e4-hybrid-session-bench,e7-bench,e7-realdata-bench,embedder-impact-bench,embedder-impact-realdata-bench,embedder-stress,gpu-bench,graph-bench,graph-linking-bench,graph-linking-gpu-bench,graph-linking-real-bench,graph-realdata-bench,hf-bench,mcp-bench,model-injection-bench,model-injection-rigorous-bench,multimodal-bench,multimodal-realdata-bench,realdata-bench,sparse-bench,spawn-blocking-bench,stub-fix-verification,temporal-bench,temporal-realdata-bench,unified-realdata-bench,validation-bench,validation-realdata-bench,weight-profile-bench | crates/context-graph-benchmark/Cargo.toml |
+| context-graph-benchmark | 0.1.0 | [] | context_graph_benchmark,benchmark-report,causal-accuracy-bench,causal-discovery-mcp-bench,causal-e2e-bench,causal-embedding-bench,causal-perf-bench,causal-prompt-experiment,causal-provenance-bench,causal-provenance-e2e-bench,causal-provenance-llm-bench,causal-realdata-bench,causal-span-fix-bench,code-fingerprint-bench,disk-space-bench,e1-semantic-bench,e10_modifier_tuning,e11-entity-bench,e2-manual-verification,e4-hybrid-session-bench,e7-bench,e7-realdata-bench,embedder-impact-bench,embedder-impact-realdata-bench,embedder-stress,gpu-bench,graph-bench,graph-linking-bench,graph-linking-gpu-bench,graph-linking-real-bench,graph-realdata-bench,hf-bench,mcp-bench,model-injection-bench,model-injection-rigorous-bench,multimodal-bench,multimodal-realdata-bench,realdata-bench,sparse-bench,spawn-blocking-bench,temporal-bench,temporal-realdata-bench,unified-realdata-bench,validation-bench,validation-realdata-bench,weight-profile-bench | crates/context-graph-benchmark/Cargo.toml |
 
 ## 5. Public APIs And Tools
 | Domain | Count | Source |
@@ -142,7 +142,6 @@ Context Graph is a Rust workspace that stores memory records as multi-embedding 
 | realdata-bench | bin | crates/context-graph-benchmark/src/bin/realdata_bench.rs |  |
 | sparse-bench | bin | crates/context-graph-benchmark/src/bin/sparse_bench.rs |  |
 | spawn-blocking-bench | bin | crates/context-graph-benchmark/src/bin/spawn_blocking_bench.rs | real-embeddings |
-| stub-fix-verification | bin | crates/context-graph-benchmark/src/bin/stub_fix_verification.rs |  |
 | temporal-bench | bin | crates/context-graph-benchmark/src/bin/temporal_bench.rs |  |
 | temporal-realdata-bench | bin | crates/context-graph-benchmark/src/bin/temporal_realdata_bench.rs |  |
 | unified-realdata-bench | bin | crates/context-graph-benchmark/src/bin/unified_realdata_bench.rs |  |

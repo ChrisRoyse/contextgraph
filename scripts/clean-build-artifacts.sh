@@ -9,9 +9,11 @@
 #
 # Categories cleaned:
 #   1. target/debug/  (incremental cache, stale test binaries)
-#   2. Backup files   (corrupted DBs, model backups, stale data)
-#   3. /tmp test DBs  (leftover RocksDB test directories)
-#   4. [aggressive] Release deps, HF model cache, pip cache
+#   2. target temp dirs and browser/session artifacts
+#   3. Python bytecode/cache files
+#   4. Backup files   (corrupted DBs, model backups, stale data)
+#   5. /tmp test DBs  (leftover RocksDB/CUDA FSV directories)
+#   7. [aggressive] Release deps, HF model cache, pip cache
 #
 # This script is safe to run at any time. Release binaries are preserved
 # unless --aggressive is used.
@@ -124,7 +126,58 @@ fi
 echo ""
 
 # =============================================================================
-# Category 2: Stale Release Artifacts (only incremental + old deps)
+# Category 2: Target Temp + Browser Session Artifacts
+# =============================================================================
+
+echo "--- Target Temp / Browser Session Artifacts ---"
+clean_path "$TARGET_DIR/tmp" "target/tmp/"
+clean_path "$TARGET_DIR/utl_fsv" "target/utl_fsv/"
+clean_path "$PROJECT_DIR/.playwright-mcp" ".playwright-mcp/ session artifacts"
+clean_path "$PROJECT_DIR/docs/shakespeareplan/runs" "docs/shakespeareplan/runs/ generated FSV runs"
+clean_path "$PROJECT_DIR/tmp" "tmp/ scratch artifacts"
+echo ""
+
+# =============================================================================
+# Category 3: Python Caches
+# =============================================================================
+
+echo "--- Python Caches ---"
+pycache_count=0
+pycache_kb=0
+while IFS= read -r cache_path; do
+    [ -e "$cache_path" ] || continue
+    kb=$(size_kb "$cache_path")
+    pycache_kb=$(( pycache_kb + kb ))
+    pycache_count=$(( pycache_count + 1 ))
+    if [ "$CHECK_ONLY" = false ] && [ "$DRY_RUN" = false ]; then
+        rm -rf "$cache_path"
+    fi
+done < <(
+    find "$PROJECT_DIR" \
+        \( -path "$PROJECT_DIR/.git" \
+        -o -path "$PROJECT_DIR/target" \
+        -o -path "$PROJECT_DIR/models" \
+        -o -path "$PROJECT_DIR/data" \
+        -o -path "$PROJECT_DIR/shakespear" \) -prune \
+        -o \( -type d -name __pycache__ -o -type d -name .pytest_cache -o -type f -name '*.pyc' \) -print
+)
+if [ "$pycache_count" -gt 0 ]; then
+    pycache_size=$(human_size "$pycache_kb")
+    if [ "$CHECK_ONLY" = true ]; then
+        printf "  %-50s %8s\n" "Python caches ($pycache_count paths)" "$pycache_size"
+    elif [ "$DRY_RUN" = true ]; then
+        printf "  %-50s %8s  [would delete]\n" "Python caches ($pycache_count paths)" "$pycache_size"
+    else
+        printf "  %-50s %8s  [deleted]\n" "Python caches ($pycache_count paths)" "$pycache_size"
+    fi
+    TOTAL_FREED=$(( TOTAL_FREED + pycache_kb ))
+else
+    echo "  No Python caches found"
+fi
+echo ""
+
+# =============================================================================
+# Category 4: Stale Release Artifacts (only incremental + old deps)
 # =============================================================================
 
 echo "--- Release Stale Artifacts ---"
@@ -148,7 +201,7 @@ fi
 echo ""
 
 # =============================================================================
-# Category 3: Backup and Stale Data
+# Category 5: Backup and Stale Data
 # =============================================================================
 
 echo "--- Backup / Stale Data ---"
@@ -169,13 +222,13 @@ done
 echo ""
 
 # =============================================================================
-# Category 4: /tmp Test Remnants
+# Category 6: /tmp Test Remnants
 # =============================================================================
 
 echo "--- /tmp Test Remnants ---"
 tmp_count=0
 tmp_kb=0
-for tmp_dir in /tmp/db-* /tmp/ocr-processor-test-*; do
+for tmp_dir in /tmp/db-* /tmp/ocr-processor-test-* /tmp/contextgraph-cuda13-fsv.* /tmp/contextgraph-cuda13-fsv.partial; do
     if [ -e "$tmp_dir" ]; then
         kb=$(size_kb "$tmp_dir")
         tmp_kb=$(( tmp_kb + kb ))

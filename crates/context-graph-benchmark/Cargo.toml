@@ -233,10 +233,6 @@ path = "src/bin/causal_span_fix_bench.rs"
 required-features = ["real-embeddings"]
 
 [[bin]]
-name = "stub-fix-verification"
-path = "src/bin/stub_fix_verification.rs"
-
-[[bin]]
 name = "model-injection-bench"
 path = "src/bin/model_injection_bench.rs"
 required-features = ["real-embeddings"]

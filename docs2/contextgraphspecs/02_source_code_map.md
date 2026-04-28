@@ -63,7 +63,6 @@ Generated from `crates/*/src/**/*.rs`; descriptions are path-derived for token e
 `crates/context-graph-benchmark/src/bin/report.rs`  # Rust source in context-graph-benchmark
 `crates/context-graph-benchmark/src/bin/sparse_bench.rs`  # Rust source in context-graph-benchmark
 `crates/context-graph-benchmark/src/bin/spawn_blocking_bench.rs`  # Rust source in context-graph-benchmark
-`crates/context-graph-benchmark/src/bin/stub_fix_verification.rs`  # Rust source in context-graph-benchmark
 `crates/context-graph-benchmark/src/bin/temporal_bench.rs`  # Rust source in context-graph-benchmark
 `crates/context-graph-benchmark/src/bin/temporal_realdata_bench.rs`  # Rust source in context-graph-benchmark
 `crates/context-graph-benchmark/src/bin/unified_realdata_bench.rs`  # Rust source in context-graph-benchmark
