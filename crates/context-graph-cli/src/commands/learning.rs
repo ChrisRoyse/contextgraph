@@ -17,6 +17,7 @@ use context_graph_core::learning::{
 use context_graph_core::training::NUM_CROSS_CORRELATIONS;
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
+use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -32,6 +33,8 @@ pub enum LearningCommands {
     ExportEventsJsonl(LearningExportEventsJsonlArgs),
     /// Export persisted learner-training matrix rows as JSONL.
     ExportDatasetJsonl(LearningExportDatasetJsonlArgs),
+    /// Store real LearningEvent rows from JSONL and read them back.
+    RecordEventsJsonl(LearningRecordEventsJsonlArgs),
     /// Store a deterministic synthetic learning event and read it back.
     RecordSynthetic(LearningRecordSyntheticArgs),
 }
@@ -126,6 +129,69 @@ pub struct LearningExportDatasetJsonlArgs {
     /// Allow overwriting an existing output file.
     #[arg(long)]
     pub overwrite: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct LearningRecordEventsJsonlArgs {
+    /// Path to the RocksDB data directory. Created by RocksDB when missing.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub storage: PathBuf,
+
+    /// Input JSONL where each row is one LearningEvent payload.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Delete existing learning events before importing rows.
+    #[arg(long)]
+    pub clear_existing: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningEventJsonRow {
+    event_id: Option<Uuid>,
+    #[serde(default)]
+    memory_ids: Vec<Uuid>,
+    session_id: Option<String>,
+    response_id: Option<String>,
+    task_id: Option<String>,
+    query: String,
+    retrieved_context: String,
+    assistant_response: String,
+    before: LearningStateJsonRow,
+    after: LearningStateJsonRow,
+    outcome: LearningOutcomeJsonRow,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningStateJsonRow {
+    topic_profile: [f32; NUM_EMBEDDERS],
+    cross_correlations: Vec<f32>,
+    retrieval_rank: Option<u32>,
+    embedder_scores: Option<[f32; NUM_EMBEDDERS]>,
+    #[serde(default)]
+    contradiction_pressure: f32,
+    #[serde(default)]
+    integration_confidence: f32,
+    #[serde(default)]
+    recurrence_count: u32,
+    #[serde(default)]
+    stability_score: f32,
+    domain: Option<String>,
+    #[serde(default)]
+    successful_transfer_count: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LearningOutcomeJsonRow {
+    label: String,
+    utility_delta: f32,
+    #[serde(default)]
+    correction_required: bool,
+    #[serde(default)]
+    reuse_observed: bool,
 }
 
 #[derive(Args, Debug)]
@@ -226,6 +292,10 @@ async fn run(action: LearningCommands) -> Result<serde_json::Value> {
         LearningCommands::ExportDatasetJsonl(args) => {
             let store = open_store(&args.storage)?;
             export_dataset_jsonl(&store, &args).await
+        }
+        LearningCommands::RecordEventsJsonl(args) => {
+            let store = open_store(&args.storage)?;
+            record_events_jsonl(&store, &args).await
         }
         LearningCommands::RecordSynthetic(args) => {
             let store = open_store(&args.storage)?;
@@ -419,6 +489,79 @@ async fn export_dataset_jsonl(
     }))
 }
 
+async fn record_events_jsonl(
+    store: &RocksDbTeleologicalStore,
+    args: &LearningRecordEventsJsonlArgs,
+) -> Result<serde_json::Value> {
+    if !args.input.exists() {
+        return Err(anyhow!(
+            "input JSONL does not exist: {}",
+            args.input.display()
+        ));
+    }
+    let input = std::fs::read_to_string(&args.input)
+        .with_context(|| format!("reading {}", args.input.display()))?;
+    let before_count = store.count_learning_events().await?;
+    let cleared = if args.clear_existing {
+        store.clear_all_learning_events().await?
+    } else {
+        0
+    };
+    let after_clear_count = store.count_learning_events().await?;
+    let mut imported = Vec::new();
+
+    for (idx, line) in input.lines().enumerate() {
+        let line_no = idx + 1;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed: LearningEventJsonRow = serde_json::from_str(line)
+            .with_context(|| format!("parsing {} line {line_no}", args.input.display()))?;
+        let event = parsed
+            .into_event()
+            .with_context(|| format!("building LearningEvent from line {line_no}"))?;
+        let event_id = event.event_id;
+        store
+            .store_learning_event(&event)
+            .await
+            .with_context(|| format!("storing LearningEvent {event_id} from line {line_no}"))?;
+        let readback = store
+            .get_learning_event(event_id)
+            .await
+            .with_context(|| format!("reading back LearningEvent {event_id}"))?
+            .with_context(|| format!("LearningEvent {event_id} missing after write"))?;
+        imported.push(json!({
+            "line": line_no,
+            "event_id": event_id.to_string(),
+            "shape": event_shape(&readback),
+            "features": feature_summary(&readback),
+            "outcome": {
+                "label": outcome_label_str(readback.outcome.label),
+                "utility_delta": readback.outcome.utility_delta,
+            },
+        }));
+    }
+
+    if imported.is_empty() {
+        return Err(anyhow!(
+            "input JSONL contained zero LearningEvent rows: {}",
+            args.input.display()
+        ));
+    }
+    let after_count = store.count_learning_events().await?;
+    Ok(json!({
+        "status": "stored",
+        "source_of_truth": source_of_truth(),
+        "input": args.input,
+        "before_count": before_count,
+        "cleared_before_write": cleared,
+        "after_clear_count": after_clear_count,
+        "after_count": after_count,
+        "imported": imported.len(),
+        "events": imported,
+    }))
+}
+
 async fn load_training_datasets(
     store: &RocksDbTeleologicalStore,
     dataset_id: Option<Uuid>,
@@ -488,6 +631,56 @@ fn rename_or_cleanup(tmp_path: &PathBuf, out: &PathBuf) -> Result<()> {
         });
     }
     Ok(())
+}
+
+impl LearningEventJsonRow {
+    fn into_event(self) -> Result<LearningEvent> {
+        let event_id = self.event_id.unwrap_or_else(Uuid::new_v4);
+        let before = self.before.into_state();
+        let after = self.after.into_state();
+        let outcome = self.outcome.into_outcome()?;
+        Ok(LearningEvent::new(
+            event_id,
+            self.memory_ids,
+            self.session_id,
+            self.response_id,
+            self.task_id,
+            self.query,
+            self.retrieved_context,
+            self.assistant_response,
+            before,
+            after,
+            outcome,
+        )?)
+    }
+}
+
+impl LearningStateJsonRow {
+    fn into_state(self) -> LearningStateSnapshot {
+        LearningStateSnapshot {
+            topic_profile: self.topic_profile,
+            cross_correlations: self.cross_correlations,
+            retrieval_rank: self.retrieval_rank,
+            embedder_scores: self.embedder_scores.unwrap_or([0.0; NUM_EMBEDDERS]),
+            contradiction_pressure: self.contradiction_pressure,
+            integration_confidence: self.integration_confidence,
+            recurrence_count: self.recurrence_count,
+            stability_score: self.stability_score,
+            domain: self.domain,
+            successful_transfer_count: self.successful_transfer_count,
+        }
+    }
+}
+
+impl LearningOutcomeJsonRow {
+    fn into_outcome(self) -> Result<LearningOutcome> {
+        Ok(LearningOutcome {
+            label: parse_outcome_label(&self.label)?,
+            utility_delta: self.utility_delta,
+            correction_required: self.correction_required,
+            reuse_observed: self.reuse_observed,
+        })
+    }
 }
 
 fn synthetic_event(
