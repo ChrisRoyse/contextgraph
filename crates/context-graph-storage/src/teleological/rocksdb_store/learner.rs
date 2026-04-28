@@ -79,6 +79,10 @@ impl RocksDbTeleologicalStore {
             .transpose()
     }
 
+    pub async fn list_learner_fingerprint_keys(&self) -> CoreResult<Vec<(Uuid, u64)>> {
+        self.list_learner_session_keys(CF_FINGERPRINTS_LEARNER)
+    }
+
     pub async fn store_learner_delta_log(&self, log: &LearnerDeltaLog) -> CoreResult<()> {
         let payload = encode_learner_delta_log(log)?;
         let key = learner_session_key(log.learner_id, log.session_ts);
@@ -94,6 +98,10 @@ impl RocksDbTeleologicalStore {
         self.get_learner_bytes(CF_LEARNER_DELTA_LOG, &key)?
             .map(|bytes| decode_learner_delta_log(&bytes))
             .transpose()
+    }
+
+    pub async fn list_learner_delta_log_keys(&self) -> CoreResult<Vec<(Uuid, u64)>> {
+        self.list_learner_session_keys(CF_LEARNER_DELTA_LOG)
     }
 
     pub async fn store_learner_m_trace(&self, trace: &LearnerMTrace) -> CoreResult<()> {
@@ -166,6 +174,46 @@ impl RocksDbTeleologicalStore {
         self.get_learner_bytes(CF_LEARNER_RETRIEVAL_LOG, &key)?
             .map(|bytes| decode_learner_retrieval_log(&bytes))
             .transpose()
+    }
+
+    pub async fn list_learner_retrieval_log_keys(&self) -> CoreResult<Vec<(Uuid, Uuid, u64)>> {
+        let cf = self.learner_cf(CF_LEARNER_RETRIEVAL_LOG);
+        let mut out = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (key, _) = item.map_err(|e| {
+                error!(
+                    cf = CF_LEARNER_RETRIEVAL_LOG,
+                    error = %e,
+                    "ROCKSDB ERROR: Failed to iterate learner retrieval log keys"
+                );
+                TeleologicalStoreError::rocksdb_op(
+                    "iterate_learner_retrieval_log_keys",
+                    CF_LEARNER_RETRIEVAL_LOG,
+                    None,
+                    e,
+                )
+            })?;
+            if key.len() != 40 {
+                warn!(
+                    cf = CF_LEARNER_RETRIEVAL_LOG,
+                    len = key.len(),
+                    "Skipping learner retrieval log with unexpected key length"
+                );
+                continue;
+            }
+            let mut learner = [0u8; 16];
+            let mut trace = [0u8; 16];
+            let mut ts = [0u8; 8];
+            learner.copy_from_slice(&key[..16]);
+            trace.copy_from_slice(&key[16..32]);
+            ts.copy_from_slice(&key[32..40]);
+            out.push((
+                Uuid::from_bytes(learner),
+                Uuid::from_bytes(trace),
+                u64::from_be_bytes(ts),
+            ));
+        }
+        Ok(out)
     }
 
     pub async fn store_learner_k_sleep(&self, value: &LearnerKSleep) -> CoreResult<()> {
@@ -302,6 +350,36 @@ impl RocksDbTeleologicalStore {
     fn count_learner_cf(&self, cf_name: &'static str) -> CoreResult<usize> {
         let cf = self.learner_cf(cf_name);
         Ok(self.db.iterator_cf(cf, IteratorMode::Start).count())
+    }
+
+    fn list_learner_session_keys(&self, cf_name: &'static str) -> CoreResult<Vec<(Uuid, u64)>> {
+        let cf = self.learner_cf(cf_name);
+        let mut out = Vec::new();
+        for item in self.db.iterator_cf(cf, IteratorMode::Start) {
+            let (key, _) = item.map_err(|e| {
+                error!(cf = cf_name, error = %e, "ROCKSDB ERROR: Failed to iterate learner session keys");
+                TeleologicalStoreError::rocksdb_op(
+                    "iterate_learner_session_keys",
+                    cf_name,
+                    None,
+                    e,
+                )
+            })?;
+            if key.len() != 24 {
+                warn!(
+                    cf = cf_name,
+                    len = key.len(),
+                    "Skipping learner session record with unexpected key length"
+                );
+                continue;
+            }
+            let mut learner = [0u8; 16];
+            let mut ts = [0u8; 8];
+            learner.copy_from_slice(&key[..16]);
+            ts.copy_from_slice(&key[16..24]);
+            out.push((Uuid::from_bytes(learner), u64::from_be_bytes(ts)));
+        }
+        Ok(out)
     }
 
     fn clear_learner_cf(&self, cf_name: &'static str) -> CoreResult<usize> {

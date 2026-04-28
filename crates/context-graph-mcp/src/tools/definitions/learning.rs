@@ -3,7 +3,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 4 Learning-as-UTL tool definitions.
+/// Returns the 8 Learning-as-UTL tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -92,6 +92,63 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(
             "count_learning_events",
             "Return the current number of rows in CF_LEARNING_EVENTS.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "export_learner_training_dataset",
+            "Compile Learning-as-UTL and learner-state RocksDB rows into a versioned row-major f32 matrix stored in CF_LEARNER_TRAINING_DATASETS.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "datasetId": {"type": "string", "format": "uuid", "description": "Optional dataset UUID. Generated when omitted."},
+                    "task": {
+                        "type": "string",
+                        "enum": ["reward_model", "reranker", "embedder_contrastive", "diagnostic_classifier", "scheduler", "personal_physiology"],
+                        "default": "reward_model"
+                    },
+                    "maxRows": {"type": "integer", "minimum": 0, "maximum": 1000000, "default": 10000},
+                    "clearExisting": {"type": "boolean", "default": false}
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "list_learner_training_datasets",
+            "List dataset UUIDs stored in CF_LEARNER_TRAINING_DATASETS with optional matrix shape summaries.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 50},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "includeShape": {"type": "boolean", "default": true}
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "get_learner_training_dataset",
+            "Fetch one matrix-shaped learner training dataset from CF_LEARNER_TRAINING_DATASETS.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "datasetId": {"type": "string", "format": "uuid"},
+                    "includeMatrix": {"type": "boolean", "default": false},
+                    "previewRows": {"type": "integer", "minimum": 0, "maximum": 100, "default": 3}
+                },
+                "required": ["datasetId"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "count_learner_training_datasets",
+            "Return the current number of rows in CF_LEARNER_TRAINING_DATASETS.",
             json!({
                 "type": "object",
                 "properties": {},

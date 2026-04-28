@@ -8,18 +8,19 @@ use crate::teleological::*;
 
 #[test]
 fn test_teleological_cf_names_count() {
-    // 40 active teleological CFs (core teleological + training/export
+    // 41 active teleological CFs (core teleological + training/export
     // + learning events + 11 learner-state UTL CFs
     //  + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
     //  + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
-    //  + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS)
+    //  + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS
+    //  + CF_LEARNER_TRAINING_DATASETS)
     assert_eq!(
         TELEOLOGICAL_CFS.len(),
         TELEOLOGICAL_CF_COUNT,
         "Must have exactly {} teleological column families",
         TELEOLOGICAL_CF_COUNT
     );
-    assert_eq!(TELEOLOGICAL_CF_COUNT, 40);
+    assert_eq!(TELEOLOGICAL_CF_COUNT, 41);
 }
 
 #[test]

@@ -1,18 +1,25 @@
 //! UTL learner-state tool handlers.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
+use chrono::Utc;
 use context_graph_core::learner::{
-    compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_utl_l, sha256_bytes,
-    sha256_json, update_m_trace, ComputationEnvelope, LearnerDeltaLog, LearnerFingerprint,
-    LearnerModality, LearnerProfile, LearnerStateComponents, LearnerStateVector, ModalityEmbedding,
-    ObservationEnvelope,
+    compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_transfer_t,
+    compute_utl_l, sha256_bytes, sha256_json, update_m_trace, ComputationEnvelope, GoalCentroid,
+    LearnerAuditEntry, LearnerConstellation, LearnerDeltaLog, LearnerFingerprint,
+    LearnerGoalState, LearnerKSleep, LearnerModality, LearnerModalityCentroid, LearnerProfile,
+    LearnerRetrievalLog, LearnerStateComponents, LearnerStateVector, ModalityEmbedding,
+    ObservationEnvelope, LEARNER_BASELINE_SELECTOR_REGULATED,
 };
 use context_graph_embeddings::{
-    embed_learner_signal, state_vector_from_outputs, LearnerEmbedderInput, LearnerEmbedderSlot,
+    embed_learner_signal, learner_embedder_specs, preflight_learner_assets,
+    state_vector_from_outputs, LearnerEmbedderInput, LearnerEmbedderSlot,
+    CALIBRATION_DATASET_MANIFEST, LEARNER_EMBEDDER_COUNT, UTL_PLANNED_TOTAL_EMBEDDERS,
 };
+use context_graph_embeddings::types::ModelId;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -172,6 +179,79 @@ struct TraceArgs {
     trace_id: Uuid,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreflightLearnerAssetsArgs {
+    #[serde(default = "default_models_root")]
+    models_root: PathBuf,
+    #[serde(default = "default_calibration_root")]
+    calibration_root: PathBuf,
+    #[serde(default)]
+    allow_missing: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GetLearnerStateArgs {
+    learner_id: Uuid,
+    session_ts: Option<u64>,
+    trace_id: Option<Uuid>,
+    #[serde(default)]
+    include_vectors: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordKSleepArgs {
+    learner_id: Uuid,
+    session_ts: u64,
+    slow_wave_minutes: u16,
+    k: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordRetrievalArgs {
+    learner_id: Uuid,
+    trace_id: Uuid,
+    ts: u64,
+    session_ts: Option<u64>,
+    correct: bool,
+    score: f32,
+    #[serde(default)]
+    state_vector: Vec<f32>,
+    components: Option<ComponentsArgs>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoalCentroidArgs {
+    skill_id: Uuid,
+    modality: String,
+    vector: Vec<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoalDistanceArgs {
+    learner_id: Uuid,
+    skill_id: Uuid,
+    session_ts: u64,
+    modality: String,
+    #[serde(default)]
+    persist_goal_state: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CompileConstellationArgs {
+    learner_id: Uuid,
+    session_ts_list: Vec<u64>,
+    selector_kind: Option<u8>,
+    #[serde(default = "default_constellation_label")]
+    label: String,
+}
+
 impl Handlers {
     pub(crate) async fn call_register_learner(
         &self,
@@ -208,12 +288,24 @@ impl Handlers {
         if let Err(e) = store.store_learner_profile(&profile).await {
             return self.tool_error(id, &format!("store_learner_profile failed: {e}"));
         }
+        if let Err(e) = store_learner_audit(
+            store,
+            profile.learner_id,
+            parsed.calibration_session_ts.unwrap_or(0),
+            "register_learner",
+            "learner_profile",
+            &profile,
+        )
+        .await
+        {
+            return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+        }
         self.tool_result(
             id,
             json!({
                 "status": "stored",
                 "learner_id": profile.learner_id.to_string(),
-                "source_of_truth": source_of_truth(["learner_profile"]),
+                "source_of_truth": source_of_truth(["learner_profile", "learner_audit"]),
                 "profile": render_profile(&profile),
             }),
         )
@@ -231,25 +323,39 @@ impl Handlers {
                     .tool_error(id, &format!("Invalid record_session_observation args: {e}"))
             }
         };
+        let RecordObservationArgs {
+            learner_id,
+            session_ts,
+            modality,
+            raw_text,
+            consent_state,
+            preprocessing_version,
+            embedder_version,
+            threshold_version,
+            state_vector: state_vector_arg,
+            components: components_arg,
+            embeddings: embedding_args,
+            signals,
+        } = parsed;
         let mut context = BTreeMap::new();
-        let mut embeddings = Vec::with_capacity(parsed.embeddings.len() + parsed.signals.len());
+        let mut embeddings = Vec::with_capacity(embedding_args.len() + signals.len());
         let mut observation_envelopes = Vec::new();
-        let state_vector = if parsed.signals.is_empty() {
-            let modality = match LearnerModality::parse(&parsed.modality) {
+        let state_vector = if signals.is_empty() {
+            let modality = match LearnerModality::parse(&modality) {
                 Ok(v) => v,
                 Err(e) => return self.tool_error(id, &format!("{e}")),
             };
             let observation_id = Uuid::new_v4();
             let envelope = match ObservationEnvelope::new(
                 observation_id,
-                parsed.learner_id,
-                parsed.session_ts,
+                learner_id,
+                session_ts,
                 modality,
-                parsed.consent_state.clone(),
-                sha256_bytes(parsed.raw_text.as_bytes()),
-                parsed.preprocessing_version.clone(),
-                parsed.embedder_version.clone(),
-                parsed.threshold_version.clone(),
+                consent_state.clone(),
+                sha256_bytes(raw_text.as_bytes()),
+                preprocessing_version.clone(),
+                embedder_version.clone(),
+                threshold_version.clone(),
                 Vec::new(),
             ) {
                 Ok(v) => v,
@@ -258,14 +364,14 @@ impl Handlers {
                 }
             };
             observation_envelopes.push(envelope);
-            let Some(components) = parsed.components else {
+            let Some(components) = components_arg else {
                 return self.tool_error(
                     id,
                     "record_session_observation requires components when signals are not provided",
                 );
             };
             let components: LearnerStateComponents = components.into();
-            let values = if parsed.state_vector.is_empty() {
+            let values = if state_vector_arg.is_empty() {
                 vec![
                     components.plasticity_window,
                     components.hrv_coherence,
@@ -275,18 +381,18 @@ impl Handlers {
                     components.k_sleep,
                 ]
             } else {
-                parsed.state_vector
+                state_vector_arg
             };
             LearnerStateVector {
-                learner_id: parsed.learner_id,
-                session_ts: parsed.session_ts,
+                learner_id,
+                session_ts,
                 values,
                 components,
                 context,
             }
         } else {
-            let mut outputs = Vec::with_capacity(parsed.signals.len());
-            for signal in parsed.signals {
+            let mut outputs = Vec::with_capacity(signals.len());
+            for signal in signals {
                 let (slot, input, raw_hash) = match signal_to_embedder_input(signal) {
                     Ok(v) => v,
                     Err(e) => return self.tool_error(id, &e),
@@ -303,14 +409,14 @@ impl Handlers {
                 let observation_id = Uuid::new_v4();
                 let envelope = match ObservationEnvelope::new(
                     observation_id,
-                    parsed.learner_id,
-                    parsed.session_ts,
+                    learner_id,
+                    session_ts,
                     output.modality,
-                    parsed.consent_state.clone(),
+                    consent_state.clone(),
                     raw_hash,
-                    parsed.preprocessing_version.clone(),
+                    preprocessing_version.clone(),
                     output.embedder_version.clone(),
-                    parsed.threshold_version.clone(),
+                    threshold_version.clone(),
                     Vec::new(),
                 ) {
                     Ok(v) => v,
@@ -322,12 +428,44 @@ impl Handlers {
                 embeddings.push(output.to_modality_embedding(observation_id));
                 outputs.push(output);
             }
-            context.insert("record_session_observation_mode".into(), "signals".into());
-            match state_vector_from_outputs(parsed.learner_id, parsed.session_ts, &outputs, context)
-            {
-                Ok(v) => v,
-                Err(e) => {
-                    return self.tool_error(id, &format!("state vector derivation failed: {e}"))
+            if outputs.len() == LEARNER_EMBEDDER_COUNT {
+                context.insert("record_session_observation_mode".into(), "full_signal_panel".into());
+                match state_vector_from_outputs(learner_id, session_ts, &outputs, context) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return self.tool_error(id, &format!("state vector derivation failed: {e}"))
+                    }
+                }
+            } else {
+                let Some(components) = components_arg else {
+                    return self.tool_error(
+                        id,
+                        "partial signal observations require components so a valid learner state vector can be persisted",
+                    );
+                };
+                let components: LearnerStateComponents = components.into();
+                let values = if state_vector_arg.is_empty() {
+                    vec![
+                        components.plasticity_window,
+                        components.hrv_coherence,
+                        components.valence,
+                        components.arousal,
+                        components.stress_floor,
+                        components.k_sleep,
+                    ]
+                } else {
+                    state_vector_arg
+                };
+                context.insert(
+                    "record_session_observation_mode".into(),
+                    "partial_signals_with_components".into(),
+                );
+                LearnerStateVector {
+                    learner_id,
+                    session_ts,
+                    values,
+                    components,
+                    context,
                 }
             }
         };
@@ -335,7 +473,7 @@ impl Handlers {
             .first()
             .map(|envelope| envelope.observation_id)
             .unwrap_or_else(Uuid::new_v4);
-        for embedding in parsed.embeddings {
+        for embedding in embedding_args {
             let modality = match LearnerModality::parse(&embedding.modality) {
                 Ok(v) => v,
                 Err(e) => return self.tool_error(id, &format!("{e}")),
@@ -364,8 +502,8 @@ impl Handlers {
             });
         }
         let fingerprint = LearnerFingerprint {
-            learner_id: parsed.learner_id,
-            session_ts: parsed.session_ts,
+            learner_id,
+            session_ts,
             observation_envelopes,
             modality_embeddings: embeddings,
             state_vector,
@@ -382,11 +520,23 @@ impl Handlers {
         if let Err(e) = store.store_learner_fingerprint(&fingerprint).await {
             return self.tool_error(id, &format!("store_learner_fingerprint failed: {e}"));
         }
+        if let Err(e) = store_learner_audit(
+            store,
+            fingerprint.learner_id,
+            fingerprint.session_ts,
+            "record_session_observation",
+            "fingerprints_learner",
+            &fingerprint,
+        )
+        .await
+        {
+            return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+        }
         self.tool_result(
             id,
             json!({
                 "status": "stored",
-                "source_of_truth": source_of_truth(["fingerprints_learner", "learner_state_history"]),
+                "source_of_truth": source_of_truth(["fingerprints_learner", "learner_state_history", "learner_audit"]),
                 "fingerprint": render_fingerprint(&fingerprint),
             }),
         )
@@ -551,6 +701,18 @@ impl Handlers {
             if let Err(e) = store.store_learner_delta_log(&delta_log).await {
                 return self.tool_error(id, &format!("store_learner_delta_log failed: {e}"));
             }
+            if let Err(e) = store_learner_audit(
+                store,
+                learner_id,
+                session_ts,
+                "compute_L",
+                "learner_delta_log",
+                &delta_log,
+            )
+            .await
+            {
+                return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+            }
             persisted["delta_log"] = json!(true);
             if let Some(trace_id) = parsed.trace_id {
                 let previous = match store.get_learner_m_trace(learner_id, trace_id).await {
@@ -573,6 +735,18 @@ impl Handlers {
                 if let Err(e) = store.store_learner_m_trace(&m_trace).await {
                     return self.tool_error(id, &format!("store_learner_m_trace failed: {e}"));
                 }
+                if let Err(e) = store_learner_audit(
+                    store,
+                    learner_id,
+                    session_ts,
+                    "compute_L",
+                    "learner_m_per_trace",
+                    &m_trace,
+                )
+                .await
+                {
+                    return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+                }
                 persisted["m_trace"] = json!(true);
                 persisted["next_review_ts"] = json!(m_trace.next_review_ts);
             }
@@ -589,7 +763,7 @@ impl Handlers {
                     "diagnostic_state": computation.diagnostic_state.as_str(),
                 },
                 "persisted": persisted,
-                "source_of_truth": source_of_truth(["learner_delta_log", "learner_m_per_trace"]),
+                "source_of_truth": source_of_truth(["learner_delta_log", "learner_m_per_trace", "learner_audit"]),
             }),
         )
     }
@@ -657,6 +831,529 @@ impl Handlers {
         }
     }
 
+    pub(crate) async fn call_list_learner_embedders(
+        &self,
+        id: Option<JsonRpcId>,
+    ) -> JsonRpcResponse {
+        self.tool_result(
+            id,
+            json!({
+                "source_of_truth": {
+                    "content_registry": "context_graph_embeddings::types::ModelId::production",
+                    "learner_registry": "context_graph_embeddings::learner::LearnerEmbedderSlot::all",
+                    "calibration_manifest": "context_graph_embeddings::learner::CALIBRATION_DATASET_MANIFEST"
+                },
+                "planned_total_embedders": UTL_PLANNED_TOTAL_EMBEDDERS,
+                "content_embedder_count": ModelId::production().len(),
+                "learner_embedder_count": learner_embedder_specs().len(),
+                "content_embedders": content_embedder_specs_json(),
+                "learner_embedders": learner_embedder_specs().iter().map(|spec| json!({
+                    "slot": spec.slot_number,
+                    "id": spec.slot.as_str(),
+                    "modality": spec.modality.as_str(),
+                    "model_name": spec.model_name,
+                    "model_path": spec.model_path,
+                    "output_dimension": spec.output_dimension,
+                    "scalar_heads": spec.scalar_heads,
+                })).collect::<Vec<_>>(),
+                "calibration_datasets": CALIBRATION_DATASET_MANIFEST.iter().map(|dataset| json!({
+                    "name": dataset.name,
+                    "modality": dataset.modality,
+                    "used_for": dataset.used_for,
+                    "access": dataset.access,
+                    "license": dataset.license,
+                })).collect::<Vec<_>>(),
+                "legacy_content_variants_not_counted": [{
+                    "id": "Entity",
+                    "reason": "legacy E11 MiniLM compatibility variant; production E11 is Kepler"
+                }]
+            }),
+        )
+    }
+
+    pub(crate) async fn call_preflight_learner_assets(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: PreflightLearnerAssetsArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid preflight_learner_assets args: {e}"))
+            }
+        };
+        let report = match preflight_learner_assets(&parsed.models_root, &parsed.calibration_root)
+        {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("preflight_learner_assets failed: {e}")),
+        };
+        let value = match serde_json::to_value(&report) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("serialize preflight report failed: {e}")),
+        };
+        if !report.ready && !parsed.allow_missing {
+            return self.tool_error(
+                id,
+                &format!(
+                    "UTL learner asset preflight failed: {} missing file groups",
+                    report.missing_count
+                ),
+            );
+        }
+        self.tool_result(id, value)
+    }
+
+    pub(crate) async fn call_count_learner_state(
+        &self,
+        id: Option<JsonRpcId>,
+    ) -> JsonRpcResponse {
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(id, "count_learner_state requires RocksDbTeleologicalStore.");
+        };
+        match learner_counts(store).await {
+            Ok(counts) => self.tool_result(
+                id,
+                json!({
+                    "source_of_truth": source_of_truth([
+                        "learner_profile",
+                        "learner_constellations",
+                        "fingerprints_learner",
+                        "learner_m_per_trace",
+                        "learner_state_history",
+                        "learner_goal_states",
+                        "learner_retrieval_log",
+                        "learner_k_sleep",
+                        "goal_centroids",
+                        "learner_delta_log",
+                        "learner_audit"
+                    ]),
+                    "counts": counts,
+                }),
+            ),
+            Err(e) => self.tool_error(id, &format!("count learner CFs failed: {e}")),
+        }
+    }
+
+    pub(crate) async fn call_get_learner_state(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: GetLearnerStateArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("Invalid get_learner_state args: {e}")),
+        };
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(id, "get_learner_state requires RocksDbTeleologicalStore.");
+        };
+        let profile = match store.get_learner_profile(parsed.learner_id).await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("get_learner_profile failed: {e}")),
+        };
+        let mut session = json!(null);
+        if let Some(session_ts) = parsed.session_ts {
+            let fingerprint = match store
+                .get_learner_fingerprint(parsed.learner_id, session_ts)
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_fingerprint failed: {e}"))
+                }
+            };
+            let state = match store
+                .get_learner_state_vector(parsed.learner_id, session_ts)
+                .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_state_vector failed: {e}"))
+                }
+            };
+            let delta = match store.get_learner_delta_log(parsed.learner_id, session_ts).await {
+                Ok(v) => v,
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_delta_log failed: {e}"))
+                }
+            };
+            let k_sleep = match store.get_learner_k_sleep(parsed.learner_id, session_ts).await {
+                Ok(v) => v,
+                Err(e) => return self.tool_error(id, &format!("get_learner_k_sleep failed: {e}")),
+            };
+            session = json!({
+                "session_ts": session_ts,
+                "fingerprint": fingerprint.as_ref().map(render_fingerprint),
+                "state_vector": state.as_ref().map(|state| render_state_vector(state, parsed.include_vectors)),
+                "delta_log": delta.as_ref().map(render_delta_log),
+                "k_sleep": k_sleep.as_ref().map(render_k_sleep),
+            });
+        }
+        let m_trace = if let Some(trace_id) = parsed.trace_id {
+            match store.get_learner_m_trace(parsed.learner_id, trace_id).await {
+                Ok(v) => v.map(|trace| render_m_trace(&trace)),
+                Err(e) => return self.tool_error(id, &format!("get_learner_m_trace failed: {e}")),
+            }
+        } else {
+            None
+        };
+        self.tool_result(
+            id,
+            json!({
+                "source_of_truth": source_of_truth([
+                    "learner_profile",
+                    "fingerprints_learner",
+                    "learner_state_history",
+                    "learner_delta_log",
+                    "learner_k_sleep",
+                    "learner_m_per_trace"
+                ]),
+                "learner_id": parsed.learner_id.to_string(),
+                "profile_found": profile.is_some(),
+                "profile": profile.as_ref().map(render_profile),
+                "session": session,
+                "m_trace": m_trace,
+            }),
+        )
+    }
+
+    pub(crate) async fn call_record_learner_k_sleep(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: RecordKSleepArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid record_learner_k_sleep args: {e}"))
+            }
+        };
+        let value = LearnerKSleep {
+            learner_id: parsed.learner_id,
+            session_ts: parsed.session_ts,
+            k: parsed
+                .k
+                .unwrap_or_else(|| k_sleep_from_slow_wave_minutes(parsed.slow_wave_minutes)),
+            slow_wave_minutes: parsed.slow_wave_minutes,
+        };
+        if let Err(e) = value.validate() {
+            return self.tool_error(id, &format!("LearnerKSleep validation failed: {e}"));
+        }
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(
+                id,
+                "record_learner_k_sleep requires RocksDbTeleologicalStore.",
+            );
+        };
+        if let Err(e) = store.store_learner_k_sleep(&value).await {
+            return self.tool_error(id, &format!("store_learner_k_sleep failed: {e}"));
+        }
+        if let Err(e) = store_learner_audit(
+            store,
+            parsed.learner_id,
+            parsed.session_ts,
+            "record_learner_k_sleep",
+            "learner_k_sleep",
+            &value,
+        )
+        .await
+        {
+            return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+        }
+        self.tool_result(
+            id,
+            json!({
+                "status": "stored",
+                "source_of_truth": source_of_truth(["learner_k_sleep", "learner_audit"]),
+                "k_sleep": render_k_sleep(&value),
+            }),
+        )
+    }
+
+    pub(crate) async fn call_record_learner_retrieval(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: RecordRetrievalArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid record_learner_retrieval args: {e}"))
+            }
+        };
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(
+                id,
+                "record_learner_retrieval requires RocksDbTeleologicalStore.",
+            );
+        };
+        let state_at_retrieval = if let Some(session_ts) = parsed.session_ts {
+            match store.get_learner_state_vector(parsed.learner_id, session_ts).await {
+                Ok(Some(state)) => state,
+                Ok(None) => {
+                    return self.tool_error(
+                        id,
+                        "No learner state vector found for learnerId+sessionTs",
+                    )
+                }
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_state_vector failed: {e}"))
+                }
+            }
+        } else {
+            let Some(components) = parsed.components else {
+                return self.tool_error(
+                    id,
+                    "record_learner_retrieval requires either sessionTs or stateVector+components",
+                );
+            };
+            LearnerStateVector {
+                learner_id: parsed.learner_id,
+                session_ts: parsed.ts,
+                values: parsed.state_vector,
+                components: components.into(),
+                context: BTreeMap::from([("source".into(), "record_learner_retrieval".into())]),
+            }
+        };
+        let log = LearnerRetrievalLog {
+            learner_id: parsed.learner_id,
+            trace_id: parsed.trace_id,
+            ts: parsed.ts,
+            correct: parsed.correct,
+            score: parsed.score,
+            state_at_retrieval,
+        };
+        if let Err(e) = log.validate() {
+            return self.tool_error(id, &format!("LearnerRetrievalLog validation failed: {e}"));
+        }
+        if let Err(e) = store.store_learner_retrieval_log(&log).await {
+            return self.tool_error(id, &format!("store_learner_retrieval_log failed: {e}"));
+        }
+        if let Err(e) = store_learner_audit(
+            store,
+            parsed.learner_id,
+            parsed.ts,
+            "record_learner_retrieval",
+            "learner_retrieval_log",
+            &log,
+        )
+        .await
+        {
+            return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+        }
+        self.tool_result(
+            id,
+            json!({
+                "status": "stored",
+                "source_of_truth": source_of_truth(["learner_retrieval_log", "learner_audit"]),
+                "retrieval_log": render_retrieval_log(&log),
+            }),
+        )
+    }
+
+    pub(crate) async fn call_upsert_goal_centroid(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: GoalCentroidArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("Invalid upsert_goal_centroid args: {e}")),
+        };
+        let modality = match LearnerModality::parse(&parsed.modality) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("{e}")),
+        };
+        let centroid = GoalCentroid {
+            skill_id: parsed.skill_id,
+            modality,
+            vector: parsed.vector,
+        };
+        if let Err(e) = centroid.validate() {
+            return self.tool_error(id, &format!("GoalCentroid validation failed: {e}"));
+        }
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(id, "upsert_goal_centroid requires RocksDbTeleologicalStore.");
+        };
+        if let Err(e) = store.store_goal_centroid(&centroid).await {
+            return self.tool_error(id, &format!("store_goal_centroid failed: {e}"));
+        }
+        self.tool_result(
+            id,
+            json!({
+                "status": "stored",
+                "source_of_truth": source_of_truth(["goal_centroids"]),
+                "goal_centroid": render_goal_centroid(&centroid, false),
+            }),
+        )
+    }
+
+    pub(crate) async fn call_get_goal_distance(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: GoalDistanceArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("Invalid get_goal_distance args: {e}")),
+        };
+        let modality = match LearnerModality::parse(&parsed.modality) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("{e}")),
+        };
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(id, "get_goal_distance requires RocksDbTeleologicalStore.");
+        };
+        let centroid = match store.get_goal_centroid(parsed.skill_id, modality).await {
+            Ok(Some(v)) => v,
+            Ok(None) => return self.tool_error(id, "Goal centroid not found for skill/modality"),
+            Err(e) => return self.tool_error(id, &format!("get_goal_centroid failed: {e}")),
+        };
+        let fingerprint = match store
+            .get_learner_fingerprint(parsed.learner_id, parsed.session_ts)
+            .await
+        {
+            Ok(Some(v)) => v,
+            Ok(None) => return self.tool_error(id, "Learner fingerprint not found for session"),
+            Err(e) => return self.tool_error(id, &format!("get_learner_fingerprint failed: {e}")),
+        };
+        let Some(embedding) = fingerprint
+            .modality_embeddings
+            .iter()
+            .find(|embedding| embedding.modality == modality)
+        else {
+            return self.tool_error(id, "Learner fingerprint has no embedding for modality");
+        };
+        if embedding.vector.len() != centroid.vector.len() {
+            return self.tool_error(
+                id,
+                &format!(
+                    "Goal centroid dimension {} does not match learner embedding dimension {}",
+                    centroid.vector.len(),
+                    embedding.vector.len()
+                ),
+            );
+        }
+        let cosine = cosine_similarity(&embedding.vector, &centroid.vector);
+        let euclidean = euclidean_distance(&embedding.vector, &centroid.vector);
+        let transfer_t = match compute_transfer_t(&embedding.vector, &centroid.vector, 1.0) {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("compute_transfer_t failed: {e}")),
+        };
+        let mut persisted_goal_state = json!(null);
+        if parsed.persist_goal_state {
+            let goal = LearnerGoalState {
+                learner_id: parsed.learner_id,
+                skill_id: parsed.skill_id,
+                state_vector: fingerprint.state_vector.clone(),
+            };
+            if let Err(e) = store.store_learner_goal_state(&goal).await {
+                return self.tool_error(id, &format!("store_learner_goal_state failed: {e}"));
+            }
+            if let Err(e) = store_learner_audit(
+                store,
+                parsed.learner_id,
+                parsed.session_ts,
+                "get_goal_distance",
+                "learner_goal_states",
+                &goal,
+            )
+            .await
+            {
+                return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+            }
+            persisted_goal_state = render_goal_state(&goal);
+        }
+        self.tool_result(
+            id,
+            json!({
+                "found": true,
+                "source_of_truth": source_of_truth(["goal_centroids", "fingerprints_learner", "learner_goal_states", "learner_audit"]),
+                "learner_id": parsed.learner_id.to_string(),
+                "skill_id": parsed.skill_id.to_string(),
+                "session_ts": parsed.session_ts,
+                "modality": modality.as_str(),
+                "cosine_similarity": cosine,
+                "cosine_distance": 1.0 - cosine,
+                "euclidean_distance": euclidean,
+                "transfer_t_lambda_1": transfer_t,
+                "persisted_goal_state": persisted_goal_state,
+            }),
+        )
+    }
+
+    pub(crate) async fn call_compile_learner_constellation(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: CompileConstellationArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self
+                    .tool_error(id, &format!("Invalid compile_learner_constellation args: {e}"))
+            }
+        };
+        if parsed.session_ts_list.is_empty() {
+            return self.tool_error(
+                id,
+                "compile_learner_constellation requires at least one session timestamp",
+            );
+        }
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(
+                id,
+                "compile_learner_constellation requires RocksDbTeleologicalStore.",
+            );
+        };
+        let mut fingerprints = Vec::with_capacity(parsed.session_ts_list.len());
+        for session_ts in &parsed.session_ts_list {
+            match store
+                .get_learner_fingerprint(parsed.learner_id, *session_ts)
+                .await
+            {
+                Ok(Some(fingerprint)) => fingerprints.push(fingerprint),
+                Ok(None) => {
+                    return self.tool_error(
+                        id,
+                        &format!("Learner fingerprint not found for sessionTs={session_ts}"),
+                    )
+                }
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_fingerprint failed: {e}"))
+                }
+            }
+        }
+        let constellation =
+            match compile_constellation_from_fingerprints(parsed.learner_id, &parsed, &fingerprints)
+            {
+                Ok(v) => v,
+                Err(e) => return self.tool_error(id, &e),
+            };
+        if let Err(e) = store.store_learner_constellation(&constellation).await {
+            return self.tool_error(id, &format!("store_learner_constellation failed: {e}"));
+        }
+        if let Err(e) = store_learner_audit(
+            store,
+            parsed.learner_id,
+            constellation.session_ts_end,
+            "compile_learner_constellation",
+            "learner_constellations",
+            &constellation,
+        )
+        .await
+        {
+            return self.tool_error(id, &format!("store_learner_audit_entry failed: {e}"));
+        }
+        self.tool_result(
+            id,
+            json!({
+                "status": "stored",
+                "source_of_truth": source_of_truth(["learner_constellations", "learner_audit"]),
+                "constellation": render_constellation(&constellation),
+            }),
+        )
+    }
+
     fn rocksdb_store_or_error(&self, _id: Option<JsonRpcId>) -> Option<&RocksDbTeleologicalStore> {
         self.teleological_store
             .as_any()
@@ -699,6 +1396,397 @@ fn render_m_trace(trace: &context_graph_core::learner::LearnerMTrace) -> serde_j
         "num_retrievals": trace.num_retrievals,
         "next_review_ts": trace.next_review_ts,
     })
+}
+
+fn render_state_vector(state: &LearnerStateVector, include_values: bool) -> serde_json::Value {
+    let mut out = json!({
+        "learner_id": state.learner_id.to_string(),
+        "session_ts": state.session_ts,
+        "values_len": state.values.len(),
+        "components": {
+            "plasticity_window": state.components.plasticity_window,
+            "hrv_coherence": state.components.hrv_coherence,
+            "valence": state.components.valence,
+            "arousal": state.components.arousal,
+            "stress_floor": state.components.stress_floor,
+            "k_sleep": state.components.k_sleep,
+        },
+        "context": state.context,
+    });
+    if include_values {
+        out["values"] = json!(state.values);
+    }
+    out
+}
+
+fn render_delta_log(log: &LearnerDeltaLog) -> serde_json::Value {
+    json!({
+        "learner_id": log.learner_id.to_string(),
+        "session_ts": log.session_ts,
+        "l": log.computation.l,
+        "diagnostic_state": log.computation.diagnostic_state.as_str(),
+        "delta_s": log.computation.delta_s,
+        "delta_c": log.computation.delta_c,
+        "delta_e": log.computation.delta_e,
+        "provenance": {
+            "computation_id": log.provenance.computation_id.to_string(),
+            "parent_observation_ids": log.provenance.parent_observation_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "threshold_version": log.provenance.threshold_version,
+            "output_sha256": log.provenance.output_sha256,
+        }
+    })
+}
+
+fn render_k_sleep(value: &LearnerKSleep) -> serde_json::Value {
+    json!({
+        "learner_id": value.learner_id.to_string(),
+        "session_ts": value.session_ts,
+        "k": value.k,
+        "slow_wave_minutes": value.slow_wave_minutes,
+    })
+}
+
+fn render_retrieval_log(log: &LearnerRetrievalLog) -> serde_json::Value {
+    json!({
+        "learner_id": log.learner_id.to_string(),
+        "trace_id": log.trace_id.to_string(),
+        "ts": log.ts,
+        "correct": log.correct,
+        "score": log.score,
+        "state_at_retrieval": render_state_vector(&log.state_at_retrieval, false),
+    })
+}
+
+fn render_goal_centroid(
+    centroid: &GoalCentroid,
+    include_vector: bool,
+) -> serde_json::Value {
+    let mut out = json!({
+        "skill_id": centroid.skill_id.to_string(),
+        "modality": centroid.modality.as_str(),
+        "vector_len": centroid.vector.len(),
+    });
+    if include_vector {
+        out["vector"] = json!(centroid.vector);
+    }
+    out
+}
+
+fn render_goal_state(goal: &LearnerGoalState) -> serde_json::Value {
+    json!({
+        "learner_id": goal.learner_id.to_string(),
+        "skill_id": goal.skill_id.to_string(),
+        "state_vector": render_state_vector(&goal.state_vector, false),
+    })
+}
+
+fn render_constellation(constellation: &LearnerConstellation) -> serde_json::Value {
+    json!({
+        "learner_id": constellation.learner_id.to_string(),
+        "selector_kind": constellation.selector_kind,
+        "label": constellation.label,
+        "sample_count": constellation.sample_count,
+        "session_ts_start": constellation.session_ts_start,
+        "session_ts_end": constellation.session_ts_end,
+        "modality_centroids": constellation.modality_centroids.iter().map(|centroid| json!({
+            "modality": centroid.modality.as_str(),
+            "vector_len": centroid.vector.len(),
+            "scalar_mean": centroid.scalar_mean,
+            "sample_count": centroid.sample_count,
+        })).collect::<Vec<_>>(),
+        "state_centroid": render_state_vector(&constellation.state_centroid, false),
+        "created_at": constellation.created_at,
+    })
+}
+
+async fn learner_counts(
+    store: &RocksDbTeleologicalStore,
+) -> context_graph_core::error::CoreResult<serde_json::Value> {
+    Ok(json!({
+        "learner_profile": store.count_learner_profiles().await?,
+        "learner_constellations": store.count_learner_constellations().await?,
+        "fingerprints_learner": store.count_learner_fingerprints().await?,
+        "learner_m_per_trace": store.count_learner_m_traces().await?,
+        "learner_state_history": store.count_learner_state_history().await?,
+        "learner_goal_states": store.count_learner_goal_states().await?,
+        "learner_retrieval_log": store.count_learner_retrieval_logs().await?,
+        "learner_k_sleep": store.count_learner_k_sleep().await?,
+        "goal_centroids": store.count_goal_centroids().await?,
+        "learner_delta_log": store.count_learner_delta_logs().await?,
+        "learner_audit": store.count_learner_audit_entries().await?,
+    }))
+}
+
+fn k_sleep_from_slow_wave_minutes(minutes: u16) -> f32 {
+    0.5 + (minutes.min(120) as f32 / 120.0)
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot = 0.0f64;
+    let mut norm_a = 0.0f64;
+    let mut norm_b = 0.0f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let x = *x as f64;
+        let y = *y as f64;
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    if norm_a <= 1e-12 || norm_b <= 1e-12 {
+        0.0
+    } else {
+        (dot / (norm_a.sqrt() * norm_b.sqrt())).clamp(-1.0, 1.0) as f32
+    }
+}
+
+fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (*x as f64 - *y as f64).powi(2))
+        .sum::<f64>()
+        .sqrt() as f32
+}
+
+fn compile_constellation_from_fingerprints(
+    learner_id: Uuid,
+    args: &CompileConstellationArgs,
+    fingerprints: &[LearnerFingerprint],
+) -> Result<LearnerConstellation, String> {
+    if fingerprints.is_empty() {
+        return Err("compile_learner_constellation requires at least one fingerprint".into());
+    }
+    let first_state_len = fingerprints[0].state_vector.values.len();
+    let mut state_values = vec![0.0f32; first_state_len];
+    let mut components = LearnerStateComponents {
+        plasticity_window: 0.0,
+        hrv_coherence: 0.0,
+        valence: 0.0,
+        arousal: 0.0,
+        stress_floor: 0.0,
+        k_sleep: 0.0,
+    };
+    let mut session_ts_start = u64::MAX;
+    let mut session_ts_end = 0u64;
+    let mut by_modality: BTreeMap<LearnerModality, Vec<&ModalityEmbedding>> = BTreeMap::new();
+
+    for fingerprint in fingerprints {
+        if fingerprint.learner_id != learner_id {
+            return Err("all fingerprints must belong to the requested learner_id".into());
+        }
+        if fingerprint.state_vector.values.len() != first_state_len {
+            return Err("all learner state vectors must have the same dimension".into());
+        }
+        session_ts_start = session_ts_start.min(fingerprint.session_ts);
+        session_ts_end = session_ts_end.max(fingerprint.session_ts);
+        for (dst, src) in state_values
+            .iter_mut()
+            .zip(fingerprint.state_vector.values.iter())
+        {
+            *dst += *src;
+        }
+        components.plasticity_window += fingerprint.state_vector.components.plasticity_window;
+        components.hrv_coherence += fingerprint.state_vector.components.hrv_coherence;
+        components.valence += fingerprint.state_vector.components.valence;
+        components.arousal += fingerprint.state_vector.components.arousal;
+        components.stress_floor += fingerprint.state_vector.components.stress_floor;
+        components.k_sleep += fingerprint.state_vector.components.k_sleep;
+
+        for embedding in &fingerprint.modality_embeddings {
+            if embedding.modality != LearnerModality::SelfReport {
+                by_modality
+                    .entry(embedding.modality)
+                    .or_default()
+                    .push(embedding);
+            }
+        }
+    }
+
+    let sample_count = fingerprints.len() as f32;
+    for value in &mut state_values {
+        *value /= sample_count;
+    }
+    components.plasticity_window /= sample_count;
+    components.hrv_coherence /= sample_count;
+    components.valence /= sample_count;
+    components.arousal /= sample_count;
+    components.stress_floor /= sample_count;
+    components.k_sleep /= sample_count;
+
+    let mut modality_centroids = Vec::new();
+    for (modality, embeddings) in by_modality {
+        if embeddings.is_empty() {
+            continue;
+        }
+        let dim = embeddings[0].vector.len();
+        if dim == 0 {
+            return Err(format!(
+                "modality {} has an empty embedding vector",
+                modality.as_str()
+            ));
+        }
+        let mut mean = vec![0.0f32; dim];
+        let mut kept = 0u32;
+        let mut scalar_sum = 0.0f32;
+        let mut scalar_count = 0u32;
+        for embedding in embeddings {
+            if embedding.vector.len() != dim {
+                return Err(format!(
+                    "modality {} has inconsistent embedding dimensions",
+                    modality.as_str()
+                ));
+            }
+            if let Some(unit) = l2_normalize(&embedding.vector) {
+                for (dst, src) in mean.iter_mut().zip(unit.iter()) {
+                    *dst += *src;
+                }
+                kept += 1;
+            }
+            if let Some(scalar) = embedding.scalar {
+                scalar_sum += scalar;
+                scalar_count += 1;
+            }
+        }
+        if kept == 0 {
+            return Err(format!(
+                "modality {} has no non-zero vectors for centroid construction",
+                modality.as_str()
+            ));
+        }
+        for value in &mut mean {
+            *value /= kept as f32;
+        }
+        let Some(vector) = l2_normalize(&mean) else {
+            return Err(format!(
+                "modality {} mean vector collapsed to zero",
+                modality.as_str()
+            ));
+        };
+        modality_centroids.push(LearnerModalityCentroid {
+            modality,
+            vector,
+            scalar_mean: (scalar_count > 0).then_some(scalar_sum / scalar_count as f32),
+            sample_count: kept,
+        });
+    }
+
+    let state_centroid = LearnerStateVector {
+        learner_id,
+        session_ts: session_ts_end,
+        values: state_values,
+        components,
+        context: BTreeMap::from([
+            ("source".into(), "compile_learner_constellation".into()),
+            ("aggregation".into(), "mean_of_l2_normalized_modalities".into()),
+        ]),
+    };
+    let constellation = LearnerConstellation {
+        learner_id,
+        selector_kind: args
+            .selector_kind
+            .unwrap_or(LEARNER_BASELINE_SELECTOR_REGULATED),
+        label: args.label.clone(),
+        sample_count: fingerprints.len() as u32,
+        session_ts_start,
+        session_ts_end,
+        modality_centroids,
+        state_centroid,
+        created_at: Utc::now(),
+    };
+    constellation
+        .validate()
+        .map_err(|e| format!("LearnerConstellation validation failed: {e}"))?;
+    Ok(constellation)
+}
+
+fn l2_normalize(values: &[f32]) -> Option<Vec<f32>> {
+    let norm = values
+        .iter()
+        .map(|v| (*v as f64) * (*v as f64))
+        .sum::<f64>()
+        .sqrt();
+    if !norm.is_finite() || norm < 1e-6 {
+        return None;
+    }
+    Some(values.iter().map(|v| (*v as f64 / norm) as f32).collect())
+}
+
+async fn store_learner_audit<T: Serialize>(
+    store: &RocksDbTeleologicalStore,
+    learner_id: Uuid,
+    ts: u64,
+    action: &str,
+    target_cf: &str,
+    result: &T,
+) -> context_graph_core::error::CoreResult<()> {
+    let entry = LearnerAuditEntry {
+        audit_id: Uuid::new_v4(),
+        learner_id,
+        ts,
+        action: action.into(),
+        target_cf: target_cf.into(),
+        result_sha256: sha256_json(result)?,
+        parent_audit_id: None,
+    };
+    store.store_learner_audit_entry(&entry).await
+}
+
+fn content_embedder_specs_json() -> Vec<serde_json::Value> {
+    ModelId::production()
+        .iter()
+        .map(|model| {
+            json!({
+                "slot": content_slot_number(*model),
+                "id": model.as_str(),
+                "model_name": content_model_name(*model),
+                "model_repo": model.model_repo(),
+                "model_path": model.directory_name(),
+                "native_dimension": model.dimension(),
+                "projected_dimension": model.projected_dimension(),
+                "max_tokens": model.max_tokens(),
+                "custom": model.is_custom(),
+            })
+        })
+        .collect()
+}
+
+fn content_slot_number(model: ModelId) -> u8 {
+    match model {
+        ModelId::Semantic => 1,
+        ModelId::TemporalRecent => 2,
+        ModelId::TemporalPeriodic => 3,
+        ModelId::TemporalPositional => 4,
+        ModelId::Causal => 5,
+        ModelId::Sparse => 6,
+        ModelId::Code => 7,
+        ModelId::Graph => 8,
+        ModelId::Hdc => 9,
+        ModelId::Contextual => 10,
+        ModelId::Kepler => 11,
+        ModelId::LateInteraction => 12,
+        ModelId::Splade => 13,
+        ModelId::BgeM3Dense => 14,
+        ModelId::Entity => 11,
+    }
+}
+
+fn content_model_name(model: ModelId) -> &'static str {
+    match model {
+        ModelId::Semantic => "intfloat/e5-large-v2",
+        ModelId::TemporalRecent => "exponential recency basis",
+        ModelId::TemporalPeriodic => "Fourier periodic basis",
+        ModelId::TemporalPositional => "sinusoidal positional basis",
+        ModelId::Causal => "nomic-ai/nomic-embed-text-v1.5",
+        ModelId::Sparse => "naver/splade-cocondenser-ensembledistil",
+        ModelId::Code => "Qodo/Qodo-Embed-1-1.5B",
+        ModelId::Graph => "intfloat/e5-large-v2 graph/sentence embedding",
+        ModelId::Hdc => "hyperdimensional computing encoder",
+        ModelId::Contextual => "intfloat/e5-base-v2 contextual paraphrase",
+        ModelId::Entity => "legacy sentence-transformers/all-MiniLM-L6-v2",
+        ModelId::Kepler => "THU-KEG/KEPLER-Wiki5M-KE",
+        ModelId::LateInteraction => "colbert-ir/colbertv2.0",
+        ModelId::Splade => "prithivida/Splade_PP_en_v1",
+        ModelId::BgeM3Dense => "BAAI/bge-m3 dense head",
+    }
 }
 
 fn source_of_truth<const N: usize>(column_families: [&str; N]) -> serde_json::Value {
@@ -774,6 +1862,18 @@ fn default_embedder() -> String {
 
 fn default_threshold() -> String {
     "thresholds-default-pending-calibration-v1".into()
+}
+
+fn default_models_root() -> PathBuf {
+    PathBuf::from("models")
+}
+
+fn default_calibration_root() -> PathBuf {
+    PathBuf::from("data/utl_calibration")
+}
+
+fn default_constellation_label() -> String {
+    "regulated-baseline".into()
 }
 
 fn one() -> f32 {

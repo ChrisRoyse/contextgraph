@@ -481,6 +481,16 @@ pub const CF_LEARNER_DELTA_LOG: &str = "learner_delta_log";
 /// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerAuditEntry]`.
 pub const CF_LEARNER_AUDIT: &str = "learner_audit";
 
+/// Matrix-shaped learner training dataset shards.
+///
+/// Populated by `export_learner_training_dataset`. Each record materializes one
+/// task-specific row-major feature matrix plus row metadata and provenance
+/// hashes, compiled from `CF_LEARNING_EVENTS` and learner-state CFs.
+///
+/// Key: dataset UUID bytes (16).
+/// Value: `[LEARNER_TRAINING_DATASET_VERSION: u8][bincode LearnerTrainingDataset]`.
+pub const CF_LEARNER_TRAINING_DATASETS: &str = "learner_training_datasets";
+
 /// Column family for compiled constellation records (Phase 2).
 ///
 /// Each constellation aggregates per-embedder centroids + spread statistics
@@ -598,7 +608,7 @@ pub const CF_TYPED_EDGE_RECORDS: &str = "typed_edge_records";
 /// - 2MB write buffer (append-light)
 pub const CF_TYPED_EDGE_VALIDATIONS: &str = "typed_edge_validations";
 
-/// All teleological column family names (29 total — 24 base + 3 contrastive + 2 typed-edge).
+/// All teleological column family names.
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -633,6 +643,7 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_GOAL_CENTROIDS,
     CF_LEARNER_DELTA_LOG,
     CF_LEARNER_AUDIT,
+    CF_LEARNER_TRAINING_DATASETS,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
     CF_CONTRASTIVE_PAIRS,
@@ -643,7 +654,7 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 40;
+pub const TELEOLOGICAL_CF_COUNT: usize = 41;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -977,6 +988,11 @@ pub fn learner_delta_log_cf_options(cache: &Cache) -> Options {
 /// Options for learner audit rows keyed by learner UUID + timestamp + audit UUID.
 pub fn learner_audit_cf_options(cache: &Cache) -> Options {
     uuid_prefixed_cf_options(cache, 16, 2)
+}
+
+/// Options for compiled learner training matrix datasets keyed by dataset UUID.
+pub fn learner_training_datasets_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 64, 8)
 }
 
 /// Options for `CF_CONSTELLATIONS` (Phase 2).
@@ -1703,6 +1719,10 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_GOAL_CENTROIDS, goal_centroids_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_LEARNER_DELTA_LOG, learner_delta_log_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_LEARNER_AUDIT, learner_audit_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_TRAINING_DATASETS,
+            learner_training_datasets_cf_options(cache),
+        ),
         // Phase 2: Constellation compiler (compile_constellation MCP tool)
         ColumnFamilyDescriptor::new(CF_CONSTELLATIONS, constellations_cf_options(cache)),
         ColumnFamilyDescriptor::new(

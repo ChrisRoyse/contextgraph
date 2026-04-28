@@ -57,6 +57,7 @@ mod helpers;
 mod index_ops;
 mod inverted_index;
 mod learner;
+mod learner_training;
 mod learning;
 mod llm_validation;
 mod persistence;
@@ -91,6 +92,9 @@ pub use learner::{
     encode_learner_profile, encode_learner_retrieval_log, encode_learner_state_vector,
     learner_audit_key, learner_constellation_key, learner_session_key, learner_skill_key,
     learner_trace_key, learner_trace_ts_key,
+};
+pub use learner_training::{
+    decode_learner_training_dataset, encode_learner_training_dataset,
 };
 pub use learning::{decode_learning_event, encode_learning_event};
 pub use llm_validation::{decode_llm_edge_validation, encode_llm_edge_validation};

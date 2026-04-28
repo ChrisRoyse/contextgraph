@@ -183,10 +183,16 @@ async fn test_e2e_tools_list_all_tools() {
     //   register_learner, record_session_observation, compute_delta_s,
     //   compute_delta_c, compute_delta_e, compute_L, get_learner_M,
     //   next_review_for_trace
+    // 2026-04-28: Bumped 87 → 96 after MCP learner-ops completion:
+    //   list_learner_embedders, preflight_learner_assets, count_learner_state,
+    //   get_learner_state, record_learner_k_sleep, record_learner_retrieval,
+    //   upsert_goal_centroid, get_goal_distance, compile_learner_constellation
+    // 2026-04-28: Bumped 96 → 100 after learner matrix dataset export:
+    //   export_learner_training_dataset, list/get/count_learner_training_datasets
     assert_eq!(
         tools.len(),
-        87,
-        "Expected exactly 87 tools with LLM feature, found {}",
+        100,
+        "Expected exactly 100 tools with LLM feature, found {}",
         tools.len()
     );
 

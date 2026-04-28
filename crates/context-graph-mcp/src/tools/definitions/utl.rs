@@ -3,7 +3,8 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 8 UTL learner-state tool definitions from docs/07.
+/// Returns the 17 UTL learner-state tool definitions from docs/07 plus the
+/// operational MCP readback/control surface needed for full learner workflows.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -207,6 +208,149 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "traceId": {"type": "string", "format": "uuid"}
                 },
                 "required": ["learnerId", "traceId"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "list_learner_embedders",
+            "Return the canonical E1-E21 embedder matrix: E1-E14 content embedders plus E15-E21 learner-state embedders.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "preflight_learner_assets",
+            "Inspect cached E15-E21 model assets and real calibration datasets. Fails closed when required files are missing unless allowMissing=true.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "modelsRoot": {"type": "string", "default": "models"},
+                    "calibrationRoot": {"type": "string", "default": "data/utl_calibration"},
+                    "allowMissing": {"type": "boolean", "default": false}
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "count_learner_state",
+            "Return row counts for all learner-state RocksDB column families.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "get_learner_state",
+            "Read persisted learner profile, session fingerprint/state vector, delta log, k_sleep, and optional M trace from RocksDB.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "sessionTs": {"type": "integer", "minimum": 0},
+                    "traceId": {"type": "string", "format": "uuid"},
+                    "includeVectors": {"type": "boolean", "default": false}
+                },
+                "required": ["learnerId"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "record_learner_k_sleep",
+            "Persist a sleep-gated consolidation multiplier row to CF_LEARNER_K_SLEEP.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "sessionTs": {"type": "integer", "minimum": 0},
+                    "slowWaveMinutes": {"type": "integer", "minimum": 0, "maximum": 1440},
+                    "k": {"type": "number", "minimum": 0.0, "maximum": 5.0}
+                },
+                "required": ["learnerId", "sessionTs", "slowWaveMinutes"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "record_learner_retrieval",
+            "Persist a retrieval-practice row to CF_LEARNER_RETRIEVAL_LOG using either a stored session state or an explicit state vector/components payload.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "traceId": {"type": "string", "format": "uuid"},
+                    "ts": {"type": "integer", "minimum": 0},
+                    "sessionTs": {"type": "integer", "minimum": 0},
+                    "correct": {"type": "boolean"},
+                    "score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "stateVector": {"type": "array", "items": {"type": "number"}},
+                    "components": {"$ref": "#/$defs/components"}
+                },
+                "required": ["learnerId", "traceId", "ts", "correct", "score"],
+                "additionalProperties": false,
+                "$defs": {
+                    "components": {
+                        "type": "object",
+                        "properties": {
+                            "plasticityWindow": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                            "hrvCoherence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                            "valence": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+                            "arousal": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+                            "stressFloor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                            "kSleep": {"type": "number", "minimum": 0.0, "maximum": 5.0, "default": 1.0}
+                        },
+                        "required": ["plasticityWindow", "hrvCoherence", "valence", "arousal", "stressFloor"],
+                        "additionalProperties": false
+                    }
+                }
+            }),
+        ),
+        ToolDefinition::new(
+            "upsert_goal_centroid",
+            "Persist an expert goal centroid for one skill/modality in CF_GOAL_CENTROIDS.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "skillId": {"type": "string", "format": "uuid"},
+                    "modality": {"type": "string"},
+                    "vector": {"type": "array", "items": {"type": "number"}, "minItems": 1}
+                },
+                "required": ["skillId", "modality", "vector"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "get_goal_distance",
+            "Compare a learner session modality embedding to a persisted skill goal centroid, and optionally persist the learner's goal-state snapshot.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "skillId": {"type": "string", "format": "uuid"},
+                    "sessionTs": {"type": "integer", "minimum": 0},
+                    "modality": {"type": "string"},
+                    "persistGoalState": {"type": "boolean", "default": false}
+                },
+                "required": ["learnerId", "skillId", "sessionTs", "modality"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "compile_learner_constellation",
+            "Compile and persist a learner regulated-state baseline constellation from stored learner-session fingerprints.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "sessionTsList": {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1},
+                    "selectorKind": {"type": "integer", "minimum": 0, "maximum": 255, "default": 1},
+                    "label": {"type": "string", "default": "regulated-baseline"}
+                },
+                "required": ["learnerId", "sessionTsList"],
                 "additionalProperties": false
             }),
         ),

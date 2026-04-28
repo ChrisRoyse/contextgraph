@@ -92,6 +92,7 @@ pub use column_families::{
     learner_profile_cf_options,
     learner_retrieval_log_cf_options,
     learner_state_history_cf_options,
+    learner_training_datasets_cf_options,
     learning_events_cf_options,
     // Phase 4 Lifecycle Provenance: Merge + importance history column families
     merge_history_cf_options,
@@ -147,6 +148,7 @@ pub use column_families::{
     CF_LEARNER_PROFILE,
     CF_LEARNER_RETRIEVAL_LOG,
     CF_LEARNER_STATE_HISTORY,
+    CF_LEARNER_TRAINING_DATASETS,
     CF_LEARNING_EVENTS,
     CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,
@@ -221,9 +223,9 @@ pub use indexes::{
 
 // Re-export RocksDB teleological store (TASK: RocksDbTeleologicalStore)
 pub use rocksdb_store::{
-    decode_learning_event, decode_training_record, encode_learning_event, encode_training_record,
-    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError,
-    TeleologicalStoreResult,
+    decode_learner_training_dataset, decode_learning_event, decode_training_record,
+    encode_learner_training_dataset, encode_learning_event, encode_training_record,
+    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalStoreResult,
 };
 
 // Re-export search types (TASK-LOGIC-005)

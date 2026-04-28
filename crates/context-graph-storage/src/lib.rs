@@ -137,6 +137,7 @@ pub use teleological::{
     CF_LEARNER_PROFILE,
     CF_LEARNER_RETRIEVAL_LOG,
     CF_LEARNER_STATE_HISTORY,
+    CF_LEARNER_TRAINING_DATASETS,
     CF_LEARNING_EVENTS,
     // Phase 4 Lifecycle Provenance: Merge + importance history
     CF_MERGE_HISTORY,

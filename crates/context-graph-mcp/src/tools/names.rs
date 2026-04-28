@@ -158,6 +158,14 @@ pub const LIST_LEARNING_EVENTS: &str = "list_learning_events";
 pub const GET_LEARNING_EVENT: &str = "get_learning_event";
 /// Count rows currently stored in `CF_LEARNING_EVENTS`.
 pub const COUNT_LEARNING_EVENTS: &str = "count_learning_events";
+/// Compile learner/learning CF rows into a matrix-shaped RocksDB dataset.
+pub const EXPORT_LEARNER_TRAINING_DATASET: &str = "export_learner_training_dataset";
+/// List matrix-shaped learner training datasets.
+pub const LIST_LEARNER_TRAINING_DATASETS: &str = "list_learner_training_datasets";
+/// Fetch one learner training dataset by dataset UUID.
+pub const GET_LEARNER_TRAINING_DATASET: &str = "get_learner_training_dataset";
+/// Count learner training datasets.
+pub const COUNT_LEARNER_TRAINING_DATASETS: &str = "count_learner_training_datasets";
 
 // ========== UTL LEARNER-STATE TOOLS ==========
 /// Register a learner profile in `CF_LEARNER_PROFILE`.
@@ -176,6 +184,24 @@ pub const COMPUTE_L: &str = "compute_L";
 pub const GET_LEARNER_M: &str = "get_learner_M";
 /// Compute next-review timestamp for a learner trace.
 pub const NEXT_REVIEW_FOR_TRACE: &str = "next_review_for_trace";
+/// List the canonical E1-E21 content + learner-state embedder matrix.
+pub const LIST_LEARNER_EMBEDDERS: &str = "list_learner_embedders";
+/// Inspect cached E15-E21 model assets and real calibration datasets.
+pub const PREFLIGHT_LEARNER_ASSETS: &str = "preflight_learner_assets";
+/// Count all learner-state RocksDB column families.
+pub const COUNT_LEARNER_STATE: &str = "count_learner_state";
+/// Read persisted learner profile/session state/delta rows.
+pub const GET_LEARNER_STATE: &str = "get_learner_state";
+/// Persist a sleep-derived k(tau) row.
+pub const RECORD_LEARNER_K_SLEEP: &str = "record_learner_k_sleep";
+/// Persist a retrieval-practice row tied to a learner trace.
+pub const RECORD_LEARNER_RETRIEVAL: &str = "record_learner_retrieval";
+/// Persist an expert goal centroid for a skill and learner modality.
+pub const UPSERT_GOAL_CENTROID: &str = "upsert_goal_centroid";
+/// Compare a learner session embedding to a persisted goal centroid.
+pub const GET_GOAL_DISTANCE: &str = "get_goal_distance";
+/// Compile and persist a learner regulated-state baseline constellation.
+pub const COMPILE_LEARNER_CONSTELLATION: &str = "compile_learner_constellation";
 
 // ========== CONSTELLATION TOOLS (Phase 2 compiler) ==========
 /// Compile a constellation (per-embedder centroids + spread stats) from a
