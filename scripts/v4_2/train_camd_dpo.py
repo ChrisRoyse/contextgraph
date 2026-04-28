@@ -38,11 +38,17 @@ from __future__ import annotations
 
 import argparse
 import atexit
-import gc
 import json
 import os
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from v4_2.cuda13_blackwell import (  # noqa: E402
+    apply_preimport_cuda_env,
+    configure_torch_cuda,
+    release_torch_cuda,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -148,7 +154,7 @@ def load_pair_records(pairs_path: Path, label: str) -> list[dict]:
 def main() -> int:
     args = parse_args()
 
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    apply_preimport_cuda_env()
 
     print(f"[v4.2-dpo] base={args.base}")
     print(f"[v4.2-dpo] adapter-in={args.adapter_in}")
@@ -184,14 +190,11 @@ def main() -> int:
     from peft import PeftModel
     from trl import DPOConfig, DPOTrainer
 
+    cuda_info = configure_torch_cuda(torch, label="v4.2-camd-dpo")
+    print(f"[v4.2-dpo] cuda={json.dumps(cuda_info, sort_keys=True)}")
+
     def release_cuda_cache() -> None:
-        try:
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
-        except Exception:
-            pass
+        release_torch_cuda(torch)
 
     atexit.register(release_cuda_cache)
 

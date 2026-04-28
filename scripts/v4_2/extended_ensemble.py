@@ -12,13 +12,22 @@ under agent_id=agent-v42-1-ensemble-builder.
 """
 from __future__ import annotations
 
-import gc
 import logging
 import sys
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from v4_2.cuda13_blackwell import (  # noqa: E402
+    apply_preimport_cuda_env,
+    configure_torch_cuda,
+    release_torch_cuda,
+)
+
+apply_preimport_cuda_env()
 
 # Compat shim for FlagEmbedding on transformers 5.x (see discovery note).
 import transformers.utils.import_utils as _iu  # noqa: E402
@@ -161,6 +170,8 @@ class ExtendedEmbedderEnsemble:
         if device == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("extended_ensemble: device='cuda' requested "
                                "but torch.cuda.is_available() is False.")
+        if device == "cuda":
+            configure_torch_cuda(torch, label="v4.2-extended-ensemble")
         self.device = device
         self.dtype = dtype
         logger.info("Ensemble init: device=%s dtype=%s cuda_free=%d MiB",
@@ -482,9 +493,7 @@ def _smoke_test() -> int:
     print(f"Total wall time: {time.time() - t0:.1f}s")
 
     del ens
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    release_torch_cuda(torch)
 
     if failed:
         print(f"\nSMOKE TEST FAIL: {len(failed)} check(s) below "
