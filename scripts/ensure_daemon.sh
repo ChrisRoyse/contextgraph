@@ -10,6 +10,23 @@ BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
 LOGFILE="/tmp/context-graph-daemon.log"
 PIDFILE="/tmp/context-graph-daemon.pid"
 MAX_WAIT=300  # 5 minutes max wait for startup
+MAX_LOG_BYTES=$((10 * 1024 * 1024))
+LOG_BACKUPS=3
+
+rotate_log_if_needed() {
+    local path="$1"
+    [ -f "$path" ] || return 0
+    local size
+    size=$(wc -c < "$path" 2>/dev/null || echo 0)
+    [ "$size" -lt "$MAX_LOG_BYTES" ] && return 0
+
+    rm -f "${path}.${LOG_BACKUPS}" 2>/dev/null || true
+    local i
+    for ((i=LOG_BACKUPS-1; i>=1; i--)); do
+        [ -f "${path}.${i}" ] && mv "${path}.${i}" "${path}.$((i + 1))"
+    done
+    mv "$path" "${path}.1"
+}
 
 # Check if already listening
 if ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
@@ -43,6 +60,7 @@ fi
 
 # Start daemon
 echo "[ensure_daemon] Starting context-graph daemon on port $PORT..." >&2
+rotate_log_if_needed "$LOGFILE"
 CONTEXT_GRAPH_STORAGE_PATH="$STORAGE" \
 CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
 RUST_LOG=warn \

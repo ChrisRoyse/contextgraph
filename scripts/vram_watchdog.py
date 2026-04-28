@@ -42,6 +42,8 @@ WHITELIST_CMDS = {
 }
 # Filesystem
 LOGFILE = Path("/tmp/vram_watchdog.log")
+MAX_LOG_BYTES = 10 * 1024 * 1024
+LOG_BACKUPS = 3
 
 
 @dataclass(frozen=True)
@@ -56,8 +58,26 @@ def log(msg: str, level: str = "INFO") -> None:
     line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{level}] vram_watchdog: {msg}"
     print(line, file=sys.stderr, flush=True)
     try:
+        rotate_log_if_needed(LOGFILE, MAX_LOG_BYTES, LOG_BACKUPS)
         with LOGFILE.open("a") as f:
             f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def rotate_log_if_needed(path: Path, max_bytes: int, backups: int) -> None:
+    """Bound append-only watchdog logs without deleting the active file."""
+    try:
+        if not path.exists() or path.stat().st_size < max_bytes:
+            return
+        oldest = path.with_name(f"{path.name}.{backups}")
+        if oldest.exists():
+            oldest.unlink()
+        for idx in range(backups - 1, 0, -1):
+            src = path.with_name(f"{path.name}.{idx}")
+            if src.exists():
+                src.rename(path.with_name(f"{path.name}.{idx + 1}"))
+        path.rename(path.with_name(f"{path.name}.1"))
     except OSError:
         pass
 

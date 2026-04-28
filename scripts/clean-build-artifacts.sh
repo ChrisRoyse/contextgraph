@@ -13,6 +13,7 @@
 #   3. Python bytecode/cache files
 #   4. Backup files   (corrupted DBs, model backups, stale data)
 #   5. /tmp test DBs  (leftover RocksDB/CUDA FSV directories)
+#   6. Old /tmp runtime logs and heartbeat sidecars
 #   7. [aggressive] Release deps, HF model cache, pip cache
 #
 # This script is safe to run at any time. Release binaries are preserved
@@ -211,10 +212,11 @@ for stale_dir in "$PROJECT_DIR"/contextgraph_data_corrupted_* "$PROJECT_DIR"/con
     [ -e "$stale_dir" ] && clean_path "$stale_dir" "$(basename "$stale_dir")"
 done
 
-# Model backups
-for bak in "$PROJECT_DIR"/models/causal_backup "$PROJECT_DIR"/models/causal/model.safetensors.degenerate.bak; do
-    [ -e "$bak" ] && clean_path "$bak" "models/$(basename "$bak")"
-done
+# Model snapshots/caches are intentionally preserved. They are large by design
+# and should stay ready for warm starts and offline use.
+if [ -d "$PROJECT_DIR/models" ]; then
+    printf "  %-50s %8s  [preserved]\n" "models/ weights and snapshots" "$(du -sh "$PROJECT_DIR/models" 2>/dev/null | cut -f1 || echo unknown)"
+fi
 
 # Stale benchmark data
 for stale_data in "$PROJECT_DIR"/data/hf_benchmark_arxiv_only_backup "$PROJECT_DIR"/data/hf_benchmark/temp_wikipedia; do
@@ -255,7 +257,47 @@ fi
 echo ""
 
 # =============================================================================
-# Category 5: Documentation artifacts
+# Category 7: Old /tmp Runtime Logs
+# =============================================================================
+
+echo "--- Old /tmp Runtime Logs ---"
+log_count=0
+log_kb=0
+while IFS= read -r log_path; do
+    [ -e "$log_path" ] || continue
+    kb=$(size_kb "$log_path")
+    log_kb=$(( log_kb + kb ))
+    log_count=$(( log_count + 1 ))
+    if [ "$CHECK_ONLY" = false ] && [ "$DRY_RUN" = false ]; then
+        rm -f "$log_path"
+    fi
+done < <(
+    find /tmp -maxdepth 1 -type f \
+        \( -name 'vram_watchdog.log*' \
+        -o -name 'context-graph-daemon.log*' \
+        -o -name 'cg-daemon.log*' \
+        -o -name 'shake_*heartbeat*.jsonl*' \
+        -o -name 'shake_*_mem.jsonl*' \
+        -o -name 'shake_dpo_rejected_pairs.log*' \) \
+        -mtime +7 -print 2>/dev/null
+)
+if [ "$log_count" -gt 0 ]; then
+    log_size=$(human_size "$log_kb")
+    if [ "$CHECK_ONLY" = true ]; then
+        printf "  %-50s %8s\n" "Old /tmp logs ($log_count files, >7 days)" "$log_size"
+    elif [ "$DRY_RUN" = true ]; then
+        printf "  %-50s %8s  [would delete]\n" "Old /tmp logs ($log_count files, >7 days)" "$log_size"
+    else
+        printf "  %-50s %8s  [deleted]\n" "Old /tmp logs ($log_count files, >7 days)" "$log_size"
+    fi
+    TOTAL_FREED=$(( TOTAL_FREED + log_kb ))
+else
+    echo "  No old /tmp runtime logs found"
+fi
+echo ""
+
+# =============================================================================
+# Category 8: Documentation artifacts
 # =============================================================================
 
 if [ -d "$TARGET_DIR/doc" ]; then
@@ -265,7 +307,7 @@ if [ -d "$TARGET_DIR/doc" ]; then
 fi
 
 # =============================================================================
-# Category 6 (Aggressive): External Caches
+# Category 9 (Aggressive): External Caches
 # =============================================================================
 
 if [ "$AGGRESSIVE" = true ]; then
@@ -282,21 +324,12 @@ if [ "$AGGRESSIVE" = true ]; then
         fi
     fi
 
-    # Unused HuggingFace models (audio/video models not used by context-graph)
+    # HuggingFace model cache is intentionally preserved so models stay warm
+    # and available offline. Do not delete model cache from this cleanup script.
     HF_HUB="$HOME/.cache/huggingface/hub"
     if [ -d "$HF_HUB" ]; then
-        # These models are NOT part of the 13-embedder stack
-        for unused_model in \
-            "models--facebook--sam-audio-large" \
-            "models--facebook--sam-audio-judge" \
-            "models--facebook--sam-audio-base" \
-            "models--facebook--pe-a-frame-large" \
-            "models--lukewys--laion_clap" \
-            "models--Qwen--Qwen3-Embedding-8B" \
-            "models--Qwen--Qwen2.5-7B-Instruct-GGUF" \
-        ; do
-            [ -d "$HF_HUB/$unused_model" ] && clean_path "$HF_HUB/$unused_model" "HF cache: $(echo "$unused_model" | sed 's/models--//' | sed 's/--/\//')"
-        done
+        hf_kb=$(size_kb "$HF_HUB")
+        printf "  %-50s %8s  [preserved]\n" "HuggingFace model cache" "$(human_size "$hf_kb")"
     fi
 
     # Cargo registry (old crate versions)

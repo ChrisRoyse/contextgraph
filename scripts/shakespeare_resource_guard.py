@@ -61,6 +61,8 @@ from typing import Any, Callable
 # =============================================================================
 _IN_FLIGHT_FPS: set[str] = set()
 _FP_LOCK = threading.Lock()
+HEARTBEAT_MAX_BYTES = 50 * 1024 * 1024
+HEARTBEAT_BACKUPS = 3
 
 
 def register_fingerprint(fp_id: str) -> None:
@@ -80,6 +82,28 @@ def unregister_fingerprint(fp_id: str) -> None:
 def _snapshot_fingerprints() -> list[str]:
     with _FP_LOCK:
         return list(_IN_FLIGHT_FPS)
+
+
+def _rotate_file_if_needed(
+    path: Path,
+    *,
+    max_bytes: int = HEARTBEAT_MAX_BYTES,
+    backups: int = HEARTBEAT_BACKUPS,
+) -> None:
+    """Rotate append-only sidecar files before opening them for a new run."""
+    try:
+        if not path.exists() or path.stat().st_size < max_bytes:
+            return
+        oldest = path.with_name(f"{path.name}.{backups}")
+        if oldest.exists():
+            oldest.unlink()
+        for idx in range(backups - 1, 0, -1):
+            src = path.with_name(f"{path.name}.{idx}")
+            if src.exists():
+                src.rename(path.with_name(f"{path.name}.{idx + 1}"))
+        path.rename(path.with_name(f"{path.name}.1"))
+    except OSError:
+        pass
 
 
 # =============================================================================
@@ -180,6 +204,7 @@ class MemoryHeartbeat(threading.Thread):
             print(f"[guard] heartbeat cannot create {self._path.parent}: {e}",
                   file=sys.stderr)
             return
+        _rotate_file_if_needed(self._path)
         try:
             fp = self._path.open("a", encoding="utf-8")
         except OSError as e:

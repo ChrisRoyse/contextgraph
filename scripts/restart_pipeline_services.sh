@@ -130,7 +130,7 @@ if pgrep -f vram_watchdog.py >/dev/null; then
   ok "vram_watchdog already running"
 else
   cd "$REPO"
-  setsid bash -c "exec python3 scripts/vram_watchdog.py --threshold-gb 30 --warn-gb 28 --interval 10 > \"$WATCHDOG_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
+  setsid bash -c "exec python3 scripts/vram_watchdog.py --threshold-gb 30 --warn-gb 28 --interval 10" < /dev/null >/dev/null 2>&1 &
   sleep 2
   WPID=$(pgrep -f vram_watchdog.py | head -1)
   if [ -n "$WPID" ] && kill -0 "$WPID" 2>/dev/null; then

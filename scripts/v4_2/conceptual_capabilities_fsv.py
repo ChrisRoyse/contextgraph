@@ -332,7 +332,9 @@ def analyze_benchmarks(results: dict[str, Any], budgets: dict[str, float]) -> di
         "budgets": budget_results,
         "quality": quality,
         "benchmark_note": (
-            "The expensive step is model/provider initialization inside Rust MCP tests. "
+            "Rust FSV commands are scoped to --lib so each MCP test runs once instead "
+            "of duplicating through the binary test target. The expensive step remains "
+            "model/provider initialization inside Rust MCP tests. "
             "Functional quality metrics are exact or near-exact; runtime improvements should "
             "come from grouping FSV cases into fewer Rust process launches, not weakening checks."
         ),
@@ -389,6 +391,7 @@ def main() -> int:
                 "test",
                 "-p",
                 "context-graph-mcp",
+                "--lib",
                 "test_e2e_derive_constellation_fsv",
                 "--features",
                 "llm",
@@ -404,6 +407,7 @@ def main() -> int:
                 "test",
                 "-p",
                 "context-graph-mcp",
+                "--lib",
                 "test_e2e_estimate_learning_outcome_fsv",
                 "--features",
                 "llm",
@@ -419,6 +423,7 @@ def main() -> int:
                 "test",
                 "-p",
                 "context-graph-mcp",
+                "--lib",
                 "test_e2e_tools_list_all_tools",
                 "--features",
                 "llm",
