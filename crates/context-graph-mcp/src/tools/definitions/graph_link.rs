@@ -206,10 +206,11 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "conversation_history", "category_weighted", "typo_tolerant",
                         "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
                         "balanced",
-                        "multilingual_search", "long_context", "translation_finder"
+                        "multilingual_search", "long_context", "translation_finder",
+                        "affect_repair", "affect_priming", "affect_neutral"
                     ],
                     "default": "semantic_search",
-                    "description": "Weight profile for RRF fusion. Temporal profiles: temporal_navigation (E2+E3+E4 balanced), sequence_navigation (E4-heavy), conversation_history (E4+E1). Multilingual/long-doc profiles (E14 BGE-M3 Dense): multilingual_search (E14=0.40 cross-lingual), long_context (E14=0.45, only embedder seeing past 512 tokens), translation_finder (E14=0.70 for translation pairs). Use customWeights for fine-grained E2/E3/E4/E14 control."
+                    "description": "Weight profile for RRF fusion. Temporal profiles: temporal_navigation (E2+E3+E4 balanced), sequence_navigation (E4-heavy), conversation_history (E4+E1). Multilingual/long-doc profiles (E14 BGE-M3 Dense): multilingual_search (E14=0.40 cross-lingual), long_context (E14=0.45, only embedder seeing past 512 tokens), translation_finder (E14=0.70 for translation pairs). Learner-state profiles: affect_repair, affect_priming, affect_neutral. Use customWeights for fine-grained E2/E3/E4/E14 control."
                 },
                 "top_k": {
                     "type": "integer",

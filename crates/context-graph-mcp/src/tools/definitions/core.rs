@@ -111,9 +111,25 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "conversation_history", "category_weighted", "typo_tolerant",
                             "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
                             "balanced",
-                            "multilingual_search", "long_context", "translation_finder"
+                            "multilingual_search", "long_context", "translation_finder",
+                            "affect_repair", "affect_priming", "affect_neutral"
                         ],
-                        "description": "Weight profile for multi-space search. Temporal profiles: temporal_navigation (E2+E3+E4 balanced — time-based retrieval), sequence_navigation (E4-heavy — find nearby conversation items), conversation_history (E4+E1 — contextual recall within sessions). E14-aware profiles: multilingual_search (E14=0.40 — cross-lingual retrieval), long_context (E14=0.45 — docs > 512 tokens), translation_finder (E14=0.70 — translation pairs / cross-lingual near-duplicates). For fine-grained temporal control, use customWeights to set E2/E3/E4 independently."
+                        "description": "Weight profile for multi-space search. Temporal profiles: temporal_navigation (E2+E3+E4 balanced — time-based retrieval), sequence_navigation (E4-heavy — find nearby conversation items), conversation_history (E4+E1 — contextual recall within sessions). E14-aware profiles: multilingual_search (E14=0.40 — cross-lingual retrieval), long_context (E14=0.45 — docs > 512 tokens), translation_finder (E14=0.70 — translation pairs / cross-lingual near-duplicates). Learner-state profiles: affect_repair, affect_priming, affect_neutral. For fine-grained temporal control, use customWeights to set E2/E3/E4 independently."
+                    },
+                    "stateConditionedProfile": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, require learnerId+learnerSessionTs, read CF_LEARNER_STATE_HISTORY, and route weightProfile through the state-conditioned retrieval policy."
+                    },
+                    "learnerId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Learner UUID used with stateConditionedProfile."
+                    },
+                    "learnerSessionTs": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Persisted learner session timestamp used with stateConditionedProfile."
                     },
                     "customWeights": {
                         "type": "object",

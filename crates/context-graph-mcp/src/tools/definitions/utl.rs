@@ -354,5 +354,31 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
+        ToolDefinition::new(
+            "resolve_learner_retrieval_policy",
+            "Read a persisted learner state vector and resolve the state-conditioned E1-E14 retrieval weight profile without falling back on missing state.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "learnerId": {"type": "string", "format": "uuid"},
+                    "sessionTs": {"type": "integer", "minimum": 0},
+                    "baseWeightProfile": {
+                        "type": "string",
+                        "enum": [
+                            "semantic_search", "causal_reasoning", "code_search", "fact_checking",
+                            "graph_reasoning", "temporal_navigation", "sequence_navigation",
+                            "conversation_history", "category_weighted", "typo_tolerant",
+                            "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
+                            "balanced", "multilingual_search", "long_context", "translation_finder",
+                            "affect_repair", "affect_priming", "affect_neutral"
+                        ],
+                        "default": "semantic_search"
+                    },
+                    "includeWeights": {"type": "boolean", "default": true}
+                },
+                "required": ["learnerId", "sessionTs"],
+                "additionalProperties": false
+            }),
+        ),
     ]
 }

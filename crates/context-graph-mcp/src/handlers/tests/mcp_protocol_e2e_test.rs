@@ -189,10 +189,12 @@ async fn test_e2e_tools_list_all_tools() {
     //   upsert_goal_centroid, get_goal_distance, compile_learner_constellation
     // 2026-04-28: Bumped 96 → 100 after learner matrix dataset export:
     //   export_learner_training_dataset, list/get/count_learner_training_datasets
+    // 2026-04-28: Bumped 100 → 101 after state-conditioned learner retrieval policy:
+    //   resolve_learner_retrieval_policy
     assert_eq!(
         tools.len(),
-        100,
-        "Expected exactly 100 tools with LLM feature, found {}",
+        101,
+        "Expected exactly 101 tools with LLM feature, found {}",
         tools.len()
     );
 
@@ -685,6 +687,138 @@ async fn test_e2e_curation_tools_workflow() {
     println!("FSV: Final store count: {}", final_count);
 
     println!("\n=== CURATION TOOLS WORKFLOW COMPLETE ===\n");
+}
+
+#[tokio::test]
+#[cfg(feature = "llm")]
+async fn test_e2e_resolve_learner_retrieval_policy_fsv() {
+    println!("\n=== E2E TEST: Learner Retrieval Policy FSV ===");
+
+    let (handlers, store, _tempdir) =
+        create_test_handlers_with_real_embeddings_store_access().await;
+    let rocksdb_store = store
+        .as_any()
+        .downcast_ref::<context_graph_storage::teleological::RocksDbTeleologicalStore>()
+        .expect("FSV requires RocksDbTeleologicalStore");
+
+    let learner_id = "12345678-1234-4234-9234-123456789abc";
+    let session_ts = 1_900_100_001u64;
+
+    println!(
+        "SOURCE OF TRUTH: RocksDB CF_LEARNER_STATE_HISTORY before={}",
+        rocksdb_store.count_learner_state_history().await.unwrap()
+    );
+
+    let record = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(501)),
+        Some(json!({
+            "name": "record_session_observation",
+            "arguments": {
+                "learnerId": learner_id,
+                "sessionTs": session_ts,
+                "modality": "affect_text",
+                "rawText": "policy fsv high stress learner state",
+                "components": {
+                    "plasticityWindow": 0.55,
+                    "hrvCoherence": 0.40,
+                    "valence": 0.10,
+                    "arousal": 0.20,
+                    "stressFloor": 0.70,
+                    "kSleep": 1.0
+                },
+                "stateVector": [0.55, 0.40, 0.10, 0.20, 0.70, 1.0],
+                "embeddings": [{
+                    "modality": "affect_text",
+                    "vector": [0.2, 0.4, 0.8]
+                }]
+            }
+        })),
+    );
+    let record_response = handlers.dispatch(record).await;
+    assert!(
+        record_response.error.is_none(),
+        "record_session_observation JSON-RPC error: {:?}",
+        record_response.error
+    );
+    let record_data =
+        extract_mcp_tool_data(&record_response.result.expect("record must return result"));
+    assert_eq!(record_data["status"], "stored");
+
+    let readback = rocksdb_store
+        .get_learner_state_vector(uuid::Uuid::parse_str(learner_id).unwrap(), session_ts)
+        .await
+        .unwrap()
+        .expect("state vector must be physically present after MCP write");
+    assert_eq!(readback.components.stress_floor, 0.70);
+    println!(
+        "AFTER RECORD state_history={} stress_floor={}",
+        rocksdb_store.count_learner_state_history().await.unwrap(),
+        readback.components.stress_floor
+    );
+
+    let resolve = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(502)),
+        Some(json!({
+            "name": "resolve_learner_retrieval_policy",
+            "arguments": {
+                "learnerId": learner_id,
+                "sessionTs": session_ts,
+                "baseWeightProfile": "semantic_search",
+                "includeWeights": true
+            }
+        })),
+    );
+    let resolve_response = handlers.dispatch(resolve).await;
+    assert!(
+        resolve_response.error.is_none(),
+        "resolve_learner_retrieval_policy JSON-RPC error: {:?}",
+        resolve_response.error
+    );
+    let resolve_data =
+        extract_mcp_tool_data(&resolve_response.result.expect("resolve must return result"));
+    assert_eq!(resolve_data["policy"]["selected_profile"], "affect_repair");
+    assert_eq!(resolve_data["state_vector_len"], 6);
+    let e14_weight = resolve_data["weights"]
+        .as_array()
+        .expect("weights must be an array")
+        .iter()
+        .find(|item| item["embedder"] == "E14_BgeM3Dense")
+        .and_then(|item| item["weight"].as_f64())
+        .expect("E14_BgeM3Dense weight must be present");
+    assert!((e14_weight - 0.2).abs() < 0.0001);
+    println!(
+        "AFTER RESOLVE selected={} source_of_truth={}",
+        resolve_data["policy"]["selected_profile"], resolve_data["source_of_truth"]
+    );
+
+    let invalid = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(503)),
+        Some(json!({
+            "name": "resolve_learner_retrieval_policy",
+            "arguments": {
+                "learnerId": learner_id,
+                "sessionTs": session_ts,
+                "baseWeightProfile": "missing_profile"
+            }
+        })),
+    );
+    let invalid_response = handlers.dispatch(invalid).await;
+    assert!(
+        invalid_response.error.is_none(),
+        "tool errors must be returned as MCP tool results"
+    );
+    let invalid_result = invalid_response
+        .result
+        .expect("invalid call returns tool result");
+    assert_eq!(invalid_result["isError"], true);
+    println!(
+        "EDGE INVALID_PROFILE state_history={} isError={}",
+        rocksdb_store.count_learner_state_history().await.unwrap(),
+        invalid_result["isError"]
+    );
 }
 
 /// Complete E2E test covering all tools.

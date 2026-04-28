@@ -26,6 +26,7 @@
 //!
 //! FAIL FAST: Invalid weights or unknown profiles return detailed errors immediately.
 
+use crate::learner::LearnerStateComponents;
 use crate::types::fingerprint::NUM_EMBEDDERS;
 
 /// Whether E2/E3/E4 temporal embedders generate vectors during store_memory.
@@ -103,6 +104,42 @@ impl std::fmt::Display for WeightProfileError {
 }
 
 impl std::error::Error for WeightProfileError {}
+
+/// Errors from learner-state-conditioned weight profile routing.
+#[derive(Debug, Clone)]
+pub enum StateConditionedProfileError {
+    /// The supplied learner state is malformed.
+    InvalidLearnerState(String),
+    /// The caller supplied a base profile that does not exist.
+    InvalidBaseProfile(WeightProfileError),
+}
+
+impl std::fmt::Display for StateConditionedProfileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidLearnerState(message) => {
+                write!(f, "Invalid learner state for retrieval policy: {message}")
+            }
+            Self::InvalidBaseProfile(error) => write!(f, "Invalid base profile: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for StateConditionedProfileError {}
+
+impl From<WeightProfileError> for StateConditionedProfileError {
+    fn from(value: WeightProfileError) -> Self {
+        Self::InvalidBaseProfile(value)
+    }
+}
+
+/// Deterministic routing decision for state-conditioned retrieval.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateConditionedProfileSelection {
+    pub base_profile: String,
+    pub selected_profile: String,
+    pub reason: &'static str,
+}
 
 /// Predefined weight profiles per query type.
 ///
@@ -513,6 +550,74 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.70, // E14_BgeM3Dense (DOMINANT — translation equivalence)
         ],
     ),
+    // =========================================================================
+    // LEARNER-STATE-AWARE PROFILES — selected from persisted E15-E21 state
+    // =========================================================================
+
+    // Affect Repair: broad, analogy-friendly retrieval under elevated stress.
+    // Keeps semantic/paraphrase/multilingual channels high, retains a small
+    // robust/noisy-text channel, and avoids over-indexing on causal/code edges.
+    (
+        "affect_repair",
+        [
+            0.30, // E1_Semantic
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.05, // E5_Causal
+            0.05, // E6_Sparse
+            0.05, // E7_Code
+            0.05, // E8_Graph
+            0.10, // E9_HDC
+            0.20, // E10_Multimodal / paraphrase
+            0.0,  // E11_Entity
+            0.0,  // E12_Late_Interaction
+            0.0,  // E13_SPLADE
+            0.20, // E14_BgeM3Dense
+        ],
+    ),
+    // Affect Priming: when valence is low but stress is not high, bias toward
+    // semantically close paraphrases and multilingual/style-safe material.
+    (
+        "affect_priming",
+        [
+            0.25, // E1_Semantic
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.05, // E5_Causal
+            0.05, // E6_Sparse
+            0.05, // E7_Code
+            0.05, // E8_Graph
+            0.05, // E9_HDC
+            0.25, // E10_Multimodal / paraphrase
+            0.0,  // E11_Entity
+            0.0,  // E12_Late_Interaction
+            0.0,  // E13_SPLADE
+            0.25, // E14_BgeM3Dense
+        ],
+    ),
+    // Affect Neutral: high stress + high arousal. Prefer literal/factual
+    // retrieval with less associative drift while preserving E14 context.
+    (
+        "affect_neutral",
+        [
+            0.25, // E1_Semantic
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.15, // E5_Causal
+            0.20, // E6_Sparse
+            0.05, // E7_Code
+            0.05, // E8_Graph
+            0.05, // E9_HDC
+            0.10, // E10_Multimodal
+            0.0,  // E11_Entity
+            0.0,  // E12_Late_Interaction
+            0.0,  // E13_SPLADE
+            0.15, // E14_BgeM3Dense
+        ],
+    ),
 ];
 
 /// Get weight profile by name.
@@ -540,6 +645,51 @@ pub fn get_weight_profile(name: &str) -> Result<[f32; NUM_EMBEDDERS], WeightProf
 /// Get all available profile names.
 pub fn get_profile_names() -> Vec<&'static str> {
     WEIGHT_PROFILES.iter().map(|(n, _)| *n).collect()
+}
+
+/// Select a content retrieval weight profile from persisted E15-E21 learner state.
+///
+/// This does not invent learner embedders inside content fusion. Instead, it
+/// uses the learner-state scalar components as a routing signal for the existing
+/// E1-E14 retrieval profiles. The function is deliberately deterministic and
+/// fail-fast so MCP callers can verify the same state always produces the same
+/// profile.
+pub fn select_state_conditioned_weight_profile(
+    base_profile: Option<&str>,
+    components: &LearnerStateComponents,
+) -> Result<StateConditionedProfileSelection, StateConditionedProfileError> {
+    components
+        .validate()
+        .map_err(|e| StateConditionedProfileError::InvalidLearnerState(e.to_string()))?;
+
+    let base_profile = base_profile.unwrap_or("semantic_search");
+    get_weight_profile(base_profile)?;
+
+    let (selected_profile, reason) = if components.stress_floor >= 0.80
+        || (components.stress_floor >= 0.60 && components.arousal >= 0.65)
+    {
+        (
+            "affect_neutral",
+            "stress_floor/arousal above neutral-routing threshold",
+        )
+    } else if components.stress_floor >= 0.60 {
+        (
+            "affect_repair",
+            "stress_floor above repair-routing threshold",
+        )
+    } else if components.valence <= -0.30 {
+        ("affect_priming", "valence below priming-routing threshold")
+    } else {
+        (base_profile, "learner state within base-profile band")
+    };
+
+    get_weight_profile(selected_profile)?;
+
+    Ok(StateConditionedProfileSelection {
+        base_profile: base_profile.to_string(),
+        selected_profile: selected_profile.to_string(),
+        reason,
+    })
 }
 
 /// Get weight profile with E11 disable applied when `E11_ENTITY_ENABLED` is false.
@@ -794,10 +944,99 @@ mod tests {
         assert!(names.contains(&"code_search"));
         assert!(names.contains(&"causal_reasoning"));
         assert!(names.contains(&"graph_reasoning"));
+        assert!(names.contains(&"affect_repair"));
+        assert!(names.contains(&"affect_priming"));
+        assert!(names.contains(&"affect_neutral"));
         println!(
             "[VERIFIED] get_profile_names returns {} profiles",
             names.len()
         );
+    }
+
+    fn components(
+        plasticity_window: f32,
+        hrv_coherence: f32,
+        valence: f32,
+        arousal: f32,
+        stress_floor: f32,
+    ) -> LearnerStateComponents {
+        LearnerStateComponents {
+            plasticity_window,
+            hrv_coherence,
+            valence,
+            arousal,
+            stress_floor,
+            k_sleep: 1.0,
+        }
+    }
+
+    #[test]
+    fn test_state_conditioned_profile_routes_high_stress_to_repair() {
+        let selection = select_state_conditioned_weight_profile(
+            Some("semantic_search"),
+            &components(0.5, 0.4, 0.0, 0.2, 0.70),
+        )
+        .unwrap();
+        assert_eq!(selection.selected_profile, "affect_repair");
+        println!(
+            "[VERIFIED] high stress routes {} -> {} ({})",
+            selection.base_profile, selection.selected_profile, selection.reason
+        );
+    }
+
+    #[test]
+    fn test_state_conditioned_profile_routes_stress_arousal_to_neutral() {
+        let selection = select_state_conditioned_weight_profile(
+            Some("semantic_search"),
+            &components(0.4, 0.3, -0.1, 0.80, 0.85),
+        )
+        .unwrap();
+        assert_eq!(selection.selected_profile, "affect_neutral");
+        println!(
+            "[VERIFIED] high stress/arousal routes {} -> {} ({})",
+            selection.base_profile, selection.selected_profile, selection.reason
+        );
+    }
+
+    #[test]
+    fn test_state_conditioned_profile_routes_low_valence_to_priming() {
+        let selection = select_state_conditioned_weight_profile(
+            Some("multilingual_search"),
+            &components(0.6, 0.7, -0.5, 0.1, 0.3),
+        )
+        .unwrap();
+        assert_eq!(selection.base_profile, "multilingual_search");
+        assert_eq!(selection.selected_profile, "affect_priming");
+        println!(
+            "[VERIFIED] low valence routes {} -> {} ({})",
+            selection.base_profile, selection.selected_profile, selection.reason
+        );
+    }
+
+    #[test]
+    fn test_state_conditioned_profile_fails_fast_on_invalid_state() {
+        let result = select_state_conditioned_weight_profile(
+            Some("semantic_search"),
+            &components(0.6, 0.7, 0.0, 0.1, 1.2),
+        );
+        assert!(matches!(
+            result,
+            Err(StateConditionedProfileError::InvalidLearnerState(_))
+        ));
+        println!("[VERIFIED] invalid learner state fails fast");
+    }
+
+    #[test]
+    fn test_state_conditioned_profile_fails_fast_on_unknown_base() {
+        let result = select_state_conditioned_weight_profile(
+            Some("missing_profile"),
+            &components(0.6, 0.7, 0.0, 0.1, 0.2),
+        );
+        assert!(matches!(
+            result,
+            Err(StateConditionedProfileError::InvalidBaseProfile(_))
+        ));
+        println!("[VERIFIED] invalid base profile fails fast");
     }
 
     #[test]

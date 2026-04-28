@@ -159,7 +159,8 @@ done < <(
         -o -path "$PROJECT_DIR/models" \
         -o -path "$PROJECT_DIR/data" \
         -o -path "$PROJECT_DIR/shakespear" \) -prune \
-        -o \( -type d -name __pycache__ -o -type d -name .pytest_cache -o -type f -name '*.pyc' \) -print
+        -o \( -type d \( -name __pycache__ -o -name .pytest_cache \) -prune -print \) \
+        -o \( -type f -name '*.pyc' -print \)
 )
 if [ "$pycache_count" -gt 0 ]; then
     pycache_size=$(human_size "$pycache_kb")

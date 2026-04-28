@@ -202,6 +202,8 @@ pub const UPSERT_GOAL_CENTROID: &str = "upsert_goal_centroid";
 pub const GET_GOAL_DISTANCE: &str = "get_goal_distance";
 /// Compile and persist a learner regulated-state baseline constellation.
 pub const COMPILE_LEARNER_CONSTELLATION: &str = "compile_learner_constellation";
+/// Resolve the state-conditioned retrieval weight profile for a persisted learner session.
+pub const RESOLVE_LEARNER_RETRIEVAL_POLICY: &str = "resolve_learner_retrieval_policy";
 
 // ========== CONSTELLATION TOOLS (Phase 2 compiler) ==========
 /// Compile a constellation (per-embedder centroids + spread stats) from a

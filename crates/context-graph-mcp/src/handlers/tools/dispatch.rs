@@ -196,6 +196,7 @@ impl Handlers {
             tool_names::UPSERT_GOAL_CENTROID => call_upsert_goal_centroid(arguments),
             tool_names::GET_GOAL_DISTANCE => call_get_goal_distance(arguments),
             tool_names::COMPILE_LEARNER_CONSTELLATION => call_compile_learner_constellation(arguments),
+            tool_names::RESOLVE_LEARNER_RETRIEVAL_POLICY => call_resolve_learner_retrieval_policy(arguments),
             // Constellation tools (Phase 2 compiler)
             tool_names::COMPILE_CONSTELLATION => call_compile_constellation(arguments),
             tool_names::LIST_CONSTELLATIONS => call_list_constellations(arguments),

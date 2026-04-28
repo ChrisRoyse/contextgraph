@@ -12,6 +12,10 @@ use context_graph_core::learner::{
     LearnerStateComponents, LearnerStateVector, ModalityEmbedding, ObservationEnvelope,
     LEARNER_BASELINE_SELECTOR_REGULATED,
 };
+use context_graph_core::weights::{
+    get_effective_weight_profile, select_state_conditioned_weight_profile,
+    StateConditionedProfileSelection,
+};
 use context_graph_embeddings::types::ModelId;
 use context_graph_embeddings::{
     embed_learner_signal, learner_embedder_specs, preflight_learner_assets,
@@ -250,6 +254,16 @@ struct CompileConstellationArgs {
     selector_kind: Option<u8>,
     #[serde(default = "default_constellation_label")]
     label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolveRetrievalPolicyArgs {
+    learner_id: Uuid,
+    session_ts: u64,
+    base_weight_profile: Option<String>,
+    #[serde(default = "default_true")]
+    include_weights: bool,
 }
 
 impl Handlers {
@@ -1371,6 +1385,72 @@ impl Handlers {
         )
     }
 
+    pub(crate) async fn call_resolve_learner_retrieval_policy(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: ResolveRetrievalPolicyArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(
+                    id,
+                    &format!("Invalid resolve_learner_retrieval_policy args: {e}"),
+                )
+            }
+        };
+        let Some(store) = self.rocksdb_store_or_error(id.clone()) else {
+            return self.tool_error(
+                id,
+                "resolve_learner_retrieval_policy requires RocksDbTeleologicalStore.",
+            );
+        };
+        let state = match store
+            .get_learner_state_vector(parsed.learner_id, parsed.session_ts)
+            .await
+        {
+            Ok(Some(state)) => state,
+            Ok(None) => return self.tool_error(
+                id,
+                "No learner state vector found in CF_LEARNER_STATE_HISTORY for learnerId+sessionTs",
+            ),
+            Err(e) => return self.tool_error(id, &format!("get_learner_state_vector failed: {e}")),
+        };
+        let base = parsed.base_weight_profile.as_deref();
+        let selection = match select_state_conditioned_weight_profile(base, &state.components) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("state-conditioned profile failed: {e}"))
+            }
+        };
+        let weights = if parsed.include_weights {
+            match get_effective_weight_profile(&selection.selected_profile) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "get_effective_weight_profile failed for {}: {e}",
+                            selection.selected_profile
+                        ),
+                    )
+                }
+            }
+        } else {
+            None
+        };
+        self.tool_result(
+            id,
+            render_retrieval_policy(
+                parsed.learner_id,
+                parsed.session_ts,
+                &state,
+                &selection,
+                weights.as_ref(),
+            ),
+        )
+    }
+
     fn rocksdb_store_or_error(&self, _id: Option<JsonRpcId>) -> Option<&RocksDbTeleologicalStore> {
         self.teleological_store
             .as_any()
@@ -1511,6 +1591,53 @@ fn render_constellation(constellation: &LearnerConstellation) -> serde_json::Val
         "state_centroid": render_state_vector(&constellation.state_centroid, false),
         "created_at": constellation.created_at,
     })
+}
+
+fn render_retrieval_policy(
+    learner_id: Uuid,
+    session_ts: u64,
+    state: &LearnerStateVector,
+    selection: &StateConditionedProfileSelection,
+    weights: Option<&[f32; 14]>,
+) -> serde_json::Value {
+    let mut out = json!({
+        "source_of_truth": source_of_truth(["learner_state_history"]),
+        "learner_id": learner_id.to_string(),
+        "session_ts": session_ts,
+        "state_vector_len": state.values.len(),
+        "components": {
+            "plasticity_window": state.components.plasticity_window,
+            "hrv_coherence": state.components.hrv_coherence,
+            "valence": state.components.valence,
+            "arousal": state.components.arousal,
+            "stress_floor": state.components.stress_floor,
+            "k_sleep": state.components.k_sleep,
+        },
+        "policy": {
+            "base_profile": selection.base_profile.as_str(),
+            "selected_profile": selection.selected_profile.as_str(),
+            "reason": selection.reason,
+        },
+    });
+    if let Some(weights) = weights {
+        out["weights"] = json!(weights_by_embedder(weights));
+    }
+    out
+}
+
+fn weights_by_embedder(weights: &[f32; 14]) -> serde_json::Value {
+    let items = weights
+        .iter()
+        .enumerate()
+        .map(|(idx, weight)| {
+            json!({
+                "index": idx,
+                "embedder": context_graph_core::weights::space_name(idx),
+                "weight": weight,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!(items)
 }
 
 async fn learner_counts(
@@ -1891,6 +2018,193 @@ fn default_calibration_root() -> PathBuf {
 
 fn default_constellation_label() -> String {
     "regulated-baseline".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn components(
+        plasticity_window: f32,
+        hrv_coherence: f32,
+        valence: f32,
+        arousal: f32,
+        stress_floor: f32,
+    ) -> LearnerStateComponents {
+        LearnerStateComponents {
+            plasticity_window,
+            hrv_coherence,
+            valence,
+            arousal,
+            stress_floor,
+            k_sleep: 1.0,
+        }
+    }
+
+    fn fingerprint(
+        learner_id: Uuid,
+        session_ts: u64,
+        components: LearnerStateComponents,
+        vector: Vec<f32>,
+    ) -> LearnerFingerprint {
+        let observation_id = Uuid::new_v4();
+        let raw = format!("policy-fsv:{learner_id}:{session_ts}:{vector:?}");
+        let envelope = ObservationEnvelope::new(
+            observation_id,
+            learner_id,
+            session_ts,
+            LearnerModality::AffectText,
+            "consented-local-first".into(),
+            sha256_bytes(raw.as_bytes()),
+            "policy-fsv-preprocess-v1".into(),
+            "policy-fsv-embedder-v1".into(),
+            "policy-fsv-threshold-v1".into(),
+            Vec::new(),
+        )
+        .unwrap();
+        let state_vector = LearnerStateVector {
+            learner_id,
+            session_ts,
+            values: vec![
+                components.plasticity_window,
+                components.hrv_coherence,
+                components.valence,
+                components.arousal,
+                components.stress_floor,
+                components.k_sleep,
+            ],
+            components,
+            context: BTreeMap::from([("test_case".into(), "retrieval_policy_fsv".into())]),
+        };
+        let fingerprint = LearnerFingerprint {
+            learner_id,
+            session_ts,
+            observation_envelopes: vec![envelope],
+            modality_embeddings: vec![ModalityEmbedding {
+                modality: LearnerModality::AffectText,
+                vector,
+                scalar: None,
+                source_observation_id: observation_id,
+            }],
+            state_vector,
+        };
+        fingerprint.validate().unwrap();
+        fingerprint
+    }
+
+    #[tokio::test]
+    async fn retrieval_policy_fsv_happy_path_and_edges() {
+        let tempdir = TempDir::new().unwrap();
+        let store = RocksDbTeleologicalStore::open(tempdir.path()).unwrap();
+        let learner_id = Uuid::from_u128(0x12345678_1234_4234_9234_123456789abc);
+
+        println!("SOURCE OF TRUTH: RocksDB CF_LEARNER_STATE_HISTORY");
+        println!(
+            "HAPPY BEFORE state_history={} fingerprints={}",
+            store.count_learner_state_history().await.unwrap(),
+            store.count_learner_fingerprints().await.unwrap()
+        );
+
+        let repair_session = 1_900_000_001;
+        store
+            .store_learner_fingerprint(&fingerprint(
+                learner_id,
+                repair_session,
+                components(0.55, 0.40, 0.10, 0.20, 0.70),
+                vec![0.2, 0.4, 0.8],
+            ))
+            .await
+            .unwrap();
+        let repair_state = store
+            .get_learner_state_vector(learner_id, repair_session)
+            .await
+            .unwrap()
+            .expect("state vector must be physically present after write");
+        let repair_selection = select_state_conditioned_weight_profile(
+            Some("semantic_search"),
+            &repair_state.components,
+        )
+        .unwrap();
+        let repair_weights =
+            get_effective_weight_profile(&repair_selection.selected_profile).unwrap();
+        println!(
+            "HAPPY AFTER state_history={} selected={} reason={} e1={} e10={} e14={}",
+            store.count_learner_state_history().await.unwrap(),
+            repair_selection.selected_profile,
+            repair_selection.reason,
+            repair_weights[0],
+            repair_weights[9],
+            repair_weights[13]
+        );
+        assert_eq!(repair_selection.selected_profile, "affect_repair");
+        assert!((repair_weights.iter().sum::<f32>() - 1.0).abs() < 0.02);
+
+        println!(
+            "EDGE LOW_VALENCE BEFORE state_history={}",
+            store.count_learner_state_history().await.unwrap()
+        );
+        let priming_session = 1_900_000_002;
+        store
+            .store_learner_fingerprint(&fingerprint(
+                learner_id,
+                priming_session,
+                components(0.60, 0.70, -0.50, 0.10, 0.30),
+                vec![0.1, 0.3, 0.9],
+            ))
+            .await
+            .unwrap();
+        let priming_state = store
+            .get_learner_state_vector(learner_id, priming_session)
+            .await
+            .unwrap()
+            .expect("priming state vector must be physically present");
+        let priming_selection = select_state_conditioned_weight_profile(
+            Some("multilingual_search"),
+            &priming_state.components,
+        )
+        .unwrap();
+        println!(
+            "EDGE LOW_VALENCE AFTER state_history={} base={} selected={}",
+            store.count_learner_state_history().await.unwrap(),
+            priming_selection.base_profile,
+            priming_selection.selected_profile
+        );
+        assert_eq!(priming_selection.base_profile, "multilingual_search");
+        assert_eq!(priming_selection.selected_profile, "affect_priming");
+
+        let missing_before = store.count_learner_state_history().await.unwrap();
+        println!("EDGE MISSING BEFORE state_history={missing_before}");
+        let missing = store
+            .get_learner_state_vector(learner_id, 9_999_999_999)
+            .await
+            .unwrap();
+        let missing_after = store.count_learner_state_history().await.unwrap();
+        println!(
+            "EDGE MISSING AFTER state_history={missing_after} found={}",
+            missing.is_some()
+        );
+        assert!(missing.is_none());
+        assert_eq!(missing_after, missing_before);
+
+        let invalid_before = store.count_learner_state_history().await.unwrap();
+        println!("EDGE INVALID_PROFILE BEFORE state_history={invalid_before}");
+        let invalid = select_state_conditioned_weight_profile(
+            Some("missing_profile"),
+            &repair_state.components,
+        );
+        let invalid_after = store.count_learner_state_history().await.unwrap();
+        println!(
+            "EDGE INVALID_PROFILE AFTER state_history={invalid_after} error={:?}",
+            invalid.as_ref().err()
+        );
+        assert!(invalid.is_err());
+        assert_eq!(invalid_after, invalid_before);
+    }
 }
 
 fn one() -> f32 {

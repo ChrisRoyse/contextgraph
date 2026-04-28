@@ -39,6 +39,9 @@ use context_graph_core::types::fingerprint::{
     SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
 use context_graph_core::types::{SourceMetadata, SourceType};
+use context_graph_core::weights::select_state_conditioned_weight_profile;
+use context_graph_storage::teleological::RocksDbTeleologicalStore;
+use uuid::Uuid;
 
 use crate::weights::{apply_e11_disable, get_effective_weight_profile, E11_ENTITY_ENABLED};
 
@@ -626,6 +629,19 @@ impl Handlers {
             .and_then(|v| v.as_str())
             .map(String::from);
 
+        let state_conditioned_profile = args
+            .get("stateConditionedProfile")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let learner_id = match args.get("learnerId").and_then(|v| v.as_str()) {
+            Some(raw) => match Uuid::parse_str(raw) {
+                Ok(value) => Some(value),
+                Err(_) => return self.tool_error(id, "learnerId must be a valid UUID"),
+            },
+            None => None,
+        };
+        let learner_session_ts = args.get("learnerSessionTs").and_then(|v| v.as_u64());
+
         // GAP-1: Parse custom weights (overrides weightProfile when provided)
         // AP-NAV-01: FAIL FAST on invalid embedder names
         let custom_weights: Option<[f32; 14]> = match args
@@ -933,8 +949,86 @@ impl Handlers {
             query.to_string()
         };
 
-        // Use user-specified weight profile directly (no auto-detection).
-        let effective_weight_profile = weight_profile.clone();
+        let mut adaptive_policy = json!(null);
+        let effective_weight_profile = if state_conditioned_profile {
+            if custom_weights.is_some() {
+                return self.tool_error(
+                    id,
+                    "stateConditionedProfile cannot be combined with customWeights because customWeights override profile routing",
+                );
+            }
+            let (Some(learner_id), Some(session_ts)) = (learner_id, learner_session_ts) else {
+                return self.tool_error(
+                    id,
+                    "stateConditionedProfile=true requires learnerId and learnerSessionTs",
+                );
+            };
+            let Some(rocksdb_store) = self
+                .teleological_store
+                .as_any()
+                .downcast_ref::<RocksDbTeleologicalStore>()
+            else {
+                return self.tool_error(
+                    id,
+                    "stateConditionedProfile requires RocksDbTeleologicalStore.",
+                );
+            };
+            let state = match rocksdb_store
+                .get_learner_state_vector(learner_id, session_ts)
+                .await
+            {
+                Ok(Some(state)) => state,
+                Ok(None) => {
+                    return self.tool_error(
+                        id,
+                        "No learner state vector found in CF_LEARNER_STATE_HISTORY for learnerId+learnerSessionTs",
+                    )
+                }
+                Err(e) => {
+                    return self.tool_error(id, &format!("get_learner_state_vector failed: {e}"))
+                }
+            };
+            let base = weight_profile.as_deref().unwrap_or("semantic_search");
+            let selection =
+                match select_state_conditioned_weight_profile(Some(base), &state.components) {
+                    Ok(value) => value,
+                    Err(e) => {
+                        return self
+                            .tool_error(id, &format!("state-conditioned profile failed: {e}"))
+                    }
+                };
+            adaptive_policy = json!({
+                "enabled": true,
+                "source_of_truth": {
+                    "backend": "rocksdb",
+                    "format": "version_byte + bincode",
+                    "column_families": ["learner_state_history"]
+                },
+                "learner_id": learner_id.to_string(),
+                "session_ts": session_ts,
+                "state_vector_len": state.values.len(),
+                "components": {
+                    "plasticity_window": state.components.plasticity_window,
+                    "hrv_coherence": state.components.hrv_coherence,
+                    "valence": state.components.valence,
+                    "arousal": state.components.arousal,
+                    "stress_floor": state.components.stress_floor,
+                    "k_sleep": state.components.k_sleep,
+                },
+                "base_profile": selection.base_profile,
+                "selected_profile": selection.selected_profile,
+                "reason": selection.reason,
+            });
+            Some(
+                adaptive_policy
+                    .get("selected_profile")
+                    .and_then(|v| v.as_str())
+                    .expect("selected_profile just set")
+                    .to_string(),
+            )
+        } else {
+            weight_profile.clone()
+        };
 
         // Build search options with multi-space parameters
         // For causal queries, over-fetch candidates to allow for reranking
@@ -1597,7 +1691,8 @@ impl Handlers {
                     "excludedEmbedders": exclude_embedder_names,
                     "temporalConfig": temporal_config,
                     "rrfConstant": RRF_K,
-                    "resolvedWeightProfile": effective_weight_profile,
+                    "resolvedWeightProfile": effective_weight_profile.clone(),
+                    "stateConditionedProfile": adaptive_policy,
                 });
 
                 // =========================================================================
@@ -1685,7 +1780,7 @@ impl Handlers {
                         "query_preview": query.chars().take(100).collect::<String>(),
                         "top_k": top_k,
                         "strategy": format!("{:?}", strategy),
-                        "weight_profile": effective_weight_profile,
+                        "weight_profile": effective_weight_profile.clone(),
                     }));
 
                     if let Err(e) = self

@@ -44,7 +44,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(100);
+    let mut tools = Vec::with_capacity(101);
 
     // Core tools (4 - inject_context merged into store_memory)
     tools.extend(core::definitions());
@@ -112,7 +112,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Learning-as-UTL tools (8) - event storage/readback + matrix dataset export
     tools.extend(learning::definitions());
 
-    // UTL learner-state tools (17) - Phase-0/Phase-1 measurement substrate
+    // UTL learner-state tools (18) - Phase-0/Phase-1 measurement substrate + retrieval policy
     tools.extend(utl::definitions());
 
     // Constellation tools (5) - Phase 2 compiler + read/score/delete
@@ -135,9 +135,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 100);
+        assert_eq!(tools.len(), 101);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 96);
+        assert_eq!(tools.len(), 97);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
