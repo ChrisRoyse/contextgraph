@@ -23,29 +23,29 @@ from huggingface_hub import snapshot_download
 
 
 MODEL_SOURCES: dict[str, dict[str, str]] = {
-    "e15_affect_face": {
+    "e16_affect_face": {
         "repo_url": "https://github.com/CMU-MultiComp-Lab/OpenFace-3.0.git",
         "weights_repo_id": "nutPace/openface_weights",
         "local_dir": "affect-face/OpenFace",
         "weights_dir": "affect-face/OpenFace/weights",
         "allow_patterns": "Alignment_RetinaFace.pth,Landmark_68.pkl,Landmark_98.pkl,MTL_backbone.pth,mobilenetV1X0.25_pretrain.tar",
     },
-    "e14_affect_speech": {
+    "e15_affect_speech": {
         "repo_id": "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
         "local_dir": "affect-speech",
         "allow_patterns": "config.json,model.safetensors,preprocessor_config.json",
     },
-    "e16_affect_text": {
+    "e17_affect_text": {
         "repo_id": "sentence-transformers/all-MiniLM-L6-v2",
         "local_dir": "affect-text",
         "allow_patterns": "config.json,model.safetensors,tokenizer.json,vocab.txt,tokenizer_config.json,special_tokens_map.json",
     },
-    "e19_eeg": {
+    "e20_eeg": {
         "repo_id": "braindecode/labram-pretrained",
         "local_dir": "eeg",
         "allow_patterns": "config.json,model.safetensors",
     },
-    "e20_eeg_artifact_robust": {
+    "e21_eeg_artifact_robust": {
         "repo_id": "braindecode/eegpt-pretrained",
         "local_dir": "eeg-robust",
         "allow_patterns": "config.json,model.safetensors",
@@ -53,11 +53,11 @@ MODEL_SOURCES: dict[str, dict[str, str]] = {
 }
 
 MANUAL_MODEL_SOURCES: dict[str, str] = {
-    "e18_eda": "WESAD-trained local 1D-CNN checkpoint",
+    "e19_eda": "WESAD-trained local 1D-CNN checkpoint",
 }
 
 ZENODO_SOURCES: dict[str, dict[str, Any]] = {
-    "e17_ppg": {
+    "e18_ppg": {
         "url": "https://zenodo.org/records/13983110/files/papagei_s.pt?download=1",
         "local_dir": "ppg",
         "filename": "papagei_s.pt",
@@ -337,7 +337,7 @@ def main() -> int:
     parser.add_argument(
         "--models",
         default="none",
-        help="Comma-separated E14-E20 model ids, 'all', or 'none'.",
+        help="Comma-separated E15-E21 model ids, 'all', or 'none'.",
     )
     parser.add_argument(
         "--datasets",

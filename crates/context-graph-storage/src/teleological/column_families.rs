@@ -427,7 +427,7 @@ pub const CF_LEARNER_PROFILE: &str = "learner_profile";
 /// Value: `[LEARNER_RECORD_VERSION: u8][bincode learner constellation payload]`.
 pub const CF_LEARNER_CONSTELLATIONS: &str = "learner_constellations";
 
-/// Per-session E14-E20 learner fingerprint records.
+/// Per-session E15-E21 learner fingerprint records.
 ///
 /// Key: `[learner_id:16][session_ts:u64 big-endian]`.
 /// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerFingerprint]`.

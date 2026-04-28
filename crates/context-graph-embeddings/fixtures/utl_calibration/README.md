@@ -1,6 +1,6 @@
 # UTL Calibration Fixtures
 
-This fixture set is the checked-in calibration source for the local E14-E20
+This fixture set is the checked-in calibration source for the local E15-E21
 learner-state embedder verification path. The Rust fixture generator
 `context_graph_embeddings::learner::synthetic_calibration_fixture()` is the
 executable source of truth; these JSON files document the same expected shape

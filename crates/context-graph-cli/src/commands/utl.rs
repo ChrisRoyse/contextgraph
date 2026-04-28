@@ -24,11 +24,11 @@ use uuid::Uuid;
 
 #[derive(Subcommand, Debug)]
 pub enum UtlCommands {
-    /// List the learner-state E14-E20 embedder registry and calibration datasets.
+    /// List the learner-state E15-E21 embedder registry and calibration datasets.
     ListEmbedders,
     /// Print the deterministic local calibration fixture summary.
     Fixture,
-    /// Inspect required E14-E20 model files and real calibration data.
+    /// Inspect required E15-E21 model files and real calibration data.
     PreflightAssets(UtlAssetPreflightArgs),
     /// Count rows in the learner-state source-of-truth column families.
     Count(UtlStorageArgs),
@@ -49,7 +49,7 @@ pub struct UtlStorageArgs {
 
 #[derive(Args, Debug)]
 pub struct UtlAssetPreflightArgs {
-    /// Root containing E14-E20 model asset directories.
+    /// Root containing E15-E21 model asset directories.
     #[arg(long, default_value = "models")]
     pub models_root: PathBuf,
 

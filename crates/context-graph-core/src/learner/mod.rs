@@ -16,7 +16,7 @@ use crate::error::{CoreError, CoreResult};
 /// Current on-disk version byte for learner-layer records.
 pub const LEARNER_RECORD_VERSION: u8 = 1;
 
-/// E14-E20 learner modality slots.
+/// E15-E21 learner modality slots.
 pub const LEARNER_MODALITY_COUNT: usize = 7;
 
 /// Selector byte for a learner's regulated-state baseline constellation.
@@ -34,7 +34,7 @@ pub const MAX_RECENT_SCORE_WINDOW: usize = 1024;
 /// Maximum length for handle, version, consent, and label fields.
 pub const MAX_LEARNER_LABEL_CHARS: usize = 256;
 
-/// Learner modalities mapped to the planned E14-E20 slots.
+/// Learner modalities mapped to the planned E15-E21 slots.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LearnerModality {
     AffectSpeech,

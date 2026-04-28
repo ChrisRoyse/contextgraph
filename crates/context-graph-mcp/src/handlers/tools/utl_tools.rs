@@ -715,7 +715,7 @@ fn signal_to_embedder_input(
     let modality = LearnerModality::parse(&signal.modality).map_err(|e| e.to_string())?;
     let slot = LearnerEmbedderSlot::from_modality(modality).ok_or_else(|| {
         format!(
-            "modality {} has no E14-E20 learner embedder",
+            "modality {} has no E15-E21 learner embedder",
             modality.as_str()
         )
     })?;

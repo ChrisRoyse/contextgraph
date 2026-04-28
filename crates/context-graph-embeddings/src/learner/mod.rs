@@ -1,10 +1,9 @@
-//! Learner-state embedders for the UTL E14-E20 namespace.
+//! Learner-state embedders for the UTL E15-E21 namespace.
 //!
-//! The content embedding pipeline already has a production E14 (`BgeM3Dense`).
-//! These learner-state embedders therefore live in a separate namespace and do
-//! not alter the `ModelId` enum or the persisted `TeleologicalFingerprint`
-//! layout. The slot labels here follow the UTL plan: content E1-E13 plus
-//! learner E14-E20.
+//! The content embedding pipeline owns production E14 (`BgeM3Dense`), so the
+//! seven learner-state embedders are numbered after it. They live in a separate
+//! namespace and do not alter the `ModelId` enum or the persisted
+//! `TeleologicalFingerprint` layout.
 
 use std::collections::BTreeMap;
 use std::f32::consts::PI;
@@ -25,129 +24,125 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 /// Number of learner-state embedders in the UTL namespace.
 pub const LEARNER_EMBEDDER_COUNT: usize = 7;
 
-/// UTL planned total: content E1-E13 plus learner E14-E20.
-///
-/// The repository's production content pipeline now has a separate BGE-M3 dense
-/// content model at production E14; this constant intentionally reflects the UTL
-/// plan count, not the storage-layer content model count.
-pub const UTL_PLANNED_TOTAL_EMBEDDERS: usize = 20;
+/// UTL planned total: production content E1-E14 plus learner-state E15-E21.
+pub const UTL_PLANNED_TOTAL_EMBEDDERS: usize = 21;
 
-/// The content embedders counted by the UTL plan before adding E14-E20.
-pub const UTL_CONTENT_EMBEDDERS_BEFORE_LEARNER_STATE: usize = 13;
+/// The production content embedders counted before adding learner-state E15-E21.
+pub const UTL_CONTENT_EMBEDDERS_BEFORE_LEARNER_STATE: usize = 14;
 
-/// E14-E20 learner-state embedder slots from the UTL plan.
+/// E15-E21 learner-state embedder slots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum LearnerEmbedderSlot {
-    E14AffectSpeech,
-    E15AffectFace,
-    E16AffectText,
-    E17Ppg,
-    E18Eda,
-    E19Eeg,
-    E20EegArtifactRobust,
+    E15AffectSpeech,
+    E16AffectFace,
+    E17AffectText,
+    E18Ppg,
+    E19Eda,
+    E20Eeg,
+    E21EegArtifactRobust,
 }
 
 impl LearnerEmbedderSlot {
-    /// All learner-state slots in E14-E20 order.
+    /// All learner-state slots in E15-E21 order.
     #[must_use]
     pub const fn all() -> &'static [Self; LEARNER_EMBEDDER_COUNT] {
         &[
-            Self::E14AffectSpeech,
-            Self::E15AffectFace,
-            Self::E16AffectText,
-            Self::E17Ppg,
-            Self::E18Eda,
-            Self::E19Eeg,
-            Self::E20EegArtifactRobust,
+            Self::E15AffectSpeech,
+            Self::E16AffectFace,
+            Self::E17AffectText,
+            Self::E18Ppg,
+            Self::E19Eda,
+            Self::E20Eeg,
+            Self::E21EegArtifactRobust,
         ]
     }
 
     #[must_use]
     pub const fn slot_number(self) -> u8 {
         match self {
-            Self::E14AffectSpeech => 14,
-            Self::E15AffectFace => 15,
-            Self::E16AffectText => 16,
-            Self::E17Ppg => 17,
-            Self::E18Eda => 18,
-            Self::E19Eeg => 19,
-            Self::E20EegArtifactRobust => 20,
+            Self::E15AffectSpeech => 15,
+            Self::E16AffectFace => 16,
+            Self::E17AffectText => 17,
+            Self::E18Ppg => 18,
+            Self::E19Eda => 19,
+            Self::E20Eeg => 20,
+            Self::E21EegArtifactRobust => 21,
         }
     }
 
     #[must_use]
     pub const fn modality(self) -> LearnerModality {
         match self {
-            Self::E14AffectSpeech => LearnerModality::AffectSpeech,
-            Self::E15AffectFace => LearnerModality::AffectFace,
-            Self::E16AffectText => LearnerModality::AffectText,
-            Self::E17Ppg => LearnerModality::Ppg,
-            Self::E18Eda => LearnerModality::Eda,
-            Self::E19Eeg => LearnerModality::Eeg,
-            Self::E20EegArtifactRobust => LearnerModality::EegArtifactRobust,
+            Self::E15AffectSpeech => LearnerModality::AffectSpeech,
+            Self::E16AffectFace => LearnerModality::AffectFace,
+            Self::E17AffectText => LearnerModality::AffectText,
+            Self::E18Ppg => LearnerModality::Ppg,
+            Self::E19Eda => LearnerModality::Eda,
+            Self::E20Eeg => LearnerModality::Eeg,
+            Self::E21EegArtifactRobust => LearnerModality::EegArtifactRobust,
         }
     }
 
     #[must_use]
     pub const fn output_dimension(self) -> usize {
         match self {
-            Self::E14AffectSpeech => 1024,
-            Self::E15AffectFace => 512,
-            Self::E16AffectText => 384,
-            Self::E17Ppg => 512,
-            Self::E18Eda => 64,
-            Self::E19Eeg | Self::E20EegArtifactRobust => 768,
+            Self::E15AffectSpeech => 1024,
+            Self::E16AffectFace => 512,
+            Self::E17AffectText => 384,
+            Self::E18Ppg => 512,
+            Self::E19Eda => 64,
+            Self::E20Eeg | Self::E21EegArtifactRobust => 768,
         }
     }
 
     #[must_use]
     pub const fn model_path(self) -> &'static str {
         match self {
-            Self::E14AffectSpeech => "affect-speech",
-            Self::E15AffectFace => "affect-face",
-            Self::E16AffectText => "affect-text",
-            Self::E17Ppg => "ppg",
-            Self::E18Eda => "eda",
-            Self::E19Eeg => "eeg",
-            Self::E20EegArtifactRobust => "eeg-robust",
+            Self::E15AffectSpeech => "affect-speech",
+            Self::E16AffectFace => "affect-face",
+            Self::E17AffectText => "affect-text",
+            Self::E18Ppg => "ppg",
+            Self::E19Eda => "eda",
+            Self::E20Eeg => "eeg",
+            Self::E21EegArtifactRobust => "eeg-robust",
         }
     }
 
     #[must_use]
     pub const fn model_name(self) -> &'static str {
         match self {
-            Self::E14AffectSpeech => "Wav2Vec2-large-MSP-DIM",
-            Self::E15AffectFace => "OpenFace 3.0 + MTL emotion/AU/gaze head",
-            Self::E16AffectText => "MiniLM-L6-v2 + EmoBank regressor",
-            Self::E17Ppg => "PaPaGei PPG foundation model",
-            Self::E18Eda => "WESAD raw EDA/BVP/TEMP 1D-CNN",
-            Self::E19Eeg => "LaBraM EEG foundation model",
-            Self::E20EegArtifactRobust => "EEGPT artifact-robust EEG model",
+            Self::E15AffectSpeech => "Wav2Vec2-large-MSP-DIM",
+            Self::E16AffectFace => "OpenFace 3.0 + MTL emotion/AU/gaze head",
+            Self::E17AffectText => "MiniLM-L6-v2 + EmoBank regressor",
+            Self::E18Ppg => "PaPaGei PPG foundation model",
+            Self::E19Eda => "WESAD chest physiology stress head",
+            Self::E20Eeg => "LaBraM EEG foundation model",
+            Self::E21EegArtifactRobust => "EEGPT artifact-robust EEG model",
         }
     }
 
     #[must_use]
     pub const fn scalar_heads(self) -> &'static [&'static str] {
         match self {
-            Self::E14AffectSpeech => &["arousal", "dominance", "valence"],
-            Self::E15AffectFace => &["valence", "arousal", "au_intensity"],
-            Self::E16AffectText => &["valence", "arousal"],
-            Self::E17Ppg => &["hrv_coherence"],
-            Self::E18Eda => &["stress_floor"],
-            Self::E19Eeg | Self::E20EegArtifactRobust => &["plasticity_window"],
+            Self::E15AffectSpeech => &["arousal", "dominance", "valence"],
+            Self::E16AffectFace => &["valence", "arousal", "au_intensity"],
+            Self::E17AffectText => &["valence", "arousal"],
+            Self::E18Ppg => &["hrv_coherence"],
+            Self::E19Eda => &["stress_floor"],
+            Self::E20Eeg | Self::E21EegArtifactRobust => &["plasticity_window"],
         }
     }
 
     #[must_use]
     pub fn from_modality(modality: LearnerModality) -> Option<Self> {
         match modality {
-            LearnerModality::AffectSpeech => Some(Self::E14AffectSpeech),
-            LearnerModality::AffectFace => Some(Self::E15AffectFace),
-            LearnerModality::AffectText => Some(Self::E16AffectText),
-            LearnerModality::Ppg => Some(Self::E17Ppg),
-            LearnerModality::Eda => Some(Self::E18Eda),
-            LearnerModality::Eeg => Some(Self::E19Eeg),
-            LearnerModality::EegArtifactRobust => Some(Self::E20EegArtifactRobust),
+            LearnerModality::AffectSpeech => Some(Self::E15AffectSpeech),
+            LearnerModality::AffectFace => Some(Self::E16AffectFace),
+            LearnerModality::AffectText => Some(Self::E17AffectText),
+            LearnerModality::Ppg => Some(Self::E18Ppg),
+            LearnerModality::Eda => Some(Self::E19Eda),
+            LearnerModality::Eeg => Some(Self::E20Eeg),
+            LearnerModality::EegArtifactRobust => Some(Self::E21EegArtifactRobust),
             LearnerModality::SelfReport => None,
         }
     }
@@ -155,13 +150,13 @@ impl LearnerEmbedderSlot {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::E14AffectSpeech => "e14_affect_speech",
-            Self::E15AffectFace => "e15_affect_face",
-            Self::E16AffectText => "e16_affect_text",
-            Self::E17Ppg => "e17_ppg",
-            Self::E18Eda => "e18_eda",
-            Self::E19Eeg => "e19_eeg",
-            Self::E20EegArtifactRobust => "e20_eeg_artifact_robust",
+            Self::E15AffectSpeech => "e15_affect_speech",
+            Self::E16AffectFace => "e16_affect_face",
+            Self::E17AffectText => "e17_affect_text",
+            Self::E18Ppg => "e18_ppg",
+            Self::E19Eda => "e19_eda",
+            Self::E20Eeg => "e20_eeg",
+            Self::E21EegArtifactRobust => "e21_eeg_artifact_robust",
         }
     }
 }
@@ -178,7 +173,7 @@ pub struct LearnerEmbedderSpec {
     pub scalar_heads: &'static [&'static str],
 }
 
-/// Returns all E14-E20 learner-state embedder specs.
+/// Returns all E15-E21 learner-state embedder specs.
 #[must_use]
 pub fn learner_embedder_specs() -> Vec<LearnerEmbedderSpec> {
     LearnerEmbedderSlot::all()
@@ -224,7 +219,7 @@ impl LearnerEmbedderInput {
     }
 }
 
-/// Output from one E14-E20 learner-state embedder.
+/// Output from one E15-E21 learner-state embedder.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LearnerEmbeddingOutput {
     pub slot: LearnerEmbedderSlot,
@@ -346,7 +341,7 @@ pub struct LearnerAssetFileGroup {
     pub alternatives: &'static [&'static str],
 }
 
-/// One E14-E20 model asset requirement.
+/// One E15-E21 model asset requirement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LearnerModelAssetRequirement {
     pub slot: LearnerEmbedderSlot,
@@ -365,7 +360,7 @@ pub struct LearnerAssetFileStatus {
     pub sha256: Option<String>,
 }
 
-/// Preflight result for one E14-E20 model directory.
+/// Preflight result for one E15-E21 model directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LearnerModelAssetStatus {
     pub slot: LearnerEmbedderSlot,
@@ -460,8 +455,13 @@ const GROUP_OPENFACE_MULTITASK_WEIGHTS: LearnerAssetFileGroup = LearnerAssetFile
     ],
 };
 const GROUP_EDA_HEAD: LearnerAssetFileGroup = LearnerAssetFileGroup {
-    label: "WESAD EDA/physiology stress head",
-    alternatives: &["wesad_cnn.safetensors", "wesad_cnn.pt", "model.safetensors"],
+    label: "WESAD stress-floor head",
+    alternatives: &[
+        "wesad_stress_head.pt",
+        "wesad_cnn.safetensors",
+        "wesad_cnn.pt",
+        "model.safetensors",
+    ],
 };
 const GROUP_GOEMOTIONS_SAMPLE: LearnerAssetFileGroup = LearnerAssetFileGroup {
     label: "real GoEmotions calibration sample",
@@ -497,48 +497,48 @@ static REQ_GOEMOTIONS: &[LearnerAssetFileGroup] =
     &[GROUP_GOEMOTIONS_SAMPLE, GROUP_GOEMOTIONS_MANIFEST];
 static REQ_WESAD: &[LearnerAssetFileGroup] = &[GROUP_WESAD_ARCHIVE, GROUP_WESAD_MANIFEST];
 
-/// Model asset requirements for the learner-state E14-E20 namespace.
+/// Model asset requirements for the learner-state E15-E21 namespace.
 #[must_use]
 pub fn learner_model_asset_requirements() -> Vec<LearnerModelAssetRequirement> {
     vec![
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E14AffectSpeech,
+            slot: LearnerEmbedderSlot::E15AffectSpeech,
             model_dir: "affect-speech",
             source: HF_AFFECT_SPEECH,
             required: REQ_E14,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E15AffectFace,
+            slot: LearnerEmbedderSlot::E16AffectFace,
             model_dir: "affect-face",
             source: "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights",
             required: REQ_E15,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E16AffectText,
+            slot: LearnerEmbedderSlot::E17AffectText,
             model_dir: "affect-text",
             source: HF_AFFECT_TEXT,
             required: REQ_E16,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E17Ppg,
+            slot: LearnerEmbedderSlot::E18Ppg,
             model_dir: "ppg",
             source: "zenodo:10.5281/zenodo.13983110:papagei_s.pt",
             required: REQ_E17,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E18Eda,
+            slot: LearnerEmbedderSlot::E19Eda,
             model_dir: "eda",
-            source: "local-training:official WESAD raw EDA/BVP/TEMP 1D-CNN head",
+            source: "local-training:official WESAD raw ECG/EDA/RESP/TEMP stress-floor head",
             required: REQ_E18,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E19Eeg,
+            slot: LearnerEmbedderSlot::E20Eeg,
             model_dir: "eeg",
             source: HF_LABRAM,
             required: REQ_E19,
         },
         LearnerModelAssetRequirement {
-            slot: LearnerEmbedderSlot::E20EegArtifactRobust,
+            slot: LearnerEmbedderSlot::E21EegArtifactRobust,
             model_dir: "eeg-robust",
             source: HF_EEGPT,
             required: REQ_E20,
@@ -637,7 +637,7 @@ pub struct LearnerCalibrationSample {
     pub inputs: BTreeMap<LearnerEmbedderSlot, LearnerEmbedderInput>,
 }
 
-/// Deterministic fixture with all E14-E20 inputs present.
+/// Deterministic fixture with all E15-E21 inputs present.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct LearnerCalibrationFixture {
     pub fixture_id: &'static str,
@@ -672,13 +672,13 @@ pub fn embed_learner_signal(
 
     let start = Instant::now();
     let (features, scalars) = match slot {
-        LearnerEmbedderSlot::E14AffectSpeech => speech_features(input)?,
-        LearnerEmbedderSlot::E15AffectFace => face_features(input)?,
-        LearnerEmbedderSlot::E16AffectText => text_affect_features(input)?,
-        LearnerEmbedderSlot::E17Ppg => ppg_features(input)?,
-        LearnerEmbedderSlot::E18Eda => eda_features(input)?,
-        LearnerEmbedderSlot::E19Eeg => eeg_features(input, false)?,
-        LearnerEmbedderSlot::E20EegArtifactRobust => eeg_features(input, true)?,
+        LearnerEmbedderSlot::E15AffectSpeech => speech_features(input)?,
+        LearnerEmbedderSlot::E16AffectFace => face_features(input)?,
+        LearnerEmbedderSlot::E17AffectText => text_affect_features(input)?,
+        LearnerEmbedderSlot::E18Ppg => ppg_features(input)?,
+        LearnerEmbedderSlot::E19Eda => eda_features(input)?,
+        LearnerEmbedderSlot::E20Eeg => eeg_features(input, false)?,
+        LearnerEmbedderSlot::E21EegArtifactRobust => eeg_features(input, true)?,
     };
     let vector = project_features(
         &features,
@@ -696,7 +696,7 @@ pub fn embed_learner_signal(
     })
 }
 
-/// Run every E14-E20 learner-state embedder for a fixture sample.
+/// Run every E15-E21 learner-state embedder for a fixture sample.
 pub fn embed_calibration_sample(
     sample: &LearnerCalibrationSample,
 ) -> EmbeddingResult<Vec<LearnerEmbeddingOutput>> {
@@ -713,7 +713,7 @@ pub fn embed_calibration_sample(
     Ok(outputs)
 }
 
-/// Concatenate E14-E20 outputs into a learner state vector and derive UTL components.
+/// Concatenate E15-E21 outputs into a learner state vector and derive UTL components.
 pub fn state_vector_from_outputs(
     learner_id: Uuid,
     session_ts: u64,
@@ -738,18 +738,18 @@ pub fn state_vector_from_outputs(
     Ok(state)
 }
 
-/// Derive reduced UTL Delta-E components from E14-E20 outputs.
+/// Derive reduced UTL Delta-E components from E15-E21 outputs.
 pub fn components_from_outputs(
     outputs: &[LearnerEmbeddingOutput],
 ) -> EmbeddingResult<LearnerStateComponents> {
     validate_all_slots_present(outputs)?;
-    let speech = output_for(outputs, LearnerEmbedderSlot::E14AffectSpeech)?;
-    let face = output_for(outputs, LearnerEmbedderSlot::E15AffectFace)?;
-    let text = output_for(outputs, LearnerEmbedderSlot::E16AffectText)?;
-    let ppg = output_for(outputs, LearnerEmbedderSlot::E17Ppg)?;
-    let eda = output_for(outputs, LearnerEmbedderSlot::E18Eda)?;
-    let eeg = output_for(outputs, LearnerEmbedderSlot::E19Eeg)?;
-    let eeg_robust = output_for(outputs, LearnerEmbedderSlot::E20EegArtifactRobust)?;
+    let speech = output_for(outputs, LearnerEmbedderSlot::E15AffectSpeech)?;
+    let face = output_for(outputs, LearnerEmbedderSlot::E16AffectFace)?;
+    let text = output_for(outputs, LearnerEmbedderSlot::E17AffectText)?;
+    let ppg = output_for(outputs, LearnerEmbedderSlot::E18Ppg)?;
+    let eda = output_for(outputs, LearnerEmbedderSlot::E19Eda)?;
+    let eeg = output_for(outputs, LearnerEmbedderSlot::E20Eeg)?;
+    let eeg_robust = output_for(outputs, LearnerEmbedderSlot::E21EegArtifactRobust)?;
 
     let valence = mean_existing([
         speech.scalars.get("valence").copied(),
@@ -800,7 +800,7 @@ pub fn components_from_outputs(
 fn regulated_sample() -> LearnerCalibrationSample {
     let mut inputs = BTreeMap::new();
     inputs.insert(
-        LearnerEmbedderSlot::E14AffectSpeech,
+        LearnerEmbedderSlot::E15AffectSpeech,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::AffectSpeech,
             samples: sine_series(160, 4.0, 0.45),
@@ -809,20 +809,20 @@ fn regulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E15AffectFace,
+        LearnerEmbedderSlot::E16AffectFace,
         LearnerEmbedderInput::Features {
             modality: LearnerModality::AffectFace,
             values: vec![0.2, 0.1, 0.15, 0.05, 0.22, 0.18, 0.1, 0.08, 0.12, 0.16],
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E16AffectText,
+        LearnerEmbedderSlot::E17AffectText,
         LearnerEmbedderInput::Text {
             content: "I feel calm, focused, and ready to learn the new concept.".into(),
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E17Ppg,
+        LearnerEmbedderSlot::E18Ppg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Ppg,
             samples: sine_series(128, 1.2, 0.8),
@@ -831,7 +831,7 @@ fn regulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E18Eda,
+        LearnerEmbedderSlot::E19Eda,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eda,
             samples: low_ramp_series(64, 0.12, 0.02),
@@ -840,7 +840,7 @@ fn regulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E19Eeg,
+        LearnerEmbedderSlot::E20Eeg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eeg,
             samples: mixed_eeg_series(256, 256.0, 6.0, 0.7, 20.0, 0.2),
@@ -849,7 +849,7 @@ fn regulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E20EegArtifactRobust,
+        LearnerEmbedderSlot::E21EegArtifactRobust,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::EegArtifactRobust,
             samples: mixed_eeg_series(256, 256.0, 6.0, 0.65, 30.0, 0.08),
@@ -875,7 +875,7 @@ fn regulated_sample() -> LearnerCalibrationSample {
 fn dysregulated_sample() -> LearnerCalibrationSample {
     let mut inputs = BTreeMap::new();
     inputs.insert(
-        LearnerEmbedderSlot::E14AffectSpeech,
+        LearnerEmbedderSlot::E15AffectSpeech,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::AffectSpeech,
             samples: noisy_series(160, 0.9, 0.35),
@@ -884,20 +884,20 @@ fn dysregulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E15AffectFace,
+        LearnerEmbedderSlot::E16AffectFace,
         LearnerEmbedderInput::Features {
             modality: LearnerModality::AffectFace,
             values: vec![0.8, 0.7, 0.75, 0.65, 0.9, 0.8, 0.72, 0.67, 0.7, 0.85],
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E16AffectText,
+        LearnerEmbedderSlot::E17AffectText,
         LearnerEmbedderInput::Text {
             content: "I am anxious, stressed, confused, and frustrated by this material.".into(),
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E17Ppg,
+        LearnerEmbedderSlot::E18Ppg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Ppg,
             samples: noisy_series(128, 0.8, 0.45),
@@ -906,7 +906,7 @@ fn dysregulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E18Eda,
+        LearnerEmbedderSlot::E19Eda,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eda,
             samples: low_ramp_series(64, 0.82, 0.5),
@@ -915,7 +915,7 @@ fn dysregulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E19Eeg,
+        LearnerEmbedderSlot::E20Eeg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eeg,
             samples: mixed_eeg_series(256, 256.0, 30.0, 0.8, 6.0, 0.15),
@@ -924,7 +924,7 @@ fn dysregulated_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E20EegArtifactRobust,
+        LearnerEmbedderSlot::E21EegArtifactRobust,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::EegArtifactRobust,
             samples: mixed_eeg_series(256, 256.0, 30.0, 0.7, 6.0, 0.1),
@@ -950,7 +950,7 @@ fn dysregulated_sample() -> LearnerCalibrationSample {
 fn boundary_sample() -> LearnerCalibrationSample {
     let mut inputs = BTreeMap::new();
     inputs.insert(
-        LearnerEmbedderSlot::E14AffectSpeech,
+        LearnerEmbedderSlot::E15AffectSpeech,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::AffectSpeech,
             samples: vec![0.0; 32],
@@ -959,20 +959,20 @@ fn boundary_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E15AffectFace,
+        LearnerEmbedderSlot::E16AffectFace,
         LearnerEmbedderInput::Features {
             modality: LearnerModality::AffectFace,
             values: vec![0.0; 17],
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E16AffectText,
+        LearnerEmbedderSlot::E17AffectText,
         LearnerEmbedderInput::Text {
             content: "neutral".into(),
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E17Ppg,
+        LearnerEmbedderSlot::E18Ppg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Ppg,
             samples: vec![0.5; 32],
@@ -981,7 +981,7 @@ fn boundary_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E18Eda,
+        LearnerEmbedderSlot::E19Eda,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eda,
             samples: vec![0.0; 32],
@@ -990,7 +990,7 @@ fn boundary_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E19Eeg,
+        LearnerEmbedderSlot::E20Eeg,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::Eeg,
             samples: vec![0.0; 64],
@@ -999,7 +999,7 @@ fn boundary_sample() -> LearnerCalibrationSample {
         },
     );
     inputs.insert(
-        LearnerEmbedderSlot::E20EegArtifactRobust,
+        LearnerEmbedderSlot::E21EegArtifactRobust,
         LearnerEmbedderInput::Samples {
             modality: LearnerModality::EegArtifactRobust,
             samples: vec![0.0; 64],
@@ -1612,7 +1612,7 @@ mod tests {
         assert_eq!(ModelId::production().len(), 14);
         assert_eq!(LEARNER_MODALITY_COUNT, 7);
         for (idx, spec) in specs.iter().enumerate() {
-            assert_eq!(spec.slot_number as usize, 14 + idx);
+            assert_eq!(spec.slot_number as usize, 15 + idx);
             assert_eq!(spec.output_dimension, spec.slot.output_dimension());
         }
     }
@@ -1677,7 +1677,7 @@ mod tests {
             sample_rate_hz: 64,
             channels: 1,
         };
-        let err = embed_learner_signal(LearnerEmbedderSlot::E17Ppg, &input).unwrap_err();
+        let err = embed_learner_signal(LearnerEmbedderSlot::E18Ppg, &input).unwrap_err();
         assert!(matches!(err, EmbeddingError::EmptyInput));
     }
 
@@ -1686,7 +1686,7 @@ mod tests {
         let input = LearnerEmbedderInput::Text {
             content: "calm text".into(),
         };
-        let err = embed_learner_signal(LearnerEmbedderSlot::E14AffectSpeech, &input).unwrap_err();
+        let err = embed_learner_signal(LearnerEmbedderSlot::E15AffectSpeech, &input).unwrap_err();
         assert!(matches!(err, EmbeddingError::ConfigError { .. }));
     }
 
@@ -1698,7 +1698,7 @@ mod tests {
             sample_rate_hz: 4,
             channels: 1,
         };
-        let err = embed_learner_signal(LearnerEmbedderSlot::E18Eda, &input).unwrap_err();
+        let err = embed_learner_signal(LearnerEmbedderSlot::E19Eda, &input).unwrap_err();
         assert!(matches!(err, EmbeddingError::ConfigError { .. }));
     }
 

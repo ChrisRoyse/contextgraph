@@ -118,7 +118,7 @@ pub use global_provider::{
     initialize_global_warm_provider, is_warm_initialized, warm_status_message,
 };
 
-// Learner-state E14-E20 embedder namespace.
+// Learner-state E15-E21 embedder namespace.
 pub use learner::{
     embed_calibration_sample, embed_learner_signal, learner_embedder_specs,
     learner_model_asset_requirements, preflight_learner_assets, state_vector_from_outputs,

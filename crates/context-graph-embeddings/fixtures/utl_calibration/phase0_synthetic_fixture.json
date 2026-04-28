@@ -1,7 +1,7 @@
 {
   "fixture_id": "utl-phase0-synthetic-v1",
   "source_of_truth": "context_graph_embeddings::learner::synthetic_calibration_fixture",
-  "purpose": "Deterministic local calibration and full-state-verification fixture for E14-E20 learner embedders.",
+  "purpose": "Deterministic local calibration and full-state-verification fixture for E15-E21 learner embedders.",
   "samples": [
     {
       "sample_id": "regulated-baseline",
@@ -13,47 +13,47 @@
       },
       "signals": [
         {
-          "slot": "E14",
+          "slot": "E15",
           "modality": "affect_speech",
           "kind": "synthetic_sine_audio",
           "sample_rate_hz": 16000,
           "channels": 1
         },
         {
-          "slot": "E15",
+          "slot": "E16",
           "modality": "affect_face",
           "kind": "synthetic_action_unit_features",
           "feature_count": 10
         },
         {
-          "slot": "E16",
+          "slot": "E17",
           "modality": "affect_text",
           "kind": "text",
           "text": "I feel calm, focused, and ready to learn the new concept."
         },
         {
-          "slot": "E17",
+          "slot": "E18",
           "modality": "ppg",
           "kind": "synthetic_periodic_ppg",
           "sample_rate_hz": 64,
           "channels": 1
         },
         {
-          "slot": "E18",
+          "slot": "E19",
           "modality": "eda",
           "kind": "synthetic_low_tonic_eda",
           "sample_rate_hz": 4,
           "channels": 1
         },
         {
-          "slot": "E19",
+          "slot": "E20",
           "modality": "eeg",
           "kind": "synthetic_theta_dominant_eeg",
           "sample_rate_hz": 256,
           "channels": 4
         },
         {
-          "slot": "E20",
+          "slot": "E21",
           "modality": "eeg_artifact_robust",
           "kind": "synthetic_theta_dominant_eeg",
           "sample_rate_hz": 256,

@@ -1,4 +1,4 @@
-//! Full State Verification for UTL learner embedders E14-E20.
+//! Full State Verification for UTL learner embedders E15-E21.
 //!
 //! Source of truth:
 //! - embedder registry: `context_graph_embeddings::learner`
@@ -61,7 +61,7 @@ async fn counts(
 
 #[tokio::test]
 async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
-    println!("=== FSV: UTL E14-E20 learner embedders happy path ===");
+    println!("=== FSV: UTL E15-E21 learner embedders happy path ===");
     println!(
         "SOURCE OF TRUTH: learner embedder registry + synthetic calibration fixture + RocksDB learner CFs"
     );
@@ -75,7 +75,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
             .map(|spec| (spec.slot.as_str(), spec.output_dimension))
             .collect::<Vec<_>>()
     );
-    assert_eq!(UTL_PLANNED_TOTAL_EMBEDDERS, 20);
+    assert_eq!(UTL_PLANNED_TOTAL_EMBEDDERS, 21);
     assert_eq!(specs.len(), LEARNER_EMBEDDER_COUNT);
 
     let dir = TempDir::new().unwrap();
@@ -94,7 +94,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
         .iter()
         .find(|sample| sample.sample_id == "regulated-baseline")
         .expect("regulated sample exists");
-    let outputs = embed_calibration_sample(sample).expect("embed all E14-E20 signals");
+    let outputs = embed_calibration_sample(sample).expect("embed all E15-E21 signals");
     println!(
         "TRIGGER fixture_id={} sample_id={} output_summary={:?}",
         fixture.fixture_id,
@@ -122,7 +122,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
             ("sample_id".into(), sample.sample_id.into()),
         ]),
     )
-    .expect("derive state vector from all E14-E20 outputs");
+    .expect("derive state vector from all E15-E21 outputs");
     let state_centroid = state_vector.clone();
 
     let profile = LearnerProfile::new(
@@ -383,7 +383,7 @@ async fn edge_empty_affect_text_rejected_before_persistence() {
     let before = counts(&store).await;
     println!("BEFORE counts={before:?}");
     let input = LearnerEmbedderInput::Text { content: "".into() };
-    let result = embed_learner_signal(LearnerEmbedderSlot::E16AffectText, &input);
+    let result = embed_learner_signal(LearnerEmbedderSlot::E17AffectText, &input);
     println!("ACTION empty text result={result:?}");
     assert!(result.is_err());
     let after = counts(&store).await;
@@ -393,7 +393,7 @@ async fn edge_empty_affect_text_rejected_before_persistence() {
 
 #[tokio::test]
 async fn edge_missing_one_slot_rejected_before_persistence() {
-    println!("=== EDGE CASE: missing one E14-E20 output ===");
+    println!("=== EDGE CASE: missing one E15-E21 output ===");
     let dir = TempDir::new().unwrap();
     let store = open_store(&dir);
     let before = counts(&store).await;
@@ -432,7 +432,7 @@ async fn edge_nonfinite_eda_sample_rejected_before_persistence() {
         sample_rate_hz: 4,
         channels: 1,
     };
-    let result = embed_learner_signal(LearnerEmbedderSlot::E18Eda, &input);
+    let result = embed_learner_signal(LearnerEmbedderSlot::E19Eda, &input);
     println!("ACTION nonfinite EDA result={result:?}");
     assert!(result.is_err());
     let after = counts(&store).await;
