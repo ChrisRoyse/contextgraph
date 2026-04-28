@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the improved E18 WESAD stress-floor head from raw WESAD physiology.
+"""Train the improved E19 WESAD stress-floor head from raw WESAD physiology.
 
 The output is a local, loadable PyTorch checkpoint containing an exported
 logistic stress classifier, scaler statistics, and the exact feature schema.
@@ -422,5 +422,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:  # noqa: BLE001
-        print(f"E18 WESAD stress-head training failed: {exc!r}", file=sys.stderr)
+        print(f"E19 WESAD stress-head training failed: {exc!r}", file=sys.stderr)
         raise
