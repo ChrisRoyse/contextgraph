@@ -122,6 +122,23 @@ struct GetLearnerTrainingDatasetArgs {
     preview_rows: usize,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EstimateLearningOutcomeArgs {
+    before: LearningStateArgs,
+    candidate_after: LearningStateArgs,
+    #[serde(default = "default_max_neighbors")]
+    max_neighbors: usize,
+    #[serde(default = "default_outcome_max_scan")]
+    max_scan: usize,
+    #[serde(default)]
+    min_similarity: f32,
+    task_id: Option<String>,
+    domain: Option<String>,
+    #[serde(default = "default_true")]
+    include_neighbors: bool,
+}
+
 impl TryFrom<LearningOutcomeArgs> for LearningOutcome {
     type Error = String;
 
@@ -359,6 +376,188 @@ impl Handlers {
             Ok(n) => self.tool_result(id, json!({"count": n})),
             Err(e) => self.tool_error(id, &format!("count_learning_events failed: {e}")),
         }
+    }
+
+    pub(crate) async fn call_estimate_learning_outcome(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let parsed: EstimateLearningOutcomeArgs = match serde_json::from_value(args) {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(id, &format!("Invalid estimate_learning_outcome args: {e}"))
+            }
+        };
+        if parsed.max_neighbors == 0 || parsed.max_neighbors > 100 {
+            return self.tool_error(id, "maxNeighbors must be in [1, 100]");
+        }
+        if parsed.max_scan == 0 || parsed.max_scan > 200_000 {
+            return self.tool_error(id, "maxScan must be in [1, 200000]");
+        }
+        if !parsed.min_similarity.is_finite() || !(-1.0..=1.0).contains(&parsed.min_similarity) {
+            return self.tool_error(id, "minSimilarity must be finite and in [-1, 1]");
+        }
+
+        let before: LearningStateSnapshot = parsed.before.into();
+        let candidate_after: LearningStateSnapshot = parsed.candidate_after.into();
+        if let Err(e) = before.validate("before") {
+            return self.tool_error(id, &format!("before validation failed: {e}"));
+        }
+        if let Err(e) = candidate_after.validate("candidateAfter") {
+            return self.tool_error(id, &format!("candidateAfter validation failed: {e}"));
+        }
+        let query_case = outcome_case_vector(&before, &candidate_after);
+
+        let Some(rocksdb_store) = self
+            .teleological_store
+            .as_any()
+            .downcast_ref::<RocksDbTeleologicalStore>()
+        else {
+            return self.tool_error(
+                id,
+                "estimate_learning_outcome requires RocksDbTeleologicalStore.",
+            );
+        };
+
+        let before_count = match rocksdb_store.count_learning_events().await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("count_learning_events failed: {e}")),
+        };
+        if before_count == 0 {
+            return self.tool_error(
+                id,
+                "CF_LEARNING_EVENTS is empty; cannot estimate an outcome without persisted cases",
+            );
+        }
+        let ids = match rocksdb_store.list_learning_event_ids().await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("list_learning_event_ids failed: {e}")),
+        };
+
+        let mut scored = Vec::new();
+        let mut scanned = 0usize;
+        for event_id in ids.into_iter().take(parsed.max_scan) {
+            let event = match rocksdb_store.get_learning_event(event_id).await {
+                Ok(Some(v)) => v,
+                Ok(None) => {
+                    return self.tool_error(
+                        id,
+                        &format!(
+                        "list_learning_event_ids returned {event_id}, but point read was missing"
+                    ),
+                    )
+                }
+                Err(e) => {
+                    return self.tool_error(
+                        id,
+                        &format!("get_learning_event failed for {event_id}: {e}"),
+                    )
+                }
+            };
+            scanned += 1;
+            if let Some(task_id) = parsed.task_id.as_ref() {
+                if event.task_id.as_deref() != Some(task_id.as_str()) {
+                    continue;
+                }
+            }
+            if let Some(domain) = parsed.domain.as_ref() {
+                let event_domain_match = event.before.domain.as_deref() == Some(domain.as_str())
+                    || event.after.domain.as_deref() == Some(domain.as_str());
+                if !event_domain_match {
+                    continue;
+                }
+            }
+            let event_case = outcome_case_vector(&event.before, &event.after);
+            let similarity = cosine_similarity(&query_case, &event_case);
+            if !similarity.is_finite() {
+                return self.tool_error(
+                    id,
+                    &format!("case similarity for event {event_id} was non-finite"),
+                );
+            }
+            if similarity >= parsed.min_similarity {
+                scored.push((similarity, event));
+            }
+        }
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let neighbors = scored
+            .into_iter()
+            .filter(|(similarity, _)| *similarity > 0.0)
+            .take(parsed.max_neighbors)
+            .collect::<Vec<_>>();
+        if neighbors.is_empty() {
+            return self.tool_error(
+                id,
+                "No positive-similarity LearningEvent neighbors matched the requested filters",
+            );
+        }
+
+        let mut weighted_sum = 0.0f32;
+        let mut weight_sum = 0.0f32;
+        let mut neighbor_json = Vec::new();
+        for (similarity, event) in &neighbors {
+            let weight = similarity * similarity;
+            weighted_sum += weight * event.outcome.utility_delta;
+            weight_sum += weight;
+            if parsed.include_neighbors {
+                neighbor_json.push(json!({
+                    "event_id": event.event_id.to_string(),
+                    "similarity": similarity,
+                    "weight": weight,
+                    "utility_delta": event.outcome.utility_delta,
+                    "outcome_label": outcome_label_str(event.outcome.label),
+                    "task_id": event.task_id,
+                    "before_domain": event.before.domain,
+                    "after_domain": event.after.domain,
+                    "delta_e_scalar": event.features.delta_e_scalar,
+                    "coherence_delta": event.features.coherence_delta,
+                    "embedder_disagreement": event.features.embedder_disagreement
+                }));
+            }
+        }
+        if weight_sum <= 0.0 {
+            return self.tool_error(id, "Matched neighbors had zero total similarity weight");
+        }
+        let predicted_utility_delta = (weighted_sum / weight_sum).clamp(-1.0, 1.0);
+        let mean_similarity = neighbors
+            .iter()
+            .map(|(similarity, _)| *similarity)
+            .sum::<f32>()
+            / neighbors.len() as f32;
+        let confidence =
+            (mean_similarity * (neighbors.len() as f32 / 3.0).min(1.0)).clamp(0.0, 1.0);
+        let after_count = match rocksdb_store.count_learning_events().await {
+            Ok(v) => v,
+            Err(e) => {
+                return self.tool_error(
+                    id,
+                    &format!("post-estimate count_learning_events failed: {e}"),
+                )
+            }
+        };
+
+        self.tool_result(
+            id,
+            json!({
+                "source_of_truth": {
+                    "backend": "rocksdb",
+                    "column_family": "learning_events",
+                    "format": "version_byte + bincode"
+                },
+                "before_count": before_count,
+                "after_count": after_count,
+                "state_mutated": before_count != after_count,
+                "scanned_events": scanned,
+                "matched_neighbors": neighbors.len(),
+                "feature_dimensions": query_case.len(),
+                "predicted_utility_delta": predicted_utility_delta,
+                "predicted_label": predicted_outcome_label(predicted_utility_delta),
+                "confidence": confidence,
+                "mean_neighbor_similarity": mean_similarity,
+                "neighbors": neighbor_json,
+            }),
+        )
     }
 
     pub(crate) async fn call_export_learner_training_dataset(
@@ -1095,6 +1294,69 @@ fn outcome_label_str(label: LearningOutcomeLabel) -> &'static str {
     }
 }
 
+fn predicted_outcome_label(utility_delta: f32) -> &'static str {
+    if utility_delta >= 0.15 {
+        "useful"
+    } else if utility_delta <= -0.15 {
+        "harmful"
+    } else if utility_delta.abs() <= 0.05 {
+        "no_learning"
+    } else {
+        "neutral"
+    }
+}
+
+fn outcome_case_vector(before: &LearningStateSnapshot, after: &LearningStateSnapshot) -> Vec<f32> {
+    let mut out = Vec::with_capacity(NUM_EMBEDDERS * 5 + before.cross_correlations.len() * 2 + 10);
+    out.extend_from_slice(&before.topic_profile);
+    out.extend_from_slice(&after.topic_profile);
+    for i in 0..NUM_EMBEDDERS {
+        out.push(after.topic_profile[i] - before.topic_profile[i]);
+    }
+    out.extend_from_slice(&before.cross_correlations);
+    for (before_value, after_value) in before
+        .cross_correlations
+        .iter()
+        .zip(after.cross_correlations.iter())
+    {
+        out.push(after_value - before_value);
+    }
+    out.extend_from_slice(&before.embedder_scores);
+    out.extend_from_slice(&after.embedder_scores);
+    out.push(rank_norm(before.retrieval_rank));
+    out.push(rank_norm(after.retrieval_rank));
+    out.push(after.contradiction_pressure - before.contradiction_pressure);
+    out.push(after.integration_confidence - before.integration_confidence);
+    out.push(after.stability_score - before.stability_score);
+    out.push(before.recurrence_count as f32 / 1000.0);
+    out.push(after.recurrence_count as f32 / 1000.0);
+    out.push(before.successful_transfer_count as f32 / 1000.0);
+    out.push(after.successful_transfer_count as f32 / 1000.0);
+    out
+}
+
+fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0f32;
+    let mut na = 0.0f32;
+    let mut nb = 0.0f32;
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+    }
+    if na <= 0.0 || nb <= 0.0 {
+        return 0.0;
+    }
+    (dot / (na.sqrt() * nb.sqrt())).clamp(-1.0, 1.0)
+}
+
+fn rank_norm(rank: Option<u32>) -> f32 {
+    rank.map(|rank| 1.0 / (1.0 + rank as f32)).unwrap_or(0.0)
+}
+
 fn render_training_dataset_summary(dataset: &LearnerTrainingDataset) -> serde_json::Value {
     json!({
         "dataset_id": dataset.dataset_id.to_string(),
@@ -1159,6 +1421,14 @@ fn default_list_limit() -> usize {
 
 fn default_preview_rows() -> usize {
     3
+}
+
+fn default_max_neighbors() -> usize {
+    5
+}
+
+fn default_outcome_max_scan() -> usize {
+    10_000
 }
 
 fn default_true() -> bool {

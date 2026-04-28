@@ -3,7 +3,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 8 Learning-as-UTL tool definitions.
+/// Returns the 9 Learning-as-UTL tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -97,6 +97,72 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {},
                 "required": [],
                 "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "estimate_learning_outcome",
+            "Predict the likely utility delta of a candidate before/after \
+             learning transition by nearest-neighbor case-based reasoning over \
+             persisted CF_LEARNING_EVENTS rows. The tool scans real stored \
+             events, validates every read, returns weighted neighbor evidence, \
+             and does not mutate storage.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "before": {"$ref": "#/$defs/state"},
+                    "candidateAfter": {"$ref": "#/$defs/state"},
+                    "maxNeighbors": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 5
+                    },
+                    "maxScan": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200000,
+                        "default": 10000
+                    },
+                    "minSimilarity": {
+                        "type": "number",
+                        "minimum": -1.0,
+                        "maximum": 1.0,
+                        "default": 0.0
+                    },
+                    "taskId": {
+                        "type": "string",
+                        "description": "Optional exact task_id filter."
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional before/after domain filter."
+                    },
+                    "includeNeighbors": {
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "required": ["before", "candidateAfter"],
+                "additionalProperties": false,
+                "$defs": {
+                    "state": {
+                        "type": "object",
+                        "properties": {
+                            "topicProfile": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"type": "number"}},
+                            "crossCorrelations": {"type": "array", "minItems": 91, "maxItems": 91, "items": {"type": "number"}},
+                            "retrievalRank": {"type": "integer", "minimum": 0},
+                            "embedderScores": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"type": "number"}},
+                            "contradictionPressure": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "integrationConfidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "recurrenceCount": {"type": "integer", "minimum": 0, "default": 0},
+                            "stabilityScore": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+                            "domain": {"type": "string"},
+                            "successfulTransferCount": {"type": "integer", "minimum": 0, "default": 0}
+                        },
+                        "required": ["topicProfile", "crossCorrelations"],
+                        "additionalProperties": false
+                    }
+                }
             }),
         ),
         ToolDefinition::new(

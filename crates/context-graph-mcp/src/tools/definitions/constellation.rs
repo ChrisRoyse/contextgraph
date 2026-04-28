@@ -1,10 +1,13 @@
 //! Constellation tool definitions (Phase 2).
 //!
-//! Five tools exposing the constellation compiler and read/delete paths:
+//! Six tools exposing the constellation compiler, derived anchors, and
+//! read/delete paths:
 //! - `compile_constellation` — build and persist a constellation.
 //! - `list_constellations` — paginated UUID listing.
 //! - `get_constellation` — full record by id with optional heavy arrays.
 //! - `score_against_constellation` — classify a memory vs a constellation.
+//! - `derive_constellation` — persist interpolation/add/difference or an
+//!   anti-pole compiled from low-scoring real memories.
 //! - `delete_constellation` — remove a constellation + secondary index.
 //!
 //! Every schema carries `additionalProperties: false` to reject unknown
@@ -14,7 +17,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 5 constellation tool definitions.
+/// Returns the 6 constellation tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -163,6 +166,101 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["constellationId", "memoryId"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "derive_constellation",
+            "Persist a derived constellation in CF_CONSTELLATIONS. \
+             Operations interpolate/add/difference combine two stored \
+             constellation centroids. Operation anti_pole scans a real \
+             candidate memory selector, scores candidates against the source \
+             constellation, selects the lowest-scoring non-source memories, \
+             recompiles them, and persists the opposite anchor. The tool \
+             performs readback verification from RocksDB before returning.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["interpolate", "add", "difference", "anti_pole"],
+                        "description": "Derivation operation to perform."
+                    },
+                    "sourceConstellationId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Primary source constellation UUID."
+                    },
+                    "otherConstellationId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Second constellation UUID for interpolate/add/difference."
+                    },
+                    "alpha": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                        "default": 0.5,
+                        "description": "Interpolation weight for otherConstellationId when operation='interpolate'."
+                    },
+                    "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "description": "Human-readable label for the persisted derived constellation."
+                    },
+                    "selector": {
+                        "type": "string",
+                        "enum": ["topic", "session", "tag", "time_range", "explicit_ids"],
+                        "description": "Candidate pool selector for operation='anti_pole'."
+                    },
+                    "topicId": {
+                        "type": "string",
+                        "description": "Required for anti_pole when selector='topic'."
+                    },
+                    "sessionId": {
+                        "type": "string",
+                        "description": "Required for anti_pole when selector='session'."
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Required for anti_pole when selector='tag'. Matches source_metadata.tool_name."
+                    },
+                    "startIso": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Required for anti_pole when selector='time_range'."
+                    },
+                    "endIso": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Required for anti_pole when selector='time_range'."
+                    },
+                    "memoryIds": {
+                        "type": "array",
+                        "items": { "type": "string", "format": "uuid" },
+                        "description": "Required for anti_pole when selector='explicit_ids'. Candidate memory UUIDs."
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Optional anti_pole explicit_ids rationale."
+                    },
+                    "maxCandidates": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 200000,
+                        "default": 10000,
+                        "description": "Maximum candidate memories to resolve before anti-pole scoring."
+                    },
+                    "selectedMembers": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 100000,
+                        "default": 50,
+                        "description": "Lowest-scoring non-source memories to recompile into the anti-pole."
+                    }
+                },
+                "required": ["operation", "sourceConstellationId", "label"],
                 "additionalProperties": false
             }),
         ),

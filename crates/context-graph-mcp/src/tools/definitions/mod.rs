@@ -44,7 +44,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(101);
+    let mut tools = Vec::with_capacity(103);
 
     // Core tools (4 - inject_context merged into store_memory)
     tools.extend(core::definitions());
@@ -109,13 +109,13 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Training tools (1) - Training data export to CF_TRAINING_RECORDS
     tools.extend(training::definitions());
 
-    // Learning-as-UTL tools (8) - event storage/readback + matrix dataset export
+    // Learning-as-UTL tools (9) - event storage/readback + outcome estimate + matrix dataset export
     tools.extend(learning::definitions());
 
     // UTL learner-state tools (18) - Phase-0/Phase-1 measurement substrate + retrieval policy
     tools.extend(utl::definitions());
 
-    // Constellation tools (5) - Phase 2 compiler + read/score/delete
+    // Constellation tools (6) - Phase 2 compiler + derived anchors + read/score/delete
     tools.extend(constellation::definitions());
 
     // Contrastive pair tools (4) - Phase 3 miner + read surface
@@ -135,9 +135,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 101);
+        assert_eq!(tools.len(), 103);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 97);
+        assert_eq!(tools.len(), 99);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -179,9 +179,9 @@ mod tests {
         assert_eq!(provenance::definitions().len(), 3);
         assert_eq!(daemon::definitions().len(), 1);
         assert_eq!(training::definitions().len(), 4);
-        assert_eq!(learning::definitions().len(), 8);
-        assert_eq!(utl::definitions().len(), 17);
-        assert_eq!(constellation::definitions().len(), 5);
+        assert_eq!(learning::definitions().len(), 9);
+        assert_eq!(utl::definitions().len(), 18);
+        assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested

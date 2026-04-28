@@ -14,10 +14,14 @@
 //! [`RocksDbTeleologicalStore`]; other backends return an MCP tool error.
 //! This mirrors the training-tools pattern (Phase 1).
 
+use std::collections::{HashMap, HashSet};
+
 use chrono::{DateTime, Utc};
 use context_graph_core::constellation::{
-    score_memory_against_constellation, Constellation, ConstellationAccumulator,
-    ConstellationError, ConstellationScoringResult, ConstellationSelector, DEFAULT_MAX_MEMBERS,
+    compile_constellation, score_memory_against_constellation, Constellation,
+    ConstellationAccumulator, ConstellationError, ConstellationScoringResult,
+    ConstellationSelector, EmbedderStats, VectorKind, DEFAULT_MAX_MEMBERS,
+    MIN_CONSTELLATION_MEMBERS,
 };
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
@@ -390,6 +394,239 @@ impl Handlers {
         }
     }
 
+    /// Handle `derive_constellation`.
+    ///
+    /// This condenses the conceptual constellation arithmetic surface into
+    /// one persisted operation:
+    /// - interpolate/add/difference operate on stored constellation centroids.
+    /// - anti_pole mines the lowest-scoring real memories from a caller-selected
+    ///   candidate pool, recompiles them, and persists the resulting opposite
+    ///   anchor.
+    pub(crate) async fn call_derive_constellation(
+        &self,
+        id: Option<JsonRpcId>,
+        args: JsonValue,
+    ) -> JsonRpcResponse {
+        debug!("Handling derive_constellation: {:?}", args);
+
+        let operation = match args.get("operation").and_then(|v| v.as_str()) {
+            Some(op @ ("interpolate" | "add" | "difference" | "anti_pole")) => op,
+            Some(other) => {
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "operation must be interpolate, add, difference, or anti_pole; got {other}"
+                    ),
+                )
+            }
+            None => return self.tool_error(id, "Missing required 'operation' parameter"),
+        };
+        let label = match args.get("label").and_then(|v| v.as_str()) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => return self.tool_error(id, "Missing or empty 'label' parameter"),
+        };
+        let source_id = match parse_uuid_arg(&args, "sourceConstellationId") {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &e),
+        };
+
+        let Some(rocksdb_store) = self
+            .teleological_store
+            .as_any()
+            .downcast_ref::<RocksDbTeleologicalStore>()
+        else {
+            return self.tool_error(id, "derive_constellation requires RocksDbTeleologicalStore");
+        };
+
+        let before_count = match rocksdb_store.count_constellations().await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("count_constellations failed: {e}")),
+        };
+        let source = match rocksdb_store.get_constellation(source_id).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return self.tool_error(id, &format!("source constellation {source_id} not found"))
+            }
+            Err(e) => return self.tool_error(id, &format!("get source constellation failed: {e}")),
+        };
+
+        let (derived, derivation) = match operation {
+            "interpolate" | "add" | "difference" => {
+                let other_id = match parse_uuid_arg(&args, "otherConstellationId") {
+                    Ok(v) => v,
+                    Err(e) => return self.tool_error(id, &e),
+                };
+                let other = match rocksdb_store.get_constellation(other_id).await {
+                    Ok(Some(v)) => v,
+                    Ok(None) => {
+                        return self
+                            .tool_error(id, &format!("other constellation {other_id} not found"))
+                    }
+                    Err(e) => {
+                        return self.tool_error(id, &format!("get other constellation failed: {e}"))
+                    }
+                };
+                let alpha = args.get("alpha").and_then(|v| v.as_f64()).unwrap_or(0.5) as f32;
+                let derived =
+                    match derive_linear_constellation(&source, &other, operation, alpha, label) {
+                        Ok(v) => v,
+                        Err(e) => return self.tool_error(id, &e),
+                    };
+                (
+                    derived,
+                    json!({
+                        "operation": operation,
+                        "source_constellation_id": source_id.to_string(),
+                        "other_constellation_id": other_id.to_string(),
+                        "alpha": alpha,
+                        "method": "linear centroid arithmetic over persisted CF_CONSTELLATIONS rows"
+                    }),
+                )
+            }
+            "anti_pole" => {
+                let selector = match parse_selector(&args) {
+                    Ok(v) => v,
+                    Err(e) => return self.tool_error(id, &e),
+                };
+                let max_candidates = args
+                    .get("maxCandidates")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v.clamp(MIN_CONSTELLATION_MEMBERS as u64, 200_000) as usize)
+                    .unwrap_or(10_000);
+                let selected_members = args
+                    .get("selectedMembers")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v.clamp(MIN_CONSTELLATION_MEMBERS as u64, 100_000) as usize)
+                    .unwrap_or(50);
+
+                let candidates = match self.resolve_members(&selector, max_candidates).await {
+                    Ok(v) => v,
+                    Err(e) => return self.tool_error(id, &e),
+                };
+                let source_members: HashSet<Uuid> = source.member_ids.iter().copied().collect();
+                let mut scored = Vec::new();
+                for fp in candidates {
+                    if source_members.contains(&fp.id) {
+                        continue;
+                    }
+                    let score = score_memory_against_constellation(&source, fp.id, &fp.semantic)
+                        .combined_score;
+                    if !score.is_finite() {
+                        return self.tool_error(
+                            id,
+                            &format!("anti_pole candidate {} produced non-finite score", fp.id),
+                        );
+                    }
+                    scored.push((score, fp));
+                }
+                scored.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                let selected = scored
+                    .into_iter()
+                    .take(selected_members)
+                    .collect::<Vec<_>>();
+                if selected.len() < MIN_CONSTELLATION_MEMBERS {
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "anti_pole requires at least {MIN_CONSTELLATION_MEMBERS} non-source candidates; got {}",
+                            selected.len()
+                        ),
+                    );
+                }
+                let mut member_rows = Vec::with_capacity(selected.len());
+                let mut selected_scores = Vec::with_capacity(selected.len());
+                for (score, fp) in selected {
+                    let stored_profile = match rocksdb_store.get_topic_profile(fp.id).await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!(id = %fp.id, error = %e, "get_topic_profile failed during anti_pole");
+                            return self.tool_error(
+                                id,
+                                &format!("Failed to read CF_TOPIC_PROFILES for {}: {}", fp.id, e),
+                            );
+                        }
+                    };
+                    selected_scores.push(json!({
+                        "memory_id": fp.id.to_string(),
+                        "source_combined_score": score
+                    }));
+                    member_rows.push((fp.id, fp.semantic, stored_profile));
+                }
+                let selector_tag = derived_selector_tag("anti_pole", source_id, None, None);
+                let derived = match compile_constellation(
+                    ConstellationSelector::Tag { tag: selector_tag },
+                    label,
+                    member_rows,
+                    &SynergyMatrix::with_base_synergies(),
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return self.tool_error(id, &format!("anti_pole compile failed: {e}"))
+                    }
+                };
+                (
+                    derived,
+                    json!({
+                        "operation": "anti_pole",
+                        "source_constellation_id": source_id.to_string(),
+                        "candidate_selector_kind": selector_kind_str(&selector),
+                        "candidate_selector": selector_json(&selector),
+                        "max_candidates": max_candidates,
+                        "selected_members": selected_scores.len(),
+                        "selected_lowest_scores": selected_scores,
+                        "method": "lowest combined_score real memories from persisted fingerprint store, recompiled into CF_CONSTELLATIONS"
+                    }),
+                )
+            }
+            _ => unreachable!(),
+        };
+
+        if let Err(e) = rocksdb_store.store_constellation(&derived).await {
+            error!(id = %derived.id, error = %e, "store derived constellation failed");
+            return self.tool_error(id, &format!("store_constellation failed: {e}"));
+        }
+        let readback = match rocksdb_store.get_constellation(derived.id).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                return self.tool_error(
+                    id,
+                    "derive_constellation store reported success but readback was missing",
+                )
+            }
+            Err(e) => return self.tool_error(id, &format!("derived readback failed: {e}")),
+        };
+        let after_count = match rocksdb_store.count_constellations().await {
+            Ok(v) => v,
+            Err(e) => return self.tool_error(id, &format!("post-store count failed: {e}")),
+        };
+
+        self.tool_result(
+            id,
+            json!({
+                "status": "stored",
+                "source_of_truth": {
+                    "backend": "rocksdb",
+                    "column_families": ["constellations", "constellation_by_selector"],
+                    "format": "version_byte + bincode"
+                },
+                "before_count": before_count,
+                "after_count": after_count,
+                "derived_constellation_id": readback.id.to_string(),
+                "label": readback.label,
+                "member_count": readback.member_count,
+                "coherence": readback.coherence,
+                "selector": selector_json(&readback.selector),
+                "per_embedder_coverage": readback
+                    .per_embedder
+                    .iter()
+                    .map(|s| s.coverage)
+                    .collect::<Vec<_>>(),
+                "readback_verified": true,
+                "derivation": derivation,
+            }),
+        )
+    }
+
     /// Resolve the member set for a selector by scanning up to `SCAN_CAP`
     /// fingerprints and filtering per selector kind. Expensive selectors
     /// (Tag, Session, TimeRange) do per-memory `get_source_metadata` calls —
@@ -643,6 +880,264 @@ fn render_scoring(r: &ConstellationScoringResult) -> JsonValue {
         "combined_score": r.combined_score,
         "in_spread_p95": r.in_spread_p95,
     })
+}
+
+fn parse_uuid_arg(args: &JsonValue, field: &str) -> Result<Uuid, String> {
+    let raw = args
+        .get(field)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("Missing required '{field}' parameter"))?;
+    Uuid::parse_str(raw).map_err(|_| format!("{field} must be a valid UUID"))
+}
+
+fn derive_linear_constellation(
+    source: &Constellation,
+    other: &Constellation,
+    operation: &str,
+    alpha: f32,
+    label: String,
+) -> Result<Constellation, String> {
+    if source.per_embedder.len() != other.per_embedder.len() {
+        return Err(format!(
+            "constellation embedder count mismatch: source={}, other={}",
+            source.per_embedder.len(),
+            other.per_embedder.len()
+        ));
+    }
+    if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
+        return Err("alpha must be finite and in [0, 1]".into());
+    }
+
+    let (wa, wb) = match operation {
+        "interpolate" => (1.0 - alpha, alpha),
+        "add" => (1.0, 1.0),
+        "difference" => (1.0, -1.0),
+        _ => {
+            return Err(format!(
+                "unsupported linear derivation operation: {operation}"
+            ))
+        }
+    };
+
+    let mut per_embedder = Vec::with_capacity(source.per_embedder.len());
+    for (a, b) in source.per_embedder.iter().zip(other.per_embedder.iter()) {
+        per_embedder.push(combine_embedder_stats(a, b, wa, wb)?);
+    }
+
+    let topic_profile_centroid = combine_array(
+        source.topic_profile_centroid,
+        other.topic_profile_centroid,
+        wa,
+        wb,
+    )?;
+    let group_alignment_centroid = combine_array(
+        source.group_alignment_centroid,
+        other.group_alignment_centroid,
+        wa,
+        wb,
+    )?;
+    let cross_correlation_centroid = combine_vec(
+        &source.cross_correlation_centroid,
+        &other.cross_correlation_centroid,
+        wa,
+        wb,
+        "cross_correlation_centroid",
+    )?;
+
+    let mut member_ids = source.member_ids.clone();
+    member_ids.extend(other.member_ids.iter().copied());
+    member_ids.sort();
+    member_ids.dedup();
+
+    let selector_tag = derived_selector_tag(operation, source.id, Some(other.id), Some(alpha));
+    Ok(Constellation {
+        id: Uuid::new_v4(),
+        label,
+        created_at: Utc::now(),
+        selector: ConstellationSelector::Tag { tag: selector_tag },
+        member_count: member_ids.len(),
+        member_ids,
+        per_embedder,
+        topic_profile_centroid,
+        group_alignment_centroid,
+        cross_correlation_centroid,
+        coherence: combine_scalar(source.coherence, other.coherence, wa, wb).clamp(-1.0, 1.0),
+        purity: match (source.purity, other.purity) {
+            (Some(a), Some(b)) => Some(combine_scalar(a, b, wa, wb).clamp(0.0, 1.0)),
+            _ => None,
+        },
+    })
+}
+
+fn combine_embedder_stats(
+    a: &EmbedderStats,
+    b: &EmbedderStats,
+    wa: f32,
+    wb: f32,
+) -> Result<EmbedderStats, String> {
+    if a.embedder_index != b.embedder_index {
+        return Err(format!(
+            "embedder index mismatch: {} vs {}",
+            a.embedder_index, b.embedder_index
+        ));
+    }
+    if a.vector_kind != b.vector_kind {
+        return Err(format!(
+            "embedder {} vector kind mismatch: {:?} vs {:?}",
+            a.embedder_index, a.vector_kind, b.vector_kind
+        ));
+    }
+    if a.dimension != b.dimension {
+        return Err(format!(
+            "embedder {} dimension mismatch: {} vs {}",
+            a.embedder_index, a.dimension, b.dimension
+        ));
+    }
+
+    let centroid = combine_vec(
+        &a.centroid,
+        &b.centroid,
+        wa,
+        wb,
+        &format!("embedder {} centroid", a.embedder_index),
+    )?;
+    let pooled_token_centroid = combine_vec(
+        &a.pooled_token_centroid,
+        &b.pooled_token_centroid,
+        wa,
+        wb,
+        &format!("embedder {} pooled_token_centroid", a.embedder_index),
+    )?;
+    let sparse_top_terms = combine_sparse_terms(&a.sparse_top_terms, &b.sparse_top_terms, wa, wb);
+
+    if matches!(a.vector_kind, VectorKind::Dense | VectorKind::Asymmetric)
+        && a.coverage > 0.0
+        && b.coverage > 0.0
+        && l2_norm(&centroid) <= 1e-12
+    {
+        return Err(format!(
+            "embedder {} derived centroid is degenerate all-zero",
+            a.embedder_index
+        ));
+    }
+    if a.vector_kind == VectorKind::TokenLevel
+        && a.coverage > 0.0
+        && b.coverage > 0.0
+        && l2_norm(&pooled_token_centroid) <= 1e-12
+    {
+        return Err(format!(
+            "embedder {} derived pooled token centroid is degenerate all-zero",
+            a.embedder_index
+        ));
+    }
+
+    Ok(EmbedderStats {
+        embedder_index: a.embedder_index,
+        dimension: a.dimension,
+        vector_kind: a.vector_kind,
+        centroid,
+        sparse_top_terms,
+        mean_token_count: match (a.mean_token_count, b.mean_token_count) {
+            (Some(x), Some(y)) => Some(combine_scalar(x, y, wa, wb).max(0.0)),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        },
+        pooled_token_centroid,
+        mean_l2: combine_scalar(a.mean_l2, b.mean_l2, wa.abs(), wb.abs()).max(0.0),
+        stddev_l2: combine_scalar(a.stddev_l2, b.stddev_l2, wa.abs(), wb.abs()).max(0.0),
+        // Derived spread cannot be recomputed without raw members. Use the
+        // stricter inherited spread so membership tests fail closed.
+        cosine_spread_p50: a.cosine_spread_p50.min(b.cosine_spread_p50),
+        cosine_spread_p95: a.cosine_spread_p95.min(b.cosine_spread_p95),
+        min_cosine: a.min_cosine.min(b.min_cosine),
+        max_cosine: a.max_cosine.max(b.max_cosine),
+        coverage: a.coverage.min(b.coverage),
+    })
+}
+
+fn combine_array<const N: usize>(
+    a: [f32; N],
+    b: [f32; N],
+    wa: f32,
+    wb: f32,
+) -> Result<[f32; N], String> {
+    let mut out = [0.0f32; N];
+    for i in 0..N {
+        let value = combine_scalar(a[i], b[i], wa, wb);
+        if !value.is_finite() {
+            return Err(format!("derived array value at index {i} is non-finite"));
+        }
+        out[i] = value;
+    }
+    Ok(out)
+}
+
+fn combine_vec(a: &[f32], b: &[f32], wa: f32, wb: f32, field: &str) -> Result<Vec<f32>, String> {
+    if a.is_empty() && b.is_empty() {
+        return Ok(Vec::new());
+    }
+    if a.len() != b.len() {
+        return Err(format!(
+            "{field} dimension mismatch: source={}, other={}",
+            a.len(),
+            b.len()
+        ));
+    }
+    let mut out = Vec::with_capacity(a.len());
+    for (idx, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+        let value = combine_scalar(*x, *y, wa, wb);
+        if !value.is_finite() {
+            return Err(format!("{field}[{idx}] derived value is non-finite"));
+        }
+        out.push(value);
+    }
+    Ok(out)
+}
+
+fn combine_sparse_terms(a: &[(u16, f32)], b: &[(u16, f32)], wa: f32, wb: f32) -> Vec<(u16, f32)> {
+    let mut merged: HashMap<u16, f32> = HashMap::new();
+    for (idx, value) in a {
+        *merged.entry(*idx).or_insert(0.0) += wa * *value;
+    }
+    for (idx, value) in b {
+        *merged.entry(*idx).or_insert(0.0) += wb * *value;
+    }
+    let mut out: Vec<(u16, f32)> = merged
+        .into_iter()
+        .filter(|(_, value)| value.is_finite() && value.abs() > 1e-9)
+        .collect();
+    out.sort_by(|a, b| {
+        b.1.abs()
+            .partial_cmp(&a.1.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out.truncate(50);
+    out
+}
+
+fn combine_scalar(a: f32, b: f32, wa: f32, wb: f32) -> f32 {
+    wa * a + wb * b
+}
+
+fn l2_norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+fn derived_selector_tag(
+    operation: &str,
+    source_id: Uuid,
+    other_id: Option<Uuid>,
+    alpha: Option<f32>,
+) -> String {
+    match (other_id, alpha) {
+        (Some(other), Some(alpha)) => format!(
+            "derived_constellation:{operation}:{source_id}:{other}:{:.6}",
+            alpha
+        ),
+        (Some(other), None) => format!("derived_constellation:{operation}:{source_id}:{other}"),
+        (None, _) => format!("derived_constellation:{operation}:{source_id}"),
+    }
 }
 
 impl Handlers {

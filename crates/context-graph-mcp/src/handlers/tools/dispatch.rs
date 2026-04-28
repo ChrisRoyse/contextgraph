@@ -174,6 +174,7 @@ impl Handlers {
             tool_names::LIST_LEARNING_EVENTS => call_list_learning_events(arguments),
             tool_names::GET_LEARNING_EVENT => call_get_learning_event(arguments),
             tool_names::COUNT_LEARNING_EVENTS => call_count_learning_events(),
+            tool_names::ESTIMATE_LEARNING_OUTCOME => call_estimate_learning_outcome(arguments),
             tool_names::EXPORT_LEARNER_TRAINING_DATASET => call_export_learner_training_dataset(arguments),
             tool_names::LIST_LEARNER_TRAINING_DATASETS => call_list_learner_training_datasets(arguments),
             tool_names::GET_LEARNER_TRAINING_DATASET => call_get_learner_training_dataset(arguments),
@@ -202,6 +203,7 @@ impl Handlers {
             tool_names::LIST_CONSTELLATIONS => call_list_constellations(arguments),
             tool_names::GET_CONSTELLATION => call_get_constellation(arguments),
             tool_names::SCORE_AGAINST_CONSTELLATION => call_score_against_constellation(arguments),
+            tool_names::DERIVE_CONSTELLATION => call_derive_constellation(arguments),
             tool_names::DELETE_CONSTELLATION => call_delete_constellation(arguments),
             // Contrastive tools (Phase 3 pair miner)
             tool_names::MINE_CONTRASTIVE_PAIRS => call_mine_contrastive_pairs(arguments),

@@ -158,6 +158,9 @@ pub const LIST_LEARNING_EVENTS: &str = "list_learning_events";
 pub const GET_LEARNING_EVENT: &str = "get_learning_event";
 /// Count rows currently stored in `CF_LEARNING_EVENTS`.
 pub const COUNT_LEARNING_EVENTS: &str = "count_learning_events";
+/// Predict a candidate learning transition's outcome from nearest persisted
+/// LearningEvent cases.
+pub const ESTIMATE_LEARNING_OUTCOME: &str = "estimate_learning_outcome";
 /// Compile learner/learning CF rows into a matrix-shaped RocksDB dataset.
 pub const EXPORT_LEARNER_TRAINING_DATASET: &str = "export_learner_training_dataset";
 /// List matrix-shaped learner training datasets.
@@ -216,6 +219,9 @@ pub const LIST_CONSTELLATIONS: &str = "list_constellations";
 pub const GET_CONSTELLATION: &str = "get_constellation";
 /// Score a candidate memory against an existing constellation.
 pub const SCORE_AGAINST_CONSTELLATION: &str = "score_against_constellation";
+/// Persist a derived constellation through interpolation/add/difference or
+/// anti-pole mining from real candidate memories.
+pub const DERIVE_CONSTELLATION: &str = "derive_constellation";
 /// Delete a constellation and its selector-index entry.
 pub const DELETE_CONSTELLATION: &str = "delete_constellation";
 

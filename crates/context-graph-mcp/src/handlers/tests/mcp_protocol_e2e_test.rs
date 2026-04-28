@@ -41,6 +41,21 @@ use super::{extract_mcp_tool_data, make_request};
 #[cfg(feature = "llm")]
 use super::create_test_handlers_with_real_embeddings_store_access;
 
+#[cfg(feature = "llm")]
+use context_graph_core::constellation::{compile_constellation, ConstellationSelector};
+#[cfg(feature = "llm")]
+use context_graph_core::learning::LearningOutcomeLabel;
+#[cfg(feature = "llm")]
+use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
+#[cfg(feature = "llm")]
+use context_graph_core::training::NUM_CROSS_CORRELATIONS;
+#[cfg(feature = "llm")]
+use context_graph_core::types::fingerprint::{
+    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+};
+#[cfg(feature = "llm")]
+use context_graph_storage::teleological::RocksDbTeleologicalStore;
+
 // =============================================================================
 // End-to-End Protocol Tests with Real GPU Embeddings
 // =============================================================================
@@ -191,10 +206,12 @@ async fn test_e2e_tools_list_all_tools() {
     //   export_learner_training_dataset, list/get/count_learner_training_datasets
     // 2026-04-28: Bumped 100 → 101 after state-conditioned learner retrieval policy:
     //   resolve_learner_retrieval_policy
+    // 2026-04-28: Bumped 101 → 103 after conceptual capability tools:
+    //   estimate_learning_outcome, derive_constellation
     assert_eq!(
         tools.len(),
-        101,
-        "Expected exactly 101 tools with LLM feature, found {}",
+        103,
+        "Expected exactly 103 tools with LLM feature, found {}",
         tools.len()
     );
 
@@ -819,6 +836,541 @@ async fn test_e2e_resolve_learner_retrieval_policy_fsv() {
         rocksdb_store.count_learner_state_history().await.unwrap(),
         invalid_result["isError"]
     );
+}
+
+#[tokio::test]
+#[cfg(feature = "llm")]
+async fn test_e2e_derive_constellation_fsv() {
+    println!("\n=== E2E TEST: Derived Constellation FSV ===");
+
+    let (handlers, store, _tempdir) =
+        create_test_handlers_with_real_embeddings_store_access().await;
+    let rocksdb_store = store
+        .as_any()
+        .downcast_ref::<RocksDbTeleologicalStore>()
+        .expect("FSV requires RocksDbTeleologicalStore");
+
+    println!(
+        "SOURCE OF TRUTH: RocksDB CF_CONSTELLATIONS before={}",
+        rocksdb_store.count_constellations().await.unwrap()
+    );
+
+    let source_fps = (0..3)
+        .map(|seed| fsv_fingerprint_with_e1_axis(seed, 0, 1.0))
+        .collect::<Vec<_>>();
+    let other_fps = (10..13)
+        .map(|seed| fsv_fingerprint_with_e1_axis(seed, 1, 1.0))
+        .collect::<Vec<_>>();
+    let antipole_fps = (20..23)
+        .map(|seed| fsv_fingerprint_with_e1_axis(seed, 0, -1.0))
+        .collect::<Vec<_>>();
+
+    for fp in source_fps
+        .iter()
+        .chain(other_fps.iter())
+        .chain(antipole_fps.iter())
+    {
+        let stored_id = store.store(fp.clone()).await.expect("store fingerprint");
+        assert_eq!(stored_id, fp.id);
+        assert!(
+            store.retrieve(fp.id).await.unwrap().is_some(),
+            "fingerprint must read back from CF_FINGERPRINTS"
+        );
+    }
+
+    let source = compile_constellation(
+        ConstellationSelector::ExplicitIds {
+            rationale: "fsv source".into(),
+            ids: source_fps.iter().map(|fp| fp.id).collect(),
+        },
+        "fsv-source".into(),
+        source_fps
+            .iter()
+            .map(|fp| (fp.id, fp.semantic.clone(), None))
+            .collect::<Vec<_>>(),
+        &SynergyMatrix::with_base_synergies(),
+    )
+    .expect("compile source");
+    let other = compile_constellation(
+        ConstellationSelector::ExplicitIds {
+            rationale: "fsv other".into(),
+            ids: other_fps.iter().map(|fp| fp.id).collect(),
+        },
+        "fsv-other".into(),
+        other_fps
+            .iter()
+            .map(|fp| (fp.id, fp.semantic.clone(), None))
+            .collect::<Vec<_>>(),
+        &SynergyMatrix::with_base_synergies(),
+    )
+    .expect("compile other");
+    rocksdb_store
+        .store_constellation(&source)
+        .await
+        .expect("store source constellation");
+    rocksdb_store
+        .store_constellation(&other)
+        .await
+        .expect("store other constellation");
+    assert_eq!(rocksdb_store.count_constellations().await.unwrap(), 2);
+    println!(
+        "AFTER SEED constellations={} source={} other={}",
+        rocksdb_store.count_constellations().await.unwrap(),
+        source.id,
+        other.id
+    );
+
+    let interpolate = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(601)),
+        Some(json!({
+            "name": "derive_constellation",
+            "arguments": {
+                "operation": "interpolate",
+                "sourceConstellationId": source.id.to_string(),
+                "otherConstellationId": other.id.to_string(),
+                "alpha": 0.25,
+                "label": "fsv-interpolate"
+            }
+        })),
+    );
+    let interpolate_response = handlers.dispatch(interpolate).await;
+    assert!(
+        interpolate_response.error.is_none(),
+        "derive_constellation JSON-RPC error: {:?}",
+        interpolate_response.error
+    );
+    let interpolate_data =
+        extract_mcp_tool_data(&interpolate_response.result.expect("derive returns result"));
+    assert_eq!(interpolate_data["status"], "stored");
+    let derived_id = interpolate_data["derived_constellation_id"]
+        .as_str()
+        .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+        .expect("derived UUID");
+    let derived = rocksdb_store
+        .get_constellation(derived_id)
+        .await
+        .unwrap()
+        .expect("derived constellation must physically exist");
+    assert!((derived.per_embedder[0].centroid[0] - 0.75).abs() < 0.0001);
+    assert!((derived.per_embedder[0].centroid[1] - 0.25).abs() < 0.0001);
+    println!(
+        "HAPPY INTERPOLATE after={} derived={} e1[0]={} e1[1]={}",
+        rocksdb_store.count_constellations().await.unwrap(),
+        derived.id,
+        derived.per_embedder[0].centroid[0],
+        derived.per_embedder[0].centroid[1]
+    );
+
+    let before_invalid = rocksdb_store.count_constellations().await.unwrap();
+    let invalid_alpha = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(602)),
+        Some(json!({
+            "name": "derive_constellation",
+            "arguments": {
+                "operation": "interpolate",
+                "sourceConstellationId": source.id.to_string(),
+                "otherConstellationId": other.id.to_string(),
+                "alpha": 1.5,
+                "label": "invalid-alpha"
+            }
+        })),
+    );
+    let invalid_alpha_response = handlers.dispatch(invalid_alpha).await;
+    let invalid_alpha_result = invalid_alpha_response.result.expect("tool result");
+    assert_eq!(invalid_alpha_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_constellations().await.unwrap(),
+        before_invalid
+    );
+    println!(
+        "EDGE INVALID_ALPHA before={} after={} isError={}",
+        before_invalid,
+        rocksdb_store.count_constellations().await.unwrap(),
+        invalid_alpha_result["isError"]
+    );
+
+    let before_missing = rocksdb_store.count_constellations().await.unwrap();
+    let missing_other = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(603)),
+        Some(json!({
+            "name": "derive_constellation",
+            "arguments": {
+                "operation": "add",
+                "sourceConstellationId": source.id.to_string(),
+                "otherConstellationId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+                "label": "missing-other"
+            }
+        })),
+    );
+    let missing_other_response = handlers.dispatch(missing_other).await;
+    let missing_other_result = missing_other_response.result.expect("tool result");
+    assert_eq!(missing_other_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_constellations().await.unwrap(),
+        before_missing
+    );
+    println!(
+        "EDGE MISSING_OTHER before={} after={} isError={}",
+        before_missing,
+        rocksdb_store.count_constellations().await.unwrap(),
+        missing_other_result["isError"]
+    );
+
+    let antipole = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(604)),
+        Some(json!({
+            "name": "derive_constellation",
+            "arguments": {
+                "operation": "anti_pole",
+                "sourceConstellationId": source.id.to_string(),
+                "label": "fsv-anti-pole",
+                "selector": "explicit_ids",
+                "memoryIds": antipole_fps.iter().map(|fp| fp.id.to_string()).collect::<Vec<_>>(),
+                "selectedMembers": 3
+            }
+        })),
+    );
+    let antipole_response = handlers.dispatch(antipole).await;
+    assert!(
+        antipole_response.error.is_none(),
+        "anti_pole JSON-RPC error: {:?}",
+        antipole_response.error
+    );
+    let antipole_data = extract_mcp_tool_data(&antipole_response.result.expect("anti_pole result"));
+    let antipole_id = antipole_data["derived_constellation_id"]
+        .as_str()
+        .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+        .expect("anti-pole UUID");
+    let antipole_readback = rocksdb_store
+        .get_constellation(antipole_id)
+        .await
+        .unwrap()
+        .expect("anti-pole constellation must physically exist");
+    assert!(antipole_readback.per_embedder[0].centroid[0] < -0.99);
+    println!(
+        "HAPPY ANTI_POLE after={} derived={} e1[0]={}",
+        rocksdb_store.count_constellations().await.unwrap(),
+        antipole_readback.id,
+        antipole_readback.per_embedder[0].centroid[0]
+    );
+
+    let before_short_pool = rocksdb_store.count_constellations().await.unwrap();
+    let short_pool = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(605)),
+        Some(json!({
+            "name": "derive_constellation",
+            "arguments": {
+                "operation": "anti_pole",
+                "sourceConstellationId": source.id.to_string(),
+                "label": "short-anti-pole",
+                "selector": "explicit_ids",
+                "memoryIds": antipole_fps.iter().take(2).map(|fp| fp.id.to_string()).collect::<Vec<_>>(),
+                "selectedMembers": 3
+            }
+        })),
+    );
+    let short_pool_response = handlers.dispatch(short_pool).await;
+    let short_pool_result = short_pool_response.result.expect("tool result");
+    assert_eq!(short_pool_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_constellations().await.unwrap(),
+        before_short_pool
+    );
+    println!(
+        "EDGE SHORT_ANTI_POOL before={} after={} isError={}",
+        before_short_pool,
+        rocksdb_store.count_constellations().await.unwrap(),
+        short_pool_result["isError"]
+    );
+}
+
+#[tokio::test]
+#[cfg(feature = "llm")]
+async fn test_e2e_estimate_learning_outcome_fsv() {
+    println!("\n=== E2E TEST: Learning Outcome Estimator FSV ===");
+
+    let (handlers, store, _tempdir) =
+        create_test_handlers_with_real_embeddings_store_access().await;
+    let rocksdb_store = store
+        .as_any()
+        .downcast_ref::<RocksDbTeleologicalStore>()
+        .expect("FSV requires RocksDbTeleologicalStore");
+
+    println!(
+        "SOURCE OF TRUTH: RocksDB CF_LEARNING_EVENTS before={}",
+        rocksdb_store.count_learning_events().await.unwrap()
+    );
+
+    let useful_id = "11111111-1111-4111-8111-111111111111";
+    let harmful_id = "22222222-2222-4222-8222-222222222222";
+    let neutral_id = "33333333-3333-4333-8333-333333333333";
+    for (idx, (event_id, before_value, after_value, label, utility, domain)) in [
+        (useful_id, 0.20, 0.80, "useful", 0.80, "math"),
+        (harmful_id, 0.80, 0.20, "harmful", -0.75, "math"),
+        (neutral_id, 0.40, 0.42, "neutral", 0.02, "language"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let record = make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(650 + idx as i64)),
+            Some(json!({
+                "name": "record_learning_event",
+                "arguments": {
+                    "eventId": event_id,
+                    "taskId": "outcome-fsv-task",
+                    "query": "synthetic but persisted outcome FSV",
+                    "retrievedContext": "controlled context",
+                    "assistantResponse": "controlled response",
+                    "before": learning_state_json(before_value, 5, domain),
+                    "after": learning_state_json(after_value, 1, domain),
+                    "outcome": {
+                        "label": label,
+                        "utilityDelta": utility,
+                        "correctionRequired": label == "harmful",
+                        "reuseObserved": label == "useful"
+                    }
+                }
+            })),
+        );
+        let response = handlers.dispatch(record).await;
+        assert!(
+            response.error.is_none(),
+            "record_learning_event JSON-RPC error: {:?}",
+            response.error
+        );
+        let data = extract_mcp_tool_data(&response.result.expect("record result"));
+        assert_eq!(data["status"], "stored");
+    }
+
+    assert_eq!(rocksdb_store.count_learning_events().await.unwrap(), 3);
+    let useful_readback = rocksdb_store
+        .get_learning_event(uuid::Uuid::parse_str(useful_id).unwrap())
+        .await
+        .unwrap()
+        .expect("useful event must physically exist");
+    assert_eq!(outcome_label_name(useful_readback.outcome.label), "useful");
+    assert!((useful_readback.outcome.utility_delta - 0.80).abs() < 0.0001);
+    println!(
+        "AFTER RECORD learning_events={} useful_delta={} feature_delta_e={}",
+        rocksdb_store.count_learning_events().await.unwrap(),
+        useful_readback.outcome.utility_delta,
+        useful_readback.features.delta_e_scalar
+    );
+
+    let estimate = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(670)),
+        Some(json!({
+            "name": "estimate_learning_outcome",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "candidateAfter": learning_state_json(0.82, 1, "math"),
+                "maxNeighbors": 2,
+                "domain": "math",
+                "includeNeighbors": true
+            }
+        })),
+    );
+    let estimate_response = handlers.dispatch(estimate).await;
+    assert!(
+        estimate_response.error.is_none(),
+        "estimate_learning_outcome JSON-RPC error: {:?}",
+        estimate_response.error
+    );
+    let estimate_data = extract_mcp_tool_data(&estimate_response.result.expect("estimate result"));
+    assert_eq!(estimate_data["state_mutated"], false);
+    assert_eq!(estimate_data["before_count"], 3);
+    assert_eq!(estimate_data["after_count"], 3);
+    let predicted = estimate_data["predicted_utility_delta"]
+        .as_f64()
+        .expect("prediction numeric");
+    assert!(
+        predicted > 0.60,
+        "expected useful prediction from nearest useful case, got {predicted}"
+    );
+    assert_eq!(estimate_data["predicted_label"], "useful");
+    println!(
+        "HAPPY ESTIMATE before={} after={} predicted={} label={} neighbors={}",
+        estimate_data["before_count"],
+        estimate_data["after_count"],
+        estimate_data["predicted_utility_delta"],
+        estimate_data["predicted_label"],
+        estimate_data["matched_neighbors"]
+    );
+
+    let before_invalid_dims = rocksdb_store.count_learning_events().await.unwrap();
+    let invalid_dims = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(671)),
+        Some(json!({
+            "name": "estimate_learning_outcome",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "candidateAfter": {
+                    "topicProfile": vec![0.8; 14],
+                    "crossCorrelations": vec![0.1; 90]
+                }
+            }
+        })),
+    );
+    let invalid_dims_response = handlers.dispatch(invalid_dims).await;
+    let invalid_dims_result = invalid_dims_response.result.expect("tool result");
+    assert_eq!(invalid_dims_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_invalid_dims
+    );
+    println!(
+        "EDGE INVALID_DIMS before={} after={} isError={}",
+        before_invalid_dims,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        invalid_dims_result["isError"]
+    );
+
+    let before_no_match = rocksdb_store.count_learning_events().await.unwrap();
+    let no_match = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(672)),
+        Some(json!({
+            "name": "estimate_learning_outcome",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "candidateAfter": learning_state_json(0.82, 1, "math"),
+                "domain": "physics"
+            }
+        })),
+    );
+    let no_match_response = handlers.dispatch(no_match).await;
+    let no_match_result = no_match_response.result.expect("tool result");
+    assert_eq!(no_match_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_no_match
+    );
+    println!(
+        "EDGE NO_MATCH before={} after={} isError={}",
+        before_no_match,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        no_match_result["isError"]
+    );
+
+    let before_bad_limit = rocksdb_store.count_learning_events().await.unwrap();
+    let bad_limit = make_request(
+        "tools/call",
+        Some(JsonRpcId::Number(673)),
+        Some(json!({
+            "name": "estimate_learning_outcome",
+            "arguments": {
+                "before": learning_state_json(0.20, 5, "math"),
+                "candidateAfter": learning_state_json(0.82, 1, "math"),
+                "maxNeighbors": 0
+            }
+        })),
+    );
+    let bad_limit_response = handlers.dispatch(bad_limit).await;
+    let bad_limit_result = bad_limit_response.result.expect("tool result");
+    assert_eq!(bad_limit_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_bad_limit
+    );
+    println!(
+        "EDGE BAD_LIMIT before={} after={} isError={}",
+        before_bad_limit,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        bad_limit_result["isError"]
+    );
+}
+
+#[cfg(feature = "llm")]
+fn fsv_fingerprint_with_e1_axis(seed: u8, axis: usize, sign: f32) -> TeleologicalFingerprint {
+    let mut e1 = vec![0.0f32; 1024];
+    e1[axis] = sign;
+
+    let semantic = SemanticFingerprint {
+        e1_semantic: e1,
+        e2_temporal_recent: fsv_dense(512, seed.wrapping_add(2)),
+        e3_temporal_periodic: fsv_dense(512, seed.wrapping_add(3)),
+        e4_temporal_positional: fsv_dense(512, seed.wrapping_add(4)),
+        e5_causal_as_cause: fsv_dense(768, seed.wrapping_add(5)),
+        e5_causal_as_effect: fsv_dense(768, seed.wrapping_add(6)),
+        e5_causal: Vec::new(),
+        e6_sparse: SparseVector {
+            indices: vec![1, 2, seed as u16 + 10],
+            values: vec![0.5, 0.3, 0.2],
+        },
+        e7_code: fsv_dense(1536, seed.wrapping_add(7)),
+        e8_graph_as_source: fsv_dense(1024, seed.wrapping_add(8)),
+        e8_graph_as_target: fsv_dense(1024, seed.wrapping_add(9)),
+        e8_graph: Vec::new(),
+        e9_hdc: fsv_dense(1024, seed.wrapping_add(10)),
+        e10_multimodal_paraphrase: fsv_dense(768, seed.wrapping_add(11)),
+        e10_multimodal_as_context: fsv_dense(768, seed.wrapping_add(12)),
+        e11_entity: fsv_dense(768, seed.wrapping_add(13)),
+        e12_late_interaction: vec![fsv_dense(128, seed.wrapping_add(14))],
+        e13_splade: SparseVector {
+            indices: vec![100, 200, seed as u16 + 300],
+            values: vec![0.4, 0.4, 0.2],
+        },
+        e14_bge_m3_dense: fsv_dense(1024, seed.wrapping_add(15)),
+    };
+
+    TeleologicalFingerprint::new(semantic, fsv_hash(seed))
+}
+
+#[cfg(feature = "llm")]
+fn fsv_dense(dim: usize, seed: u8) -> Vec<f32> {
+    let mut values = (0..dim)
+        .map(|idx| (((idx as u32 + seed as u32) % 31) as f32 + 1.0) / 100.0)
+        .collect::<Vec<_>>();
+    let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+    for value in &mut values {
+        *value /= norm;
+    }
+    values
+}
+
+#[cfg(feature = "llm")]
+fn fsv_hash(seed: u8) -> [u8; 32] {
+    let mut hash = [0u8; 32];
+    hash[0] = 0xF5;
+    hash[1] = seed;
+    hash[30] = seed.wrapping_mul(17);
+    hash[31] = 0x5F;
+    hash
+}
+
+#[cfg(feature = "llm")]
+fn learning_state_json(value: f32, rank: u32, domain: &str) -> serde_json::Value {
+    json!({
+        "topicProfile": vec![value; 14],
+        "crossCorrelations": vec![value * 0.5; NUM_CROSS_CORRELATIONS],
+        "retrievalRank": rank,
+        "embedderScores": vec![value; 14],
+        "contradictionPressure": (1.0 - value).clamp(0.0, 1.0),
+        "integrationConfidence": value.clamp(0.0, 1.0),
+        "recurrenceCount": 2,
+        "stabilityScore": value.clamp(0.0, 1.0),
+        "domain": domain,
+        "successfulTransferCount": if value > 0.5 { 1 } else { 0 }
+    })
+}
+
+#[cfg(feature = "llm")]
+fn outcome_label_name(label: LearningOutcomeLabel) -> &'static str {
+    match label {
+        LearningOutcomeLabel::Useful => "useful",
+        LearningOutcomeLabel::Neutral => "neutral",
+        LearningOutcomeLabel::Harmful => "harmful",
+        LearningOutcomeLabel::NoLearning => "no_learning",
+    }
 }
 
 /// Complete E2E test covering all tools.
