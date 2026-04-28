@@ -85,8 +85,11 @@ impl Handlers {
         );
 
         tool_dispatch!(self, id, tool_name,
+            // Capability discovery
+            tool_names::GET_CAPABILITY_MATRIX => call_get_capability_matrix(arguments),
             // Core tools (PRD Section 10.1)
             tool_names::STORE_MEMORY => call_store_memory(arguments),
+            tool_names::STORE_MEMORIES => call_store_memories(arguments),
             tool_names::GET_MEMETIC_STATUS => call_get_memetic_status(),
             tool_names::SEARCH_GRAPH => call_search_graph(arguments),
             // Consolidation tools

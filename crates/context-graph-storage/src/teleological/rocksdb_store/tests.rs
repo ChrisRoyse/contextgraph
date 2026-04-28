@@ -1418,8 +1418,36 @@ async fn test_provenance_embedding_version_roundtrip() {
         "Non-existent fingerprint should return None"
     );
 
+    // FSV: hard-delete must remove current-state embedding provenance. This
+    // matters for MCP batch-ingest rollback, where a failed batch must not leave
+    // CF_EMBEDDING_REGISTRY rows behind for deleted fingerprints.
+    let fp = create_test_fingerprint();
+    let stored_id = fp.id;
+    store.store(fp).await.unwrap();
+    let mut rollback_versions = HashMap::new();
+    rollback_versions.insert("E1".to_string(), "rollback-test".to_string());
+    store
+        .store_embedding_version(&EmbeddingVersionRecord {
+            fingerprint_id: stored_id,
+            computed_at: Utc::now(),
+            embedder_versions: rollback_versions,
+            e7_model_version: None,
+            computation_time_ms: Some(1),
+        })
+        .unwrap();
+    assert!(
+        store.get_embedding_version(stored_id).unwrap().is_some(),
+        "precondition: embedding version must exist before hard-delete"
+    );
+    store.delete(stored_id, false).await.unwrap();
+    assert!(
+        store.get_embedding_version(stored_id).unwrap().is_none(),
+        "hard-delete must remove CF_EMBEDDING_REGISTRY row"
+    );
+
     println!("  ✓ Embedding version roundtrip: write, read, overwrite all verified");
     println!("  ✓ Edge case: non-existent fingerprint returns None");
+    println!("  ✓ Hard-delete removes CF_EMBEDDING_REGISTRY row");
     println!("\n=== FSV: PASSED - Embedding Version Registry Roundtrip ===\n");
 }
 

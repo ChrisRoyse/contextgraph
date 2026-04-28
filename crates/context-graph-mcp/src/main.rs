@@ -360,7 +360,7 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
 ///
 /// TASK-INTEG-019: Modifies config in-place with CLI and env overrides.
 /// Called AFTER config is loaded but BEFORE validation.
-fn apply_overrides(config: &mut Config, cli: &CliArgs) {
+fn apply_overrides(config: &mut Config, cli: &CliArgs) -> Result<()> {
     // Override TCP port from CLI
     if let Some(port) = cli.port {
         info!("CLI override: tcp_port = {}", port);
@@ -388,6 +388,29 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) {
     } else if let Ok(transport) = env::var("CONTEXT_GRAPH_TRANSPORT") {
         info!("ENV override: transport = {}", transport);
         config.mcp.transport = transport;
+    }
+
+    // Override request timeout for long-running real embedder operations.
+    // Supports both the direct MCP-server env name and the nested config-style name.
+    if let Some((name, value)) = env::var("CONTEXT_GRAPH_MCP_REQUEST_TIMEOUT")
+        .ok()
+        .map(|v| ("CONTEXT_GRAPH_MCP_REQUEST_TIMEOUT", v))
+        .or_else(|| {
+            env::var("CONTEXT_GRAPH__MCP__REQUEST_TIMEOUT")
+                .ok()
+                .map(|v| ("CONTEXT_GRAPH__MCP__REQUEST_TIMEOUT", v))
+        })
+    {
+        let timeout = value.parse::<u64>().map_err(|e| {
+            anyhow::anyhow!(
+                "Invalid {}='{}': request timeout must be a positive integer number of seconds ({})",
+                name,
+                value,
+                e
+            )
+        })?;
+        info!("ENV override: mcp.request_timeout = {}", timeout);
+        config.mcp.request_timeout = timeout;
     }
 
     // CRITICAL: Override storage path and enable RocksDB backend
@@ -434,6 +457,8 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) {
         info!("ENV override: watcher.enabled = {}", enabled);
         config.watcher.enabled = enabled;
     }
+
+    Ok(())
 }
 
 /// Determine warm_first mode from CLI and environment.
@@ -1820,7 +1845,7 @@ async fn async_main() -> Result<()> {
     };
 
     // Apply CLI/env overrides BEFORE validation
-    apply_overrides(&mut config, &cli);
+    apply_overrides(&mut config, &cli)?;
 
     // CRITICAL: Validate config AFTER overrides applied
     // This catches invalid CLI/env values early with FAIL FAST

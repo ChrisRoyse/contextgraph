@@ -17,8 +17,8 @@ use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use crate::teleological::column_families::{
-    CF_E12_LATE_INTERACTION, CF_E13_SPLADE_INVERTED, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS,
-    CF_SOURCE_METADATA, CF_TOPIC_PROFILES, QUANTIZED_EMBEDDER_CFS,
+    CF_E12_LATE_INTERACTION, CF_E13_SPLADE_INVERTED, CF_E1_MATRYOSHKA_128, CF_EMBEDDING_REGISTRY,
+    CF_FINGERPRINTS, CF_SOURCE_METADATA, CF_TOPIC_PROFILES, QUANTIZED_EMBEDDER_CFS,
 };
 use crate::teleological::schema::{
     content_key, e12_late_interaction_key, e1_matryoshka_128_key, fingerprint_key,
@@ -392,6 +392,12 @@ impl RocksDbTeleologicalStore {
             // DAT-7: Remove source metadata (was missing from hard-delete)
             let cf_sm = self.get_cf(CF_SOURCE_METADATA)?;
             batch.delete_cf(cf_sm, source_metadata_key(&id));
+
+            // Remove embedding-version provenance for this fingerprint. Audit log
+            // remains append-only by design; embedding registry is current-state
+            // provenance and must not survive a hard-delete rollback.
+            let cf_embedding_registry = self.get_cf(CF_EMBEDDING_REGISTRY)?;
+            batch.delete_cf(cf_embedding_registry, id.as_bytes());
 
             // DAT-7: Remove quantized embedder data from all 13 emb_X CFs
             // Note: emb_X CFs are not populated in production (quantized write path not wired).

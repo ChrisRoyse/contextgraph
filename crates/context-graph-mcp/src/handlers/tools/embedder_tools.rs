@@ -1002,6 +1002,7 @@ impl Handlers {
             EmbedderId::E11,
             EmbedderId::E12,
             EmbedderId::E13,
+            EmbedderId::E14,
         ];
 
         let mut embedder_infos: Vec<EmbedderVectorInfo> = Vec::new();

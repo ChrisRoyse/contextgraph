@@ -13,6 +13,7 @@
 // Note: inject_context was merged into store_memory. When rationale is provided,
 // the same validation (1-1024 chars) and response format is used.
 pub const STORE_MEMORY: &str = "store_memory";
+pub const STORE_MEMORIES: &str = "store_memories";
 pub const GET_MEMETIC_STATUS: &str = "get_memetic_status";
 pub const SEARCH_GRAPH: &str = "search_graph";
 
@@ -129,6 +130,11 @@ pub const GET_UNIFIED_NEIGHBORS: &str = "get_unified_neighbors";
 // ========== DAEMON TOOLS (Multi-agent observability) ==========
 /// Returns daemon health metrics: active connections, model state, background tasks.
 pub const DAEMON_STATUS: &str = "daemon_status";
+
+// ========== CAPABILITY DISCOVERY TOOLS ==========
+/// Return the exposed MCP capability matrix: embedders, learner-state slots,
+/// tool groups, source-of-truth CFs, and optional runtime counts.
+pub const GET_CAPABILITY_MATRIX: &str = "get_capability_matrix";
 
 // ========== PROVENANCE TOOLS (Phase P3 - Provenance Queries) ==========
 /// Query audit log for a specific memory or time range.

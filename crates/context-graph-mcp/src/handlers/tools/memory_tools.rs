@@ -24,8 +24,9 @@
 //! - Direction modifiers: cause→effect (1.2x), effect→cause (0.8x)
 //! - Auto-profile selection: Causal queries auto-select "causal_reasoning" profile
 
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use context_graph_core::causal::asymmetric::{
@@ -34,7 +35,7 @@ use context_graph_core::causal::asymmetric::{
 };
 use context_graph_core::teleological::matrix_search::embedder_names;
 use context_graph_core::traits::{EmbeddingMetadata, SearchStrategy, TeleologicalSearchOptions};
-use context_graph_core::types::audit::{AuditOperation, AuditRecord};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord, EmbeddingVersionRecord};
 use context_graph_core::types::fingerprint::{
     SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
@@ -56,6 +57,8 @@ use super::helpers::{compute_position_label, ToolErrorKind};
 // When rationale is provided, validate: 1-1024 chars
 const MIN_RATIONALE_LEN: usize = 1;
 const MAX_RATIONALE_LEN: usize = 1024;
+const MAX_CONTENT_LEN: usize = 10_000;
+const MAX_STORE_MEMORIES_BATCH: usize = 64;
 
 // Validation constants for search_graph (BUG-001)
 // Per PRD Section 10: topK must be 1-100
@@ -97,6 +100,72 @@ fn infer_causal_direction_from_fingerprint(fingerprint: &SemanticFingerprint) ->
     }
 }
 
+#[derive(Debug, Clone)]
+struct StoreMemoriesItem {
+    content: String,
+    session_id: Option<String>,
+    session_sequence: u64,
+    importance: f32,
+    rationale: Option<String>,
+    operator_id: Option<String>,
+}
+
+struct BatchStoreRecord {
+    index: usize,
+    fingerprint_id: Uuid,
+    content: String,
+    session_id: Option<String>,
+    session_sequence: u64,
+    importance: f32,
+    rationale: Option<String>,
+    operator_id: Option<String>,
+    causal_direction: String,
+    cluster_array: [Vec<f32>; 14],
+    model_ids: [String; NUM_EMBEDDERS],
+    embedding_latency_ms: u64,
+}
+
+fn validate_content_arg(content: &str) -> Result<(), String> {
+    if content.trim().is_empty() {
+        return Err("Content cannot be empty or whitespace-only".to_string());
+    }
+    if content.len() > MAX_CONTENT_LEN {
+        return Err(format!(
+            "Content must be at most {} characters, got {}",
+            MAX_CONTENT_LEN,
+            content.len()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_rationale_arg(rationale: Option<&str>) -> Result<(), String> {
+    if let Some(r) = rationale {
+        if r.len() < MIN_RATIONALE_LEN {
+            return Err("rationale must be at least 1 character".to_string());
+        }
+        if r.len() > MAX_RATIONALE_LEN {
+            return Err(format!(
+                "rationale must be at most {} characters, got {}",
+                MAX_RATIONALE_LEN,
+                r.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_importance_arg(value: Option<&Value>) -> Result<f32, String> {
+    match value.and_then(Value::as_f64) {
+        Some(v) if !(0.0..=1.0).contains(&v) => {
+            Err(format!("importance must be between 0.0 and 1.0, got {}", v))
+        }
+        Some(v) => Ok(v as f32),
+        None if value.is_some() => Err("importance must be a number".to_string()),
+        None => Ok(TeleologicalFingerprint::DEFAULT_IMPORTANCE),
+    }
+}
+
 impl Handlers {
     /// store_memory tool implementation.
     ///
@@ -113,9 +182,34 @@ impl Handlers {
         args: serde_json::Value,
     ) -> JsonRpcResponse {
         let content = match args.get("content").and_then(|v| v.as_str()) {
-            Some(c) if !c.is_empty() => c.to_string(),
-            Some(_) => return self.tool_error(id, "Content cannot be empty"),
-            None => return self.tool_error(id, "Missing 'content' parameter"),
+            Some(c) if !c.trim().is_empty() && c.len() <= MAX_CONTENT_LEN => c.to_string(),
+            Some(c) if c.len() > MAX_CONTENT_LEN => {
+                error!(
+                    content_len = c.len(),
+                    max_allowed = MAX_CONTENT_LEN,
+                    "store_memory: content validation FAILED - exceeds maximum"
+                );
+                return self.tool_error(
+                    id,
+                    &format!(
+                        "Content must be at most {} characters, got {}",
+                        MAX_CONTENT_LEN,
+                        c.len()
+                    ),
+                );
+            }
+            Some(c) => {
+                error!(
+                    content_len = c.len(),
+                    trimmed_len = c.trim().len(),
+                    "store_memory: content validation FAILED - empty or whitespace-only"
+                );
+                return self.tool_error(id, "Content cannot be empty or whitespace-only");
+            }
+            None => {
+                error!("store_memory: content validation FAILED - missing content");
+                return self.tool_error(id, "Missing 'content' parameter");
+            }
         };
 
         // Handle optional rationale (merged from inject_context)
@@ -505,6 +599,647 @@ impl Handlers {
             Err(e) => {
                 error!(error = %e, "store_memory: Storage FAILED");
                 self.tool_error(id, &format!("Storage failed: {}", e))
+            }
+        }
+    }
+
+    /// store_memories tool implementation.
+    ///
+    /// Batch variant of `store_memory` for corpus ingestion. This still uses the
+    /// real 14-embedder pipeline and real RocksDB source-of-truth CFs. The core
+    /// write path is all-or-error for fingerprints/content/source metadata,
+    /// embedding-version provenance, and memory-created audit rows: validation
+    /// happens before embedding, and any post-store failure triggers hard-delete
+    /// rollback of stored fingerprints.
+    pub(crate) async fn call_store_memories(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let started = Instant::now();
+        let (items, causal_hints_enabled) = match self.prepare_store_memories_items(args) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(error = %e, "store_memories: validation FAILED");
+                return self.tool_error_typed(id, ToolErrorKind::Validation, &e);
+            }
+        };
+
+        let mut causal_hints = Vec::with_capacity(items.len());
+        if causal_hints_enabled {
+            let Some(provider) = &self.causal_hint_provider else {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    "causalHints=true requires a causal hint provider",
+                );
+            };
+            if !provider.is_available() {
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    "causalHints=true requires a loaded causal hint provider",
+                );
+            }
+            for item in &items {
+                causal_hints.push(provider.get_hint(&item.content).await);
+            }
+        } else {
+            causal_hints.resize_with(items.len(), || None);
+        }
+
+        let contents: Vec<String> = items.iter().map(|item| item.content.clone()).collect();
+        let metadata: Vec<EmbeddingMetadata> = items
+            .iter()
+            .zip(causal_hints.iter())
+            .map(|(item, hint)| EmbeddingMetadata {
+                session_id: item.session_id.clone(),
+                session_sequence: Some(item.session_sequence),
+                timestamp: Some(chrono::Utc::now()),
+                causal_hint: hint.clone(),
+            })
+            .collect();
+
+        let embedding_started = Instant::now();
+        let embedding_outputs = match self
+            .multi_array_provider
+            .embed_batch_all(&contents, &metadata)
+            .await
+        {
+            Ok(outputs) if outputs.len() == items.len() => outputs,
+            Ok(outputs) => {
+                error!(
+                    expected = items.len(),
+                    actual = outputs.len(),
+                    "store_memories: embed_batch_all returned wrong output count"
+                );
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!(
+                        "Embedding batch returned {} outputs for {} inputs",
+                        outputs.len(),
+                        items.len()
+                    ),
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "store_memories: embed_batch_all FAILED");
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Embedding batch failed: {}", e),
+                );
+            }
+        };
+        let embedding_elapsed_ms = embedding_started.elapsed().as_millis() as u64;
+
+        let mut fingerprints = Vec::with_capacity(items.len());
+        let mut records = Vec::with_capacity(items.len());
+        for (index, ((item, hint), embedding_output)) in items
+            .into_iter()
+            .zip(causal_hints.into_iter())
+            .zip(embedding_outputs.into_iter())
+            .enumerate()
+        {
+            let mut hasher = Sha256::new();
+            hasher.update(item.content.as_bytes());
+            let content_hash: [u8; 32] = hasher.finalize().into();
+
+            let cluster_array = embedding_output.fingerprint.to_cluster_array();
+            let causal_direction = hint
+                .as_ref()
+                .and_then(|h| {
+                    if h.is_useful() {
+                        Some(match h.direction_hint {
+                            context_graph_core::traits::CausalDirectionHint::Cause => {
+                                "cause".to_string()
+                            }
+                            context_graph_core::traits::CausalDirectionHint::Effect => {
+                                "effect".to_string()
+                            }
+                            context_graph_core::traits::CausalDirectionHint::Neutral => {
+                                "unknown".to_string()
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| {
+                    infer_causal_direction_from_fingerprint(&embedding_output.fingerprint)
+                });
+            let e6_sparse = embedding_output.fingerprint.e6_sparse.clone();
+            let fingerprint = TeleologicalFingerprint::with_importance(
+                embedding_output.fingerprint,
+                content_hash,
+                item.importance,
+            )
+            .with_e6_sparse(e6_sparse);
+            let fingerprint_id = fingerprint.id;
+            records.push(BatchStoreRecord {
+                index,
+                fingerprint_id,
+                content: item.content,
+                session_id: item.session_id,
+                session_sequence: item.session_sequence,
+                importance: item.importance,
+                rationale: item.rationale,
+                operator_id: item.operator_id,
+                causal_direction,
+                cluster_array,
+                model_ids: embedding_output.model_ids,
+                embedding_latency_ms: embedding_output.total_latency.as_millis() as u64,
+            });
+            fingerprints.push(fingerprint);
+        }
+
+        let expected_ids: Vec<Uuid> = records.iter().map(|record| record.fingerprint_id).collect();
+        let stored_ids = match self.teleological_store.store_batch(fingerprints).await {
+            Ok(ids) if ids == expected_ids => ids,
+            Ok(ids) => {
+                self.rollback_stored_memories(
+                    &ids,
+                    "store_batch returned partial or reordered IDs",
+                )
+                .await;
+                error!(
+                    expected = ?expected_ids,
+                    actual = ?ids,
+                    "store_memories: store_batch returned unexpected IDs"
+                );
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Storage,
+                    "Batch store returned partial or reordered IDs; rolled back stored fingerprints",
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "store_memories: store_batch FAILED");
+                return self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Storage,
+                    &format!("Batch store failed: {}", e),
+                );
+            }
+        };
+
+        if let Err(e) = self.write_batch_sidecars(&records).await {
+            self.rollback_stored_memories(&stored_ids, "batch sidecar write failed")
+                .await;
+            error!(error = %e, "store_memories: sidecar writes FAILED and fingerprints were rolled back");
+            return self.tool_error_typed(id, ToolErrorKind::Storage, &e);
+        }
+
+        if let Err(e) = self.verify_batch_readback(&records).await {
+            self.rollback_stored_memories(&stored_ids, "batch readback verification failed")
+                .await;
+            error!(error = %e, "store_memories: readback verification FAILED and fingerprints were rolled back");
+            return self.tool_error_typed(id, ToolErrorKind::Storage, &e);
+        }
+
+        if let Some(builder) = self.graph_builder() {
+            for id in &stored_ids {
+                builder.enqueue(*id).await;
+            }
+        }
+
+        let item_response: Vec<Value> = records
+            .iter()
+            .map(|record| {
+                json!({
+                    "index": record.index,
+                    "fingerprintId": record.fingerprint_id.to_string(),
+                    "sessionId": record.session_id,
+                    "sessionSequence": record.session_sequence,
+                    "contentChars": record.content.len(),
+                    "importance": record.importance,
+                    "causalDirection": record.causal_direction,
+                    "embeddingLatencyMs": record.embedding_latency_ms,
+                })
+            })
+            .collect();
+
+        self.tool_result(
+            id,
+            json!({
+                "requestedCount": item_response.len(),
+                "storedCount": stored_ids.len(),
+                "embedderCount": NUM_EMBEDDERS,
+                "causalHintsRequested": causal_hints_enabled,
+                "causalRelationshipExtraction": "deferred_to_trigger_causal_discovery",
+                "embeddingLatencyMs": embedding_elapsed_ms,
+                "roundTripMs": started.elapsed().as_millis() as u64,
+                "sourceOfTruth": {
+                    "fingerprints": "CF_FINGERPRINTS",
+                    "content": "CF_CONTENT",
+                    "sourceMetadata": "CF_SOURCE_METADATA",
+                    "embeddingVersions": "CF_EMBEDDING_REGISTRY",
+                    "audit": "CF_AUDIT_LOG"
+                },
+                "items": item_response
+            }),
+        )
+    }
+
+    fn prepare_store_memories_items(
+        &self,
+        args: serde_json::Value,
+    ) -> Result<(Vec<StoreMemoriesItem>, bool), String> {
+        let obj = args
+            .as_object()
+            .ok_or_else(|| "store_memories arguments must be an object".to_string())?;
+        for key in obj.keys() {
+            if key != "items" && key != "sessionId" && key != "operatorId" && key != "causalHints" {
+                return Err(format!("unknown argument '{}'", key));
+            }
+        }
+
+        let batch_session_id = match obj.get("sessionId") {
+            Some(v) => {
+                let s = v
+                    .as_str()
+                    .ok_or_else(|| "sessionId must be a string".to_string())?;
+                if s.trim().is_empty() {
+                    return Err("sessionId cannot be empty or whitespace-only".to_string());
+                }
+                Some(s.to_string())
+            }
+            None => None,
+        };
+        let batch_operator_id = match obj.get("operatorId") {
+            Some(v) => {
+                let s = v
+                    .as_str()
+                    .ok_or_else(|| "operatorId must be a string".to_string())?;
+                if s.trim().is_empty() {
+                    return Err("operatorId cannot be empty or whitespace-only".to_string());
+                }
+                Some(s.to_string())
+            }
+            None => None,
+        };
+        let causal_hints = match obj.get("causalHints") {
+            Some(v) => v
+                .as_bool()
+                .ok_or_else(|| "causalHints must be a boolean".to_string())?,
+            None => false,
+        };
+
+        let item_values = obj
+            .get("items")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "items must be an array".to_string())?;
+        if item_values.is_empty() {
+            return Err("items must contain at least one memory".to_string());
+        }
+        if item_values.len() > MAX_STORE_MEMORIES_BATCH {
+            return Err(format!(
+                "items must contain at most {} memories, got {}",
+                MAX_STORE_MEMORIES_BATCH,
+                item_values.len()
+            ));
+        }
+
+        let fallback_session_id = batch_session_id
+            .clone()
+            .or_else(|| Some(self.get_or_init_session_id()));
+        let mut items = Vec::with_capacity(item_values.len());
+        for (index, value) in item_values.iter().enumerate() {
+            let item_obj = value
+                .as_object()
+                .ok_or_else(|| format!("items[{index}] must be an object"))?;
+            for key in item_obj.keys() {
+                if key != "content"
+                    && key != "sessionId"
+                    && key != "operatorId"
+                    && key != "importance"
+                    && key != "rationale"
+                {
+                    return Err(format!("items[{index}] unknown field '{}'", key));
+                }
+            }
+            let content = item_obj
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("items[{index}].content must be a string"))?;
+            validate_content_arg(content)
+                .map_err(|e| format!("items[{index}].content invalid: {e}"))?;
+            let rationale = match item_obj.get("rationale") {
+                Some(v) => Some(
+                    v.as_str()
+                        .ok_or_else(|| format!("items[{index}].rationale must be a string"))?
+                        .to_string(),
+                ),
+                None => None,
+            };
+            validate_rationale_arg(rationale.as_deref())
+                .map_err(|e| format!("items[{index}].rationale invalid: {e}"))?;
+            let importance = validate_importance_arg(item_obj.get("importance"))
+                .map_err(|e| format!("items[{index}].importance invalid: {e}"))?;
+            let session_id = match item_obj.get("sessionId") {
+                Some(v) => {
+                    let s = v
+                        .as_str()
+                        .ok_or_else(|| format!("items[{index}].sessionId must be a string"))?;
+                    if s.trim().is_empty() {
+                        return Err(format!(
+                            "items[{index}].sessionId cannot be empty or whitespace-only"
+                        ));
+                    }
+                    Some(s.to_string())
+                }
+                None => fallback_session_id.clone(),
+            };
+            let operator_id = match item_obj.get("operatorId") {
+                Some(v) => {
+                    let s = v
+                        .as_str()
+                        .ok_or_else(|| format!("items[{index}].operatorId must be a string"))?;
+                    if s.trim().is_empty() {
+                        return Err(format!(
+                            "items[{index}].operatorId cannot be empty or whitespace-only"
+                        ));
+                    }
+                    Some(s.to_string())
+                }
+                None => batch_operator_id.clone(),
+            };
+
+            items.push(StoreMemoriesItem {
+                content: content.to_string(),
+                session_id,
+                session_sequence: self.get_next_sequence(),
+                importance,
+                rationale,
+                operator_id,
+            });
+        }
+
+        Ok((items, causal_hints))
+    }
+
+    async fn write_batch_sidecars(&self, records: &[BatchStoreRecord]) -> Result<(), String> {
+        for record in records {
+            {
+                let mut cluster_mgr = self.cluster_manager.write();
+                cluster_mgr
+                    .insert(record.fingerprint_id, &record.cluster_array)
+                    .map_err(|e| {
+                        format!(
+                            "cluster_manager insert failed for {}: {}",
+                            record.fingerprint_id, e
+                        )
+                    })?;
+            }
+
+            self.teleological_store
+                .store_content(record.fingerprint_id, &record.content)
+                .await
+                .map_err(|e| {
+                    format!("store_content failed for {}: {}", record.fingerprint_id, e)
+                })?;
+
+            let entity_names = {
+                let entity_meta = super::entity_tools::extract_entity_mentions(&record.content);
+                let ids: Vec<String> = entity_meta
+                    .canonical_ids()
+                    .into_iter()
+                    .map(String::from)
+                    .collect();
+                if ids.is_empty() {
+                    None
+                } else {
+                    Some(ids)
+                }
+            };
+
+            let source_metadata = SourceMetadata {
+                source_type: SourceType::Manual,
+                session_id: record.session_id.clone(),
+                session_sequence: Some(record.session_sequence),
+                causal_direction: Some(record.causal_direction.clone()),
+                created_by: record.operator_id.clone(),
+                created_at: Some(chrono::Utc::now()),
+                entity_names,
+                ..SourceMetadata::default()
+            };
+            self.teleological_store
+                .store_source_metadata(record.fingerprint_id, &source_metadata)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "store_source_metadata failed for {}: {}",
+                        record.fingerprint_id, e
+                    )
+                })?;
+
+            let mut embedder_versions = std::collections::HashMap::new();
+            for (i, label) in EMBEDDER_NAMES.iter().enumerate() {
+                embedder_versions.insert(label.to_string(), record.model_ids[i].clone());
+            }
+            let version_record = EmbeddingVersionRecord {
+                fingerprint_id: record.fingerprint_id,
+                computed_at: chrono::Utc::now(),
+                embedder_versions,
+                e7_model_version: Some(record.model_ids[6].clone()),
+                computation_time_ms: Some(record.embedding_latency_ms),
+            };
+            self.teleological_store
+                .store_embedding_version(&version_record)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "store_embedding_version failed for {}: {}",
+                        record.fingerprint_id, e
+                    )
+                })?;
+
+            let mut audit_record =
+                AuditRecord::new(AuditOperation::MemoryCreated, record.fingerprint_id);
+            if let Some(ref op_id) = record.operator_id {
+                audit_record = audit_record.with_operator(op_id.clone());
+            }
+            if let Some(ref session_id) = record.session_id {
+                audit_record = audit_record.with_session(session_id.clone());
+            }
+            if let Some(ref rationale) = record.rationale {
+                audit_record = audit_record.with_rationale(rationale);
+            }
+            audit_record = audit_record.with_parameters(json!({
+                "importance": record.importance,
+                "content_size": record.content.len(),
+                "causal_direction": record.causal_direction,
+                "batch_tool": "store_memories",
+            }));
+            self.teleological_store
+                .append_audit_record(&audit_record)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "append_audit_record failed for {}: {}",
+                        record.fingerprint_id, e
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    async fn verify_batch_readback(&self, records: &[BatchStoreRecord]) -> Result<(), String> {
+        let ids: Vec<Uuid> = records.iter().map(|record| record.fingerprint_id).collect();
+        let fingerprints = self
+            .teleological_store
+            .retrieve_batch(&ids)
+            .await
+            .map_err(|e| format!("retrieve_batch readback failed: {e}"))?;
+        if fingerprints.len() != records.len() {
+            return Err(format!(
+                "retrieve_batch returned {} rows for {} records",
+                fingerprints.len(),
+                records.len()
+            ));
+        }
+        for (record, maybe_fp) in records.iter().zip(fingerprints.iter()) {
+            if maybe_fp.is_none() {
+                return Err(format!(
+                    "fingerprint readback missing for {}",
+                    record.fingerprint_id
+                ));
+            }
+        }
+
+        let contents = self
+            .teleological_store
+            .get_content_batch(&ids)
+            .await
+            .map_err(|e| format!("get_content_batch readback failed: {e}"))?;
+        if contents.len() != records.len() {
+            return Err(format!(
+                "get_content_batch returned {} rows for {} records",
+                contents.len(),
+                records.len()
+            ));
+        }
+        for (record, maybe_content) in records.iter().zip(contents.iter()) {
+            match maybe_content {
+                Some(content) if content == &record.content => {}
+                Some(_) => {
+                    return Err(format!(
+                        "content readback mismatch for {}",
+                        record.fingerprint_id
+                    ))
+                }
+                None => {
+                    return Err(format!(
+                        "content readback missing for {}",
+                        record.fingerprint_id
+                    ))
+                }
+            }
+        }
+
+        let source_metadata = self
+            .teleological_store
+            .get_source_metadata_batch(&ids)
+            .await
+            .map_err(|e| format!("get_source_metadata_batch readback failed: {e}"))?;
+        if source_metadata.len() != records.len() {
+            return Err(format!(
+                "get_source_metadata_batch returned {} rows for {} records",
+                source_metadata.len(),
+                records.len()
+            ));
+        }
+        for (record, maybe_meta) in records.iter().zip(source_metadata.iter()) {
+            let Some(meta) = maybe_meta else {
+                return Err(format!(
+                    "source metadata readback missing for {}",
+                    record.fingerprint_id
+                ));
+            };
+            if meta.session_id != record.session_id
+                || meta.session_sequence != Some(record.session_sequence)
+            {
+                return Err(format!(
+                    "source metadata readback mismatch for {}",
+                    record.fingerprint_id
+                ));
+            }
+        }
+
+        for record in records {
+            let Some(version) = self
+                .teleological_store
+                .get_embedding_version(record.fingerprint_id)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "get_embedding_version readback failed for {}: {}",
+                        record.fingerprint_id, e
+                    )
+                })?
+            else {
+                return Err(format!(
+                    "embedding version readback missing for {}",
+                    record.fingerprint_id
+                ));
+            };
+            if version.embedder_versions.len() != NUM_EMBEDDERS {
+                return Err(format!(
+                    "embedding version readback for {} has {} embedders, expected {}",
+                    record.fingerprint_id,
+                    version.embedder_versions.len(),
+                    NUM_EMBEDDERS
+                ));
+            }
+            for label in EMBEDDER_NAMES {
+                if !version.embedder_versions.contains_key(label) {
+                    return Err(format!(
+                        "embedding version readback for {} missing {}",
+                        record.fingerprint_id, label
+                    ));
+                }
+            }
+
+            let audit = self
+                .teleological_store
+                .get_audit_by_target(record.fingerprint_id, 20)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "get_audit_by_target readback failed for {}: {}",
+                        record.fingerprint_id, e
+                    )
+                })?;
+            let has_batch_create = audit.iter().any(|entry| {
+                matches!(entry.operation, AuditOperation::MemoryCreated)
+                    && entry.session_id == record.session_id
+                    && entry.operator_id == record.operator_id
+                    && entry.parameters.get("batch_tool").and_then(Value::as_str)
+                        == Some("store_memories")
+            });
+            if !has_batch_create {
+                return Err(format!(
+                    "memory-created batch audit readback missing for {}",
+                    record.fingerprint_id
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn rollback_stored_memories(&self, ids: &[Uuid], reason: &str) {
+        for id in ids {
+            match self.teleological_store.delete(*id, false).await {
+                Ok(true) => {
+                    warn!(fingerprint_id = %id, reason = reason, "store_memories: rolled back fingerprint")
+                }
+                Ok(false) => {
+                    warn!(fingerprint_id = %id, reason = reason, "store_memories: rollback found no fingerprint")
+                }
+                Err(e) => {
+                    error!(fingerprint_id = %id, reason = reason, error = %e, "store_memories: rollback FAILED")
+                }
             }
         }
     }

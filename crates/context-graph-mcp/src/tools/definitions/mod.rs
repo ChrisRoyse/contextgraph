@@ -14,6 +14,7 @@
 //! plus 4 graph linking tools (get_memory_neighbors, get_typed_edges, traverse_graph, get_unified_neighbors)
 //! plus 1 maintenance tool (repair_causal_relationships).
 
+pub(crate) mod capability;
 pub(crate) mod causal;
 pub(crate) mod causal_discovery;
 pub(crate) mod code;
@@ -44,9 +45,12 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(103);
+    let mut tools = Vec::with_capacity(105);
 
-    // Core tools (4 - inject_context merged into store_memory)
+    // Capability discovery tools (1) - compact map of embedders, CFs, and tools
+    tools.extend(capability::definitions());
+
+    // Core tools (5 - inject_context merged into store_memory; batch via store_memories)
     tools.extend(core::definitions());
 
     // Merge tool (1 - part of curation)
@@ -135,9 +139,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 103);
+        assert_eq!(tools.len(), 105);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 99);
+        assert_eq!(tools.len(), 101);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -161,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_submodule_counts() {
-        assert_eq!(core::definitions().len(), 4);
+        assert_eq!(capability::definitions().len(), 1);
+        assert_eq!(core::definitions().len(), 5);
         assert_eq!(merge::definitions().len(), 1);
         assert_eq!(curation::definitions().len(), 2);
         assert_eq!(topic::definitions().len(), 4);

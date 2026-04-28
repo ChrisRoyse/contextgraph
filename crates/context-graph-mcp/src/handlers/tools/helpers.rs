@@ -64,6 +64,7 @@ impl Handlers {
                     "type": "text",
                     "text": serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string())
                 }],
+                "structuredContent": data,
                 "isError": false
             }),
         )

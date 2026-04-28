@@ -22,6 +22,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "content": {
                         "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000,
                         "description": "The content to store"
                     },
                     "rationale": {
@@ -50,6 +52,78 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
+        ToolDefinition::new(
+            "store_memories",
+            "Store a validated batch of memory nodes through the same 14-content-embedder pipeline. The batch is all-or-error for fingerprint/content/source-metadata/embedding-version/audit readback: if any required write or verification fails, stored fingerprints are hard-deleted and the tool returns an error.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 10000,
+                                    "description": "The content to store"
+                                },
+                                "rationale": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 1024,
+                                    "description": "Why this context is relevant and should be stored"
+                                },
+                                "importance": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1,
+                                    "default": 0.5
+                                },
+                                "sessionId": {
+                                    "type": "string",
+                                    "description": "Per-item session ID. Defaults to top-level sessionId, then CLAUDE_SESSION_ID/server session."
+                                },
+                                "operatorId": {
+                                    "type": "string",
+                                    "description": "Per-item operator/user ID. Defaults to top-level operatorId."
+                                }
+                            },
+                            "required": ["content"],
+                            "additionalProperties": false
+                        }
+                    },
+                    "sessionId": {
+                        "type": "string",
+                        "description": "Default session ID for all items that omit sessionId"
+                    },
+                    "operatorId": {
+                        "type": "string",
+                        "description": "Default operator/user ID for all items that omit operatorId"
+                    },
+                    "causalHints": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "When true, ask the LLM causal-hint provider for E5 hints before batch embedding. False still computes E5 embeddings without LLM hints."
+                    }
+                },
+                "required": ["items"],
+                "additionalProperties": false
+            }),
+        )
+        .with_output_schema(json!({
+            "type": "object",
+            "required": ["requestedCount", "storedCount", "embedderCount", "items"],
+            "properties": {
+                "requestedCount": {"type": "integer"},
+                "storedCount": {"type": "integer"},
+                "embedderCount": {"type": "integer"},
+                "items": {"type": "array"}
+            }
+        })),
         // get_memetic_status - get system state and metrics
         ToolDefinition::new(
             "get_memetic_status",

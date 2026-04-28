@@ -19,6 +19,7 @@
 //! - search_recent (temporal_tools.rs) - E2 V_freshness Temporal Search
 //! - get_memory_neighbors, get_typed_edges, traverse_graph (graph_link_tools.rs) - K-NN Graph Linking
 
+mod capability_tools;
 mod causal_discovery_tools;
 mod causal_relationship_tools;
 mod causal_tools;
