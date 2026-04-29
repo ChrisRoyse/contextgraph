@@ -810,7 +810,7 @@ fn score_one(stats: &EmbedderStats, fp: &SemanticFingerprint) -> f32 {
     }
 }
 
-fn pick_dense<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> &'a [f32] {
+fn pick_dense(emb_idx: u8, fp: &SemanticFingerprint) -> &[f32] {
     match emb_idx {
         0 => &fp.e1_semantic,
         1 => &fp.e2_temporal_recent,
@@ -827,7 +827,7 @@ fn pick_dense<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> &'a [f32] {
     }
 }
 
-fn pick_sparse<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> Option<(&'a [u16], &'a [f32])> {
+fn pick_sparse(emb_idx: u8, fp: &SemanticFingerprint) -> Option<(&[u16], &[f32])> {
     match emb_idx {
         5 => Some((&fp.e6_sparse.indices, &fp.e6_sparse.values)),
         12 => Some((&fp.e13_splade.indices, &fp.e13_splade.values)),

@@ -130,6 +130,17 @@ pub(crate) struct ResolvedGraphLearningPolicy {
     pub evidence: Vec<JsonValue>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct GraphLearningPolicyResolveParams {
+    pub source_memory_id: Option<Uuid>,
+    pub policy_scope: String,
+    pub base_weights: [f32; NUM_EMBEDDERS],
+    pub min_evidence: usize,
+    pub max_scan: usize,
+    pub learning_rate: f32,
+    pub include_evidence: bool,
+}
+
 impl ResolvedGraphLearningPolicy {
     pub(crate) fn apply_score(&self, target_id: Uuid, base_score: f32) -> (f32, f32) {
         let boost = self.edge_boosts.get(&target_id).copied().unwrap_or(0.0);
@@ -448,13 +459,15 @@ impl Handlers {
         };
         let policy = match resolve_graph_learning_policy(
             rocksdb_store,
-            parsed.source_memory_id,
-            &parsed.policy_scope,
-            base_weights,
-            parsed.min_evidence,
-            parsed.max_scan,
-            parsed.learning_rate,
-            parsed.include_evidence,
+            GraphLearningPolicyResolveParams {
+                source_memory_id: parsed.source_memory_id,
+                policy_scope: parsed.policy_scope,
+                base_weights,
+                min_evidence: parsed.min_evidence,
+                max_scan: parsed.max_scan,
+                learning_rate: parsed.learning_rate,
+                include_evidence: parsed.include_evidence,
+            },
         )
         .await
         {
@@ -484,14 +497,16 @@ impl Handlers {
 
 pub(crate) async fn resolve_graph_learning_policy(
     rocksdb_store: &RocksDbTeleologicalStore,
-    source_memory_id: Option<Uuid>,
-    policy_scope: &str,
-    base_weights: [f32; NUM_EMBEDDERS],
-    min_evidence: usize,
-    max_scan: usize,
-    learning_rate: f32,
-    include_evidence: bool,
+    params: GraphLearningPolicyResolveParams,
 ) -> Result<ResolvedGraphLearningPolicy, String> {
+    let policy_scope = params.policy_scope.as_str();
+    let source_memory_id = params.source_memory_id;
+    let base_weights = params.base_weights;
+    let min_evidence = params.min_evidence;
+    let max_scan = params.max_scan;
+    let learning_rate = params.learning_rate;
+    let include_evidence = params.include_evidence;
+
     validate_policy_scope(policy_scope)?;
     if min_evidence == 0 || min_evidence > 10_000 {
         return Err("minEvidence must be in [1, 10000]".into());
@@ -928,8 +943,8 @@ fn render_edge_evidence(edge: &GraphLearningEdgeEvidence) -> JsonValue {
 
 fn render_weight_vector(weights: &[f32; NUM_EMBEDDERS]) -> JsonValue {
     let mut map = BTreeMap::new();
-    for idx in 0..NUM_EMBEDDERS {
-        map.insert(format!("E{}", idx + 1), weights[idx]);
+    for (idx, weight) in weights.iter().enumerate() {
+        map.insert(format!("E{}", idx + 1), *weight);
     }
     json!(map)
 }

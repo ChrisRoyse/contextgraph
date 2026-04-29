@@ -609,7 +609,7 @@ fn topic_cosine_similarity(a: &[f32; 14], b: &[f32; 14]) -> f32 {
 /// # Returns
 /// Additional parent topics to add to the list. These have `depth` 0 and
 /// `parent_id` None. The child topics in `topics` are modified in place.
-pub fn build_topic_hierarchy(topics: &mut Vec<Topic>, threshold: f32) -> Vec<Topic> {
+pub fn build_topic_hierarchy(topics: &mut [Topic], threshold: f32) -> Vec<Topic> {
     let n = topics.len();
     if n < 2 {
         return Vec::new();

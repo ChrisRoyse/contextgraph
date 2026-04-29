@@ -32,7 +32,7 @@ impl EmbedderId {
     ///
     /// Accepts `"E1"`..`"E14"` (case-insensitive) as well as the canonical
     /// `"bge_m3_dense"` name (for compatibility with factory/ModelId wiring).
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let upper = s.to_uppercase();
         match upper.as_str() {
             "E1" => Some(EmbedderId::E1),
@@ -217,7 +217,7 @@ impl SearchByEmbedderRequest {
         if self.query.is_empty() {
             return Err("Query cannot be empty".to_string());
         }
-        match EmbedderId::from_str(&self.embedder) {
+        match EmbedderId::parse(&self.embedder) {
             None => {
                 return Err(format!(
                     "Invalid embedder '{}'. Must be E1-E14.",
@@ -241,7 +241,7 @@ impl SearchByEmbedderRequest {
 
     /// Get the parsed embedder ID.
     pub fn embedder_id(&self) -> Option<EmbedderId> {
-        EmbedderId::from_str(&self.embedder)
+        EmbedderId::parse(&self.embedder)
     }
 }
 
@@ -392,7 +392,7 @@ fn default_samples_per_cluster() -> usize {
 impl GetEmbedderClustersRequest {
     /// Validate the request.
     pub fn validate(&self) -> Result<(), String> {
-        match EmbedderId::from_str(&self.embedder) {
+        match EmbedderId::parse(&self.embedder) {
             None => {
                 return Err(format!(
                     "Invalid embedder '{}'. Must be E1-E14.",
@@ -417,7 +417,7 @@ impl GetEmbedderClustersRequest {
 
     /// Get the parsed embedder ID.
     pub fn embedder_id(&self) -> Option<EmbedderId> {
-        EmbedderId::from_str(&self.embedder)
+        EmbedderId::parse(&self.embedder)
     }
 }
 
@@ -498,7 +498,7 @@ impl CompareEmbedderViewsRequest {
             return Err("Cannot compare more than 5 embedders".to_string());
         }
         for e in &self.embedders {
-            match EmbedderId::from_str(e) {
+            match EmbedderId::parse(e) {
                 None => {
                     return Err(format!("Invalid embedder '{}'. Must be E1-E14.", e));
                 }
@@ -519,7 +519,7 @@ impl CompareEmbedderViewsRequest {
     pub fn embedder_ids(&self) -> Vec<EmbedderId> {
         self.embedders
             .iter()
-            .filter_map(|e| EmbedderId::from_str(e))
+            .filter_map(|e| EmbedderId::parse(e))
             .collect()
     }
 }
@@ -676,7 +676,7 @@ impl GetMemoryFingerprintRequest {
             ));
         }
         for e in &self.embedders {
-            if EmbedderId::from_str(e).is_none() {
+            if EmbedderId::parse(e).is_none() {
                 return Err(format!("Invalid embedder '{}'. Must be E1-E14.", e));
             }
         }
@@ -687,7 +687,7 @@ impl GetMemoryFingerprintRequest {
     pub fn embedder_filter(&self) -> Vec<EmbedderId> {
         self.embedders
             .iter()
-            .filter_map(|e| EmbedderId::from_str(e))
+            .filter_map(|e| EmbedderId::parse(e))
             .collect()
     }
 }
@@ -777,7 +777,7 @@ impl CreateWeightProfileRequest {
         }
         // Validate all keys are valid embedder names
         for key in self.weights.keys() {
-            if EmbedderId::from_str(key).is_none() {
+            if EmbedderId::parse(key).is_none() {
                 return Err(format!(
                     "Invalid embedder name '{}' in weights. Valid names: E1-E14.",
                     key
@@ -791,7 +791,7 @@ impl CreateWeightProfileRequest {
     pub fn to_weight_array(&self) -> [f32; 14] {
         let mut weights = [0.0f32; 14];
         for (key, &val) in &self.weights {
-            if let Some(eid) = EmbedderId::from_str(key) {
+            if let Some(eid) = EmbedderId::parse(key) {
                 weights[eid.to_index()] = val as f32;
             }
         }
@@ -862,13 +862,13 @@ impl SearchCrossEmbedderAnomaliesRequest {
         if self.query.is_empty() {
             return Err("Query cannot be empty".to_string());
         }
-        if EmbedderId::from_str(&self.high_embedder).is_none() {
+        if EmbedderId::parse(&self.high_embedder).is_none() {
             return Err(format!(
                 "Invalid highEmbedder '{}'. Must be E1-E14.",
                 self.high_embedder
             ));
         }
-        if EmbedderId::from_str(&self.low_embedder).is_none() {
+        if EmbedderId::parse(&self.low_embedder).is_none() {
             return Err(format!(
                 "Invalid lowEmbedder '{}'. Must be E1-E14.",
                 self.low_embedder
@@ -1029,16 +1029,16 @@ mod tests {
 
     #[test]
     fn test_happy_path_deserialization() {
-        assert_eq!(EmbedderId::from_str("E1"), Some(EmbedderId::E1));
-        assert_eq!(EmbedderId::from_str("e11"), Some(EmbedderId::E11));
+        assert_eq!(EmbedderId::parse("E1"), Some(EmbedderId::E1));
+        assert_eq!(EmbedderId::parse("e11"), Some(EmbedderId::E11));
         // Post-E14: the 14th slot is BGE-M3 Dense. E15 is the first invalid slot.
-        assert_eq!(EmbedderId::from_str("E14"), Some(EmbedderId::E14));
+        assert_eq!(EmbedderId::parse("E14"), Some(EmbedderId::E14));
         assert_eq!(
-            EmbedderId::from_str("bge_m3_dense"),
+            EmbedderId::parse("bge_m3_dense"),
             Some(EmbedderId::E14),
             "canonical lowercase alias must resolve to E14"
         );
-        assert_eq!(EmbedderId::from_str("E15"), None);
+        assert_eq!(EmbedderId::parse("E15"), None);
         assert_eq!(EmbedderId::E1.to_index(), 0);
         assert_eq!(EmbedderId::E13.to_index(), 12);
         assert_eq!(EmbedderId::E14.to_index(), 13);

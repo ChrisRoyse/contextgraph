@@ -2050,6 +2050,10 @@ fn default_true() -> bool {
     true
 }
 
+fn one() -> f32 {
+    1.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2231,8 +2235,4 @@ mod tests {
         assert!(invalid.is_err());
         assert_eq!(invalid_after, invalid_before);
     }
-}
-
-fn one() -> f32 {
-    1.0
 }

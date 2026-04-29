@@ -1373,7 +1373,7 @@ impl Handlers {
             };
 
         // MED-22 FIX: Use proper error handling instead of .expect() - defense in depth
-        let high_eid = match EmbedderId::from_str(&request.high_embedder) {
+        let high_eid = match EmbedderId::parse(&request.high_embedder) {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.high_embedder, "search_cross_embedder_anomalies: Invalid high_embedder");
@@ -1383,7 +1383,7 @@ impl Handlers {
                 );
             }
         };
-        let low_eid = match EmbedderId::from_str(&request.low_embedder) {
+        let low_eid = match EmbedderId::parse(&request.low_embedder) {
             Some(eid) => eid,
             None => {
                 error!(embedder = %request.low_embedder, "search_cross_embedder_anomalies: Invalid low_embedder");

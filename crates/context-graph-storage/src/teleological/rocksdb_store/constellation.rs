@@ -79,7 +79,7 @@ impl RocksDbTeleologicalStore {
         // it in the same WriteBatch to preserve the invariant "at most one
         // primary row per selector". A pointer equal to our new UUID (re-store
         // of the same record) or no prior entry at all needs no cleanup.
-        let prior_id: Option<[u8; 16]> = match self.db.get_cf(index_cf, &index_key) {
+        let prior_id: Option<[u8; 16]> = match self.db.get_cf(index_cf, index_key) {
             Ok(Some(bytes)) if bytes.len() == 16 && bytes.as_slice() != new_id_bytes => {
                 let mut buf = [0u8; 16];
                 buf.copy_from_slice(&bytes);
@@ -107,7 +107,7 @@ impl RocksDbTeleologicalStore {
             batch.delete_cf(primary_cf, old);
         }
         batch.put_cf(primary_cf, c.id.as_bytes(), &payload);
-        batch.put_cf(index_cf, &index_key, c.id.as_bytes());
+        batch.put_cf(index_cf, index_key, c.id.as_bytes());
 
         self.db.write(batch).map_err(|e| {
             error!(
@@ -225,9 +225,9 @@ impl RocksDbTeleologicalStore {
         // Only delete the secondary index when it still points at this UUID.
         // Avoids clobbering a newer constellation that happens to share the
         // selector.
-        match self.db.get_cf(index_cf, &index_key) {
+        match self.db.get_cf(index_cf, index_key) {
             Ok(Some(bytes)) if bytes.len() == 16 && bytes == id_bytes => {
-                batch.delete_cf(index_cf, &index_key);
+                batch.delete_cf(index_cf, index_key);
             }
             Ok(_) => {
                 debug!(
@@ -266,7 +266,7 @@ impl RocksDbTeleologicalStore {
     ) -> CoreResult<Option<Uuid>> {
         let index_cf = self.cf_constellation_by_selector();
         let key = selector_index_key(selector);
-        match self.db.get_cf(index_cf, &key) {
+        match self.db.get_cf(index_cf, key) {
             Ok(Some(bytes)) => {
                 if bytes.len() != 16 {
                     return Err(CoreError::SerializationError(format!(

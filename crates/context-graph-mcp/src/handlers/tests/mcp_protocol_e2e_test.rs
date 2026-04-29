@@ -1806,11 +1806,52 @@ async fn test_e2e_graph_learning_policy_fsv() {
             .is_some(),
         "orphan memory must physically exist before missing-edge audit"
     );
+
+    let orphan_knn_before = edge_repo.get_embedder_edges(0, orphan_id).unwrap().len();
+    let before_no_knn = rocksdb_store.count_learning_events().await.unwrap();
+    let no_knn_neighbors = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(816)),
+            Some(json!({
+                "name": "get_memory_neighbors",
+                "arguments": {
+                    "memory_id": orphan_id.to_string(),
+                    "embedder_id": 0,
+                    "top_k": 3
+                }
+            })),
+        ))
+        .await;
+    let no_knn_result = no_knn_neighbors.result.expect("no KNN result");
+    assert_eq!(no_knn_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_no_knn
+    );
+    assert_eq!(
+        edge_repo.get_embedder_edges(0, orphan_id).unwrap().len(),
+        orphan_knn_before
+    );
+    println!(
+        "EDGE GET_MEMORY_NEIGHBORS_NO_EDGES before_events={} after_events={} before_knn={} after_knn={} orphan_exists={} isError={}",
+        before_no_knn,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        orphan_knn_before,
+        edge_repo.get_embedder_edges(0, orphan_id).unwrap().len(),
+        rocksdb_store
+            .get_content(orphan_id)
+            .await
+            .unwrap()
+            .is_some(),
+        no_knn_result["isError"]
+    );
+
     let before_missing_edge = rocksdb_store.count_learning_events().await.unwrap();
     let missing_edge = handlers
         .dispatch(make_request(
             "tools/call",
-            Some(JsonRpcId::Number(816)),
+            Some(JsonRpcId::Number(817)),
             Some(json!({
                 "name": "record_graph_learning_event",
                 "arguments": {
@@ -1846,7 +1887,7 @@ async fn test_e2e_graph_learning_policy_fsv() {
     let missing_scope = handlers
         .dispatch(make_request(
             "tools/call",
-            Some(JsonRpcId::Number(817)),
+            Some(JsonRpcId::Number(818)),
             Some(json!({
                 "name": "resolve_graph_learning_policy",
                 "arguments": {

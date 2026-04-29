@@ -97,8 +97,10 @@ impl RocksDbTeleologicalStore {
             .iter_all_typed_edges()
             .map_err(|e| CoreError::StorageError(format!("iter_all_typed_edges failed: {}", e)))?;
 
-        let mut summary = AnomalyDerivationSummary::default();
-        summary.edges_scanned = edges.len();
+        let mut summary = AnomalyDerivationSummary {
+            edges_scanned: edges.len(),
+            ..Default::default()
+        };
 
         for edge in edges.iter() {
             if summary.pairs_written >= cfg.max_pairs {

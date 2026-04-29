@@ -26,8 +26,8 @@ use super::layer_norm::layer_norm;
 /// * `seq_len`   - Real sequence length (post-truncation).
 /// * `weights`   - Loaded XLM-R weights (BertWeights flavour).
 /// * `config`    - Parsed `config.json` (includes `max_position_embeddings`,
-///                  which for BGE-M3 is 8194 — 8192 usable positions + the
-///                  `<pad>` + `<pad>+1` offset).
+///   which for BGE-M3 is 8194 — 8192 usable positions + the `<pad>` +
+///   `<pad>+1` offset).
 /// * `device`    - GPU device singleton.
 pub fn compute_embeddings(
     input_ids: &Tensor,

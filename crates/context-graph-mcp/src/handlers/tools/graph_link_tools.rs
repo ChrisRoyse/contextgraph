@@ -22,7 +22,6 @@
 //! - K-NN edges from embedder_edges column family
 //! - Typed edges from typed_edges column family
 
-use serde_json::json;
 use std::collections::{HashMap, HashSet, VecDeque};
 use tracing::{debug, error, info};
 use uuid::Uuid;
@@ -34,7 +33,9 @@ use context_graph_core::weights::get_effective_weight_profile;
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
-use super::graph_learning_tools::resolve_graph_learning_policy;
+use super::graph_learning_tools::{
+    resolve_graph_learning_policy, GraphLearningPolicyResolveParams,
+};
 use super::graph_link_dtos::{
     embedder_name, embedder_name_to_index, uses_asymmetric_similarity, AgreementSummary,
     EmbedderContribution, GetMemoryNeighborsRequest, GetMemoryNeighborsResponse,
@@ -152,25 +153,68 @@ impl Handlers {
         let candidates_evaluated = embedder_edges.len();
         let mut filtered_count = 0;
 
-        if candidates_evaluated == 0 {
-            // FAIL FAST: Report diagnostic info when no edges found
-            let repo_empty = edge_repo.is_empty().unwrap_or(true);
-            error!(
-                memory_id = %memory_uuid,
-                embedder_id = embedder_id,
-                repo_empty = repo_empty,
-                "get_memory_neighbors: ZERO K-NN edges found. \
-                 Repository empty={repo_empty}. If repo is empty, the startup \
-                 rebuild_all() failed or produced no edges. Check server startup logs."
-            );
-        }
-
         info!(
             candidates_evaluated = candidates_evaluated,
             embedder_id = embedder_id,
             "get_memory_neighbors: Retrieved {} K-NN edges from EdgeRepository",
             candidates_evaluated
         );
+
+        if candidates_evaluated == 0 {
+            let repo_empty = match edge_repo.is_empty() {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        memory_id = %memory_uuid,
+                        embedder_id = embedder_id,
+                        "get_memory_neighbors: failed to inspect EdgeRepository emptiness after zero K-NN edges"
+                    );
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "EdgeRepository returned zero K-NN edges and is_empty() failed: {}. NO FALLBACKS.",
+                            e
+                        ),
+                    );
+                }
+            };
+            let fp_count = match self.teleological_store.count().await {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        memory_id = %memory_uuid,
+                        embedder_id = embedder_id,
+                        "get_memory_neighbors: failed to inspect fingerprint count after zero K-NN edges"
+                    );
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "EdgeRepository returned zero K-NN edges and fingerprint count failed: {}. NO FALLBACKS.",
+                            e
+                        ),
+                    );
+                }
+            };
+            error!(
+                memory_id = %memory_uuid,
+                embedder_id = embedder_id,
+                embedder_name = %emb_name,
+                repo_empty = repo_empty,
+                total_fingerprints_in_store = fp_count,
+                "get_memory_neighbors: ZERO K-NN edges found; failing closed"
+            );
+            return self.tool_error(
+                id,
+                &format!(
+                    "No K-NN graph edges exist for memory {} in embedder {} ({}). \
+                     EdgeRepository empty={}, total_fingerprints_in_store={}. \
+                     Run or repair graph building; NO FALLBACKS.",
+                    memory_uuid, embedder_id, emb_name, repo_empty, fp_count
+                ),
+            );
+        }
 
         // Step 3: Filter and prepare neighbors
         let mut neighbors: Vec<NeighborResult> = embedder_edges
@@ -259,46 +303,6 @@ impl Handlers {
                 used_asymmetric: uses_asymmetric,
             },
         };
-
-        // Surface diagnostic info in tool response when edges are empty
-        if candidates_evaluated == 0 {
-            let repo_empty = edge_repo.is_empty().unwrap_or(true);
-            let fp_count = self.teleological_store.count().await.unwrap_or(0);
-            let diagnostic = json!({
-                "memory_id": memory_uuid.to_string(),
-                "embedder_id": embedder_id,
-                "embedder_name": emb_name,
-                "neighbors": [],
-                "count": 0,
-                "metadata": {
-                    "candidates_evaluated": 0,
-                    "filtered_by_similarity": 0,
-                    "used_asymmetric": uses_asymmetric,
-                },
-                "diagnostic": {
-                    "edge_repository_empty": repo_empty,
-                    "total_fingerprints_in_store": fp_count,
-                    "suggestion": "Use get_unified_neighbors instead — it works for recently stored \
-                                   memories without waiting for the background K-NN graph build.",
-                    "explanation": if repo_empty {
-                        format!(
-                            "Edge repository has NO K-NN edges. {} fingerprints exist in store. \
-                             K-NN edges are built in the background (60s batches, minimum 10 items). \
-                             Recently stored memories won't have edges until the next batch completes.",
-                            fp_count
-                        )
-                    } else {
-                        format!(
-                            "Edge repository has data but no edges for memory {} in embedder {}. \
-                             This memory was likely stored recently and hasn't been included in the \
-                             K-NN graph build yet. Use get_unified_neighbors for immediate results.",
-                            memory_uuid, embedder_id
-                        )
-                    },
-                },
-            });
-            return self.tool_result(id, diagnostic);
-        }
 
         match serde_json::to_value(&response) {
             Ok(v) => self.tool_result(id, v),
@@ -1075,13 +1079,15 @@ impl Handlers {
             };
             let policy = match resolve_graph_learning_policy(
                 rocksdb_store,
-                Some(memory_uuid),
-                &policy_request.policy_scope,
-                weights,
-                policy_request.min_evidence,
-                policy_request.max_scan,
-                policy_request.learning_rate,
-                policy_request.include_evidence,
+                GraphLearningPolicyResolveParams {
+                    source_memory_id: Some(memory_uuid),
+                    policy_scope: policy_request.policy_scope.clone(),
+                    base_weights: weights,
+                    min_evidence: policy_request.min_evidence,
+                    max_scan: policy_request.max_scan,
+                    learning_rate: policy_request.learning_rate,
+                    include_evidence: policy_request.include_evidence,
+                },
             )
             .await
             {

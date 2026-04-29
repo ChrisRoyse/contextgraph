@@ -20,9 +20,9 @@
 //! - E2, E3, E4, E5 (cause), E10 (paraphrase), E11:  smaller, zero-padded to 1024D on the right
 //! - E7:                        1536D, truncated to the first 1024 entries
 //! - E6, E13:                   sparse vocabulary vectors, represented as zeros in the
-//!                              reference frame (they do not live in a dense 1024-D space)
+//!   reference frame (they do not live in a dense 1024-D space)
 //! - E12:                       token-level; use the mean over tokens zero-padded to 1024D,
-//!                              or zeros when there are no tokens
+//!   or zeros when there are no tokens
 //!
 //! This is a deliberate simplification per §6 of the training-data export plan.
 //! The 1024-D reference dimension captures the dominant dense embeddings; E6,
@@ -378,7 +378,7 @@ fn jacobi_eigen_13(
     mat: [[f64; NUM_EMBEDDERS]; NUM_EMBEDDERS],
     k: usize,
 ) -> Result<(Vec<f64>, Vec<Vec<f32>>), TuckerError> {
-    assert!(k >= 1 && k <= NUM_EMBEDDERS);
+    assert!((1..=NUM_EMBEDDERS).contains(&k));
 
     let mut a = mat;
     // Eigenvectors as columns of v (13 x 13); initialize to identity.

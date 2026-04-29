@@ -1103,9 +1103,7 @@ fn parse_learning_signal_id(raw: &str) -> Result<LearningSignalId, String> {
 
 fn parse_learning_signal_ids(raw: Option<&[String]>) -> Result<Vec<LearningSignalId>, String> {
     let selected = match raw {
-        Some(values) if values.is_empty() => {
-            return Err("signalIds must not be empty when provided".into())
-        }
+        Some([]) => return Err("signalIds must not be empty when provided".into()),
         Some(values) => values
             .iter()
             .map(|value| parse_learning_signal_id(value.as_str()))
