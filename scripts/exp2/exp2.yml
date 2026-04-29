@@ -1,0 +1,68 @@
+run_id: exp2_v1_20260429
+operator: chris_royse
+output_dir: artefacts/exp2
+
+corpus:
+  manifest: artefacts/exp2/corpus_manifest_v1.json
+  expected_count: 800
+  expected_strata: 8
+
+embedders:
+  use_e11: true
+  panel_size: 14
+  asymmetric_use: ["E5_cause", "E8_source", "E10_paraphrase"]
+
+pca:
+  fit_corpus: artefacts/exp2/pca_training_corpus_v1.json
+  fit_corpus_count: 1000
+  target_dim: 32
+  variance_threshold: 0.85
+
+infonce:
+  critic_hidden_dim: 64
+  critic_depth: 2
+  optimizer: adamw
+  lr: 3e-4
+  weight_decay: 0.01
+  beta1: 0.9
+  beta2: 0.98
+  batch_size: 128
+  train_steps: 5000
+  warmup_steps: 200
+  train_val_split: 0.8
+  early_stopping_patience: 500
+  overfit_gap_threshold_nats: 0.1
+  device: cuda
+  dtype: float32
+
+ksg:
+  k: 5
+  k_sweep_pilot: [3, 5, 10]
+  distance_metric: chebyshev
+  implementation: sklearn_direct
+
+bootstrap:
+  n_resamples: 10000
+  seed: 42
+  method: percentile
+  confidence: 0.95
+
+cross_validation:
+  agreement_threshold_nats: 0.15
+  min_agreement_rate: 0.80
+  on_failure: fail_with_diagnostics
+
+effective_rank:
+  primary_method: redundancy_adjusted
+  schur_threshold: 0.05
+  spectrum_normalization: frobenius
+
+run:
+  pilot_pairs: ["E1_E1", "E1_random", "E1_E1_noisy", "E1_E10"]
+  parallel_pair_workers: 1
+  enable_replay_check: true
+  replay_tolerance: 1e-5
+  log_level: INFO
+  random_seed: 42
+  mcp_binary: target/release/context-graph-mcp
+  models_path: models

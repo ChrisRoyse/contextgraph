@@ -133,6 +133,7 @@ perf.data.old
 
 # Runtime data
 contextgraph_data/
+artefacts/
 
 # RocksDB runtime data
 data/
