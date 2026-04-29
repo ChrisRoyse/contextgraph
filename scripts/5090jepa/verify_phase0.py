@@ -757,13 +757,29 @@ def verify_phase0(evidence_path: Path | None = None) -> dict[str, Any]:
         "edge_case_audit": {
             "counter_world": {
                 "empty_input": {"before_state": before_snapshot["configs/dynamicjepa/verification/counter_world_edge_empty_input.jsonl"], "expected_storage_delta": "all DynamicJEPA CFs unchanged except FSV audit row once Phase 10 exists", "after_state": after_snapshot["configs/dynamicjepa/verification/counter_world_edge_empty_input.jsonl"]},
-                "invalid_action": counter_fixtures["edge_invalid_action_expected_failure"],
-                "max_panel": counter_fixtures["edge_max_panel_expected_failure"],
+                "invalid_action": {
+                    "before_state": before_snapshot["configs/dynamicjepa/verification/counter_world_edge_invalid_action.jsonl"],
+                    "decoded_edge_contract": counter_fixtures["edge_invalid_action_expected_failure"],
+                    "after_state": after_snapshot["configs/dynamicjepa/verification/counter_world_edge_invalid_action.jsonl"],
+                },
+                "max_panel": {
+                    "before_state": before_snapshot["configs/dynamicjepa/verification/counter_world_edge_max_panel.jsonl"],
+                    "decoded_edge_contract": counter_fixtures["edge_max_panel_expected_failure"],
+                    "after_state": after_snapshot["configs/dynamicjepa/verification/counter_world_edge_max_panel.jsonl"],
+                },
             },
             "gridworld_5x5": {
                 "empty_input": {"before_state": before_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_empty.jsonl"], "expected_storage_delta": "all DynamicJEPA CFs unchanged except FSV audit row once Phase 10 exists", "after_state": after_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_empty.jsonl"]},
-                "invalid_action": grid_fixtures["edge_invalid_action_expected_failure"],
-                "oob_state": grid_fixtures["edge_oob_state_expected_failure"],
+                "invalid_action": {
+                    "before_state": before_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_invalid_action.jsonl"],
+                    "decoded_edge_contract": grid_fixtures["edge_invalid_action_expected_failure"],
+                    "after_state": after_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_invalid_action.jsonl"],
+                },
+                "oob_state": {
+                    "before_state": before_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_oob_state.jsonl"],
+                    "decoded_edge_contract": grid_fixtures["edge_oob_state_expected_failure"],
+                    "after_state": after_snapshot["configs/dynamicjepa/verification/gridworld_5x5_edge_oob_state.jsonl"],
+                },
             },
         },
         "dynamicjepa_runtime_claim": "none; Phase 0 only locks contracts and fixtures",
