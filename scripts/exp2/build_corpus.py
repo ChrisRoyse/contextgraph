@@ -251,7 +251,7 @@ def deduplicate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def build_sources(args: argparse.Namespace, out: Path) -> None:
+def build_sources(args: argparse.Namespace, out: Path, active_strata: list[str]) -> None:
     strata_dir = repo_path("scripts/exp2/strata")
     strata_dir.mkdir(parents=True, exist_ok=True)
     builders = {
@@ -265,7 +265,7 @@ def build_sources(args: argparse.Namespace, out: Path) -> None:
         "S8_multilingual": collect_multilingual,
     }
     global_hashes: set[str] = set()
-    for name in STRATA:
+    for name in active_strata:
         records = deduplicate(builders[name]())
         records = [r for r in records if r["text_sha256"] not in global_hashes]
         global_hashes.update(r["text_sha256"] for r in records)
@@ -274,20 +274,20 @@ def build_sources(args: argparse.Namespace, out: Path) -> None:
         write_json(strata_dir / f"{name}.json", records)
 
 
-def sample_sources(seed: int) -> None:
+def sample_sources(seed: int, active_strata: list[str]) -> None:
     strata_dir = repo_path("scripts/exp2/strata")
-    for name in STRATA:
+    for name in active_strata:
         records = read_json(strata_dir / f"{name}.json")
         rng = random.Random(seed)
         sampled = rng.sample(records, SAMPLE_PER_STRATUM)
         write_json(strata_dir / f"{name}_sampled.json", sampled)
 
 
-def merge_manifest(cfg: dict[str, Any]) -> None:
+def merge_manifest(cfg: dict[str, Any], active_strata: list[str], excluded: list[str]) -> None:
     strata_dir = repo_path("scripts/exp2/strata")
     inputs = []
     seen: set[str] = set()
-    for name in STRATA:
+    for name in active_strata:
         records = read_json(strata_dir / f"{name}_sampled.json")
         if len(records) != SAMPLE_PER_STRATUM:
             raise Exp2Error(f"{name}_sampled has {len(records)} rows, expected 100")
@@ -302,7 +302,8 @@ def merge_manifest(cfg: dict[str, Any]) -> None:
         "creation_timestamp": utc_now(),
         "creator_attribution": cfg["operator"],
         "total_inputs": len(inputs),
-        "strata": {name: {"count": SAMPLE_PER_STRATUM, "selection_seed": 42} for name in STRATA},
+        "strata": {name: {"count": SAMPLE_PER_STRATUM, "selection_seed": 42} for name in active_strata},
+        "deviations": {"excluded_strata": excluded} if excluded else {},
         "inputs": inputs,
         "embedder_panel": [{"slot": f"E{i+1}", "name": label} for i, label in enumerate(EMBEDDER_LABELS)],
     }
@@ -312,11 +313,11 @@ def merge_manifest(cfg: dict[str, Any]) -> None:
     path.with_suffix(path.suffix + ".sha256").write_text(manifest["manifest_sha256"] + "\n", encoding="utf-8")
 
 
-def build_pca_training(cfg: dict[str, Any], seed: int) -> None:
+def build_pca_training(cfg: dict[str, Any], seed: int, active_strata: list[str]) -> None:
     strata_dir = repo_path("scripts/exp2/strata")
-    audit_hashes = {r["text_sha256"] for name in STRATA for r in read_json(strata_dir / f"{name}_sampled.json")}
+    audit_hashes = {r["text_sha256"] for name in active_strata for r in read_json(strata_dir / f"{name}_sampled.json")}
     pool = []
-    for name in STRATA:
+    for name in active_strata:
         candidates = [r for r in read_json(strata_dir / f"{name}.json") if r["text_sha256"] not in audit_hashes]
         if len(candidates) < 125:
             raise Exp2Error(f"{name}: only {len(candidates)} PCA candidates distinct from audit sample")
@@ -340,18 +341,29 @@ def main() -> None:
     parser.add_argument("--config", default="scripts/exp2/exp2.yml")
     parser.add_argument("--phase", choices=["sources", "sample", "manifest", "pca", "all"], default="all")
     parser.add_argument("--learning-events-json", type=Path)
+    parser.add_argument(
+        "--exclude-strata",
+        nargs="+",
+        default=[],
+        choices=STRATA,
+        help="Audited methodology deviation: drop named strata. Each exclusion is "
+        "logged in the manifest's deviations field so the audit chain captures it.",
+    )
     args = parser.parse_args()
     cfg = load_config(args.config)
     out = output_dir(cfg)
     setup_logging(out)
+    active_strata = [s for s in STRATA if s not in args.exclude_strata]
+    if not active_strata:
+        raise Exp2Error("No strata remain after --exclude-strata; refusing to build empty corpus")
     if args.phase in {"sources", "all"}:
-        build_sources(args, out)
+        build_sources(args, out, active_strata)
     if args.phase in {"sample", "all"}:
-        sample_sources(seed=42)
+        sample_sources(seed=42, active_strata=active_strata)
     if args.phase in {"manifest", "all"}:
-        merge_manifest(cfg)
+        merge_manifest(cfg, active_strata=active_strata, excluded=args.exclude_strata)
     if args.phase in {"pca", "all"}:
-        build_pca_training(cfg, seed=43)
+        build_pca_training(cfg, seed=43, active_strata=active_strata)
 
 
 if __name__ == "__main__":

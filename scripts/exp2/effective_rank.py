@@ -33,6 +33,24 @@ def n_eff_redundancy_adjusted(mi_matrix: np.ndarray, entropy: np.ndarray) -> flo
     return total
 
 
+def backfill_pair_redundancy(rows: dict[str, dict], entropy: np.ndarray, out_dir: Path) -> None:
+    """Per spec §13 each pair row carries redundancy = I / min(H_j, H_k).
+
+    run_estimators.run_pair writes redundancy=None because entropies aren't yet known
+    at row-write time. Once estimate_entropies() has produced per-embedder H, we fill
+    the value in and rewrite the row in place. Idempotent.
+    """
+    for i, j in itertools.combinations(range(14), 2):
+        key = f"E{i + 1}_E{j + 1}"
+        row = rows[key]
+        denom = min(float(entropy[i]), float(entropy[j]))
+        if denom <= 0:
+            raise Exp2Error(f"Non-positive entropy denominator for pair {key}: {denom}")
+        mi = float(row["infonce_estimate_nats"])
+        row["redundancy"] = min(1.0, max(0.0, mi / denom))
+        write_json(out_dir / "pair_results" / f"{key}.json", row)
+
+
 def n_eff_spectrum_entropy(mi_matrix: np.ndarray) -> tuple[float, np.ndarray]:
     norm = np.linalg.norm(mi_matrix, ord="fro")
     if norm <= 0:
@@ -120,6 +138,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="scripts/exp2/exp2.yml")
     parser.add_argument("--projected", default="artefacts/exp2/projected.npz")
+    parser.add_argument("--audit-chain", help="Path to phase audit chain JSON to append to.")
     args = parser.parse_args()
     cfg = load_config(args.config)
     out = output_dir(cfg)
@@ -128,6 +147,7 @@ def main() -> None:
     arrays = {key: np.asarray(projected[key], dtype=np.float32) for key in EMBEDDER_KEYS}
     rows = load_pair_rows(out)
     entropy = estimate_entropies(cfg, arrays, out)
+    backfill_pair_redundancy(rows, entropy, out)
     mi = mi_matrix_from_rows(rows, "infonce")
     for i in range(14):
         mi[i, i] = entropy[i]
@@ -153,6 +173,18 @@ def main() -> None:
     }
     write_json(out / "n_eff_summary.json", summary)
     log.info("N_eff redundancy-adjusted %.6f [%.6f, %.6f]", primary, low, high)
+
+    if args.audit_chain:
+        from scripts.exp2.audit_chain import AuditChain
+        from scripts.exp2.common import sha256_file as _sha256_file
+
+        chain = AuditChain(cfg["run_id"], args.audit_chain, cfg["run"]["random_seed"])
+        chain.add_event("n_eff_complete", {"primary": primary, "ci_low": low, "ci_high": high})
+        chain.add_artefact(out / "n_eff_summary.json", "n_eff_summary", created_by="T-021")
+        chain.add_artefact(out / "entropy_per_embedder.json", "entropy_per_embedder", created_by="T-019")
+        cfg_full = repo_path(args.config)
+        hp_sha = _sha256_file(cfg_full) if cfg_full.exists() else None
+        chain.finalize(hp_sha)
 
 
 if __name__ == "__main__":

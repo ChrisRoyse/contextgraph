@@ -92,15 +92,21 @@ def _truth_mi_nats(rho: float, dim: int) -> float:
 # ---------------------------------------------------------------------------
 
 
-def test_b4_production_ksg_mi_fails_at_dim_32():
-    """Documents BLOCKER B-4: production ksg_mi raises at dim>=20 on sklearn 1.8."""
+def test_b4_production_ksg_mi_runs_at_dim_32():
+    """B-4 fix verification: production ksg_mi must complete at dim=32 on sklearn>=1.3.
+
+    Before the fix this raised TypeError from sklearn's _radius_neighbors.pyx because
+    NearestNeighbors.radius_neighbors no longer accepts array radii at high dim.
+    The fix in ksg.py switches to KDTree.query_radius (which still accepts array radii).
+    """
     u, v, _ = gaussian_pair(n=200, dim=32, rho=0.5, seed=0)
-    with pytest.raises((TypeError, Exp2Error)):
-        ksg_mi(u, v, k=5)
+    estimate = ksg_mi(u, v, k=5)
+    assert math.isfinite(estimate)
+    assert estimate >= 0.0
 
 
 def test_b4_production_ksg_mi_works_at_dim_1():
-    """Confirms production ksg_mi only works at low dim (existing test regime)."""
+    """Confirms production ksg_mi still works at low dim after the B-4 fix."""
     u, v, truth = gaussian_pair(n=400, dim=1, rho=0.5, seed=0)
     estimate = ksg_mi(u, v, k=5)
     assert math.isfinite(estimate)
@@ -284,3 +290,118 @@ def test_ksg_raises_on_invalid_k_dim_1():
         ksg_mi(u, v, k=0)
     with pytest.raises(Exp2Error, match=r"k must satisfy"):
         ksg_mi(u, v, k=10)
+
+
+# ---------------------------------------------------------------------------
+# R3 verification — provenance helper contracts (no-op on missing artefacts).
+# ---------------------------------------------------------------------------
+
+
+def test_run_estimators_provenance_helper_handles_missing_artefacts(tmp_path):
+    """load_provenance must return None for upstream artefacts that don't exist yet,
+    not crash. Per spec §13 the AuditChain flags dangling references at finalize().
+    """
+    from scripts.exp2.run_estimators import EMBEDDER_WEIGHT_FILES, embedder_weight_sha256, load_provenance
+
+    # tmp_path has no corpus_manifest, no verification_log, no pca_models.
+    fake_pca_models = tmp_path / "pca_models.npz"  # missing
+    prov = load_provenance(
+        cfg_path="scripts/exp2/exp2.yml",
+        out_dir=tmp_path,
+        pca_models_path=fake_pca_models,
+    )
+    assert prov["corpus_manifest_sha256"] is None
+    assert prov["weight_hashes"] == {}
+    assert prov["pca_hashes"] == {}
+    # exp2.yml exists in repo so hyperparams_sha256 should be set.
+    assert prov["hyperparams_sha256"] is not None
+    assert len(prov["hyperparams_sha256"]) == 64
+    # Embedders without a learned weight (E2/E3/E4/E9) always return None.
+    for key in ("e2_temporal_recent", "e3_temporal_periodic", "e4_temporal_positional", "e9_hdc"):
+        assert EMBEDDER_WEIGHT_FILES[key] is None
+        assert embedder_weight_sha256(key, prov["weight_hashes"]) is None
+    # All 14 embedder keys must be in the mapping (no silent drift).
+    expected = {
+        "e1_semantic", "e2_temporal_recent", "e3_temporal_periodic", "e4_temporal_positional",
+        "e5_causal_cause", "e6_sparse_top_k", "e7_code", "e8_graph_source",
+        "e9_hdc", "e10_paraphrase", "e11_entity", "e12_token_pooled",
+        "e13_splade_top_k", "e14_bge_m3_dense",
+    }
+    assert set(EMBEDDER_WEIGHT_FILES.keys()) == expected
+
+
+def test_run_estimators_provenance_helper_pulls_weight_hashes_from_log(tmp_path):
+    """When verification_log.json contains weight_hashes, embedder_weight_sha256
+    must surface the right hash for each embedder via EMBEDDER_WEIGHT_FILES mapping.
+    """
+    from scripts.exp2.run_estimators import embedder_weight_sha256, load_provenance
+
+    log_path = tmp_path / "verification_log.json"
+    fake_hashes = {
+        "models/semantic/model.safetensors": "a" * 64,
+        "models/causal/model.safetensors": "b" * 64,
+        "models/code-1536/model.safetensors.index.json": "c" * 64,
+    }
+    log_path.write_text(json.dumps({"weight_hashes": fake_hashes}))
+    fake_pca_models = tmp_path / "pca_models.npz"  # missing
+    prov = load_provenance("scripts/exp2/exp2.yml", tmp_path, fake_pca_models)
+    assert embedder_weight_sha256("e1_semantic", prov["weight_hashes"]) == "a" * 64
+    assert embedder_weight_sha256("e5_causal_cause", prov["weight_hashes"]) == "b" * 64
+    assert embedder_weight_sha256("e7_code", prov["weight_hashes"]) == "c" * 64
+    # An embedder with a weight file but no hash recorded yet returns None.
+    assert embedder_weight_sha256("e8_graph_source", prov["weight_hashes"]) is None
+    # An embedder without a weight file (E9) always returns None.
+    assert embedder_weight_sha256("e9_hdc", prov["weight_hashes"]) is None
+
+
+# ---------------------------------------------------------------------------
+# R2 verification — orchestrator finalizes master audit chain even on partial run.
+# ---------------------------------------------------------------------------
+
+
+def test_orchestrator_finalize_master_audit_chain_on_partial_run():
+    """Per Constitution C7 the master audit_chain.json must always exist after
+    `run_exp2.py` runs, even if only verify_environment has produced a phase
+    chain. Missing artefacts surface as `artefact_missing` events, never crash.
+
+    Note: AuditChain.add_artefact uses repo_path(".").relative_to() so artefacts
+    must live under the repo. We isolate a per-test workspace under
+    artefacts/exp2/.test_master_chain_<short>/ and clean up afterwards.
+    """
+    import shutil
+    import uuid
+
+    from scripts.exp2.run_exp2 import finalize_master_audit_chain
+
+    workspace = ARTEFACTS_DIR / f".test_master_chain_{uuid.uuid4().hex[:8]}"
+    workspace.mkdir(parents=True, exist_ok=False)
+    try:
+        cfg_text = (
+            f"run_id: exp2_test_partial\n"
+            f"operator: pytest\n"
+            # Path must be relative to repo for output_dir() to keep it under repo.
+            f"output_dir: {workspace.relative_to(REPO_ROOT)}\n"
+            f"run:\n  random_seed: 42\n"
+        )
+        cfg_path = workspace / "exp2_partial.yml"
+        cfg_path.write_text(cfg_text)
+        # Seed a phase chain file. Master chain hashes whatever is here.
+        (workspace / "audit_chain_environment.json").write_text(
+            json.dumps({"phase": "environment"})
+        )
+
+        master = finalize_master_audit_chain(str(cfg_path))
+        assert master.exists()
+        payload = json.loads(master.read_text())
+        assert "chain_sha256" in payload
+        assert len(payload["chain_sha256"]) == 64
+        labels = {a["label"] for a in payload["artefacts"]}
+        assert "phase_chain:environment" in labels
+        # Missing phases produce events, not crashes.
+        event_types = {e["event_type"] for e in payload["events"]}
+        # estimators + n_eff phase chains absent in this stub.
+        assert "phase_chain_missing" in event_types
+        # Most headline artefacts also absent.
+        assert "artefact_missing" in event_types
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)

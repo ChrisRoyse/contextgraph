@@ -69,8 +69,28 @@ def main() -> None:
         total = int(total_raw.replace(" MiB", ""))
         free = int(free_raw.replace(" MiB", ""))
         gpu_rows.append({"name": name, "total_mib": total, "free_mib": free})
-    ok_gpu = any(row["name"].endswith("RTX 5090") and row["total_mib"] >= 30000 and row["free_mib"] >= 30000 for row in gpu_rows)
-    check("cuda_gpu_rtx5090_30gb_free", ok_gpu, gpu_rows)
+    # WSL2 quirk: nvidia-smi can report stale "ghost" memory from killed CUDA contexts
+    # that the runtime has actually freed. torch.cuda.mem_get_info reads the live
+    # allocator state and is what extraction will observe. Pass if either source
+    # confirms ≥30 GiB free on an RTX 5090.
+    try:
+        import torch
+        torch_rows = []
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                free_b, total_b = torch.cuda.mem_get_info(i)
+                torch_rows.append({
+                    "device_index": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "total_mib": total_b // (1024 * 1024),
+                    "free_mib": free_b // (1024 * 1024),
+                })
+    except Exception as exc:
+        raise Exp2Error(f"torch CUDA probe failed: {exc}") from exc
+    ok_smi = any(row["name"].endswith("RTX 5090") and row["total_mib"] >= 30000 and row["free_mib"] >= 30000 for row in gpu_rows)
+    ok_torch = any(row["name"].endswith("RTX 5090") and row["total_mib"] >= 30000 and row["free_mib"] >= 30000 for row in torch_rows)
+    ok_gpu = ok_smi or ok_torch
+    check("cuda_gpu_rtx5090_30gb_free", ok_gpu, {"nvidia_smi": gpu_rows, "torch_runtime": torch_rows, "ok_smi": ok_smi, "ok_torch": ok_torch})
 
     binary = repo_path(cfg["run"]["mcp_binary"])
     check("mcp_binary_exists", binary.exists(), str(binary))

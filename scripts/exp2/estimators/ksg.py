@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 from scipy.special import digamma
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import KDTree, NearestNeighbors
 
 from scripts.exp2.common import Exp2Error
 
@@ -38,11 +38,15 @@ def ksg_mi(u: np.ndarray, v: np.ndarray, k: int = 5, jitter_seed: int | None = N
     joint = np.hstack([u, v])
     nn_joint = NearestNeighbors(metric="chebyshev", n_neighbors=k + 1).fit(joint)
     distances, _ = nn_joint.kneighbors(joint)
+    # KSG-1 uses strict-less-than: shrink eps by one ULP so query_radius (<=) excludes the kth neighbour.
     eps = np.nextafter(distances[:, k], 0.0)
-    nn_u = NearestNeighbors(metric="chebyshev").fit(u)
-    nn_v = NearestNeighbors(metric="chebyshev").fit(v)
-    n_u = np.array([len(x) - 1 for x in nn_u.radius_neighbors(u, radius=eps, return_distance=False)])
-    n_v = np.array([len(x) - 1 for x in nn_v.radius_neighbors(v, radius=eps, return_distance=False)])
+    # KDTree.query_radius accepts an array of per-query radii under sklearn>=1.3 where
+    # NearestNeighbors.radius_neighbors does not (TypeError on the cython path at dim>=20).
+    # `count_only=True` returns the count of points within r including self; subtract 1 for self.
+    kdt_u = KDTree(u, metric="chebyshev")
+    kdt_v = KDTree(v, metric="chebyshev")
+    n_u = np.maximum(kdt_u.query_radius(u, r=eps, count_only=True) - 1, 0)
+    n_v = np.maximum(kdt_v.query_radius(v, r=eps, count_only=True) - 1, 0)
     value = float(digamma(k) + digamma(n) - np.mean(digamma(n_u + 1) + digamma(n_v + 1)))
     if not math.isfinite(value):
         raise Exp2Error("KSG MI produced non-finite value")
