@@ -31,11 +31,15 @@
 //!
 //! Run explicitly with: `cargo test -p context-graph-mcp mcp_protocol_e2e --features llm`
 
+#[cfg(feature = "llm")]
 use serde_json::json;
+#[cfg(feature = "llm")]
 use std::collections::HashSet;
 
+#[cfg(feature = "llm")]
 use crate::protocol::JsonRpcId;
 
+#[cfg(feature = "llm")]
 use super::{extract_mcp_tool_data, make_request};
 
 #[cfg(feature = "llm")]

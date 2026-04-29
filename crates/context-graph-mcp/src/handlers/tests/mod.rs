@@ -42,6 +42,8 @@ use tempfile::TempDir;
 use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
+#[cfg(not(feature = "llm"))]
+use context_graph_storage::{BackgroundGraphBuilder, EdgeRepository, GraphBuilderConfig};
 
 // GRAPH-AGENT: Import stub for testing (enabled via test-utils feature in dev-dependencies)
 #[cfg(feature = "llm")]
@@ -170,7 +172,6 @@ use crate::protocol::{JsonRpcId, JsonRpcRequest};
 // Tests that WRITE to storage (store_memory, merge, delete, forget, etc.) MUST
 // continue to use `create_test_handlers()` for isolation.
 
-#[cfg(feature = "llm")]
 static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceCell::const_new();
 
 /// Get a shared read-only Handlers instance for protocol-only tests.
@@ -191,7 +192,6 @@ static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceC
 /// - Tests that write memories (`store_memory`, `merge_memories`, etc.)
 /// - Tests that inspect RocksDB state after writes
 /// - Tests that use `create_test_handlers_with_real_embeddings_store_access`
-#[cfg(feature = "llm")]
 pub(crate) async fn shared_readonly_handlers() -> Arc<Handlers> {
     let (handlers, _tempdir) = SHARED_READONLY_HANDLERS
         .get_or_init(|| async {
@@ -268,29 +268,13 @@ pub(crate) fn extract_mcp_tool_data(result: &serde_json::Value) -> serde_json::V
 /// # Panics
 ///
 /// Panics if CUDA GPU not available, models not loaded, or RocksDB fails to open.
-#[cfg(feature = "llm")]
 pub(crate) async fn create_test_handlers() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb");
 
     let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
         .expect("Failed to open RocksDbTeleologicalStore in test");
-
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
-    let multi_array_provider = get_warm_loaded_provider().await;
-    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
-
-    // GRAPH-AGENT: Create stub service with unloaded LLM
-    // Calls to graph discovery methods will return Err(LlmNotInitialized)
-    let graph_discovery_service = create_stub_graph_discovery_service();
-
-    let handlers = Handlers::with_defaults(
-        teleological_store,
-        multi_array_provider,
-        layer_status_provider,
-        graph_discovery_service,
-    )
-    .expect("Default cluster manager should always succeed in tests");
+    let (handlers, _) = create_handlers_from_store(rocksdb_store).await;
 
     (handlers, tempdir)
 }
@@ -307,7 +291,6 @@ pub(crate) async fn create_test_handlers() -> (Handlers, TempDir) {
 ///
 /// `(Handlers, TempDir)` - The Handlers instance and TempDir that owns the database.
 /// The TempDir MUST be kept alive for the duration of the test.
-#[cfg(feature = "llm")]
 pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB FSV test");
     let db_path = tempdir.path().join("test_rocksdb_fsv_real_embeddings");
@@ -316,27 +299,7 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
     let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
         .expect("Failed to open RocksDbTeleologicalStore in FSV test with real embeddings");
 
-    // Note: EmbedderIndexRegistry is initialized in constructor
-
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
-
-    // TASK-WARM-LOAD: Use WARM-LOADED embedding provider from global cache
-    // RTX 5090 32GB - models loaded ONCE, shared across all tests
-    // This prevents CUDA OOM when tests run in parallel
-    let multi_array_provider = get_warm_loaded_provider().await;
-
-    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
-
-    // GRAPH-AGENT: Create stub service with unloaded LLM
-    let graph_discovery_service = create_stub_graph_discovery_service();
-
-    let handlers = Handlers::with_defaults(
-        teleological_store,
-        multi_array_provider,
-        layer_status_provider,
-        graph_discovery_service,
-    )
-    .expect("Default cluster manager should always succeed in tests");
+    let (handlers, _) = create_handlers_from_store(rocksdb_store).await;
 
     (handlers, tempdir)
 }
@@ -364,28 +327,61 @@ pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
     let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
         .expect("Failed to open RocksDbTeleologicalStore in FSV test");
 
-    // Note: EmbedderIndexRegistry is initialized in constructor
+    let (handlers, teleological_store) = create_handlers_from_store(rocksdb_store).await;
+
+    (handlers, teleological_store, tempdir)
+}
+
+async fn create_handlers_from_store(
+    rocksdb_store: RocksDbTeleologicalStore,
+) -> (Handlers, Arc<dyn TeleologicalMemoryStore>) {
+    #[cfg(not(feature = "llm"))]
+    let db_arc = rocksdb_store.db_arc();
 
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
-    // TASK-WARM-LOAD: Use WARM-LOADED embedding provider from global cache
-    // RTX 5090 32GB - models loaded ONCE, shared across all tests
+    // TASK-WARM-LOAD: Use WARM-LOADED embedding provider from global cache.
+    // RTX 5090 32GB - models loaded ONCE, shared across all tests.
     let multi_array_provider = get_warm_loaded_provider().await;
-
     let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
-    // GRAPH-AGENT: Create stub service with unloaded LLM
-    let graph_discovery_service = create_stub_graph_discovery_service();
+    #[cfg(feature = "llm")]
+    let handlers = {
+        // GRAPH-AGENT: Create stub service with unloaded LLM.
+        // Calls to graph discovery methods will return Err(LlmNotInitialized).
+        let graph_discovery_service = create_stub_graph_discovery_service();
 
-    let handlers = Handlers::with_defaults(
-        Arc::clone(&teleological_store),
-        multi_array_provider,
-        layer_status_provider,
-        graph_discovery_service,
-    )
-    .expect("Default cluster manager should always succeed in tests");
+        Handlers::with_defaults(
+            Arc::clone(&teleological_store),
+            multi_array_provider,
+            layer_status_provider,
+            graph_discovery_service,
+        )
+        .expect("Default cluster manager should always succeed in tests")
+    };
 
-    (handlers, teleological_store, tempdir)
+    #[cfg(not(feature = "llm"))]
+    let handlers = {
+        let edge_repository = EdgeRepository::new(db_arc);
+        let graph_builder = Arc::new(BackgroundGraphBuilder::new(
+            edge_repository.clone(),
+            Arc::clone(&teleological_store),
+            Arc::clone(&multi_array_provider),
+            GraphBuilderConfig::default(),
+        ));
+
+        Handlers::without_llm(
+            Arc::clone(&teleological_store),
+            multi_array_provider,
+            layer_status_provider,
+            edge_repository,
+            graph_builder,
+            Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider),
+        )
+        .expect("Default cluster manager should always succeed in no-LLM tests")
+    };
+
+    (handlers, teleological_store)
 }
 
 /// Resolve models directory for tests.

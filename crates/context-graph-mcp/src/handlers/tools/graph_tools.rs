@@ -21,7 +21,9 @@
 
 use serde_json::json;
 use std::collections::HashSet;
-use tracing::{debug, error, info, warn};
+#[cfg(feature = "llm")]
+use tracing::warn;
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::graph::asymmetric::{

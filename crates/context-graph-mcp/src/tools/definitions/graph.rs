@@ -15,7 +15,7 @@ use serde_json::json;
 /// Without `llm` feature: 2 tools (search_connections, get_graph_path).
 /// With `llm` feature: 4 tools (+ discover_graph_relationships, validate_graph_link).
 pub fn definitions() -> Vec<ToolDefinition> {
-    let mut tools = vec![
+    let tools = vec![
         // search_connections - Find connected memories
         ToolDefinition::new(
             "search_connections",
@@ -119,6 +119,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
 
     #[cfg(feature = "llm")]
     {
+        let mut tools = tools;
+
         // discover_graph_relationships - LLM-based relationship discovery
         tools.push(ToolDefinition::new(
             "discover_graph_relationships",
@@ -211,8 +213,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ));
+        tools
     }
 
+    #[cfg(not(feature = "llm"))]
     tools
 }
 

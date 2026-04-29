@@ -6,163 +6,116 @@
 - `crates/context-graph-mcp/src/main.rs`
 - `crates/context-graph-mcp/src/tools/definitions/mod.rs`
 - `crates/context-graph-storage/src/column_families.rs`
+- `crates/context-graph-storage/src/teleological/column_families.rs`
 - `crates/context-graph-core/src/types/fingerprint/semantic/constants.rs`
 - `scripts/v4_2/*.py`
 
 ## 1. Summary
-Context Graph is a Rust workspace that stores memory records as multi-embedding fingerprints, persists them in RocksDB, and exposes MCP JSON-RPC tools plus a local CLI. Current source defines 14 production embedder slots, 73 RocksDB column families, and 100 MCP tools with the `llm` feature (96 without it). Python CAMD-DPO scripts under `scripts/v4_2` call the daemon and optional LMDB sidecars.
+Context Graph is a Rust workspace that stores memories as 14-embedder fingerprints in RocksDB and exposes MCP JSON-RPC tools plus a local CLI. Source defines 14 production content embedders (E1-E14), 7 learner-state slots (E15-E21), 73 RocksDB column families, and **108 MCP tools with `llm` (104 without)**. Python scripts under `scripts/v4_2` mine CAMD-DPO pairs, run FSVs, and execute Shakespeare empirical cycles.
 
 ## 2. Architecture
 | Process | Port/address | Technology | Purpose |
 | --- | --- | --- | --- |
-| context-graph-mcp | stdio or TCP 3100; SSE rejected by main | tokio JSON-RPC | MCP tools/list and tools/call |
-| context-graph-cli | local process | Rust clap | Operator commands |
-| RocksDB | storage.path or CONTEXT_GRAPH_STORAGE_PATH | RocksDB CFs | Durable memory/graph/training/learner data |
-| Embedding warm provider | in-process GPU | Candle/CUDA | Loads 14 production embedders by default |
-| CAMD scripts | local Python | Python RPC + optional LMDB | Mine DPO data |
+| context-graph-mcp | stdio or TCP 3100 (sse rejected by main) | tokio JSON-RPC | tools/list, tools/call |
+| context-graph-cli | local process | clap | Operator commands, hooks, capture/inject |
+| RocksDB | `storage.path` or `CONTEXT_GRAPH_STORAGE_PATH` | 73 CFs | Sacred durable storage |
+| Embedding warm provider | in-process GPU | Candle/CUDA | Loads E1-E14 (lazy) |
+| CAMD/Shakespeare scripts | local Python | Python RPC + optional LMDB | DPO mining, empirical cycle |
 
 ## 3. Technology Stack
 | Layer | Technology | Source |
 | --- | --- | --- |
-| Rust | edition 2021, workspace rust-version 1.75 | Cargo.toml |
-| Async/MCP | tokio 1.35 full, JSON-RPC 2.0 | Cargo.toml; mcp main |
+| Rust | edition 2021, rust-version 1.75 | Cargo.toml |
+| Async/MCP | tokio 1.35 full, JSON-RPC 2.0 | Cargo.toml |
 | Storage | rocksdb 0.22, usearch 2 | Cargo.toml |
-| Embeddings | candle 0.9.2-alpha, llama-cpp-2 optional | Cargo.toml |
-| Search | hnsw_rs 0.3, RRF k=60 | Cargo.toml; retrieval/aggregation.rs |
+| Embeddings | candle 0.9.2-alpha (CUDA 13/Blackwell), llama-cpp-2 (llm feature) | Cargo.toml |
+| Search | hnsw_rs 0.3, RRF k=60 | retrieval/aggregation.rs |
 | Parsing | tree-sitter 0.23, tree-sitter-rust 0.23 | Cargo.toml |
 | Serialization | serde, serde_json, bincode, toml | Cargo.toml |
 
 ## 4. Workspace Crates
-| Package | Version | Default features | Targets | Manifest |
-| --- | --- | --- | --- | --- |
-| context-graph-mcp | 0.1.0 | cuda,llm | context_graph_mcp,context-graph-mcp | crates/context-graph-mcp/Cargo.toml |
-| context-graph-causal-agent | 0.1.0 | [] | context_graph_causal_agent | crates/context-graph-causal-agent/Cargo.toml |
-| context-graph-core | 0.1.0 | [] | context_graph_core | crates/context-graph-core/Cargo.toml |
-| context-graph-embeddings | 0.1.0 | candle | context_graph_embeddings,train-causal | crates/context-graph-embeddings/Cargo.toml |
-| context-graph-cuda | 0.1.0 | cuda | context_graph_cuda | crates/context-graph-cuda/Cargo.toml |
-| context-graph-storage | 0.1.0 | cuda | context_graph_storage | crates/context-graph-storage/Cargo.toml |
-| context-graph-test-utils | 0.1.0 | [] | context_graph_test_utils | crates/context-graph-test-utils/Cargo.toml |
-| context-graph-graph-agent | 0.1.0 | [] | context_graph_graph_agent | crates/context-graph-graph-agent/Cargo.toml |
-| context-graph-cli | 0.1.0 | cuda | context_graph_cli,context-graph-cli | crates/context-graph-cli/Cargo.toml |
-| context-graph-benchmark | 0.1.0 | [] | context_graph_benchmark,benchmark-report,causal-accuracy-bench,causal-discovery-mcp-bench,causal-e2e-bench,causal-embedding-bench,causal-perf-bench,causal-prompt-experiment,causal-provenance-bench,causal-provenance-e2e-bench,causal-provenance-llm-bench,causal-realdata-bench,causal-span-fix-bench,code-fingerprint-bench,disk-space-bench,e1-semantic-bench,e10_modifier_tuning,e11-entity-bench,e2-manual-verification,e4-hybrid-session-bench,e7-bench,e7-realdata-bench,embedder-impact-bench,embedder-impact-realdata-bench,embedder-stress,gpu-bench,graph-bench,graph-linking-bench,graph-linking-gpu-bench,graph-linking-real-bench,graph-realdata-bench,hf-bench,mcp-bench,model-injection-bench,model-injection-rigorous-bench,multimodal-bench,multimodal-realdata-bench,realdata-bench,sparse-bench,spawn-blocking-bench,temporal-bench,temporal-realdata-bench,unified-realdata-bench,validation-bench,validation-realdata-bench,weight-profile-bench | crates/context-graph-benchmark/Cargo.toml |
-
-## 5. Public APIs And Tools
-| Domain | Count | Source |
+| Package | Default features | Notes |
 | --- | --- | --- |
-| core | 4 |
-| merge | 1 |
-| curation | 2 |
-| topic | 4 |
-| file_watcher | 4 |
-| sequence | 4 |
-| causal | 4 |
-| keyword | 1 |
-| code | 1 |
-| robustness | 1 |
-| entity | 6 |
-| embedder | 7 |
-| temporal | 2 |
-| graph_link | 4 |
-| maintenance | 1 |
-| provenance | 3 |
-| daemon | 1 |
-| training | 4 |
-| learning | 8 |
-| utl | 17 |
-| constellation | 5 |
-| contrastive | 4 |
-| typed_edges | 4 |
-| graph | 4 |
-| causal_discovery | 2 |
-| graph | 2 |
-| causal_discovery | 0 |
-| causal_discovery | 2 with llm / 0 without |
-| graph | 4 with llm / 2 without |
+| context-graph-mcp | cuda, llm | MCP server + 108 tools |
+| context-graph-core | — | Fingerprints, weights, retrieval, learning, teleological |
+| context-graph-embeddings | candle | 14 embedder providers + train-causal bin |
+| context-graph-cuda | cuda | FFI, similarity, hdbscan, allocation |
+| context-graph-storage | cuda | 73 CFs, search, fusion, repository |
+| context-graph-causal-agent | — | Causal discovery (LLM-gated) |
+| context-graph-graph-agent | — | Graph link discovery (LLM-gated) |
+| context-graph-cli | cuda | Operator CLI, hooks, watcher |
+| context-graph-test-utils | — | Shared fixtures |
+| context-graph-benchmark | — | Excluded from default-members; build with `-p context-graph-benchmark` |
+
+## 5. MCP Tool Domains (108 total with llm, 104 without)
+| Category | Count | Source module |
+| --- | --- | --- |
+| capability | 1 | tools/definitions/capability.rs |
+| core | 5 | core.rs (store_memory, store_memories, get_memetic_status, search_graph, trigger_consolidation) |
+| merge | 1 | merge.rs |
+| curation | 2 | curation.rs |
+| topic | 4 | topic.rs |
+| file_watcher | 4 | file_watcher.rs |
+| sequence | 4 | sequence.rs |
+| causal | 4 | causal.rs |
+| causal_discovery | 0 (default) / 2 (llm) | causal_discovery.rs |
+| keyword | 1 | keyword.rs |
+| code | 1 | code.rs |
+| graph | 2 (default) / 4 (llm) | graph.rs |
+| robustness | 1 | robustness.rs |
+| entity | 6 | entity.rs |
+| embedder | 7 + 2 standalone | embedder.rs |
+| temporal | 2 | temporal.rs |
+| graph_link | 4 | graph_link.rs |
+| maintenance | 1 | maintenance.rs |
+| provenance | 3 | provenance.rs |
+| daemon | 1 | daemon.rs |
+| training | 4 | training.rs |
+| learning | 12 | learning.rs |
+| utl | 18 | utl.rs |
+| constellation | 6 | constellation.rs |
+| contrastive | 4 | contrastive.rs |
+| typed_edges | 4 | typed_edges.rs |
+
+See [08_mcp_tools_reference.md](08_mcp_tools_reference.md) for full tool inventory.
 
 ## 6. Entry Points
-| Entry | Kind | Source | Required features |
-| --- | --- | --- | --- |
-| context-graph-mcp | bin | crates/context-graph-mcp/src/main.rs |  |
-| benchmark_causal | example | crates/context-graph-causal-agent/examples/benchmark_causal.rs |  |
-| benchmark_causal_enhanced | example | crates/context-graph-causal-agent/examples/benchmark_causal_enhanced.rs |  |
-| benchmark_causal_large | example | crates/context-graph-causal-agent/examples/benchmark_causal_large.rs |  |
-| test_llm | example | crates/context-graph-causal-agent/examples/test_llm.rs |  |
-| divergence_fsv_test | example | crates/context-graph-core/examples/divergence_fsv_test.rs |  |
-| fsv_line_numbers | example | crates/context-graph-core/examples/fsv_line_numbers.rs |  |
-| fsv_source_metadata | example | crates/context-graph-core/examples/fsv_source_metadata.rs |  |
-| tree_sitter_test | example | crates/context-graph-core/examples/tree_sitter_test.rs |  |
-| train-causal | bin | crates/context-graph-embeddings/src/bin/train_causal.rs |  |
-| demo_typed_edge_capabilities | example | crates/context-graph-storage/examples/demo_typed_edge_capabilities.rs |  |
-| fsv_typed_edges_physical | example | crates/context-graph-storage/examples/fsv_typed_edges_physical.rs |  |
-| causal_relationships_bench | bench | crates/context-graph-storage/benches/causal_relationships_bench.rs |  |
-| e11_quality_bench | bench | crates/context-graph-storage/benches/e11_quality_bench.rs |  |
-| hybrid_effectiveness_bench | bench | crates/context-graph-storage/benches/hybrid_effectiveness_bench.rs |  |
-| maxsim_bench | bench | crates/context-graph-storage/benches/maxsim_bench.rs |  |
-| benchmark_graph | example | crates/context-graph-graph-agent/examples/benchmark_graph.rs | llm |
-| benchmark_graph_code | example | crates/context-graph-graph-agent/examples/benchmark_graph_code.rs | llm |
-| benchmark_graph_multi | example | crates/context-graph-graph-agent/examples/benchmark_graph_multi.rs | llm |
-| context-graph-cli | bin | crates/context-graph-cli/src/main.rs |  |
-| cli_benchmarks | bench | crates/context-graph-cli/benches/cli_benchmarks.rs |  |
-| benchmark-report | bin | crates/context-graph-benchmark/src/bin/report.rs |  |
-| causal-accuracy-bench | bin | crates/context-graph-benchmark/src/bin/causal_accuracy_bench.rs |  |
-| causal-discovery-mcp-bench | bin | crates/context-graph-benchmark/src/bin/causal_discovery_mcp_bench.rs | real-embeddings |
-| causal-e2e-bench | bin | crates/context-graph-benchmark/src/bin/causal_e2e_bench.rs |  |
-| causal-embedding-bench | bin | crates/context-graph-benchmark/src/bin/causal_embedding_bench.rs |  |
-| causal-perf-bench | bin | crates/context-graph-benchmark/src/bin/causal_perf_bench.rs |  |
-| causal-prompt-experiment | bin | crates/context-graph-benchmark/src/bin/causal_prompt_experiment_bench.rs | real-embeddings |
-| causal-provenance-bench | bin | crates/context-graph-benchmark/src/bin/causal_provenance_bench.rs |  |
-| causal-provenance-e2e-bench | bin | crates/context-graph-benchmark/src/bin/causal_provenance_e2e_bench.rs |  |
-| causal-provenance-llm-bench | bin | crates/context-graph-benchmark/src/bin/causal_provenance_llm_bench.rs | real-embeddings |
-| causal-realdata-bench | bin | crates/context-graph-benchmark/src/bin/causal_realdata_bench.rs |  |
-| causal-span-fix-bench | bin | crates/context-graph-benchmark/src/bin/causal_span_fix_bench.rs | real-embeddings |
-| code-fingerprint-bench | bin | crates/context-graph-benchmark/src/bin/code_fingerprint_bench.rs | real-embeddings |
-| disk-space-bench | bin | crates/context-graph-benchmark/src/bin/disk_space_bench.rs |  |
-| e1-semantic-bench | bin | crates/context-graph-benchmark/src/bin/e1_semantic_bench.rs |  |
-| e10_modifier_tuning | bin | crates/context-graph-benchmark/src/bin/e10_modifier_tuning.rs |  |
-| e11-entity-bench | bin | crates/context-graph-benchmark/src/bin/e11_entity_bench.rs |  |
-| e2-manual-verification | bin | crates/context-graph-benchmark/src/bin/e2_manual_verification.rs | real-embeddings |
-| e4-hybrid-session-bench | bin | crates/context-graph-benchmark/src/bin/e4_hybrid_session_bench.rs |  |
-| e7-bench | bin | crates/context-graph-benchmark/src/bin/e7_bench.rs |  |
-| e7-realdata-bench | bin | crates/context-graph-benchmark/src/bin/e7_realdata_bench.rs | real-embeddings |
-| embedder-impact-bench | bin | crates/context-graph-benchmark/src/bin/embedder_impact_bench.rs |  |
-| embedder-impact-realdata-bench | bin | crates/context-graph-benchmark/src/bin/embedder_impact_realdata_bench.rs |  |
-| embedder-stress | bin | crates/context-graph-benchmark/src/bin/embedder_stress.rs |  |
-| gpu-bench | bin | crates/context-graph-benchmark/src/bin/gpu_bench.rs |  |
-| graph-bench | bin | crates/context-graph-benchmark/src/bin/graph_bench.rs |  |
-| graph-linking-bench | bin | crates/context-graph-benchmark/src/bin/graph_linking_bench.rs |  |
-| graph-linking-gpu-bench | bin | crates/context-graph-benchmark/src/bin/graph_linking_gpu_bench.rs | real-embeddings |
-| graph-linking-real-bench | bin | crates/context-graph-benchmark/src/bin/graph_linking_real_bench.rs |  |
-| graph-realdata-bench | bin | crates/context-graph-benchmark/src/bin/graph_realdata_bench.rs |  |
-| hf-bench | bin | crates/context-graph-benchmark/src/bin/hf_bench.rs |  |
-| mcp-bench | bin | crates/context-graph-benchmark/src/bin/mcp_bench.rs |  |
-| model-injection-bench | bin | crates/context-graph-benchmark/src/bin/model_injection_bench.rs | real-embeddings |
-| model-injection-rigorous-bench | bin | crates/context-graph-benchmark/src/bin/model_injection_rigorous_bench.rs | real-embeddings |
-| multimodal-bench | bin | crates/context-graph-benchmark/src/bin/multimodal_bench.rs |  |
-| multimodal-realdata-bench | bin | crates/context-graph-benchmark/src/bin/multimodal_realdata_bench.rs |  |
-| realdata-bench | bin | crates/context-graph-benchmark/src/bin/realdata_bench.rs |  |
-| sparse-bench | bin | crates/context-graph-benchmark/src/bin/sparse_bench.rs |  |
-| spawn-blocking-bench | bin | crates/context-graph-benchmark/src/bin/spawn_blocking_bench.rs | real-embeddings |
-| temporal-bench | bin | crates/context-graph-benchmark/src/bin/temporal_bench.rs |  |
-| temporal-realdata-bench | bin | crates/context-graph-benchmark/src/bin/temporal_realdata_bench.rs |  |
-| unified-realdata-bench | bin | crates/context-graph-benchmark/src/bin/unified_realdata_bench.rs |  |
-| validation-bench | bin | crates/context-graph-benchmark/src/bin/validation_bench.rs |  |
-| validation-realdata-bench | bin | crates/context-graph-benchmark/src/bin/validation_realdata_bench.rs |  |
-| weight-profile-bench | bin | crates/context-graph-benchmark/src/bin/weight_profile_bench.rs |  |
-| comparative_suite | bench | crates/context-graph-benchmark/benches/comparative_suite.rs |  |
-| scaling_analysis | bench | crates/context-graph-benchmark/benches/scaling_analysis.rs |  |
-
-## 7. Storage Classification
-| Path/source | Class | Behavior |
+| Entry | Kind | Source |
 | --- | --- | --- |
-| RocksDB path | sacred durable | Contains all CFs; MCP pid guard protects concurrent open |
-| models path | regenerable runtime asset | Model weights are loaded by embedding providers |
-| target | regenerable | Cargo artifacts |
-| <db_path>/mcp.pid | ephemeral | flock lock file |
-| ~/.contextgraph/extended_embeddings.lmdb | regenerable sidecar | Extended CAMD cache |
+| context-graph-mcp | bin | crates/context-graph-mcp/src/main.rs |
+| context-graph-cli | bin | crates/context-graph-cli/src/main.rs |
+| train-causal | bin | crates/context-graph-embeddings/src/bin/train_causal.rs |
+| benchmark binaries | bin × ~40 | crates/context-graph-benchmark/src/bin/*.rs |
+| examples × ~12 | example | causal-agent, core, graph-agent, storage examples |
 
-## 8. Current Source Gaps
-| Gap | Source |
+MCP server CLI flags: `--config`, `--transport`, `--port`, `--bind`, `--warm-first`, `--no-warm`, `--daemon`, `--daemon-port`, hidden `--daemon-server-only`. See [10_cli_reference.md](10_cli_reference.md).
+
+## 7. Storage Tier Classification
+| Path | Class | Behavior |
+| --- | --- | --- |
+| RocksDB at `storage.path` | sacred durable | All 73 CFs; `mcp.pid` flock guards single-writer |
+| `models/` | regenerable runtime asset | Embedder weights downloaded by providers |
+| `target/` | regenerable | Cargo artifacts |
+| `<db_path>/mcp.pid` | ephemeral | Unix flock |
+| `~/.contextgraph/extended_embeddings.lmdb` | regenerable sidecar | Extended CAMD cache |
+
+## 8. Key Subsystems (One-Line Each)
+- **Embedding** ([05](05_embedding_subsystem.md)) — 14 production embedders + 7 learner slots; SemanticFingerprint stores all without fusion.
+- **Search & Fusion** ([06](06_search_and_fusion.md)) — RRF/Weighted/MaxPooling fusion across 14 dense+sparse+token spaces; 17 weight profiles.
+- **Graph & Causal** ([07](07_graph_and_causal.md)) — K-NN embedder edges, typed edges, causal relationships; LLM-gated discovery.
+- **Storage** ([09](09_storage_layer.md)) — RocksDB with 73 CFs; bloom filters, prefix extractors, LZ4.
+- **Teleological** ([13](13_teleological_subsystem.md)) — TeleologicalFingerprint wraps SemanticFingerprint with metadata, importance, access tracking.
+- **Training** ([16](16_training_subsystem.md)) — TrainingRecord v3 exports memory + 14 embeddings + 91 cross-correlations.
+- **Constellation** ([17](17_constellation_subsystem.md)) — Aggregate centroids over selected memory sets.
+- **Contrastive/Typed-Edges** ([18](18_contrastive_and_typed_edges.md)) — Disagreement mining + LLM edge validation.
+- **CAMD/DPO** ([19](19_camd_dpo_subsystem.md)) — Python-side DPO pair mining, retrieval policy benchmarks.
+- **Learning/UTL** ([20](20_learning_subsystem.md)) — Learner profiles, deltas (S/C/E), L = ΔS·ΔC·ΔE, M(t) traces.
+- **Capability Matrix** — `get_capability_matrix` tool returns embedders, CFs, tools, runtime state in compact form.
+
+## 9. Source-Level Inconsistencies (Documented As-Is)
+| Item | Source |
 | --- | --- |
-| Teleological compact vector is 13D while NUM_EMBEDDERS is 14 | teleological/types.rs; semantic/constants.rs |
-| Config validates sse but MCP main rejects sse | config/sub_configs.rs; mcp/main.rs |
-| Some comments still mention older 13/59/75 counts | multiple files; constants above are current |
+| `TELEOLOGICAL_VECTOR_DIM = 13` while `NUM_EMBEDDERS = 14` (E14 excluded from compact vector) | teleological/types.rs; semantic/constants.rs |
+| Config validates `sse` transport but MCP main rejects it | config/sub_configs.rs; mcp/main.rs |
+| `LEARNER_MODALITY_COUNT = 7` while `LearnerModality` has more variants; validation permits `+1` | learner/mod.rs |
+| Some comments mention older 13/100/96 counts; constants in this doc are current | various files |

@@ -6,17 +6,29 @@
 - `crates/context-graph-mcp/src/tools/definitions/topic.rs`
 
 ## 1. Scope
-Clustering/topic code builds fingerprint matrices, topic profiles, recluster results, and topic MCP/CLI surfaces.
+Clustering builds fingerprint matrices, derives topic profiles, runs HDBSCAN reclustering, and exposes topic/divergence MCP+CLI surfaces.
 
 ## 2. Constants
-| Constant | Value |
-| --- | --- |
-| MAX_WEIGHTED_AGREEMENT | 9.5 |
-| NUM_EMBEDDERS | 14 |
-| Topic MCP tools | 4 |
+| Constant | Value | Source |
+| --- | --- | --- |
+| MAX_WEIGHTED_AGREEMENT | 9.5 | clustering/manager.rs |
+| NUM_EMBEDDERS | 14 | semantic/constants.rs |
+| Topic MCP tools | 4 | tools/definitions/topic.rs |
+| Topic emergence threshold | weighted_agreement ≥ 2.5 | clustering manager |
 
 ## 3. Algorithms
-Fingerprint matrices aggregate per-embedder similarity with weighted, max, mean, product, or min strategies. Topic confidence uses weighted agreement divided by `MAX_WEIGHTED_AGREEMENT`. Topic tools expose portfolio, stability, detection, and divergence alerts.
+- **Fingerprint matrix**: per-embedder similarity aggregated via `weighted | max | mean | product | min`.
+- **Topic confidence** = weighted_agreement / `MAX_WEIGHTED_AGREEMENT`.
+- **HDBSCAN**: minimum cluster size 3 (per `clustering.parameters`).
+- **Divergence alerts**: semantic embedders only (E1, E6, E7, E10, E12, E13 per AP-62). Excludes E5 (no CausalDirection) per AP-77 and E2-E4 per AP-63.
 
-## 4. Integration
-Topic profiles are stored in CF_TOPIC_PROFILES, topic portfolios in CF_TOPIC_PORTFOLIO, training records carry 14D topic profiles, and constellations aggregate topic profile centroids.
+## 4. Storage Integration
+| Concern | CF |
+| --- | --- |
+| Topic profile per memory | CF_TOPIC_PROFILES (UUID → 13 × f32 = 52B) |
+| Per-session portfolio | CF_TOPIC_PORTFOLIO (key by session_id or `__latest__`) |
+| Training records carry topic_profile | CF_TRAINING_RECORDS (14D) |
+| Constellation centroids include topic profile aggregation | CF_CONSTELLATIONS |
+
+## 5. MCP Tools
+get_topic_portfolio, get_topic_stability, detect_topics, get_divergence_alerts. See [08_mcp_tools_reference.md](08_mcp_tools_reference.md).

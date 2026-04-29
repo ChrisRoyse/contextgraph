@@ -18,13 +18,20 @@
 //! method to find ALL cause-effect relationships in individual memories,
 //! generating E5 dual embeddings for each.
 
+#[cfg(feature = "llm")]
 use serde_json::json;
+#[cfg(feature = "llm")]
 use tracing::{debug, error, info, warn};
 
+#[cfg(feature = "llm")]
 use context_graph_core::causal::asymmetric::{detect_causal_query_intent, CausalDirection};
+#[cfg(feature = "llm")]
 use context_graph_core::traits::{CausalDirectionHint, CausalHint, EmbeddingMetadata};
+#[cfg(feature = "llm")]
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
+#[cfg(feature = "llm")]
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
+#[cfg(feature = "llm")]
 use context_graph_core::types::SourceMetadata;
 #[cfg(feature = "llm")]
 use context_graph_graph_agent::MemoryForGraphAnalysis;

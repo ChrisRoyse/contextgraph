@@ -6,157 +6,210 @@
 - `crates/context-graph-mcp/src/handlers/tools/**/*.rs`
 
 ## 1. Registry
-`get_tool_definitions()` appends category modules and tests assert 100 tools with `llm`, 96 without. `names.rs` defines 100 tool constants. A `*` marks a top-level required parameter extracted from schema.
+`get_tool_definitions()` aggregates per-category modules. Test `tools::definitions::tests::test_total_tool_count_and_no_duplicates` asserts **108 tools with `llm`, 104 without**. `names.rs` defines 108 tool constants. Categories with `*` denote required top-level params.
 
 ## 2. Category Counts
-| Category | Count |
-| --- | --- |
-| core | 4 |
-| merge | 1 |
-| curation | 2 |
-| topic | 4 |
-| file_watcher | 4 |
-| sequence | 4 |
-| causal | 4 |
-| keyword | 1 |
-| code | 1 |
-| robustness | 1 |
-| entity | 6 |
-| embedder | 7 |
-| temporal | 2 |
-| graph_link | 4 |
-| maintenance | 1 |
-| provenance | 3 |
-| daemon | 1 |
-| training | 4 |
-| learning | 8 |
-| utl | 17 |
-| constellation | 5 |
-| contrastive | 4 |
-| typed_edges | 4 |
-| graph | 4 |
-| causal_discovery | 2 |
-| graph | 2 |
-| causal_discovery | 0 |
-| causal_discovery | 2 with llm / 0 without |
-| graph | 4 with llm / 2 without |
+| Category | Count | Notes |
+| --- | --- | --- |
+| capability | 1 | get_capability_matrix |
+| core | 5 | store_memory, store_memories, get_memetic_status, search_graph, trigger_consolidation |
+| merge | 1 | |
+| curation | 2 | |
+| topic | 4 | |
+| file_watcher | 4 | |
+| sequence | 4 | E4 |
+| causal | 4 | E5 |
+| causal_discovery | 0/2 | LLM-gated |
+| keyword | 1 | E6 |
+| code | 1 | E7 |
+| graph | 2/4 | LLM adds 2 |
+| robustness | 1 | E9 |
+| entity | 6 | E11/TransE |
+| embedder | 7 + 2 standalone | E1-E14 cross-cutting + search_by_tokens / search_by_expansion |
+| temporal | 2 | E2/E3 |
+| graph_link | 4 | K-NN, typed edges, traversal |
+| maintenance | 1 | repair_causal_relationships |
+| provenance | 3 | audit, merge, chain |
+| daemon | 1 | daemon_status |
+| training | 4 | TrainingRecord v3 export + read |
+| learning | 12 | events, signal embedders, outcome estimate, training datasets |
+| utl | 18 | learner-state measurement substrate + retrieval policy |
+| constellation | 6 | compile/derive + read/score/delete |
+| contrastive | 4 | mine + read |
+| typed_edges | 4 | export + LLM validate + read |
 
 ## 3. Protocol Methods
 | Method | Behavior |
 | --- | --- |
-| initialize | Initializes MCP session metadata |
-| tools/list | Returns ToolDefinition array (100 with llm, 96 without) |
-| tools/call | Dispatches by tool name through handlers/tools/dispatch.rs |
+| initialize | MCP session metadata |
+| tools/list | Returns ToolDefinition[] (108 with llm, 104 without) |
+| tools/call | Dispatches via handlers/tools/dispatch.rs |
 
-## 4. Every Tool
-| Category | Tool | Description | Top-level parameters | Source |
-| --- | --- | --- | --- | --- |
-| causal | search_causal_relationships | Search for causal relationships using E5 asymmetric similarity. \ Returns LLM-generated 1-3 paragraph descriptions explaining causal mechanisms, \ with full provenance linking to source memories. Use for understanding causal \ relationships with rich explanations and evidence. | query*, direction, topK, includeSource, includeProvenance, sourceWeight, explanationWeight, multiEmbedder, minConsensus, e1Weight, e5Weight, e8Weight, e11Weight | crates/context-graph-mcp/src/tools/definitions/causal.rs |
-| causal | search_causes | Abductive reasoning to find likely causes of observed effects. \ Uses asymmetric E5 similarity with 0.8x effect→cause dampening (per AP-77). \ Returns ranked causes with abductive scores. Use for \ | query*, topK, minScore, includeContent, filterCausalDirection, searchScope, strategy, rerankWeight | crates/context-graph-mcp/src/tools/definitions/causal.rs |
-| causal | search_effects | Find effects/consequences of a given cause using E5 asymmetric embeddings. \ Uses 1.2x cause→effect boost (per AP-77) for forward causal reasoning. \ Returns ranked effects with predictive scores. Use for \ | query*, topK, minScore, includeContent, filterCausalDirection, searchScope, strategy, rerankWeight | crates/context-graph-mcp/src/tools/definitions/causal.rs |
-| causal | get_causal_chain | Build and visualize transitive causal chains from an anchor point. \ Iteratively searches for causally-related memories using asymmetric E5 similarity. \ Applies hop attenuation (0.9^hop) for chain scoring. Use for causal path visualization. | anchorId*, direction, maxHops, minSimilarity, includeContent | crates/context-graph-mcp/src/tools/definitions/causal.rs |
-| causal_discovery | trigger_causal_discovery | Manually trigger the causal discovery agent to analyze memories for cause-effect relationships. \ Uses Qwen2.5 via Candle with native CUDA for RTX 5090 Blackwell optimization. \ FP16 tensor cores for inference, INT8 for larger models. \ Confirmed relationships are embedded using CausalModel.embed_dual() for asymmetric E5 vectors. \ VRAM usage: 3B=~6GB FP16, 7B=~14GB FP16. Use after bulk memory imports or for immediate causal analysis. | mode, maxPairs, minConfidence, sessionScope, session_id, dryRun | crates/context-graph-mcp/src/tools/definitions/causal_discovery.rs |
-| causal_discovery | get_causal_discovery_status | Get the status and statistics of the causal discovery agent. \ Shows whether the agent is running, last cycle results, VRAM usage, \ and cumulative statistics (pairs analyzed, relationships found, etc.). | includeLastResult, includeGraphStats | crates/context-graph-mcp/src/tools/definitions/causal_discovery.rs |
-| code | search_code | Find memories containing code patterns using E7 dense embeddings (1536D). ENHANCES E1 semantic search with code-specific understanding. Use for \ | query*, topK, minScore, blendWithSemantic, includeContent, searchMode, languageHint | crates/context-graph-mcp/src/tools/definitions/code.rs |
-| constellation | compile_constellation | Compile a constellation (per-embedder centroids + spread statistics) \ over a caller-selected set of memories and persist the result to \ CF_CONSTELLATIONS. Selectors: topic / session / tag / time_range / \ explicit_ids. Returns the fresh constellation UUID plus summary \ shape. Fails with TooFewMembers when fewer than 3 members match. | selector*, topicId, sessionId, tag, startIso, endIso, memoryIds, rationale, label*, maxMembers, rebuildIfExists | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| constellation | list_constellations | List UUIDs currently stored in CF_CONSTELLATIONS with paging and \ optional per-record shape summary (member_count, coherence, \ selector kind, purity). | limit, offset, includeCentroids | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| constellation | get_constellation | Fetch a single constellation by UUID. includeCentroids defaults to \ true for this endpoint (the typical caller wants the full record). \ Returns member_ids, per-embedder stats, topic/group/cross-\ correlation centroids, coherence, and purity. | constellationId*, includeCentroids | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| constellation | score_against_constellation | Score a candidate memory against a stored constellation. Returns \ per-embedder cosine-to-centroid similarities, an unweighted \ combined_score mean (over embedders with coverage>0), and an \ in_spread_p95 flag indicating whether the candidate is at least as \ central as the 95th-percentile E1 member. | constellationId*, memoryId* | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| constellation | derive_constellation | Persist a derived constellation in CF_CONSTELLATIONS. Operations interpolate/add/difference combine two stored constellation centroids. Operation anti_pole scans a real candidate memory selector, scores candidates against the source constellation, selects the lowest-scoring non-source memories, recompiles them, and persists the opposite anchor. The tool performs readback verification from RocksDB before returning. | operation*, sourceConstellationId*, otherConstellationId, alpha, label*, selector, topicId, sessionId, tag, startIso, endIso, memoryIds, rationale, maxCandidates, selectedMembers | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| constellation | delete_constellation | Delete a constellation and its selector-index entry. Returns \ { deleted: bool } — false when no record existed for that UUID. \ Idempotent. | constellationId* | crates/context-graph-mcp/src/tools/definitions/constellation.rs |
-| contrastive | mine_contrastive_pairs | Scan the memory corpus for cross-embedder anomaly pairs and \ persist each match to CF_CONTRASTIVE_PAIRS. For every anchor \ we score a bounded candidate pool (`topKCandidatesPerAnchor` \ peers), compute the full 14-embedder similarity profile, filter \ by `minDisagreement` + thresholds, classify into one of six \ AnomalyKinds, and store the resulting (anchor, negative, \ similarity_profile) triple. Idempotent on the composite key. | maxPairs, minDisagreement, highThreshold, lowThreshold, kinds, sessionFilter, topKCandidatesPerAnchor, candidatePoolSize | crates/context-graph-mcp/src/tools/definitions/contrastive.rs |
-| contrastive | list_contrastive_pairs | List stored contrastive pair keys from CF_CONTRASTIVE_PAIRS with \ optional filters on AnomalyKind and anchor UUID. includeFull=true \ fetches full records (warning: includes 13-slot similarity \ profile per row). | limit, offset, kind, anchorId, includeFull | crates/context-graph-mcp/src/tools/definitions/contrastive.rs |
-| contrastive | get_contrastive_pair | Fetch a single contrastive pair by composite (anchorId, \ negativeId) key. Returns the full ContrastivePair record \ (similarity profile, high/low embedders, disagreement \ magnitude, anomaly kind, texts, timestamps). | anchorId*, negativeId* | crates/context-graph-mcp/src/tools/definitions/contrastive.rs |
-| contrastive | count_contrastive_pairs | Count rows in CF_CONTRASTIVE_PAIRS. Pass `kind` to restrict the \ count to one AnomalyKind via the CF_CONTRASTIVE_BY_KIND prefix \ scan. | kind | crates/context-graph-mcp/src/tools/definitions/contrastive.rs |
-| core | store_memory | Store a memory node directly in the knowledge graph without UTL processing. | content*, rationale, importance, sessionId, operatorId | crates/context-graph-mcp/src/tools/definitions/core.rs |
-| core | get_memetic_status | Get current system status including fingerprint count, number of embedders (14), \ storage backend and size, and layer status from LayerStatusProvider. | none | crates/context-graph-mcp/src/tools/definitions/core.rs |
-| core | search_graph | Search the knowledge graph using multi-space semantic similarity across 14 embedders. \ Supports temporal search via E2 (recency), E3 (periodicity), E4 (sequence) — \ use temporal_navigation profile or set E2/E3/E4 independently via customWeights. \ For causal queries ('why', 'what happens'), automatically applies \ asymmetric E5 similarity with direction modifiers (cause→effect 1.2x, \ effect→cause 0.8x). Returns nodes matching the query with relevance scores. | query*, topK, minSimilarity, includeContent, strategy, weightProfile, customWeights, excludeEmbedders, useQuantizedPrefilter, includeEmbedderBreakdown, enableRerank, enableAsymmetricE5, causalDirection, enableQueryExpansion, temporalWeight, conversationContext, sessionScope, decayHalfLifeSecs, lastHours, lastDays, sessionId, periodicBoost, targetHour, targetDayOfWeek, sequenceAnchor, sequenceDirection, includeProvenance, decayFunction, temporalScale | crates/context-graph-mcp/src/tools/definitions/core.rs |
-| core | trigger_consolidation | Analyze memories for consolidation candidates. Returns pairs that could be merged \ but does NOT automatically merge them. Use merge_concepts to execute merges. \ Uses similarity-based, temporal, or semantic strategies to identify candidates. | strategy, min_similarity, max_memories | crates/context-graph-mcp/src/tools/definitions/core.rs |
-| curation | forget_concept | Soft-delete a memory with 30-day recovery window (per SEC-06). \ Set soft_delete=false for permanent deletion (use with caution). \ Returns deleted_at timestamp for recovery tracking. | node_id*, soft_delete, operator_id, reason | crates/context-graph-mcp/src/tools/definitions/curation.rs |
-| curation | boost_importance | Adjust a memory's importance score by delta. Final value is clamped \ to [0.0, 1.0] (per BR-MCP-002). Response includes old, delta, and new values. | node_id*, delta*, operator_id | crates/context-graph-mcp/src/tools/definitions/curation.rs |
-| daemon | daemon_status | Returns the daemon's health metrics for multi-agent observability. \ Shows active connection count, model loading state, background task status \ (GC, HNSW persist, graph builder), uptime, and PID. \ Use this to diagnose connection issues or verify multi-agent setup is working. | none | crates/context-graph-mcp/src/tools/definitions/daemon.rs |
-| embedder | search_by_embedder | Search using any embedder (E1-E14) as the primary perspective. Each of the 14 embedders \ sees the knowledge graph differently. E1 finds semantic similarity, E11 finds entity \ relationships, E7 finds code patterns, E5 finds causal chains. Use this to explore \ what a specific embedder sees that others might miss. Per Constitution v6.3 \ embedder-first search philosophy. | embedder*, query*, topK, minSimilarity, includeContent, includeAllScores | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | get_embedder_clusters | Explore clusters of memories in a specific embedder's space. Each embedder creates \ different clusters based on what it sees - E7 (code) clusters by implementation patterns, \ E11 (entity) clusters by entity relationships, E5 (causal) clusters by cause-effect chains. \ Use to discover emergent groupings from different perspectives. | embedder*, minClusterSize, topClusters, includeSamples, samplesPerCluster | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | compare_embedder_views | Compare how different embedders rank the same query. Shows rankings from each embedder \ side-by-side, highlighting agreement (same top results) and unique finds (memories found \ by only one embedder). Useful for understanding blind spots - e.g., what E11 (entity) \ finds that E1 (semantic) misses. | query*, embedders*, topK, includeContent | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | list_embedder_indexes | List all 14 embedder indexes with their statistics. Shows dimension, index type, \ vector count, size, and GPU residency for each embedder. Useful for understanding \ the system's embedding infrastructure and checking index health. | includeDetails | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | get_memory_fingerprint | Retrieve the per-embedder fingerprint vectors for a specific memory. Returns dimension, \ vector norm (L2), and presence status for each of the 14 embedders. Asymmetric embedders \ (E5 causal, E8 graph, E10 paraphrase) show both directional variants. Sparse embedders \ (E6, E13) show non-zero element count. E14 (BGE-M3 Dense) shows the 1024-D multilingual \ vector. Use to debug embedding quality, verify which embedders produced vectors, and \ understand how a memory is represented across all 14 spaces. | memoryId*, embedders, includeVectorNorms, includeContent | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | create_weight_profile | Create a named custom embedder weight profile for the current session. Assigns weights \ to each of the 14 embedders (E1-E14). The profile can be referenced by name in \ search_graph's weightProfile and get_unified_neighbors. Useful \ for defining reusable search strategies. Rejects built-in profile names. | name*, weights*, description | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | search_cross_embedder_anomalies | Find memories that score high in one embedder but low in another. Reveals blind \ spots and perspective disagreements. Example: highEmbedder=E7 (code), \ lowEmbedder=E1 (semantic) finds code patterns that semantic search misses. \ Anomaly score = high_score - low_score. | query*, highEmbedder*, lowEmbedder*, highThreshold, lowThreshold, topK, includeContent, primaryEmbedder, contrastEmbedder | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | search_by_tokens | Search using E12 ColBERT token-level MaxSim scoring for precise phrase matching. | query*, topK, minSimilarity | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| embedder | search_by_expansion | Search using E13 SPLADE learned term expansion for enhanced keyword recall. | query*, topK, minScore | crates/context-graph-mcp/src/tools/definitions/embedder.rs |
-| entity | extract_entities | Extract and canonicalize entities from text using pattern matching and knowledge base lookup. \ Resolves variations to canonical forms (e.g., 'postgres' → 'postgresql', 'k8s' → 'kubernetes'). \ Detects programming languages, frameworks, databases, cloud services, companies, and technical terms. \ Per ARCH-20: E11 uses entity linking for disambiguation. | text*, includeUnknown, groupByType | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| entity | search_by_entities | Find memories containing specific entities with entity-aware ranking. \ Uses E11 entity embeddings combined with entity Jaccard similarity for hybrid scoring. \ ENHANCES E1 semantic search with entity precision (ARCH-12). \ Supports 'any' (match any entity) or 'all' (match all entities) modes. | entities*, entityTypes, matchMode, topK, minScore, includeContent, boostExactMatch, strategy | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| entity | infer_relationship | Infer the relationship between two entities using TransE knowledge graph operations. \ Uses the formula r̂ = t - h to predict the relation vector, then matches against known relations. \ Returns ranked relation candidates with TransE scores and confidence values. \ Per constitution: Delta_S method for E11 is 'TransE \|\|h+r-t\|\|'. | headEntity*, tailEntity*, headType, tailType, topK, includeScore | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| entity | find_related_entities | Find entities that have a given relationship to a source entity using TransE. \ Supports both directions: outgoing (h→t, what does X depend_on?) or incoming (t←h, what depends_on X?). \ Uses TransE prediction: t̂ = h + r for outgoing, ĥ = t - r for incoming. \ Can optionally filter to entities found in stored memories. | entity*, relation*, direction, entityType, topK, minScore, searchMemories | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| entity | validate_knowledge | Score whether a (subject, predicate, object) knowledge triple is valid using TransE. \ Computes score = -\|\|h + r - t\|\|₂ where h=subject, r=predicate, t=object. \ Score of 0 is perfect match. Returns validation result: 'valid', 'uncertain', or 'unlikely'. \ Can also find supporting or contradicting memories in the knowledge graph. | subject*, predicate*, object*, subjectType, objectType | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| entity | get_entity_graph | Build and visualize entity relationships discovered in stored memories. \ Returns a graph with entity nodes and relationship edges. \ If centerEntity is provided, focuses on that entity's neighborhood. \ Infers relationships using TransE and weights edges by score and evidence count. | centerEntity, maxNodes, entityTypes, minRelationScore, includeMemoryCounts | crates/context-graph-mcp/src/tools/definitions/entity.rs |
-| file_watcher | list_watched_files | List all files that have embeddings in the knowledge graph from the file watcher. \ Returns file paths with chunk counts and last update times. | include_counts, path_filter | crates/context-graph-mcp/src/tools/definitions/file_watcher.rs |
-| file_watcher | get_file_watcher_stats | Get statistics about file watcher content in the knowledge graph. \ Returns total files, total chunks, average chunks per file, and min/max values. | none | crates/context-graph-mcp/src/tools/definitions/file_watcher.rs |
-| file_watcher | delete_file_content | Delete all embeddings for a specific file path. Use for manual cleanup. \ Supports soft delete with 30-day recovery (per SEC-06). | file_path*, soft_delete | crates/context-graph-mcp/src/tools/definitions/file_watcher.rs |
-| file_watcher | reconcile_files | Find orphaned files (embeddings exist but file doesn't on disk) and optionally delete them. \ Use dry_run=true to preview changes without modifying data. | dry_run, base_path | crates/context-graph-mcp/src/tools/definitions/file_watcher.rs |
-| graph | search_connections | Find memories connected to a given concept using asymmetric E8 similarity. \ Searches for source connections (what points TO this), target connections \ (what this points TO), or both. Uses 1.2x/0.8x direction modifiers per AP-77. \ Use for \ | query*, direction, topK, minScore, includeContent, filterGraphDirection, includeProvenance | crates/context-graph-mcp/src/tools/definitions/graph.rs |
-| graph | get_graph_path | Build and visualize multi-hop graph paths from an anchor point. \ Iteratively searches for connected memories using asymmetric E8 similarity. \ Applies hop attenuation (0.9^hop) for path scoring. \ Use for dependency chain visualization, connectivity exploration. | anchorId*, direction, maxHops, minSimilarity, includeContent | crates/context-graph-mcp/src/tools/definitions/graph.rs |
-| graph | discover_graph_relationships | Discover graph relationships between memories using LLM analysis with asymmetric E8 embeddings. \ Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for relationship detection. \ Supports 20 relationship types across 4 domains: Code (imports, calls, implements), \ Legal (cites, overrules, interprets), Academic (cites, applies, extends), General. \ Returns discovered relationships with confidence scores, categories, and directions. | memory_ids*, relationship_types, min_confidence, batch_size | crates/context-graph-mcp/src/tools/definitions/graph.rs |
-| graph | validate_graph_link | Validate a proposed graph link between two memories using LLM analysis with asymmetric E8 embeddings. \ Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for validation. \ Supports 20 relationship types across Code, Legal, Academic, and General domains. \ Returns validation result with confidence score, detected relationship type, category, and direction. | source_id*, target_id*, expected_relationship_type | crates/context-graph-mcp/src/tools/definitions/graph.rs |
-| graph_link | get_memory_neighbors | Get K nearest neighbors of a memory in a specific embedder space using pre-computed \ K-NN edges. Returns neighbors sorted by similarity. NOTE: Recently stored memories \ may return 0 neighbors until the background K-NN graph build runs (~60s). \ Use get_unified_neighbors for immediate results on recent memories. | memory_id*, embedder_id, top_k, min_similarity, include_content | crates/context-graph-mcp/src/tools/definitions/graph_link.rs |
-| graph_link | get_typed_edges | Get typed edges from a memory. Typed edges represent relationships derived from \ embedder agreement patterns: semantic_similar, code_related, entity_shared, \ causal_chain, graph_connected, paraphrase_aligned, keyword_overlap, multi_agreement. | memory_id*, edge_type, direction, min_weight, include_content | crates/context-graph-mcp/src/tools/definitions/graph_link.rs |
-| graph_link | traverse_graph | Multi-hop graph traversal starting from a memory. Explores the knowledge graph \ following typed edges up to a maximum depth. Useful for discovering connected \ memories, causal chains, or code dependencies. | start_memory_id*, max_hops, edge_type, min_weight, max_results, include_content | crates/context-graph-mcp/src/tools/definitions/graph_link.rs |
-| graph_link | get_unified_neighbors | Find neighbors using Weighted RRF fusion across all 14 embedders, providing a unified \ view where neighbors are ranked by how consistently multiple embedders agree they are \ related. Unlike get_memory_neighbors (single embedder), this shows what ALL embedders \ agree on. Per ARCH-21: Uses Weighted RRF, not weighted sum. Per AP-60: Temporal \ embedders (E2-E4) are excluded from semantic fusion. | memory_id*, weight_profile, top_k, min_score, include_content, include_embedder_breakdown, custom_weights, exclude_embedders | crates/context-graph-mcp/src/tools/definitions/graph_link.rs |
-| keyword | search_by_keywords | Find memories matching specific keywords using E6 sparse embeddings. ENHANCES E1 semantic search with keyword-level precision for exact term matches. Use for \ | query*, topK, minScore, blendWithSemantic, useSpladeExpansion, includeContent, strategy | crates/context-graph-mcp/src/tools/definitions/keyword.rs |
-| learning | record_learning_event | Persist one Learning-as-UTL event to CF_LEARNING_EVENTS. The event \ captures before/after 14D topic profiles, 91D cross-correlations, \ outcome labels, deterministic UTL features, and five baseline \ learning signals. This does not change E1-E14 embedder slots. | eventId, memoryIds, sessionId, responseId, taskId, query, retrievedContext, assistantResponse, before*, after*, outcome* | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | list_learning_events | List UUIDs currently stored in CF_LEARNING_EVENTS with optional feature shape summaries. | limit, offset, includeFeatures | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | get_learning_event | Fetch a single Learning-as-UTL event by event UUID from CF_LEARNING_EVENTS. | eventId*, includeText, includeSignals | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | count_learning_events | Return the current number of rows in CF_LEARNING_EVENTS. | none | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | estimate_learning_outcome | Predict the likely utility delta of a candidate before/after learning transition by nearest-neighbor case-based reasoning over persisted CF_LEARNING_EVENTS rows. The tool scans real stored events, validates every read, returns weighted neighbor evidence, and does not mutate storage. | before*, candidateAfter*, maxNeighbors, maxScan, minSimilarity, taskId, domain, includeNeighbors | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | export_learner_training_dataset | Compile Learning-as-UTL and learner-state RocksDB rows into a versioned row-major f32 matrix stored in CF_LEARNER_TRAINING_DATASETS. | datasetId, task, maxRows, clearExisting | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | list_learner_training_datasets | List dataset UUIDs stored in CF_LEARNER_TRAINING_DATASETS with optional matrix shape summaries. | limit, offset, includeShape | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | get_learner_training_dataset | Fetch one matrix-shaped learner training dataset from CF_LEARNER_TRAINING_DATASETS. | datasetId*, includeMatrix, previewRows | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| learning | count_learner_training_datasets | Return the current number of rows in CF_LEARNER_TRAINING_DATASETS. | none | crates/context-graph-mcp/src/tools/definitions/learning.rs |
-| maintenance | repair_causal_relationships | Repair corrupted causal relationships by removing entries that fail deserialization. \ Scans CF_CAUSAL_RELATIONSHIPS and deletes any truncated or corrupted entries. \ This is useful after crashes or interrupted writes that may have left incomplete data. \ Returns (deleted_count, total_scanned) statistics. | none | crates/context-graph-mcp/src/tools/definitions/maintenance.rs |
-| merge | merge_concepts | Merge two or more related concept nodes into a unified node. \ Supports union (combine all), intersection (common only), or \ weighted_average (by importance) strategies. Returns reversal_hash \ for 30-day undo capability. Requires rationale per PRD 0.3. | source_ids*, target_name*, merge_strategy, rationale*, force_merge | crates/context-graph-mcp/src/tools/definitions/merge.rs |
-| provenance | get_audit_trail | Query the audit log for a specific memory or time range. Returns chronological audit records showing all operations performed on the memory (create, merge, delete, boost, etc.). | target_id, start_time, end_time, limit | crates/context-graph-mcp/src/tools/definitions/provenance.rs |
-| provenance | get_merge_history | Show merge lineage and history for a fingerprint. Returns all merge operations that created or affected this memory, including source memory IDs, strategy used, and operator. | memory_id*, include_source_metadata | crates/context-graph-mcp/src/tools/definitions/provenance.rs |
-| provenance | get_provenance_chain | Full provenance chain from embedding to source for a memory. Shows source type, file path, chunk info, operator attribution, causal direction, and creation timestamps. | memory_id*, include_audit, include_embedding_version, include_importance_history, include_merge_history, depth_full | crates/context-graph-mcp/src/tools/definitions/provenance.rs |
-| robustness | search_robust | Find memories using E9 noise-robust structural matching. ENHANCES E1 semantic search \ with typo tolerance via character trigram hypervectors. E9 preserves similarity \ despite spelling errors, casing variations, and morphological changes. Use for \ 'noisy queries (typos, variations)' per constitution. Example: query 'authetication' \ finds 'authentication' via character overlap E1 would miss. | query*, topK, minScore, e9DiscoveryThreshold, e1WeaknessThreshold, includeContent, includeE9Score, strategy | crates/context-graph-mcp/src/tools/definitions/robustness.rs |
-| sequence | get_conversation_context | Get memories around the current conversation turn with auto-anchoring. \ Uses E4 (V_ordering) for sequence-based retrieval. \ Perfect for \ | direction, windowSize, sessionOnly, includeContent, query, minSimilarity | crates/context-graph-mcp/src/tools/definitions/sequence.rs |
-| sequence | get_session_timeline | Get an ordered timeline of all session memories with sequence numbers. \ Returns memories sorted by session_sequence in ascending order. \ Includes position labels like \ | sessionId, limit, offset, sourceTypes, includeContent | crates/context-graph-mcp/src/tools/definitions/sequence.rs |
-| sequence | traverse_memory_chain | Navigate through a chain of memories starting from an anchor point. \ Supports multi-hop traversal for understanding conversation flow. \ Useful for tracing the evolution of a topic across turns. | anchorId*, direction, hops, semanticFilter, minSimilarity, includeContent | crates/context-graph-mcp/src/tools/definitions/sequence.rs |
-| sequence | compare_session_states | Compare memory state at different sequence points in a session. \ Useful for understanding what changed between two points in the conversation. \ Returns topics, memory counts, and key differences. | beforeSequence*, afterSequence*, sessionId | crates/context-graph-mcp/src/tools/definitions/sequence.rs |
-| temporal | search_recent | Search for recent memories with E2 temporal boost applied. \ Automatically applies freshness decay to prioritize recent results. \ Use for queries like 'what did we discuss recently', 'latest updates', \ 'yesterday's conversation', or any time-sensitive retrieval. \ Per ARCH-25: Temporal boost is applied POST-retrieval, not in similarity fusion. | query*, topK, temporalWeight, decayFunction, temporalScale, includeContent, minSimilarity | crates/context-graph-mcp/src/tools/definitions/temporal.rs |
-| temporal | search_periodic | Search for memories matching periodic time patterns (E3 V_periodicity). \ Finds memories from similar times of day or days of week. \ Use for queries like 'morning meetings', 'Friday deployments', \ 'what do I usually work on at 3pm?', or finding routine patterns. \ Per ARCH-25: Periodic boost is applied POST-retrieval, not in similarity fusion. | query*, topK, targetHour, targetDayOfWeek, autoDetect, periodicWeight, includeContent, minSimilarity | crates/context-graph-mcp/src/tools/definitions/temporal.rs |
-| topic | get_topic_portfolio | Get all discovered topics with profiles, stability metrics, and tier info. \ Topics emerge from weighted multi-space clustering (threshold >= 2.5). \ Temporal embedders (E2-E4) are excluded from topic detection. | format | crates/context-graph-mcp/src/tools/definitions/topic.rs |
-| topic | get_topic_stability | Get portfolio-level stability metrics including churn rate, entropy, and phase breakdown. | hours | crates/context-graph-mcp/src/tools/definitions/topic.rs |
-| topic | detect_topics | Force topic detection recalculation using HDBSCAN clustering. \ Requires minimum 3 memories (per clustering.parameters.min_cluster_size). \ Topics require weighted_agreement >= 2.5 to be recognized. | force, max_memories | crates/context-graph-mcp/src/tools/definitions/topic.rs |
-| topic | get_divergence_alerts | Check for divergence from recent activity using SEMANTIC embedders only \ (E1, E6, E7, E10, E12, E13 per AP-62). E5 (Causal) is excluded per AP-77 \ (returns 0.0 without CausalDirection). Temporal embedders (E2-E4) excluded per AP-63. | lookback_hours | crates/context-graph-mcp/src/tools/definitions/topic.rs |
-| training | export_training_corpus | Export memories as fully-labeled training records persisted to the \ CF_TRAINING_RECORDS column family. Each record bundles the memory's \ content, all 14 embedding vectors (dense + sparse + token-level), a \ 14D topic profile, 91 synergy-weighted cross-correlations, 6D group \ alignments, outgoing typed edges, K-NN neighbors per embedder, and \ LLM-discovered causal relationships. Optionally embeds a Tucker-1 \ decomposition of the 14x14x1024 interaction tensor when \ includeTuckerCore=true (Phase 4, CPU). Records can be read back via \ `list_training_record_ids` / `get_training_record` at the storage \ layer. Output is binary (bincode + version byte); no external files. | filter, filterId, maxMemories, includeEmbeddings, includeSparseVectors, includeTokenEmbeddings, includeEdges, includeCausalLabels, includeIncomingEdges, includeTemporalLabels, includeTuckerCore, clearExisting | crates/context-graph-mcp/src/tools/definitions/training.rs |
-| training | list_training_records | List UUIDs currently stored in CF_TRAINING_RECORDS, optionally with \ per-record shape statistics (content length, number of outgoing/incoming \ edges, number of causal labels, E1/E7/E11 vector presence flags). Used \ for post-export verification and observability. | limit, offset, includeShape | crates/context-graph-mcp/src/tools/definitions/training.rs |
-| training | get_training_record | Fetch a single training record by memory UUID. Use includeVectors=true \ to include the raw dense/sparse/token embedding arrays in the response \ (may be large; default off). Always returns topic_profile, \ cross_correlations, group_alignments, edge/knn summaries, and causal labels. | memoryId*, includeVectors, includeTokenEmbeddings, includeEdges | crates/context-graph-mcp/src/tools/definitions/training.rs |
-| training | count_training_records | Return the current number of rows in CF_TRAINING_RECORDS. | none | crates/context-graph-mcp/src/tools/definitions/training.rs |
-| typed_edges | export_typed_edges_corpus | Export every typed edge currently stored in CF_TYPED_EDGES as a \ TypedEdgeTrainingRecord into CF_TYPED_EDGE_RECORDS. Each record \ carries the per-embedder similarity profile, optional source/target \ content, optional source_metadata (session_id, source_type), \ optional mechanism_type (joined from CF_CAUSAL_RELATIONSHIPS when \ edge type is CausalChain), and an optional LLMValidationSummary \ (joined from CF_TYPED_EDGE_VALIDATIONS). Idempotent — re-export \ overwrites prior records on the composite \ (source, target, edge_type) key. Set clearExisting=true to wipe \ CF_TYPED_EDGE_RECORDS before writing. Output is binary (version \ byte + bincode); no external files are written. | maxEdges, includeContent, includeSourceMetadata, includeMechanismType, joinLLMValidation, clearExisting | crates/context-graph-mcp/src/tools/definitions/typed_edges.rs |
-| typed_edges | derive_anomalies_from_edges | Classify typed edges against the five expressible AnomalyKind \ patterns (SemanticButNotCausal, CodeShapeButDifferentIntent, \ EntitySharedButDifferentStructure, KeywordButNotParaphrase, \ HdcRobustButSemanticDifferent) and persist matching pairs to \ CF_CONTRASTIVE_PAIRS via the standard contrastive-pair write path. \ Each written pair carries generator=\ | highThreshold, lowThreshold, minDisagreement, maxPairs, kinds | crates/context-graph-mcp/src/tools/definitions/typed_edges.rs |
-| typed_edges | validate_low_confidence_edges | Run the graph-agent LLM on typed edges whose auto-derived weight \ is below weightCeiling and persist each verdict as an \ LLMEdgeValidation row in CF_TYPED_EDGE_VALIDATIONS. Skips edges \ that already have a validation row (idempotent). When the 'llm' \ feature is disabled or the graph-agent's LLM is not loaded, the \ tool returns { status: 'skipped' } with a reason. Optional \ sessionFilter restricts walked edges to those whose source's \ SourceMetadata.session_id matches. | weightCeiling, maxEdges, sessionFilter | crates/context-graph-mcp/src/tools/definitions/typed_edges.rs |
-| typed_edges | list_typed_edge_records | Paginated read view of CF_TYPED_EDGE_RECORDS. Returns composite \ keys (source_memory_id, target_memory_id, edge_type, edge_type_name) \ in RocksDB iteration order. Set includeFull=true to hydrate each \ row with the full TypedEdgeTrainingRecord payload. | limit, offset, includeFull | crates/context-graph-mcp/src/tools/definitions/typed_edges.rs |
-| utl | register_learner | Register a learner profile in CF_LEARNER_PROFILE with consent state and enabled modalities. | learnerId, handle*, consentState, modalitiesEnabled, calibrationSessionTs | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | record_session_observation | Persist a learner-session fingerprint and state vector to CF_FINGERPRINTS_LEARNER and CF_LEARNER_STATE_HISTORY. | learnerId*, sessionTs*, modality, rawText, consentState, preprocessingVersion, embedderVersion, thresholdVersion, stateVector, components, embeddings, signals | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | compute_delta_s | Compute Delta S from predicted, actual, optional simulated text, and exploration rate. | predictedText, actualText, simulatedText, explorationRate, gamma | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | compute_delta_c | Compute Delta C from recent scores, HRV coherence, panel agreement, and contradiction pressure. | recentScores, hrvCoherence, panelAgreement, contradiction, gradientScale | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | compute_delta_e | Compute Delta E from learner-state subcomponents or from a stored learner session. | learnerId, sessionTs, components | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | compute_L | Compute L = DeltaS * DeltaC * DeltaE and optionally persist the session delta log and M trace. | learnerId, sessionTs, traceId, predictedText, actualText, simulatedText, explorationRate, recentScores, hrvCoherence, panelAgreement, contradiction, components*, persist, retrievalCorrect | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | get_learner_M | Read a persisted learner M(t) trace from CF_LEARNER_M_PER_TRACE. | learnerId*, traceId* | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | next_review_for_trace | Return the next-review timestamp for a persisted learner M(t) trace. | learnerId*, traceId* | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | list_learner_embedders | Return the canonical E1-E21 embedder matrix: E1-E14 content embedders plus E15-E21 learner-state embedders. | none | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | preflight_learner_assets | Inspect cached E15-E21 model assets and real calibration datasets. Fails closed when required files are missing unless allowMissing=true. | modelsRoot, calibrationRoot, allowMissing | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | count_learner_state | Return row counts for all learner-state RocksDB column families. | none | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | get_learner_state | Read persisted learner profile, session fingerprint/state vector, delta log, k_sleep, and optional M trace from RocksDB. | learnerId*, sessionTs, traceId, includeVectors | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | record_learner_k_sleep | Persist a sleep-gated consolidation multiplier row to CF_LEARNER_K_SLEEP. | learnerId*, sessionTs*, slowWaveMinutes*, k | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | record_learner_retrieval | Persist a retrieval-practice row to CF_LEARNER_RETRIEVAL_LOG using either a stored session state or an explicit state vector/components payload. | learnerId*, traceId*, ts*, sessionTs, correct*, score*, stateVector, components | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | upsert_goal_centroid | Persist an expert goal centroid for one skill/modality in CF_GOAL_CENTROIDS. | skillId*, modality*, vector* | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | get_goal_distance | Compare a learner session modality embedding to a persisted skill goal centroid, and optionally persist the learner's goal-state snapshot. | learnerId*, skillId*, sessionTs*, modality*, persistGoalState | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | compile_learner_constellation | Compile and persist a learner regulated-state baseline constellation from stored learner-session fingerprints. | learnerId*, sessionTsList*, selectorKind, label | crates/context-graph-mcp/src/tools/definitions/utl.rs |
-| utl | resolve_learner_retrieval_policy | Resolve the state-conditioned retrieval weight profile for a persisted learner session. Fails closed when the learner state or requested base profile is missing. | learnerId*, sessionTs*, baseWeightProfile, includeWeights | crates/context-graph-mcp/src/tools/definitions/utl.rs |
+## 4. Tool Inventory (Name → One-Line)
+### capability
+- **get_capability_matrix** — Compact MCP capability map: E1-E14 content embedders, E15-E21 learner slots, tool groups, RocksDB CFs, optional runtime counts.
 
-## 5. Aliases
+### core
+- **store_memory*** — Store one memory directly without UTL processing. Params: `content*`, `rationale`, `importance`, `sessionId`, `operatorId`.
+- **store_memories*** — Batch store an array of memories. Params: `memories*` (array of {content, rationale, importance, sessionId, operatorId}).
+- **get_memetic_status** — Fingerprint count, embedder count (14), storage backend/size, layer status.
+- **search_graph*** — Multi-space search across 14 embedders. Params: `query*`, `topK`, `minSimilarity`, `strategy`, `weightProfile`, `customWeights`, `excludeEmbedders`, `enableRerank`, `enableAsymmetricE5`, `causalDirection`, `temporalWeight`, `lastHours`, `lastDays`, `sessionId`, `decayFunction`, `temporalScale`, ... .
+- **trigger_consolidation** — Identify merge candidates (does NOT auto-merge). Params: `strategy`, `min_similarity`, `max_memories`.
+
+### merge / curation
+- **merge_concepts*** — Merge ≥2 nodes; `union | intersection | weighted_average`; reversal_hash for 30-day undo. Params: `source_ids*`, `target_name*`, `merge_strategy`, `rationale*`, `force_merge`.
+- **forget_concept*** — Soft-delete (30-day recovery) or permanent. Params: `node_id*`, `soft_delete`, `operator_id`, `reason`.
+- **boost_importance*** — Adjust importance by delta; clamps [0.0, 1.0]. Params: `node_id*`, `delta*`, `operator_id`.
+
+### topic
+- **get_topic_portfolio** — All discovered topics + stability metrics. Param: `format`.
+- **get_topic_stability** — Portfolio churn/entropy/phase breakdown. Param: `hours`.
+- **detect_topics** — Force HDBSCAN recalculation (min 3 memories). Params: `force`, `max_memories`.
+- **get_divergence_alerts** — Divergence vs recent activity using semantic embedders only. Param: `lookback_hours`.
+
+### file_watcher
+- **list_watched_files** — Files with embeddings + chunk counts.
+- **get_file_watcher_stats** — Aggregate file watcher stats.
+- **delete_file_content*** — Delete embeddings for a path; soft-delete supported. Params: `file_path*`, `soft_delete`.
+- **reconcile_files** — Find orphaned files vs disk; `dry_run` to preview.
+
+### sequence (E4)
+- **get_conversation_context** — Memories around current turn via E4 ordering.
+- **get_session_timeline** — Ordered memory timeline.
+- **traverse_memory_chain*** — Multi-hop sequence traversal from `anchorId*`.
+- **compare_session_states*** — Compare state at two sequence points. Params: `beforeSequence*`, `afterSequence*`, `sessionId`.
+
+### causal (E5)
+- **search_causal_relationships*** — E5 asymmetric similarity + LLM 1-3 paragraph descriptions.
+- **search_causes*** — Abductive: find causes of effects (0.8× dampening).
+- **search_effects*** — Predictive: find effects of causes (1.2× boost).
+- **get_causal_chain*** — Transitive chains from anchor; hop attenuation 0.9^hop.
+
+### causal_discovery (llm)
+- **trigger_causal_discovery** — Run Qwen2.5 causal discovery; FP16 on RTX 5090.
+- **get_causal_discovery_status** — Agent status, last cycle, VRAM usage.
+
+### keyword / code / robustness
+- **search_by_keywords*** — E6 sparse + optional SPLADE expansion.
+- **search_code*** — E7 dense (1536D) + optional E1 blend.
+- **search_robust*** — E9 HDC typo-tolerant.
+
+### entity (E11 / TransE)
+- **extract_entities*** — Pattern + KB canonicalization.
+- **search_by_entities*** — E11 + Jaccard hybrid; `any` / `all` modes.
+- **infer_relationship*** — TransE r̂ = t - h.
+- **find_related_entities*** — TransE outgoing/incoming.
+- **validate_knowledge*** — Score (h, r, t) triple via TransE.
+- **get_entity_graph** — Inferred relationship graph with weights.
+
+### embedder (cross-cutting + standalone)
+- **search_by_embedder*** — Single-embedder primary search. Params: `embedder*`, `query*`, ... .
+- **get_embedder_clusters*** — Per-embedder clusters.
+- **compare_embedder_views*** — Side-by-side rankings.
+- **list_embedder_indexes** — All 14 indexes + stats.
+- **get_memory_fingerprint*** — Per-embedder vectors for one memory.
+- **create_weight_profile*** — Named custom weight profile (rejects built-in names). Params: `name*`, `weights*`, `description`.
+- **search_cross_embedder_anomalies*** — High-score one embedder, low-score another.
+- **search_by_tokens*** — E12 ColBERT MaxSim.
+- **search_by_expansion*** — E13 SPLADE expansion.
+
+### temporal (E2/E3)
+- **search_recent*** — E2 freshness boost (post-retrieval).
+- **search_periodic*** — E3 hour/day-of-week match.
+
+### graph (base + llm)
+- **search_connections*** — E8 asymmetric source/target connections.
+- **get_graph_path*** — Multi-hop E8 paths.
+- **discover_graph_relationships*** (llm) — Qwen2.5-3B; 20 relationship types.
+- **validate_graph_link*** (llm) — LLM verdict on (source, target).
+
+### graph_link
+- **get_memory_neighbors*** — Pre-computed K-NN; embedder_id selectable.
+- **get_typed_edges*** — Typed edges (8 types) by direction/edge_type.
+- **traverse_graph*** — Multi-hop typed-edge traversal.
+- **get_unified_neighbors*** — Weighted RRF fusion across all 14 embedders.
+
+### maintenance / provenance / daemon
+- **repair_causal_relationships** — Delete corrupt CF_CAUSAL_RELATIONSHIPS rows.
+- **get_audit_trail** — Audit log query.
+- **get_merge_history*** — Merge lineage for fingerprint.
+- **get_provenance_chain*** — Full embedding→source chain.
+- **daemon_status** — Connections, models, uptime, PID.
+
+### training
+- **export_training_corpus** — TrainingRecord v3 → CF_TRAINING_RECORDS. Params include `includeEmbeddings`, `includeSparseVectors`, `includeTokenEmbeddings`, `includeEdges`, `includeCausalLabels`, `includeIncomingEdges`, `includeTemporalLabels`, `includeTuckerCore`, `clearExisting`.
+- **list_training_records** / **get_training_record*** / **count_training_records**.
+
+### learning (Learning-as-UTL)
+- **record_learning_event** — Persist event with before/after 14D topic profile, 91D cross-correlations, outcome label, signals.
+- **list_learning_events** / **get_learning_event*** / **count_learning_events**.
+- **list_learning_signal_embedders** — Available learner-signal embedder IDs.
+- **compute_learning_signals** — Compute deterministic learning features from inputs.
+- **embed_learning_event_signals** — Embed signals for a stored event.
+- **estimate_learning_outcome*** — Nearest-neighbor outcome prediction over CF_LEARNING_EVENTS.
+- **export_learner_training_dataset** — Compile rows into row-major f32 matrix in CF_LEARNER_TRAINING_DATASETS.
+- **list_learner_training_datasets** / **get_learner_training_dataset*** / **count_learner_training_datasets**.
+
+### utl (Learner-State Substrate)
+- **register_learner** — Profile + consent + modalities.
+- **record_session_observation*** — Persist learner-session fingerprint and state vector.
+- **compute_delta_s** / **compute_delta_c** / **compute_delta_e** — Components of L.
+- **compute_L** — L = ΔS·ΔC·ΔE; optionally persist delta log + M trace.
+- **get_learner_M*** — Read persisted M(t).
+- **next_review_for_trace*** — Next review timestamp for M trace.
+- **list_learner_embedders** — E1-E14 + E15-E21 matrix.
+- **preflight_learner_assets** — Verify cached E15-E21 model assets and calibration data.
+- **count_learner_state** — Row counts across learner CFs.
+- **get_learner_state*** — Profile, fingerprint, state vector, delta log, k_sleep, optional M trace.
+- **record_learner_k_sleep*** — Sleep-gated consolidation multiplier.
+- **record_learner_retrieval*** — Retrieval-practice row.
+- **upsert_goal_centroid*** — Expert goal centroid per (skill, modality).
+- **get_goal_distance*** — Compare session embedding to goal centroid.
+- **compile_learner_constellation*** — Persist regulated-state baseline.
+- **resolve_learner_retrieval_policy*** — Resolve state-conditioned weight profile (affect_repair / affect_priming / affect_neutral / base).
+
+### constellation
+- **compile_constellation*** — Aggregate centroids over selector. Selectors: topic / session / tag / time_range / explicit_ids.
+- **list_constellations** / **get_constellation*** — Read.
+- **score_against_constellation*** — Per-embedder cosine + in_spread_p95.
+- **derive_constellation*** — Operations: `interpolate / add / difference / anti_pole`. Persists derived anchor.
+- **delete_constellation*** — Idempotent.
+
+### contrastive
+- **mine_contrastive_pairs** — Scan for cross-embedder anomaly pairs into CF_CONTRASTIVE_PAIRS.
+- **list_contrastive_pairs** / **get_contrastive_pair*** / **count_contrastive_pairs**.
+
+### typed_edges (training)
+- **export_typed_edges_corpus** — Each typed edge → TypedEdgeTrainingRecord with similarity profile, optional content/source/mechanism/LLM-validation join.
+- **derive_anomalies_from_edges** — Classify edges into 5 AnomalyKind patterns; persists to CF_CONTRASTIVE_PAIRS.
+- **validate_low_confidence_edges** — Run LLM on low-weight edges; persists to CF_TYPED_EDGE_VALIDATIONS (skipped without `llm`).
+- **list_typed_edge_records** — Paginated read.
+
+## 5. Tool Aliases
 | Alias | Canonical |
 | --- | --- |
 | consolidate_memories | trigger_consolidation |
 | inject_context | store_memory |
+
+## 6. AnomalyKinds (contrastive / typed_edges)
+- semantic_but_not_causal
+- keyword_but_not_paraphrase
+- code_shape_but_different_intent
+- entity_shared_but_different_structure
+- hdc_robust_but_semantic_different
+- other (sentinel for unmatched)
+
+## 7. Common Side Effects
+| Tool group | Writes |
+| --- | --- |
+| store_memory(_ies) | CF_FINGERPRINTS, CF_CONTENT, CF_SOURCE_METADATA, all CF_EMB_*, audit log |
+| forget_concept | tombstone in CF_SYSTEM, CF_AUDIT_LOG |
+| merge_concepts | CF_FINGERPRINTS (target), CF_MERGE_HISTORY, CF_AUDIT_LOG |
+| boost_importance | CF_FINGERPRINTS, CF_IMPORTANCE_HISTORY, CF_AUDIT_LOG |
+| trigger_causal_discovery | CF_CAUSAL_RELATIONSHIPS, CF_CAUSAL_BY_SOURCE |
+| export_training_corpus | CF_TRAINING_RECORDS |
+| record_learning_event | CF_LEARNING_EVENTS |
+| compile_constellation / derive_constellation | CF_CONSTELLATIONS, CF_CONSTELLATION_BY_SELECTOR |
+| mine_contrastive_pairs / derive_anomalies_from_edges | CF_CONTRASTIVE_PAIRS, CF_CONTRASTIVE_BY_KIND/ANCHOR |
+| validate_low_confidence_edges | CF_TYPED_EDGE_VALIDATIONS |
+| record_session_observation / record_learner_* | CF_FINGERPRINTS_LEARNER, CF_LEARNER_STATE_HISTORY, CF_LEARNER_DELTA_LOG, etc. |

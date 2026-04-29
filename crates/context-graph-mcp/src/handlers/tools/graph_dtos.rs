@@ -327,6 +327,7 @@ impl super::validate::ValidateInto for GetGraphPathRequest {
     }
 }
 
+#[cfg(feature = "llm")]
 impl super::validate::ValidateInto for DiscoverGraphRelationshipsRequest {
     type Output = Vec<Uuid>;
     fn validate(&self) -> Result<Self::Output, String> {
@@ -334,6 +335,7 @@ impl super::validate::ValidateInto for DiscoverGraphRelationshipsRequest {
     }
 }
 
+#[cfg(feature = "llm")]
 impl super::validate::ValidateInto for ValidateGraphLinkRequest {
     type Output = (Uuid, Uuid);
     fn validate(&self) -> Result<Self::Output, String> {
@@ -569,15 +571,19 @@ impl GetGraphPathResponse {
 // ============================================================================
 
 /// Default minimum confidence for discovered relationships.
+#[cfg(feature = "llm")]
 pub const DEFAULT_MIN_DISCOVERY_CONFIDENCE: f32 = 0.7;
 
 /// Default batch size for relationship discovery.
+#[cfg(feature = "llm")]
 pub const DEFAULT_DISCOVERY_BATCH_SIZE: usize = 50;
 
 /// Maximum batch size for relationship discovery.
+#[cfg(feature = "llm")]
 pub const MAX_DISCOVERY_BATCH_SIZE: usize = 100;
 
 /// Maximum number of memories for relationship discovery.
+#[cfg(feature = "llm")]
 pub const MAX_DISCOVERY_MEMORIES: usize = 50;
 
 /// Request parameters for discover_graph_relationships tool.
@@ -592,6 +598,7 @@ pub const MAX_DISCOVERY_MEMORIES: usize = 50;
 /// }
 /// ```
 #[derive(Debug, Clone, Deserialize)]
+#[cfg(feature = "llm")]
 pub struct DiscoverGraphRelationshipsRequest {
     /// UUIDs of memories to analyze for relationships (2-50 required).
     pub memory_ids: Vec<String>,
@@ -609,14 +616,17 @@ pub struct DiscoverGraphRelationshipsRequest {
     pub batch_size: usize,
 }
 
+#[cfg(feature = "llm")]
 fn default_min_confidence() -> f32 {
     DEFAULT_MIN_DISCOVERY_CONFIDENCE
 }
 
+#[cfg(feature = "llm")]
 fn default_batch_size() -> usize {
     DEFAULT_DISCOVERY_BATCH_SIZE
 }
 
+#[cfg(feature = "llm")]
 impl Default for DiscoverGraphRelationshipsRequest {
     fn default() -> Self {
         Self {
@@ -628,6 +638,7 @@ impl Default for DiscoverGraphRelationshipsRequest {
     }
 }
 
+#[cfg(feature = "llm")]
 impl DiscoverGraphRelationshipsRequest {
     /// Validate the request parameters.
     ///
@@ -725,6 +736,7 @@ impl DiscoverGraphRelationshipsRequest {
 
 /// A discovered relationship between two memories.
 #[derive(Debug, Clone, Serialize)]
+#[cfg(feature = "llm")]
 pub struct DiscoveredRelationship {
     /// UUID of the source memory (the one that "points to").
     pub source_id: Uuid,
@@ -755,6 +767,7 @@ pub struct DiscoveredRelationship {
 
 /// Response for discover_graph_relationships tool.
 #[derive(Debug, Clone, Serialize)]
+#[cfg(feature = "llm")]
 pub struct DiscoverGraphRelationshipsResponse {
     /// Discovered relationships.
     pub relationships: Vec<DiscoveredRelationship>,
@@ -768,6 +781,7 @@ pub struct DiscoverGraphRelationshipsResponse {
 
 /// Metadata about the discovery process.
 #[derive(Debug, Clone, Serialize)]
+#[cfg(feature = "llm")]
 pub struct DiscoveryMetadata {
     /// Number of memories analyzed.
     pub memories_analyzed: usize,
@@ -799,6 +813,7 @@ pub struct DiscoveryMetadata {
 /// }
 /// ```
 #[derive(Debug, Clone, Deserialize)]
+#[cfg(feature = "llm")]
 pub struct ValidateGraphLinkRequest {
     /// UUID of the source memory (the one that "points to").
     pub source_id: String,
@@ -811,6 +826,7 @@ pub struct ValidateGraphLinkRequest {
     pub expected_relationship_type: Option<String>,
 }
 
+#[cfg(feature = "llm")]
 impl ValidateGraphLinkRequest {
     /// Validate the request parameters.
     ///
@@ -877,6 +893,7 @@ impl ValidateGraphLinkRequest {
 
 /// Response for validate_graph_link tool.
 #[derive(Debug, Clone, Serialize)]
+#[cfg(feature = "llm")]
 pub struct ValidateGraphLinkResponse {
     /// Whether a valid relationship exists between the memories.
     pub is_valid: bool,

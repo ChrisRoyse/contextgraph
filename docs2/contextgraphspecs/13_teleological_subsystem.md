@@ -6,24 +6,42 @@
 - `crates/context-graph-storage/src/teleological/**/*.rs`
 
 ## 1. Scope
-The teleological subsystem combines semantic fingerprints, metadata, topic profiles, synergy/cross-correlation features, profile weights, matrix search, multi-resolution views, and storage integration.
+The teleological subsystem combines `SemanticFingerprint`, metadata, topic profiles, synergy/cross-correlation features, weight profiles, multi-space search, and storage integration.
 
 ## 2. Data Models
-| Model | Fields/shape |
+| Model | Fields/Shape |
 | --- | --- |
-| SemanticFingerprint | 14 production slots with sparse/token/asymmetric fields |
+| SemanticFingerprint | 14 production slots; sparse / token / asymmetric fields (see [05](05_embedding_subsystem.md)) |
 | TeleologicalFingerprint | id, semantic, content_hash, timestamps, access_count, importance, last_accessed_at, optional e6_sparse |
-| TopicProfile | per-embedder alignment profile |
-| Training cross correlations | C(14,2)=91 |
-| Group alignments | 6D |
+| TopicProfile | per-embedder alignment profile; 13D compact (E14 excluded) |
+| Cross correlations | C(14, 2) = 91 pairwise |
+| Group alignments | 6D semantic group buckets |
 
-## 3. Formulas
+## 3. Compact Vector Layout (`teleological_vector` → 13 entries)
+1-9: dense L2 norms for E1, E2, E3, E4, E5, E7, E8, E9, E10
+10: e6_sparse nnz / 1000
+11: E11 dense L2 norm
+12: e12 average per-token norm
+13: e13 sparse nnz / 1000
+(E14 dense norm intentionally excluded; tracked separately in training records.)
+
+## 4. Formulas
 | Formula | Behavior |
 | --- | --- |
-| teleological_vector | 13 values: dense L2 norms, sparse nnz/1000, E12 avg token norm; E14 excluded |
-| e6_term_overlap | merge-join sparse indices; shared/query nnz |
-| importance | with_importance clamps to [0,1] |
-| record_access | increments count and updates timestamps |
+| `e6_term_overlap` | Merge-join sparse indices; shared / query nnz |
+| `with_importance` | Clamp to [0.0, 1.0] |
+| `record_access` | Increment count + update timestamps |
+| Topic confidence | weighted_agreement / 9.5 |
 
-## 4. Current Source Gaps
-`TeleologicalFingerprint` comments still refer to 13 embeddings while `SemanticFingerprint` has 14. `TELEOLOGICAL_VECTOR_DIM` remains 13.
+## 5. Constants
+| Constant | Value |
+| --- | --- |
+| TELEOLOGICAL_VECTOR_DIM | 13 |
+| NUM_EMBEDDERS | 14 |
+| MAX_WEIGHTED_AGREEMENT | 9.5 |
+| TOTAL_WEIGHT | 9.5 |
+
+## 6. Source Notes
+- `TeleologicalFingerprint` carries 14 embeddings (via SemanticFingerprint) but its compact `teleological_vector` is 13D.
+- `record_access` mutates `last_accessed_at`; access patterns drive importance heuristics.
+- Storage integration handled by `storage/teleological/rocksdb_store/*.rs`.

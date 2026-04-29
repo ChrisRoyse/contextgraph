@@ -22,13 +22,15 @@ use std::time::Instant;
 
 use chrono::Utc;
 use context_graph_core::graph_linking::GraphLinkEdgeType;
+#[cfg(feature = "llm")]
 use context_graph_core::llm_edge_validation::LLMEdgeValidation;
-use context_graph_core::typed_edge_export::{
-    LLMValidationSummary, LLMVerdict, TypedEdgeTrainingRecord,
-};
+#[cfg(feature = "llm")]
+use context_graph_core::typed_edge_export::LLMVerdict;
+use context_graph_core::typed_edge_export::{LLMValidationSummary, TypedEdgeTrainingRecord};
 use context_graph_storage::teleological::rocksdb_store::AnomalyDerivationConfig;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use serde_json::{json, Value as JsonValue};
+#[cfg(feature = "llm")]
 use sha2::{Digest, Sha256};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -893,6 +895,7 @@ fn record_to_json(rec: &TypedEdgeTrainingRecord) -> JsonValue {
 
 /// Compute a stable SHA-256 hash over the inputs actually sent to the LLM so
 /// a future change in the prompt template can be detected as drift.
+#[cfg(feature = "llm")]
 fn compute_prompt_hash(source_content: &str, target_content: &str) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"graph_agent::analyze_relationship::v1\n");
@@ -912,6 +915,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "llm")]
     fn prompt_hash_is_stable_and_content_sensitive() {
         let h1 = compute_prompt_hash("alpha", "beta");
         let h2 = compute_prompt_hash("alpha", "beta");
