@@ -82,7 +82,7 @@ def main() -> None:
     missing = [p for p in REQUIRED_PACKAGES if importlib.util.find_spec(p) is None]
     check("python_packages", not missing, {"missing": missing})
 
-    gpu_rows = []
+    gpu_rows: list[dict[str, object]] = []
     try:
         smi = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,memory.total,memory.free", "--format=csv,noheader"],
@@ -96,15 +96,9 @@ def main() -> None:
             total = int(total_raw.replace(" MiB", ""))
             free = int(free_raw.replace(" MiB", ""))
             gpu_rows.append({"name": name, "total_mib": total, "free_mib": free})
-        ok_gpu = any(
-            row["name"].endswith("RTX 5090")
-            and row["total_mib"] >= 30000
-            and row["free_mib"] >= 30000
-            for row in gpu_rows
-        )
-        check("cuda_gpu_rtx5090_30gb_free", ok_gpu, {"source_of_truth": "nvidia-smi", "rows": gpu_rows})
     except Exception as exc:
-        check("cuda_gpu_rtx5090_30gb_free", False, {"source_of_truth": "nvidia-smi", "error": str(exc)})
+        gpu_rows.append({"error": str(exc)})
+    report["nvidia_smi_probe"] = gpu_rows
 
     torch_probe: dict[str, object] = {"available": False, "devices": []}
     try:
@@ -127,6 +121,22 @@ def main() -> None:
     except Exception as exc:
         torch_probe["error"] = str(exc)
     report["torch_cuda_probe"] = torch_probe
+    ok_gpu = any(
+        str(row["name"]).endswith("RTX 5090")
+        and int(row["total_mib"]) >= 30000
+        and int(row["free_mib"]) >= 30000
+        for row in torch_probe.get("devices", [])
+    )
+    check(
+        "cuda_gpu_rtx5090_30gb_free",
+        ok_gpu,
+        {
+            "source_of_truth": "torch.cuda.mem_get_info",
+            "required": {"name_suffix": "RTX 5090", "total_mib_min": 30000, "free_mib_min": 30000},
+            "torch_devices": torch_probe.get("devices", []),
+            "nvidia_smi_diagnostic": gpu_rows,
+        },
+    )
 
     binary = repo_path(cfg["run"]["mcp_binary"])
     check("mcp_binary_exists", binary.exists(), str(binary))

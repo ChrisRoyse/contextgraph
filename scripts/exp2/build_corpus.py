@@ -152,7 +152,9 @@ def collect_learning_events(path: Path | None) -> list[dict[str, Any]]:
         label = item.get("outcome", {}).get("label") if isinstance(item.get("outcome"), dict) else item.get("label")
         if not isinstance(text, str) or not label:
             raise Exp2Error(f"S4 event {i} missing text/query/content or outcome.label")
-        out.append(record(text, "S4_learning_events", str(path), "private_anonymized", {"event_index": i, "label": label}))
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        event_metadata = {"event_index": i, "label": label, **metadata}
+        out.append(record(text, "S4_learning_events", str(path), "private_anonymized", event_metadata))
     return out
 
 
@@ -226,22 +228,52 @@ def collect_multilingual() -> list[dict[str, Any]]:
         from datasets import load_dataset
     except Exception as exc:
         raise Exp2Error(f"S8 requires datasets package: {exc}") from exc
-    langs = [("eng_Latn", "English"), ("spa_Latn", "Spanish"), ("fra_Latn", "French"), ("deu_Latn", "German"), ("zho_Hans", "Chinese"), ("arb_Arab", "Arabic")]
+    langs = [
+        ("eng_Latn", "English"),
+        ("spa_Latn", "Spanish"),
+        ("fra_Latn", "French"),
+        ("deu_Latn", "German"),
+        ("arb_Arab", "Arabic"),
+        ("rus_Cyrl", "Russian"),
+        ("hin_Deva", "Hindi"),
+        ("ita_Latn", "Italian"),
+        ("por_Latn", "Portuguese"),
+        ("nld_Latn", "Dutch"),
+        ("pol_Latn", "Polish"),
+        ("ces_Latn", "Czech"),
+        ("ukr_Cyrl", "Ukrainian"),
+        ("tur_Latn", "Turkish"),
+        ("ind_Latn", "Indonesian"),
+        ("vie_Latn", "Vietnamese"),
+        ("ron_Latn", "Romanian"),
+        ("swe_Latn", "Swedish"),
+        ("dan_Latn", "Danish"),
+        ("fin_Latn", "Finnish"),
+        ("ell_Grek", "Greek"),
+        ("heb_Hebr", "Hebrew"),
+        ("hun_Latn", "Hungarian"),
+        ("slv_Latn", "Slovenian"),
+    ]
     target = max(MIN_CANDIDATES, 250)
-    per_language_target = (target + len(langs) - 1) // len(langs)
+    per_language_target = max(12, (target + len(langs) - 1) // len(langs))
     out = []
-    for code, name in langs:
-        ds = load_dataset("facebook/flores", code, split="dev", streaming=True)
-        window: list[str] = []
-        for i, row in enumerate(ds):
-            text = clean_text(row.get("sentence", ""))
-            if text:
-                window.append(text)
-                candidate = " ".join(window[-8:])
-                if 50 <= token_count(candidate) <= 800:
-                    out.append(record(candidate, "S8_multilingual", f"facebook/flores:{code}", "CC-BY-SA", {"language": name, "row": i, "window_size": len(window[-8:])}))
-            if len([r for r in out if r["metadata"]["language"] == name]) >= per_language_target:
-                break
+    ds = load_dataset("mteb/flores", split="dev", streaming=True)
+    windows: dict[str, list[str]] = {code: [] for code, _ in langs}
+    counts: dict[str, int] = {name: 0 for _, name in langs}
+    for i, row in enumerate(ds):
+        for code, name in langs:
+            if counts[name] >= per_language_target:
+                continue
+            text = clean_text(row.get(code, ""))
+            if not text:
+                continue
+            windows[code].append(text)
+            candidate = " ".join(windows[code][-8:])
+            if 50 <= token_count(candidate) <= 800:
+                out.append(record(candidate, "S8_multilingual", f"mteb/flores:{code}", "CC-BY-SA", {"language": name, "row": i, "window_size": len(windows[code][-8:])}))
+                counts[name] += 1
+        if all(count >= per_language_target for count in counts.values()):
+            break
     if len(out) < target:
         raise Exp2Error(f"S8 collected {len(out)} candidates, need {target}")
     return out[:target]

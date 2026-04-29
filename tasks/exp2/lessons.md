@@ -19,3 +19,13 @@ Why it matters: silently clamping or ignoring those resamples would make CI valu
 Fix: production KSG still fails on duplicate raw data. Bootstrap-only KSG uses deterministic `1e-12` tie-break jitter and records that duplicate policy in each pair result.
 
 Prevention rule: estimator numerical policies that change the data, even at tiny scale, must be explicit in artefacts and not hidden inside helper functions.
+
+## 2026-04-29 — Partial EXP-2 Artefacts Must Not Be Certifiable
+
+What happened: the workspace contained a 600-input `corpus_manifest_v1.json` that excluded S4 learning-events and S8 multilingual strata, while the EXP-2 contract requires 800 inputs across 8 strata.
+
+Why it matters: downstream estimator, audit, and FSV phases could otherwise operate on an invalid corpus and make the run look complete.
+
+Fix: production corpus construction now rejects excluded strata, extraction checks exact manifest counts and no deviations, audit finalization refuses missing phase chains or artefacts, and FSV requires production artefacts plus a fresh replay.
+
+Prevention rule: missing or partial EXP-2 state is never recorded as a successful artefact; it must raise with the exact missing source of truth.

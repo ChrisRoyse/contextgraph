@@ -80,7 +80,7 @@ def test_b4_production_ksg_mi_works_at_dim_1():
 
 
 # ---------------------------------------------------------------------------
-# M2 — Synthetic Gaussian sweep using KDTree workaround
+# M2 — Synthetic Gaussian sweep using production KSG
 # ---------------------------------------------------------------------------
 
 

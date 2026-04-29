@@ -92,10 +92,17 @@ def validate_reference(root: Path, cfg: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             raise Exp2Error(f"FSV check failed: {name}: {detail}")
 
+    missing_required = []
     for rel in REQUIRED_ARTEFACTS:
         path = root / rel
-        check(f"exists:{rel}", path.exists(), str(path))
+        exists = path.exists()
+        report["checks"].append({"name": f"exists:{rel}", "ok": exists, "detail": str(path)})
+        if not exists:
+            missing_required.append(rel)
+            continue
         report["artefacts"][rel] = sha256_file(path)
+    if missing_required:
+        raise Exp2Error(f"FSV missing required artefacts: {missing_required}")
     manifest = _read_json(root / "corpus_manifest_v1.json")
     expected_count = int(cfg["corpus"]["expected_count"])
     expected_strata = int(cfg["corpus"]["expected_strata"])

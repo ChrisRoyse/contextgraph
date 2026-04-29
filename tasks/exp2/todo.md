@@ -4,7 +4,7 @@ Source docs: `docs/exp2/06_atomic_tasks.md`.
 
 | Task | Status | Evidence |
 |---|---|---|
-| T-001 Verify Environment | blocked | `artefacts/exp2/verification_log.json` shows Python/packages/models/cargo build present, but free VRAM is 17,639 MiB < required 30,000 MiB. |
+| T-001 Verify Environment | blocked | `artefacts/exp2/verification_log.json` now fails loudly: missing Python packages (`scipy`, `sklearn`, `torch`, `matplotlib`, `seaborn`) and RTX 5090 free VRAM 28,318 MiB < required 30,000 MiB. Cargo and all 14 embedder hashes are logged. |
 | T-002 Build Per-Stratum Source Files | pending | Blocked by T-001. |
 | T-003 Sample Exactly 100 Per Stratum | pending | Blocked by T-002. |
 | T-004 Merge + Validate + Sign Manifest | pending | Blocked by T-003 and operator sign-off. |
@@ -27,7 +27,7 @@ Source docs: `docs/exp2/06_atomic_tasks.md`.
 | T-021 Compute Effective Rank | implemented, not run | `scripts/exp2/effective_rank.py`; blocked by T-018/T-019. |
 | T-022 Render Visualizations | implemented, not run | `scripts/exp2/visualize.py`; blocked by T-021. |
 | T-023 Per-Pair Recommendation Table | implemented, not run | `scripts/exp2/visualize.py`; blocked by T-021. |
-| T-024 Audit Chain Finalization | partially implemented | `scripts/exp2/audit_chain.py`; full chain blocked by missing production artefacts. |
+| T-024 Audit Chain Finalization | implemented, blocked by artefacts | `scripts/exp2/run_exp2.py --phase audit` now refuses missing phase chains / artefacts. Current failure: missing `audit_chain_estimators.json`. |
 | T-025 FSV Replay Test | implemented, not run | `scripts/exp2/fsv.py`, `scripts/exp2/replay.py`; blocked by production artefacts. |
 | T-026 Operator Sign-Off On Headline | pending | Requires measured `n_eff_summary.json`. |
 | T-027 Paper Patch Drafting | pending | Requires measured headline. |
@@ -44,4 +44,6 @@ Latest verification:
 
 - `pytest -q scripts/exp2/tests` -> 7 passed.
 - `python3 scripts/exp2/manual_fsv.py --config scripts/exp2/exp2.yml` -> passed. Evidence: `artefacts/exp2/manual_fsv_log.json` read back 3 fingerprints and 3 training records, then proved 3 edge cases left source-of-truth counts unchanged.
-- `python3 scripts/exp2/verify_environment.py --config scripts/exp2/exp2.yml --skip-cargo` -> expected failure until GPU memory is freed. Evidence: `artefacts/exp2/verification_log.json`.
+- `python3 scripts/exp2/verify_environment.py --config scripts/exp2/exp2.yml` -> failed loudly until Python deps and GPU free memory are fixed. Evidence: `artefacts/exp2/verification_log.json`.
+- `python3 scripts/exp2/build_corpus.py --config scripts/exp2/exp2.yml --phase sources` -> failed loudly because the required real S4 export is missing: `artefacts/exp2/learning_events_export.json`.
+- `python3 scripts/exp2/fsv.py --config scripts/exp2/exp2.yml` -> failed loudly because production artefacts have not been generated (`embeddings_per_input.npz` is the first missing artefact).
