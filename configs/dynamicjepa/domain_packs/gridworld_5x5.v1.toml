@@ -1,0 +1,152 @@
+[domain]
+id = "gridworld_5x5"
+version = "1.0.0"
+title = "Gridworld 5x5 - Deterministic Discrete Navigation"
+schema_version = 1
+
+[time]
+field = { name = "step_index", kind = "i64", required = true }
+
+[[state.fields]]
+name = "x"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 4
+
+[[state.fields]]
+name = "y"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 4
+
+[[action.fields]]
+name = "move"
+kind = { type = "categorical", variants = ["up", "down", "left", "right", "noop"] }
+required = true
+
+[[outcome.fields]]
+name = "next_x"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 4
+
+[[outcome.fields]]
+name = "next_y"
+kind = { type = "i64" }
+required = true
+min = 0
+max = 4
+
+[[entity.fields]]
+name = "trajectory_id"
+kind = { type = "string" }
+required = true
+
+[[instruments]]
+id = "state_xy_onehot"
+kind = { type = "onehot", dim = 25 }
+input_fields = ["state.x", "state.y"]
+output_shape = [25]
+normalization = { type = "none" }
+required = true
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "action_move_onehot"
+kind = { type = "categorical", variants = ["up", "down", "left", "right", "noop"] }
+input_fields = ["action.move"]
+output_shape = [5]
+normalization = { type = "none" }
+required = true
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+
+[[instruments]]
+id = "step_scalar"
+kind = { type = "scalar" }
+input_fields = ["time.step_index"]
+output_shape = [1]
+normalization = { type = "standard_score", mean = 3.5, std = 2.0 }
+required = false
+version = 1
+[instruments.validation]
+require_finite = true
+reject_nan = true
+reject_inf = true
+min = 0.0
+max = 7.0
+
+[[adapters]]
+id = "json_event"
+kind = "json_event"
+version = 1
+[adapters.mapping]
+"state.x" = "$.state.x"
+"state.y" = "$.state.y"
+"action.move" = "$.action.move"
+"outcome.next_x" = "$.outcome.next_x"
+"outcome.next_y" = "$.outcome.next_y"
+"time.step_index" = "$.step"
+"entity.trajectory_id" = "$.trajectory_id"
+
+[[objectives]]
+id = "predict_next_xy"
+kind = "latent_delta"
+input_panel = "state_action"
+target = "outcome.next_xy_onehot"
+loss_weight = 1.0
+required_dataset_fields = ["target_panel_id", "input_panel_id", "action_id"]
+
+[[invariants]]
+id = "wall_clip_consistency"
+expression = """
+  (action.move == 'up'    -> outcome.next_y == max(state.y - 1, 0)) AND
+  (action.move == 'down'  -> outcome.next_y == min(state.y + 1, 4)) AND
+  (action.move == 'left'  -> outcome.next_x == max(state.x - 1, 0)) AND
+  (action.move == 'right' -> outcome.next_x == min(state.x + 1, 4)) AND
+  (action.move == 'noop'  -> outcome.next_x == state.x AND outcome.next_y == state.y)
+"""
+severity = "fatal"
+
+[dataset_policy]
+default_split = "by_domain_key_hash"
+split_key = "entity.trajectory_id"
+split_buckets = { train = 0.70, val = 0.20, test = 0.10 }
+default_objective = "predict_next_xy"
+negative_sampling = "same_domain_different_outcome"
+min_negatives_per_row = 1
+
+[planner_policy]
+candidate_actions = { kind = "enumerated", moves = ["up", "down", "left", "right", "noop"] }
+guards = ["bounds_check"]
+surprise_threshold = 0.85
+
+[verification_policy]
+required_cfs = [
+  "dj_domain_packs", "dj_raw_events", "dj_adapter_runs",
+  "dj_normalized_states", "dj_actions", "dj_outcomes", "dj_transitions",
+  "dj_instrument_readings", "dj_latent_panels",
+  "dj_trajectories", "dj_dataset_shards",
+  "dj_training_runs", "dj_model_artifacts",
+  "dj_predictions", "dj_plan_traces", "dj_guard_decisions",
+  "dj_verification_runs", "dj_audit_log"
+]
+expected_trajectory_count = 1000
+expected_event_count = 8000
+expected_panel_count = 8000
+expected_train_rows_min = 4800
+expected_train_rows_max = 5000
+expected_val_rows_min = 1300
+expected_val_rows_max = 1500
+expected_test_rows_min = 600
+expected_test_rows_max = 800

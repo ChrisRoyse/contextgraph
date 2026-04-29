@@ -1,0 +1,1 @@
+{"trajectory_id":"edge_invalid","step":0,"state":{"x":2,"y":2},"action":{"move":"diagonal"},"outcome":{"next_x":3,"next_y":3}}

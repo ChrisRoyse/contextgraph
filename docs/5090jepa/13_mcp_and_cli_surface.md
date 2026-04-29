@@ -1,6 +1,6 @@
 # 13 — MCP & CLI Surface (v1)
 
-The DynamicJEPA tools are *additive* on the existing 108-tool MCP and existing CLI. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
+The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
 ## 1. Tool Name Constants
 
@@ -44,7 +44,7 @@ fn test_total_tool_count_and_no_duplicates() {
     let tools = get_tool_definitions();
     let names: HashSet<_> = tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names.len(), tools.len(), "duplicate tool names");
-    let expected = if cfg!(feature = "llm") { 108 + 26 } else { 104 + 26 };
+    let expected = if cfg!(feature = "llm") { 110 + 26 } else { 106 + 26 };
     assert_eq!(tools.len(), expected, "expected {expected} tools, got {}", tools.len());
 }
 ```

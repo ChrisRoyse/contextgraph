@@ -133,7 +133,7 @@ curl -sS -X POST http://127.0.0.1:3199 -d '{"jsonrpc":"2.0","id":2,"method":"too
 kill $MCP_PID
 ```
 
-Expected: `tools/list` length = 134 (108 base + 26 dynamicjepa) with `llm` feature, or 130 without. `dynamicjepa.enabled = true` and CF counts populated.
+Expected: `tools/list` length = 136 (110 base + 26 dynamicjepa) with `llm` feature, or 132 without. `dynamicjepa.enabled = true` and CF counts populated.
 
 ## 8. Test Suite
 

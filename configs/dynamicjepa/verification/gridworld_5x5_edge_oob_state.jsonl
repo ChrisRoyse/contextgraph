@@ -1,0 +1,1 @@
+{"trajectory_id":"edge_oob","step":0,"state":{"x":7,"y":2},"action":{"move":"noop"},"outcome":{"next_x":7,"next_y":2}}

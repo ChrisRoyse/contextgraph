@@ -128,6 +128,6 @@ The repo's `tmp/` directory exists per CLAUDE.md ("never save working files… t
 - The pinned candle versions (`0.9.2-alpha`). Bumping candle is out of scope.
 - The Rust toolchain (`stable`, `1.75` MSRV in workspace). Demo runs on whatever stable is installed (currently 1.92.0); we do not pin a newer minimum here.
 - The existing 73 RocksDB column families. The DynamicJEPA CFs are *additive*.
-- The existing 108 MCP tools. DynamicJEPA tools are *additive*.
+- The existing 110 MCP tools with `llm` enabled (106 without). DynamicJEPA tools are *additive*.
 
 If you encounter a real blocker that requires bumping candle or the toolchain, stop and ask the user.

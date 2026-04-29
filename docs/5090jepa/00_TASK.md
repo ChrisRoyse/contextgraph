@@ -156,12 +156,12 @@ This rule is non‑negotiable because the user has explicitly said: *"if there i
 
 ## 8. What Already Exists (Anti‑Hallucination Anchor)
 
-Verified at planning time on `main` at commit `dc599e69`:
+Verified again during Phase 0 on `main` at commit `c7ab8721`:
 
 - `crates/` contains 10 packages: `context-graph-core`, `-cuda`, `-embeddings`, `-storage`, `-mcp`, `-cli`, `-causal-agent`, `-graph-agent`, `-test-utils`, `-benchmark`. The DynamicJEPA crate `context-graph-dynamicjepa` does **not** exist yet — you create it.
 - `crates/context-graph-core/src/lib.rs` does **not** declare `pub mod dynamicjepa;` — you add it.
 - `crates/context-graph-storage/src/teleological/column_families.rs` defines existing CFs but **no DynamicJEPA CFs**.
-- `crates/context-graph-mcp/src/tools/names.rs` exposes 108 tool name constants (with `llm`) — **none** are DynamicJEPA tools.
+- `crates/context-graph-mcp/src/tools/names.rs` exposes 110 tool name constants with `llm` enabled (106 without) — **none** are DynamicJEPA tools.
 - `crates/context-graph-cli/src/commands/mod.rs` registers existing subcommands — **no** `dynamicjepa` command.
 - `configs/` does not exist; the existing config dir is **`config/`** (singular, with `default.toml`, `development.toml`, `production.toml`, `test.toml`). **Create `configs/dynamicjepa/` exactly as planned** (the implementation plan deliberately uses the `configs/` plural to keep operator inputs separate from runtime config). If you find a `configs/` directory already exists when you start, treat it as the source of truth.
 - `data/contextgraph_data` (or wherever `CONTEXT_GRAPH_STORAGE_PATH` points) is the existing RocksDB physical database. **Do not corrupt it.** All FSV runs use a fresh `/tmp/` path.

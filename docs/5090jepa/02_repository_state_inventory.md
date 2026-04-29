@@ -2,13 +2,13 @@
 
 This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before Phase 0 and again before Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
-## 1. Branch & Commit Snapshot (Verified At Planning Time)
+## 1. Branch & Commit Snapshot (Phase 0 Live Audit: 2026-04-29)
 
 | Property | Value |
 | --- | --- |
 | Branch | `main` |
-| Latest commits | `dc599e69 docs(dynamicjepa): add 16-section implementation plan` → `f9fb5d0f docs(dynamicjepa): add DynamicJEPA planning package (15 sections)` → `eebca1b4 docs(mejepa): add ME-JEPA planning package (14 sections)` |
-| Working tree | One modified file: `docs/dynamicjepa/00_master_index.md` |
+| Latest commits | `c7ab8721 docs(5090jepa): add section 17 open questions and recommendations` → `bdd6d046 docs(5090jepa): add sections 08-16 (pipeline through troubleshooting)` → `a29c3dcc docs(5090jepa): add 7-section demo build planning package` |
+| Working tree at Phase 0 start | Clean (`git status --short` returned no rows before fixture edits) |
 | `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
 
 ## 2. Workspace Layout (Verified)
@@ -121,7 +121,7 @@ Single‑writer enforcement: `<db_path>/mcp.pid` + Unix flock via `PidFileGuard`
 
 Tool registry surface:
 
-- `tools/names.rs` — 108 `pub const` tool names. Append DynamicJEPA names; do not renumber.
+- `tools/names.rs` — 110 `pub const` tool names with `llm` enabled (106 without). Append DynamicJEPA names; do not renumber.
 - `tools/types.rs` — `ToolDefinition` struct.
 - `tools/definitions/<group>.rs` — one file per group; aggregated in `tools/definitions/mod.rs`. Add `dynamicjepa.rs`.
 - `handlers/tools/<group>_tools.rs` + `<group>_dtos.rs` — per‑group handler. Add `dynamicjepa_tools.rs` + `dynamicjepa_dtos.rs`.
