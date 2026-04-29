@@ -44,7 +44,7 @@ STRATA = [
 ]
 MIN_CANDIDATES = 120
 SAMPLE_PER_STRATUM = 100
-MAX_CONTENT_CHARS = 10_000
+MAX_CONTENT_BYTES = 9_500
 
 
 def clean_text(text: str) -> str:
@@ -53,22 +53,23 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def chunks(text: str, min_words: int = 80, max_words: int = 600, max_chars: int = MAX_CONTENT_CHARS) -> Iterable[str]:
+def chunks(text: str, min_words: int = 80, max_words: int = 600, max_bytes: int = MAX_CONTENT_BYTES) -> Iterable[str]:
     words = clean_text(text).split()
     window: list[str] = []
-    window_chars = 0
+    window_bytes = 0
     for word in words:
-        projected = window_chars + len(word) + (1 if window else 0)
-        if window and (len(window) >= max_words or projected > max_chars):
+        word_bytes = len(word.encode("utf-8"))
+        projected = window_bytes + word_bytes + (1 if window else 0)
+        if window and (len(window) >= max_words or projected > max_bytes):
             part = " ".join(window)
             if min_words <= len(part.split()) <= max_words:
                 yield part
             window = []
-            window_chars = 0
-        if len(word) > max_chars:
+            window_bytes = 0
+        if word_bytes > max_bytes:
             continue
         window.append(word)
-        window_chars += len(word) + (1 if len(window) > 1 else 0)
+        window_bytes += word_bytes + (1 if len(window) > 1 else 0)
     if window:
         part = " ".join(window)
         if min_words <= len(part.split()) <= max_words:
@@ -77,8 +78,9 @@ def chunks(text: str, min_words: int = 80, max_words: int = 600, max_chars: int 
 
 def record(text: str, stratum: str, source: str, license_: str, metadata: dict[str, Any]) -> dict[str, Any]:
     cleaned = clean_text(text)
-    if len(cleaned) > MAX_CONTENT_CHARS:
-        raise Exp2Error(f"{stratum}: candidate from {source} has {len(cleaned)} chars, exceeds MCP limit {MAX_CONTENT_CHARS}")
+    n_bytes = len(cleaned.encode("utf-8"))
+    if n_bytes > MAX_CONTENT_BYTES:
+        raise Exp2Error(f"{stratum}: candidate from {source} has {n_bytes} UTF-8 bytes, exceeds EXP-2 MCP-safe limit {MAX_CONTENT_BYTES}")
     n = token_count(cleaned)
     if n < 50 or n > 800:
         raise Exp2Error(f"{stratum}: candidate from {source} has {n} tokens, outside 50..800")
@@ -142,7 +144,7 @@ def collect_causal_claims() -> list[dict[str, Any]]:
                 if markers.search(sent):
                     window.append(sent)
                     joined = " ".join(window[-6:])
-                    if len(joined) <= MAX_CONTENT_CHARS and 50 <= token_count(joined) <= 800:
+                    if len(joined.encode("utf-8")) <= MAX_CONTENT_BYTES and 50 <= token_count(joined) <= 800:
                         out.append(
                             record(
                                 joined,
