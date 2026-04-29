@@ -814,7 +814,11 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
     invalid_domain
         .refresh_content_hash()
         .expect("invalid id corrupt record hashes");
-    write_unchecked(&invalid_domain, DOMAIN_PACK_RECORD_VERSION, &invalid_id_path);
+    write_unchecked(
+        &invalid_domain,
+        DOMAIN_PACK_RECORD_VERSION,
+        &invalid_id_path,
+    );
     let invalid_after = file_state(&invalid_id_path);
     let invalid_err = decode_versioned_record::<DomainPack>(
         &fs::read(&invalid_id_path).expect("read invalid id edge"),
