@@ -222,7 +222,7 @@ Format per task:
 **Definition of Done**:
 - [ ] All 91 pairs evaluated.
 - [ ] $k$ sweep on first 10 pairs to confirm $k=5$ stability.
-- [ ] All KSG estimates ≥ 0 (clamp + log if any negative).
+- [ ] All KSG estimates ≥ 0; any negative estimate fails the run and triggers root-cause investigation.
 
 ## T-018: Bootstrap All Pairs
 **Phase**: D · **Estimated**: 3-4h (compute) · **Deps**: T-016, T-017

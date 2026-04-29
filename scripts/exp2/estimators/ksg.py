@@ -50,9 +50,9 @@ def ksg_mi(u: np.ndarray, v: np.ndarray, k: int = 5, jitter_seed: int | None = N
     value = float(digamma(k) + digamma(n) - np.mean(digamma(n_u + 1) + digamma(n_v + 1)))
     if not math.isfinite(value):
         raise Exp2Error("KSG MI produced non-finite value")
-    if value < -1e-6:
+    if value < 0.0:
         raise Exp2Error(f"KSG MI produced negative estimate {value}; inspect duplicate/noisy inputs")
-    return max(0.0, value)
+    return value
 
 
 def ksg_entropy(x: np.ndarray, k: int = 5, jitter_seed: int | None = None) -> float:

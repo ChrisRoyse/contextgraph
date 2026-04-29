@@ -141,6 +141,8 @@ def collect_causal_claims() -> list[dict[str, Any]]:
 def collect_learning_events(path: Path | None) -> list[dict[str, Any]]:
     if path is None:
         raise Exp2Error("S4 requires --learning-events-json exported from real CF_LEARNING_EVENTS")
+    if not path.exists():
+        raise Exp2Error(f"S4 learning-events export missing: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise Exp2Error("S4 learning events JSON must be a list")
@@ -225,6 +227,8 @@ def collect_multilingual() -> list[dict[str, Any]]:
     except Exception as exc:
         raise Exp2Error(f"S8 requires datasets package: {exc}") from exc
     langs = [("eng_Latn", "English"), ("spa_Latn", "Spanish"), ("fra_Latn", "French"), ("deu_Latn", "German"), ("zho_Hans", "Chinese"), ("arb_Arab", "Arabic")]
+    target = max(MIN_CANDIDATES, 250)
+    per_language_target = (target + len(langs) - 1) // len(langs)
     out = []
     for code, name in langs:
         ds = load_dataset("facebook/flores", code, split="dev", streaming=True)
@@ -236,11 +240,11 @@ def collect_multilingual() -> list[dict[str, Any]]:
                 candidate = " ".join(window[-8:])
                 if 50 <= token_count(candidate) <= 800:
                     out.append(record(candidate, "S8_multilingual", f"facebook/flores:{code}", "CC-BY-SA", {"language": name, "row": i, "window_size": len(window[-8:])}))
-            if len([r for r in out if r["metadata"]["language"] == name]) >= 25:
+            if len([r for r in out if r["metadata"]["language"] == name]) >= per_language_target:
                 break
-    if len(out) < MIN_CANDIDATES:
-        raise Exp2Error(f"S8 collected {len(out)} candidates, need {MIN_CANDIDATES}")
-    return out[:MIN_CANDIDATES]
+    if len(out) < target:
+        raise Exp2Error(f"S8 collected {len(out)} candidates, need {target}")
+    return out[:target]
 
 
 def deduplicate(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -288,6 +292,15 @@ def sample_sources(seed: int, active_strata: list[str]) -> None:
 
 
 def merge_manifest(cfg: dict[str, Any], active_strata: list[str], excluded: list[str]) -> None:
+    expected_count = int(cfg["corpus"]["expected_count"])
+    expected_strata = int(cfg["corpus"]["expected_strata"])
+    if excluded:
+        raise Exp2Error(
+            "EXP-2 corpus construction requires all 8 strata. "
+            f"Refusing excluded strata: {excluded}"
+        )
+    if len(active_strata) != expected_strata:
+        raise Exp2Error(f"Expected {expected_strata} strata, got {len(active_strata)}: {active_strata}")
     strata_dir = repo_path("scripts/exp2/strata")
     inputs = []
     seen: set[str] = set()
@@ -300,6 +313,8 @@ def merge_manifest(cfg: dict[str, Any], active_strata: list[str], excluded: list
                 raise Exp2Error(f"Duplicate text hash in sampled corpus: {rec['text_sha256']}")
             seen.add(rec["text_sha256"])
             inputs.append({"input_id": f"exp2_input_{len(inputs):05d}", **rec})
+    if len(inputs) != expected_count:
+        raise Exp2Error(f"Expected {expected_count} corpus inputs, got {len(inputs)}")
     manifest = {
         "corpus_id": "exp2_corpus_v1",
         "version": "1.0.0",
@@ -307,7 +322,6 @@ def merge_manifest(cfg: dict[str, Any], active_strata: list[str], excluded: list
         "creator_attribution": cfg["operator"],
         "total_inputs": len(inputs),
         "strata": {name: {"count": SAMPLE_PER_STRATUM, "selection_seed": 42} for name in active_strata},
-        "deviations": {"excluded_strata": excluded} if excluded else {},
         "inputs": inputs,
         "embedder_panel": [{"slot": f"E{i+1}", "name": label} for i, label in enumerate(EMBEDDER_LABELS)],
     }
@@ -350,14 +364,21 @@ def main() -> None:
         nargs="+",
         default=[],
         choices=STRATA,
-        help="Audited methodology deviation: drop named strata. Each exclusion is "
-        "logged in the manifest's deviations field so the audit chain captures it.",
+        help="Rejected for EXP-2 production runs. Present only to fail loudly on partial-corpus attempts.",
     )
     args = parser.parse_args()
     cfg = load_config(args.config)
     out = output_dir(cfg)
     setup_logging(out)
+    if args.learning_events_json is None:
+        configured_learning_events = cfg.get("corpus", {}).get("learning_events_json")
+        if configured_learning_events:
+            args.learning_events_json = repo_path(configured_learning_events)
     active_strata = [s for s in STRATA if s not in args.exclude_strata]
+    if args.exclude_strata:
+        raise Exp2Error(
+            "Partial EXP-2 corpora are not valid. Remove --exclude-strata and provide all required data sources."
+        )
     if not active_strata:
         raise Exp2Error("No strata remain after --exclude-strata; refusing to build empty corpus")
     if args.phase in {"sources", "all"}:

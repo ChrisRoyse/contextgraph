@@ -252,7 +252,6 @@ pca:
   fit_corpus_count: 1000
   target_dim: 32
   variance_threshold: 0.85
-  fallback_dim: 64
 
 # Hyperparameters (per 03_methodology.md §6)
 infonce:
@@ -496,7 +495,7 @@ def replay(
     ...
 ```
 
-The replay produces an alternate set of artefacts; pair-by-pair, replay artefacts are compared to reference within tolerance. Failures logged. Pass criterion: ≤ 5 numerical mismatches across all 91 pairs (some are tolerated due to InfoNCE training nondeterminism, but the median over the last 1000 steps should match within $10^{-5}$).
+The replay produces an alternate set of artefacts; pair-by-pair, replay artefacts are compared to reference within tolerance. Pass criterion: zero numerical mismatches outside $10^{-5}$ across all reported scalars.
 
 ## 16. Top-Level Orchestrator
 

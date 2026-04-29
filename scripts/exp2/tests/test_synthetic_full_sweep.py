@@ -15,11 +15,8 @@ Also includes:
 - Bootstrap determinism (M7): two identical bootstrap_ci calls produce identical output.
 - Failure-mode coverage (M8): F4 KSG NaN, F2 InfoNCE overfit -> raise.
 
-NOTE: The production `ksg_mi` in scripts/exp2/estimators/ksg.py is BROKEN at
-dim>=20 on sklearn >= 1.3 (see memory/blockers/agent-02-tester--ksg-radius-
-neighbors-array-broken-on-sklearn-1.8.md). This test uses a sibling
-KDTree-based `_ksg_mi_kdtree` helper to validate the *algorithm* on the
-synthetic sweep while documenting that production code needs a fix.
+This test uses the production KSG implementation. If the production estimator
+cannot recover the low-rho ground truth within tolerance, EXP-2 must stop.
 """
 
 from __future__ import annotations
@@ -30,9 +27,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from scipy.special import digamma
-from sklearn.neighbors import KDTree, NearestNeighbors
-
 from scripts.exp2.estimators.bootstrap import bootstrap_ci
 from scripts.exp2.estimators.ksg import ksg_mi
 from scripts.exp2.estimators.synthetic import gaussian_pair
@@ -45,38 +39,9 @@ REPORT_PATH = ARTEFACTS_DIR / "synthetic_validation_report.json"
 
 
 RHO_SWEEP = [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99]
-TOL_LOW_RHO = 0.20  # for rho <= 0.7
+TOL_LOW_RHO = 0.15  # for rho <= 0.7 per docs/exp2/07_validation_harness.md
 DIM = 32
 N = 800
-
-
-def _ksg_mi_kdtree(u: np.ndarray, v: np.ndarray, k: int = 5) -> float:
-    """KSG-1 via sklearn.neighbors.KDTree.query_radius — works at any dim.
-
-    This mirrors the algorithm in scripts/exp2/estimators/ksg.py but uses
-    KDTree (which still accepts an array of per-query radii under sklearn
-    1.8) rather than NearestNeighbors.radius_neighbors (which is broken
-    for dim>=20 on sklearn>=1.3).
-
-    Returns MI estimate in nats. Used ONLY for synthetic algorithm validation.
-    """
-    u = np.asarray(u, dtype=np.float64)
-    v = np.asarray(v, dtype=np.float64)
-    if not (np.isfinite(u).all() and np.isfinite(v).all()):
-        raise ValueError("u or v contains NaN/Inf")
-    n = u.shape[0]
-    joint = np.hstack([u, v])
-    nn_joint = NearestNeighbors(metric="chebyshev", n_neighbors=k + 1).fit(joint)
-    distances, _ = nn_joint.kneighbors(joint)
-    eps = np.nextafter(distances[:, k], 0.0)
-    kdt_u = KDTree(u, metric="chebyshev")
-    kdt_v = KDTree(v, metric="chebyshev")
-    n_u = kdt_u.query_radius(u, r=eps, count_only=True) - 1
-    n_v = kdt_v.query_radius(v, r=eps, count_only=True) - 1
-    n_u = np.maximum(n_u, 0)
-    n_v = np.maximum(n_v, 0)
-    value = float(digamma(k) + digamma(n) - np.mean(digamma(n_u + 1) + digamma(n_v + 1)))
-    return value
 
 
 def _truth_mi_nats(rho: float, dim: int) -> float:
@@ -129,19 +94,16 @@ def sweep_results():
         assert math.isclose(truth_from_helper, truth, rel_tol=1e-10, abs_tol=1e-10), (
             f"gaussian_pair truth disagreement at rho={rho}: helper={truth_from_helper} vs closed={truth}"
         )
-        ksg = _ksg_mi_kdtree(u, v, k=5)
-        # Clamp to non-negative for reporting (KSG can produce small negatives at independence).
-        ksg_clamped = max(0.0, ksg)
-        err = abs(ksg_clamped - truth)
+        ksg = ksg_mi(u, v, k=5)
+        err = abs(ksg - truth)
         if rho <= 0.7:
             passed = err <= TOL_LOW_RHO
         else:
-            passed = True  # documented underestimate region
+            passed = True
         results[f"rho_{rho:.2f}"] = {
             "rho": rho,
             "truth_nats": truth,
-            "ksg_nats": float(ksg_clamped),
-            "ksg_raw_nats": float(ksg),
+            "ksg_nats": float(ksg),
             "abs_error_nats": float(err),
             "tolerance_nats": TOL_LOW_RHO if rho <= 0.7 else None,
             "pass": bool(passed),
@@ -156,8 +118,7 @@ def sweep_results():
             "k_ksg": 5,
             "seed": 42,
             "tolerance_nats_rho_le_0.7": TOL_LOW_RHO,
-            "ksg_implementation": "kdtree_workaround_for_b4",
-            "production_ksg_blocked_by": "agent-02-tester--ksg-radius-neighbors-array-broken-on-sklearn-1.8.md",
+            "ksg_implementation": "production: scripts.exp2.estimators.ksg.ksg_mi",
         },
         "results": results,
         "overall_pass": bool(overall_pass),
@@ -167,23 +128,17 @@ def sweep_results():
 
 
 @pytest.mark.parametrize("rho", RHO_SWEEP)
-def test_ksg_recovers_gaussian_at_d32_documents_curse_of_dimensionality(sweep_results, rho):
-    """Documents the spec contradiction: §3a says |err|<0.15 at d=32 but §2 admits
-    KSG suffers curse of dimensionality at d>32. In practice, at d=32 KSG SEVERELY
-    underestimates high-MI Gaussians. We assert finiteness only and write the
-    actual numbers to the artefact for the coordinator to arbitrate.
-
-    See memory/blockers/agent-02-tester--ksg-curse-of-dimensionality-at-d-32.md
-    """
+def test_ksg_recovers_gaussian_at_d32_or_fails_loudly(sweep_results, rho):
+    """Production KSG must satisfy the pre-production synthetic acceptance gate."""
     key = f"rho_{rho:.2f}"
     row = sweep_results[key]
     assert math.isfinite(row["ksg_nats"])
     assert row["ksg_nats"] >= 0.0
-    # At rho=0, KSG should be near zero (independence). This MUST hold even
-    # under curse of dimensionality.
-    if rho == 0.0:
-        assert row["ksg_nats"] < 0.10, (
-            f"KSG independence check at rho=0 failed: ksg={row['ksg_nats']:.4f}"
+    if rho <= 0.7:
+        assert row["pass"], (
+            f"KSG synthetic gate failed at rho={rho}: "
+            f"truth={row['truth_nats']:.6f}, estimate={row['ksg_nats']:.6f}, "
+            f"abs_error={row['abs_error_nats']:.6f}, tolerance={TOL_LOW_RHO}"
         )
 
 
@@ -204,7 +159,7 @@ def test_ksg_k_sweep_stability_at_rho_0_5():
     """Spec: 'If pilot disagreement > 0.1 nats across k, methodology revisits.'"""
     rho = 0.5
     u, v, truth = gaussian_pair(n=N, dim=DIM, rho=rho, seed=42)
-    estimates = {k: _ksg_mi_kdtree(u, v, k=k) for k in (3, 5, 10)}
+    estimates = {k: ksg_mi(u, v, k=k) for k in (3, 5, 10)}
     spread = max(estimates.values()) - min(estimates.values())
     for k, val in estimates.items():
         assert math.isfinite(val)
@@ -221,12 +176,13 @@ def test_ksg_k_sweep_stability_at_rho_0_5():
                 "spread_nats": float(spread),
                 "spec_threshold_nats": 0.1,
                 "stable": bool(spread <= 0.1),
-                "ksg_implementation": "kdtree_workaround_for_b4",
+                "ksg_implementation": "production: scripts.exp2.estimators.ksg.ksg_mi",
             },
             indent=2,
             sort_keys=True,
         )
     )
+    assert spread <= 0.1, f"KSG k-sweep instability {spread:.6f} exceeds 0.1 nats"
 
 
 # ---------------------------------------------------------------------------
@@ -293,81 +249,59 @@ def test_ksg_raises_on_invalid_k_dim_1():
 
 
 # ---------------------------------------------------------------------------
-# R3 verification — provenance helper contracts (no-op on missing artefacts).
+# R3 verification — provenance helper contracts.
 # ---------------------------------------------------------------------------
 
 
-def test_run_estimators_provenance_helper_handles_missing_artefacts(tmp_path):
-    """load_provenance must return None for upstream artefacts that don't exist yet,
-    not crash. Per spec §13 the AuditChain flags dangling references at finalize().
-    """
-    from scripts.exp2.run_estimators import EMBEDDER_WEIGHT_FILES, embedder_weight_sha256, load_provenance
+def test_run_estimators_provenance_helper_fails_on_missing_artefacts(tmp_path):
+    """Missing provenance must block estimator execution."""
+    from scripts.exp2.run_estimators import load_provenance
 
-    # tmp_path has no corpus_manifest, no verification_log, no pca_models.
-    fake_pca_models = tmp_path / "pca_models.npz"  # missing
-    prov = load_provenance(
-        cfg_path="scripts/exp2/exp2.yml",
-        out_dir=tmp_path,
-        pca_models_path=fake_pca_models,
-    )
-    assert prov["corpus_manifest_sha256"] is None
-    assert prov["weight_hashes"] == {}
-    assert prov["pca_hashes"] == {}
-    # exp2.yml exists in repo so hyperparams_sha256 should be set.
-    assert prov["hyperparams_sha256"] is not None
-    assert len(prov["hyperparams_sha256"]) == 64
-    # Embedders without a learned weight (E2/E3/E4/E9) always return None.
-    for key in ("e2_temporal_recent", "e3_temporal_periodic", "e4_temporal_positional", "e9_hdc"):
-        assert EMBEDDER_WEIGHT_FILES[key] is None
-        assert embedder_weight_sha256(key, prov["weight_hashes"]) is None
-    # All 14 embedder keys must be in the mapping (no silent drift).
-    expected = {
-        "e1_semantic", "e2_temporal_recent", "e3_temporal_periodic", "e4_temporal_positional",
-        "e5_causal_cause", "e6_sparse_top_k", "e7_code", "e8_graph_source",
-        "e9_hdc", "e10_paraphrase", "e11_entity", "e12_token_pooled",
-        "e13_splade_top_k", "e14_bge_m3_dense",
-    }
-    assert set(EMBEDDER_WEIGHT_FILES.keys()) == expected
+    with pytest.raises(Exp2Error, match="Corpus manifest missing"):
+        load_provenance(
+            cfg_path="scripts/exp2/exp2.yml",
+            out_dir=tmp_path,
+            pca_models_path=tmp_path / "pca_models.npz",
+        )
 
 
-def test_run_estimators_provenance_helper_pulls_weight_hashes_from_log(tmp_path):
-    """When verification_log.json contains weight_hashes, embedder_weight_sha256
-    must surface the right hash for each embedder via EMBEDDER_WEIGHT_FILES mapping.
-    """
+def test_run_estimators_provenance_helper_requires_all_embedder_hashes(tmp_path):
     from scripts.exp2.run_estimators import embedder_weight_sha256, load_provenance
+    from scripts.exp2.common import EMBEDDER_KEYS, canonical_json, sha256_bytes
 
-    log_path = tmp_path / "verification_log.json"
-    fake_hashes = {
-        "models/semantic/model.safetensors": "a" * 64,
-        "models/causal/model.safetensors": "b" * 64,
-        "models/code-1536/model.safetensors.index.json": "c" * 64,
+    manifest = {
+        "corpus_id": "exp2_corpus_v1",
+        "version": "1.0.0",
+        "total_inputs": 800,
+        "strata": {f"S{i}": {"count": 100} for i in range(8)},
+        "inputs": [],
     }
-    log_path.write_text(json.dumps({"weight_hashes": fake_hashes}))
-    fake_pca_models = tmp_path / "pca_models.npz"  # missing
-    prov = load_provenance("scripts/exp2/exp2.yml", tmp_path, fake_pca_models)
-    assert embedder_weight_sha256("e1_semantic", prov["weight_hashes"]) == "a" * 64
-    assert embedder_weight_sha256("e5_causal_cause", prov["weight_hashes"]) == "b" * 64
-    assert embedder_weight_sha256("e7_code", prov["weight_hashes"]) == "c" * 64
-    # An embedder with a weight file but no hash recorded yet returns None.
-    assert embedder_weight_sha256("e8_graph_source", prov["weight_hashes"]) is None
-    # An embedder without a weight file (E9) always returns None.
-    assert embedder_weight_sha256("e9_hdc", prov["weight_hashes"]) is None
+    manifest["manifest_sha256"] = sha256_bytes(canonical_json({k: v for k, v in manifest.items() if k != "manifest_sha256"}))
+    (tmp_path / "corpus_manifest_v1.json").write_text(json.dumps(manifest, sort_keys=True))
+    (tmp_path / "corpus_manifest_v1.json.sha256").write_text(manifest["manifest_sha256"] + "\n")
+    np.savez_compressed(
+        tmp_path / "pca_models.npz",
+        metadata_json=np.asarray([json.dumps({key: {"sha256": "b" * 64} for key in EMBEDDER_KEYS})]),
+    )
+    (tmp_path / "verification_log.json").write_text(json.dumps({"embedder_hashes": {"e1_semantic": "a" * 64}}))
+    with pytest.raises(Exp2Error, match="missing embedder hashes"):
+        load_provenance("scripts/exp2/exp2.yml", tmp_path, tmp_path / "pca_models.npz")
+
+    (tmp_path / "verification_log.json").write_text(
+        json.dumps({"embedder_hashes": {key: "a" * 64 for key in EMBEDDER_KEYS}})
+    )
+    prov = load_provenance("scripts/exp2/exp2.yml", tmp_path, tmp_path / "pca_models.npz")
+    assert embedder_weight_sha256("e1_semantic", prov["embedder_hashes"]) == "a" * 64
+    assert embedder_weight_sha256("e9_hdc", prov["embedder_hashes"]) == "a" * 64
 
 
 # ---------------------------------------------------------------------------
-# R2 verification — orchestrator finalizes master audit chain even on partial run.
+# R2 verification — orchestrator refuses incomplete master audit chains.
 # ---------------------------------------------------------------------------
 
 
-def test_orchestrator_finalize_master_audit_chain_on_partial_run():
-    """Per Constitution C7 the master audit_chain.json must always exist after
-    `run_exp2.py` runs, even if only verify_environment has produced a phase
-    chain. Missing artefacts surface as `artefact_missing` events, never crash.
-
-    Note: AuditChain.add_artefact uses repo_path(".").relative_to() so artefacts
-    must live under the repo. We isolate a per-test workspace under
-    artefacts/exp2/.test_master_chain_<short>/ and clean up afterwards.
-    """
+def test_orchestrator_finalize_master_audit_chain_fails_on_partial_run():
+    """The master audit chain must not certify missing production artefacts."""
     import shutil
     import uuid
 
@@ -390,18 +324,7 @@ def test_orchestrator_finalize_master_audit_chain_on_partial_run():
             json.dumps({"phase": "environment"})
         )
 
-        master = finalize_master_audit_chain(str(cfg_path))
-        assert master.exists()
-        payload = json.loads(master.read_text())
-        assert "chain_sha256" in payload
-        assert len(payload["chain_sha256"]) == 64
-        labels = {a["label"] for a in payload["artefacts"]}
-        assert "phase_chain:environment" in labels
-        # Missing phases produce events, not crashes.
-        event_types = {e["event_type"] for e in payload["events"]}
-        # estimators + n_eff phase chains absent in this stub.
-        assert "phase_chain_missing" in event_types
-        # Most headline artefacts also absent.
-        assert "artefact_missing" in event_types
+        with pytest.raises(Exp2Error, match="Required phase audit chain missing"):
+            finalize_master_audit_chain(str(cfg_path))
     finally:
         shutil.rmtree(workspace, ignore_errors=True)

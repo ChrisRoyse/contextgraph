@@ -4,6 +4,7 @@ output_dir: artefacts/exp2
 
 corpus:
   manifest: artefacts/exp2/corpus_manifest_v1.json
+  learning_events_json: artefacts/exp2/learning_events_export.json
   expected_count: 800
   expected_strata: 8
 

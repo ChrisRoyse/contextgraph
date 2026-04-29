@@ -139,8 +139,8 @@ If `overall_pass=false`, the production run is blocked.
 3. Check KSG for $k$ sensitivity.
 
 **Resolution**:
-- Re-run with smaller critic.
-- If overfitting persists: KSG-only result for this pair, with documented caveat.
+- Re-run diagnostics to identify the cause.
+- Production remains blocked until the pair succeeds with both estimators under a pre-registered method.
 
 ### F3: InfoNCE Doesn't Converge
 *Symptom*: training loss flat or oscillating after warmup.
@@ -151,9 +151,9 @@ If `overall_pass=false`, the production run is blocked.
 3. Check learning rate.
 
 **Resolution**:
-- Reduce LR to 1e-4.
-- Increase critic depth (2 → 3 layers).
-- If still failing: KSG-only for this pair.
+- Diagnose optimizer, projection, and data-quality state.
+- Any hyperparameter change requires a documented methodology revision before a new full production run.
+- Production remains blocked until the pair succeeds with both estimators.
 
 ### F4: KSG Numerical Issues
 *Symptom*: NaN, Inf, or extreme values from KSG.
@@ -214,7 +214,7 @@ If `overall_pass=false`, the production run is blocked.
 ### Phase B
 - [ ] All 800 × 14 = 11,200 embeddings non-zero.
 - [ ] Per-embedder dimensional consistency.
-- [ ] PCA explained variance ≥ 0.85 per embedder (or 0.70 with d=64 fallback).
+- [ ] PCA explained variance ≥ 0.85 per embedder; otherwise fail and revise the pre-registered projection method before rerun.
 
 ### Phase C
 - [ ] Synthetic validation passes.

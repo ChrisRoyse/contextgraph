@@ -19,9 +19,17 @@ def main() -> None:
     args = parser.parse_args()
     cfg = load_config(args.config)
     out = output_dir(cfg)
+    required = [
+        out / "n_eff_summary.json",
+        out / "per_pair_table.csv",
+        out / "redundancy_heatmap.pdf",
+        out / "audit_chain.json",
+        out / "fsv_replay_log.json",
+    ]
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        raise Exp2Error(f"Distribution drafts require completed EXP-2 artefacts; missing: {missing}")
     summary_path = out / "n_eff_summary.json"
-    if not summary_path.exists():
-        raise Exp2Error("n_eff_summary.json is required before distribution drafts can be generated")
     summary = read_json(summary_path)
     h = summary["headline"]
     n_eff = f"{h['n_eff']:.3f}"

@@ -28,7 +28,14 @@ def n_eff_redundancy_adjusted(mi_matrix: np.ndarray, entropy: np.ndarray) -> flo
             denom = min(float(entropy[i]), float(entropy[j]))
             if denom <= 0:
                 raise Exp2Error(f"Non-positive entropy denominator for pair {(i, j)}: {denom}")
-            redundancy = min(1.0, max(0.0, float(mi_matrix[i, j]) / denom))
+            mi = float(mi_matrix[i, j])
+            if mi < 0 or not math.isfinite(mi):
+                raise Exp2Error(f"Invalid MI for pair {(i, j)}: {mi}")
+            redundancy = mi / denom
+            if redundancy > 1.0 + 1e-6:
+                raise Exp2Error(
+                    f"Pair {(i, j)} MI exceeds entropy bound: mi={mi}, min_entropy={denom}, redundancy={redundancy}"
+                )
             total += 1.0 - redundancy
     return total
 
@@ -47,7 +54,12 @@ def backfill_pair_redundancy(rows: dict[str, dict], entropy: np.ndarray, out_dir
         if denom <= 0:
             raise Exp2Error(f"Non-positive entropy denominator for pair {key}: {denom}")
         mi = float(row["infonce_estimate_nats"])
-        row["redundancy"] = min(1.0, max(0.0, mi / denom))
+        if mi < 0 or not math.isfinite(mi):
+            raise Exp2Error(f"{key}: invalid InfoNCE MI for redundancy: {mi}")
+        redundancy = mi / denom
+        if redundancy > 1.0 + 1e-6:
+            raise Exp2Error(f"{key}: MI exceeds entropy bound: mi={mi}, min_entropy={denom}, redundancy={redundancy}")
+        row["redundancy"] = redundancy
         write_json(out_dir / "pair_results" / f"{key}.json", row)
 
 
@@ -105,6 +117,8 @@ def estimate_entropies(cfg: dict, arrays: dict[str, np.ndarray], out_dir) -> np.
             seed=int(bcfg["seed"]),
             confidence=float(bcfg["confidence"]),
         )
+        if low <= 0 or high <= 0 or not (math.isfinite(low) and math.isfinite(high)):
+            raise Exp2Error(f"{key}: entropy bootstrap CI invalid: low={low}, high={high}")
         ent[i] = point
         entries.append({"embedder": EMBEDDER_LABELS[i], "entropy_nats": point, "ci_low": low, "ci_high": high})
     write_json(out_dir / "entropy_per_embedder.json", {"entries": entries})
@@ -127,7 +141,9 @@ def bootstrap_n_eff(cfg: dict, arrays: dict[str, np.ndarray], rows: dict[str, di
             m[a, a] = entropy[a]
         for i, j in itertools.combinations(range(14), 2):
             value = critics[(i, j)].estimate(arrays[EMBEDDER_KEYS[i]][idx], arrays[EMBEDDER_KEYS[j]][idx])
-            m[i, j] = m[j, i] = max(0.0, value)
+            if value < 0 or not math.isfinite(value):
+                raise Exp2Error(f"Bootstrap N_eff critic produced invalid MI for {(i, j)}: {value}")
+            m[i, j] = m[j, i] = value
         return n_eff_redundancy_adjusted(m, entropy)
 
     low, high, _ = bootstrap_ci(point, n_items, int(bcfg["n_resamples"]), int(bcfg["seed"]), float(bcfg["confidence"]))

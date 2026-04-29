@@ -159,7 +159,7 @@ EXP-2 is **accepted** when:
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| InfoNCE doesn't converge for some pair | Medium | Diagnostic logging + retry with longer training + fall back to KSG-only result for that pair |
+| InfoNCE doesn't converge for some pair | Medium | Diagnostic logging; production run fails until root cause is fixed and the full two-estimator run succeeds |
 | KSG curse of dimensionality (1024-D vectors) | High before mitigation | Partitioned PCA-32D before KSG; pre-validated on synthetic data |
 | Compute time exceeds budget | Low | Parallelize 8 InfoNCE trainings on RTX 5090; test with 4 pairs first |
 | Bootstrap CI is too wide | Medium | Increase corpus to 1200 inputs (extension); document |

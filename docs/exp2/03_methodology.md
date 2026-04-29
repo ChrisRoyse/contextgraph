@@ -55,7 +55,7 @@ Per-embedder projection table:
 **All MI estimates are computed on these 32-D projections.** The audit chain logs the PCA models' SHA-256, the sparse top-K=128 selection rule, and the random projection matrix for E9.
 
 **Why 32-D?** Empirical sweet spot:
-- High enough to retain ≥85% variance (validated per-embedder; if any falls below, increase that one to 64-D).
+- High enough to retain ≥85% variance (validated per-embedder; if any falls below, the run fails and the projection method must be pre-registered again before rerun).
 - Low enough that KSG kNN works without partitioning beyond the partition step.
 - Standard MINE practice in the literature.
 
@@ -65,7 +65,7 @@ For each embedder, after PCA-32 fit, log:
 - Cumulative explained variance ratio at d=32.
 - Effective rank of the original (Schur-complement) at $\epsilon = 0.01$.
 
-Pass criterion: explained variance ≥ 0.85. Fail criterion: a single embedder retains < 0.70 variance — that embedder is upgraded to PCA-64 with audit-chain note.
+Pass criterion: explained variance ≥ 0.85. Fail criterion: any embedder below 0.85 blocks production until the methodology is revised and re-run from T-009.
 
 ## 4. InfoNCE / MINE Estimator
 
@@ -150,7 +150,6 @@ Per Constitution C5, these are committed before the production run:
 exp2_hyperparameters:
   pca:
     target_dim: 32
-    fallback_dim: 64
     variance_threshold: 0.85
   infonce:
     critic_hidden_dim: 64

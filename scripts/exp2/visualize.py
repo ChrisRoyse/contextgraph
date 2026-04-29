@@ -89,6 +89,7 @@ def write_pair_table(rows: dict[str, dict], out_dir) -> None:
         "mi_ksg_ci_high",
         "agreement_nats",
         "agreement_pass",
+        "redundancy",
         "recommendation",
         "training_diagnostic",
     ]
@@ -110,6 +111,7 @@ def write_pair_table(rows: dict[str, dict], out_dir) -> None:
                     "mi_ksg_ci_high": row["ksg_ci_high"],
                     "agreement_nats": row["agreement_nats"],
                     "agreement_pass": row["agreement_pass"],
+                    "redundancy": row["redundancy"],
                     "recommendation": rec,
                     "training_diagnostic": "converged" if row["infonce_train_val_gap"] <= 0.1 else "overfit",
                 }
@@ -117,19 +119,21 @@ def write_pair_table(rows: dict[str, dict], out_dir) -> None:
 
 
 def recommendation(row: dict) -> str:
-    mi = float(row["infonce_estimate_nats"])
-    if mi >= 1.0:
+    if row.get("redundancy") is None:
+        raise Exp2Error(f"{row.get('pair')}: redundancy missing; run effective_rank.py before visualization")
+    redundancy = float(row["redundancy"])
+    if redundancy >= 0.75:
         return "high redundancy"
-    if mi >= 0.5:
+    if redundancy >= 0.5:
         return "consider swap"
     return "keep both"
 
 
 def write_swap_recommendation(rows: dict[str, dict], out_dir) -> None:
-    top = sorted(rows.values(), key=lambda r: float(r["infonce_estimate_nats"]), reverse=True)[:5]
+    top = sorted(rows.values(), key=lambda r: float(r["redundancy"]), reverse=True)[:5]
     lines = ["# Embedder Swap Recommendations", "", "Based on EXP-2 pairwise MI measurements:", ""]
     for i, row in enumerate(top, 1):
-        lines.append(f"{i}. {row['embedder_j']} <-> {row['embedder_k']}: MI = {row['infonce_estimate_nats']:.4f} nats.")
+        lines.append(f"{i}. {row['embedder_j']} <-> {row['embedder_k']}: MI = {row['infonce_estimate_nats']:.4f} nats; redundancy = {row['redundancy']:.4f}.")
         lines.append(f"   Recommendation: {recommendation(row)}.")
     lines.append("")
     (out_dir / "embedder_swap_recommendation.md").write_text("\n".join(lines), encoding="utf-8")

@@ -13,7 +13,9 @@ python3 scripts/exp2/fit_projections.py --config scripts/exp2/exp2.yml --fit --a
 python3 scripts/exp2/run_estimators.py --config scripts/exp2/exp2.yml
 python3 scripts/exp2/effective_rank.py --config scripts/exp2/exp2.yml
 python3 scripts/exp2/visualize.py --config scripts/exp2/exp2.yml
+python3 scripts/exp2/run_exp2.py --config scripts/exp2/exp2.yml --phase audit
 python3 scripts/exp2/fsv.py --config scripts/exp2/exp2.yml
 ```
 
 The extraction path uses the real MCP server and verifies persisted state by reading back `CF_FINGERPRINTS` and `CF_TRAINING_RECORDS`.
+`fsv.py` validates the reference artefacts, reruns T-006 through visualization into a fresh replay directory, and compares persisted scalars within `1e-5`.

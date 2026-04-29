@@ -100,6 +100,18 @@ def extract_manifest(cfg: dict[str, Any], manifest_path: Path, output_npz: Path,
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list) or not inputs:
         raise Exp2Error(f"Manifest has no inputs: {manifest_path}")
+    expected_count = int(cfg["pca"]["fit_corpus_count"]) if storage_name == "pca" else int(cfg["corpus"]["expected_count"])
+    if len(inputs) != expected_count:
+        raise Exp2Error(f"{manifest_path}: expected {expected_count} inputs for {storage_name}, got {len(inputs)}")
+    if storage_name != "pca":
+        strata = manifest.get("strata")
+        if not isinstance(strata, dict) or len(strata) != int(cfg["corpus"]["expected_strata"]):
+            raise Exp2Error(f"{manifest_path}: expected {cfg['corpus']['expected_strata']} strata, got {strata}")
+        bad_counts = {name: entry.get("count") for name, entry in strata.items() if entry.get("count") != 100}
+        if bad_counts:
+            raise Exp2Error(f"{manifest_path}: invalid per-stratum counts: {bad_counts}")
+        if "deviations" in manifest:
+            raise Exp2Error(f"{manifest_path}: production manifest contains deviations: {manifest['deviations']}")
     session_id = f"exp2-{storage_name}-{manifest.get('manifest_sha256', 'unsigned')[:16]}"
     storage_path = out / f"mcp_{storage_name}_rocksdb"
     extraction_log: dict[str, Any] = {
@@ -110,6 +122,7 @@ def extract_manifest(cfg: dict[str, Any], manifest_path: Path, output_npz: Path,
         "batches": [],
     }
     with McpClient(cfg["run"]["mcp_binary"], storage_path, cfg["run"]["models_path"]) as client:
+        extraction_log["fingerprints_before"] = client.call_tool("get_memetic_status", {})
         before_count = client.call_tool("count_training_records", {})
         extraction_log["training_records_before"] = before_count
         memory_ids: list[str] = []
@@ -169,6 +182,11 @@ def extract_manifest(cfg: dict[str, Any], manifest_path: Path, output_npz: Path,
         if after_count.get("count") != len(inputs):
             raise Exp2Error(f"CF_TRAINING_RECORDS count mismatch after export: {after_count}")
         extraction_log["training_records_after"] = after_count
+        fingerprints_after = client.call_tool("get_memetic_status", {})
+        fingerprint_count = fingerprints_after.get("fingerprintCount", fingerprints_after.get("total_fingerprints"))
+        if fingerprint_count != len(inputs):
+            raise Exp2Error(f"CF_FINGERPRINTS count mismatch after extraction: {fingerprints_after}")
+        extraction_log["fingerprints_after"] = fingerprints_after
 
         arrays: dict[str, list[np.ndarray]] = {key: [] for key in EMBEDDER_KEYS}
         for mid in memory_ids:
