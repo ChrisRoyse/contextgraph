@@ -33,6 +33,7 @@ mod dispatch;
 mod embedder_tools;
 mod entity_tools;
 mod file_watcher_tools;
+pub(crate) mod graph_learning_tools;
 mod graph_link_tools;
 mod graph_tools;
 pub(crate) mod helpers;

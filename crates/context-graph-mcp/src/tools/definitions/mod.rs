@@ -113,7 +113,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Training tools (1) - Training data export to CF_TRAINING_RECORDS
     tools.extend(training::definitions());
 
-    // Learning-as-UTL tools (12) - event storage/readback + signal embedders + outcome estimate + matrix dataset export
+    // Learning-as-UTL tools (14) - event storage/readback + signal embedders + graph learning + outcome estimate + matrix dataset export
     tools.extend(learning::definitions());
 
     // UTL learner-state tools (18) - Phase-0/Phase-1 measurement substrate + retrieval policy
@@ -139,9 +139,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 108);
+        assert_eq!(tools.len(), 110);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 104);
+        assert_eq!(tools.len(), 106);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(provenance::definitions().len(), 3);
         assert_eq!(daemon::definitions().len(), 1);
         assert_eq!(training::definitions().len(), 4);
-        assert_eq!(learning::definitions().len(), 12);
+        assert_eq!(learning::definitions().len(), 14);
         assert_eq!(utl::definitions().len(), 18);
         assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);

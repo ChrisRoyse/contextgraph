@@ -127,6 +127,13 @@ pub const TRAVERSE_GRAPH: &str = "traverse_graph";
 /// Per AP-60: Temporal embedders (E2-E4) excluded from semantic fusion.
 pub const GET_UNIFIED_NEIGHBORS: &str = "get_unified_neighbors";
 
+// ========== GRAPH LEARNING TOOLS ==========
+/// Persist a graph-navigation outcome as a LearningEvent backed by real
+/// EdgeRepository evidence.
+pub const RECORD_GRAPH_LEARNING_EVENT: &str = "record_graph_learning_event";
+/// Resolve a learned graph ranking policy from persisted graph LearningEvents.
+pub const RESOLVE_GRAPH_LEARNING_POLICY: &str = "resolve_graph_learning_policy";
+
 // ========== DAEMON TOOLS (Multi-agent observability) ==========
 /// Returns daemon health metrics: active connections, model state, background tasks.
 pub const DAEMON_STATUS: &str = "daemon_status";

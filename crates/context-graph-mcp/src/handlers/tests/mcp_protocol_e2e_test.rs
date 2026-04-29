@@ -43,7 +43,10 @@ use crate::protocol::JsonRpcId;
 use super::{extract_mcp_tool_data, make_request};
 
 #[cfg(feature = "llm")]
-use super::create_test_handlers_with_real_embeddings_store_access;
+use super::{
+    create_test_handlers_with_graph_edges_store_access,
+    create_test_handlers_with_real_embeddings_store_access,
+};
 
 #[cfg(feature = "llm")]
 use context_graph_core::constellation::{compile_constellation, ConstellationSelector};
@@ -53,6 +56,8 @@ use context_graph_core::learning::LearningOutcomeLabel;
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 #[cfg(feature = "llm")]
 use context_graph_core::training::NUM_CROSS_CORRELATIONS;
+#[cfg(feature = "llm")]
+use context_graph_core::traits::TeleologicalMemoryStore;
 #[cfg(feature = "llm")]
 use context_graph_core::types::fingerprint::{
     SemanticFingerprint, SparseVector, TeleologicalFingerprint,
@@ -215,10 +220,12 @@ async fn test_e2e_tools_list_all_tools() {
     // 2026-04-28: Bumped 105 → 108 after learning signal embedder MCP tools:
     //   list_learning_signal_embedders, compute_learning_signals,
     //   embed_learning_event_signals
+    // 2026-04-28: Bumped 108 → 110 after graph-learning policy tools:
+    //   record_graph_learning_event, resolve_graph_learning_policy
     assert_eq!(
         tools.len(),
-        108,
-        "Expected exactly 108 tools with LLM feature, found {}",
+        110,
+        "Expected exactly 110 tools with LLM feature, found {}",
         tools.len()
     );
 
@@ -1470,6 +1477,397 @@ async fn test_e2e_estimate_learning_outcome_fsv() {
         before_bad_limit,
         rocksdb_store.count_learning_events().await.unwrap(),
         bad_limit_result["isError"]
+    );
+}
+
+#[tokio::test]
+#[cfg(feature = "llm")]
+async fn test_e2e_graph_learning_policy_fsv() {
+    println!("\n=== E2E TEST: Graph Learning Policy FSV ===");
+
+    let (handlers, store, _tempdir) = create_test_handlers_with_graph_edges_store_access().await;
+    let rocksdb_store = store
+        .as_any()
+        .downcast_ref::<RocksDbTeleologicalStore>()
+        .expect("FSV requires RocksDbTeleologicalStore");
+    let edge_repo = handlers
+        .edge_repository()
+        .expect("FSV requires EdgeRepository");
+    let graph_builder = handlers
+        .graph_builder()
+        .expect("FSV requires BackgroundGraphBuilder");
+
+    println!(
+        "SOURCE OF TRUTH: before learning_events={} edge_stats={:?}",
+        rocksdb_store.count_learning_events().await.unwrap(),
+        edge_repo.get_stats().unwrap()
+    );
+
+    let mut memory_ids = Vec::new();
+    for (idx, content) in [
+        "Graph learning FSV anchor: Rust async services use Tokio task scheduling, backpressure, and channel coordination.",
+        "Graph learning FSV preferred target: Tokio backpressure tuning improves async task scheduling reliability.",
+        "Graph learning FSV alternate target: Async channels coordinate producers and consumers in Rust services.",
+        "Graph learning FSV distractor: Kitchen garden soil moisture and tomato seedlings need sunlight.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = handlers
+            .dispatch(make_request(
+                "tools/call",
+                Some(JsonRpcId::Number(800 + idx as i64)),
+                Some(json!({
+                    "name": "store_memory",
+                    "arguments": {
+                        "content": content,
+                        "importance": 0.8,
+                        "tags": ["graph-learning-fsv", "real-embedding"]
+                    }
+                })),
+            ))
+            .await;
+        assert!(
+            response.error.is_none(),
+            "store_memory JSON-RPC error: {:?}",
+            response.error
+        );
+        let data = extract_mcp_tool_data(&response.result.expect("store result"));
+        let id = uuid::Uuid::parse_str(
+            data["fingerprintId"]
+                .as_str()
+                .expect("fingerprintId string"),
+        )
+        .expect("fingerprintId UUID");
+        let persisted_content = rocksdb_store
+            .get_content(id)
+            .await
+            .unwrap()
+            .expect("stored memory content must exist");
+        assert_eq!(persisted_content, content);
+        memory_ids.push(id);
+    }
+
+    let rebuild = graph_builder.rebuild_all().await.unwrap();
+    let edge_stats = edge_repo.get_stats().unwrap();
+    assert_eq!(rebuild.total_processed, memory_ids.len());
+    assert!(
+        edge_stats.total_embedder_edges > 0,
+        "graph rebuild must physically write embedder_edges"
+    );
+    println!(
+        "AFTER GRAPH_BUILD processed={} knn_edges={} typed_edges={} edge_cf_total={}",
+        rebuild.total_processed,
+        rebuild.total_knn_edges,
+        rebuild.total_typed_edges,
+        edge_stats.total_embedder_edges
+    );
+
+    let source_id = memory_ids[0];
+    let raw_response = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(810)),
+            Some(json!({
+                "name": "get_unified_neighbors",
+                "arguments": {
+                    "memory_id": source_id.to_string(),
+                    "top_k": 3,
+                    "include_embedder_breakdown": true
+                }
+            })),
+        ))
+        .await;
+    assert!(raw_response.error.is_none());
+    let raw_data = extract_mcp_tool_data(&raw_response.result.expect("raw neighbors"));
+    let raw_neighbors = raw_data["neighbors"].as_array().unwrap();
+    assert!(
+        raw_neighbors.len() >= 2,
+        "FSV needs at least two graph neighbors, got {}",
+        raw_neighbors.len()
+    );
+    let selected_rank = raw_neighbors.len();
+    let selected_neighbor_id = uuid::Uuid::parse_str(
+        raw_neighbors[selected_rank - 1]["neighbor_id"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let rejected_neighbor_id =
+        uuid::Uuid::parse_str(raw_neighbors[0]["neighbor_id"].as_str().unwrap()).unwrap();
+    assert_ne!(selected_neighbor_id, rejected_neighbor_id);
+    println!(
+        "RAW_GRAPH source={} selected={} raw_rank={} rejected_top={} raw_count={}",
+        source_id,
+        selected_neighbor_id,
+        selected_rank,
+        rejected_neighbor_id,
+        raw_neighbors.len()
+    );
+
+    let event_id = uuid::Uuid::parse_str("44444444-4444-4444-8444-444444444444").unwrap();
+    let before_record = rocksdb_store.count_learning_events().await.unwrap();
+    let record_response = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(811)),
+            Some(json!({
+                "name": "record_graph_learning_event",
+                "arguments": {
+                    "eventId": event_id.to_string(),
+                    "policyScope": "fsv_graph_policy",
+                    "graphTool": "get_unified_neighbors",
+                    "sourceMemoryId": source_id.to_string(),
+                    "selectedNeighborIds": [selected_neighbor_id.to_string()],
+                    "rejectedNeighborIds": [rejected_neighbor_id.to_string()],
+                    "weightProfile": "semantic_search",
+                    "beforeRank": selected_rank,
+                    "afterRank": 1,
+                    "query": "Prefer the async backpressure graph neighbor for this source.",
+                    "outcome": {
+                        "label": "useful",
+                        "utilityDelta": 0.95,
+                        "correctionRequired": false,
+                        "reuseObserved": true
+                    },
+                    "outcomeReason": "Manual FSV selected a known graph neighbor and observed it should be promoted."
+                }
+            })),
+        ))
+        .await;
+    assert!(
+        record_response.error.is_none(),
+        "record_graph_learning_event JSON-RPC error: {:?}",
+        record_response.error
+    );
+    let record_data = extract_mcp_tool_data(&record_response.result.expect("record graph result"));
+    assert_eq!(record_data["status"], "stored");
+    assert_eq!(record_data["before_count"], before_record);
+    assert_eq!(record_data["after_count"], before_record + 1);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_record + 1
+    );
+    let readback_event = rocksdb_store
+        .get_learning_event(event_id)
+        .await
+        .unwrap()
+        .expect("graph learning event must physically exist");
+    assert_eq!(
+        readback_event.task_id.as_deref(),
+        Some("graph_learning:fsv_graph_policy")
+    );
+    let readback_context: serde_json::Value =
+        serde_json::from_str(&readback_event.retrieved_context).unwrap();
+    assert_eq!(
+        readback_context["source_memory_id"],
+        serde_json::Value::String(source_id.to_string())
+    );
+    assert_eq!(
+        readback_context["selected_neighbor_ids"][0],
+        serde_json::Value::String(selected_neighbor_id.to_string())
+    );
+    println!(
+        "AFTER GRAPH_LEARNING_RECORD before={} after={} event_id={} task_id={} selected={} delta_e={}",
+        before_record,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        event_id,
+        readback_event.task_id.as_deref().unwrap(),
+        selected_neighbor_id,
+        readback_event.features.delta_e_scalar
+    );
+
+    let resolve_response = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(812)),
+            Some(json!({
+                "name": "resolve_graph_learning_policy",
+                "arguments": {
+                    "policyScope": "fsv_graph_policy",
+                    "sourceMemoryId": source_id.to_string(),
+                    "baseWeightProfile": "semantic_search",
+                    "minEvidence": 1,
+                    "learningRate": 1.0,
+                    "includeEvidence": true
+                }
+            })),
+        ))
+        .await;
+    assert!(resolve_response.error.is_none());
+    let resolve_data = extract_mcp_tool_data(&resolve_response.result.expect("resolve result"));
+    assert_eq!(resolve_data["evidence_events"], 1);
+    assert!(
+        resolve_data["edge_boost_count"].as_u64().unwrap() >= 1,
+        "resolved policy must include at least one edge boost"
+    );
+    println!(
+        "HAPPY RESOLVE_GRAPH_POLICY evidence={} edge_boost_count={} source_of_truth={}",
+        resolve_data["evidence_events"],
+        resolve_data["edge_boost_count"],
+        resolve_data["source_of_truth"]["column_family"]
+    );
+
+    let learned_response = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(813)),
+            Some(json!({
+                "name": "get_unified_neighbors",
+                "arguments": {
+                    "memory_id": source_id.to_string(),
+                    "top_k": 3,
+                    "include_embedder_breakdown": true,
+                    "learning_policy": {
+                        "policy_scope": "fsv_graph_policy",
+                        "min_evidence": 1,
+                        "learning_rate": 1.0,
+                        "include_evidence": true
+                    }
+                }
+            })),
+        ))
+        .await;
+    assert!(learned_response.error.is_none());
+    let learned_data = extract_mcp_tool_data(&learned_response.result.expect("learned neighbors"));
+    let learned_top = learned_data["neighbors"][0]["neighbor_id"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        learned_top,
+        selected_neighbor_id.to_string(),
+        "learned policy should promote selected graph neighbor to rank 1"
+    );
+    assert_eq!(
+        learned_data["metadata"]["graph_learning_policy"]["evidence_events"],
+        1
+    );
+    println!(
+        "HAPPY LEARNED_GRAPH_RANK selected={} raw_rank={} learned_rank=1 policy_evidence={} learning_events={}",
+        selected_neighbor_id,
+        selected_rank,
+        learned_data["metadata"]["graph_learning_policy"]["evidence_events"],
+        rocksdb_store.count_learning_events().await.unwrap()
+    );
+
+    let before_empty_selected = rocksdb_store.count_learning_events().await.unwrap();
+    let empty_selected = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(814)),
+            Some(json!({
+                "name": "record_graph_learning_event",
+                "arguments": {
+                    "policyScope": "fsv_graph_policy",
+                    "sourceMemoryId": source_id.to_string(),
+                    "selectedNeighborIds": [],
+                    "beforeRank": 2,
+                    "afterRank": 1,
+                    "outcome": {"label": "useful", "utilityDelta": 0.5}
+                }
+            })),
+        ))
+        .await;
+    let empty_selected_result = empty_selected.result.expect("empty selected result");
+    assert_eq!(empty_selected_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_empty_selected
+    );
+    println!(
+        "EDGE EMPTY_SELECTED before={} after={} isError={}",
+        before_empty_selected,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        empty_selected_result["isError"]
+    );
+
+    let orphan_response = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(815)),
+            Some(json!({
+                "name": "store_memory",
+                "arguments": {
+                    "content": "Graph learning FSV orphan target stored after graph rebuild so no source edge exists yet.",
+                    "importance": 0.8,
+                    "tags": ["graph-learning-fsv", "orphan"]
+                }
+            })),
+        ))
+        .await;
+    assert!(orphan_response.error.is_none());
+    let orphan_data = extract_mcp_tool_data(&orphan_response.result.expect("orphan store"));
+    let orphan_id = uuid::Uuid::parse_str(orphan_data["fingerprintId"].as_str().unwrap()).unwrap();
+    assert!(
+        rocksdb_store
+            .get_content(orphan_id)
+            .await
+            .unwrap()
+            .is_some(),
+        "orphan memory must physically exist before missing-edge audit"
+    );
+    let before_missing_edge = rocksdb_store.count_learning_events().await.unwrap();
+    let missing_edge = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(816)),
+            Some(json!({
+                "name": "record_graph_learning_event",
+                "arguments": {
+                    "policyScope": "fsv_graph_policy",
+                    "sourceMemoryId": source_id.to_string(),
+                    "selectedNeighborIds": [orphan_id.to_string()],
+                    "beforeRank": 3,
+                    "afterRank": 1,
+                    "outcome": {"label": "useful", "utilityDelta": 0.5}
+                }
+            })),
+        ))
+        .await;
+    let missing_edge_result = missing_edge.result.expect("missing edge result");
+    assert_eq!(missing_edge_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_missing_edge
+    );
+    println!(
+        "EDGE MISSING_GRAPH_EVIDENCE before={} after={} orphan_exists={} isError={}",
+        before_missing_edge,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        rocksdb_store
+            .get_content(orphan_id)
+            .await
+            .unwrap()
+            .is_some(),
+        missing_edge_result["isError"]
+    );
+
+    let before_missing_scope = rocksdb_store.count_learning_events().await.unwrap();
+    let missing_scope = handlers
+        .dispatch(make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(817)),
+            Some(json!({
+                "name": "resolve_graph_learning_policy",
+                "arguments": {
+                    "policyScope": "missing_fsv_scope",
+                    "sourceMemoryId": source_id.to_string(),
+                    "minEvidence": 1
+                }
+            })),
+        ))
+        .await;
+    let missing_scope_result = missing_scope.result.expect("missing scope result");
+    assert_eq!(missing_scope_result["isError"], true);
+    assert_eq!(
+        rocksdb_store.count_learning_events().await.unwrap(),
+        before_missing_scope
+    );
+    println!(
+        "EDGE MISSING_POLICY_SCOPE before={} after={} isError={}",
+        before_missing_scope,
+        rocksdb_store.count_learning_events().await.unwrap(),
+        missing_scope_result["isError"]
     );
 }
 

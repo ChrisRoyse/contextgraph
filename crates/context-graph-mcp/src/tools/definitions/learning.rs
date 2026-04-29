@@ -3,7 +3,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns the 12 Learning-as-UTL tool definitions.
+/// Returns the Learning-as-UTL tool definitions.
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition::new(
@@ -254,6 +254,65 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "additionalProperties": false
                     }
                 }
+            }),
+        ),
+        ToolDefinition::new(
+            "record_graph_learning_event",
+            "Persist a graph-navigation outcome as a LearningEvent in CF_LEARNING_EVENTS. \
+             The tool reads real K-NN/typed edges from EdgeRepository, rejects missing graph \
+             evidence, derives the learning state from observed edge scores, writes the event, \
+             and immediately reads the same RocksDB row back for full-state verification.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "eventId": {"type": "string", "format": "uuid", "description": "Optional event UUID. Generated when omitted."},
+                    "policyScope": {"type": "string", "description": "Required learning policy scope. Stored as taskId=graph_learning:<policyScope>."},
+                    "graphTool": {"type": "string", "enum": ["get_unified_neighbors", "get_memory_neighbors", "traverse_graph"], "default": "get_unified_neighbors"},
+                    "sourceMemoryId": {"type": "string", "format": "uuid"},
+                    "selectedNeighborIds": {"type": "array", "items": {"type": "string", "format": "uuid"}, "minItems": 1},
+                    "rejectedNeighborIds": {"type": "array", "items": {"type": "string", "format": "uuid"}, "default": []},
+                    "weightProfile": {"type": "string", "default": "semantic_search"},
+                    "beforeRank": {"type": "integer", "minimum": 1},
+                    "afterRank": {"type": "integer", "minimum": 1},
+                    "query": {"type": "string", "default": ""},
+                    "sessionId": {"type": "string"},
+                    "responseId": {"type": "string"},
+                    "outcome": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string", "enum": ["useful", "neutral", "harmful", "no_learning"]},
+                            "utilityDelta": {"type": "number", "minimum": -1.0, "maximum": 1.0},
+                            "correctionRequired": {"type": "boolean", "default": false},
+                            "reuseObserved": {"type": "boolean", "default": false}
+                        },
+                        "required": ["label", "utilityDelta"],
+                        "additionalProperties": false
+                    },
+                    "outcomeReason": {"type": "string", "description": "Human or system-observed reason for the outcome."}
+                },
+                "required": ["policyScope", "sourceMemoryId", "selectedNeighborIds", "beforeRank", "afterRank", "outcome"],
+                "additionalProperties": false
+            }),
+        ),
+        ToolDefinition::new(
+            "resolve_graph_learning_policy",
+            "Resolve a learned graph ranking policy from persisted graph LearningEvents in \
+             CF_LEARNING_EVENTS. This scans real stored events, validates their embedded graph \
+             evidence, and returns learned embedder weights and edge boosts. If matching evidence \
+             is missing or insufficient, the tool errors instead of falling back to the base policy.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "policyScope": {"type": "string"},
+                    "sourceMemoryId": {"type": "string", "format": "uuid", "description": "Optional source-memory filter."},
+                    "baseWeightProfile": {"type": "string", "default": "semantic_search"},
+                    "minEvidence": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1},
+                    "maxScan": {"type": "integer", "minimum": 1, "maximum": 200000, "default": 10000},
+                    "learningRate": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.35},
+                    "includeEvidence": {"type": "boolean", "default": true}
+                },
+                "required": ["policyScope"],
+                "additionalProperties": false
             }),
         ),
         ToolDefinition::new(

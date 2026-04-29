@@ -29,7 +29,7 @@ Content embedders are E1-E14 (always); learner-state slots E15-E21 carry signal 
 | MAX_LEARNING_EVENT_TEXT_CHARS | 65536 | learning/mod.rs |
 | MAX_LEARNING_EVENT_LABEL_CHARS | 256 | learning/mod.rs |
 
-## 3. Modalities (`LearnerModality` enum, 14 variants)
+## 3. Modalities (`LearnerModality` enum, 8 variants)
 | Variant | Wire string | Group |
 | --- | --- | --- |
 | AffectSpeech | affect_speech | affect |
@@ -40,12 +40,18 @@ Content embedders are E1-E14 (always); learner-state slots E15-E21 carry signal 
 | Eeg | eeg | physiological |
 | EegArtifactRobust | eeg_artifact_robust | physiological |
 | SelfReport | self_report | self-report |
-| Confused | confused | regulated state label |
-| Optimal | optimal | regulated state label |
-| Boring | boring | regulated state label |
-| Stuck | stuck | regulated state label |
-| Dysregulated | dysregulated | regulated state label |
-| Dissipating | dissipating | regulated state label |
+
+## 3a. Diagnostic States (`LearnerDiagnosticState` enum, 6 variants)
+| Variant | Wire string | When (heuristic on L) |
+| --- | --- | --- |
+| Confused | confused | L < 0.3 |
+| Optimal | optimal | 0.3 ≤ L < 0.7 |
+| Stuck | stuck | (low ΔE / low ΔC) |
+| Boring | boring | (low ΔS) |
+| Dysregulated | dysregulated | (high stress_floor) |
+| Dissipating | dissipating | (decay-dominated) |
+
+`UtlComputation { delta_s, delta_c, delta_e, l, diagnostic_state }` is returned by `compute_L`.
 
 ## 4. Learner-State Embedders (E15-E21)
 | Slot | Source | Purpose |
@@ -130,6 +136,6 @@ Fail-fast on unknown base profile or invalid state.
 - `context-graph-cli utl {preflight|register|record-observation|compute-l|...}` — learner-state ops.
 
 ## 11. Source Notes
-- `LEARNER_MODALITY_COUNT = 7` (physiological + affect groups); enum has 14 variants total (includes regulated-state labels). Validation permits `LEARNER_MODALITY_COUNT + 1` modalities per profile.
+- `LEARNER_MODALITY_COUNT = 7` (physiological + affect groups, excluding `SelfReport`); enum has 8 variants. Validation permits `LEARNER_MODALITY_COUNT + 1` modalities per profile.
 - E15-E21 are signal embedders; they back goal-distance computations and state vectors but never participate in content RRF/fusion.
 - Phase 6 added `compute_learning_signals` and `embed_learning_event_signals` for offline learner-conditioned DPO mining (see [19](19_camd_dpo_subsystem.md)).

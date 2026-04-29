@@ -159,6 +159,9 @@ impl Handlers {
             tool_names::GET_TYPED_EDGES => call_get_typed_edges(arguments),
             tool_names::TRAVERSE_GRAPH => call_traverse_graph(arguments),
             tool_names::GET_UNIFIED_NEIGHBORS => call_get_unified_neighbors(arguments),
+            // Graph learning tools
+            tool_names::RECORD_GRAPH_LEARNING_EVENT => call_record_graph_learning_event(arguments),
+            tool_names::RESOLVE_GRAPH_LEARNING_POLICY => call_resolve_graph_learning_policy(arguments),
             // Maintenance tools
             tool_names::REPAIR_CAUSAL_RELATIONSHIPS => call_repair_causal_relationships(),
             // Provenance tools (Phase P3)

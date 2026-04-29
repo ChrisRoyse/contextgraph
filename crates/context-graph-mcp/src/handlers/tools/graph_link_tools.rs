@@ -34,6 +34,7 @@ use context_graph_core::weights::get_effective_weight_profile;
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
+use super::graph_learning_tools::resolve_graph_learning_policy;
 use super::graph_link_dtos::{
     embedder_name, embedder_name_to_index, uses_asymmetric_similarity, AgreementSummary,
     EmbedderContribution, GetMemoryNeighborsRequest, GetMemoryNeighborsResponse,
@@ -1060,6 +1061,43 @@ impl Handlers {
             }
         }
 
+        let graph_learning_policy = if let Some(policy_request) = request.learning_policy.as_ref() {
+            let Some(rocksdb_store) = self
+                .teleological_store
+                .as_any()
+                .downcast_ref::<context_graph_storage::teleological::RocksDbTeleologicalStore>(
+            ) else {
+                error!("get_unified_neighbors: learning_policy requires RocksDbTeleologicalStore");
+                return self.tool_error(
+                    id,
+                    "learning_policy requires RocksDbTeleologicalStore so graph LearningEvents can be read.",
+                );
+            };
+            let policy = match resolve_graph_learning_policy(
+                rocksdb_store,
+                Some(memory_uuid),
+                &policy_request.policy_scope,
+                weights,
+                policy_request.min_evidence,
+                policy_request.max_scan,
+                policy_request.learning_rate,
+                policy_request.include_evidence,
+            )
+            .await
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    error!(error = %e, "get_unified_neighbors: graph learning policy resolve failed");
+                    return self
+                        .tool_error(id, &format!("graph learning policy resolve failed: {e}"));
+                }
+            };
+            weights = policy.learned_weights;
+            Some(policy)
+        } else {
+            None
+        };
+
         // Step 3: Query K-NN graphs from each semantic embedder (excluding E2-E4 temporal)
         let mut all_candidates: HashMap<Uuid, CandidateInfo> = HashMap::new();
         let mut total_candidates_evaluated = 0;
@@ -1121,7 +1159,7 @@ impl Handlers {
 
         // Step 4: Apply Weighted RRF fusion
         // RRF_score(d) = Sum over embedders i: weight_i / (rank_i(d) + k)
-        let mut fused_candidates: Vec<(Uuid, f32, CandidateInfo)> = all_candidates
+        let mut fused_candidates: Vec<(Uuid, f32, CandidateInfo, f32)> = all_candidates
             .into_iter()
             .map(|(memory_id, info)| {
                 let mut rrf_score = 0.0;
@@ -1135,7 +1173,12 @@ impl Handlers {
                     }
                 }
 
-                (memory_id, rrf_score, info)
+                let (rrf_score, learning_boost) = graph_learning_policy
+                    .as_ref()
+                    .map(|policy| policy.apply_score(memory_id, rrf_score))
+                    .unwrap_or((rrf_score, 0.0));
+
+                (memory_id, rrf_score, info, learning_boost)
             })
             .collect();
 
@@ -1148,7 +1191,7 @@ impl Handlers {
         let mut filtered_count = 0;
         let neighbors: Vec<UnifiedNeighborResult> = fused_candidates
             .into_iter()
-            .filter(|(_, score, _)| {
+            .filter(|(_, score, _, _)| {
                 if *score < min_score {
                     filtered_count += 1;
                     false
@@ -1157,7 +1200,7 @@ impl Handlers {
                 }
             })
             .take(top_k)
-            .map(|(neighbor_id, rrf_score, info)| {
+            .map(|(neighbor_id, rrf_score, info, _learning_boost)| {
                 let embedder_count = info.contributing_embedders.len();
                 UnifiedNeighborResult {
                     neighbor_id,
@@ -1279,6 +1322,9 @@ impl Handlers {
                     "E4 (V_ordering)".to_string(),
                 ],
                 fusion_strategy: "weighted_rrf".to_string(),
+                graph_learning_policy: graph_learning_policy
+                    .as_ref()
+                    .map(|policy| policy.metadata(request.learning_policy.as_ref().is_some())),
             },
         };
 

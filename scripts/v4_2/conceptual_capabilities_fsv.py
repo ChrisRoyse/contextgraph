@@ -242,8 +242,8 @@ def parse_outcome_fsv(text: str) -> dict[str, Any]:
 def parse_tools_list(text: str) -> dict[str, Any]:
     found = require_regex(text, r"Found (\d+) tools:", "tools count")
     count = int(found.group(1))
-    if count != 108:
-        raise FsvFailure(f"expected 108 MCP tools, found {count}")
+    if count != 110:
+        raise FsvFailure(f"expected 110 MCP tools, found {count}")
     for tool in [
         "derive_constellation",
         "estimate_learning_outcome",
@@ -251,6 +251,8 @@ def parse_tools_list(text: str) -> dict[str, Any]:
         "list_learning_signal_embedders",
         "compute_learning_signals",
         "embed_learning_event_signals",
+        "record_graph_learning_event",
+        "resolve_graph_learning_policy",
     ]:
         require_regex(text, rf"- {tool} \(desc: true, schema: true\)", f"{tool} listed")
     return {
@@ -262,6 +264,8 @@ def parse_tools_list(text: str) -> dict[str, Any]:
             "list_learning_signal_embedders",
             "compute_learning_signals",
             "embed_learning_event_signals",
+            "record_graph_learning_event",
+            "resolve_graph_learning_policy",
         ],
     }
 

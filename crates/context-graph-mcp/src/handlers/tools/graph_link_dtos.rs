@@ -11,6 +11,7 @@
 //! - AP-77: E5 MUST NOT use symmetric cosine
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 // ============================================================================
@@ -827,6 +828,34 @@ pub struct GetUnifiedNeighborsRequest {
     /// Embedders to exclude from fusion (zeroed + renormalized).
     #[serde(default)]
     pub exclude_embedders: Vec<String>,
+
+    /// Optional learned graph policy. When present, matching persisted graph
+    /// learning evidence is required; missing evidence is an error.
+    #[serde(default)]
+    pub learning_policy: Option<GraphLearningPolicyRequest>,
+}
+
+/// Request parameters for applying persisted graph-learning evidence.
+#[derive(Debug, Clone, Deserialize)]
+pub struct GraphLearningPolicyRequest {
+    /// Required policy scope used when graph learning events were recorded.
+    pub policy_scope: String,
+
+    /// Minimum matching graph LearningEvents required.
+    #[serde(default = "default_graph_learning_min_evidence")]
+    pub min_evidence: usize,
+
+    /// Maximum LearningEvent rows to scan.
+    #[serde(default = "default_graph_learning_max_scan")]
+    pub max_scan: usize,
+
+    /// Scale for learned embedder and edge adjustments.
+    #[serde(default = "default_graph_learning_rate")]
+    pub learning_rate: f32,
+
+    /// Include event evidence in response metadata.
+    #[serde(default)]
+    pub include_evidence: bool,
 }
 
 fn default_weight_profile() -> String {
@@ -848,6 +877,7 @@ impl Default for GetUnifiedNeighborsRequest {
             include_embedder_breakdown: true,
             custom_weights: None,
             exclude_embedders: Vec::new(),
+            learning_policy: None,
         }
     }
 }
@@ -885,9 +915,48 @@ impl GetUnifiedNeighborsRequest {
                 self.min_score
             ));
         }
+        if let Some(policy) = self.learning_policy.as_ref() {
+            policy.validate()?;
+        }
 
         Ok(memory_uuid)
     }
+}
+
+impl GraphLearningPolicyRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.policy_scope.trim().is_empty() {
+            return Err("learning_policy.policy_scope must not be empty".into());
+        }
+        if self.policy_scope.chars().count() > 128 {
+            return Err("learning_policy.policy_scope must be <= 128 characters".into());
+        }
+        if self.policy_scope.contains(char::is_whitespace) {
+            return Err("learning_policy.policy_scope must not contain whitespace".into());
+        }
+        if self.min_evidence == 0 || self.min_evidence > 10_000 {
+            return Err("learning_policy.min_evidence must be in [1, 10000]".into());
+        }
+        if self.max_scan == 0 || self.max_scan > 200_000 {
+            return Err("learning_policy.max_scan must be in [1, 200000]".into());
+        }
+        if !self.learning_rate.is_finite() || !(0.0..=1.0).contains(&self.learning_rate) {
+            return Err("learning_policy.learning_rate must be finite and in [0, 1]".into());
+        }
+        Ok(())
+    }
+}
+
+fn default_graph_learning_min_evidence() -> usize {
+    1
+}
+
+fn default_graph_learning_max_scan() -> usize {
+    10_000
+}
+
+fn default_graph_learning_rate() -> f32 {
+    0.35
 }
 
 /// A single neighbor result with unified RRF score from get_unified_neighbors.
@@ -973,6 +1042,10 @@ pub struct UnifiedNeighborMetadata {
 
     /// Fusion strategy used.
     pub fusion_strategy: String,
+
+    /// Optional learned graph policy metadata when learning_policy was applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph_learning_policy: Option<JsonValue>,
 }
 
 /// Response for get_unified_neighbors tool.
@@ -1022,6 +1095,7 @@ impl GetUnifiedNeighborsResponse {
                     "E4 (V_ordering)".to_string(),
                 ],
                 fusion_strategy: "weighted_rrf".to_string(),
+                graph_learning_policy: None,
             },
         }
     }
@@ -1316,6 +1390,7 @@ mod tests {
             include_embedder_breakdown: true,
             custom_weights: None,
             exclude_embedders: Vec::new(),
+            learning_policy: None,
         };
 
         assert!(req.validate().is_ok());

@@ -264,6 +264,40 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "type": "string",
                         "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     }
+                },
+                "learning_policy": {
+                    "type": "object",
+                    "description": "Explicit learned graph policy to apply. Matching persisted graph LearningEvents are required; if evidence is missing, the tool errors instead of falling back to base RRF.",
+                    "properties": {
+                        "policy_scope": {
+                            "type": "string",
+                            "description": "Policy scope used by record_graph_learning_event."
+                        },
+                        "min_evidence": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 10000,
+                            "default": 1
+                        },
+                        "max_scan": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200000,
+                            "default": 10000
+                        },
+                        "learning_rate": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.35
+                        },
+                        "include_evidence": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    },
+                    "required": ["policy_scope"],
+                    "additionalProperties": false
                 }
             },
             "additionalProperties": false
