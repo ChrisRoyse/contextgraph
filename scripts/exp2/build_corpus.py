@@ -159,6 +159,8 @@ def collect_beir() -> list[dict[str, Any]]:
         from datasets import load_dataset
     except Exception as exc:
         raise Exp2Error(f"S5 requires datasets package: {exc}") from exc
+    # Need 100 audit + 125 PCA distinct = 225 minimum. Pull 250 for headroom.
+    target = max(MIN_CANDIDATES, 250)
     out = []
     ds = load_dataset("BeIR/scifact", "corpus", split="corpus", streaming=True)
     for i, row in enumerate(ds):
@@ -167,7 +169,7 @@ def collect_beir() -> list[dict[str, Any]]:
             cleaned = clean_text(text)
             if 50 <= token_count(cleaned) <= 800:
                 out.append(record(cleaned, "S5_beir_retrieval", "BeIR/scifact/corpus", "CC-BY-SA/MIT metadata", {"row": i, "kind": "document"}))
-        if len(out) >= MIN_CANDIDATES:
+        if len(out) >= target:
             break
     if len(out) < MIN_CANDIDATES:
         raise Exp2Error(f"S5 collected {len(out)} candidates, need {MIN_CANDIDATES}")
@@ -179,6 +181,7 @@ def collect_wikipedia() -> list[dict[str, Any]]:
         from datasets import load_dataset
     except Exception as exc:
         raise Exp2Error(f"S6 requires datasets package: {exc}") from exc
+    target = max(MIN_CANDIDATES, 250)
     out = []
     ds = load_dataset("wikimedia/wikipedia", "20231101.en", split="train", streaming=True)
     rng = random.Random(42)
@@ -190,10 +193,10 @@ def collect_wikipedia() -> list[dict[str, Any]]:
             if 100 <= token_count(cleaned) <= 400:
                 out.append(record(cleaned, "S6_wikipedia", "wikimedia/wikipedia:20231101.en", "CC-BY-SA", {"row": i}))
                 break
-        if len(out) >= MIN_CANDIDATES:
+        if len(out) >= target:
             break
-        if i > 25000 and len(out) < MIN_CANDIDATES:
-            raise Exp2Error(f"S6 collected {len(out)} candidates after {i} rows, need {MIN_CANDIDATES}")
+        if i > 50000 and len(out) < target:
+            raise Exp2Error(f"S6 collected {len(out)} candidates after {i} rows, need {target}")
     return out
 
 
@@ -201,6 +204,7 @@ def collect_temporal() -> list[dict[str, Any]]:
     cmd = ["git", "log", "--date=iso-strict", "--pretty=format:%H%x09%ad%x09%s%n%b"]
     log = subprocess.check_output(cmd, cwd=repo_path("."), text=True, errors="replace")
     entries = [e for e in log.split("\n\n") if e.strip()]
+    target = max(MIN_CANDIDATES, 250)
     out = []
     window: list[str] = []
     for i, entry in enumerate(entries):
@@ -208,7 +212,7 @@ def collect_temporal() -> list[dict[str, Any]]:
         candidate = " ".join(window[-8:])
         if 50 <= token_count(candidate) <= 800:
             out.append(record(candidate, "S7_temporal_sequence", "git_log", "repository_history", {"event_index": i, "window_size": len(window[-8:])}))
-        if len(out) >= MIN_CANDIDATES:
+        if len(out) >= target:
             break
     if len(out) < MIN_CANDIDATES:
         raise Exp2Error(f"S7 collected {len(out)} git-log candidates, need {MIN_CANDIDATES}")

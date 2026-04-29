@@ -1,0 +1,1202 @@
+[
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 163,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 151
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Steroid receptor RNA activator (SRA), the only known RNA coactivator, augments transactivation by nuclear receptors (NRs). We identified SLIRP (SRA stem-loop interacting RNA binding protein) binding to a functional substructure of SRA, STR7. SLIRP is expressed in normal and tumor tissues, contains an RNA recognition motif (RRM), represses NR transactivation in a SRA- and RRM-dependent manner, augments the effect of Tamoxifen, and modulates association of SRC-1 with SRA. SHARP, a RRM-containing corepressor, also binds STR7, augmenting repression with SLIRP. SLIRP colocalizes with SKIP (Chr14q24.3), another NR coregulator, and reduces SKIP-potentiated NR signaling. SLIRP is recruited to endogenous promoters (pS2 and metallothionein), the latter in a SRA-dependent manner, while NCoR promoter recruitment is dependent on SLIRP. The majority of the endogenous SLIRP resides in the mitochondria. Our data demonstrate that SLIRP modulates NR transactivation, suggest it may regulate mitochondrial function, and provide mechanistic insight into interactions between SRA, SLIRP, SRC-1, and NCoR.",
+    "text_sha256": "d9318f73926536fd29144766e6025fda63f2602751a8e01801f4fb7548ae5b46"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 28,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 341
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "HTRF (Homogeneous Time Resolved Fluorescence) is the most frequently used generic assay technology to measure analytes in a homogenous format, which is the ideal platform used for drug target studies in high-throughput screening (HTS). This technology combines fluorescence resonance energy transfer technology (FRET) with time-resolved measurement (TR). In TR-FRET assays, a signal is generated through fluorescent resonance energy transfer between a donor and an acceptor molecule when in close proximity to each other. Buffer and media interference is dramatically reduced by dual-wavelength detection, and the final signal is proportional to the extent of product formation. The HTRF assay is usually sensitive and robust that can be miniaturized into the 384 and 1536-well plate formats. This assay technology has been applied to many antibody-based assays including GPCR signaling (cAMP and IP-One), kinases, cytokines and biomarkers, bioprocess (antibody and protein production), as well as the assays for protein-protein, proteinpeptide, and protein-DNA/RNA interactions. Since its introduction to the drug-screening world over ten years ago, researchers have used HTRF to expedite the study of GPCRs, kinases, new biomarkers, protein-protein interactions, and other targets of interest. HTRF has also been utilized as an alternative method for bioprocess monitoring. The first-generation HTRF technology, which uses Europium cryptate as a fluorescence donor to monitor reactions between biomolecules, was extended in 2008 through the introduction of a second-generation donor, Terbium cryptate (Tb), enhancing screening performance. Terbium cryptate possesses different photophysical properties compared to Europium, including increased quantum yield and a higher molar extinction coefficient. In addition to being compatible with the same acceptor fluorophors used with Europium, it can serve as a donor fluorophore to green-emitting fluors because it has multiple emission peaks including one at 490 nm. Moreover, all Terbium HTRF assays can be read on the same HTRF-compatible instruments as Europium HTRF assays. Overall, HTRF is a highly sensitive, robust technology for the detection of molecular interactions in vitro and is widely used for primary and secondary screening phases of drug development. This review addresses the general principles of HTRF and its current applications in drug discovery.",
+    "text_sha256": "a064207803bc6190f7b373f8081f65d1493f9ceb5a4a63f79c95421a14d8f7be"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 6,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 137
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Realizing the full potential of human embryonic stem cells (hESCs) and induced pluripotent stem cells (hiPSCs) requires efficient methods for genetic modification. However, techniques to generate cell type–specific lineage reporters, as well as reliable tools to disrupt, repair or overexpress genes by gene targeting, are inefficient at best and thus are not routinely used. Here we report the highly efficient targeting of three genes in human pluripotent cells using zinc-finger nuclease (ZFN)–mediated genome editing. First, using ZFNs specific for the OCT4 (POU5F1) locus, we generated OCT4-eGFP reporter cells to monitor the pluripotent state of hESCs. Second, we inserted a transgene into the AAVS1 locus to generate a robust drug-inducible overexpression system in hESCs. Finally, we targeted the PITX3 gene, demonstrating that ZFNs can be used to generate reporter cells by targeting non-expressed genes in hESCs and hiPSCs.",
+    "text_sha256": "e86377c806a42258327c4956bdaab667b004d71f95379b788a5b5a69a91734ce"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 189,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 173
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Neutrophil extracellular traps (NETs) are implicated in autoimmunity, but how they are generated and their roles in sterile inflammation remain unclear. Ribonucleoprotein immune complexes (RNP ICs), inducers of NETosis, require mitochondrial reactive oxygen species (ROS) for maximal NET stimulation. After RNP IC stimulation of neutrophils, mitochondria become hypopolarized and translocate to the cell surface. Extracellular release of oxidized mitochondrial DNA is proinflammatory in vitro, and when this DNA is injected into mice, it stimulates type I interferon (IFN) signaling through a pathway dependent on the DNA sensor STING. Mitochondrial ROS are also necessary for spontaneous NETosis of low-density granulocytes from individuals with systemic lupus erythematosus. This was also observed in individuals with chronic granulomatous disease, who lack NADPH oxidase activity but still develop autoimmunity and type I IFN signatures. Mitochondrial ROS inhibition in vivo reduces disease severity and type I IFN responses in a mouse model of lupus. Together, these findings highlight a role for mitochondria in the generation not only of NETs but also of pro-inflammatory oxidized mitochondrial DNA in autoimmune diseases.",
+    "text_sha256": "78fecc60b4bac357f9ec6eec76c068912bc45c5f417665755a4e1d9ce1dd472d"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 70,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 239
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Abstract Simultaneously evaluating postthaw viability and acrosome integrity of spermatozoa by flow cytometry would provide a valuable testing tool in both research and routine work. In the present study, a new triple-stain combination was developed for the simultaneous evaluation of viability and acrosome integrity of bovine sperm processed in egg yolk-based extender by flow cytometer. SYBR-14 and propidium iodide (PI) enabled the discrimination of sperm cells from egg yolk and debris particles, which was instrumental for the flow cytometric analyses of frozen-thawed bovine sperm, because it implied that washing steps to remove egg yolk were no longer required. In addition, phycoerythrin-conjugated peanut agglutinin (PE-PNA) was used to discriminate acrosome-damaged/reacted sperm cells from acrosome-intact cells. Repeatability was calculated using two processed ejaculates of 10 bulls. Three straws per batch were analyzed in duplicate measurements. Method-agreement analysis between the SYBR-14/PE-PNA/PI and fluorescein isothiocyanate (FITC)-conjugated PNA was performed, with FITC-PNA/PI staining being carried out on 14 frozen-thawed semen samples immediately after thawing and after a 3-h incubation at 37°C. The British Standards Institution repeatability index of the SYBR-14/PE-PNA/PI combination was 2.6%. On average, the FITC-PNA/PI method showed a 6.3% overestimation of the live and acrosome-intact sperm cell subpopulation. In conclusion, the new triple-stain combination is highly repeatable and easy to use in routine application, and it provides a more precise estimate for the rate of sperm cells with intact head membrane and acrosome compared to the generally used and validated FITC-PNA/PI staining.",
+    "text_sha256": "738cd8bfdd90067eb732441895e1161f4bd26d0304548930c62b02e4f7a7778e"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 62,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 336
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Under the Revised National Tuberculosis Control Programme of India, patients with new smear-positive pulmonary tuberculosis are treated with a thrice-weekly regimen of antitubercular drugs (2H(3)R(3)Z(3)E(3)/4H(3)R(3) [H isoniazid, R rifampicin, Z pyrazinamide and E ethambutol]) for 6 months. We conducted a retrospective analysis of the efficacy andtolerability of this regimen under clinical trial conditions in HIV-negative patients with newly diagnosed smear-positive pulmonary tuberculosis. METHODS We retrospectively analysed the data on patients assigned to the control regimen (2H (3)R(3)Z(3)E(3)/4H(3)R(3)) in two clinical trials during 2001-06 at the National Institute for Research in Tuberculosis, Chennai, India. RESULTS Of the 268 patients treated with this regimen, data for efficacy analysis were available for 249. At the end of treatment, of 249 patients, 238 (96%) had a favourable status. Treatment failure occurred in the remaining 11: 7 in whom the organisms were initially drug-susceptible and 4 with initial drug resistance. Of the 238 patients who had a favourable status at the end of treatment, 14 (6%) had recurrence of tuberculosis during the following 24 months. In the intention-to-treat analysis, 245 (94%) of 262 patients had a favourable status at the end of treatment. Of the 28 patients with initial drug resistance, 24 (86%) had a favourable outcome. Only 4 of these 24 patients were found to have recurrence of tuberculosis in 2 years of follow-up. Among the 221 patients initially infected with drug-susceptible organisms, drug resistance did not develop in any of the 7 patients in whom the treatment failed or the 10 who had recurrence of tuberculosis. Further, 5 of the 7 patients in whom the treatment failed continued to excrete drug-susceptible bacilli at 6 months. Adverse drug reactions were observed in 38 (14%) of the 262 patients. Only 3 (1.1%) needed a modification in the treatment. CONCLUSION This thrice-weekly 6-month regimen of antitubercular drugs, when administered under full supervision, is associated with a high rate of favourable treatment outcomes in HIV-negative patients with newly diagnosed sputum smearpositive pulmonary tuberculosis. There are few adverse drug reactions in these patients.",
+    "text_sha256": "b2fb1e57e4c95706af1c6db9583b8a4d22043d3239a6a1ad3bce81f143f3bcc2"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 57,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 274
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Dishevelled (Dvl) proteins are important signaling components of both the canonical beta-catenin/Wnt pathway, which controls cell proliferation and patterning, and the planar cell polarity (PCP) pathway, which coordinates cell polarity within a sheet of cells and also directs convergent extension cell (CE) movements that produce narrowing and elongation of the tissue. Three mammalian Dvl genes have been identified and the developmental roles of Dvl1 and Dvl2 were previously determined. Here, we identify the functions of Dvl3 in development and provide evidence of functional redundancy among the three murine Dvls. Dvl3(-/-) mice died perinatally with cardiac outflow tract abnormalities, including double outlet right ventricle and persistent truncus arteriosis. These mutants also displayed a misorientated stereocilia in the organ of Corti, a phenotype that was enhanced with the additional loss of a single allele of the PCP component Vangl2/Ltap (LtapLp/+). Although neurulation appeared normal in both Dvl3(-/-) and LtapLp/+ mutants, Dvl3(+/-);LtapLp/+ combined mutants displayed incomplete neural tube closure. Importantly, we show that many of the roles of Dvl3 are also shared by Dvl1 and Dvl2. More severe phenotypes were observed in Dvl3 mutants with the deficiency of another Dvl, and increasing Dvl dosage genetically with Dvl transgenes demonstrated the ability of Dvls to compensate for each other to enable normal development. Interestingly, global canonical Wnt signaling appeared largely unaffected in the double Dvl mutants, suggesting that low Dvl levels are sufficient for functional canonical Wnt signals. In summary, we demonstrate that Dvl3 is required for cardiac outflow tract development and describe its importance in the PCP pathway during neurulation and cochlea development. Finally, we establish several developmental processes in which the three Dvls are functionally redundant.",
+    "text_sha256": "2c6541e20fb74c019e984a06f23c7376a9c7651ee2974a751b67e95e7d6cdb4c"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 35,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 236
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Patients undergoing dialysis have a substantially increased risk of cardiovascular mortality and morbidity. Although several trials have shown the cardiovascular benefits of lowering blood pressure in the general population, there is uncertainty about the efficacy and tolerability of reducing blood pressure in patients on dialysis. We did a systematic review and meta-analysis to assess the effect of blood pressure lowering in patients on dialysis. METHODS We systematically searched Medline, Embase, and the Cochrane Library database for trials reported between 1950 and November, 2008, without language restriction. We extracted a standardised dataset from randomised controlled trials of blood pressure lowering in patients on dialysis that reported cardiovascular outcomes. Meta-analysis was done with a random effects model. FINDINGS We identified eight relevant trials, which provided data for 1679 patients and 495 cardiovascular events. Weighted mean systolic blood pressure was 4.5 mm Hg lower and diastolic blood pressure 2.3 mm Hg lower in actively treated patients than in controls. Blood pressure lowering treatment was associated with lower risks of cardiovascular events (RR 0.71, 95% CI 0.55-0.92; p=0.009), all-cause mortality (RR 0.80, 0.66-0.96; p=0.014), and cardiovascular mortality (RR 0.71, 0.50-0.99; p=0.044) than control regimens. The effects seem to be consistent across a range of patient groups included in the studies. INTERPRETATION Treatment with agents that lower blood pressure should routinely be considered for individuals undergoing dialysis to reduce the very high cardiovascular morbidity and mortality rate in this population.",
+    "text_sha256": "c5fe79cd37942ee706068ec5a927bb705294bcc6a8346b433c0920b857c87696"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 188,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 399
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Proteinase-activated receptors (PARs) belong to a family of G protein-coupled receptors. PARs are activated by a serine-dependent cleavage generating a tethered activating ligand. PAR-2 was shown to be involved in inflammatory pathways. We investigated the in situ levels and modulation of PAR-2 in human normal and osteoarthritis (OA) cartilage/chondrocytes. Furthermore, we evaluated the role of PAR-2 on the synthesis of the major catabolic factors in OA cartilage, including metalloproteinase (MMP)-1 and MMP-13 and the inflammatory mediator cyclooxygenase 2 (COX-2), as well as the PAR-2-activated signalling pathways in OA chondrocytes. PAR-2 expression was determined using real-time reverse transcription-polymerase chain reaction and protein levels by immunohistochemistry in normal and OA cartilage. Protein modulation was investigated in OA cartilage explants treated with a specific PAR-2-activating peptide (PAR-2-AP), SLIGKV-NH2 (1 to 400 μM), interleukin 1 beta (IL-1β) (100 pg/mL), tumor necrosis factor-alpha (TNF-α) (5 ng/mL), transforming growth factor-beta-1 (TGF-β1) (10 ng/mL), or the signalling pathway inhibitors of p38 (SB202190), MEK1/2 (mitogen-activated protein kinase kinase) (PD98059), and nuclear factor-kappa B (NF-κB) (SN50), and PAR-2 levels were determined by immunohistochemistry. Signalling pathways were analyzed on OA chondrocytes by Western blot using specific phospho-antibodies against extracellular signal-regulated kinase 1/2 (Erk1/2), p38, JNK (c-jun N-terminal kinase), and NF-κB in the presence or absence of the PAR-2-AP and/or IL-1β. PAR-2-induced MMP and COX-2 levels in cartilage were determined by immunohistochemistry. PAR-2 is produced by human chondrocytes and is significantly upregulated in OA compared with normal chondrocytes (p < 0.04 and p < 0.03, respectively). The receptor levels were significantly upregulated by IL-1β (p < 0.006) and TNF-α (p < 0.002) as well as by the PAR-2-AP at 10, 100, and 400 μM (p < 0.02) and were downregulated by the inhibition of p38. After 48 hours of incubation, PAR-2 activation significantly induced MMP-1 and COX-2 starting at 10 μM (both p < 0.005) and MMP-13 at 100 μM (p < 0.02) as well as the phosphorylation of Erk1/2 and p38 within 5 minutes of incubation (p < 0.03). Though not statistically significant, IL-1β produced an additional effect on the activation of Erk1/2 and p38. This study documents, for the first time, functional consequences of PAR-2 activation in human OA cartilage, identifies p38 as the major signalling pathway regulating its synthesis, and demonstrates that specific PAR-2 activation induces Erk1/2 and p38 in OA chondrocytes. These results suggest PAR-2 as a potential new therapeutic target for the treatment of OA.",
+    "text_sha256": "64fe0547a6f9e1db4f5cbc5ab02fbacb39c30f8626c4049e48fa8d0979173a55"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 26,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 374
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The genomic RNA of an alphavirus encodes four different nonstructural proteins, nsP1, nsP2, nsP3, and nsP4. The polyprotein P123 is produced when translation terminates at an opal termination codon between nsP3 and nsP4. The polyprotein P1234 is produced when translational readthrough occurs or when the opal termination codon has been replaced by a sense codon in the alphavirus genome. Evolutionary pressures appear to have maintained genomic sequences encoding both a stop codon (opal) and an open reading frame (arginine) as a general feature of the O'nyong-nyong virus (ONNV) genome, indicating that both are required at some point. Alternate replication of ONNVs in both vertebrate and invertebrate hosts may determine predominance of a particular codon at this locus in the viral quasispecies. However, no systematic study has previously tested this hypothesis in whole animals. We report here the results of the first study to investigate in a natural mosquito host the functional significance of the opal stop codon in an alphavirus genome. We used a full-length cDNA clone of ONNV to construct a series of mutants in which the arginine between nsP3 and nsP4 was replaced with an opal, ochre, or amber stop codon. The presence of an opal stop codon upstream of nsP4 nearly doubled (75.5%) the infectivity of ONNV over that of virus possessing a codon for the amino acid arginine at the corresponding position (39.8%). Although the frequency with which the opal virus disseminated from the mosquito midgut did not differ significantly from that of the arginine virus on days 8 and 10, dissemination did began earlier in mosquitoes infected with the opal virus. Although a clear fitness advantage is provided to ONNV by the presence of an opal codon between nsP3 and nsP4 in Anopheles gambiae, sequence analysis of ONNV RNA extracted from mosquito bodies and heads indicated codon usage at this position corresponded with that of the virus administered in the blood meal. These results suggest that while selection of ONNV variants is occurring, de novo mutation at the position between nsP3 and nsP4 does not readily occur in the mosquito. Taken together, these results suggest that the primary fitness advantage provided to ONNV by the presence of an opal codon between nsP3 and nsP4 is related to mosquito infectivity.",
+    "text_sha256": "d1a7f19fc4b7aaf229637c31bf2418676b0391c4f527e9083bfce7ea065e25f5"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 173,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 150
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The RNA-Induced Silencing Complex (RISC) is a ribonucleoprotein particle composed of a single-stranded short interfering RNA (siRNA) and an endonucleolytically active Argonaute protein, capable of cleaving mRNAs complementary to the siRNA. The mechanism by which RISC cleaves a target RNA is well understood, however it remains enigmatic how RISC finds its target RNA. Here, we show, both in vitro and in vivo, that the accessibility of the target site correlates directly with the efficiency of cleavage, demonstrating that RISC is unable to unfold structured RNA. In the course of target recognition, RISC transiently contacts single-stranded RNA nonspecifically and promotes siRNA-target RNA annealing. Furthermore, the 5' part of the siRNA within RISC creates a thermodynamic threshold that determines the stable association of RISC and the target RNA. We therefore provide mechanistic insights by revealing features of RISC and target RNAs that are crucial to achieve efficiency and specificity in RNA interference.",
+    "text_sha256": "d4d772defbafd7b133040cf4f8ba789cf2b3010f5a2696907c8847a1a5b7a400"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 246,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 131
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Accurate chromosome segregation requires carefully regulated interactions between kinetochores and microtubules, but how plasticity is achieved to correct diverse attachment defects remains unclear. Here we demonstrate that Aurora B kinase phosphorylates three spatially distinct targets within the conserved outer kinetochore KNL1/Mis12 complex/Ndc80 complex (KMN) network, the key player in kinetochore-microtubule attachments. The combinatorial phosphorylation of the KMN network generates graded levels of microtubule-binding activity, with full phosphorylation severely compromising microtubule binding. Altering the phosphorylation state of each protein causes corresponding chromosome segregation defects. Importantly, the spatial distribution of these targets along the kinetochore axis leads to their differential phosphorylation in response to changes in tension and attachment state. In total, rather than generating exclusively binary changes in microtubule binding, our results suggest a mechanism for the tension-dependent fine-tuning of kinetochore-microtubule interactions.",
+    "text_sha256": "51917668df276d65090d29025503f4de60d674951ac15b9572a6e9fdbf0f5eba"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 228,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 77
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Fiji is a distribution of the popular open-source software ImageJ focused on biological-image analysis. Fiji uses modern software engineering practices to combine powerful software libraries with a broad range of scripting languages to enable rapid prototyping of image-processing algorithms. Fiji facilitates the transformation of new algorithms into ImageJ plugins that can be shared with end users through an integrated update system. We propose Fiji as a platform for productive collaboration between computer science and biology research communities.",
+    "text_sha256": "7886a8a19610f66483e494ccffc0d477cda4d8c927611b34928c836ab38c96e6"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 139,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 266
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Few studies have compared long-term status of bypass grafts between patients with and without diabetes, and uncertainty exists as to whether diabetes independently predicts poor clinical outcome after CABG. METHODS AND RESULTS Among 1526 patients in BARI who underwent CABG as initial revascularization, 99 of 292 (34%) with treated diabetes mellitus (TDM) (those on insulin or oral hypoglycemic agents) and 469 of 1234 (38%) without TDM had follow-up angiography. Angiograms with the longest interval from initial surgery and before any percutaneous graft intervention (mean 3.9 years) were reviewed. An average of 3.0 grafts were placed at initial CABG for patients with TDM (n=297; internal mammary artery [IMA], 33%) and 2.9 grafts for patients without TDM (n=1347; IMA, 34%). Patients with TDM were more likely than those without to have small (<1.5 mm) grafted distal vessels (29% versus 22%) and vessels of poor quality (9% versus 6%). On follow-up angiography, 89% of IMA grafts were free of stenoses > or =50% among patients with TDM versus 85% among patients without TDM (P=0.23). For vein grafts, the corresponding percentages were 71% versus 75% (P=0.40). After statistical adjustment, TDM was unrelated to having a graft stenosis > or =50% (adjusted odds ratio, 0.87; 95% CI, 0.58 to 1.32). CONCLUSIONS Despite diabetic patients' having smaller distal vessels and vessels judged to be of poorer quality, diabetes does not appear to adversely affect patency of IMA or vein grafts over an average of 4-year follow-up. Previously observed differences in survival between CABG-treated patients with and without diabetes may be largely a result of differential risk of mortality from noncardiac causes.",
+    "text_sha256": "5abf044a15a66772eaa28b5d932c12c76e280456d4ac65045e09183dbb2c0cb3"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 22,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 107
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Obesity is associated with an increased risk of developing insulin resistance and type 2 diabetes. In obese individuals, adipose tissue releases increased amounts of non-esterified fatty acids, glycerol, hormones, pro-inflammatory cytokines and other factors that are involved in the development of insulin resistance. When insulin resistance is accompanied by dysfunction of pancreatic islet β-cells — the cells that release insulin — failure to control blood glucose levels results. Abnormalities in β-cell function are therefore critical in defining the risk and development of type 2 diabetes. This knowledge is fostering exploration of the molecular and genetic basis of the disease and new approaches to its treatment and prevention.",
+    "text_sha256": "e983f8581a0d4d76e78348e2cead2c072c980c3ef1de1e8aded3dc98d9d6ceb9"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 151,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 122
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The epithelial-mesenchymal transition (EMT) is required in the embryo for the formation of tissues for which cells originate far from their final destination. Carcinoma cells hijack this program for tumor dissemination. The relevance of the EMT in cancer is still debated because it is unclear how these migratory cells colonize distant tissues to form macrometastases. We show that the homeobox factor Prrx1 is an EMT inducer conferring migratory and invasive properties. The loss of Prrx1 is required for cancer cells to metastasize in vivo, which revert to the epithelial phenotype concomitant with the acquisition of stem cell properties. Thus, unlike the classical EMT transcription factors, Prrx1 uncouples EMT and stemness, and is a biomarker associated with patient survival and lack of metastasis.",
+    "text_sha256": "86b46bcbb4b54b80193db5bb7824d58097c41437e94e94c78313b58ba568213e"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 108,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 241
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Adverse drug events (ADEs) are the harms associated with uses of given medications at normal dosages, which are crucial for a drug to be approved in clinical use or continue to stay on the market. Many ADEs are not identified in trials until the drug is approved for clinical use, which results in adverse morbidity and mortality. To date, millions of ADEs have been reported around the world. Methods to avoid or reduce ADEs are an important issue for drug discovery and development. Here, we reported a comprehensive database of adverse drug events (namely MetaADEDB), which included more than 520,000 drug-ADE associations among 3059 unique compounds (including 1330 drugs) and 13,200 ADE items by data integration and text mining. All compounds and ADEs were annotated with the most commonly used concepts defined in Medical Subject Headings (MeSH). Meanwhile, a computational method, namely the phenotypic network inference model (PNIM), was developed for prediction of potential ADEs based on the database. The area under the receive operating characteristic curve (AUC) is more than 0.9 by 10-fold cross validation, while the AUC value was 0.912 for an external validation set extracted from the US-FDA Adverse Events Reporting System, which indicated that the prediction capability of the method was reliable. MetaADEDB is accessible free of charge at http://www.lmmd.org/online_services/metaadedb/. The database and the method provide us a useful tool to search for known side effects or predict potential side effects for a given drug or compound.",
+    "text_sha256": "6af982a337fe0b2b502a15f7804a1c20e09b7958c98db60dcd02007c5ca9b5fc"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 8,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 204
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Summary. We consider the problem of comparing complex hierarchical models in which the number of parameters is not clearly defined. Using an information theoretic argument we derive a measure pD for the effective number of parameters in a model as the difference between the posterior mean of the deviance and the deviance at the posterior means of the parameters of interest. In general pD approximately corresponds to the trace of the product of Fisher's information and the posterior covariance, which in normal models is the trace of the ‘hat’ matrix projecting observations onto fitted values. Its properties in exponential families are explored. The posterior mean deviance is suggested as a Bayesian measure of fit or adequacy, and the contributions of individual observations to the fit and complexity can give rise to a diagnostic plot of deviance residuals against leverages. Adding pD to the posterior mean deviance gives a deviance information criterion for comparing models, which is related to other information criteria and has an approximate decision theoretic justification. The procedure is illustrated in some examples, and comparisons are drawn with alternative Bayesian and classical proposals. Throughout it is emphasized that the quantities required are trivial to compute in a Markov chain Monte Carlo analysis.",
+    "text_sha256": "5b5020edfe4d9d4de63154b5261099cea273688c809f25838d548d454be5e487"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 7,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 318
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Microarrays offer great potential as a platform for molecular diagnostics, testing clinical samples for the presence of numerous biomarkers in highly multiplexed assays. In this study applied to infectious diseases, data from a microarray designed for molecular serotyping of Streptococcus pneumoniae was used, identifying the presence of any one of 91 known pneumococcal serotypes from DNA extracts. This microarray incorporated oligonucleotide probes for all known capsular polysaccharide synthesis genes and required a statistical analysis of the microarray intensity data to determine which serotype, or combination of serotypes, were present within a sample based on the combination of genes detected. RESULTS We propose an empirical Bayesian model for calculating the probabilities of combinations of serotypes from the microarray data. The model takes into consideration the dependencies between serotypes, induced by genes they have in common, and by homologous genes which, although not identical, are similar to each other in sequence. For serotypes which are very similar in capsular gene composition, extra probes are included on the microarray, providing additional information which is integrated into the Bayesian model. For each serotype combination with high probability, a second model, a Bayesian random effects model is applied to determine the relative abundance of each serotype. CONCLUSIONS To assess the accuracy of the proposed analysis we applied our methods to experimental data from samples containing individual serotypes and samples containing combinations of serotypes with known levels of abundance. All but two of the known serotypes of S. pneumoniae that were tested as individual samples could be uniquely determined by the Bayesian model. The model also enabled the presence of combinations of serotypes within samples to be determined. Serotypes with very low abundance within a combination of serotypes can be detected (down to 2% abundance in this study). As well as detecting the presence of serotype combinations, an approximate measure of the percentage abundance of the serotypes within the combination can be obtained.",
+    "text_sha256": "4e4b69e6621133b8670d62fe951e924fd5baa5cd85dfe3fce53706779bec9ce6"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 23,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 148
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Podocytes are critical in the maintenance of a healthy glomerular filter; however, they have been difficult to study in the intact kidney because of technical limitations. Here we report the development of serial multiphoton microscopy (MPM) of the same glomeruli over several days to visualize the motility of podocytes and parietal epithelial cells (PECs) in vivo. In podocin-GFP mice, podocytes formed sporadic multicellular clusters after unilateral ureteral ligation and migrated into the parietal Bowman's capsule. The tracking of single cells in podocin-confetti mice featuring cell-specific expression of CFP, GFP, YFP or RFP revealed the simultaneous migration of multiple podocytes. In phosphoenolpyruvate carboxykinase (PEPCK)-GFP mice, serial MPM found PEC-to-podocyte migration and nanotubule connections. Our data support a highly dynamic rather than a static nature of the glomerular environment and cellular composition. Future application of this new approach should advance our understanding of the mechanisms of glomerular injury and regeneration.",
+    "text_sha256": "382e91a1492314b3ac3cbf615702bde18f674df00581189141264ed70695ef22"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 55,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 249
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Blind individuals often demonstrate enhanced nonvisual perceptual abilities. However, the neural substrate that underlies this improved performance remains to be fully understood. An earlier behavioral study demonstrated that some early-blind people localize sounds more accurately than sighted controls using monaural cues. In order to investigate the neural basis of these behavioral differences in humans, we carried out functional imaging studies using positron emission tomography and a speaker array that permitted pseudo-free-field presentations within the scanner. During binaural sound localization, a sighted control group showed decreased cerebral blood flow in the occipital lobe, which was not seen in early-blind individuals. During monaural sound localization (one ear plugged), the subgroup of early-blind subjects who were behaviorally superior at sound localization displayed two activation foci in the occipital cortex. This effect was not seen in blind persons who did not have superior monaural sound localization abilities, nor in sighted individuals. The degree of activation of one of these foci was strongly correlated with sound localization accuracy across the entire group of blind subjects. The results show that those blind persons who perform better than sighted persons recruit occipital areas to carry out auditory localization under monaural conditions. We therefore conclude that computations carried out in the occipital cortex specifically underlie the enhanced capacity to use monaural cues. Our findings shed light not only on intermodal compensatory mechanisms, but also on individual differences in these mechanisms and on inhibitory patterns that differ between sighted individuals and those deprived of vision early in life.",
+    "text_sha256": "37588fb44fa11e7169d857642377f350676a3fbaa730ca14f461f5ee9f18098a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 59,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 353
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "AIMS To analyse the long-term outcome of the largest reported cohort of patients presenting asystole during head-up tilt test. METHODS AND RESULTS Since 1990, 1322 patients with syncope of unknown origin have undergone tilt-table testing. Of those, 330 patients (24 X 9%) presented an abnormal response (syncope or pre-syncope). Furthermore, 58 of those patients (17 X 5%) suffered a period of asystole (> or = 3000 ms) during the test. Asystole (median (interquartile range)) lasted 10 (4, 19 X 2) s (range 3-90). Two different protocols (angles) of tilting (Westminster (60 degrees) n=1124; isoproterenol (80 degrees) n=198)) influenced the time to the syncopal episode (13 (6 X 5, 20 X 5) vs 2 (1, 6 X 5) min, P=0,0005) but not the duration of the asystole. During this period, therapy for asystole featured three different stages: first patients were treated with pacemakers; later drug therapy (metoprolol and/or etilefrine) was recommended; lastly (from 1995), no specific treatment was given. In a cohort age- and gender-matched study, those patients without were compared to those with asystole in a 2:1 basis. During 40 X 7 months of follow-up (17 X 7, 66 X 8), 12 patients (20 X 6%) with asystole had syncopal recurrences. Furthermore, 34 patients (28 X 8%) without asystole presented syncopal episodes during a follow-up of 51 X 6 months (29 X 3, 73 X 1) (P=ns). The Kaplan-Meier analysis in patients with and without asystole showed a mean time free of recurrence of 92 X 6 +/- 6 months vs 82 X 6 +/- 4 X 7 months (P=ns). The previous number of syncopes had a significant relationship with recurrences (P=0 X 002), but not therapy. There were no cardiac related deaths. CONCLUSIONS (1) Asystole during head-up tilt test does not imply a malignant outcome and syncope recurrence is low; (2) pacemaker or drug therapy do not significantly influence outcome which correlates to the previous number of syncopal episodes but not to gender, age, asystole occurrence, asystole duration and timing to asystole during head-up tilt test; (3) tilting protocol (angle) might influence time to and incidence of asystole during head-up tilt test.",
+    "text_sha256": "5ecd0532a1261d22cd27e3736a177f32d2b88619bfd22dc6f9b6a765cb113368"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 129,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 129
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Patients with asthma, a major public health problem, are at high risk for serious disease from influenza virus infection, but the pathogenic mechanisms by which influenza A causes airway disease and asthma are not fully known. We show here in a mouse model that influenza infection acutely induced airway hyper-reactivity (AHR), a cardinal feature of asthma, independently of T helper type 2 (TH2) cells and adaptive immunity. Instead, influenza infection induced AHR through a previously unknown pathway that required the interleukin 13 (IL-13)–IL-33 axis and cells of the non-T cell, non-B cell innate lymphoid type called 'natural helper cells'. Infection with influenza A virus, which activates the NLRP3 inflammasome, resulted in much more production of IL-33 by alveolar macrophages, which in turn activated natural helper cells producing substantial IL-13.",
+    "text_sha256": "99ebd323382d2974af182ee0c98fd8df974cc69d36317f2ca3c292710527ef07"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 154,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 288
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Hutchinson–Gilford progeria syndrome (HGPS; OMIM 176670) is an extremely rare but devastating disorder that mimics premature aging.1–3 Affected children appear normal at birth but typically develop failure to thrive in the first two years. Other features include alopecia, micrognathia, loss of subcutaneous fat with prominent veins, abnormal dentition, sclerodermatous skin changes, and osteolysis of the clavicles and distal phalanges. The mean age of death is at age 13 years, most commonly due to atherosclerosis. HGPS is mainly sporadic in occurrence, but a genetic cause has now been implicated following the identification of de novo heterozygous mutations in the LMNA gene in the majority of HGPS patients.4,5 A single family showing autosomal recessive inheritance of homozygous LMNA mutations has also been reported.6 LMNA encodes lamins A and C, components of the nuclear lamina, a meshwork underlying the nuclear envelope that serves as a structural support and is also thought to contribute to chromatin organisation and the regulation of gene expression.7,8 Interestingly, mutations in LMNA have recently been associated with at least eight inherited disorders, known as laminopathies, with differential dystrophic effects on a variety of tissues including muscle, neurones, skin, bone, and adipose tissue (reviewed in Mounkes et al 9). However, the realisation that these disorders share common genetic defects has led to clinical re-evaluation, with emerging evidence of significant phenotypic overlap.10 Hence the laminopathies might reasonably be considered as a spectrum of related diseases. HGPS has phenotypic similarities to several other laminopathies, in particular the atypical Werner’s syndrome11 and mandibuloacral dysplasia (MAD; OMIM 248370 and 608612).12 These diseases are associated with lipodystrophy,3,13 which is the most prominent feature of another laminopathy, familial partial lipodystrophy of the Dunnigan variety (OMIM 151660).14 MAD has been further classified as two …",
+    "text_sha256": "df731f794749e328cfec8bd38c9dc6a808b9afdb6bcecd6502ef588594d25c4f"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 247,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 307
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "6-Mercaptopurine (6MP) and methotrexate are the backbone of continuation therapy for childhood acute lymphoblastic leukemia (ALL). In studies of oral 6MP and methotrexate, indices of chronic systemic exposure to active metabolites of these agents, namely, red blood cell (RBC) concentrations of methotrexate polyglutamates (MTXPGs) and thioguanine nucleotides (TGNs) have positively correlated with event-free survival (EFS). Our objective was to evaluate whether MTXPGs, TGNs, and the dose intensity of administered methotrexate and 6MP were prognostic in the setting of a treatment protocol in which all treatment was coordinated through a single center, and the weekly doses of methotrexate were given parenterally. On protocol Total XII, 182 children achieved remission and received weekly methotrexate 40 mg/m2 parenterally and daily oral 6MP, interrupted every 6 weeks during the first year by pulse chemotherapy. A total of 709 TGN, 418 MTX-PG, and 267 thiopurine methyltransferase (TPMT) measurements, along with complete dose intensity information (dose received divided by protocol dose per week) for 19,046 weeks of 6MP and methotrexate, were analyzed. In univariate analyses, only higher dose intensity of 6MP and of weekly methotrexate were significant predictors of overall EFS (P =.006 and. 039, respectively). The occurrence of neutropenia was associated with worse outcome (P =.040). In a multivariate analysis, only higher dose intensity of 6MP (P =.020) was a significant predictor of EFS, with lower TPMT activity (P =.096) tending to associate with better outcome. 6MP dose intensity was also associated (P =.007) with EFS among patients with homozygous wild-type TPMT phenotype. Lower 6MP dose intensity was primarily due to missed weeks of therapy and not to reductions in daily dose. We conclude that increased dose-intensity of oral 6MP is an important determinant of EFS in ALL, particularly among those children with a homozygous wild-type TPMT phenotype. However, increasing intensity of therapy such that neutropenia precludes chemotherapy administration may be counterproductive.",
+    "text_sha256": "76bc5b7738cba7525b7d0bb6ba1e75a1bbdefdc4939a49c97a11ef4e82e601e4"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 143,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 127
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The yeast transcriptional activator GAL4 binds specific sites on DNA to activate transcription of adjacent genes1–5. The distinct activating regions of GAL4 are rich in acidic residues and it has been suggested that these regions interact with another protein component of the transcriptional machinery (such as the TATA-binding protein or RNA polymerase II) while the DNA-binding region serves to position the activating region near the gene6,7,8. Here we show that various GAL4 derivatives, when expressed at high levels in yeast, inhibit transcription of certain genes lacking GAL4 binding sites, that more efficient activators inhibit more strongly and that inhibition does not depend on the DNA-binding domain. We suggest that this inhibition, which we call squelching, reflects titration of a transcription factor by the activating region of GAL4.",
+    "text_sha256": "a29304c29479d83dfe9252194f037dbe2b9d83a3604bbb4b551ff55fc78a8cd9"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 50,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 153
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The thymic medulla provides a specialized microenvironment for the negative selection of T cells, with the presence of autoimmune regulator (Aire)-expressing medullary thymic epithelial cells (mTECs) during the embryonic-neonatal period being both necessary and sufficient to establish long-lasting tolerance. Here we showed that emergence of the first cohorts of Aire(+) mTECs at this key developmental stage, prior to αβ T cell repertoire selection, was jointly directed by Rankl(+) lymphoid tissue inducer cells and invariant Vγ5(+) dendritic epidermal T cell (DETC) progenitors that are the first thymocytes to express the products of gene rearrangement. In turn, generation of Aire(+) mTECs then fostered Skint-1-dependent, but Aire-independent, DETC progenitor maturation and the emergence of an invariant DETC repertoire. Hence, our data attributed a functional importance to the temporal development of Vγ5(+) γδ T cells during thymus medulla formation for αβ T cell tolerance induction and demonstrated a Rank-mediated reciprocal link between DETC and Aire(+) mTEC maturation.",
+    "text_sha256": "ec121f17935adfb5d02e1d485bb2568a9385993d7a3037309703f470a0daa4d7"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 183,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 283
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "CONTEXT Health care applications of autoidentification technologies, such as radio frequency identification (RFID), have been proposed to improve patient safety and also the tracking and tracing of medical equipment. However, electromagnetic interference (EMI) by RFID on medical devices has never been reported. OBJECTIVE To assess and classify incidents of EMI by RFID on critical care equipment. DESIGN AND SETTING Without a patient being connected, EMI by 2 RFID systems (active 125 kHz and passive 868 MHz) was assessed under controlled conditions during May 2006, in the proximity of 41 medical devices (in 17 categories, 22 different manufacturers) at the Academic Medical Centre, University of Amsterdam, Amsterdam, The Netherlands. Assessment took place according to an international test protocol. Incidents of EMI were classified according to a critical care adverse events scale as hazardous, significant, or light. RESULTS In 123 EMI tests (3 per medical device), RFID induced 34 EMI incidents: 22 were classified as hazardous, 2 as significant, and 10 as light. The passive 868-MHz RFID signal induced a higher number of incidents (26 incidents in 41 EMI tests; 63%) compared with the active 125-kHz RFID signal (8 incidents in 41 EMI tests; 20%); difference 44% (95% confidence interval, 27%-53%; P < .001). The passive 868-MHz RFID signal induced EMI in 26 medical devices, including 8 that were also affected by the active 125-kHz RFID signal (26 in 41 devices; 63%). The median distance between the RFID reader and the medical device in all EMI incidents was 30 cm (range, 0.1-600 cm). CONCLUSIONS In a controlled nonclinical setting, RFID induced potentially hazardous incidents in medical devices. Implementation of RFID in the critical care environment should require on-site EMI tests and updates of international standards.",
+    "text_sha256": "4094b779571233b7483f9c7562f5dd0d187758ca1b86d9c03587589d5af93b1c"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 166,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 170
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Cells in tissues can organize into a broad spectrum of structures according to their function. Drastic changes of organization, such as epithelial-mesenchymal transitions or the formation of spheroidal aggregates, are often associated either to tissue morphogenesis or to cancer progression. Here, we study the organization of cell colonies by means of simulations of self-propelled particles with generic cell-like interactions. The interplay between cell softness, cell-cell adhesion, and contact inhibition of locomotion (CIL) yields structures and collective dynamics observed in several existing tissue phenotypes. These include regular distributions of cells, dynamic cell clusters, gel-like networks, collectively migrating monolayers, and 3D aggregates. We give analytical predictions for transitions between noncohesive, cohesive, and 3D cell arrangements. We explicitly show how CIL yields an effective repulsion that promotes cell dispersal, thereby hindering the formation of cohesive tissues. Yet, in continuous monolayers, CIL leads to collective cell motion, ensures tensile intercellular stresses, and opposes cell extrusion. Thus, our work highlights the prominent role of CIL in determining the emergent structures and dynamics of cell colonies.",
+    "text_sha256": "bcd0aac48750d89d72d18059c003e2eef264352bedee713086449d17393f74ec"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 179,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 212
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Post-transcriptional modification of RNA nucleosides occurs in all living organisms. Pseudouridine, the most abundant modified nucleoside in non-coding RNAs, enhances the function of transfer RNA and ribosomal RNA by stabilizing the RNA structure. Messenger RNAs were not known to contain pseudouridine, but artificial pseudouridylation dramatically affects mRNA function--it changes the genetic code by facilitating non-canonical base pairing in the ribosome decoding centre. However, without evidence of naturally occurring mRNA pseudouridylation, its physiological relevance was unclear. Here we present a comprehensive analysis of pseudouridylation in Saccharomyces cerevisiae and human RNAs using Pseudo-seq, a genome-wide, single-nucleotide-resolution method for pseudouridine identification. Pseudo-seq accurately identifies known modification sites as well as many novel sites in non-coding RNAs, and reveals hundreds of pseudouridylated sites in mRNAs. Genetic analysis allowed us to assign most of the new modification sites to one of seven conserved pseudouridine synthases, Pus1-4, 6, 7 and 9. Notably, the majority of pseudouridines in mRNA are regulated in response to environmental signals, such as nutrient deprivation in yeast and serum starvation in human cells. These results suggest a mechanism for the rapid and regulated rewiring of the genetic code through inducible mRNA modifications. Our findings reveal unanticipated roles for pseudouridylation and provide a resource for identifying the targets of pseudouridine synthases implicated in human disease.",
+    "text_sha256": "840001b6770d08f9fb253070e429eeca697e55f872a64a94dc76cbe0594dbd8b"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 236,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 194
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Multicellular eukaryotes produce small RNA molecules (approximately 21–24 nucleotides) of two general types, microRNA (miRNA) and short interfering RNA (siRNA). They collectively function as sequence-specific guides to silence or regulate genes, transposons, and viruses and to modify chromatin and genome structure. Formation or activity of small RNAs requires factors belonging to gene families that encode DICER (or DICER-LIKE [DCL]) and ARGONAUTE proteins and, in the case of some siRNAs, RNA-dependent RNA polymerase (RDR) proteins. Unlike many animals, plants encode multiple DCL and RDR proteins. Using a series of insertion mutants of Arabidopsis thaliana, unique functions for three DCL proteins in miRNA (DCL1), endogenous siRNA (DCL3), and viral siRNA (DCL2) biogenesis were identified. One RDR protein (RDR2) was required for all endogenous siRNAs analyzed. The loss of endogenous siRNA in dcl3 and rdr2 mutants was associated with loss of heterochromatic marks and increased transcript accumulation at some loci. Defects in siRNA-generation activity in response to turnip crinkle virus in dcl2 mutant plants correlated with increased virus susceptibility. We conclude that proliferation and diversification of DCL and RDR genes during evolution of plants contributed to specialization of small RNA-directed pathways for development, chromatin structure, and defense.",
+    "text_sha256": "3ddf8646e35baee56402ef7f9454806686826208af49aaddffdcfb4da6723c8a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 107,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 576
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Healthy life expectancy (HALE) and disability-adjusted life-years (DALYs) provide summary measures of health across geographies and time that can inform assessments of epidemiological patterns and health system performance, help to prioritise investments in research and development, and monitor progress toward the Sustainable Development Goals (SDGs). We aimed to provide updated HALE and DALYs for geographies worldwide and evaluate how disease burden changes with development. METHODS We used results from the Global Burden of Diseases, Injuries, and Risk Factors Study 2015 (GBD 2015) for all-cause mortality, cause-specific mortality, and non-fatal disease burden to derive HALE and DALYs by sex for 195 countries and territories from 1990 to 2015. We calculated DALYs by summing years of life lost (YLLs) and years of life lived with disability (YLDs) for each geography, age group, sex, and year. We estimated HALE using the Sullivan method, which draws from age-specific death rates and YLDs per capita. We then assessed how observed levels of DALYs and HALE differed from expected trends calculated with the Socio-demographic Index (SDI), a composite indicator constructed from measures of income per capita, average years of schooling, and total fertility rate. FINDINGS Total global DALYs remained largely unchanged from 1990 to 2015, with decreases in communicable, neonatal, maternal, and nutritional (Group 1) disease DALYs offset by increased DALYs due to non-communicable diseases (NCDs). Much of this epidemiological transition was caused by changes in population growth and ageing, but it was accelerated by widespread improvements in SDI that also correlated strongly with the increasing importance of NCDs. Both total DALYs and age-standardised DALY rates due to most Group 1 causes significantly decreased by 2015, and although total burden climbed for the majority of NCDs, age-standardised DALY rates due to NCDs declined. Nonetheless, age-standardised DALY rates due to several high-burden NCDs (including osteoarthritis, drug use disorders, depression, diabetes, congenital birth defects, and skin, oral, and sense organ diseases) either increased or remained unchanged, leading to increases in their relative ranking in many geographies. From 2005 to 2015, HALE at birth increased by an average of 2·9 years (95% uncertainty interval 2·9-3·0) for men and 3·5 years (3·4-3·7) for women, while HALE at age 65 years improved by 0·85 years (0·78-0·92) and 1·2 years (1·1-1·3), respectively. Rising SDI was associated with consistently higher HALE and a somewhat smaller proportion of life spent with functional health loss; however, rising SDI was related to increases in total disability. Many countries and territories in central America and eastern sub-Saharan Africa had increasingly lower rates of disease burden than expected given their SDI. At the same time, a subset of geographies recorded a growing gap between observed and expected levels of DALYs, a trend driven mainly by rising burden due to war, interpersonal violence, and various NCDs. INTERPRETATION Health is improving globally, but this means more populations are spending more time with functional health loss, an absolute expansion of morbidity. The proportion of life spent in ill health decreases somewhat with increasing SDI, a relative compression of morbidity, which supports continued efforts to elevate personal income, improve education, and limit fertility. Our analysis of DALYs and HALE and their relationship to SDI represents a robust framework on which to benchmark geography-specific health performance and SDG progress. Country-specific drivers of disease burden, particularly for causes with higher-than-expected DALYs, should inform financial and research investments, prevention efforts, health policies, and health system improvement initiatives for all countries along the development continuum. FUNDING Bill & Melinda Gates Foundation.",
+    "text_sha256": "c6f0f24d75000e87a85fef474f8f06745a09f3aa8228951cd7ef05cde020da2e"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 56,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 189
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The tumor microenvironment is composed of tumor cells, fibroblasts, endothelial cells and infiltrating immune cells, which may inhibit or promote tumor growth and progression. The objectives of this retrospective study were to characterize the density of tumor-associated macrophages (TAMs) in breast cancer, and to correlate the density of TAMs with clinicopathological parameters. Paraffin-embedded specimens and clinicopathological data, including up to 5 years follow-up information, were obtained from 172 breast cancer patients. Immunohistochemical staining for CD68 (marker for macrophages) was performed and evaluated in a blinded fashion. We found that TAMs were significantly frequent in high histopathological grade breast cancer patients. Breast cancer patients with a high density of TAMs had significantly lower rates of disease-free survival and 5-year overall survival than patients with low density of TAMs. Furthermore, high-infiltration of TAMs indicated worse survival rate for patients with node-negative breast cancer. In conclusion, the number of TAMs in the tumor stroma is an independent predictor of survival time for breast cancer patients. High-infiltration of TAMs is a significant unfavorable prognostic factor for patients with invasive breast cancer and, as such, is a potentially useful prognostic marker for breast cancer.",
+    "text_sha256": "f3b47da248cf1e990872ecc9ad6815ffb90f05b933d3a87edc4c95f39cb54719"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 114,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 227
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Human T-cell leukemia virus-associated adult T-cell leukemia-lymphoma (ATLL) has a very poor prognosis, despite trials of a variety of different treatment regimens. Virus expression has been reported to be limited or absent when ATLL is diagnosed, and this has suggested that secondary genetic or epigenetic changes are important in disease pathogenesis. METHODS AND FINDINGS We prospectively investigated combination chemotherapy followed by antiretroviral therapy for this disorder. Nineteen patients were prospectively enrolled between 2002 and 2006 at five medical centers in a phase II clinical trial of infusional chemotherapy with etoposide, doxorubicin, and vincristine, daily prednisone, and bolus cyclophosphamide (EPOCH) given for two to six cycles until maximal clinical response, and followed by antiviral therapy with daily zidovudine, lamivudine, and alpha interferon-2a for up to one year. Seven patients were on study for less than one month due to progressive disease or chemotherapy toxicity. Eleven patients achieved an objective response with median duration of response of thirteen months, and two complete remissions. During chemotherapy induction, viral RNA expression increased (median 190-fold), and virus replication occurred, coincident with development of disease progression. CONCLUSIONS EPOCH chemotherapy followed by antiretroviral therapy is an active therapeutic regimen for adult T-cell leukemia-lymphoma, but viral reactivation during induction chemotherapy may contribute to treatment failure. Alternative therapies are sorely needed in this disease that simultaneously prevent virus expression, and are cytocidal for malignant cells.",
+    "text_sha256": "614efd05e61a6e2e7bf61d1fb07955866cfb851a1bff0424833ee8ecd08d8ff5"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 150,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 111
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "There is strong evidence for a genetic contribution to epilepsy, but it is commonly assumed that this genetic contribution is limited to ‘generalized’ epilepsies, and that most forms of ‘partial’ epilepsy are nongenetic. In a linkage analysis of a single family containing 11 affected individuals, we obtained strong evidence for localization of a gene for partial epilepsy. This susceptibility gene maps to chromosome 10q, with a maximum two–point lod score for D10S192 of 3.99 at θ=0.0. All affected individuals share a single haplotype for seven tightly linked contiguous markers; the maximum lod score for this haplotype is 4.83 at θ=0.0. Key recombinants place the susceptibility locus within a 10 centimorgan interval.",
+    "text_sha256": "6f98ec54135e697858484105c72f7e2b4a70ef655b99b2862111fc857bf35a18"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 71,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 313
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Roughly 3 million people worldwide were receiving antiretroviral therapy (ART) at the end of 2007, but an estimated 6.7 million were still in need of treatment and a further 2.7 million became infected with HIV in 2007. Prevention efforts might reduce HIV incidence but are unlikely to eliminate this disease. We investigated a theoretical strategy of universal voluntary HIV testing and immediate treatment with ART, and examined the conditions under which the HIV epidemic could be driven towards elimination. METHODS We used mathematical models to explore the effect on the case reproduction number (stochastic model) and long-term dynamics of the HIV epidemic (deterministic transmission model) of testing all people in our test-case community (aged 15 years and older) for HIV every year and starting people on ART immediately after they are diagnosed HIV positive. We used data from South Africa as the test case for a generalised epidemic, and assumed that all HIV transmission was heterosexual. FINDINGS The studied strategy could greatly accelerate the transition from the present endemic phase, in which most adults living with HIV are not receiving ART, to an elimination phase, in which most are on ART, within 5 years. It could reduce HIV incidence and mortality to less than one case per 1000 people per year by 2016, or within 10 years of full implementation of the strategy, and reduce the prevalence of HIV to less than 1% within 50 years. We estimate that in 2032, the yearly cost of the present strategy and the theoretical strategy would both be US$1.7 billion; however, after this time, the cost of the present strategy would continue to increase whereas that of the theoretical strategy would decrease. INTERPRETATION Universal voluntary HIV testing and immediate ART, combined with present prevention approaches, could have a major effect on severe generalised HIV/AIDS epidemics. This approach merits further mathematical modelling, research, and broad consultation.",
+    "text_sha256": "02d42cf08dde4bd2a803694517f27040dad744d700c5a53f58de7663c3556c6e"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 207,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 166
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Experience gained from the Global Malaria Eradication Program (1955-72) identified a set of shared technical and operational factors that enabled some countries to successfully eliminate malaria. Spatial data for these factors were assembled for all malaria-endemic countries and combined to provide an objective, relative ranking of countries by technical, operational, and combined elimination feasibility. The analysis was done separately for Plasmodium falciparum and Plasmodium vivax, and the limitations of the approach were discussed. The relative rankings suggested that malaria elimination would be most feasible in countries in the Americas and Asia, and least feasible in countries in central and west Africa. The results differed when feasibility was measured by technical or operational factors, highlighting the different types of challenge faced by each country. The results are not intended to be prescriptive, predictive, or to provide absolute assessments of feasibility, but they do show that spatial information is available to facilitate evidence-based assessments of the relative feasibility of malaria elimination by country that can be rapidly updated.",
+    "text_sha256": "7f7f6c0d540af30dac010e9abb1036693139a0458fa6540b7db13e95abd77ebc"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 1,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 201
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Myelodysplastic syndromes (MDS) are age-dependent stem cell malignancies that share biological features of activated adaptive immune response and ineffective hematopoiesis. Here we report that myeloid-derived suppressor cells (MDSC), which are classically linked to immunosuppression, inflammation, and cancer, were markedly expanded in the bone marrow of MDS patients and played a pathogenetic role in the development of ineffective hematopoiesis. These clonally distinct MDSC overproduce hematopoietic suppressive cytokines and function as potent apoptotic effectors targeting autologous hematopoietic progenitors. Using multiple transfected cell models, we found that MDSC expansion is driven by the interaction of the proinflammatory molecule S100A9 with CD33. These 2 proteins formed a functional ligand/receptor pair that recruited components to CD33’s immunoreceptor tyrosine-based inhibition motif (ITIM), inducing secretion of the suppressive cytokines IL-10 and TGF-β by immature myeloid cells. S100A9 transgenic mice displayed bone marrow accumulation of MDSC accompanied by development of progressive multilineage cytopenias and cytological dysplasia. Importantly, early forced maturation of MDSC by either all-trans-retinoic acid treatment or active immunoreceptor tyrosine-based activation motif–bearing (ITAM-bearing) adapter protein (DAP12) interruption of CD33 signaling rescued the hematologic phenotype. These findings indicate that primary bone marrow expansion of MDSC driven by the S100A9/CD33 pathway perturbs hematopoiesis and contributes to the development of MDS.",
+    "text_sha256": "879d669bc5b461313928590b799ec2f34095955ca1e2e15c26fe6a01a32e1cf8"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 194,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 163
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Live attenuated simian immunodeficiency virus (SIV) vaccines (LAVs) remain the most efficacious of all vaccines in nonhuman primate models of HIV and AIDS, yet the basis of their robust protection remains poorly understood. Here we show that the degree of LAV-mediated protection against intravenous wild-type SIVmac239 challenge strongly correlates with the magnitude and function of SIV-specific, effector-differentiated T cells in the lymph node but not with the responses of such T cells in the blood or with other cellular, humoral and innate immune parameters. We found that maintenance of protective T cell responses is associated with persistent LAV replication in the lymph node, which occurs almost exclusively in follicular helper T cells. Thus, effective LAVs maintain lymphoid tissue-based, effector-differentiated, SIV-specific T cells that intercept and suppress early wild-type SIV amplification and, if present in sufficient frequencies, can completely control and perhaps clear infection, an observation that provides a rationale for the development of safe, persistent vectors that can elicit and maintain such responses.",
+    "text_sha256": "109c3235211f3aa3b25736d9006c01142177c5291178dd570e5efd19f084a8f8"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 206,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 237
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "A considerable subgroup of patients with early breast cancer does not address benefits of anthracycline based chemotherapy. The aim of this retrospective study was to investigate the effect of microvessel density (MVD) and status of p53 protein on 5-year disease free survival (DFS) in the group of breast cancer patients treated with anthracyclines in adjuvant setting. Correlations between MVD, p53 status and other clinicopathological parameters were also assessed. MVD and p53 status were analyzed immunohistochemically in the group of 172 women with breast cancer in clinical stage T1-2, N1-N2, M0. There were 123 tumors (71.5 %) with lower MVD (≤ 214.8 microvesells/mm(2)) and 49 (28.5 %) with higher MVD (>214.8 microvesells/mm(2)). The proportion of higher MVD tumors significantly increased in N2 (P = 0.000) and in estrogen (P = 0.046) or progesterone receptors (P = 0.029) negative tumors. p53 positivity was indicated in 50 cancers (29.1 %) and was significantly associated with higher grade (P = 0.000), steroid receptors negativity (P = 0.000), cytokeratin5/6 positivity (P = 0.026), topoisomerase IIα overexpression (P = 0.005) and higher proliferation rate (P = 0.001). In univariate analysis, higher MVD (P = 0.016) and p53 negativity (P = 0.023) were significantly related with longer DFS (median follow-up 36 months). In multivariate Cox regression analysis MVD was independently associated with DFS. These data suggest that higher MVD is favourable prognostic factors for early advanced breast cancer patients after adjuvant anthracycline based chemotherapy.",
+    "text_sha256": "c45c44de9a310312fa9aec8564dcc37a6e46a824f280dddf3f0cd638e6abed6f"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 40,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 203
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "In many eukaryotes, RNA-dependent RNA polymerases (RdRPs) play key roles in the RNAi pathway. They have been implicated in the recognition and processing of aberrant transcripts triggering the process, and in amplification of the silencing response. We have tested the functions of RdRP genes from the ciliate Paramecium tetraurelia in experimentally induced and endogenous mechanisms of gene silencing. In this organism, RNAi can be triggered either by high-copy, truncated transgenes or by directly feeding cells with double-stranded RNA (dsRNA). Surprisingly, dsRNA-induced silencing depends on the putatively functional RDR1 and RDR2 genes, which are required for the accumulation of both primary siRNAs and a distinct class of small RNAs suggestive of secondary siRNAs. In contrast, a third gene with a highly divergent catalytic domain, RDR3, is required for siRNA accumulation when RNAi is triggered by truncated transgenes. Our data further implicate RDR3 in the accumulation of previously described endogenous siRNAs and in the regulation of the surface antigen gene family. While only one of these genes is normally expressed in any clonal cell line, the knockdown of RDR3 leads to co-expression of multiple antigens. These results provide evidence for a functional specialization of Paramecium RdRP genes in distinct RNAi pathways operating during vegetative growth.",
+    "text_sha256": "a6a2900f3a42494a474bf77a41e1b2838b0b5f9d6b693a8eab7e43a2ff31ae5d"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 178,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 265
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND & AIMS Tumor cells survive hypoxic conditions by inducing autophagy. We investigated the roles of microRNAs (miRNAs) in regulating autophagy of hepatocellular carcinoma (HCC) cells under hypoxic conditions. METHODS We used gain- and loss-of-function methods to evaluate the effect of miRNAs on autophagy in human HCC cell lines (Huh7 and Hep3B) under hypoxic conditions. Autophagy was quantified by immunoblot, immunofluoresence, and transmission electron microscopy analyses, and after incubation of cells with bafilomycin A1. We used a luciferase reporter assay to confirm associations between miRNAs and their targets. We analyzed growth of HCC xenograft tumors in nude mice. RESULTS miR-375 was down-regulated in HCC cells and tissues; it inhibited autophagy under hypoxic conditions by suppressing the conversion of LC3I to LC3II and thereby autophagic flux. The ability of miR-375 to inhibit autophagy was independent of its ability to regulate 3'-phosphoinositide-dependent protein kinase-1-AKT-mammalian target of rapamycin signaling, but instead involved suppression of ATG7, an autophagy-associated gene. miR-375 bound directly to a predicted site in the 3' untranslated region of ATG7. Up-regulating miR-375 or down-regulating ATG7 inhibited mitochondrial autophagy of HCC cells, reduced the elimination of damaged mitochondria under hypoxia, increased release of mitochondrial apoptotic proteins, and reduced viability of HCC cells. In mice, xenograft tumors that expressed miR-375 had fewer autophagic cells, larger areas of necrosis, and grew more slowly than tumors from HCC cells that expressed lower levels of miR-375. CONCLUSIONS miR-375 inhibits autophagy by reducing expression of ATG7 and impairs viability of HCC cells under hypoxic conditions in culture and in mice. miRNAs that inhibit autophagy of cancer cells might be developed as therapeutics.",
+    "text_sha256": "c543e4eddb7d7c73d395715c134c437ea99e4f62d240c7883ebb3997bd72ae14"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 233,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 101
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The twin-arginine translocation (Tat) protein export system is present in the cytoplasmic membranes of most bacteria and archaea and has the highly unusual property of transporting fully folded proteins. The system must therefore provide a transmembrane pathway that is large enough to allow the passage of structured macromolecular substrates of different sizes but that maintains the impermeability of the membrane to ions. In the Gram-negative bacterium Escherichia coli, this complex task can be achieved by using only three small membrane proteins: TatA, TatB and TatC. In this Review, we summarize recent advances in our understanding of how this remarkable machine operates.",
+    "text_sha256": "720578d1baab8b53eb71bbd6559674c23f5bf82c19e16b22579dc6746448a299"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 87,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 119
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Functional elucidation of causal genetic variants and elements requires precise genome editing technologies. The type II prokaryotic CRISPR (clustered regularly interspaced short palindromic repeats)/Cas adaptive immune system has been shown to facilitate RNA-guided site-specific DNA cleavage. We engineered two different type II CRISPR/Cas systems and demonstrate that Cas9 nucleases can be directed by short RNAs to induce precise cleavage at endogenous genomic loci in human and mouse cells. Cas9 can also be converted into a nicking enzyme to facilitate homology-directed repair with minimal mutagenic activity. Lastly, multiple guide sequences can be encoded into a single CRISPR array to enable simultaneous editing of several sites within the mammalian genome, demonstrating easy programmability and wide applicability of the RNA-guided nuclease technology.",
+    "text_sha256": "2755ee0a5e2a484327ff66527b7830be242abac6081bacfb2de6ad16619148de"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 214,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 151
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Huntington disease (HD) is a genetic neurodegenerative disorder for which there is currently no cure and no way to stop or even slow the brain changes it causes. In the present study, we aimed to investigate whether FTY720, the first approved oral therapy for multiple sclerosis, may be effective in HD models and eventually constitute an alternative therapeutic approach for the treatment of the disease. Here, we utilized preclinical target validation paradigms and examined the in vivo efficacy of chronic administration of FTY720 in R6/2 HD mouse model. Our findings indicate that FTY720 improved motor function, prolonged survival and reduced brain atrophy in R6/2 mice. The beneficial effect of FTY720 administration was associated with a significant strengthening of neuronal activity and connectivity and, with reduction of mutant huntingtin aggregates, and it was also paralleled by increased phosphorylation of mutant huntingtin at serine 13/16 residues that are predicted to attenuate protein toxicity.",
+    "text_sha256": "2f4f36c5385f7fe8991e8c734642dfee3492a7b7953ac928c2f49de1be7ca366"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 39,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 95
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Activin/Nodal growth factors control a broad range of biological processes, including early cell fate decisions, organogenesis and adult tissue homeostasis. Here, we provide an overview of the mechanisms by which the Activin/Nodal signalling pathway governs stem cell function in these different stages of development. We describe recent findings that associate Activin/Nodal signalling to pathological conditions, focusing on cancer stem cells in tumorigenesis and its potential as a target for therapies. Moreover, we will discuss future directions and questions that currently remain unanswered on the role of Activin/Nodal signalling in stem cell self-renewal, differentiation and proliferation.",
+    "text_sha256": "f5c4f6a567c22c2090bbe547254cf86189557bdffc2a3c95421cef39fe2722f4"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 229,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 247
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Extensive evidence implicates activation of the lipid phosphatidylinositide 3-kinase (PI3K) pathway in the genesis and progression of various human cancers. PI3K inhibitors thus have considerable potential as molecular cancer therapeutics. Here, we detail the pharmacologic properties of a prototype of a new series of inhibitors of class I PI3K. PI103 is a potent inhibitor with low IC50 values against recombinant PI3K isoforms p110alpha (2 nmol/L), p110beta (3 nmol/L), p110delta (3 nmol/L), and p110gamma (15 nmol/L). PI103 also inhibited TORC1 by 83.9% at 0.5 micromol/L and exhibited an IC50 of 14 nmol/L against DNA-PK. A high degree of selectivity for the PI3K family was shown by the lack of activity of PI103 in a panel of 70 protein kinases. PI103 potently inhibited proliferation and invasion of a wide variety of human cancer cells in vitro and showed biomarker modulation consistent with inhibition of PI3K signaling. PI103 was extensively metabolized, but distributed rapidly to tissues and tumors. This resulted in tumor growth delay in eight different human cancer xenograft models with various PI3K pathway abnormalities. Decreased phosphorylation of AKT was observed in U87MG gliomas, consistent with drug levels achieved. We also showed inhibition of invasion in orthotopic breast and ovarian cancer xenograft models and obtained evidence that PI103 has antiangiogenic potential. Despite its rapid in vivo metabolism, PI103 is a valuable tool compound for exploring the biological function of class I PI3K and importantly represents a lead for further optimization of this novel class of targeted molecular cancer therapeutic.",
+    "text_sha256": "84187560bb7177e2638b412cb55987157904c0751d34ffb4aaa2585bb93d58a7"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 195,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 136
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Neural networks that regulate binge eating remain to be identified, and effective treatments for binge eating are limited. METHODS We combined neuroanatomic, pharmacologic, electrophysiological, Cre-lox, and chemogenetic approaches to investigate the functions of 5-hydroxytryptamine (5-HT) 2C receptor (5-HT2CR) expressed by dopamine (DA) neurons in the regulation of binge-like eating behavior in mice. RESULTS We showed that 5-HT stimulates DA neural activity through a 5-HT2CR-mediated mechanism, and activation of this midbrain 5-HT→DA neural circuit effectively inhibits binge-like eating behavior in mice. Notably, 5-HT medications, including fluoxetine, d-fenfluramine, and lorcaserin (a selective 5-HT2CR agonist), act on 5-HT2CRs expressed by DA neurons to inhibit binge-like eating in mice. CONCLUSIONS We identified the 5-HT2CR population in DA neurons as one potential target for antibinge therapies, and provided preclinical evidence that 5-HT2CR agonists could be used to treat binge eating.",
+    "text_sha256": "f485001de0af791a0fe779b8481a5b316f3032a8cecfe3ad2c2d851a87bb41cf"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 86,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 284
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Purpose To evaluate the global trends in health burden of people visually impaired from cataract in terms of disability-adjusted life years (DALY) and its correlations with national levels of socioeconomic development. Methods Global, regional, and national DALY numbers, crude rate, and age-standardized rate of cataract vision loss by age and sex were obtained from the database of the Global Burden of Disease Study 2015. The human development index, per capita gross domestic product, and other country-level data were derived from international open databases. Regression analysis was used to assess the correlations between age-standardized DALY rate and socioeconomic variables. Results The global DALY numbers of cataract vision loss increased by 89.42%, from 2048.18 (95%CI [confidence interval]: 1457.60-2761.80) thousands in 1990 to 3879.74 (95% CI: 2766.07-5232.43) thousands in 2015 (P < 0.001). Females had higher DALY number 315.83 (95%CI: 237.17-394.4) and crude rate 38.29 (95%CI: 35.35-41.23) after adjusting for age and country (all P < 0.001). The age-standardized DALY rate was higher in countries with low human development index (HDI), with 91.03 (95%CI: 73.04-108.75) for low HDI, 81.67 (95%CI: 53.24-108.82) for medium HDI, 55.89 (95%CI: 36.87-69.63) for high HDI, and 17.10 (95%CI: 13.91-26.84) for very high HDI countries (P < 0.01), respectively. The national age-standardized DALY rates in 2015 were negatively associated with both HDI (R2 = 0.489, P < 0.001) and per capita gross domestic product (R2 = 0.331, P < 0.001). Stepwise multiple regression showed that HDI was significantly correlated with national age-standardized DALY rates in 2015 after adjusting for other confounding factors (P < 0.001). Conclusions The global health burden of vision loss due to cataract increased between 1990 and 2015 despite considerable efforts from the World Health Organization and VISION 2020 initiatives.",
+    "text_sha256": "3cfc0efa2e6d6c16082f81ce13e4b3f3fc451a2f3a72aca90bde87cfb8ee5d14"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 240,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 227
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Notch plays a critical role in the transition from proliferation to differentiation in the epidermis and corneal epithelium. Furthermore, aberrant Notch signaling is a feature of diseases like psoriasis, eczema, nonmelanoma skin cancer, and melanoma where differentiation and proliferation are impaired. Whereas much is known about the downstream events following Notch signaling, factors responsible for negatively regulating Notch receptor signaling after ligand activation are incompletely understood. Notch can undergo hydroxylation by factor-inhibiting hypoxia-inducible factor 1 (FIH-1); however, the biological significance of this phenomenon is unclear. Here we show that FIH-1 expression is up-regulated in diseased epidermis and corneal epithelium. Elevating FIH-1 levels in primary human epidermal keratinocytes (HEKs) and human corneal epithelial keratinocytes (HCEKs) impairs differentiation in submerged cultures and in a \"three-dimensional\" organotypic raft model of human epidermis, in part, via a coordinate decrease in Notch signaling. Knockdown of FIH-1 enhances keratinocyte differentiation. Loss of FIH-1 in vivo increased Notch activity in the limbal epithelium, resulting in a more differentiated phenotype. microRNA-31 (miR-31) is an endogenous negative regulator of FIH-1 expression that results in keratinocyte differentiation, mediated by Notch activation. Ectopically expressing miR-31 in an undifferentiated corneal epithelial cell line promotes differentiation and recapitulates a corneal epithelium in a three-dimensional raft culture model. Our results define a previously unknown mechanism for keratinocyte fate decisions where Notch signaling potential is, in part, controlled through a miR-31/FIH-1 nexus.",
+    "text_sha256": "6df072bb25e8c8380681b29c55b4d5d32a3c75aafa8a2f08f67cd08acbf26208"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 230,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 214
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The type II clustered regularly interspaced short palindromic repeats (CRISPR)/CRISPR-associated (Cas) system has emerged recently as a powerful method to manipulate the genomes of various organisms. Here, we report a toolbox for high-efficiency genome engineering of Drosophila melanogaster consisting of transgenic Cas9 lines and versatile guide RNA (gRNA) expression plasmids. Systematic evaluation reveals Cas9 lines with ubiquitous or germ-line-restricted patterns of activity. We also demonstrate differential activity of the same gRNA expressed from different U6 snRNA promoters, with the previously untested U6:3 promoter giving the most potent effect. An appropriate combination of Cas9 and gRNA allows targeting of essential and nonessential genes with transmission rates ranging from 25-100%. We also demonstrate that our optimized CRISPR/Cas tools can be used for offset nicking-based mutagenesis. Furthermore, in combination with oligonucleotide or long double-stranded donor templates, our reagents allow precise genome editing by homology-directed repair with rates that make selection markers unnecessary. Last, we demonstrate a novel application of CRISPR/Cas-mediated technology in revealing loss-of-function phenotypes in somatic cells following efficient biallelic targeting by Cas9 expressed in a ubiquitous or tissue-restricted manner. Our CRISPR/Cas tools will facilitate the rapid evaluation of mutant phenotypes of specific genes and the precise modification of the genome with single-nucleotide precision. Our results also pave the way for high-throughput genetic screening with CRISPR/Cas.",
+    "text_sha256": "28fdebb1416e4d1ec2c02b474c2e420d4d496cb3755945ae8edea7153d0013eb"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 97,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 128
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "How sister kinetochores attach to microtubules from opposite spindle poles during mitosis (bi-orientation) remains poorly understood. In yeast, the ortholog of the Aurora B-INCENP protein kinase complex (Ipl1-Sli15) may have a role in this crucial process, because it is necessary to prevent attachment of sister kinetochores to microtubules from the same spindle pole. We investigated IPL1 function in cells that cannot replicate their chromosomes but nevertheless duplicate their spindle pole bodies (SPBs). Kinetochores detach from old SPBs and reattach to old and new SPBs with equal frequency in IPL1+ cells, but remain attached to old SPBs in ipl1 mutants. This raises the possibility that Ipl1-Sli15 facilitates bi-orientation by promoting turnover of kinetochore-SPB connections until traction of sister kinetochores toward opposite spindle poles creates tension in the surrounding chromatin.",
+    "text_sha256": "7452767163335be83f7584707449634f745b1f4db99e90d45b16f50fe6f827a5"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 24,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 224
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "It is thought that the H19 imprinting control region (ICR) directs the silencing of the maternally inherited Igf2 allele through a CTCF-dependent chromatin insulator. The ICR has been shown to interact physically with a silencer region in Igf2, differentially methylated region (DMR)1, but the role of CTCF in this chromatin loop and whether it restricts the physical access of distal enhancers to Igf2 is not known. We performed systematic chromosome conformation capture analyses in the Igf2/H19 region over >160 kb, identifying sequences that interact physically with the distal enhancers and the ICR. We found that, on the paternal chromosome, enhancers interact with the Igf2 promoters but that, on the maternal allele, this is prevented by CTCF binding within the H19 ICR. CTCF binding in the maternal ICR regulates its interaction with matrix attachment region (MAR)3 and DMR1 at Igf2, thus forming a tight loop around the maternal Igf2 locus, which may contribute to its silencing. Mutation of CTCF binding sites in the H19 ICR leads to loss of CTCF binding and de novo methylation of a CTCF target site within Igf2 DMR1, showing that CTCF can coordinate regional epigenetic marks. This systematic chromosome conformation capture analysis of an imprinting cluster reveals that CTCF has a critical role in the epigenetic regulation of higher-order chromatin structure and gene silencing over considerable distances in the genome.",
+    "text_sha256": "7293bbf72495acf88a61a784fe1c542768d69a56739ea63b166aa3aa2b0b2059"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 91,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 157
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "During corticogenesis, pyramidal neurons (∼80% of cortical neurons) arise from the ventricular zone, pass through a multipolar stage to become bipolar and attach to radial glia, and then migrate to their proper position within the cortex. As pyramidal neurons migrate radially, they remain attached to their glial substrate as they pass through the subventricular and intermediate zones, regions rich in tangentially migrating interneurons and axon fibre tracts. We examined the role of lamellipodin (Lpd), a homologue of a key regulator of neuronal migration and polarization in Caenorhabditis elegans, in corticogenesis. Lpd depletion caused bipolar pyramidal neurons to adopt a tangential, rather than radial-glial, migration mode without affecting cell fate. Mechanistically, Lpd depletion reduced the activity of SRF, a transcription factor regulated by changes in the ratio of polymerized to unpolymerized actin. Therefore, Lpd depletion exposes a role for SRF in directing pyramidal neurons to select a radial migration pathway along glia rather than a tangential migration mode.",
+    "text_sha256": "d2c606059b141f5d08f770a7bdec2fc326813008f1b2869beeff325ac4e7c0f9"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 88,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 145
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Intact yeast cells treated with alkali cations took up plasmid DNA. Li+, Cs+, Rb+, K+, and Na+ were effective in inducing competence. Conditions for the transformation of Saccharomyces cerevisiae D13-1A with plasmid YRp7 were studied in detail with CsCl. The optimum incubation time was 1 h, and the optimum cell concentration was 5 x 10(7) cells per ml. The optimum concentration of Cs+ was 1.0 M. Transformation efficiency increased with increasing concentrations of plasmid DNA. Polyethylene glycol was absolutely required. Heat pulse and various polyamines or basic proteins stimulated the uptake of plasmid DNA. Besides circular DNA, linear plasmid DNA was also taken up by Cs+-treated yeast cells, although the uptake efficiency was considerably reduced. The transformation efficiency with Cs+ or Li+ was comparable with that of conventional protoplast methods for a plasmid containing ars1, although not for plasmids containing a 2 microns origin replication.",
+    "text_sha256": "819cd7a20acaa0a8f7b8b688bed1dbb032d610bad904e21b994227816beb9cd9"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 226,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 208
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Little is known about the molecular basis of somatosensory mechanotransduction in mammals. We screened a library of peptide toxins for effects on mechanically activated currents in cultured dorsal root ganglion neurons. One conopeptide analogue, termed NMB-1 for noxious mechanosensation blocker 1, selectively inhibits (IC50 1 µM) sustained mechanically activated currents in a subset of sensory neurons. Biotinylated NMB-1 retains activity and binds selectively to peripherin-positive nociceptive sensory neurons. The selectivity of NMB-1 was confirmed by the fact that it has no inhibitory effects on voltage-gated sodium and calcium channels, or ligand-gated channels such as acid-sensing ion channels or TRPA1 channels. Conversely, the tarantula toxin, GsMTx-4, which inhibits stretch-activated ion channels, had no effects on mechanically activated currents in sensory neurons. In behavioral assays, NMB-1 inhibits responses only to high intensity, painful mechanical stimulation and has no effects on low intensity mechanical stimulation or thermosensation. Unexpectedly, NMB-1 was found to also be an inhibitor of rapid FM1-43 loading (a measure of mechanotransduction) in cochlear hair cells. These data demonstrate that pharmacologically distinct channels respond to distinct types of mechanical stimuli and suggest that mechanically activated sustained currents underlie noxious mechanosensation. NMB-1 thus provides a novel diagnostic tool for the molecular definition of channels involved in hearing and pressure-evoked pain.",
+    "text_sha256": "4afbc7fd649e8e42e79b3eeb019c75366bde1f3bd2c366296fea5d4aaaf46dc8"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 67,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 219
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "OBJECTIVES Calcific aortic valve (AV) disease is known to be an inflammation-related process. High-mobility group box-1 (HMGB1) protein and Toll-like receptor 4 (TLR4) have been reported to participate in several inflammatory diseases. The purpose of the present study was to determine whether the HMGB1-TLR4 axis is involved in calcific AV disease, and to evaluate the effect of HMGB1, and its potential mechanisms, on the pro-osteogenic phenotype change of valvular interstitial cells (VICs). METHODS Expression of HMGB1 and TLR4 in human calcific AVs was evaluated using immunohistochemical staining and immunoblotting. Cultured VICs were used as an in vitro model. The VICs were stimulated with HMGB1 for analysis, with versus without TLR4 small interfering ribonucleic acid (siRNA), c-Jun N-terminal kinase mitogen-activated protein kinase (JNK MAPK), and nuclear factor kappa-B (NF-κB) inhibitors. RESULTS Enhanced accumulation of HMGB1 and TLR4 was observed in calcific valves. Moreover, we found that HMGB1 induced high levels of pro-inflammatory cytokine production and promoted the osteoblastic differentiation and calcification of VICs. In addition, HMGB1 induced phosphorylation of JNK MAPK and NF-κB. However, these effects were markedly suppressed by siRNA silencing of TLR4. In addition, blockade of JNK MAPK and NF-κB phosphorylation prohibited HMGB1-induced production of pro-osteogenic factors, and mineralization of VICs. CONCLUSIONS The HMGB1 protein may promote osteoblastic differentiation and calcification of VICs, through the TLR4-JNK-NF-κB signaling pathway.",
+    "text_sha256": "003ab88b4c852c662b153360624d5dd377293a8d802eea65ba0d44080a89282a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 11,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 204
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "OBJECTIVE The purpose of this study was to characterize the relationship between adipose tissue phenotype and depot-specific microvascular function in fat. METHODS AND RESULTS In 30 obese subjects (age 42±11 years, body mass index 46±11 kg/m(2)) undergoing bariatric surgery, we intraoperatively collected visceral and subcutaneous adipose tissue and characterized depot-specific adipose phenotypes. We assessed vasomotor function of the adipose microvasculature using videomicroscopy of small arterioles (75-250 μm) isolated from different fat compartments. Endothelium-dependent, acetylcholine-mediated vasodilation was severely impaired in visceral arterioles, compared to the subcutaneous depot (P<0.001 by ANOVA). Nonendothelium dependent responses to papaverine and nitroprusside were similar. Endothelial nitric oxide synthase inhibition with N(ω)-nitro-l-arginine methyl ester reduced subcutaneous vasodilation but had no effect on severely blunted visceral arteriolar responses. Visceral fat exhibited greater expression of proinflammatory, oxidative stress-related, hypoxia-induced, and proangiogenic genes; increased activated macrophage populations; and had a higher capacity for cytokine production ex vivo. CONCLUSIONS Our findings provide clinical evidence that the visceral microenvironment may be intrinsically toxic to arterial health providing a potential mechanism by which visceral adiposity burden is linked to atherosclerotic vascular disease. Our findings also support the evolving concept that both adipose tissue quality and quantity may play significant roles in shaping cardiovascular phenotypes in human obesity.",
+    "text_sha256": "03f3883fa02b883f62cbc72ec7a3d8da4708ca141f79f8084d8793b37536d650"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 186,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 151
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Spemann's organizer plays a key role in dorsal-ventral (DV) patterning in the amphibian embryo by secreting diffusible proteins such as Chordin, an antagonist to ventralizing bone morphogenetic proteins (BMPs). The DV patterning is so robust that an amphibian embryo with its ventral half surgically removed can develop into a smaller but proportionally patterned larva. Here, we show that this robust patterning depends on facilitated Chordin degradation and requires the expression of the Chordin-proteinase inhibitor Sizzled on the opposite side. Sizzled, which is stable and diffuses widely along the DV axis, stabilizes Chordin and expands its distribution in the ventral direction. This expanded Chordin distribution, in turn, limits BMP-dependent Sizzled production, forming an axis-wide feedback loop for shaping Chordin's activity. Using bisection assays, we demonstrate that Chordin degradation is dynamically controlled by embryo-size-coupled Sizzled accumulation. We propose a scaling model that enables the DV pattern to adjust proportionally to embryonic axis size.",
+    "text_sha256": "fb87298e829b36ed5ad749e43d1939a29712fdd985ccf7dcfd96b473021453ff"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 117,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 121
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "In the past years, simple organisms such as yeasts and worms have contributed a great deal to aging research. Studies pioneered in Saccharomyces cerevisiae were useful to elucidate a significant number of molecular mechanisms underlying cellular aging and to discover novel longevity genes. Importantly, these genes proved many times to be conserved in multicellular eukaryotes. Consequently, such discovery approaches are being extended to other yeast models, such as Schizosaccharomyces pombe, Candida albicans, Kluyveromyces lactis, and Cryptococcus neoformans. In fission yeast, researchers have found links between asymmetrical cell division and nutrient signaling pathways with aging. In this review, we discuss the state of knowledge on the mechanisms controlling both replicative and chronological aging in S pombe and the other emergent yeast models.",
+    "text_sha256": "c68e4470540b9ce3978ae0f9a6b7e00c0388d3c6d5b0612b73f11384404f1f5b"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 137,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 338
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The Drosophila spaghetti squash ( sqh ) gene encodes the regulatory myosin light chain (RMLC) of nonmuscle myosin II. Biochemical analysis of vertebrate nonmuscle and smooth muscle myosin II has established that phosphorylation of certain amino acids of the RMLC greatly increases the actin-dependent myosin ATPase and motor activity of myosin in vitro. We have assessed the in vivo importance of these sites, which in Drosophila correspond to serine-21 and threonine-20, by creating a series of transgenes in which these specific amino acids were altered. The phenotypes of the transgenes were examined in an otherwise null mutant background during oocyte development in Drosophila females. Germ line cystoblasts entirely lacking a functional sqh gene show severe defects in proliferation and cytokinesis. The ring canals, cytoplasmic bridges linking the oocyte to the nurse cells in the egg chamber, are abnormal, suggesting a role of myosin II in their establishment or maintenance. In addition, numerous aggregates of myosin heavy chain accumulate in the sqh null cells. Mutant sqh transgene sqh -A20, A21 in which both serine-21 and threonine-20 have been replaced by alanines behaves in most respects identically to the null allele in this system, with the exception that no heavy chain aggregates are found. In contrast, expression of sqh -A21, in which only the primary phosphorylation target serine-21 site is altered, partially restores functionality to germ line myosin II, allowing cystoblast division and oocyte development, albeit with some cytokinesis failure, defects in the rapid cytoplasmic transport from nurse cells to cytoplasm characteristic of late stage oogenesis, and some damaged ring canals. Substituting a glutamate for the serine-21 (mutant sqh -E21) allows oogenesis to be completed with minimal defects, producing eggs that can develop normally to produce fertile adults. Flies expressing sqh -A20, in which only the secondary phosphorylation site is absent, appear to be entirely wild type. Taken together, this genetic evidence argues that phosphorylation at serine-21 is critical to RMLC function in activating myosin II in vivo, but that the function can be partially provided by phosphorylation at threonine-20.",
+    "text_sha256": "bb5ba7139ff64bf2b60372f2721068ec968693bc29295f3e152914719204d5a5"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 31,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 300
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "A multitude of nanoparticles, such as titanium oxide (TiO2), zinc oxide, aluminum oxide, gold oxide, silver oxide, iron oxide, and silica oxide, are found in many chemical, cosmetic, pharmaceutical, and electronic products. Recently, SiO2 nanoparticles were shown to have an inert toxicity profile and no association with an irreversible toxicological change in animal models. Hence, exposure to SiO2 nanoparticles is on the increase. SiO2 nanoparticles are routinely used in numerous materials, from strengthening filler for concrete and other construction composites, to nontoxic platforms for biomedical application, such as drug delivery and theragnostics. On the other hand, recent in vitro experiments indicated that SiO2 nanoparticles were cytotoxic. Therefore, we investigated these nanoparticles to identify potentially toxic pathways by analyzing the adsorbed protein corona on the surface of SiO2 nanoparticles in the blood and brain of the rat. Four types of SiO2 nanoparticles were chosen for investigation, and the protein corona of each type was analyzed using liquid chromatography-tandem mass spectrometry technology. In total, 115 and 48 plasma proteins from the rat were identified as being bound to negatively charged 20 nm and 100 nm SiO2 nanoparticles, respectively, and 50 and 36 proteins were found for 20 nm and 100 nm arginine-coated SiO2 nanoparticles, respectively. Higher numbers of proteins were adsorbed onto the 20 nm sized SiO2 nanoparticles than onto the 100 nm sized nanoparticles regardless of charge. When proteins were compared between the two charges, higher numbers of proteins were found for arginine-coated positively charged SiO2 nanoparticles than for the negatively charged nanoparticles. The proteins identified as bound in the corona from SiO2 nanoparticles were further analyzed with ClueGO, a Cytoscape plugin used in protein ontology and for identifying biological interaction pathways. Proteins bound on the surface of nanoparticles may affect functional and conformational properties and distributions in complicated biological processes.",
+    "text_sha256": "6164f4c72a984cb0409f2ac3584dc785c0749fcd22f5d55698fbee18d01fcef2"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 96,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 168
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "A primary goal of case management is to coordinate services across treatment settings and to integrate substance abuse services with other types of services offered in the community, including housing, mental health, medical, and social services. However, case management is a global construct that consists of several key dimensions, which include extent of case management coverage, the degree of management of the referral process, and the location of case management activity (on-site, off-site, or both). This study examines the relationship between specific dimensions of case management and the utilization of health and ancillary social services in outpatient substance abuse treatment. In general, results suggest that more active case management during the referral process and providing case management both on-site and off-site are most consistent with our predictions of greater use of health and ancillary social services by substance abuse clients. However, these effects are specific to general health care and mental health services. Case management appears to have little effect on use of social services or aftercare plans.",
+    "text_sha256": "00c7d26dc77882958fa711f2403754158a6c89e2b74b4d17e8769474be2d7eae"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 20,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 250
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Understanding molecular mechanisms mediating epileptogenesis is critical for developing more effective therapies for epilepsy. We recently found that the mammalian target of rapamycin (mTOR) signaling pathway is involved in epileptogenesis, and mTOR inhibitors prevent epilepsy in a mouse model of tuberous sclerosis complex. Here, we investigated the potential role of mTOR in a rat model of temporal lobe epilepsy initiated by status epilepticus. Acute kainate-induced seizures resulted in biphasic activation of the mTOR pathway, as evident by an increase in phospho-S6 (P-S6) expression. An initial rise in P-S6 expression started approximately 1 h after seizure onset, peaked at 3-6 h, and returned to baseline by 24 h in both hippocampus and neocortex, reflecting widespread stimulation of mTOR signaling by acute seizure activity. After resolution of status epilepticus, a second increase in P-S6 was observed in hippocampus only, which started at 3 d, peaked 5-10 d, and persisted for several weeks after kainate injection, correlating with the development of chronic epileptogenesis within hippocampus. The mTOR inhibitor rapamycin, administered before kainate, blocked both the acute and chronic phases of seizure-induced mTOR activation and decreased kainate-induced neuronal cell death, neurogenesis, mossy fiber sprouting, and the development of spontaneous epilepsy. Late rapamycin treatment, after termination of status epilepticus, blocked the chronic phase of mTOR activation and reduced mossy fiber sprouting and epilepsy but not neurogenesis or neuronal death. These findings indicate that mTOR signaling mediates mechanisms of epileptogenesis in the kainate rat model and that mTOR inhibitors have potential antiepileptogenic effects in this model.",
+    "text_sha256": "8649889b43402d4cd23da2c8ac698ac00a2b6282a5300987df46c6de3a7eb713"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 141,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 261
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND A reduction in compliance of the large-sized cardiothoracic (central) arteries is an independent risk factor for the development of cardiovascular disease with advancing age. METHODS AND RESULTS We determined the role of habitual exercise on the age-related decrease in central arterial compliance by using both cross-sectional and interventional approaches. First, we studied 151 healthy men aged 18 to 77 years: 54 were sedentary, 45 were recreationally active, and 53 were endurance exercise-trained. Central arterial compliance (simultaneous B-mode ultrasound and arterial applanation tonometry on the common carotid artery) was lower (P:<0.05) in middle-aged and older men than in young men in all 3 groups. There were no significant differences between sedentary and recreationally active men at any age. However, arterial compliance in the endurance-trained middle-aged and older men was 20% to 35% higher than in the 2 less active groups (P:<0.01). As such, age-related differences in central arterial compliance were smaller in the endurance-trained men than in the sedentary and recreationally active men. Second, we studied 20 middle-aged and older (53+/-2 years) sedentary healthy men before and after a 3-month aerobic exercise intervention (primarily walking). Regular exercise increased central arterial compliance (P:<0.01) to levels similar to those of the middle-aged and older endurance-trained men. These effects were independent of changes in body mass, adiposity, arterial blood pressure, or maximal oxygen consumption. CONCLUSIONS Regular aerobic-endurance exercise attenuates age-related reductions in central arterial compliance and restores levels in previously sedentary healthy middle-aged and older men. This may be one mechanism by which habitual exercise lowers the risk of cardiovascular disease in this population.",
+    "text_sha256": "c0777f80dce121962c861a7681aa3c97c75a42fe21ccdd3b29a9a3385247085d"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 75,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 135
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "In yeast, remodeling of PHO5 promoter chromatin upon activation is accompanied by transient hyperacetylation and subsequent eviction of histones from the promoter in trans. In the course of rerepression, nucleosomes have to be reassembled on the promoter. We have analyzed where the histones for reassembly of the inactive promoter chromatin come from. The use of a strain with two differently tagged and differently regulated versions of histone H3 allowed us to discriminate between histones originating from the chromatin fraction and histones arising from the soluble histone pool. In this way, we show that the incorporated histones originate from a source in trans. Promoter closure occurs very rapidly, and the histone chaperones Asf1 and Hir1 as well as the SWI/SNF nucleosome remodeling complex appear to be important for rapid reassembly of nucleosomes at the PHO5 promoter.",
+    "text_sha256": "2452e8f58addf09f0fe1d3b4dd1586f9f7424cb9143b1b908417ced46234fb38"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 160,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 198
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Despite progress in the development of drugs that efficiently target cancer cells, treatments for metastatic tumours are often ineffective. The now well-established dependency of cancer cells on their microenvironment suggests that targeting the non-cancer-cell component of the tumour might form a basis for the development of novel therapeutic approaches. However, the as-yet poorly characterized contribution of host responses during tumour growth and metastatic progression represents a limitation to exploiting this approach. Here we identify neutrophils as the main component and driver of metastatic establishment within the (pre-)metastatic lung microenvironment in mouse breast cancer models. Neutrophils have a fundamental role in inflammatory responses and their contribution to tumorigenesis is still controversial. Using various strategies to block neutrophil recruitment to the pre-metastatic site, we demonstrate that neutrophils specifically support metastatic initiation. Importantly, we find that neutrophil-derived leukotrienes aid the colonization of distant tissues by selectively expanding the sub-pool of cancer cells that retain high tumorigenic potential. Genetic or pharmacological inhibition of the leukotriene-generating enzyme arachidonate 5-lipoxygenase (Alox5) abrogates neutrophil pro-metastatic activity and consequently reduces metastasis. Our results reveal the efficacy of using targeted therapy against a specific tumour microenvironment component and indicate that neutrophil Alox5 inhibition may limit metastatic progression.",
+    "text_sha256": "5f4a22a08ed916ab3ad6220892be75eea5dfe7bf9cc9b22c791212ea76700ec6"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 158,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 189
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The protein cytotoxic T lymphocyte antigen-4 (CTLA-4) is an essential negative regulator of immune responses, and its loss causes fatal autoimmunity in mice. We studied a large family in which five individuals presented with a complex, autosomal dominant immune dysregulation syndrome characterized by hypogammaglobulinemia, recurrent infections and multiple autoimmune clinical features. We identified a heterozygous nonsense mutation in exon 1 of CTLA4. Screening of 71 unrelated patients with comparable clinical phenotypes identified five additional families (nine individuals) with previously undescribed splice site and missense mutations in CTLA4. Clinical penetrance was incomplete (eight adults of a total of 19 genetically proven CTLA4 mutation carriers were considered unaffected). However, CTLA-4 protein expression was decreased in regulatory T cells (Treg cells) in both patients and carriers with CTLA4 mutations. Whereas Treg cells were generally present at elevated numbers in these individuals, their suppressive function, CTLA-4 ligand binding and transendocytosis of CD80 were impaired. Mutations in CTLA4 were also associated with decreased circulating B cell numbers. Taken together, mutations in CTLA4 resulting in CTLA-4 haploinsufficiency or impaired ligand binding result in disrupted T and B cell homeostasis and a complex immune dysregulation syndrome.",
+    "text_sha256": "9eaf8557a70f5da3e67b0c18b9ba2e0466aaba3d8d22a6aaaff191263ddf86a4"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 92,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 146
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Genomic alterations leading to aberrant activation of cyclin/cyclin-dependent kinase (cdk) complexes drive the pathogenesis of many common human tumor types. In the case of glioblastoma multiforme (GBM), these alterations are most commonly due to homozygous deletion of p16(INK4a) and less commonly due to genomic amplifications of individual genes encoding cyclins or cdks. Here, we describe deletion of the p18(INK4c) cdk inhibitor as a novel genetic alteration driving the pathogenesis of GBM. Deletions of p18(INK4c) often occurred in tumors also harboring homozygous deletions of p16(INK4a). Expression of p18(INK4c) was completely absent in 43% of GBM primary tumors studied by immunohistochemistry. Lentiviral reconstitution of p18(INK4c) expression at physiologic levels in p18(INK4c)-deficient but not p18(INK4c)-proficient GBM cells led to senescence-like G(1) cell cycle arrest. These studies identify p18(INK4c) as a GBM tumor suppressor gene, revealing an additional mechanism leading to aberrant activation of cyclin/cdk complexes in this terrible malignancy.",
+    "text_sha256": "98657499a65ba072dfd11b683e3eb2ea526107de7f02350e8e160a83f866a1f1"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 147,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 175
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Analysis of serum samples from 100 wild-caught or colony-born Sykes' monkeys (Cercopithecus mitis) in Kenya revealed that 59 animals had antibodies cross-reactive to human immunodeficiency virus type 2 (HIV-2) and to simian immunodeficiency viruses (SIVs). A lentivirus, designated SIVsyk, was isolated from five of six seropositive asymptomatic Sykes' monkeys, but in four cases isolation was possible only after depletion of CD8+ lymphocytes and cocultivation of the CD4(+)-enriched cell population with peripheral blood mononuclear cells from seronegative Sykes' monkeys. SIVsyk resembled other SIVs and HIVs morphologically, had an Mg2(+)-dependent reverse transcriptase enzyme, and replicated in and was cytopathic for CEMx174 and Sup-T1 cells. SIVsyk differred substantially from other SIVs, however, in that it failed to replicate in normal human, mangabey, and macaque peripheral blood mononuclear cells and serum from seropositive Sykes' monkeys immunoprecipitated env antigens from HIV-1 as well as from HIV-2, SIVsmm, and SIVagm. These data demonstrate a high prevalence of natural infection in Sykes' monkeys in Kenya with a lentivirus that appears to be unique with respect to its host range and antigenic cross-reactivity.",
+    "text_sha256": "e648e7cdbff3e0cbca5fe8944b8827e50297ab5ccba846c9fb0ab596a20f38b4"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 49,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 135
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The significant disparities in metabolism between tumor and normal cells have inspired the development of metabolism-based anti-tumor therapeutics. Arginine is a semi-essential amino acid because normal cells can not only synthesize arginine de novo but also take up extracellular arginine. Several types of tumors have abnormalities in arginine metabolism enzymes and completely rely on extracellular arginine to support necessary biological processes. This property is referred to as arginine auxotrophy. Taking advantage of characteristic arginine auxotrophy in tumors, arginine deprivation, which is generally induced by the use of arginine deiminase (ADI) and arginase I, has been investigated as a novel strategy for cancer therapy. Arginine deprivation demonstrated promising efficacy against arginine-auxotrophic tumors. By integrating perspectives from both clinical oncologists and laboratory scientists, this article reviews the important aspects of arginine deprivation as a promising anticancer therapy.",
+    "text_sha256": "b3c6b844712a61b2494525b31be9c8de74e091de9a524c34043e2267905ef201"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 17,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 143
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The current reference curves of stature and weight for the UK were first published in 1966 and have been used ever since despite increasing concern that they may not adequately describe the growth of present day British children. Using current data from seven sources new reference curves have been estimated from birth to 20 years for children in 1990. The great majority of the data are nationally representative. The analysis used Cole's LMS method and has produced efficient estimates of the conventional centiles and gives a good fit to the data. These curves differ from the currently used curves at key ages for both stature and weight. In view of the concerns expressed about the current curves and the differences between them and the new curves, it is proposed that the curves presented here should be adopted as the new UK reference curves.",
+    "text_sha256": "df3288c5c707c1ee0f093e7adce3bb5864585cae98730e454de678c2c5843c6f"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 192,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 160
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Attention-deficit hyperactivity disorder is a common condition in adulthood. The disorder is characterized by symptoms of inattention, hyperactivity, and impulsivity. Alongside these symptoms, it is discussed whether symptoms of emotional dysregulation could add additional and better description of the psychopathology of ADHD. Neither the current ICD-10 and DSM-IV nor the upcoming DSM-5 includes symptoms of emotional dysregulation as a core aspect of ADHD. Several authors (e.g., Wender 1995) describe adult ADHD in a more differentiated way and propose concepts of the disorder that consider the subjective experiences of the adult patient by introducing the symptomatology of emotional symptoms. Empirical studies attest this dimension sufficient reliability and validity. Symptoms of emotional dysregulation are definable and seem to be distinct factors of the psychopathology of adult ADHD. Pharmacological and psychotherapeutic interventions help to alleviate this type of symptoms. This review attests a decisive role to the emotional symptoms in the ADHD symptomatology, which should be taken in serious consideration by future research.",
+    "text_sha256": "944d5562e0cd00cbb78a3537f1e956227d755989cbf055c2353556c4b1682078"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 169,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 148
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "RNA-binding proteins are at the heart of posttranscriptional gene regulation, coordinating the processing, storage, and handling of cellular RNAs. We show here that GRSF1, previously implicated in the binding and selective translation of influenza mRNAs, is targeted to mitochondria where it forms granules that colocalize with foci of newly synthesized mtRNA next to mitochondrial nucleoids. GRSF1 preferentially binds RNAs transcribed from three contiguous genes on the light strand of mtDNA, the ND6 mRNA, and the long noncoding RNAs for cytb and ND5, each of which contains multiple consensus binding sequences. RNAi-mediated knockdown of GRSF1 leads to alterations in mitochondrial RNA stability, abnormal loading of mRNAs and lncRNAs on the mitochondrial ribosome, and impaired ribosome assembly. This results in a specific protein synthesis defect and a failure to assemble normal amounts of the oxidative phosphorylation complexes. These data implicate GRSF1 as a key regulator of posttranscriptional mitochondrial gene expression.",
+    "text_sha256": "7299276db9795f482e97b5a8d4f9ca4ee4a5a482c6c6d10a4cee032cc68fa23a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 58,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 116
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The epithelial cadherin (E-cadherin)-catenin complex binds to cytoskeletal components and regulatory and signaling molecules to form a mature adherens junction (AJ). This dynamic structure physically connects neighboring epithelial cells, couples intercellular adhesive contacts to the cytoskeleton, and helps define each cell's apical-basal axis. Together these activities coordinate the form, polarity, and function of all cells in an epithelium. Several molecules regulate AJ formation and integrity, including Rho family GTPases and Par polarity proteins. However, only recently, with the development of live-cell imaging, has the extent to which E-cadherin is actively turned over at junctions begun to be appreciated. This turnover contributes to junction formation and to the maintenance of epithelial integrity during tissue homeostasis and remodeling.",
+    "text_sha256": "09cd326cbb38b8722baee4424ed53a9438abecd898ddcaa0592edbc74f11ee73"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 74,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 291
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "A human placental soluble \"high Km\" 5'-nucleotidase has been separated from \"low Km\" 5'-nucleotidase and nonspecific phosphatase by AMP-Sepharose affinity chromatography. The enzyme was purified 8000-fold to a specific activity of 25.6 mumol/min/mg. The subunit molecular mass is 53 kDa, and the native molecular mass is 210 kDa, suggesting a tetrameric structure. Soluble high Km 5'-nucleotidase is most active with IMP and GMP and their deoxy derivatives. IMP is hydrolyzed 15 times faster than AMP. The enzyme has a virtually absolute requirement for magnesium ions and is regulated by them. Purine nucleoside 5'-triphosphates strongly activate the enzyme with the potency order dATP greater than ATP greater than GTP. 2,3-Diphosphoglycerate activates the enzyme as potently as ATP. Three millimolar ATP decreased the Km for IMP from 0.33 to 0.09 mM and increased the Vmax 12-fold. ATP activation was modified by the IMP concentration. At 20 microM IMP the ATP-dependent activation curve was sigmoidal, while at 2 mM IMP it was hyperbolic. The A0.5 values for ATP were 2.26 and 0.70 mM, and the relative maximal velocities were 32.9 and 126.0 nmol/min, respectively. Inorganic phosphate shifts the hyperbolic substrate velocity relationship for IMP to a sigmoidal one. With physiological concentrations of cofactors (3 mM ATP, 1-4 mM Pi, 150 mM KCl) at pH 7.4, the enzyme is 25-35 times more active toward 100 microM IMP than 100 microM AMP. These data show that: (a) soluble human placental high Km 5'-nucleotidase coexists in human placenta with the low Km enzyme; (b) under physiological conditions the enzyme favors the hydrolysis of IMP and is critically regulated by IMP, ATP, and Pi levels; and (c) kinetic properties of ATP and IMP are each modified by the other compound suggesting complex interaction of the associated binding sites.",
+    "text_sha256": "0af2eb21e318a62ee8cc4c5f47de2980e0e54311c13e6e003e907064fafacdca"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 191,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 103
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The effective size of a population, Ne, determines the rate of change in the composition of a population caused by genetic drift, which is the random sampling of genetic variants in a finite population. Ne is crucial in determining the level of variability in a population, and the effectiveness of selection relative to drift. This article reviews the properties of Ne in a variety of different situations of biological interest, and the factors that influence it. In particular, the action of selection means that Ne varies across the genome, and advances in genomic techniques are giving new insights into how selection shapes Ne.",
+    "text_sha256": "e4235ac1522adea4d57590eaba325e527c4e41d2ae95977ccd5fcc564559e958"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 237,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 211
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "One major role of the thymus is to provide the peripheral immune system with mature T cells, but the mechanisms involving the cellular export are not fully understood. In this study, we examined the ability of a novel immunosuppressive reagent, FTY720, to inhibit T cell export from the thymus. Daily administration of FTY720 at a dose of 1 mg / kg resulted in a marked decrease in the number of peripheral blood T lymphocytes. In the thymus, long-term daily administration of FTY720 caused a three- to fourfold increase in the proportion of mature medullary thymocytes (CD4(+)CD8(-) and CD4(-)CD8(+)) as well as a slight decrease in the double-positive cell (CD4(+)CD8(+)) ratio. Phenotypic analysis (TCRalpha beta, H-2K(d), CD44, CD69 and CD24) revealed that these increased subsets represent possible peripheral recent thymic emigrants. High level expression of L-selectin by these subsets further suggests that they were prevented from leaving the thymus. By intrathymic labeling with fluorescein isothiocyanate, only one fourth of labeled cells could be detected in the lymph nodes and in the spleen of FTY720-treated mice compared to saline-treated control mice. Taken together, these results suggest that the immunosuppressive action of FTY720, at least in part, could be due to its inhibitory effect on T cell emigration from the thymus to the periphery.",
+    "text_sha256": "00342c6684268224a7cb32d1b9acaa8caed24bdd7c80b420f78785aeebab3581"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 25,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 223
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Telomerase-negative tumor cells use an alternative lengthening of telomeres (ALT) pathway that involves DNA recombination and repair to maintain their proliferative potential. The cytological hallmark of this process is the accumulation of promyelocytic leukemia (PML) nuclear protein at telomeric DNA to form ALT-associated PML bodies (APBs). Here, the de novo formation of a telomeric PML nuclear subcompartment was investigated by recruiting APB protein components. We show that functionally distinct proteins were able to initiate the formation of bona fide APBs with high efficiency in a self-organizing and self-propagating manner. These included: (1) PML and Sp100 as the constituting components of PML nuclear bodies, (2) telomere repeat binding factors 1 and 2 (TRF1 and TRF2, respectively), (3) the DNA repair protein NBS1 and (4) the SUMO E3 ligase MMS21, as well as the isolated SUMO1 domain, through an interacting domain of another protein factor. By contrast, the repair factors Rad9, Rad17 and Rad51 were less efficient in APB nucleation but were recruited to preassembled APBs. The artificially created APBs induced telomeric extension through a DNA repair mechanism, as inferred from their colocalization with sites of non-replicative DNA synthesis and histone H2A.X phosphorylation, and an increase of the telomere repeat length. These activities were absent after recruitment of the APB factors to a pericentric locus and establish APBs as functional intermediates of the ALT pathway.",
+    "text_sha256": "f1b347041d05eebd51d08053a925e5dad6c6b4b7854f8109126ac1ea0b013b40"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 198,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 145
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Antibiotic mode-of-action classification is based upon drug-target interaction and whether the resultant inhibition of cellular function is lethal to bacteria. Here we show that the three major classes of bactericidal antibiotics, regardless of drug-target interaction, stimulate the production of highly deleterious hydroxyl radicals in Gram-negative and Gram-positive bacteria, which ultimately contribute to cell death. We also show, in contrast, that bacteriostatic drugs do not produce hydroxyl radicals. We demonstrate that the mechanism of hydroxyl radical formation induced by bactericidal antibiotics is the end product of an oxidative damage cellular death pathway involving the tricarboxylic acid cycle, a transient depletion of NADH, destabilization of iron-sulfur clusters, and stimulation of the Fenton reaction. Our results suggest that all three major classes of bactericidal drugs can be potentiated by targeting bacterial systems that remediate hydroxyl radical damage, including proteins involved in triggering the DNA damage response, e.g., RecA.",
+    "text_sha256": "928c72f06d1bb0ae3f5aae791ca66a40e9debb7e5b86470e0d138d55cfaeccbf"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 205,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 263
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "BACKGROUND Intraperitoneal placement of polypropylene mesh leads to extensive visceral adhesions and is contraindicated. Different coatings are used to improve polypropylene mesh properties. Collagen is a protein with unique biocompatibility and cell ingrowth enhancement potential. A novel acetic acid extracted collagen coating was developed to allow placement of polypropylene mesh in direct contact with viscera. The authors' aim was to evaluate the long-term influence of acetic acid extracted collagen coating on surgical aspects and biomechanical properties of polypropylene mesh implanted in direct contact with viscera, including complications, adhesions with viscera, strength of incorporation, and microscopic inflammatory reaction. METHODS Forty adult Wistar rats were divided into two groups: experimental (polypropylene mesh/acetic acid extracted collagen coating) and control (polypropylene mesh only). Astandardized procedure of mesh implantation was performed. Animals were killed 3 months after surgery and analyzed for complications, mesh area covered by adhesions, type of adhesions, strength of incorporation, and intensity of inflammatory response. RESULTS The mean adhesion area was lower for polypropylene mesh/acetic acid extracted collagen coating (14.5 percent versus 69.9 percent, p < 0.001). Adhesion severity was decreased in the experimental group: grades 0 and 1 were more frequent (p < 0.04 and p < 0.002, respectively) and grade 3 was less frequent (p < 0.0001). An association between adhesion area and severity was found (p < 0.0001). Complications, strength of incorporation, and intensity of inflammatory response to the mesh were similar. CONCLUSIONS Visceral adhesions to polypropylene mesh are significantly reduced because of acetic acid extracted collagen coating. The collagen coating does not increase complications or induce alterations of polypropylene mesh incorporation.",
+    "text_sha256": "0a88c583e4b3067ae69ec63087ac8dffd8328fef454e56e0fd5fa0c46270aafe"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 116,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 125
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The extracellular amino-terminal domains (ATDs) of the ionotropic glutamate receptor subunits form a semiautonomous component of all glutamate receptors that resides distal to the membrane and controls a surprisingly diverse set of receptor functions. These functions include subunit assembly, receptor trafficking, channel gating, agonist potency, and allosteric modulation. The many divergent features of the different ionotropic glutamate receptor classes and different subunits within a class may stem from differential regulation by the amino-terminal domains. The emerging knowledge of the structure and function of the amino-terminal domains reviewed here may enable targeting of this region for the therapeutic modulation of glutamatergic signaling. Toward this end, NMDA receptor antagonists that interact with the GluN2B ATD show promise in animal models of ischemia, neuropathic pain, and Parkinson's disease.",
+    "text_sha256": "a0a9e3564ac04621f8ec7faea216646fa2762f06ead7c94994ba03af4255316a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 162,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 136
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Group 2 innate lymphoid cells (ILC2s) secrete type 2 cytokines, which protect against parasites but can also contribute to a variety of inflammatory airway diseases. We report here that interleukin 1β (IL-1β) directly activated human ILC2s and that IL-12 induced the conversion of these activated ILC2s into interferon-γ (IFN-γ)-producing ILC1s, which was reversed by IL-4. The plasticity of ILCs was manifested in diseased tissues of patients with severe chronic obstructive pulmonary disease (COPD) or chronic rhinosinusitis with nasal polyps (CRSwNP), which displayed IL-12 or IL-4 signatures and the accumulation of ILC1s or ILC2s, respectively. Eosinophils were a major cellular source of IL-4, which revealed cross-talk between IL-5-producing ILC2s and IL-4-producing eosinophils. We propose that IL-12 and IL-4 govern ILC2 functional identity and that their imbalance results in the perpetuation of type 1 or type 2 inflammation.",
+    "text_sha256": "cdc59d47fc6592034452ef97d3985bcf6984fdd6663273c29fcd466fc7703e54"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 93,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 267
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Escherichia coli responds to the redox stress imposed by superoxide-generating agents such as paraquat by activating the synthesis of as many as 80 polypeptides. Expression of a key group of these inducible proteins is controlled at the transcriptional level by the soxRS locus (the soxRS regulon). A two-stage control system was hypothesized for soxRS, in which an intracellular redox signal would trigger the SoxR protein as a transcriptional activator of the soxS gene and the resulting increased levels of SoxS protein would activate transcription of the various soxRS regulon genes (B. Demple and C.F. Amábile Cuevas, Cell 67:837-839, 1990). We have constructed operon fusions of the E. coli lac genes to the soxS promoter to monitor soxS transcription. Expression from the soxS promoter is strongly inducible by paraquat in a manner strictly dependent on a functional soxR gene. Several other superoxide-generating agents also trigger soxR(+)-dependent soxS expression, and the inductions by paraquat and phenazine methosulfate were dependent on the presence of oxygen. Numerous other oxidative stress agents (H2O2, gamma rays, heat shock, etc.) failed to induce soxS, while aerobic growth of superoxide dismutase-deficient bacteria triggered soxR-dependent soxS expression. These results indicate a specific redox signal for soxS induction. A direct role for SoxR protein in the activation of the soxS gene is indicated by band-shift and DNase I footprinting experiments that demonstrate specific binding of the SoxR protein in cell extracts to the soxS promoter. The mode of SoxR binding to DNA appears to be similar to that of its homolog MerR in that the SoxR footprint spans the -10 to -35 region of the soxS promoter.",
+    "text_sha256": "78f5c32b0680a4734801031934e2d4b30287ac8920b9e2e6f7ca79c2e4bc5e0a"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 41,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 204
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Background:Chronic cyclosporine A (CsA) nephrotoxicity (CCN) is a major cause of chronic renal dysfunction and has no effective clinical interventions yet. Objective: To reveal the mechanisms of renal cell apoptosis in CCN, we analyzed all in vitro studies of such mechanisms. Methods: We collected all in vitro studies about the mechanisms of renal cell apoptosis induced by CsA in Medline (1966 to July 2010), Embase (1980 to July 2010) and ISI (1986 to July 2010), evaluated their quality according to in vitro standards and extracted data following the PICOS principles and synthesized the data. Results: First,CsA could upregulate Fas and Fas-L expression, increase FADD and apoptosis enzymes (caspase-2, -3, -4, -7, -8, -9 and -10) and downregulate the Bcl-2 and Bcl-xL. Second, CsA could induce oxidative stress and damage the antioxidant defense system. Third, CsA could increase the expression of HERP, GRP78 and CHOP. Fourth, CsA could induce renal cell apoptosis and increase their iNOS and p53 expression in cultured cells. Conclusions: At least four pathways are involved in renal cell apoptosis induced by CsA in different cell species. Caspases might be their final common pathway in vitro. They might all provide potential points for interventions, but these need to be confirmed in vivo.",
+    "text_sha256": "48885aa3bf3eb953df04813a78df971aa51b84a4c685ae321dc78d6d6d497ff3"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 94,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 136
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Air pollution is a heterogeneous, complex mixture of gases, liquids, and particulate matter. Epidemiological studies have demonstrated a consistent increased risk for cardiovascular events in relation to both short- and long-term exposure to present-day concentrations of ambient particulate matter. Several plausible mechanistic pathways have been described, including enhanced coagulation/thrombosis, a propensity for arrhythmias, acute arterial vasoconstriction, systemic inflammatory responses, and the chronic promotion of atherosclerosis. The purpose of this statement is to provide healthcare professionals and regulatory agencies with a comprehensive review of the literature on air pollution and cardiovascular disease. In addition, the implications of these findings in relation to public health and regulatory policies are addressed. Practical recommendations for healthcare providers and their patients are outlined. In the final section, suggestions for future research are made to address a number of remaining scientific questions.",
+    "text_sha256": "9dd6ae38ebaa1c804794317be41e2f7effa7b6c6adf43d179981bfcde460703b"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 90,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 155
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Genetically identical cells sharing an environment can display markedly different phenotypes. It is often unclear how much of this variation derives from chance, external signals, or attempts by individual cells to exert autonomous phenotypic programs. By observing thousands of cells for hundreds of consecutive generations under constant conditions, we dissect the stochastic decision between a solitary, motile state and a chained, sessile state in Bacillus subtilis. We show that the motile state is 'memoryless', exhibiting no autonomous control over the time spent in the state. In contrast, the time spent as connected chains of cells is tightly controlled, enforcing coordination among related cells in the multicellular state. We show that the three-protein regulatory circuit governing the decision is modular, as initiation and maintenance of chaining are genetically separable functions. As stimulation of the same initiating pathway triggers biofilm formation, we argue that autonomous timing allows a trial commitment to multicellularity that external signals could extend.",
+    "text_sha256": "05ac817d8b037550aed89e2d0e5ff4ab049012c54c15e948520085421736e4eb"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 53,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 86
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Analysis of excitatory synaptic transmission in the rat hypothalamic supraoptic nucleus revealed that glutamate clearance and, as a consequence, glutamate concentration and diffusion in the extracellular space, is associated with the degree of astrocytic coverage of its neurons. Reduction in glutamate clearance, whether induced pharmacologically or associated with a relative decrease of glial coverage in the vicinity of synapses, affected transmitter release through modulation of presynaptic metabotropic glutamate receptors. Astrocytic wrapping of neurons, therefore, contributes to the regulation of synaptic efficacy in the central nervous system.",
+    "text_sha256": "c6ca39f24e5040a8d18752c0a3aa3cec3de033e897d5b29b5d95bffd26a70c17"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 68,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 190
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "We describe methods for obtaining a quantitative description of RNA processing at high resolution in budding yeast. As a model gene expression system, we constructed tetON (for induction studies) and tetOFF (for repression, derepression, and RNA degradation studies) yeast strains with a series of reporter genes integrated in the genome under the control of a tetO7 promoter. Reverse transcription and quantitative real-time-PCR (RT-qPCR) methods were adapted to allow the determination of mRNA abundance as the average number of copies per cell in a population. Fluorescence in situ hybridization (FISH) measurements of transcript numbers in individual cells validated the RT-qPCR approach for the average copy-number determination despite the broad distribution of transcript levels within a population of cells. In addition, RT-qPCR was used to distinguish the products of the different steps in splicing of the reporter transcripts, and methods were developed to map and quantify 3'-end cleavage and polyadenylation. This system permits pre-mRNA production, splicing, 3'-end maturation and degradation to be quantitatively monitored with unprecedented kinetic detail, suitable for mathematical modeling. Using this approach, we demonstrate that reporter transcripts are spliced prior to their 3'-end cleavage and polyadenylation, that is, cotranscriptionally.",
+    "text_sha256": "ddd2a3c3ca726faeb036eea8102181c78b0f8c4bdc0f03779867c6b65570a009"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 18,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 155
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Bone tissue undergoes constant turnover supported by stem cells. Recent studies showed that perivascular mesenchymal stem cells (MSCs) contribute to the turnover of long bones. Craniofacial bones are flat bones derived from a different embryonic origin than the long bones. The identity and regulating niche for craniofacial-bone MSCs remain unknown. Here, we identify Gli1+ cells within the suture mesenchyme as the main MSC population for craniofacial bones. They are not associated with vasculature, give rise to all craniofacial bones in the adult and are activated during injury repair. Gli1+ cells are typical MSCs in vitro. Ablation of Gli1+ cells leads to craniosynostosis and arrest of skull growth, indicating that these cells are an indispensable stem cell population. Twist1(+/-) mice with craniosynostosis show reduced Gli1+ MSCs in sutures, suggesting that craniosynostosis may result from diminished suture stem cells. Our study indicates that craniofacial sutures provide a unique niche for MSCs for craniofacial bone homeostasis and repair.",
+    "text_sha256": "563e35ea54d48089d56dc4e84a7c7a7c131c9be50ebb43cb253bc383b831972c"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 155,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 309
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "OBJECTIVE To assess the robustness of patient responses to a new national survey of patient experience as a basis for providing financial incentives to doctors. DESIGN Analysis of the representativeness of the respondents to the GP Patient Survey compared with those who were sampled (5.5 million patients registered with 8273 general practices in England in January 2009) and with the general population. Analysis of non-response bias looked at the relation between practice response rates and scores on the survey. Analysis of the reliability of the survey estimated the proportion of the variance of practice scores attributable to true differences between practices. RESULTS The overall response rate was 38.2% (2.2 million responses), which is comparable to that in surveys using similar methodology in the UK. Men, young adults, and people living in deprived areas were under-represented among respondents. However, for questions related to pay for performance, there was no systematic association between response rates and questionnaire scores. Two questions which triggered payments to general practitioners were reliable measures of practice performance, with average practice-level reliability coefficients of 93.2% and 95.0%. Less than 3% and 0.5% of practices had fewer than the number of responses required to achieve conventional reliability levels of 90% and 70%. A change to the payment formula in 2009 resulted in an increase in the average impact of random variation in patient scores on payments to general practitioners compared with payments made in 2007 and 2008. CONCLUSIONS There is little evidence to support the concern of some general practitioners that low response rates and selective non-response bias have led to systematic unfairness in payments attached to questionnaire scores. The study raises issues relating to the validity and reliability of payments based on patient surveys and provides lessons for the UK and for other countries considering the use of patient experience as part of pay for performance schemes.",
+    "text_sha256": "6f37ca0b2842b39f8a008d1457f2fe24b5ca36bdf1839ab33605a215708d3408"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 43,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 280
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "OBJECTIVE To determine whether the novel avian influenza H7N9 virus can transmit from person to person and its efficiency. DESIGN Epidemiological investigations conducted after a family cluster of two patients with avian H7N9 in March 2013. SETTING Wuxi, Eastern China. PARTICIPANTS Two patients, their close contacts, and relevant environments. Samples from the patients and environments were collected and tested by real time reverse transcriptase-polymerase chain reaction (rRT-PCR), viral culture, and haemagglutination inhibition assay. Any contacts who became ill had samples tested for avian H7N9 by rRT-PCR. Paired serum samples were obtained from contacts for serological testing by haemagglutination inhibition assays. MAIN OUTCOMES MEASURES Clinical data, history of exposure before the onset of illnesses, and results of laboratory testing of pathogens and further analysis of sequences and phylogenetic tree to isolated strains. RESULTS The index patient became ill five to six days after his last exposure to poultry. The second patient, his daughter aged 32, who provided unprotected bedside care in the hospital, had no known exposure to poultry. She developed symptoms six days after her last contact with her father. Two strains were isolated successfully from the two patients. Genome sequence and analyses of phylogenetic trees showed that both viruses were almost genetically identical. Forty three close contacts of both patients were identified. One had mild illness but had negative results for avian H7N9 by rRT-PCR. All 43 close contacts tested negative for haemagglutination inhibition antibodies specific for avian H7N9. CONCLUSIONS The infection of the daughter probably resulted from contact with her father (the index patient) during unprotected exposure, suggesting that in this cluster the virus was able to transmit from person to person. The transmissibility was limited and non-sustainable.",
+    "text_sha256": "f99e07e91510479df408f5af65826358afa959a6750fef8c8b1a8d2306c9d2d5"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 136,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 181
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Advanced glycation end-products (AGEs) resulting from non-enzymatic glycation are one of the major factors implicated in secondary complications of diabetes. Scientists are focusing on discovering new compounds that may be used as potential AGEs inhibitors without affecting the normal structure and function of biomolecules. A number of natural and synthetic compounds have been proposed as AGE inhibitors. In this study, we investigated the inhibitory effects of AgNPs (silver nanoparticles) in AGEs formation. AgNPs (~30.5 nm) synthesized from Aloe Vera leaf extract were characterized using UV-Vis spectroscopy, energy-dispersive X-ray spectroscopy (EDX), high resolution-transmission electron microscopy, X-ray diffraction and dynamic light scattering (DLS) techniques. The inhibitory effects of AgNPs on AGEs formation were evaluated by investigating the degree of reactivity of free amino groups (lysine and arginine residues), protein-bound carbonyl and carboxymethyl lysine (CML) content, and the effects on protein structure using various physicochemical techniques. The results showed that AgNPs significantly inhibit AGEs formation in a concentration dependent manner and that AgNPs have a positive effect on protein structure. These findings strongly suggest that AgNPs may play a therapeutic role in diabetes-related complications.",
+    "text_sha256": "01cb729512ab1e89937cc46debef6a334b67b2211e6508479ee507ffb0f6598b"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 244,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 189
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Exercise increases plasma TNF-alpha, IL-1beta, and IL-6, yet the stimuli and sources of TNF-alpha and IL-1beta remain largely unknown. We tested the role of oxidative stress and the potential contribution of monocytes in this cytokine (especially IL-1beta) response in previously untrained individuals. Six healthy nonathletes performed two 45-min bicycle exercise sessions at 70% of Vo(2 max) before and after a combination of antioxidants (vitamins E, A, and C for 60 days; allopurinol for 15 days; and N-acetylcysteine for 3 days). Blood was drawn at baseline, end-exercise, and 30 and 120 min postexercise. Plasma cytokines were determined by ELISA and monocyte intracellular cytokine level by flow cytometry. Before antioxidants, TNF-alpha increased by 60%, IL-1beta by threefold, and IL-6 by sixfold secondary to exercise (P < 0.05). After antioxidants, plasma IL-1beta became undetectable, the TNF-alpha response to exercise was abolished, and the IL-6 response was significantly blunted (P < 0.05). Exercise did not increase the percentage of monocytes producing the cytokines or their mean fluorescence intensity. We conclude that in untrained humans oxidative stress is a major stimulus for exercise-induced cytokine production and that monocytes play no role in this process.",
+    "text_sha256": "54cfed47cc95ef9d834229e873253aa3a689fd9cb970c62b06955e8140c6b5e3"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 165,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 97
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The forkhead box (Fox) family of transcription factors, which originated in unicellular eukaryotes, has expanded over time through multiple duplication events, and sometimes through gene loss, to over 40 members in mammals. Fox genes have evolved to acquire a specialized function in many key biological processes. Mutations in Fox genes have a profound effect on human disease, causing phenotypes as varied as cancer, glaucoma and language disorders. We summarize the salient features of the evolution of the Fox gene family and highlight the diverse contribution of various Fox subfamilies to developmental processes, from organogenesis to speech acquisition.",
+    "text_sha256": "8b31ba617d77a99c97cbf2fb90b3d5502c16e08089e1bbba9185048b84f453ad"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 118,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 234
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Centrifugal elutriation was used further to isolate human peripheral blood monocytes (HPBM) from mononuclear-enriched cells harvested as a secondary component following platelet concentration collection samples. HPBM were recovered in either one or two populations consisting of either total HPBM or small (SM) and large monocytes (LM). The elutriation was carried out at 3,500 +/- 5 rpm for the separation of lymphocytes and HPBM in Ca++- and Mg++-free PBS without EDTA. An average of 5.05 +/- 1.50 X 10(8) HPBM were recovered in the total HPBM with a purity of 95% +/- 3%. The SM and LM were obtained by splitting the total HPBM into two equal populations with an HPBM purity of 92% +/- 3% and 93% +/- 3, respectively, by nonspecific esterase staining. The elutriation media were shown to have no effect on viability by trypan blue exclusion. All three HPBM populations were shown to be histochemically (lack of reactivity to leu-1 and leu-7) and functionally (depletion of NK cell activity) purified from the lymphocyte population. The HPBM populations were enriched in HLA-Dr, OKM-1, OKM-5, MY-8, and leu M-3 monoclonal antibody marker staining. There were no differences in percent positive cells between SM and LM populations for any of the monocyte-specific monoclonal antibodies. All three monocyte populations mediated antibody-dependent cell-mediated cytotoxicity to human red blood cells, with LM mediating more lysis (27.0% +/- 5%) than SM (7% +/- 3%).(ABSTRACT TRUNCATED AT 250 WORDS)",
+    "text_sha256": "b9a35eb76b04323888ccc2be40bcacae32fbc483727314d6a6414d8291987890"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 170,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 123
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "A protein of molecular size 62,000 daltons (p62) was detected in HeLa cell nuclear extracts by UV cross-linking to mRNA precursors. p62 binds specifically to the polypyrimidine tract of the 3' splice site region of introns. p62 purified to homogeneity binds the polypyrimidine tract of pre-mRNAs. This binding does not require the AG dinucleotide at the 3' splice site. Alterations in the polypyrimidine tract that reduce the binding of p62 yield a corresponding reduction in the efficiency of formation of a U2 snRNP/pre-mRNA complex and splicing. The p62 protein is retained in the spliceosome, where it remains bound to the pre-mRNA. This polypyrimidine tract binding protein (pPTB) is proposed to be a critical component in recognition of the 3' splice site during splicing.",
+    "text_sha256": "b9c98ce34c18ab5d78163c844ec4d89bd586af653f85b4a345b60403420ec9b0"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 69,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 158
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "The p75(NTR) neurotrophin receptor has been implicated in multiple biological and pathological processes. While significant advances have recently been made in understanding the physiologic role of p75(NTR) , many details and aspects remain to be determined. This is in part because the two existing knockout mouse models (Exons 3 or 4 deleted, respectively), both display features that defy definitive conclusions. Here we describe the generation of mice that carry a conditional p75(NTR) (p75(NTR-FX) ) allele made by flanking Exons 4-6, which encode the transmembrane and all cytoplasmic domains, by loxP sites. To validate this novel conditional allele, both neural crest-specific p75(NTR) /Wnt1-Cre mutants and conventional p75(NTR) null mutants were generated. Both mutants displayed abnormal hind limb reflexes, implying that loss of p75(NTR) in neural crest-derived cells causes a peripheral neuropathy similar to that seen in conventional p75(NTR) mutants. This novel conditional p75(NTR) allele will offer new opportunities to investigate the role of p75(NTR) in specific tissues and cells.",
+    "text_sha256": "178fa857da25f8088346f798d10aec4269e09087b99c72e68cf7a8ca3f4f7eb9"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 142,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 208
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "This study aimed to describe cancer screening rates for second primary cancer among cancer survivors in Korea, and to compare these rates with those of two control groups: individuals without a history of cancer but with other chronic diseases, and individuals without a history of cancer and without other chronic diseases. The study is a cross-sectional analysis of 15,556 adults ≥30 years old who participated in the 2001, 2005, and 2007 Korean National Health and Nutrition Examination Surveys (KNHANES). The prevalence of breast, cervical, gastric, and colorectal cancer screening examinations according to national guidelines was assessed and compared to two control groups. Screening rates among cancer survivors were 48.5, 54.7, 34.7, and 28.6% for breast, cervical, gastric, and colorectal cancer screening, respectively. Cancer survivors showed higher screening rates for all four cancer sites compared with both control groups, but breast cancer screening was only statistically significant after adjusting gender, age, marital status, education, income, working status, health insurance, smoking and drinking status, and self-reported health status. Cancer survivors were more likely than individuals without a cancer history to obtain screening examinations according to recommended guidelines. Still, screening rates even among survivors were suboptimal, emphasizing the need for a more systematic approach to second primary cancer screening and prevention.",
+    "text_sha256": "f227f2af884eb550d85662a74c016f2393835c8ec1999ea04e131c343eb3560f"
+  },
+  {
+    "license": "CC-BY-SA/MIT metadata",
+    "metadata": {
+      "kind": "document",
+      "row": 217,
+      "source": "BeIR/scifact/corpus",
+      "tokens": 121
+    },
+    "stratum": "S5_beir_retrieval",
+    "text": "Mammalian target of rapamycin (mTOR) is an atypical protein kinase that controls growth and metabolism in response to nutrients, growth factors and cellular energy levels, and it is frequently dysregulated in cancer and metabolic disorders. Rapamycin is an allosteric inhibitor of mTOR, and was approved as an immuno-suppressant in 1999. In recent years, interest has focused on its potential as an anticancer drug. However, the performance of rapamycin and its analogues (rapalogues) has been undistinguished despite isolated successes in subsets of cancer, suggesting that the full therapeutic potential of targeting mTOR has yet to be exploited. A new generation of ATP-competitive inhibitors that directly target the mTOR catalytic site display potent and comprehensive mTOR inhibition and are in early clinical trials.",
+    "text_sha256": "bd77efd89cc905bc2a8c59ba23cd1908c1156c5a42774933133a2d10bb79bb35"
+  }
+]

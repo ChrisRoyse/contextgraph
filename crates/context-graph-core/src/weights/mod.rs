@@ -43,8 +43,9 @@ pub const TEMPORAL_EMBEDDERS_ENABLED: bool = true;
 
 /// Whether E11 Entity (KEPLER) participates in search/fusion.
 /// KEPLER produces near-identical vectors for all inputs (0.96-0.98 cosine).
-/// Set to `true` and rebuild to re-enable when loading custom entity embeddings.
-pub const E11_ENTITY_ENABLED: bool = false;
+/// Enabled for EXP-2 audit per PRD §5: E11 is included in the 14-embedder MI audit
+/// even when low-discrimination for retrieval, so its information geometry can be measured.
+pub const E11_ENTITY_ENABLED: bool = true;
 
 /// Weight profile error types.
 ///
