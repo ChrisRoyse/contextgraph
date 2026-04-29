@@ -102,7 +102,11 @@ impl Validate for FieldSpec {
     }
 }
 
-fn validate_fields(fields: &[FieldSpec], schema_name: &str, allow_empty: bool) -> DynamicJepaResult<()> {
+fn validate_fields(
+    fields: &[FieldSpec],
+    schema_name: &str,
+    allow_empty: bool,
+) -> DynamicJepaResult<()> {
     if fields.is_empty() && !allow_empty {
         return Err(DynamicJepaError::schema(
             schema_name,

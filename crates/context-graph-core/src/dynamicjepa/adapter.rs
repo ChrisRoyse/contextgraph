@@ -1,5 +1,7 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use crate::dynamicjepa::ids::{ActionId, AdapterId, DomainPackId, EventId, OutcomeId, StateId, TransitionId};
+use crate::dynamicjepa::ids::{
+    ActionId, AdapterId, DomainPackId, EventId, OutcomeId, StateId, TransitionId,
+};
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::{ensure_uuid, Validate};
 use serde::{Deserialize, Serialize};
@@ -132,4 +134,8 @@ impl Validate for AdapterRunRecord {
     }
 }
 
-crate::impl_dynamic_jepa_record!(AdapterRunRecord, ADAPTER_RUN_RECORD_VERSION, "AdapterRunRecord");
+crate::impl_dynamic_jepa_record!(
+    AdapterRunRecord,
+    ADAPTER_RUN_RECORD_VERSION,
+    "AdapterRunRecord"
+);

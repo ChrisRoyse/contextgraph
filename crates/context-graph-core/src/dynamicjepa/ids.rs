@@ -21,9 +21,7 @@ pub fn validate_string_id(value: &str, field: &str) -> DynamicJepaResult<()> {
         ));
     }
     for b in &bytes[1..] {
-        let ok = b.is_ascii_lowercase()
-            || b.is_ascii_digit()
-            || matches!(*b, b'_' | b'-' | b'.');
+        let ok = b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(*b, b'_' | b'-' | b'.');
         if !ok {
             return Err(DynamicJepaError::validation(
                 field,
@@ -37,9 +35,7 @@ pub fn validate_string_id(value: &str, field: &str) -> DynamicJepaResult<()> {
 
 macro_rules! string_id {
     ($name:ident) => {
-        #[derive(
-            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-        )]
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         pub struct $name(pub String);
 
         impl $name {

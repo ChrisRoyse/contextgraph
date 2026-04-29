@@ -4,7 +4,6 @@ use crate::dynamicjepa::ids::VerificationRunId;
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::Validate;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const VERIFICATION_RUN_RECORD_VERSION: u8 = 1;
@@ -20,9 +19,9 @@ pub struct VerificationRunRecord {
     pub after_counts: BTreeMap<String, u64>,
     pub commands_executed: Vec<String>,
     pub artifact_hash_checks: Vec<ArtifactHashCheck>,
-    pub decoded_record_excerpts: BTreeMap<String, Value>,
-    pub expected_results: BTreeMap<String, Value>,
-    pub actual_results: BTreeMap<String, Value>,
+    pub decoded_record_excerpts: BTreeMap<String, DjJsonValue>,
+    pub expected_results: BTreeMap<String, DjJsonValue>,
+    pub actual_results: BTreeMap<String, DjJsonValue>,
     pub status: VerificationStatus,
     pub created_at_unix_ms: i64,
 }
@@ -40,6 +39,111 @@ pub struct ArtifactHashCheck {
 pub enum VerificationStatus {
     Passed,
     Failed { failure_details: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DjJsonValue {
+    Null,
+    Bool(bool),
+    I64(i64),
+    F64(f64),
+    String(String),
+    Array(Vec<DjJsonValue>),
+    Object(BTreeMap<String, DjJsonValue>),
+}
+
+impl DjJsonValue {
+    pub fn from_json(value: serde_json::Value) -> DynamicJepaResult<Self> {
+        match value {
+            serde_json::Value::Null => Ok(Self::Null),
+            serde_json::Value::Bool(value) => Ok(Self::Bool(value)),
+            serde_json::Value::Number(number) => {
+                if let Some(value) = number.as_i64() {
+                    Ok(Self::I64(value))
+                } else if let Some(value) = number.as_f64() {
+                    if value.is_finite() {
+                        Ok(Self::F64(value))
+                    } else {
+                        Err(DynamicJepaError::validation(
+                            "DjJsonValue.number",
+                            "number must be finite",
+                            "verification evidence must not contain NaN or infinity",
+                        ))
+                    }
+                } else {
+                    Err(DynamicJepaError::validation(
+                        "DjJsonValue.number",
+                        format!("unsupported JSON number {number}"),
+                        "use i64 or finite f64 evidence numbers",
+                    ))
+                }
+            }
+            serde_json::Value::String(value) => Ok(Self::String(value)),
+            serde_json::Value::Array(values) => values
+                .into_iter()
+                .map(Self::from_json)
+                .collect::<DynamicJepaResult<Vec<_>>>()
+                .map(Self::Array),
+            serde_json::Value::Object(values) => values
+                .into_iter()
+                .map(|(key, value)| Ok((key, Self::from_json(value)?)))
+                .collect::<DynamicJepaResult<BTreeMap<_, _>>>()
+                .map(Self::Object),
+        }
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Self::Null => serde_json::Value::Null,
+            Self::Bool(value) => serde_json::Value::Bool(*value),
+            Self::I64(value) => serde_json::Value::Number((*value).into()),
+            Self::F64(value) => serde_json::Number::from_f64(*value)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
+            Self::String(value) => serde_json::Value::String(value.clone()),
+            Self::Array(values) => {
+                serde_json::Value::Array(values.iter().map(Self::to_json).collect())
+            }
+            Self::Object(values) => serde_json::Value::Object(
+                values
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.to_json()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+impl Validate for DjJsonValue {
+    fn validate(&self) -> DynamicJepaResult<()> {
+        match self {
+            Self::F64(value) if !value.is_finite() => Err(DynamicJepaError::validation(
+                "DjJsonValue::F64",
+                "value must be finite",
+                "verification evidence must not contain NaN or infinity",
+            )),
+            Self::Array(values) => {
+                for value in values {
+                    value.validate()?;
+                }
+                Ok(())
+            }
+            Self::Object(values) => {
+                for (key, value) in values {
+                    if key.trim().is_empty() {
+                        return Err(DynamicJepaError::validation(
+                            "DjJsonValue::Object",
+                            "object keys must not be empty",
+                            "write named evidence fields",
+                        ));
+                    }
+                    value.validate()?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 impl From<ArtifactFile> for ArtifactHashCheck {
@@ -108,6 +212,14 @@ impl Validate for VerificationRunRecord {
         }
         for check in &self.artifact_hash_checks {
             check.validate()?;
+        }
+        for value in self
+            .decoded_record_excerpts
+            .values()
+            .chain(self.expected_results.values())
+            .chain(self.actual_results.values())
+        {
+            value.validate()?;
         }
         if matches!(self.status, VerificationStatus::Passed)
             && (self.expected_results.is_empty() || self.actual_results.is_empty())

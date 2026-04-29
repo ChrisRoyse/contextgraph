@@ -71,7 +71,8 @@ impl Validate for TrainingRunRecord {
             return Err(DynamicJepaError::TrainingFailed {
                 training_run_id: self.training_run_id.0,
                 message: "training_config_hash must be computed".to_string(),
-                remediation: "hash the canonical training config before starting the run".to_string(),
+                remediation: "hash the canonical training config before starting the run"
+                    .to_string(),
             });
         }
         if self.objective_ids.is_empty() {

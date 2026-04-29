@@ -124,10 +124,17 @@ impl Validate for LatentPanel {
                 });
             }
             for (value_idx, value) in vector.iter().enumerate() {
-                ensure_finite(*value, &format!("LatentPanel.slot_vectors[{idx}][{value_idx}]"))?;
+                ensure_finite(
+                    *value,
+                    &format!("LatentPanel.slot_vectors[{idx}][{value_idx}]"),
+                )?;
             }
         }
-        for (idx, (slot, mask)) in self.ordered_slots.iter().zip(self.slot_masks.iter()).enumerate()
+        for (idx, (slot, mask)) in self
+            .ordered_slots
+            .iter()
+            .zip(self.slot_masks.iter())
+            .enumerate()
         {
             if !*mask && matches!(slot.kind, PanelSlotKind::State | PanelSlotKind::Action) {
                 return Err(DynamicJepaError::validation(

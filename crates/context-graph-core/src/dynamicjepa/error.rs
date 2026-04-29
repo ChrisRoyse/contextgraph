@@ -28,7 +28,9 @@ pub enum DynamicJepaError {
         payload_type: String,
         remediation: String,
     },
-    #[error("instrument {instrument_id} failed for event {event_id}: {message} field_path={field_path}")]
+    #[error(
+        "instrument {instrument_id} failed for event {event_id}: {message} field_path={field_path}"
+    )]
     InstrumentFailed {
         instrument_id: String,
         event_id: Uuid,
@@ -101,7 +103,9 @@ pub enum DynamicJepaError {
         field: String,
         remediation: String,
     },
-    #[error("adapter failed: adapter={adapter_id} event={event_id}: {message} field_path={field_path}")]
+    #[error(
+        "adapter failed: adapter={adapter_id} event={event_id}: {message} field_path={field_path}"
+    )]
     AdapterFailed {
         adapter_id: String,
         event_id: Uuid,

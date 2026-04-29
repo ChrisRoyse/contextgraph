@@ -79,7 +79,10 @@ pub fn validate_header(
     if header.created_at_unix_ms < 0 {
         return Err(DynamicJepaError::validation(
             format!("{payload_type}.header.created_at_unix_ms"),
-            format!("timestamp must be non-negative, got {}", header.created_at_unix_ms),
+            format!(
+                "timestamp must be non-negative, got {}",
+                header.created_at_unix_ms
+            ),
             "write Unix epoch milliseconds",
         ));
     }

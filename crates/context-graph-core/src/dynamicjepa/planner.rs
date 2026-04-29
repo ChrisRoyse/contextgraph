@@ -174,7 +174,11 @@ impl Validate for SurpriseEventRecord {
     }
 }
 
-crate::impl_dynamic_jepa_record!(PlanTraceRecord, PLAN_TRACE_RECORD_VERSION, "PlanTraceRecord");
+crate::impl_dynamic_jepa_record!(
+    PlanTraceRecord,
+    PLAN_TRACE_RECORD_VERSION,
+    "PlanTraceRecord"
+);
 crate::impl_dynamic_jepa_record!(
     SurpriseEventRecord,
     SURPRISE_EVENT_RECORD_VERSION,

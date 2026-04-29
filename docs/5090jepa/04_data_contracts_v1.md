@@ -402,15 +402,21 @@ pub struct VerificationRunRecord {
     pub after_counts: BTreeMap<String, u64>,
     pub commands_executed: Vec<String>,
     pub artifact_hash_checks: Vec<ArtifactHashCheck>,
-    pub decoded_record_excerpts: BTreeMap<String, serde_json::Value>,  // CF -> 1 sample
-    pub expected_results: BTreeMap<String, serde_json::Value>,
-    pub actual_results: BTreeMap<String, serde_json::Value>,
+    pub decoded_record_excerpts: BTreeMap<String, DjJsonValue>,  // CF -> 1 sample; bincode-safe JSON enum
+    pub expected_results: BTreeMap<String, DjJsonValue>,
+    pub actual_results: BTreeMap<String, DjJsonValue>,
     pub status: VerificationStatus,       // Passed | Failed { failure_details: String }
     pub created_at_unix_ms: i64,
 }
 ```
 
 Every FSV harness ends by writing one of these. Operator evidence logs are derived from `decoded_record_excerpts` + `actual_results`.
+
+Phase 1 correction: use a local bincode-safe `DjJsonValue` enum instead of raw
+`serde_json::Value` inside persisted records. `serde_json::Value` requires
+`deserialize_any`, which `bincode 1.3` does not support, so using it would make
+`VerificationRunRecord` impossible to round-trip under the no-fallback codec
+contract. CLI/MCP layers can convert `DjJsonValue` to JSON at the boundary.
 
 ## 11. Errors (`error.rs`)
 

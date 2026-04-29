@@ -1,7 +1,5 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use crate::dynamicjepa::ids::{
-    ActionId, DatasetId, DatasetShardId, PanelId, TrajectoryId,
-};
+use crate::dynamicjepa::ids::{ActionId, DatasetId, DatasetShardId, PanelId, TrajectoryId};
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::Validate;
 use serde::{Deserialize, Serialize};
@@ -94,7 +92,9 @@ impl Validate for DatasetShardRecord {
         ];
         if lengths.iter().any(|len| *len != row_count) {
             return Err(DynamicJepaError::DatasetLeakageDetected {
-                message: format!("row_count {row_count} does not match row vector lengths {lengths:?}"),
+                message: format!(
+                    "row_count {row_count} does not match row vector lengths {lengths:?}"
+                ),
                 dataset_id: self.dataset_id.0,
             });
         }

@@ -109,7 +109,10 @@ impl Validate for ObjectiveSpec {
         if !self.loss_weight.is_finite() || self.loss_weight <= 0.0 {
             return Err(DynamicJepaError::validation(
                 "ObjectiveSpec.loss_weight",
-                format!("loss_weight must be finite and >0, got {}", self.loss_weight),
+                format!(
+                    "loss_weight must be finite and >0, got {}",
+                    self.loss_weight
+                ),
                 "set a positive objective loss weight",
             ));
         }
@@ -215,7 +218,10 @@ impl Validate for PlannerPolicy {
         if !self.surprise_threshold.is_finite() || !(0.0..=1.0).contains(&self.surprise_threshold) {
             return Err(DynamicJepaError::validation(
                 "PlannerPolicy.surprise_threshold",
-                format!("threshold must be finite in [0,1], got {}", self.surprise_threshold),
+                format!(
+                    "threshold must be finite in [0,1], got {}",
+                    self.surprise_threshold
+                ),
                 "set a cosine threshold such as 0.85",
             ));
         }
@@ -296,7 +302,9 @@ impl Validate for DomainPack {
             adapter.validate()?;
         }
         ensure_no_duplicates(
-            self.adapter_specs.iter().map(|spec| spec.adapter_id.as_str()),
+            self.adapter_specs
+                .iter()
+                .map(|spec| spec.adapter_id.as_str()),
             "DomainPack.adapter_specs.adapter_id",
         )?;
         for instrument in &self.instrument_specs {
@@ -321,7 +329,10 @@ impl Validate for DomainPack {
             if !self.path_exists(&objective.target) {
                 return Err(DynamicJepaError::validation(
                     "DomainPack.objective_specs.target",
-                    format!("objective target {:?} is not declared in schemas", objective.target),
+                    format!(
+                        "objective target {:?} is not declared in schemas",
+                        objective.target
+                    ),
                     "point objectives at declared schema fields",
                 ));
             }
