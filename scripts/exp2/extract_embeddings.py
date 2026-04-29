@@ -113,8 +113,11 @@ def extract_manifest(cfg: dict[str, Any], manifest_path: Path, output_npz: Path,
         before_count = client.call_tool("count_training_records", {})
         extraction_log["training_records_before"] = before_count
         memory_ids: list[str] = []
-        for start in range(0, len(inputs), 64):
-            batch = inputs[start : start + 64]
+        # Batch size 16: keeps each store_memories call <120s wall on cold cache,
+        # well under server-side request_timeout=1800s. 64 was too aggressive on
+        # first batch (timeout/deadlock seen on 14-embedder cold start).
+        for start in range(0, len(inputs), 16):
+            batch = inputs[start : start + 16]
             payload = {
                 "sessionId": session_id,
                 "operatorId": cfg["operator"],

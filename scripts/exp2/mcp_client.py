@@ -47,7 +47,14 @@ class McpClient:
         env = os.environ.copy()
         env["CONTEXT_GRAPH_STORAGE_PATH"] = str(self.storage_path)
         env["CONTEXT_GRAPH_MODELS_PATH"] = str(self.models_path)
-        env["CONTEXT_GRAPH_WARM_FIRST"] = "1"
+        # WARM_FIRST=0: lazy-load only what's used. EXP-2 only needs the 14 embedders;
+        # the Hermes-2-Pro 7B LLM (used for causal_discovery/graph_discovery) is NOT
+        # invoked by store_memories with causalHints=False, and warm-loading it would
+        # add ~10+ minutes to startup and consume GPU memory we need for the embedders.
+        env["CONTEXT_GRAPH_WARM_FIRST"] = "0"
+        # Server-side per-request timeout. Default is 30s; EXP-2 store_memories with
+        # batch=16 and 14 embedders cold-cache can take 60-120s on first call.
+        env["CONTEXT_GRAPH_MCP_REQUEST_TIMEOUT"] = "1800"
         env["RUST_LOG"] = "error"
         self.proc = subprocess.Popen(
             [str(self.binary_path)],
