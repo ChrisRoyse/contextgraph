@@ -29,6 +29,39 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+fn hex32(bytes: &[u8; 32]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn file_state(path: &Path) -> serde_json::Value {
+    if !path.exists() {
+        return json!({"exists": false, "size_bytes": 0, "sha256": null});
+    }
+    let bytes = fs::read(path).expect("read file state");
+    json!({
+        "exists": true,
+        "size_bytes": bytes.len(),
+        "sha256": hex32(&sha256(&bytes)),
+    })
+}
+
+fn count_files_recursive(path: &Path) -> usize {
+    if !path.exists() {
+        return 0;
+    }
+    let mut count = 0;
+    for entry in fs::read_dir(path).expect("read recursive file count dir") {
+        let entry = entry.expect("read recursive file count entry");
+        let file_type = entry.file_type().expect("read recursive file type");
+        if file_type.is_file() {
+            count += 1;
+        } else if file_type.is_dir() {
+            count += count_files_recursive(&entry.path());
+        }
+    }
+    count
+}
+
 fn domain_id() -> DomainPackId {
     DomainPackId::new("counter_world").expect("counter_world id must validate")
 }
@@ -739,9 +772,7 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
         fs::remove_dir_all(&evidence_root).expect("clear stale phase1 evidence dir");
     }
     fs::create_dir_all(&evidence_root).expect("create phase1 evidence dir");
-    let before_files = fs::read_dir(&evidence_root)
-        .expect("read evidence dir before")
-        .count();
+    let before_files = count_files_recursive(&evidence_root);
 
     let (domain, samples) = sample_records();
     roundtrip_from_file::<DomainPack>(&evidence_root, "domain_pack", &domain);
@@ -753,9 +784,57 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
         &samples.verification,
     );
 
-    let after_files = fs::read_dir(&evidence_root)
-        .expect("read evidence dir after")
-        .count();
+    let edge_dir = evidence_root.join("edge_cases");
+    fs::create_dir_all(&edge_dir).expect("create edge case evidence dir");
+
+    let empty_path = edge_dir.join("empty_payload.bin");
+    let empty_before = file_state(&empty_path);
+    fs::write(&empty_path, []).expect("write empty edge source-of-truth file");
+    let empty_after = file_state(&empty_path);
+    let empty_err =
+        decode_versioned_record::<DomainPack>(&fs::read(&empty_path).expect("read empty edge"))
+            .expect_err("empty edge must fail");
+
+    let wrong_version_path = edge_dir.join("wrong_version.bin");
+    let wrong_before = file_state(&wrong_version_path);
+    let mut wrong_bytes = encode_versioned_record(&domain).expect("domain encodes");
+    wrong_bytes[0] = 9;
+    fs::write(&wrong_version_path, wrong_bytes).expect("write wrong version edge");
+    let wrong_after = file_state(&wrong_version_path);
+    let wrong_err = decode_versioned_record::<DomainPack>(
+        &fs::read(&wrong_version_path).expect("read wrong version edge"),
+    )
+    .expect_err("wrong version edge must fail");
+
+    let invalid_id_path = edge_dir.join("invalid_id_format.bin");
+    let invalid_before = file_state(&invalid_id_path);
+    let mut invalid_domain = domain.clone();
+    invalid_domain.id = DomainPackId("CounterWorld".to_string());
+    invalid_domain.header.domain_pack_id = DomainPackId("CounterWorld".to_string());
+    invalid_domain
+        .refresh_content_hash()
+        .expect("invalid id corrupt record hashes");
+    write_unchecked(&invalid_domain, DOMAIN_PACK_RECORD_VERSION, &invalid_id_path);
+    let invalid_after = file_state(&invalid_id_path);
+    let invalid_err = decode_versioned_record::<DomainPack>(
+        &fs::read(&invalid_id_path).expect("read invalid id edge"),
+    )
+    .expect_err("invalid id edge must fail");
+
+    let shape_path = edge_dir.join("panel_shape_mismatch.bin");
+    let shape_before = file_state(&shape_path);
+    let mut bad_panel = samples.panel.clone();
+    bad_panel.slot_vectors[0] = vec![0.0, 1.0];
+    bad_panel
+        .refresh_content_hash()
+        .expect("bad panel corrupt record hashes");
+    write_unchecked(&bad_panel, LATENT_PANEL_RECORD_VERSION, &shape_path);
+    let shape_after = file_state(&shape_path);
+    let shape_err =
+        decode_versioned_record::<LatentPanel>(&fs::read(&shape_path).expect("read shape edge"))
+            .expect_err("shape edge must fail");
+
+    let after_files = count_files_recursive(&evidence_root);
     let evidence = json!({
         "operation": "dynamicjepa_phase1_core_record_fsv",
         "status": "ok",
@@ -763,7 +842,16 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
         "source_of_truth": {
             "type": "versioned bincode files",
             "path": evidence_root,
-            "records": ["domain_pack.bin", "raw_event.bin", "latent_panel.bin", "verification_run.bin"]
+            "records": [
+                "domain_pack.bin",
+                "raw_event.bin",
+                "latent_panel.bin",
+                "verification_run.bin",
+                "edge_cases/empty_payload.bin",
+                "edge_cases/wrong_version.bin",
+                "edge_cases/invalid_id_format.bin",
+                "edge_cases/panel_shape_mismatch.bin"
+            ]
         },
         "before_state": {"file_count": before_files},
         "after_state": {"file_count": after_files},
@@ -777,7 +865,7 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
             "raw_event": {
                 "event_id": samples.raw_event.event_id.to_string(),
                 "source_offset": samples.raw_event.source_offset,
-                "payload_hash": format!("{:02x?}", samples.raw_event.payload_hash)
+                "payload_hash": hex32(&samples.raw_event.payload_hash)
             },
             "latent_panel": {
                 "panel_id": samples.panel.panel_id.to_string(),
@@ -790,10 +878,30 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
             }
         },
         "edge_case_audit": {
-            "empty_payload": "decode rejects empty source-of-truth bytes with CODEC",
-            "wrong_version": "decode rejects mismatched leading version byte",
-            "invalid_id_format": "decode rejects non-lowercase DomainPackId after physical read",
-            "panel_shape_mismatch": "decode rejects slot vector length mismatch after physical read"
+            "empty_payload": {
+                "before_state": empty_before,
+                "after_state": empty_after,
+                "error_code": empty_err.code(),
+                "error_message": empty_err.to_string()
+            },
+            "wrong_version": {
+                "before_state": wrong_before,
+                "after_state": wrong_after,
+                "error_code": wrong_err.code(),
+                "error_message": wrong_err.to_string()
+            },
+            "invalid_id_format": {
+                "before_state": invalid_before,
+                "after_state": invalid_after,
+                "error_code": invalid_err.code(),
+                "error_message": invalid_err.to_string()
+            },
+            "panel_shape_mismatch": {
+                "before_state": shape_before,
+                "after_state": shape_after,
+                "error_code": shape_err.code(),
+                "error_message": shape_err.to_string()
+            }
         }
     });
     let evidence_path = root_dir().join("tmp/5090jepa_evidence/phase1/core_record_fsv.json");
@@ -805,5 +913,5 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
     println!("{}", serde_json::to_string_pretty(&evidence).unwrap());
 
     assert_eq!(before_files, 0);
-    assert_eq!(after_files, 4);
+    assert_eq!(after_files, 8);
 }
