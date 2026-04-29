@@ -44,6 +44,7 @@ STRATA = [
 ]
 MIN_CANDIDATES = 120
 SAMPLE_PER_STRATUM = 100
+MAX_CONTENT_CHARS = 10_000
 
 
 def clean_text(text: str) -> str:
@@ -52,16 +53,32 @@ def clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def chunks(text: str, min_words: int = 80, max_words: int = 600) -> Iterable[str]:
+def chunks(text: str, min_words: int = 80, max_words: int = 600, max_chars: int = MAX_CONTENT_CHARS) -> Iterable[str]:
     words = clean_text(text).split()
-    for i in range(0, len(words), max_words):
-        part = " ".join(words[i : i + max_words])
+    window: list[str] = []
+    window_chars = 0
+    for word in words:
+        projected = window_chars + len(word) + (1 if window else 0)
+        if window and (len(window) >= max_words or projected > max_chars):
+            part = " ".join(window)
+            if min_words <= len(part.split()) <= max_words:
+                yield part
+            window = []
+            window_chars = 0
+        if len(word) > max_chars:
+            continue
+        window.append(word)
+        window_chars += len(word) + (1 if len(window) > 1 else 0)
+    if window:
+        part = " ".join(window)
         if min_words <= len(part.split()) <= max_words:
             yield part
 
 
 def record(text: str, stratum: str, source: str, license_: str, metadata: dict[str, Any]) -> dict[str, Any]:
     cleaned = clean_text(text)
+    if len(cleaned) > MAX_CONTENT_CHARS:
+        raise Exp2Error(f"{stratum}: candidate from {source} has {len(cleaned)} chars, exceeds MCP limit {MAX_CONTENT_CHARS}")
     n = token_count(cleaned)
     if n < 50 or n > 800:
         raise Exp2Error(f"{stratum}: candidate from {source} has {n} tokens, outside 50..800")
@@ -125,7 +142,7 @@ def collect_causal_claims() -> list[dict[str, Any]]:
                 if markers.search(sent):
                     window.append(sent)
                     joined = " ".join(window[-6:])
-                    if 50 <= token_count(joined) <= 800:
+                    if len(joined) <= MAX_CONTENT_CHARS and 50 <= token_count(joined) <= 800:
                         out.append(
                             record(
                                 joined,
