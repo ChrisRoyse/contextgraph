@@ -1,0 +1,186 @@
+# 02 — Repository State Inventory
+
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before Phase 0 and again before Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+
+## 1. Branch & Commit Snapshot (Verified At Planning Time)
+
+| Property | Value |
+| --- | --- |
+| Branch | `main` |
+| Latest commits | `dc599e69 docs(dynamicjepa): add 16-section implementation plan` → `f9fb5d0f docs(dynamicjepa): add DynamicJEPA planning package (15 sections)` → `eebca1b4 docs(mejepa): add ME-JEPA planning package (14 sections)` |
+| Working tree | One modified file: `docs/dynamicjepa/00_master_index.md` |
+| `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
+
+## 2. Workspace Layout (Verified)
+
+`Cargo.toml` workspace members (10):
+
+```
+crates/context-graph-mcp
+crates/context-graph-core
+crates/context-graph-cuda
+crates/context-graph-embeddings
+crates/context-graph-storage
+crates/context-graph-cli
+crates/context-graph-benchmark        # excluded from default-members
+crates/context-graph-causal-agent
+crates/context-graph-graph-agent
+crates/context-graph-test-utils
+```
+
+Default members exclude `context-graph-benchmark`. Build order (per `docs2/contextgraphspecs/02_source_code_map.md`): `core → cuda → embeddings → test-utils → storage → causal-agent → graph-agent → mcp → cli → benchmark`.
+
+`docs/5090jepa` adds **one** new crate:
+
+```
+crates/context-graph-dynamicjepa
+```
+
+To be added to `[workspace] members` and (after Phase 7 stabilizes) to `default-members`. Phase 1‑6 land before the new crate exists; those phases live in `context-graph-core` (records) and `context-graph-storage` (CFs + stores) and `context-graph-cli` (CLI).
+
+## 3. Audit Commands (Run Before Phase 0)
+
+```bash
+cd /home/cabdru/contextgraph
+
+# crate roster
+ls crates/
+
+# core lib.rs current modules
+sed -n '30,70p' crates/context-graph-core/src/lib.rs
+
+# storage modules
+ls crates/context-graph-storage/src/
+ls crates/context-graph-storage/src/teleological/
+
+# MCP tool name constants count
+grep -c "^pub const " crates/context-graph-mcp/src/tools/names.rs
+
+# CLI commands directory
+ls crates/context-graph-cli/src/commands/
+
+# DynamicJEPA absent (must all fail)
+test ! -d crates/context-graph-dynamicjepa
+test ! -d crates/context-graph-core/src/dynamicjepa
+test ! -d crates/context-graph-storage/src/dynamicjepa
+test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
+test ! -f crates/context-graph-cli/src/commands/dynamicjepa.rs
+
+# Configs root
+ls config/                                # operator config (existing)
+test ! -d configs/dynamicjepa            # input fixtures (you create)
+```
+
+If every command in the "DynamicJEPA absent" block exits 0 (i.e. the tested path does **not** exist), the inventory matches. Any unexpected presence is real work that has been started — read it before adding parallel work.
+
+## 4. Existing Surfaces You Will Reuse
+
+### 4.1 Core (`crates/context-graph-core/src/`)
+
+Modules currently re‑exported in `lib.rs`:
+
+```
+causal, clustering, code, config, constellation, contrastive, embeddings, entity,
+error, fusion, graph, graph_linking, index, injection, learner, learner_training,
+learning, llm_edge_validation, memory, monitoring, quantization, retrieval,
+similarity, stubs, teleological, training, traits, typed_edge_export, types, weights
+```
+
+Add `pub mod dynamicjepa;` (do not break alphabetic ordering — insert between `contrastive` and `embeddings`). Re‑export from `dynamicjepa::*` only types the rest of the workspace needs.
+
+Reusable error pattern: `error::ContextGraphError`, `CoreError`, `Result`. Add `DynamicJepaError` in `dynamicjepa::error` and implement `From<DynamicJepaError> for ContextGraphError`.
+
+Reusable record pattern: `learner_training::*` and `training::TrainingRecord` — both use versioned bincode with explicit version bytes. Mirror that pattern for every DynamicJEPA record.
+
+### 4.2 Storage (`crates/context-graph-storage/src/`)
+
+Existing layout:
+
+```
+column_families.rs            # 11 base CFs
+graph_edges/                  # 3 base graph edge CFs
+code/                         # 5 code CFs
+teleological/
+  column_families.rs          # 41 teleological CFs + 14 quantized = 55
+  rocksdb_store/              # all read/write paths
+  quantized/                  # per-embedder codecs
+  indexes/, search/, schema.rs, serialization.rs
+```
+
+73 CFs total today. Add a sibling `dynamicjepa/` module under `crates/context-graph-storage/src/` that:
+
+- declares ~25 DynamicJEPA CFs (full list in `05_storage_schema_v1.md`);
+- contributes its CF descriptors to the existing DB open path so one physical RocksDB stays the source of truth;
+- exposes typed `put_*` / `get_*` / `list_*` / `count_*` for every record class.
+
+Reusable codec helper: `crates/context-graph-storage/src/teleological/rocksdb_store/versioned_bincode.rs`. Use it verbatim for `[version: u8][bincode payload]` framing.
+
+Single‑writer enforcement: `<db_path>/mcp.pid` + Unix flock via `PidFileGuard`. The demo's CLI commands operate against a `/tmp/` DB so they cannot race with the operator's real MCP server.
+
+### 4.3 MCP (`crates/context-graph-mcp/src/`)
+
+Tool registry surface:
+
+- `tools/names.rs` — 108 `pub const` tool names. Append DynamicJEPA names; do not renumber.
+- `tools/types.rs` — `ToolDefinition` struct.
+- `tools/definitions/<group>.rs` — one file per group; aggregated in `tools/definitions/mod.rs`. Add `dynamicjepa.rs`.
+- `handlers/tools/<group>_tools.rs` + `<group>_dtos.rs` — per‑group handler. Add `dynamicjepa_tools.rs` + `dynamicjepa_dtos.rs`.
+- `handlers/tools/dispatch.rs` — central tools/call switch. Add a match arm per DynamicJEPA tool.
+- Tool count tests in `tools/definitions/tests` — bump expected count by the number of DynamicJEPA tools added.
+- Capability matrix handler in `handlers/tools/capability_tools.rs` — extend to include DynamicJEPA enabled flag, CFs, and counts (see `13_mcp_and_cli_surface.md`).
+
+### 4.4 CLI (`crates/context-graph-cli/src/`)
+
+Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`. Add `dynamicjepa.rs` with subcommands listed in `13_mcp_and_cli_surface.md`. Wire it through `commands/mod.rs` and the clap‑derive top‑level enum in `main.rs`.
+
+All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
+
+### 4.5 Embeddings & CUDA Crates
+
+The DynamicJEPA crate depends on `context-graph-core`, `context-graph-storage`, and `candle-core` / `candle-nn` directly. It does **not** depend on `context-graph-embeddings` for v1 (the demo's instruments are scalar/categorical/onehot/time only — no text embedders). It does **not** depend on `context-graph-cuda` directly; CUDA goes through candle.
+
+If a later phase wants `text_embedding` instruments (binding panels into the existing 14‑embedder space), that adds a `context-graph-embeddings` dep and is out of demo scope.
+
+## 5. Existing Documentation You Will Use
+
+| Path | Use |
+| --- | --- |
+| `docs/dynamicjepa/implementationplan/00_master_implementation_plan.md` | Source‑of‑truth contract |
+| `docs/dynamicjepa/implementationplan/03_core_data_contracts.md` | Records you trim into v1 |
+| `docs/dynamicjepa/implementationplan/04_storage_schema_and_migrations.md` | CF list and key formats |
+| `docs/dynamicjepa/implementationplan/12_full_state_verification_manual_tests.md` | FSV template you specialize |
+| `docs/dynamicjepa/implementationplan/14_phase_task_breakdown.md` | Phase order |
+| `docs2/contextgraphspecs/02_source_code_map.md` | Crate dependency graph |
+| `docs2/contextgraphspecs/04_database_schema.md` | Existing CF roster (73 CFs) |
+| `docs2/contextgraphspecs/06_search_and_fusion.md` | Reusable retrieval/fusion patterns |
+| `docs2/contextgraphspecs/09_storage_layer.md` | Versioning + codec patterns |
+| `docs2/contextgraphspecs/14_test_suite.md` | FSV test naming + locations |
+| `docs/bigunlock/07_full_state_verification.md` | FSV mentality (older but still authoritative on style) |
+
+You do not need to read the full DynamicJEPA architecture deck (`docs/dynamicjepa/03_*.md` etc) for the demo, but it answers any "why is this contract shaped this way?" questions.
+
+## 6. Existing Models You Will *Not* Use
+
+`models/` contains 14 production embedder weights for the existing Context Graph system. The 5090jepa demo trains a tiny encoder/predictor from scratch in candle and writes new artifacts under `artifacts/dynamicjepa/<domain>/<run_id>/`. Do not reuse existing embedder weights for the demo. Two independent reasons:
+
+1. The demo's purpose is to prove the JEPA loop trains and converges; reusing pre‑trained weights would conflate "did our pipeline learn something" with "are the existing weights any good."
+2. Loading a 1.5B parameter `Qodo/Qodo-Embed-1-1.5B` (E7) just to embed a 5×5 grid coordinate is the opposite of Occam's razor.
+
+## 7. Existing Configs You Will Not Edit
+
+`config/default.toml`, `config/development.toml`, `config/production.toml`, `config/test.toml` — these configure the existing MCP server. Do not change them. The demo's domain packs and fixtures live under a *new* directory `configs/dynamicjepa/…` (note plural) — operator‑authored TOML inputs that get hashed and registered into RocksDB.
+
+## 8. Pre‑Existing FSV Patterns To Mirror
+
+These tests in the current tree are good reference shape:
+
+- `crates/context-graph-storage/tests/full_14_embedder_fsv.rs` — full pipeline FSV harness style
+- `crates/context-graph-storage/tests/e14_fsv.rs` — single‑embedder end‑to‑end with state diff
+- `crates/context-graph-cli/tests/e14_phase_b_full_state_verification.rs` — CLI‑level FSV with JSON evidence
+- `crates/context-graph-cli/tests/e2e/full_session_test.rs` — session lifecycle, useful for demo command sequencing
+
+Place new DynamicJEPA FSV tests under each crate's `tests/` directory using `dynamicjepa_*_fsv.rs` naming.
+
+## 9. Drift Audit Reminder
+
+Re‑run Section 3 commands at the start of every phase. If a single command exits non‑zero or returns a different value, halt and resolve before continuing. The cost of one redundant audit is much less than the cost of building on an incorrect mental model.

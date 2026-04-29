@@ -46,6 +46,7 @@ domain data
 | [12 Implementation Roadmap](12_implementation_roadmap.md) | Ordered build plan |
 | [13 Risks And Open Questions](13_risks_and_open_questions.md) | Risks and decisions |
 | [14 References](14_references.md) | Web and local references |
+| [Implementation Plan](implementationplan/00_master_implementation_plan.md) | Repository-specific build specification from the current Context Graph codebase |
 
 ## What You Need To Build
 
@@ -63,4 +64,3 @@ At a high level:
 10. A verifier/guard layer for every prediction and action.
 11. A physical storage layer with independent readback.
 12. FSV harnesses that prove every stage works.
-
