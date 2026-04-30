@@ -50,6 +50,7 @@ data and controlled career-transition events.
 | `11_risks_open_questions_and_decisions.md` | Risks, unresolved items, locked choices |
 | `12_references.md` | Local and external references |
 | `13_current_implementation_and_benchmark_status.md` | Implemented smoke surface and latest FSV benchmark evidence |
+| `reports/` | Dated operator reports for paper-small runs, failures, fixes, and multi-seed results |
 
 ## Source Of Truth For The Smoke Program
 
@@ -85,8 +86,14 @@ CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
   --json
 ```
 
-The latest fully verified bundle is
-`tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12`. It uses real O*NET
-30.2 taxonomy rows to generate 120 career events, then verifies counter_world,
-gridworld_5x5, career_taxonomy, same-seed reproducibility, and career A0-A5
-ablations with RocksDB and artifact readbacks.
+The latest promoted paper-small evidence is the three-run explicit-seed set:
+
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed42_v2`;
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed43_v2`;
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed44_v1`.
+
+Each bundle uses real O*NET 30.2 taxonomy rows to generate 1,000 career events,
+then verifies counter_world, gridworld_5x5, career_taxonomy, same-seed
+reproducibility, and career A0-A5 ablations with RocksDB and artifact
+readbacks. Dated findings and failure analysis are recorded under
+`docs/5090jepa/smokedocs/reports/`.

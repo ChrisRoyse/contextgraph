@@ -49,6 +49,19 @@ gridworld_5x5, O*NET-derived career_taxonomy, career same-seed
 reproducibility, and the full career A0-A5 ablation matrix. It writes all
 source-of-truth evidence into `tmp/mejepa_research_runs/<run_id>/`.
 
+For explicit paper-small career seeds, add:
+
+```bash
+--purpose paper_small \
+--career-event-count 1000 \
+--career-training-seed 42
+```
+
+`--career-training-seed` changes the generated main career train config.
+Ablations remain on the checked-in control seed unless
+`--career-ablation-training-seed` is also supplied. Do not vary ablation seed
+unless the intended claim is specifically ablation seed sensitivity.
+
 Expected top-level files:
 
 - `run_manifest.json`;
@@ -69,6 +82,10 @@ Expected top-level files:
 - `paper_tables/*.csv`.
 - `plots/*.svg`.
 - `generated_fixtures/onet_30_2/*`.
+
+Operator reports should be written under:
+
+- `docs/5090jepa/smokedocs/reports/*.md`.
 
 ## Manual Spot Checks
 
@@ -142,6 +159,7 @@ When a gate fails:
 5. Fix the lowest-level root cause.
 6. Rerun from a fresh DB.
 7. Keep the failed bundle; do not overwrite it.
+8. Record findings in `docs/5090jepa/smokedocs/reports/`.
 
 ## Full Paper Run Promotion
 

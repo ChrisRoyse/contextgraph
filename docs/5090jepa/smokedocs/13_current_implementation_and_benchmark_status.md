@@ -3,8 +3,8 @@
 Status date: 2026-04-30.
 
 This is the current source-of-truth status for the 5090 ME-JEPA research demo.
-The implementation is ready for a paper-small dry run after one more operator
-choice: how large to make the O*NET-derived run.
+The implementation has completed the paper-small 1K O*NET-derived gate and a
+three-run explicit-seed set.
 
 ## Implemented Surface
 
@@ -167,6 +167,68 @@ The no-action ablation has an explicit generated training target of `0.50`.
 The generic career verifier reads that persisted config before applying the
 metric gate.
 
+## Paper-Small 1K Promotion
+
+Primary 1K promotion bundle:
+
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_v1`;
+- purpose: `paper_small`;
+- career events: 1000;
+- status: `passed`;
+- FSV readbacks: 9;
+- edge cases: 11;
+- artifact hash rows: 9;
+- ablation rows: 6.
+
+Independent career DB readback:
+
+| CF | Count |
+| --- | ---: |
+| `dj_raw_events` | 1004 |
+| `dj_adapter_runs` | 1004 |
+| `dj_normalized_states` | 1000 |
+| `dj_instrument_readings` | 10000 |
+| `dj_latent_panels` | 1000 |
+| `dj_transitions` | 1000 |
+| `dj_dataset_shards` | 3 |
+| `dj_training_runs` | 1 |
+| `dj_model_artifacts` | 1 |
+| `dj_predictions` | 6 |
+| `dj_guard_decisions` | 5 |
+| `dj_plan_traces` | 1 |
+| `dj_verification_runs` | 1 |
+
+## Paper-Small Multi-Seed Results
+
+Final explicit-seed bundles:
+
+| Run ID | Seed | Status |
+| --- | ---: | --- |
+| `20260430T_paper_small_1k_seed42_v2` | 42 | passed |
+| `20260430T_paper_small_1k_seed43_v2` | 43 | passed |
+| `20260430T_paper_small_1k_seed44_v1` | 44 | passed |
+
+Career metric mean/stddev across the three passed explicit-seed bundles:
+
+| Metric | Mean | Stddev | N |
+| --- | ---: | ---: | ---: |
+| `val_latent_mse` | 0.155409786323 | 0.013130850075 | 3 |
+| `val_latent_cosine` | 0.917646185906 | 0.026095423035 | 3 |
+| `test_latent_mse` | 0.291214507891 | 0.091692459686 | 3 |
+| `test_latent_cosine` | 0.884851853288 | 0.053905889447 | 3 |
+| `val_action_contrast_acc` | 0.958333333333 | 0.072168783649 | 3 |
+
+Failed bundle kept for evidence:
+
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed43_v1`;
+- failure: A0 taxonomy-only ablation did not converge with
+  `val_latent_mse=0.510142` against target `0.080000`;
+- root cause: the first seed-control implementation varied the ablation seed
+  together with the main career seed;
+- fix: `--career-training-seed` now varies main career training, while
+  ablations stay on the checked-in control seed unless
+  `--career-ablation-training-seed` is explicitly supplied.
+
 ## Manual Edge FSV
 
 Career edge cases in the current bundle:
@@ -224,8 +286,8 @@ Latest result:
 
 ## Remaining Work Before Full Demo Run
 
-- Choose `paper_small` event count, starting at 1000 O*NET-derived events.
-- Run at least three seeds for the career benchmark if runtime allows.
+- The `paper_small` 1K O*NET run is complete.
+- The three-seed paper-small career benchmark is complete.
 - Keep the paper claim scoped to an auditable public-taxonomy benchmark, not
   real recruiting prediction.
 - Decide whether ESCO is added as a replication/crosswalk source after the

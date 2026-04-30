@@ -60,6 +60,23 @@ Current O*NET smoke metrics:
 | gridworld_5x5 | 4977 | 1330 | 693 | 16960 | 0.03936942384623141 | 0.9950110445426108 | 0.04023547898409154 | 0.9949794096655592 |
 | career_taxonomy | 83 | 24 | 12 | 15344 | 0.17999517062789205 | 0.8776115717741934 | 0.25307116609684355 | 0.867371052118299 |
 
+Paper-small 1K explicit-seed career metrics:
+
+| Run ID | Seed | Val MSE | Val Cosine | Test MSE | Test Cosine |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `20260430T_paper_small_1k_seed42_v2` | 42 | 0.14071947055420186 | 0.9048476588324232 | 0.2017295513225419 | 0.8942226140087763 |
+| `20260430T_paper_small_1k_seed43_v2` | 43 | 0.15950453028461578 | 0.9476699998495745 | 0.2869484249392498 | 0.9334579971102336 |
+| `20260430T_paper_small_1k_seed44_v1` | 44 | 0.16600535812875747 | 0.9004208990365291 | 0.384965547409772 | 0.82687494874531 |
+
+Paper-small 1K mean/stddev:
+
+| Metric | Mean | Stddev | N |
+| --- | ---: | ---: | ---: |
+| `val_latent_mse` | 0.155409786323 | 0.013130850075 | 3 |
+| `val_latent_cosine` | 0.917646185906 | 0.026095423035 | 3 |
+| `test_latent_mse` | 0.291214507891 | 0.091692459686 | 3 |
+| `test_latent_cosine` | 0.884851853288 | 0.053905889447 | 3 |
+
 ## Experiment C - Action-Conditioned Planning
 
 Question:
@@ -119,6 +136,9 @@ Implementation details:
   `occupation_move_pair_onehot` with 20 declared occupation/action pairs.
 - A5 sets VICReg variance/covariance loss weights to zero in the persisted
   artifact config.
+- Multi-seed paper-small runs vary the main career training seed through
+  `--career-training-seed`. Ablations remain controlled on the checked-in seed
+  unless `--career-ablation-training-seed` is explicitly supplied.
 
 Current O*NET smoke ablation metrics:
 
