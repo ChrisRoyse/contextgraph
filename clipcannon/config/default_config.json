@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "directories": {
+    "projects": "~/.clipcannon/projects",
+    "models": "~/.clipcannon/models",
+    "temp": "~/.clipcannon/tmp"
+  },
+  "processing": {
+    "frame_extraction_fps": 2,
+    "whisper_model": "large-v3",
+    "whisper_compute_type": "float16",
+    "batch_size_visual": 128,
+    "scene_change_threshold": 0.85,
+    "highlight_count_default": 20,
+    "min_clip_duration_ms": 5000,
+    "max_clip_duration_ms": 600000
+  },
+  "audio": {
+    "music_model": "ace-step-v1.5",
+    "music_guidance_scale": 15.0,
+    "music_infer_steps": 100,
+    "music_default_volume_db": -12,
+    "musicgen_model_size": "medium",
+    "auto_music_tier": "auto",
+    "duck_under_speech": true,
+    "duck_level_db": -18,
+    "sfx_on_transitions": true,
+    "sfx_default_type": "whoosh",
+    "midi_soundfont": "GeneralUser_GS.sf2",
+    "normalize_output": true,
+    "sample_rate": 44100
+  },
+  "rendering": {
+    "default_profile": "youtube_standard",
+    "use_nvenc": true,
+    "nvenc_preset": "p4",
+    "caption_default_style": "bold_centered",
+    "thumbnail_format": "jpg",
+    "thumbnail_quality": 95,
+    "max_parallel_renders": 3
+  },
+  "publishing": {
+    "require_approval": true,
+    "max_daily_posts_per_platform": 5
+  },
+  "gpu": {
+    "device": "cuda:0",
+    "max_vram_usage_gb": 32,
+    "concurrent_models": true
+  }
+}

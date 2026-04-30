@@ -1,0 +1,94 @@
+# Dependencies
+node_modules/
+.npm/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Claude Code local state
+.claude/memory.db
+.claude/settings.local.json
+.claude/projects/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp files
+tmp/
+.tmp/
+
+# Swarm runtime state
+.swarm/
+memory/
+
+# Large test video files
+testdata/*.mp4
+testdata/*.avi
+testdata/*.mkv
+testdata/*.mov
+
+# Benchmark audio/video/model data (large binaries)
+benchmarks/generated/**/*.wav
+benchmarks/seedtts_eval/
+benchmarks/samples/**/*.wav
+*.pth
+*.zip
+
+# Documentation (kept locally, not in repo)
+docs/
+docs2/
+
+# Model checkpoints (large binaries)
+checkpoints/
+
+# Temp working files
+temp/
+
+# Playwright MCP artifacts (screenshots, logs, session files)
+.playwright-mcp/
+
+# Stray home-directory artifact
+~/
+
+# Video / large media files (general)
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.webm
+*.y4m
+vendor/
+
+# API keys and credentials — NEVER commit
+.env
+*.key
+*credentials*
+*api_key*

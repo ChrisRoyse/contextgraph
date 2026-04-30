@@ -1,0 +1,507 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════
+# ClipCannon GPU — Cost-Optimized H100 for Hallo3
+#
+# STOP/START pattern: pay ~$0.02/hr when stopped, ~$1.50/hr when running.
+# Models downloaded ONCE (52GB), persist across stop/start cycles.
+# Instance bound to specific GPU — if someone else rents it while
+# stopped, recovery creates a new instance automatically.
+#
+# Usage:
+#   ./scripts/gpu up          — Start (or resume stopped) H100
+#   ./scripts/gpu down        — STOP (disk kept, ~$0.02/hr)
+#   ./scripts/gpu destroy     — DESTROY (all data lost, $0/hr)
+#   ./scripts/gpu status      — Show instance status + cost
+#   ./scripts/gpu ssh         — SSH into running instance
+#   ./scripts/gpu setup       — First-time: install deps + download 52GB
+#   ./scripts/gpu upload      — Upload Santa training data
+#   ./scripts/gpu train [N]   — Run Hallo3 training (N steps)
+#   ./scripts/gpu infer I A   — Generate video from image + audio
+#   ./scripts/gpu download    — Download outputs + checkpoints
+#   ./scripts/gpu cost        — Show current billing breakdown
+#
+# NO AUTO-SHUTDOWN. You control everything.
+# ═══════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+STATE_FILE="$REPO_DIR/.gpu-state-clipcannon.json"
+GPU_LABEL="clipcannon-hallo3"
+
+# Use small base image — models download ONCE during setup, persist on disk
+# This minimizes disk allocation → lower stopped storage cost
+DOCKER_IMAGE="nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04"
+
+# Disk: 100GB (52GB models + 8GB base image + 20GB deps + 20GB workspace)
+# At $0.20/GB/mo storage: stopped cost = $0.028/hr = $0.67/day
+DISK_GB=100
+
+# Load API key
+if [ -f "$HOME/.config/vastai/credentials" ]; then
+    source "$HOME/.config/vastai/credentials"
+fi
+VASTAI_API_KEY="${VASTAI_API_KEY:-}"
+
+if [ -z "$VASTAI_API_KEY" ]; then
+    echo "FATAL: VASTAI_API_KEY not set"
+    echo "Set: echo 'VASTAI_API_KEY=yourkey' > ~/.config/vastai/credentials"
+    exit 1
+fi
+
+# ─── API Helpers ───────────────────────────────────────────────────
+
+API="https://console.vast.ai/api/v0"
+
+api_get()  { curl -s -H "Authorization: Bearer $VASTAI_API_KEY" "$API/$1"; }
+api_put()  { curl -s -H "Authorization: Bearer $VASTAI_API_KEY" -H "Content-Type: application/json" -X PUT -d "$2" "$API/$1"; }
+api_del()  { curl -s -H "Authorization: Bearer $VASTAI_API_KEY" -X DELETE "$API/$1"; }
+save_state() { echo "$1" > "$STATE_FILE"; }
+jq_field() { echo "$1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$2',''))" 2>/dev/null; }
+
+find_instance() {
+    api_get "instances/?owner=me" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    instances = data.get('instances', data if isinstance(data, list) else [])
+    for i in instances:
+        label = i.get('label', '') or ''
+        if '$GPU_LABEL' in label:
+            status = i.get('actual_status', i.get('status_msg', ''))
+            print(json.dumps({
+                'id': i['id'],
+                'status': status,
+                'ip': i.get('public_ipaddr', ''),
+                'ssh_port': i.get('ssh_port', ''),
+                'ssh_host': i.get('ssh_host', ''),
+                'gpu': i.get('gpu_name', ''),
+                'cost_hr': round(i.get('dph_total', 0), 4),
+                'disk_gb': i.get('disk_space', 0),
+                'storage_cost': i.get('storage_cost', 0),
+            }))
+            sys.exit(0)
+    print('{}')
+except:
+    print('{}')
+" 2>/dev/null
+}
+
+get_ssh() {
+    local info=$(find_instance)
+    local host=$(jq_field "$info" "ssh_host")
+    local port=$(jq_field "$info" "ssh_port")
+    [ -n "$host" ] && [ "$host" != "" ] && echo "ssh -o StrictHostKeyChecking=no -p $port root@$host" || return 1
+}
+
+# ─── Commands ──────────────────────────────────────────────────────
+
+cmd_status() {
+    local info=$(find_instance)
+    local id=$(jq_field "$info" "id")
+    local status=$(jq_field "$info" "status")
+
+    if [ -z "$id" ] || [ "$id" = "" ]; then
+        echo "ClipCannon GPU: OFF (no instance)"
+        echo "  Run: ./scripts/gpu up"
+        return 1
+    fi
+
+    local cost=$(jq_field "$info" "cost_hr")
+    local gpu=$(jq_field "$info" "gpu")
+    local disk=$(jq_field "$info" "disk_gb")
+    local storage=$(jq_field "$info" "storage_cost")
+
+    # Calculate costs
+    local stopped_cost=$(python3 -c "print(f'{$storage * $disk / 720:.4f}')" 2>/dev/null || echo "?")
+
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  ClipCannon GPU: $status"
+    echo "╠══════════════════════════════════════════════════╣"
+    echo "║  Instance:     $id"
+    echo "║  GPU:          $gpu"
+    echo "║  Disk:         ${disk}GB"
+    if [ "$status" = "running" ]; then
+        echo "║  Cost:         \$$cost/hr (running)"
+        local host=$(jq_field "$info" "ssh_host")
+        local port=$(jq_field "$info" "ssh_port")
+        echo "║  SSH:          ssh -p $port root@$host"
+    elif [ "$status" = "stopped" ] || [ "$status" = "inactive" ]; then
+        echo "║  Cost:         \$$stopped_cost/hr (storage only)"
+        echo "║  Daily:        \$$(python3 -c "print(f'{$stopped_cost * 24:.2f}')")/day"
+        echo "║  Resume:       ./scripts/gpu up (5-10 sec)"
+    fi
+    echo "╚══════════════════════════════════════════════════╝"
+    save_state "$info"
+}
+
+cmd_up() {
+    local info=$(find_instance)
+    local id=$(jq_field "$info" "id")
+    local status=$(jq_field "$info" "status")
+
+    # Resume stopped instance (instant, ~5-10 sec)
+    if [ -n "$id" ] && [ "$id" != "" ]; then
+        if [ "$status" = "running" ]; then
+            echo "Already running."
+            cmd_status
+            return 0
+        fi
+
+        echo "Resuming stopped instance $id..."
+        local result=$(api_put "instances/$id/?api_key=$VASTAI_API_KEY" '{"state": "running"}')
+        local ok=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',''))" 2>/dev/null)
+
+        if [ "$ok" = "True" ] || [ "$ok" = "true" ]; then
+            echo "Starting! Models are on disk — ready in 5-10 seconds."
+            echo "Check: ./scripts/gpu status"
+            return 0
+        else
+            echo "Resume failed (GPU may be rented by someone else)."
+            echo "Response: $result"
+            echo ""
+            echo "Options:"
+            echo "  1. Wait and retry: ./scripts/gpu up"
+            echo "  2. Destroy + create new: ./scripts/gpu destroy && ./scripts/gpu up"
+            echo "     (will need to re-run setup to download 52GB models)"
+            return 1
+        fi
+    fi
+
+    # No existing instance — find cheapest H100 and create
+    echo "Finding cheapest H100 80GB..."
+
+    # Search with storage cost visibility — pick LOW storage cost hosts
+    local offers=$(api_get "bundles/" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+offers = data if isinstance(data, list) else data.get('offers', data.get('results', []))
+h100s = [o for o in offers
+         if 'H100' in o.get('gpu_name', '')
+         and o.get('num_gpus', 1) == 1
+         and o.get('gpu_ram', 0) >= 80
+         and o.get('reliability2', 0) >= 0.90
+         and o.get('disk_space', 0) >= $DISK_GB]
+
+# Sort by TOTAL cost (GPU + storage for our disk size)
+for o in h100s:
+    storage_hr = o.get('storage_cost', 0.20) * $DISK_GB / 720
+    o['total_hr'] = o.get('dph_total', 0) + storage_hr
+    o['storage_hr'] = storage_hr
+    o['stopped_daily'] = storage_hr * 24
+
+h100s.sort(key=lambda o: o['total_hr'])
+for o in h100s[:5]:
+    print(f'{o[\"id\"]}|{o.get(\"dph_total\",0):.4f}|{o[\"storage_hr\"]:.4f}|{o[\"stopped_daily\"]:.2f}|{o.get(\"gpu_name\",\"H100\")}|{o.get(\"reliability2\",0)*100:.0f}')
+" 2>/dev/null)
+
+    if [ -z "$offers" ]; then
+        echo "FATAL: No H100 80GB offers available"
+        exit 1
+    fi
+
+    echo ""
+    echo "Available H100s (sorted by total cost):"
+    printf "  %-10s %-10s %-12s %-12s %-10s %-5s\n" "Offer" "GPU/hr" "Storage/hr" "Stopped/day" "GPU" "Rel%"
+    echo "$offers" | while IFS='|' read -r oid gpuhr storhr stopday gpu rel; do
+        printf "  %-10s \$%-9s \$%-11s \$%-11s %-10s %s%%\n" "$oid" "$gpuhr" "$storhr" "$stopday" "$gpu" "$rel"
+    done
+    echo ""
+
+    # Take cheapest
+    local best=$(echo "$offers" | head -1)
+    IFS='|' read -r OFFER_ID GPU_HR STOR_HR STOP_DAY GPU REL <<< "$best"
+
+    echo "Renting: $GPU at \$$GPU_HR/hr + \$$STOR_HR/hr storage"
+    echo "Stopped cost: \$$STOP_DAY/day"
+    echo ""
+
+    local result=$(api_put "asks/$OFFER_ID/" "{
+        \"image\": \"$DOCKER_IMAGE\",
+        \"disk\": $DISK_GB,
+        \"label\": \"$GPU_LABEL\",
+        \"runtype\": \"ssh_direc ssh_proxy\"
+    }")
+
+    local new_id=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('new_contract',''))" 2>/dev/null)
+
+    if [ -n "$new_id" ] && [ "$new_id" != "" ]; then
+        echo "Instance created: $new_id"
+        echo ""
+        echo "Booting (2-5 min for image pull)..."
+        echo "Then run: ./scripts/gpu setup  (one-time, downloads 52GB)"
+        echo ""
+        echo "After setup, use stop/start for instant resume:"
+        echo "  ./scripts/gpu down   — stop (\$$STOP_DAY/day storage)"
+        echo "  ./scripts/gpu up     — resume (5-10 sec, models on disk)"
+        save_state "{\"id\": $new_id, \"status\": \"starting\"}"
+    else
+        echo "Failed to create instance:"
+        echo "$result" | python3 -m json.tool 2>/dev/null || echo "$result"
+        exit 1
+    fi
+}
+
+cmd_down() {
+    local info=$(find_instance)
+    local id=$(jq_field "$info" "id")
+
+    if [ -z "$id" ] || [ "$id" = "" ]; then
+        echo "No instance to stop."
+        return 0
+    fi
+
+    local status=$(jq_field "$info" "status")
+    if [ "$status" = "stopped" ] || [ "$status" = "inactive" ]; then
+        echo "Already stopped."
+        cmd_status
+        return 0
+    fi
+
+    echo "Stopping instance $id..."
+    local result=$(api_put "instances/$id/?api_key=$VASTAI_API_KEY" '{"state": "stopped"}')
+    local ok=$(echo "$result" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success',''))" 2>/dev/null)
+
+    if [ "$ok" = "True" ] || [ "$ok" = "true" ]; then
+        echo ""
+        echo "STOPPED."
+        echo "  GPU billing stopped"
+        echo "  Disk preserved (models + workspace intact)"
+        echo "  Storage cost: ~\$0.02/hr (\$0.50-0.70/day)"
+        echo "  Resume: ./scripts/gpu up (5-10 sec)"
+        echo "  Destroy: ./scripts/gpu destroy (stops ALL billing)"
+    else
+        echo "Stop failed: $result"
+        echo "Try CLI: vastai stop instance $id"
+    fi
+}
+
+cmd_destroy() {
+    local info=$(find_instance)
+    local id=$(jq_field "$info" "id")
+
+    if [ -z "$id" ] || [ "$id" = "" ]; then
+        echo "No instance."
+        rm -f "$STATE_FILE"
+        return 0
+    fi
+
+    echo "DESTROY instance $id? All data lost, models must re-download."
+    read -p "Type 'yes' to confirm: " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Cancelled."
+        return 0
+    fi
+
+    api_del "instances/$id/?api_key=$VASTAI_API_KEY"
+    rm -f "$STATE_FILE"
+    echo "DESTROYED. All billing stopped. \$0/hr."
+}
+
+cmd_cost() {
+    local info=$(find_instance)
+    local id=$(jq_field "$info" "id")
+    local status=$(jq_field "$info" "status")
+    local cost=$(jq_field "$info" "cost_hr")
+    local disk=$(jq_field "$info" "disk_gb")
+    local storage=$(jq_field "$info" "storage_cost")
+
+    if [ -z "$id" ] || [ "$id" = "" ]; then
+        echo "No instance. Cost: \$0.00/hr"
+        return
+    fi
+
+    local storage_hr=$(python3 -c "print(f'{$storage * $disk / 720:.4f}')")
+    local storage_day=$(python3 -c "print(f'{$storage * $disk / 720 * 24:.2f}')")
+    local storage_month=$(python3 -c "print(f'{$storage * $disk / 720 * 720:.2f}')")
+
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  ClipCannon GPU Cost Breakdown"
+    echo "╠══════════════════════════════════════════════════╣"
+    echo "║  Status:       $status"
+    echo "║  Disk:         ${disk}GB at \$$storage/GB/mo"
+    echo "║"
+    if [ "$status" = "running" ]; then
+        echo "║  GPU:          \$$cost/hr"
+        echo "║  Storage:      \$$storage_hr/hr"
+        echo "║  TOTAL:        \$$(python3 -c "print(f'{$cost + float($storage_hr):.4f}')")/hr"
+        echo "║"
+        echo "║  If you STOP now:"
+        echo "║    Savings:    \$$cost/hr (GPU billing stops)"
+        echo "║    Storage:    \$$storage_hr/hr = \$$storage_day/day"
+    else
+        echo "║  GPU:          \$0.00/hr (stopped)"
+        echo "║  Storage:      \$$storage_hr/hr"
+        echo "║  TOTAL:        \$$storage_hr/hr = \$$storage_day/day"
+        echo "║"
+        echo "║  If you DESTROY:"
+        echo "║    Saves:      \$$storage_day/day"
+        echo "║    BUT:        Must re-download 52GB next time"
+    fi
+    echo "╚══════════════════════════════════════════════════╝"
+}
+
+cmd_ssh() {
+    local ssh_cmd=$(get_ssh)
+    if [ $? -ne 0 ]; then
+        echo "No running instance. Run: ./scripts/gpu up"
+        exit 1
+    fi
+    $ssh_cmd "$@"
+}
+
+cmd_setup() {
+    echo "First-time setup: installing deps + downloading 52GB models..."
+    local ssh_cmd=$(get_ssh) || { echo "No running instance."; exit 1; }
+
+    $ssh_cmd << 'SETUP'
+set -euo pipefail
+echo "=== GPU ==="
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+
+echo "=== System deps ==="
+apt-get update -qq && apt-get install -y -qq \
+    python3.10 python3.10-dev python3-pip git wget ffmpeg \
+    libgl1-mesa-glx libglib2.0-0 libsndfile1 > /dev/null 2>&1
+ln -sf /usr/bin/python3.10 /usr/bin/python 2>/dev/null || true
+echo "OK"
+
+echo "=== Cloning Hallo3 ==="
+[ -d /workspace/hallo3 ] || git clone --depth 1 https://github.com/fudan-generative-vision/hallo3.git /workspace/hallo3
+cd /workspace/hallo3
+
+echo "=== Python deps ==="
+pip install -q torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121 2>&1 | tail -3
+pip install -q -r requirements.txt 2>&1 | tail -3
+pip install -q "huggingface_hub[cli]"
+echo "OK"
+
+echo "=== Downloading Hallo3 models (52GB) ==="
+if [ ! -f pretrained_models/hallo3/1/mp_rank_00_model_states.pt ]; then
+    huggingface-cli download fudan-generative-ai/hallo3 --local-dir pretrained_models
+else
+    echo "Models already on disk"
+fi
+du -sh pretrained_models/
+
+echo ""
+echo "╔══════════════════════════════════════╗"
+echo "║  Setup complete. Ready for work.     ║"
+echo "║                                      ║"
+echo "║  Stop when done: ./scripts/gpu down  ║"
+echo "║  Resume later:   ./scripts/gpu up    ║"
+echo "║  (Models stay on disk, 5s resume)    ║"
+echo "╚══════════════════════════════════════╝"
+SETUP
+}
+
+cmd_upload() {
+    local data_dir="$REPO_DIR/data/hallo3_santa_training"
+    [ -d "$data_dir" ] || { echo "ERROR: No training data at $data_dir"; exit 1; }
+
+    local info=$(find_instance)
+    local host=$(jq_field "$info" "ssh_host")
+    local port=$(jq_field "$info" "ssh_port")
+    [ -n "$host" ] && [ "$host" != "" ] || { echo "No running instance."; exit 1; }
+
+    echo "Uploading training data ($(du -sh "$data_dir" | cut -f1))..."
+    ssh -o StrictHostKeyChecking=no -p "$port" "root@$host" "mkdir -p /workspace/santa_training"
+    scp -o StrictHostKeyChecking=no -r -P "$port" "$data_dir"/* "root@$host:/workspace/santa_training/"
+    scp -o StrictHostKeyChecking=no -P "$port" "$REPO_DIR/config/hallo3-h100/h100_train_santa.sh" "root@$host:/workspace/"
+    echo "Done. Data at /workspace/santa_training/"
+}
+
+cmd_train() {
+    local steps="${1:-1000}"
+    local ssh_cmd=$(get_ssh) || { echo "No running instance."; exit 1; }
+    echo "Training Hallo3 ($steps steps)..."
+    $ssh_cmd "bash /workspace/h100_train_santa.sh $steps"
+}
+
+cmd_infer() {
+    local image="${1:-}" audio="${2:-}"
+    local prompt="${3:-An older man dressed as Santa Claus with white beard and round glasses speaking warmly}"
+    [ -n "$image" ] && [ -n "$audio" ] || { echo "Usage: ./scripts/gpu infer <image> <audio> [prompt]"; exit 1; }
+
+    local info=$(find_instance)
+    local host=$(jq_field "$info" "ssh_host")
+    local port=$(jq_field "$info" "ssh_port")
+    [ -n "$host" ] || { echo "No running instance."; exit 1; }
+
+    echo "Uploading..."
+    scp -o StrictHostKeyChecking=no -P "$port" "$image" "root@$host:/workspace/input_image.jpg"
+    scp -o StrictHostKeyChecking=no -P "$port" "$audio" "root@$host:/workspace/input_audio.wav"
+
+    echo "Generating..."
+    ssh -o StrictHostKeyChecking=no -p "$port" "root@$host" << REMOTE
+cd /workspace/hallo3
+echo "${prompt}@@/workspace/input_image.jpg@@/workspace/input_audio.wav" > /workspace/input.txt
+WORLD_SIZE=1 RANK=0 LOCAL_RANK=0 LOCAL_WORLD_SIZE=1 \
+python hallo3/sample_video.py \
+    --base ./configs/cogvideox_5b_i2v_s2.yaml ./configs/inference.yaml \
+    --seed 42 --input-file /workspace/input.txt --output-dir /workspace/output
+ls -la /workspace/output/*.mp4 2>/dev/null
+REMOTE
+
+    echo "Downloading..."
+    mkdir -p "$REPO_DIR/output"
+    scp -o StrictHostKeyChecking=no -P "$port" "root@$host:/workspace/output/*.mp4" "$REPO_DIR/output/" 2>/dev/null
+    echo "Saved to: $REPO_DIR/output/"
+}
+
+cmd_download() {
+    local info=$(find_instance)
+    local host=$(jq_field "$info" "ssh_host")
+    local port=$(jq_field "$info" "ssh_port")
+    [ -n "$host" ] || { echo "No running instance."; exit 1; }
+
+    mkdir -p "$REPO_DIR/output" "$REPO_DIR/checkpoints"
+    scp -o StrictHostKeyChecking=no -P "$port" "root@$host:/workspace/output/*.mp4" "$REPO_DIR/output/" 2>/dev/null || echo "No videos"
+    scp -o StrictHostKeyChecking=no -r -P "$port" "root@$host:/workspace/checkpoints/" "$REPO_DIR/checkpoints/" 2>/dev/null || echo "No checkpoints"
+    echo "Downloaded to output/ and checkpoints/"
+}
+
+# ─── Main ──────────────────────────────────────────────────────────
+
+case "${1:-help}" in
+    up|start)       cmd_up ;;
+    down|stop)      cmd_down ;;
+    destroy)        cmd_destroy ;;
+    status)         cmd_status ;;
+    cost)           cmd_cost ;;
+    ssh)            shift; cmd_ssh "$@" ;;
+    setup)          cmd_setup ;;
+    upload)         cmd_upload ;;
+    train)          shift; cmd_train "$@" ;;
+    infer)          shift; cmd_infer "$@" ;;
+    download)       cmd_download ;;
+    help|*)
+        echo "ClipCannon GPU — Cost-Optimized H100"
+        echo ""
+        echo "  up        Start or resume H100"
+        echo "  down      STOP (keep disk, ~\$0.02/hr)"
+        echo "  destroy   DELETE all (stops all billing)"
+        echo "  status    Instance status + cost"
+        echo "  cost      Detailed cost breakdown"
+        echo "  ssh       SSH into instance"
+        echo "  setup     One-time: deps + 52GB models"
+        echo "  upload    Upload Santa training data"
+        echo "  train N   Train Hallo3 (N steps)"
+        echo "  infer     Generate video"
+        echo "  download  Get results"
+        echo ""
+        echo "Cost model:"
+        echo "  Running:  ~\$1.50/hr (GPU + storage)"
+        echo "  Stopped:  ~\$0.02/hr (storage only)"
+        echo "  Destroyed: \$0.00/hr"
+        echo ""
+        echo "Workflow:"
+        echo "  ./scripts/gpu up       # First time: rent H100"
+        echo "  ./scripts/gpu setup    # One-time: 20-30 min"
+        echo "  ./scripts/gpu upload   # Upload training data"
+        echo "  ./scripts/gpu train    # Train model"
+        echo "  ./scripts/gpu down     # STOP — \$0.50/day"
+        echo "  ./scripts/gpu up       # Resume — 5 seconds"
+        ;;
+esac
