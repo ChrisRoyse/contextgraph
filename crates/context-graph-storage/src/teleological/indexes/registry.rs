@@ -39,7 +39,7 @@ use super::hnsw_impl::HnswEmbedderIndex;
 
 /// Registry for per-embedder HNSW indexes.
 ///
-/// Creates and manages 15 HNSW indexes (excludes E6, E12, E13 which use different index types).
+/// Creates and manages 16 HNSW indexes (excludes E6, E12, E13 which use different index types).
 ///
 /// # Thread Safety
 ///
@@ -73,7 +73,7 @@ pub struct EmbedderIndexRegistry {
 }
 
 impl EmbedderIndexRegistry {
-    /// Create new registry with all 15 HNSW indexes.
+    /// Create new registry with all 16 HNSW indexes.
     ///
     /// Initializes indexes for E1-E5, E7-E11, Matryoshka, and asymmetric variants.
     /// E6, E12, E13 are excluded (they use inverted/MaxSim indexes).
@@ -84,12 +84,12 @@ impl EmbedderIndexRegistry {
     /// use context_graph_storage::teleological::indexes::EmbedderIndexRegistry;
     ///
     /// let registry = EmbedderIndexRegistry::new();
-    /// assert_eq!(registry.len(), 15);
+    /// assert_eq!(registry.len(), 16);
     /// ```
     pub fn new() -> Self {
         let mut indexes = HashMap::new();
 
-        // Create all 15 HNSW-capable indexes
+        // Create all 16 HNSW-capable indexes
         for embedder in EmbedderIndex::all_hnsw() {
             let index = HnswEmbedderIndex::new(embedder);
             indexes.insert(embedder, Arc::new(index));
@@ -254,8 +254,8 @@ mod tests {
 
     #[test]
     fn test_registry_creation() {
-        println!("=== TEST: Registry creates 15 HNSW indexes ===");
-        println!("  (11 original + 2 E5 asymmetric + 2 E10 asymmetric per ARCH-15)");
+        println!("=== TEST: Registry creates 16 HNSW indexes ===");
+        println!("  (11 original + 2 E5 asymmetric + 2 E10 asymmetric + E14 BGE-M3 Dense)");
         println!("BEFORE: Creating new registry");
 
         let registry = EmbedderIndexRegistry::new();

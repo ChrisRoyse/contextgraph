@@ -156,18 +156,19 @@ This rule is non‑negotiable because the user has explicitly said: *"if there i
 
 ## 8. What Already Exists (Anti‑Hallucination Anchor)
 
-Verified again during Phase 0 on `main` at commit `c7ab8721`:
+Verified again during the Phase 2 storage audit on 2026-04-30. The live tree wins if anything below drifts:
 
-- `crates/` contains 10 packages: `context-graph-core`, `-cuda`, `-embeddings`, `-storage`, `-mcp`, `-cli`, `-causal-agent`, `-graph-agent`, `-test-utils`, `-benchmark`. The DynamicJEPA crate `context-graph-dynamicjepa` does **not** exist yet — you create it.
-- `crates/context-graph-core/src/lib.rs` does **not** declare `pub mod dynamicjepa;` — you add it.
-- `crates/context-graph-storage/src/teleological/column_families.rs` defines existing CFs but **no DynamicJEPA CFs**.
-- `crates/context-graph-mcp/src/tools/names.rs` exposes 110 tool name constants with `llm` enabled (106 without) — **none** are DynamicJEPA tools.
-- `crates/context-graph-cli/src/commands/mod.rs` registers existing subcommands — **no** `dynamicjepa` command.
-- `configs/` does not exist; the existing config dir is **`config/`** (singular, with `default.toml`, `development.toml`, `production.toml`, `test.toml`). **Create `configs/dynamicjepa/` exactly as planned** (the implementation plan deliberately uses the `configs/` plural to keep operator inputs separate from runtime config). If you find a `configs/` directory already exists when you start, treat it as the source of truth.
+- `crates/` still contains the original 10 packages. The DynamicJEPA service crate `context-graph-dynamicjepa` does **not** exist yet; it is still a Phase 7 task.
+- Phase 1 core contracts are present: `crates/context-graph-core/src/lib.rs` declares `pub mod dynamicjepa;`, and `crates/context-graph-core/src/dynamicjepa/` contains the v1 records, ids, validation, errors, and versioned bincode tests.
+- Phase 2 storage data plane is present: `crates/context-graph-storage/src/dynamicjepa/` defines 25 DynamicJEPA CFs, store modules, key helpers, codec helpers, inspection/count APIs, audit records, and a storage FSV test.
+- The physical DB open path now opens **98 total CFs**: 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 25 DynamicJEPA. Fresh `/tmp` DBs open with all 25 DynamicJEPA CFs at zero rows.
+- `crates/context-graph-mcp/src/tools/names.rs` exposes the existing MCP tools only; DynamicJEPA MCP tools are still Phase 9.
+- `crates/context-graph-cli/src/commands/mod.rs` registers existing subcommands only; the `dynamicjepa` CLI surface is still Phase 3.
+- `configs/dynamicjepa/` exists and contains the Phase 0 domain packs, verification fixtures, and generated gridworld corpus.
 - `data/contextgraph_data` (or wherever `CONTEXT_GRAPH_STORAGE_PATH` points) is the existing RocksDB physical database. **Do not corrupt it.** All FSV runs use a fresh `/tmp/` path.
 - `models/` already contains all 14 production embedder weights; do not redownload. The DynamicJEPA tiny model trains from scratch in candle and writes to `artifacts/dynamicjepa/...`, a new directory.
 
-If any of those statements is wrong when you re‑audit at Phase 0, the audit wins; update this section.
+If any of those statements is wrong when you re‑audit before a later phase, the audit wins; update this section.
 
 ---
 

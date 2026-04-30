@@ -35,7 +35,7 @@
 //!
 //! // Get all HNSW configs (16 total, post-E14 BGE-M3 Dense)
 //! let configs = all_hnsw_configs();
-//! assert_eq!(configs.len(), 15);
+//! assert_eq!(configs.len(), 16);
 //!
 //! // Compute cosine distance
 //! let a = vec![1.0, 0.0, 0.0];
@@ -51,7 +51,7 @@
 //! };
 //! use uuid::Uuid;
 //!
-//! // Create registry with all 13 HNSW indexes
+//! // Create registry with all 16 HNSW indexes
 //! let registry = EmbedderIndexRegistry::new();
 //!
 //! // Get index for E8 Graph (1024D)
@@ -350,9 +350,9 @@ mod tests {
         // insert, remove, search, insert_batch, flush, memory_bytes tested elsewhere
         println!("    PASS");
 
-        // AC2: HnswEmbedderIndex for all 15 HNSW embedders
+        // AC2: HnswEmbedderIndex for all 16 HNSW embedders
         println!();
-        println!("AC2: HnswEmbedderIndex works for all 15 HNSW embedders");
+        println!("AC2: HnswEmbedderIndex works for all 16 HNSW embedders");
         for embedder in EmbedderIndex::all_hnsw() {
             let idx = HnswEmbedderIndex::new(embedder);
             assert!(idx.config().dimension >= 1);

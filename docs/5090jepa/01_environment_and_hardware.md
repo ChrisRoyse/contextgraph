@@ -18,7 +18,7 @@ The 5090jepa demo is targeted at exactly one machine. Before any phase you must 
 
 A fresh agent must run all of these probes (Section 2) and confirm every value. If `nvidia-smi` cannot be found inside WSL, CUDA is not exposed to WSL — escalate before proceeding.
 
-## 2. Environment Probe (Run This Verbatim Before Phase 0)
+## 2. Environment Probe (Run This Verbatim Before The Next Phase)
 
 ```bash
 set -e
@@ -39,10 +39,10 @@ echo "== existing crates =="
 ls crates/
 echo "== existing storage =="
 ls crates/context-graph-storage/src/
-echo "== dynamicjepa not yet present =="
-test ! -d crates/context-graph-dynamicjepa || (echo "ERROR: crate already exists" && exit 1)
-test ! -d crates/context-graph-core/src/dynamicjepa || (echo "ERROR: core module already exists" && exit 1)
-test ! -d crates/context-graph-storage/src/dynamicjepa || (echo "ERROR: storage module already exists" && exit 1)
+echo "== dynamicjepa current phase state =="
+test ! -d crates/context-graph-dynamicjepa || (echo "ERROR: Phase 7 service crate exists; audit before continuing" && exit 1)
+test -d crates/context-graph-core/src/dynamicjepa || (echo "ERROR: Phase 1 core module missing" && exit 1)
+test -d crates/context-graph-storage/src/dynamicjepa || (echo "ERROR: Phase 2 storage module missing" && exit 1)
 echo "ENV OK"
 ```
 

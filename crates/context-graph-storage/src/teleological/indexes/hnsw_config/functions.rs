@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_hnsw_configs_returns_15() {
+    fn test_all_hnsw_configs_returns_16() {
         // 11 original + 2 E5 asymmetric + 2 E10 asymmetric + 1 E14 BGE-M3 Dense = 16 HNSW configs
         let configs = all_hnsw_configs();
         assert_eq!(configs.len(), 16);
