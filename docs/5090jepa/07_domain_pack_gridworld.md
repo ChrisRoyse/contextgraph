@@ -328,7 +328,7 @@ Total parameters: encoder ~6.5K + predictor ~7K ≈ 13.5K. Comfortably under the
 
 `tests/universality_audit.rs` proves the same code handles both packs by asserting:
 
-- The set of `crates/context-graph-dynamicjepa/src/` files modified to add gridworld is **empty** (no domain-specific Rust). The diff between Phase 6 (counter_world done) and Phase 6+gridworld is purely in `configs/dynamicjepa/`.
+- The set of `crates/context-graph-dynamicjepa/src/` files modified to add gridworld is **empty** (no domain-specific Rust). Phase 6 already proves both counter_world and gridworld through the CLI/storage dataset path; future Phase 7+ model work must preserve that domain-neutral property.
 - `dynamicjepa register-domain` of both TOMLs against a single fresh DB produces the expected DOMAIN_PACK_BY_NV row count of 2.
 - Running `verify-counter-world` and `verify-gridworld` against **the same physical RocksDB** in sequence both pass and the post-state contains both training runs, both artifacts, both verification run rows.
 

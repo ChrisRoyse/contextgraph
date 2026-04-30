@@ -1,9 +1,9 @@
-//! DynamicJEPA CLI: domain-pack registry, physical inspection, and Phase 4
-//! adapter/panel materialization.
+//! DynamicJEPA CLI: domain-pack registry, physical inspection, adapter/panel
+//! materialization, binding, trajectory, and dataset compilation.
 //!
-//! These commands intentionally stop at Phase 3 scope. Mutating commands write
-//! to the real RocksDB DynamicJEPA column families, then immediately read the
-//! source-of-truth rows back through separate storage inspection paths.
+//! Mutating commands write to the real RocksDB DynamicJEPA column families, then
+//! immediately read the source-of-truth rows back through separate storage
+//! inspection paths.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -14,37 +14,39 @@ use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
     ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
     AdapterSpec, BindingId, BindingKind, BindingMethod, BindingRecord, BindingRef,
-    CandidateActionConfig, DatasetPolicy, DjRecordHeader, DomainPack, DomainPackId,
-    DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind,
-    FieldSpec, FieldValue, InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec,
-    InstrumentValidation, InvariantSpec, LatentPanel, Normalization, NormalizedAction,
-    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
-    PanelSlot, PanelSlotKind, PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus,
-    SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema, TrajectoryId,
-    TrajectoryRecord, TransitionId, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION,
-    BINDING_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
+    CandidateActionConfig, DatasetId, DatasetPolicy, DatasetShardId, DatasetShardRecord,
+    DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord,
+    DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue, InstrumentId,
+    InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation, InvariantSpec,
+    LatentPanel, LeakageReport, Normalization, NormalizedAction, NormalizedOutcome,
+    NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId, PanelSlot, PanelSlotKind,
+    PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus, ShapeSummary, SourceKind, StateId,
+    StateSchema, StateTransition, TimeEncoding, TimeSchema, TrajectoryId, TrajectoryRecord,
+    TransitionId, Validate, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION,
+    DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
     LATENT_PANEL_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION,
     NORMALIZED_OUTCOME_RECORD_VERSION, NORMALIZED_STATE_RECORD_VERSION,
     RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
-    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
-    CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS,
-    CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS, CF_DJ_TRAJECTORIES,
-    CF_DJ_TRANSITIONS, DJ_CF_NAMES,
+    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
+    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
+    CF_DJ_LATENT_PANELS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
+    CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
-    get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec, get_latent_panel,
-    get_normalized_state, get_outcome, get_raw_event, get_trajectory, get_transition, inspect_cf,
-    inspect_cf_key, list_adapter_runs, list_bindings, list_domain_packs,
-    list_instrument_readings_for_event, list_latent_panels, list_trajectories, list_transitions,
-    put_adapter_run_failure_batch, put_adapter_run_success_batch, put_audit_record,
-    put_binding_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
+    get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec,
+    get_latent_panel, get_normalized_state, get_outcome, get_raw_event, get_trajectory,
+    get_transition, inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings,
+    list_dataset_shards, list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
+    list_trajectories, list_transitions, put_adapter_run_failure_batch,
+    put_adapter_run_success_batch, put_audit_record, put_binding_with_audit_batch,
+    put_dataset_shard_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
     put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
@@ -87,6 +89,12 @@ pub enum DynamicJepaCommands {
     GetTrajectory(GetTrajectoryArgs),
     /// List compiled trajectories for a domain.
     ListTrajectories(ListTrajectoriesArgs),
+    /// Compile one-step trajectory rows into a persisted dataset shard.
+    CompileDataset(CompileDatasetArgs),
+    /// Read one persisted dataset shard.
+    GetDatasetShard(GetDatasetShardArgs),
+    /// Inspect one decoded dataset row and its linked source-of-truth records.
+    InspectDataset(InspectDatasetArgs),
 }
 
 impl DynamicJepaCommands {
@@ -107,6 +115,9 @@ impl DynamicJepaCommands {
             Self::CompileTrajectories(_) => "dynamicjepa_compile_trajectories",
             Self::GetTrajectory(_) => "dynamicjepa_get_trajectory",
             Self::ListTrajectories(_) => "dynamicjepa_list_trajectories",
+            Self::CompileDataset(_) => "dynamicjepa_compile_dataset",
+            Self::GetDatasetShard(_) => "dynamicjepa_get_dataset_shard",
+            Self::InspectDataset(_) => "dynamicjepa_inspect_dataset",
         }
     }
 }
@@ -412,6 +423,71 @@ pub struct ListTrajectoriesArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct CompileDatasetArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Dataset policy id. Phase 6 supports one_step.
+    #[arg(long, default_value = "one_step")]
+    pub policy: String,
+
+    /// Split to compile: train, val, or test.
+    #[arg(long, default_value = "train")]
+    pub split: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetDatasetShardArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Dataset id returned by compile-dataset.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: String,
+
+    /// Dataset shard id returned by compile-dataset.
+    #[arg(long = "shard-id")]
+    pub shard_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct InspectDatasetArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Dataset id returned by compile-dataset.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: String,
+
+    /// Dataset shard id returned by compile-dataset.
+    #[arg(long = "shard-id")]
+    pub shard_id: String,
+
+    /// Zero-based row index to decode.
+    #[arg(long)]
+    pub row: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -478,6 +554,9 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::CompileTrajectories(args) => compile_trajectories_command(args),
         DynamicJepaCommands::GetTrajectory(args) => get_trajectory_command(args),
         DynamicJepaCommands::ListTrajectories(args) => list_trajectories_command(args),
+        DynamicJepaCommands::CompileDataset(args) => compile_dataset_command(args),
+        DynamicJepaCommands::GetDatasetShard(args) => get_dataset_shard_command(args),
+        DynamicJepaCommands::InspectDataset(args) => inspect_dataset_command(args),
     }
 }
 
@@ -1619,6 +1698,314 @@ fn list_trajectories_command(args: ListTrajectoriesArgs) -> DynamicJepaResult<Co
     })
 }
 
+fn compile_dataset_command(args: CompileDatasetArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_TRAJECTORIES,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_ACTIONS,
+        CF_DJ_OUTCOMES,
+        CF_DJ_DATASET_SHARDS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "compile-dataset.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        if args.policy != "one_step" {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.policy",
+                format!("unsupported dataset policy {:?}", args.policy),
+                "Phase 6 supports exactly one_step",
+            ));
+        }
+        if !matches!(args.split.as_str(), "train" | "val" | "test") {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.split",
+                format!("unsupported split {:?}", args.split),
+                "use train, val, or test",
+            ));
+        }
+
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain_pack = get_domain_pack(db, &domain_id, "1.0.0")?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        if domain_pack.dataset_policy.negative_sampling != "same_domain_different_outcome" {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.negative_sampling",
+                format!(
+                    "unsupported negative sampling policy {:?}",
+                    domain_pack.dataset_policy.negative_sampling
+                ),
+                "Phase 6 supports same_domain_different_outcome",
+            ));
+        }
+
+        let existing_shards = list_dataset_shards(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|shard| shard.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        if existing_shards
+            .iter()
+            .any(|shard| shard.split_name == args.split)
+        {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.split",
+                format!(
+                    "domain {} already has a dataset shard for split {}",
+                    domain_pack.id, args.split
+                ),
+                "wipe the pre-production demo DB before recompiling dataset shards; Phase 6 does not delete or merge existing source-of-truth rows",
+            ));
+        }
+        let dataset_id = existing_shards
+            .first()
+            .map(|shard| shard.dataset_id)
+            .unwrap_or_else(DatasetId::new_v4);
+
+        let trajectories = list_trajectories(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|trajectory| trajectory.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        if trajectories.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.trajectories",
+                format!("domain {} has no trajectories to compile", domain_pack.id),
+                "run compile-trajectories successfully before compiling a dataset shard",
+            ));
+        }
+
+        let all_rows = collect_dataset_rows(db, &domain_pack, &trajectories)?;
+        if all_rows.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.rows",
+                format!(
+                    "domain {} trajectories produced zero one-step rows",
+                    domain_pack.id
+                ),
+                "compile trajectories with at least two panels each before compiling one_step datasets",
+            ));
+        }
+        let split_overlap_count = split_overlap_count(&domain_pack, &all_rows)?;
+        let split_counts = split_row_counts(&all_rows);
+        let selected_rows = all_rows
+            .iter()
+            .filter(|row| row.split_name == args.split)
+            .cloned()
+            .collect::<Vec<_>>();
+        if selected_rows.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "compile-dataset.split",
+                format!("split bucket {} received 0 rows", args.split),
+                "use a fixture/corpus with enough trajectories for the requested deterministic split",
+            ));
+        }
+
+        let domain_panels = list_latent_panels(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|panel| panel.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        let negative_pool = build_negative_pool(db, domain_panels)?;
+        let compiled = build_dataset_record(
+            &domain_pack,
+            &args.split,
+            &selected_rows,
+            &negative_pool,
+            &split_counts,
+            split_overlap_count,
+            dataset_id,
+        )?;
+        verify_dataset_shard_sources(db, &compiled)?;
+
+        let audit = build_audit(
+            "compile_dataset_shard",
+            AuditStatus::Ok,
+            compiled
+                .source_trajectory_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            vec![
+                compiled.dataset_id.to_string(),
+                compiled.shard_id.to_string(),
+            ],
+            vec![
+                CF_DJ_DATASET_SHARDS.to_string(),
+                CF_DJ_AUDIT_LOG.to_string(),
+            ],
+            vec![compiled.header.content_hash],
+        )?;
+        put_dataset_shard_with_audit_batch(db, &compiled, &audit)?;
+        let stored =
+            get_dataset_shard(db, compiled.dataset_id, compiled.shard_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_DATASET_SHARDS.to_string(),
+                    key: context_graph_storage::dynamicjepa::keys::dataset_shard_key(
+                        compiled.dataset_id,
+                        compiled.shard_id,
+                    )
+                    .to_vec(),
+                }
+            })?;
+        if stored != compiled {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "dataset shard readback mismatch for shard {}",
+                    stored.shard_id
+                ),
+            });
+        }
+        verify_dataset_shard_sources(db, &stored)?;
+        let first_row = dataset_row_snapshot(db, &stored, 0)?;
+
+        Ok(json!({
+            "created_ids": {
+                "dataset_id": stored.dataset_id.to_string(),
+                "shard_id": stored.shard_id.to_string(),
+                "audit_id": audit.audit_id.to_string(),
+                "source_trajectory_ids": stored
+                    .source_trajectory_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+            },
+            "summary": {
+                "split": stored.split_name,
+                "row_count": stored.row_count,
+                "all_split_row_counts": split_counts,
+                "input_dim": stored.shape_summary.input_dim,
+                "target_dim": stored.shape_summary.target_dim,
+                "action_dim": stored.shape_summary.action_dim,
+            },
+            "decoded_records": {
+                "dataset_shard": stored,
+                "row_0": first_row,
+                "dataset_shards_cf": inspect_cf(db, CF_DJ_DATASET_SHARDS, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 160, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_compile_dataset",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_compile_dataset",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn get_dataset_shard_command(args: GetDatasetShardArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-dataset-shard.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let dataset_id = parse_dataset_id(&args.dataset_id, "get-dataset-shard.dataset_id")?;
+    let shard_id = parse_dataset_shard_id(&args.shard_id, "get-dataset-shard.shard_id")?;
+    let record = get_dataset_shard(db, dataset_id, shard_id)?;
+    match record {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_dataset_shard",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_DATASET_SHARDS],
+                "counts": counts,
+                "decoded_records": {
+                    "dataset_shard": record,
+                },
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_dataset_shard",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_DATASET_SHARDS],
+                "counts": counts,
+                "queried": {
+                    "dataset_id": args.dataset_id,
+                    "shard_id": args.shard_id,
+                },
+                "remediation": "compile a dataset shard before reading it",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn inspect_dataset_command(args: InspectDatasetArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "inspect-dataset.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let dataset_id = parse_dataset_id(&args.dataset_id, "inspect-dataset.dataset_id")?;
+    let shard_id = parse_dataset_shard_id(&args.shard_id, "inspect-dataset.shard_id")?;
+    let record = get_dataset_shard(db, dataset_id, shard_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_DATASET_SHARDS.to_string(),
+            key: context_graph_storage::dynamicjepa::keys::dataset_shard_key(dataset_id, shard_id)
+                .to_vec(),
+        }
+    })?;
+    let row = dataset_row_snapshot(db, &record, args.row)?;
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_inspect_dataset",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": [
+                CF_DJ_DATASET_SHARDS,
+                CF_DJ_LATENT_PANELS,
+                CF_DJ_ACTIONS,
+                CF_DJ_NORMALIZED_STATES,
+                CF_DJ_OUTCOMES
+            ],
+            "counts": counts,
+            "queried": {
+                "dataset_id": args.dataset_id,
+                "shard_id": args.shard_id,
+                "row": args.row,
+            },
+            "decoded_records": {
+                "dataset_shard": record,
+                "row": row,
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
 #[derive(Debug, Default, Clone, Serialize)]
 struct IngestCreatedIds {
     raw_event_ids: Vec<String>,
@@ -1664,6 +2051,24 @@ struct TrajectoryMember {
 struct TrajectoryGroup {
     entity_refs: Vec<String>,
     members: Vec<TrajectoryMember>,
+}
+
+#[derive(Clone)]
+struct DatasetCandidateRow {
+    trajectory_id: TrajectoryId,
+    trajectory_entity_refs: Vec<String>,
+    row_index_in_trajectory: usize,
+    global_row_index: usize,
+    split_name: String,
+    input_panel: LatentPanel,
+    target_panel: LatentPanel,
+    action_id: ActionId,
+}
+
+#[derive(Clone)]
+struct NegativePoolEntry {
+    panel: LatentPanel,
+    outcome_signature: String,
 }
 
 #[derive(Debug)]
@@ -2038,6 +2443,679 @@ fn verify_trajectory_sources(db: &rocksdb::DB, record: &TrajectoryRecord) -> Dyn
     Ok(())
 }
 
+fn collect_dataset_rows(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    trajectories: &[TrajectoryRecord],
+) -> DynamicJepaResult<Vec<DatasetCandidateRow>> {
+    let mut trajectories = trajectories.to_vec();
+    trajectories.sort_by(|left, right| {
+        left.start_time_unix_ms
+            .cmp(&right.start_time_unix_ms)
+            .then_with(|| left.trajectory_id.cmp(&right.trajectory_id))
+    });
+
+    let mut rows = Vec::new();
+    for trajectory in trajectories {
+        verify_trajectory_sources(db, &trajectory)?;
+        if trajectory.ordered_panel_ids.len() < 2 {
+            continue;
+        }
+        for row_index in 0..(trajectory.ordered_panel_ids.len() - 1) {
+            let transition_id = trajectory.ordered_transition_ids[row_index];
+            let transition = get_transition(db, transition_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_TRANSITIONS.to_string(),
+                    key: transition_id.into_bytes().to_vec(),
+                }
+            })?;
+            let input_panel_id = trajectory.ordered_panel_ids[row_index];
+            let target_panel_id = trajectory.ordered_panel_ids[row_index + 1];
+            let input_panel = get_latent_panel(db, input_panel_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_LATENT_PANELS.to_string(),
+                    key: input_panel_id.into_bytes().to_vec(),
+                }
+            })?;
+            let target_panel = get_latent_panel(db, target_panel_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_LATENT_PANELS.to_string(),
+                    key: target_panel_id.into_bytes().to_vec(),
+                }
+            })?;
+            if input_panel.action_id != transition.action {
+                return Err(DynamicJepaError::StorageInvariantViolation {
+                    message: format!(
+                        "trajectory {} row {} input panel action {} did not match transition action {}",
+                        trajectory.trajectory_id,
+                        row_index,
+                        input_panel.action_id,
+                        transition.action
+                    ),
+                });
+            }
+            let global_row_index = rows.len();
+            rows.push(DatasetCandidateRow {
+                trajectory_id: trajectory.trajectory_id,
+                trajectory_entity_refs: trajectory.entity_refs.clone(),
+                row_index_in_trajectory: row_index,
+                global_row_index,
+                split_name: String::new(),
+                input_panel,
+                target_panel,
+                action_id: transition.action,
+            });
+        }
+    }
+
+    let total_rows = rows.len();
+    for row in &mut rows {
+        row.split_name = split_for_dataset_row(domain_pack, row, total_rows)?;
+    }
+    Ok(rows)
+}
+
+fn split_for_dataset_row(
+    domain_pack: &DomainPack,
+    row: &DatasetCandidateRow,
+    total_rows: usize,
+) -> DynamicJepaResult<String> {
+    match domain_pack.dataset_policy.default_split.as_str() {
+        "by_time" => Ok(by_time_split(row.global_row_index, total_rows).to_string()),
+        "by_domain_key_hash" => by_domain_key_hash_split(domain_pack, row),
+        other => Err(DynamicJepaError::validation(
+            "compile-dataset.default_split",
+            format!("unsupported deterministic split policy {other:?}"),
+            "use by_time or by_domain_key_hash in the registered domain pack",
+        )),
+    }
+}
+
+fn by_time_split(row_index: usize, total_rows: usize) -> &'static str {
+    if total_rows <= 1 {
+        return "train";
+    }
+    if total_rows == 2 {
+        return if row_index == 0 { "train" } else { "val" };
+    }
+
+    let train_count = ((total_rows * 7) / 10).max(1);
+    let remaining_after_train = total_rows.saturating_sub(train_count);
+    let val_count = if remaining_after_train == 0 {
+        0
+    } else {
+        ((total_rows * 2).div_ceil(10))
+            .max(1)
+            .min(remaining_after_train)
+    };
+    if row_index < train_count {
+        "train"
+    } else if row_index < train_count + val_count {
+        "val"
+    } else {
+        "test"
+    }
+}
+
+fn by_domain_key_hash_split(
+    domain_pack: &DomainPack,
+    row: &DatasetCandidateRow,
+) -> DynamicJepaResult<String> {
+    let split_key = domain_pack
+        .dataset_policy
+        .split_key
+        .as_deref()
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compile-dataset.split_key",
+                "by_domain_key_hash requires dataset_policy.split_key",
+                "set split_key = \"entity.<field>\" in the domain pack",
+            )
+        })?;
+    let entity_field = split_key.strip_prefix("entity.").ok_or_else(|| {
+        DynamicJepaError::validation(
+            "compile-dataset.split_key",
+            format!("split key {split_key:?} is not an entity field"),
+            "Phase 6 by_domain_key_hash supports entity.<field> keys",
+        )
+    })?;
+    let prefix = format!("{entity_field}=");
+    let entity_value = row
+        .trajectory_entity_refs
+        .iter()
+        .find_map(|reference| reference.strip_prefix(&prefix))
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compile-dataset.entity_refs",
+                format!(
+                    "trajectory {} does not carry split key {}",
+                    row.trajectory_id, split_key
+                ),
+                "compile trajectories from fixtures that include the declared entity split key",
+            )
+        })?;
+    let buckets = domain_pack
+        .dataset_policy
+        .split_buckets
+        .as_ref()
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compile-dataset.split_buckets",
+                "by_domain_key_hash requires train/val/test split buckets",
+                "declare split_buckets in the domain pack dataset policy",
+            )
+        })?;
+    let train = split_bucket_fraction(buckets, "train")?;
+    let val = split_bucket_fraction(buckets, "val")?;
+    let test = split_bucket_fraction(buckets, "test")?;
+    if (train + val + test - 1.0).abs() > 1e-6 {
+        return Err(DynamicJepaError::validation(
+            "compile-dataset.split_buckets",
+            format!(
+                "split bucket fractions must sum to 1.0, got {}",
+                train + val + test
+            ),
+            "fix the domain pack split_buckets before compiling datasets",
+        ));
+    }
+
+    let train_end = fraction_to_bucket_boundary(train, "train")?;
+    let val_end = train_end + fraction_to_bucket_boundary(val, "val")?;
+    let hash = context_graph_storage::dynamicjepa::keys::blake3_128(entity_value.as_bytes());
+    let bucket = u128::from_be_bytes(hash) % 1000;
+    if bucket < train_end as u128 {
+        Ok("train".to_string())
+    } else if bucket < val_end as u128 {
+        Ok("val".to_string())
+    } else {
+        Ok("test".to_string())
+    }
+}
+
+fn split_bucket_fraction(
+    buckets: &BTreeMap<String, f64>,
+    name: &'static str,
+) -> DynamicJepaResult<f64> {
+    let value = buckets.get(name).copied().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "compile-dataset.split_buckets",
+            format!("missing {name} split bucket"),
+            "declare train, val, and test bucket fractions",
+        )
+    })?;
+    if value < 0.0 || !value.is_finite() {
+        return Err(DynamicJepaError::validation(
+            "compile-dataset.split_buckets",
+            format!("{name} split bucket must be finite and non-negative, got {value}"),
+            "fix the domain pack split_buckets before compiling datasets",
+        ));
+    }
+    Ok(value)
+}
+
+fn fraction_to_bucket_boundary(value: f64, name: &'static str) -> DynamicJepaResult<u64> {
+    let boundary = (value * 1000.0).round();
+    if !(0.0..=1000.0).contains(&boundary) {
+        return Err(DynamicJepaError::validation(
+            "compile-dataset.split_buckets",
+            format!("{name} bucket fraction {value} produced invalid boundary {boundary}"),
+            "declare split buckets between 0.0 and 1.0",
+        ));
+    }
+    Ok(boundary as u64)
+}
+
+fn split_row_counts(rows: &[DatasetCandidateRow]) -> BTreeMap<String, u32> {
+    let mut counts = BTreeMap::from([
+        ("train".to_string(), 0u32),
+        ("val".to_string(), 0u32),
+        ("test".to_string(), 0u32),
+    ]);
+    for row in rows {
+        if let Some(count) = counts.get_mut(&row.split_name) {
+            *count += 1;
+        }
+    }
+    counts
+}
+
+fn split_overlap_count(
+    domain_pack: &DomainPack,
+    rows: &[DatasetCandidateRow],
+) -> DynamicJepaResult<u64> {
+    if domain_pack.dataset_policy.default_split != "by_domain_key_hash" {
+        return Ok(0);
+    }
+    let mut by_entity: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for row in rows {
+        for entity_ref in &row.trajectory_entity_refs {
+            by_entity
+                .entry(entity_ref.clone())
+                .or_default()
+                .insert(row.split_name.clone());
+        }
+    }
+    Ok(by_entity.values().filter(|splits| splits.len() > 1).count() as u64)
+}
+
+fn build_negative_pool(
+    db: &rocksdb::DB,
+    panels: Vec<LatentPanel>,
+) -> DynamicJepaResult<Vec<NegativePoolEntry>> {
+    let mut pool = panels
+        .into_iter()
+        .map(|panel| {
+            let outcome_signature = panel_outcome_signature(db, &panel)?;
+            Ok(NegativePoolEntry {
+                panel,
+                outcome_signature,
+            })
+        })
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    pool.sort_by(|left, right| left.panel.panel_id.cmp(&right.panel.panel_id));
+    Ok(pool)
+}
+
+fn build_dataset_record(
+    domain_pack: &DomainPack,
+    split_name: &str,
+    selected_rows: &[DatasetCandidateRow],
+    negative_pool: &[NegativePoolEntry],
+    split_counts: &BTreeMap<String, u32>,
+    split_overlap_count: u64,
+    dataset_id: DatasetId,
+) -> DynamicJepaResult<DatasetShardRecord> {
+    let row_count = u32::try_from(selected_rows.len()).map_err(|_| {
+        DynamicJepaError::validation(
+            "compile-dataset.row_count",
+            format!("dataset split {split_name} has too many rows"),
+            "split huge datasets into multiple shards before compiling",
+        )
+    })?;
+    let objective_id = domain_pack.dataset_policy.default_objective.clone();
+    if !domain_pack
+        .objective_specs
+        .iter()
+        .any(|objective| objective.id == objective_id)
+    {
+        return Err(DynamicJepaError::validation(
+            "compile-dataset.default_objective",
+            format!("default objective {objective_id:?} is not declared in objective_specs"),
+            "fix the domain pack objective list before compiling datasets",
+        ));
+    }
+
+    let mut source_trajectory_ids = Vec::new();
+    let mut seen_trajectories = BTreeSet::new();
+    let mut input_panel_ids = Vec::with_capacity(selected_rows.len());
+    let mut target_panel_ids = Vec::with_capacity(selected_rows.len());
+    let mut action_ids = Vec::with_capacity(selected_rows.len());
+    let mut negative_panel_ids = Vec::with_capacity(selected_rows.len());
+    let mut source_hashes = Vec::with_capacity(selected_rows.len() * 2);
+    let mut leakage_report = LeakageReport {
+        future_in_input_count: 0,
+        same_panel_input_target_count: 0,
+        negative_equals_target_count: 0,
+        split_overlap_count,
+    };
+
+    let input_dim = panel_dense_dim(&selected_rows[0].input_panel)?;
+    let target_dim = panel_dense_dim(&selected_rows[0].target_panel)?;
+    let action_dim = panel_action_dim(&selected_rows[0].input_panel)?;
+    for row in selected_rows {
+        if seen_trajectories.insert(row.trajectory_id.0) {
+            source_trajectory_ids.push(row.trajectory_id);
+        }
+        let row_input_dim = panel_dense_dim(&row.input_panel)?;
+        let row_target_dim = panel_dense_dim(&row.target_panel)?;
+        let row_action_dim = panel_action_dim(&row.input_panel)?;
+        if row_input_dim != input_dim
+            || row_target_dim != target_dim
+            || row_action_dim != action_dim
+        {
+            return Err(DynamicJepaError::PanelShapeMismatch {
+                domain_pack_id: domain_pack.id.to_string(),
+                expected: vec![input_dim, target_dim, action_dim],
+                actual: vec![row_input_dim, row_target_dim, row_action_dim],
+            });
+        }
+
+        if row.input_panel.panel_id == row.target_panel.panel_id {
+            leakage_report.same_panel_input_target_count += 1;
+        }
+        let negative_panel_id = select_negative_panel_id(
+            domain_pack,
+            row,
+            negative_pool,
+            domain_pack.dataset_policy.min_negatives_per_row,
+        )?;
+        if negative_panel_id == row.target_panel.panel_id {
+            leakage_report.negative_equals_target_count += 1;
+        }
+
+        input_panel_ids.push(row.input_panel.panel_id);
+        target_panel_ids.push(row.target_panel.panel_id);
+        action_ids.push(row.action_id);
+        negative_panel_ids.push(negative_panel_id);
+        source_hashes.push(row.input_panel.header.content_hash);
+        source_hashes.push(row.target_panel.header.content_hash);
+    }
+    leakage_report.validate()?;
+
+    let shard_id = DatasetShardId::new_v4();
+    let mut record = DatasetShardRecord {
+        header: DjRecordHeader::new(
+            shard_id.0,
+            DATASET_SHARD_RECORD_VERSION,
+            domain_pack.id.clone(),
+            domain_pack.version.clone(),
+            now_unix_ms()?,
+            Some(Uuid::new_v4()),
+        ),
+        dataset_id,
+        shard_id,
+        source_trajectory_ids,
+        split_name: split_name.to_string(),
+        row_count,
+        input_panel_ids,
+        target_panel_ids,
+        action_ids,
+        negative_panel_ids,
+        objective_ids: vec![objective_id],
+        shape_summary: ShapeSummary {
+            input_dim,
+            target_dim,
+            action_dim,
+            n_train_rows: *split_counts.get("train").unwrap_or(&0),
+            n_val_rows: *split_counts.get("val").unwrap_or(&0),
+            n_test_rows: *split_counts.get("test").unwrap_or(&0),
+        },
+        source_hashes,
+        leakage_report,
+        compiler_version: 1,
+    };
+    record.refresh_content_hash()?;
+    Ok(record)
+}
+
+fn select_negative_panel_id(
+    domain_pack: &DomainPack,
+    row: &DatasetCandidateRow,
+    negative_pool: &[NegativePoolEntry],
+    required: u32,
+) -> DynamicJepaResult<PanelId> {
+    let target_signature = negative_pool
+        .iter()
+        .find(|entry| entry.panel.panel_id == row.target_panel.panel_id)
+        .map(|entry| entry.outcome_signature.as_str())
+        .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: row.target_panel.panel_id.into_bytes().to_vec(),
+        })?;
+    let candidates = negative_pool
+        .iter()
+        .filter(|entry| {
+            entry.panel.panel_id != row.target_panel.panel_id
+                && entry.outcome_signature != target_signature
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() < required as usize {
+        return Err(DynamicJepaError::DatasetLeakageDetected {
+            message: format!(
+                "insufficient negatives for domain {} trajectory {} row {}: required={} found={}",
+                domain_pack.id,
+                row.trajectory_id,
+                row.row_index_in_trajectory,
+                required,
+                candidates.len()
+            ),
+            dataset_id: Uuid::nil(),
+        });
+    }
+    let seed = format!(
+        "{}:{}:{}:{}",
+        row.trajectory_id,
+        row.row_index_in_trajectory,
+        row.input_panel.panel_id,
+        row.target_panel.panel_id
+    );
+    let hash = context_graph_storage::dynamicjepa::keys::blake3_128(seed.as_bytes());
+    let idx = (u128::from_be_bytes(hash) % candidates.len() as u128) as usize;
+    Ok(candidates[idx].panel.panel_id)
+}
+
+fn verify_dataset_shard_sources(
+    db: &rocksdb::DB,
+    record: &DatasetShardRecord,
+) -> DynamicJepaResult<()> {
+    let row_count = record.row_count as usize;
+    if record.source_hashes.len() != row_count * 2 {
+        return Err(DynamicJepaError::DatasetLeakageDetected {
+            message: format!(
+                "source_hashes length {} does not equal row_count*2 ({})",
+                record.source_hashes.len(),
+                row_count * 2
+            ),
+            dataset_id: record.dataset_id.0,
+        });
+    }
+    for row_idx in 0..row_count {
+        let input_panel_id = record.input_panel_ids[row_idx];
+        let target_panel_id = record.target_panel_ids[row_idx];
+        let action_id = record.action_ids[row_idx];
+        let negative_panel_id = record.negative_panel_ids[row_idx];
+        let input_panel = get_latent_panel(db, input_panel_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_LATENT_PANELS.to_string(),
+                key: input_panel_id.into_bytes().to_vec(),
+            }
+        })?;
+        let target_panel = get_latent_panel(db, target_panel_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_LATENT_PANELS.to_string(),
+                key: target_panel_id.into_bytes().to_vec(),
+            }
+        })?;
+        get_action(db, action_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ACTIONS.to_string(),
+            key: action_id.into_bytes().to_vec(),
+        })?;
+        get_latent_panel(db, negative_panel_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_LATENT_PANELS.to_string(),
+                key: negative_panel_id.into_bytes().to_vec(),
+            }
+        })?;
+        if record.source_hashes[row_idx * 2] != input_panel.header.content_hash {
+            return Err(DynamicJepaError::DatasetLeakageDetected {
+                message: format!(
+                    "shard source hashes diverged from live input panel {} at row {}",
+                    input_panel_id, row_idx
+                ),
+                dataset_id: record.dataset_id.0,
+            });
+        }
+        if record.source_hashes[row_idx * 2 + 1] != target_panel.header.content_hash {
+            return Err(DynamicJepaError::DatasetLeakageDetected {
+                message: format!(
+                    "shard source hashes diverged from live target panel {} at row {}",
+                    target_panel_id, row_idx
+                ),
+                dataset_id: record.dataset_id.0,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn dataset_row_snapshot(
+    db: &rocksdb::DB,
+    record: &DatasetShardRecord,
+    row_index: usize,
+) -> DynamicJepaResult<Value> {
+    let row_count = record.row_count as usize;
+    if row_index >= row_count {
+        return Err(DynamicJepaError::validation(
+            "inspect-dataset.row",
+            format!("row index {row_index} is outside dataset row_count {row_count}"),
+            "request a row index in 0..row_count",
+        ));
+    }
+    let input_panel_id = record.input_panel_ids[row_index];
+    let target_panel_id = record.target_panel_ids[row_index];
+    let negative_panel_id = record.negative_panel_ids[row_index];
+    let action_id = record.action_ids[row_index];
+
+    let input_panel = get_latent_panel(db, input_panel_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: input_panel_id.into_bytes().to_vec(),
+        }
+    })?;
+    let target_panel = get_latent_panel(db, target_panel_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: target_panel_id.into_bytes().to_vec(),
+        }
+    })?;
+    let negative_panel = get_latent_panel(db, negative_panel_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: negative_panel_id.into_bytes().to_vec(),
+        }
+    })?;
+    let action =
+        get_action(db, action_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ACTIONS.to_string(),
+            key: action_id.into_bytes().to_vec(),
+        })?;
+    let input_state = get_normalized_state(db, input_panel.state_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: input_panel.state_id.into_bytes().to_vec(),
+        }
+    })?;
+    let target_state = get_normalized_state(db, target_panel.state_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: target_panel.state_id.into_bytes().to_vec(),
+        }
+    })?;
+    let negative_state = get_normalized_state(db, negative_panel.state_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: negative_panel.state_id.into_bytes().to_vec(),
+        }
+    })?;
+    let target_outcome = panel_outcome_record(db, &target_panel)?;
+    let negative_outcome = panel_outcome_record(db, &negative_panel)?;
+    let expected_input_hash = record.source_hashes.get(row_index * 2).ok_or_else(|| {
+        DynamicJepaError::DatasetLeakageDetected {
+            message: format!("missing input source hash for row {row_index}"),
+            dataset_id: record.dataset_id.0,
+        }
+    })?;
+    let expected_target_hash = record.source_hashes.get(row_index * 2 + 1).ok_or_else(|| {
+        DynamicJepaError::DatasetLeakageDetected {
+            message: format!("missing target source hash for row {row_index}"),
+            dataset_id: record.dataset_id.0,
+        }
+    })?;
+
+    Ok(json!({
+        "row_index": row_index,
+        "input_panel_id": input_panel_id.to_string(),
+        "input_panel_dense_norm": panel_dense_norm(&input_panel),
+        "input_state_fields": input_state.fields,
+        "input_action_id": action_id.to_string(),
+        "input_action_fields": action.fields,
+        "target_panel_id": target_panel_id.to_string(),
+        "target_panel_dense_norm": panel_dense_norm(&target_panel),
+        "target_state_fields": target_state.fields,
+        "target_outcome_fields": target_outcome.fields,
+        "negative_panel_id": negative_panel_id.to_string(),
+        "negative_state_fields": negative_state.fields,
+        "negative_outcome_fields": negative_outcome.fields,
+        "source_hash_checks": {
+            "input_equal": *expected_input_hash == input_panel.header.content_hash,
+            "target_equal": *expected_target_hash == target_panel.header.content_hash,
+        }
+    }))
+}
+
+fn panel_outcome_record(
+    db: &rocksdb::DB,
+    panel: &LatentPanel,
+) -> DynamicJepaResult<NormalizedOutcome> {
+    let outcome_id = panel
+        .outcome_id
+        .ok_or_else(|| DynamicJepaError::DatasetLeakageDetected {
+            message: format!("panel {} has no outcome_id", panel.panel_id),
+            dataset_id: Uuid::nil(),
+        })?;
+    get_outcome(db, outcome_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+        cf: CF_DJ_OUTCOMES.to_string(),
+        key: outcome_id.into_bytes().to_vec(),
+    })
+}
+
+fn panel_outcome_signature(db: &rocksdb::DB, panel: &LatentPanel) -> DynamicJepaResult<String> {
+    let outcome = panel_outcome_record(db, panel)?;
+    serde_json::to_string(&outcome.fields).map_err(|err| {
+        DynamicJepaError::validation(
+            "compile-dataset.outcome_signature",
+            format!("failed to serialize outcome fields: {err}"),
+            "outcome fields must remain JSON serializable for deterministic negative sampling",
+        )
+    })
+}
+
+fn panel_dense_dim(panel: &LatentPanel) -> DynamicJepaResult<usize> {
+    let dim = panel
+        .ordered_slots
+        .iter()
+        .map(|slot| slot.dim)
+        .sum::<usize>();
+    if dim == 0 {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: panel.header.domain_pack_id.to_string(),
+            expected: vec![1],
+            actual: vec![0],
+        });
+    }
+    Ok(dim)
+}
+
+fn panel_action_dim(panel: &LatentPanel) -> DynamicJepaResult<usize> {
+    let dim = panel
+        .ordered_slots
+        .iter()
+        .filter(|slot| matches!(slot.kind, PanelSlotKind::Action))
+        .map(|slot| slot.dim)
+        .sum::<usize>();
+    if dim == 0 {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: panel.header.domain_pack_id.to_string(),
+            expected: vec![1],
+            actual: vec![0],
+        });
+    }
+    Ok(dim)
+}
+
+fn panel_dense_norm(panel: &LatentPanel) -> f64 {
+    panel
+        .slot_vectors
+        .iter()
+        .flatten()
+        .map(|value| {
+            let value = *value as f64;
+            value * value
+        })
+        .sum::<f64>()
+        .sqrt()
+}
+
 fn ingest_jsonl_fixture(
     db: &rocksdb::DB,
     domain_pack: &DomainPack,
@@ -2251,7 +3329,9 @@ fn process_fixture_line(
             };
             transition.refresh_content_hash()?;
             let mut completed_run = started_run.clone();
-            completed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            completed_run.finished_at_unix_ms = Some(adapter_run_terminal_timestamp_ms(
+                started_run.started_at_unix_ms,
+            )?);
             completed_run.status = AdapterRunStatus::Completed;
             completed_run.output_state_id = Some(state_id);
             completed_run.output_action_id = Some(action_id);
@@ -2301,7 +3381,9 @@ fn process_fixture_line(
         }
         Err(line_err) => {
             let mut failed_run = started_run;
-            failed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            failed_run.finished_at_unix_ms = Some(adapter_run_terminal_timestamp_ms(
+                failed_run.started_at_unix_ms,
+            )?);
             failed_run.status = AdapterRunStatus::Failed;
             failed_run.error_code = Some("ADAPTER_FAILED".to_string());
             failed_run.error_message = Some(line_err.message.clone());
@@ -2485,7 +3567,9 @@ fn process_existing_raw_event(
             };
             transition.refresh_content_hash()?;
             let mut completed_run = started_run;
-            completed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            completed_run.finished_at_unix_ms = Some(adapter_run_terminal_timestamp_ms(
+                completed_run.started_at_unix_ms,
+            )?);
             completed_run.status = AdapterRunStatus::Completed;
             completed_run.output_state_id = Some(state_id);
             completed_run.output_action_id = Some(action_id);
@@ -2535,7 +3619,9 @@ fn process_existing_raw_event(
         }
         Err(line_err) => {
             let mut failed_run = started_run;
-            failed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            failed_run.finished_at_unix_ms = Some(adapter_run_terminal_timestamp_ms(
+                failed_run.started_at_unix_ms,
+            )?);
             failed_run.status = AdapterRunStatus::Failed;
             failed_run.error_code = Some("ADAPTER_FAILED".to_string());
             failed_run.error_message = Some(line_err.message.clone());
@@ -3808,6 +4894,14 @@ fn parse_trajectory_id(value: &str, field: &str) -> DynamicJepaResult<Trajectory
     Ok(TrajectoryId(parse_uuid(value, field)?))
 }
 
+fn parse_dataset_id(value: &str, field: &str) -> DynamicJepaResult<DatasetId> {
+    Ok(DatasetId(parse_uuid(value, field)?))
+}
+
+fn parse_dataset_shard_id(value: &str, field: &str) -> DynamicJepaResult<DatasetShardId> {
+    Ok(DatasetShardId(parse_uuid(value, field)?))
+}
+
 fn parse_hex_key(value: &str, field: &str) -> DynamicJepaResult<Vec<u8>> {
     let text = value.trim();
     if text.is_empty() || text.len() % 2 != 0 {
@@ -4321,6 +5415,9 @@ fn error_value(
                 json!(trajectory_id.to_string()),
             );
         }
+        DynamicJepaError::DatasetLeakageDetected { dataset_id, .. } => {
+            object.insert("dataset_id".to_string(), json!(dataset_id.to_string()));
+        }
         DynamicJepaError::DomainPackVersionMismatch {
             id,
             expected,
@@ -4361,6 +5458,10 @@ fn remediation(err: &DynamicJepaError) -> Option<String> {
             "inspect dj_transitions and dj_latent_panels; trajectory compilation requires strict ordering and one decoded panel per transition"
                 .to_string(),
         ),
+        DynamicJepaError::DatasetLeakageDetected { .. } => Some(
+            "inspect the dataset shard inputs, target panels, negative panels, and split evidence; no dataset shard row is written when leakage or insufficient negatives is detected"
+                .to_string(),
+        ),
         _ => None,
     }
 }
@@ -4382,6 +5483,11 @@ fn now_unix_ms() -> DynamicJepaResult<i64> {
             )
         })?;
     Ok(duration.as_millis() as i64)
+}
+
+fn adapter_run_terminal_timestamp_ms(started_at_unix_ms: i64) -> DynamicJepaResult<i64> {
+    let finished_at_unix_ms = now_unix_ms()?;
+    Ok(finished_at_unix_ms.max(started_at_unix_ms))
 }
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {

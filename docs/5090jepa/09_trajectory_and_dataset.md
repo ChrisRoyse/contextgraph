@@ -2,7 +2,7 @@
 
 After events become panels, trajectories order them and dataset shards turn pairs of panels into training rows. The demo uses a single segmentation policy and a single objective; everything is deterministic.
 
-Current implementation status as of the Phase 5 double-check on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, and `dj_latent_panels`) are written and FSV-verified, and the trajectory compiler commands are operational. The dataset compiler commands remain Phase 6 work and are not operational yet.
+Current implementation status as of the Phase 6 double-check on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, `dj_latent_panels`, and `dj_trajectories`) are written and FSV-verified, and the trajectory plus one-step dataset compiler commands are operational through the CLI/storage path.
 
 ## 1. Trajectory Compilation
 
@@ -89,7 +89,8 @@ The training loop reads this off the shard record so it never needs to re-walk t
 ## 4. APIs
 
 ```rust
-// Service layer (crates/context-graph-dynamicjepa/src/dataset/)
+// Current Phase 6 implementation lives in the CLI/storage path.
+// The service crate wrapper is Phase 7+.
 pub fn compile_trajectories(...) -> Result<Vec<TrajectoryId>, DynamicJepaError>;
 pub fn compile_dataset_shard(...) -> Result<DatasetShardId, DynamicJepaError>;
 pub fn inspect_dataset_row(...) -> Result<DatasetRowSnapshot, DynamicJepaError>;
@@ -99,6 +100,7 @@ pub fn put_trajectory_batch(...);
 pub fn get_trajectory(db, id) -> Result<Option<TrajectoryRecord>>;
 pub fn list_trajectories_for_domain(...);
 pub fn put_dataset_shard(...);
+pub fn put_dataset_shard_with_audit_batch(...);
 pub fn get_dataset_shard(db, dataset_id, shard_id) -> Result<Option<DatasetShardRecord>>;
 pub fn count_dataset_shards(db) -> Result<u64>;
 ```
@@ -118,15 +120,21 @@ dynamicjepa inspect-dataset --dataset-id UUID --shard-id UUID --row 0 --json
 
 ```json
 {
-  "row_index": 0,
-  "input_panel_id": "<uuid>",
-  "input_panel_dense_norm": 1.0,
-  "input_state_fields": {"x": 2, "y": 3},
-  "input_action_fields": {"move": "down"},
-  "target_panel_id": "<uuid>",
-  "target_state_fields": {"x": 2, "y": 4},
-  "negative_panel_id": "<uuid>",
-  "negative_state_fields": {"x": 0, "y": 0}
+  "decoded_records": {
+    "dataset_shard": {"row_count": 4977, "split_name": "train"},
+    "row": {
+      "row_index": 0,
+      "input_panel_id": "<uuid>",
+      "input_panel_dense_norm": 1.0,
+      "input_state_fields": {"x": {"I64": 2}, "y": {"I64": 3}},
+      "input_action_fields": {"move": {"String": "down"}},
+      "target_panel_id": "<uuid>",
+      "target_state_fields": {"x": {"I64": 2}, "y": {"I64": 4}},
+      "negative_panel_id": "<uuid>",
+      "negative_state_fields": {"x": {"I64": 0}, "y": {"I64": 0}},
+      "source_hash_checks": {"input_equal": true, "target_equal": true}
+    }
+  }
 }
 ```
 
@@ -142,9 +150,9 @@ Counter_world:
 Gridworld:
 
 - 1000 trajectories; each with 8 panels, 7 transitions.
-- 3 dataset shards (train/val/test) covering 7000 rows total. Train ≈ 4900 ± 100, val ≈ 1400 ± 50, test ≈ 700 ± 50 (split-bucket boundary jitter).
+- 3 dataset shards (train/val/test) covering 7000 rows total. The checked-in corpus currently splits to train=4977, val=1330, test=693.
 
-`tests/dataset_fsv.rs` asserts these with explicit numeric ranges.
+`crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs` asserts these through the real CLI, real RocksDB, and decoded source-of-truth reads.
 
 ## 6. Edge Cases
 

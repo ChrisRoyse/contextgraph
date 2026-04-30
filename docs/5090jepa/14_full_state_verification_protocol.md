@@ -17,13 +17,13 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 5)
+## 2. Current Implemented FSV Scope (Phase 6)
 
-Phase 5 verifies domain-pack registration, JSONL event ingestion, adapter runs,
+Phase 6 verifies domain-pack registration, JSONL event ingestion, adapter runs,
 normalized state/action/outcome/transition rows, instrument readings, latent
-panels, deterministic bindings, trajectory rows, and physical inspection. The
-full dataset/model/harness protocol below remains binding for later phases, but
-the current completed source-of-truth surface is:
+panels, deterministic bindings, trajectory rows, one-step dataset shards, and
+physical inspection. The full model/harness protocol below remains binding for
+later phases, but the current completed source-of-truth surface is:
 
 ```bash
 export DJ_DB=/tmp/5090jepa-phase4-fsv
@@ -37,12 +37,17 @@ context-graph dynamicjepa list-instrument-readings --db "$DJ_DB" --event-id <eve
 context-graph dynamicjepa compile-trajectories --db "$DJ_DB" --domain counter_world --policy by_domain_session --json
 context-graph dynamicjepa get-trajectory --db "$DJ_DB" --id <trajectory-id> --json
 context-graph dynamicjepa list-trajectories --db "$DJ_DB" --domain counter_world --json
+context-graph dynamicjepa compile-dataset --db "$DJ_DB" --domain counter_world --policy one_step --split train --json
+context-graph dynamicjepa compile-dataset --db "$DJ_DB" --domain counter_world --policy one_step --split val --json
+context-graph dynamicjepa get-dataset-shard --db "$DJ_DB" --dataset-id <dataset-id> --shard-id <shard-id> --json
+context-graph dynamicjepa inspect-dataset --db "$DJ_DB" --dataset-id <dataset-id> --shard-id <shard-id> --row 0 --json
 context-graph dynamicjepa bind --db "$DJ_DB" --left-cf dj_raw_events --left-key <key_hex> --right-cf dj_trajectories --right-key <key_hex> --method explicit_mapping --json
 context-graph dynamicjepa list-bindings --db "$DJ_DB" --entity <key_hex> --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_raw_events --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_runs --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_latent_panels --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_trajectories --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_dataset_shards --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_bindings --limit 10 --json
 ```
 
@@ -101,11 +106,16 @@ Current evidence:
 - Manual Phase 5 evidence: `tmp/5090jepa_evidence/phase5/manual/`, DBs `/tmp/5090jepa-phase5-manual-cw`, `/tmp/5090jepa-phase5-manual-gw`, and `/tmp/5090jepa-phase5-manual-missing-panel`.
 - Automated Phase 5 CLI evidence: `tmp/5090jepa_evidence/phase5/cli_phase5_fsv.json`.
 - Phase 5 independent physical proof: `ldb dump --count_only` was run against `dj_raw_events`, `dj_transitions`, `dj_latent_panels`, `dj_bindings`, `dj_bindings_by_entity`, `dj_trajectories`, and `dj_audit_log` and matched the decoded CLI evidence.
+- Manual Phase 6 counter evidence: `tmp/5090jepa_evidence/phase6/manual_counter/`, DBs `/tmp/5090jepa-phase6-manual-cw`, `/tmp/5090jepa-phase6-manual-no-traj`, and `/tmp/5090jepa-phase6-manual-badneg`.
+- Manual Phase 6 full-gridworld evidence: `tmp/5090jepa_evidence/phase6/manual_gridworld/`, DB `/tmp/5090jepa-phase6-manual-gw-full`.
+- Automated Phase 6 CLI evidence: `tmp/5090jepa_evidence/phase6/cli_phase6_fsv.json`.
+- Phase 6 independent physical proof: `ldb dump --count_only` was run against `dj_dataset_shards`, `dj_audit_log`, `dj_trajectories`, `dj_latent_panels`, `dj_actions`, and `dj_outcomes` and matched the decoded CLI evidence.
 
 Phase 3 remains verified by `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs`
 and `tmp/5090jepa_evidence/phase3/doublecheck/`; Phase 4 remains verified by
-`crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs`. Both are
-prerequisites for the Phase 5 FSV rather than the current endpoint.
+`crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs`; Phase 5 remains
+verified by `crates/context-graph-cli/tests/dynamicjepa_phase5_fsv.rs`. All are
+prerequisites for the Phase 6 FSV rather than the current endpoint.
 
 ## 3. Required Fixtures
 
@@ -312,7 +322,7 @@ Expected final counts (gridworld); ranges where the deterministic split bucket b
 | `dj_surprise_events` | 0 happy path |
 | `dj_verification_runs` | 1 (`Passed`) |
 
-The harness asserts dataset row counts within the declared ranges (`expected_train_rows_min..max`, etc.).
+The Phase 6 manual gridworld FSV observed the checked-in corpus split as train=4977, val=1330, test=693, totaling 7000 one-step rows. Future model harnesses may keep range assertions, but the current source-of-truth evidence records these exact counts.
 
 ## 7. Edge Cases (gridworld_5x5)
 

@@ -1,6 +1,6 @@
 # 02 — Repository State Inventory
 
-This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 6. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
 ## 1. Branch & Commit Snapshot (Phase 4 Double-Check: 2026-04-30)
 
@@ -66,6 +66,7 @@ test -d crates/context-graph-storage/src/dynamicjepa
 test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs
+test -f crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs
 test -f crates/context-graph-cli/src/bin/context-graph.rs
 
 # Configs root
@@ -75,9 +76,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2 Through Phase 5 Verification Status (2026-04-30)
+## 4. Phase 2 Through Phase 6 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6+ dataset/model/MCP work is still not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6 is implemented and manually verified as the deterministic one-step dataset shard compiler. Phase 7+ service/model/MCP work is still not present.
 
 Source of truth verified:
 
@@ -176,16 +177,27 @@ Phase 5 verification results:
 - `cargo test -p context-graph-storage dynamicjepa --all-features`: 1 passed, 0 failed.
 - `cargo build -p context-graph-cli --release --all-features`: passed.
 - Manual counter_world happy path compiled one trajectory with three ordered transitions and three ordered panels; derived timestamp proof is `[1700000000000, 1700000001000, 1700000002000]`.
-- Manual counter_world explicit binding wrote `dj_bindings=1` and `dj_bindings_by_entity=1`; decoded binding evidence references the raw event key and trajectory key that were read from RocksDB.
+- Manual counter_world binding wrote both deterministic methods: explicit mapping (`dj_raw_events` → `dj_trajectories`) and id equality (`dj_raw_events` → same `dj_raw_events` key). Final binding counts are `dj_bindings=2` and `dj_bindings_by_entity=2`; decoded binding evidence references keys that were read from RocksDB.
 - Manual gridworld one-trajectory happy path compiled one trajectory with eight ordered transitions and eight ordered panels; derived timestamp proof is `[0,1,2,3,4,5,6,7]` and `entity_refs` carries the source `trajectory_id`.
 - Edge cases verified with before/after snapshots: unsupported trajectory policy, duplicate trajectory compile, missing binding evidence, and missing panel source. Each failed with a structured error and left the relevant primary/index/audit counts unchanged.
-- Independent `ldb dump --count_only` confirmed final manual counts: counter_world `dj_raw_events=3`, `dj_transitions=3`, `dj_latent_panels=3`, `dj_bindings=1`, `dj_bindings_by_entity=1`, `dj_trajectories=1`, `dj_audit_log=12`; gridworld `dj_raw_events=8`, `dj_transitions=8`, `dj_latent_panels=8`, `dj_trajectories=1`, `dj_audit_log=26`.
+- Independent `ldb dump --count_only` confirmed final manual counts: counter_world `dj_raw_events=3`, `dj_transitions=3`, `dj_latent_panels=3`, `dj_bindings=2`, `dj_bindings_by_entity=2`, `dj_trajectories=1`, `dj_audit_log=13`; gridworld `dj_raw_events=8`, `dj_transitions=8`, `dj_latent_panels=8`, `dj_trajectories=1`, `dj_audit_log=26`.
 
-Root-cause fixes made during the Phase 5 audit:
+Phase 6 verification result:
+
+- `cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- Manual counter_world happy path compiled two dataset shards: train row `t0->t1` and val row `t1->t2`; `get-dataset-shard` and `inspect-dataset` read back the persisted rows from `dj_dataset_shards` and linked panels/actions/outcomes.
+- Manual counter_world edge cases verified before/after source-of-truth counts for duplicate split, invalid policy, no trajectories, and insufficient negatives. Each failed with structured JSON and left `dj_dataset_shards`/`dj_audit_log` unchanged.
+- Manual full gridworld happy path ingested 8000 events, materialized 8000 panels, compiled 1000 trajectories, and compiled 3 dataset shards with row counts `train=4977`, `val=1330`, `test=693`, totaling 7000 one-step rows.
+- Independent `ldb dump --count_only` confirmed final Phase 6 gridworld counts: `dj_dataset_shards=3`, `dj_trajectories=1000`, `dj_latent_panels=8000`, `dj_actions=8000`, `dj_outcomes=8000`, `dj_audit_log=25004`.
+- Manual Phase 6 evidence paths: `tmp/5090jepa_evidence/phase6/manual_counter/`, `tmp/5090jepa_evidence/phase6/manual_gridworld/`, and `tmp/5090jepa_evidence/phase6/cli_phase6_fsv.json`.
+
+Root-cause fixes made during the Phase 5 and Phase 6 audits:
 
 - Binding and trajectory storage gained atomic `*_with_audit_batch` helpers, so the primary rows, secondary index rows, and audit rows are persisted together.
 - CLI binding validates and decodes both referenced source-of-truth rows before writing; missing evidence fails with `BINDING_EVIDENCE_MISSING` and no row writes.
 - Trajectory compilation groups gridworld by the registered entity mapping from raw event payloads while counter_world uses one domain-session group; every transition must have a decoded latent panel before a trajectory row is written.
+- Adapter terminal timestamps now clamp `finished_at_unix_ms` to at least the persisted `started_at_unix_ms` before writing terminal run rows, preserving the storage invariant even if the host clock is sampled non-monotonically within the same millisecond.
+- Dataset shard storage gained an atomic `put_dataset_shard_with_audit_batch` helper, so the shard row and audit row are written together after leakage and source-hash checks pass.
 
 ## 5. Existing Surfaces You Will Reuse
 
@@ -247,7 +259,7 @@ Tool registry surface:
 
 Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
 
-Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 6+ CLI subcommands remain unimplemented.
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. Phase 6 dataset subcommands now present: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 7+ model/MCP CLI subcommands remain unimplemented.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

@@ -2,7 +2,7 @@
 
 The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
-Current implementation status as of the Phase 5 double-check on 2026-04-30: the CLI implements Phases 3-5. DynamicJEPA MCP tools are still Phase 9 and are not present in `context-graph-mcp` yet.
+Current implementation status as of the Phase 6 double-check on 2026-04-30: the CLI implements Phases 3-6, including dataset shard compilation/read/inspection. DynamicJEPA MCP tools are still Phase 9 and are not present in `context-graph-mcp` yet.
 
 ## 1. Tool Name Constants
 
@@ -132,14 +132,16 @@ crates/context-graph-cli/src/commands/dynamicjepa.rs
 
 Wire to `commands/mod.rs` and the top-level clap-derive enum in `main.rs`.
 
-Phase 4 status: the registry/inspection subset is implemented and verified:
+Current CLI status: the registry/inspection subset is implemented and verified:
 `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and
 `inspect-cf`. The adapter/panel subset is also implemented and verified:
 `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and
 `list-instrument-readings`. The Phase 5 binding/trajectory subset is implemented
 and verified: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`,
-and `list-trajectories`. Later subcommands below remain Phase 6+ work and should
-not be listed as operational until their source-of-truth FSV is complete.
+and `list-trajectories`. The Phase 6 dataset subset is implemented and verified:
+`compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. Later subcommands
+below remain Phase 7+ work and should not be listed as operational until their
+source-of-truth FSV is complete.
 
 Subcommands (all accept `--db PATH` and `--json`):
 

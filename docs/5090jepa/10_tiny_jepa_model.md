@@ -4,7 +4,7 @@ The demo's predictor is intentionally small. The point is to prove the *contract
 
 The full plan's open questions doc (`docs/dynamicjepa/implementationplan/15_open_questions_decisions.md`) recommends "tiny deterministic architecture first for FSV." This file makes that concrete.
 
-Current implementation status as of the Phase 5 double-check on 2026-04-30: model code is not implemented yet. Phases 4-5 now supply the verified panel and trajectory source-of-truth records that Phase 7 training will consume after Phase 6 datasets exist.
+Current implementation status as of the Phase 6 double-check on 2026-04-30: model code is not implemented yet. Phases 4-6 now supply verified panel, trajectory, and dataset source-of-truth records that Phase 7 training will consume.
 
 ## 1. Architecture (Single File of Truth)
 

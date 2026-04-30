@@ -2,7 +2,7 @@
 
 This file is a debugging reference. The first job when something fails is to identify the *category* of failure — that determines which evidence to gather and which fix to apply.
 
-Current implementation status as of the Phase 5 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, and `compile-trajectories` are operational and covered by FSV. Later dataset/model/planning failures are specified here for future phases.
+Current implementation status as of the Phase 6 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, `compile-trajectories`, and `compile-dataset` are operational and covered by FSV. Later model/planning failures are specified here for future phases.
 
 ## 1. Categories
 
@@ -77,6 +77,12 @@ Fix: Re-read `08_adapter_and_panel_pipeline.md` Section 4. The most likely cause
 Cause: not enough panels with different outcomes to satisfy `min_negatives_per_row`.
 
 Fix: For counter_world this should never happen (3 distinct outcomes). For gridworld this should also not happen (8000 panels). If it does, the corpus is degenerate — re-generate.
+
+### 2.6a `ingest-event` / `run-adapter` — terminal timestamp precedes start timestamp
+
+Cause: terminal adapter rows must satisfy `finished_at_unix_ms >= started_at_unix_ms`. The CLI now clamps the terminal timestamp to the persisted start timestamp before writing completed or failed runs. If this invariant reappears, inspect the adapter run row and the host clock logs; do not relax the storage validator.
+
+Fix: preserve the invariant at the writer boundary and rerun from a fresh demo DB. A failed write should leave the error JSON and RocksDB logs showing the exact row type and field.
 
 ### 2.7 `train` — `TrainingFailed: max_seconds budget exceeded before convergence`
 

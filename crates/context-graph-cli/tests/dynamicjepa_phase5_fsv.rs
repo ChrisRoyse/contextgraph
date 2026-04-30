@@ -441,6 +441,35 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
     assert_eq!(bind_ok["count_delta"]["dj_audit_log"], 1);
     evidence.push(json!({"step": "counter_bind_raw_to_trajectory", "output": bind_ok}));
 
+    let id_equality_bind = run_ok(&[
+        "dynamicjepa",
+        "bind",
+        "--db",
+        &counter_db,
+        "--left-cf",
+        "dj_raw_events",
+        "--left-key",
+        &raw_key,
+        "--right-cf",
+        "dj_raw_events",
+        "--right-key",
+        &raw_key,
+        "--method",
+        "id_equality",
+        "--json",
+    ]);
+    assert_eq!(count(&id_equality_bind, "dj_bindings"), 2);
+    assert_eq!(count(&id_equality_bind, "dj_bindings_by_entity"), 2);
+    assert_eq!(id_equality_bind["count_delta"]["dj_bindings"], 1);
+    assert_eq!(id_equality_bind["count_delta"]["dj_bindings_by_entity"], 1);
+    assert_eq!(id_equality_bind["count_delta"]["dj_audit_log"], 1);
+    assert_eq!(
+        id_equality_bind["decoded_records"]["binding"]["method"],
+        "IdEquality"
+    );
+    evidence
+        .push(json!({"step": "counter_bind_raw_to_raw_id_equality", "output": id_equality_bind}));
+
     let list_bindings = run_ok(&[
         "dynamicjepa",
         "list-bindings",
@@ -455,7 +484,7 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
             .as_array()
             .expect("bindings")
             .len(),
-        1
+        2
     );
     evidence.push(json!({"step": "counter_list_bindings", "output": list_bindings}));
 

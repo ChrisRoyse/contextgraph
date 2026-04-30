@@ -2,7 +2,7 @@
 
 The full DynamicJEPA contract is in `docs/dynamicjepa/implementationplan/03_core_data_contracts.md`. This file lists the *trimmed v1 subset* used by the 5090 demo. Every record below is added to `crates/context-graph-core/src/dynamicjepa/`. Module layout follows the full contract:
 
-Current implementation status as of the Phase 5 double-check on 2026-04-30: records needed through `RawDomainEvent`, `AdapterRunRecord`, normalized state/action/outcome/transition, `InstrumentReading`, `LatentPanel`, `BindingRecord`, and `TrajectoryRecord` are implemented and FSV-verified. Later records remain defined for schema completeness and are wired in Phase 6+.
+Current implementation status as of the Phase 6 double-check on 2026-04-30: records needed through `RawDomainEvent`, `AdapterRunRecord`, normalized state/action/outcome/transition, `InstrumentReading`, `LatentPanel`, `BindingRecord`, `TrajectoryRecord`, and `DatasetShardRecord` are implemented and FSV-verified. Later model, artifact, prediction, planning, surprise, and verification records remain defined for schema completeness and are wired in Phase 7+.
 
 ```
 crates/context-graph-core/src/dynamicjepa/

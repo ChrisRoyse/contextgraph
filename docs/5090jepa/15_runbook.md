@@ -46,13 +46,14 @@ sha256sum configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl
 
 Record the hash; the test suite asserts it. If the hash drifts, revert the generator change.
 
-## 4. Current Phase 5 Registry/Adapter/Panel/Trajectory Run
+## 4. Current Phase 6 Registry/Adapter/Panel/Trajectory/Dataset Run
 
 This is the implemented runbook today. It proves the Phase 3, Phase 4, and
-Phase 5 surfaces: domain-pack registration, decoded CF inspection, strict
+Phase 5/6 surfaces: domain-pack registration, decoded CF inspection, strict
 validation, JSONL ingestion, adapter success/failure, instrument readings,
 latent panels, deterministic bindings, trajectories, and physical RocksDB
-evidence. It intentionally does not call Phase 6+ commands.
+evidence. Phase 6 adds deterministic one-step dataset shards, decoded dataset
+row inspection, and independent `ldb` count proof.
 
 ```bash
 # Phase 3 registry regression run; Phase 4 depends on these rows.
@@ -265,6 +266,23 @@ dj_bindings_by_entity 1
 dj_audit_log 12
 ```
 
+Also verify `id_equality` by binding one decoded row to itself:
+
+```bash
+./target/debug/context-graph dynamicjepa bind --db "$DJ_DB" \
+  --left-cf dj_raw_events --left-key <raw_event_key_hex> \
+  --right-cf dj_raw_events --right-key <raw_event_key_hex> \
+  --method id_equality --json
+```
+
+Expected cumulative binding counts after both methods:
+
+```text
+dj_bindings 2
+dj_bindings_by_entity 2
+dj_audit_log 13
+```
+
 Phase 5 gridworld one-trajectory run mirrors the counter run with the first
 eight corpus rows. Expected counts after trajectory compile:
 
@@ -291,6 +309,53 @@ for cf in dj_raw_events dj_transitions dj_latent_panels dj_bindings dj_bindings_
   /usr/bin/ldb --db="$DJ_DB" --column_family="$cf" dump --count_only | awk -v cf="$cf" '/Keys in range:/ {print cf, $4}'
 done
 ```
+
+Phase 6 counter_world dataset run continues from a DB that has one trajectory
+and three panels:
+
+```bash
+./target/debug/context-graph dynamicjepa compile-dataset --db "$DJ_DB" \
+  --domain counter_world --policy one_step --split train --json
+./target/debug/context-graph dynamicjepa compile-dataset --db "$DJ_DB" \
+  --domain counter_world --policy one_step --split val --json
+./target/debug/context-graph dynamicjepa inspect-cf --db "$DJ_DB" \
+  --cf dj_dataset_shards --limit 10 --json
+```
+
+Expected counter_world dataset counts after train+val:
+
+```text
+dj_dataset_shards 2
+dj_trajectories 1
+dj_latent_panels 3
+dj_audit_log 13
+```
+
+For the full gridworld corpus, run the same register/ingest/materialize/
+compile-trajectories flow against `gridworld_5x5_corpus.jsonl`, then compile
+all three splits:
+
+```bash
+./target/debug/context-graph dynamicjepa compile-dataset --db "$DJ_DB" \
+  --domain gridworld_5x5 --policy one_step --split train --json
+./target/debug/context-graph dynamicjepa compile-dataset --db "$DJ_DB" \
+  --domain gridworld_5x5 --policy one_step --split val --json
+./target/debug/context-graph dynamicjepa compile-dataset --db "$DJ_DB" \
+  --domain gridworld_5x5 --policy one_step --split test --json
+```
+
+Expected full-gridworld Phase 6 counts for the checked-in corpus:
+
+```text
+dj_raw_events 8000
+dj_latent_panels 8000
+dj_trajectories 1000
+dj_dataset_shards 3
+dataset rows train=4977 val=1330 test=693 total=7000
+```
+
+Phase 6 manual evidence lives in `tmp/5090jepa_evidence/phase6/manual_counter/`
+and `tmp/5090jepa_evidence/phase6/manual_gridworld/`.
 
 ## 5. Future Phase 10 Counter_world Run
 
@@ -388,10 +453,11 @@ cargo test -p context-graph-core dynamicjepa --release --all-features
 cargo test -p context-graph-storage dynamicjepa --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --release --all-features
 
 # Future phases, once the service crate and MCP DynamicJEPA surface exist:
 # cargo test -p context-graph-dynamicjepa --release --all-features
-# cargo test -p context-graph-cli dynamicjepa --release --all-features
 # cargo test -p context-graph-mcp dynamicjepa --release --all-features
 
 # Full workspace if you have time:
