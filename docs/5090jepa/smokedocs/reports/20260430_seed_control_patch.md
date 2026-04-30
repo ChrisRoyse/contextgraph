@@ -69,8 +69,21 @@ Observed:
 - Field: `research_smoke.career_training_seed`
 - No bundle directory was created.
 
+Final bundle validation:
+
+| Run ID | Main Seed | A0 Ablation Seed | Status |
+| --- | ---: | ---: | --- |
+| `20260430T_paper_small_1k_seed42_v2` | 42 | 42 | passed |
+| `20260430T_paper_small_1k_seed43_v2` | 43 | 42 | passed |
+| `20260430T_paper_small_1k_seed44_v1` | 44 | 42 | passed |
+
+The seed 43 rerun is the key proof. The earlier
+`20260430T_paper_small_1k_seed43_v1` failed when the main seed override also
+changed A0. After separating main career seed and ablation control seed,
+`20260430T_paper_small_1k_seed43_v2` passed while recording `main_seed=43` and
+`a0_seed=42` in the generated train configs.
+
 ## Learning
 
 Multi-seed evidence needs a real source-of-truth seed field in the generated
 train config and run manifest. A command-line label alone is not evidence.
-
