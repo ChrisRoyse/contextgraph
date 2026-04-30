@@ -4,10 +4,14 @@ use serde_json::{json, Value};
 use tracing::error;
 
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+use context_graph_storage::dynamicjepa::{
+    column_families::DJ_CF_NAMES, count_model_artifacts, count_training_runs,
+    count_verification_runs, list_domain_packs, snapshot_dj_counts,
+};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
-use crate::tools::get_tool_definitions;
+use crate::tools::{get_tool_definitions, tool_names};
 
 use super::super::Handlers;
 use super::helpers::ToolErrorKind;
@@ -103,6 +107,7 @@ impl Handlers {
             .as_ref()
             .map(|b| b.is_running())
             .unwrap_or(false);
+        let dynamicjepa = dynamicjepa_runtime_state(store)?;
 
         #[cfg(feature = "llm")]
         let llm_loaded = self
@@ -159,7 +164,8 @@ impl Handlers {
                 "codeEmbeddingProviderAvailable": self.code_embedding_provider.is_some(),
                 "edgeRepositoryAvailable": self.edge_repository.is_some(),
                 "graphBuilderRunning": graph_builder_running
-            }
+            },
+            "dynamicjepa": dynamicjepa
         }))
     }
 }
@@ -201,6 +207,7 @@ fn tool_groups() -> Value {
         {"group": "learning_events", "tools": ["record_learning_event", "record_graph_learning_event", "list_learning_events", "get_learning_event", "count_learning_events", "list_learning_signal_embedders", "compute_learning_signals", "embed_learning_event_signals", "estimate_learning_outcome", "resolve_graph_learning_policy", "export_learner_training_dataset", "list_learner_training_datasets", "get_learner_training_dataset", "count_learner_training_datasets"]},
         {"group": "training_factories", "tools": ["export_training_corpus", "list_training_records", "get_training_record", "count_training_records", "compile_constellation", "list_constellations", "get_constellation", "score_against_constellation", "derive_constellation", "delete_constellation", "mine_contrastive_pairs", "list_contrastive_pairs", "get_contrastive_pair", "count_contrastive_pairs", "export_typed_edges_corpus", "derive_anomalies_from_edges", "validate_low_confidence_edges", "list_typed_edge_records"]},
         {"group": "llm_gated", "tools": ["trigger_causal_discovery", "get_causal_discovery_status", "discover_graph_relationships", "validate_graph_link", "validate_low_confidence_edges"]},
+        {"group": "dynamicjepa", "tools": dynamicjepa_tool_names()},
         {"group": "daemon_files_maintenance", "tools": ["daemon_status", "list_watched_files", "get_file_watcher_stats", "delete_file_content", "reconcile_files", "repair_causal_relationships"]}
     ])
 }
@@ -246,6 +253,7 @@ fn capability_records() -> Value {
         {"id": "constellation_alignment", "status": "available_when_memory_corpus_exists", "tools": ["compile_constellation", "derive_constellation", "score_against_constellation", "compile_learner_constellation"], "sourceOfTruth": ["constellations", "constellation_by_selector", "learner_constellations"]},
         {"id": "contrastive_anomaly_curriculum", "status": "available_when_edges_or_memory_exist", "tools": ["mine_contrastive_pairs", "derive_anomalies_from_edges", "list_contrastive_pairs", "count_contrastive_pairs"], "sourceOfTruth": ["contrastive_pairs", "contrastive_by_kind", "contrastive_by_anchor", "typed_edge_records"]},
         {"id": "typed_edge_training", "status": "available_when_graph_edges_exist", "tools": ["export_typed_edges_corpus", "list_typed_edge_records", "validate_low_confidence_edges"], "sourceOfTruth": ["typed_edge_records", "typed_edge_validations"]},
+        {"id": "dynamicjepa_world_modeling", "status": "available", "tools": dynamicjepa_tool_names(), "sourceOfTruth": DJ_CF_NAMES},
         {"id": "provenance_audit", "status": "available", "tools": ["get_audit_trail", "get_merge_history", "get_provenance_chain"], "sourceOfTruth": ["audit_log", "audit_by_target", "merge_history", "embedding_registry"]},
         {"id": "llm_graph_causal_discovery", "status": "llm_gated", "tools": ["trigger_causal_discovery", "discover_graph_relationships", "validate_graph_link", "validate_low_confidence_edges"], "sourceOfTruth": ["causal_relationships", "causal_by_source", "typed_edge_validations"]}
     ])
@@ -256,6 +264,70 @@ fn source_of_truth() -> Value {
         "contentGraph": ["fingerprints", "content", "source_metadata", "topic_profiles", "e1_matryoshka_128", "e6_sparse_inverted", "e12_late_interaction", "e13_splade_inverted", "emb_0", "emb_1", "emb_2", "emb_3", "emb_4", "emb_5", "emb_6", "emb_7", "emb_8", "emb_9", "emb_10", "emb_11", "emb_12", "emb_13"],
         "learnerState": ["learner_profile", "learner_constellations", "fingerprints_learner", "learner_m_per_trace", "learner_state_history", "learner_goal_states", "learner_retrieval_log", "learner_k_sleep", "goal_centroids", "learner_delta_log", "learner_audit"],
         "training": ["training_records", "learning_events", "learner_training_datasets", "constellations", "constellation_by_selector", "contrastive_pairs", "contrastive_by_kind", "contrastive_by_anchor", "typed_edge_records", "typed_edge_validations"],
-        "provenance": ["audit_log", "audit_by_target", "merge_history", "importance_history", "embedding_registry"]
+        "provenance": ["audit_log", "audit_by_target", "merge_history", "importance_history", "embedding_registry"],
+        "dynamicjepa": DJ_CF_NAMES
     })
+}
+
+fn dynamicjepa_runtime_state(store: &RocksDbTeleologicalStore) -> Result<Value, String> {
+    let db = store.dynamicjepa_db();
+    let counts = snapshot_dj_counts(db).map_err(|e| format!("snapshot_dj_counts failed: {e}"))?;
+    let domains = list_domain_packs(db, 100, 0)
+        .map_err(|e| format!("list_domain_packs(limit=100, offset=0) failed: {e}"))?;
+    let registered_domain_packs = domains
+        .iter()
+        .map(|domain| {
+            json!({
+                "id": domain.id.as_str(),
+                "version": domain.version,
+                "title": domain.title,
+                "instrumentCount": domain.instrument_specs.len(),
+                "adapterCount": domain.adapter_specs.len(),
+                "objectiveCount": domain.objective_specs.len()
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "columnFamilyCount": DJ_CF_NAMES.len(),
+        "columnFamilies": DJ_CF_NAMES,
+        "counts": counts,
+        "domainPackCount": registered_domain_packs.len(),
+        "registeredDomainPacks": registered_domain_packs,
+        "trainingRunCount": count_training_runs(db).map_err(|e| format!("count_training_runs failed: {e}"))?,
+        "modelArtifactCount": count_model_artifacts(db).map_err(|e| format!("count_model_artifacts failed: {e}"))?,
+        "verificationRunCount": count_verification_runs(db).map_err(|e| format!("count_verification_runs failed: {e}"))?
+    }))
+}
+
+fn dynamicjepa_tool_names() -> Vec<&'static str> {
+    vec![
+        tool_names::DYNAMICJEPA_REGISTER_DOMAIN_PACK,
+        tool_names::DYNAMICJEPA_LIST_DOMAIN_PACKS,
+        tool_names::DYNAMICJEPA_GET_DOMAIN_PACK,
+        tool_names::DYNAMICJEPA_INGEST_EVENT,
+        tool_names::DYNAMICJEPA_RUN_ADAPTER,
+        tool_names::DYNAMICJEPA_MATERIALIZE_PANEL,
+        tool_names::DYNAMICJEPA_GET_PANEL,
+        tool_names::DYNAMICJEPA_LIST_INSTRUMENT_READINGS,
+        tool_names::DYNAMICJEPA_CREATE_BINDING,
+        tool_names::DYNAMICJEPA_LIST_BINDINGS,
+        tool_names::DYNAMICJEPA_COMPILE_TRAJECTORIES,
+        tool_names::DYNAMICJEPA_GET_TRAJECTORY,
+        tool_names::DYNAMICJEPA_LIST_TRAJECTORIES,
+        tool_names::DYNAMICJEPA_COMPILE_DATASET,
+        tool_names::DYNAMICJEPA_GET_DATASET_SHARD,
+        tool_names::DYNAMICJEPA_INSPECT_DATASET_ROW,
+        tool_names::DYNAMICJEPA_TRAIN,
+        tool_names::DYNAMICJEPA_GET_TRAINING_RUN,
+        tool_names::DYNAMICJEPA_GET_ARTIFACT,
+        tool_names::DYNAMICJEPA_PREDICT,
+        tool_names::DYNAMICJEPA_PLAN,
+        tool_names::DYNAMICJEPA_RECORD_SURPRISE,
+        tool_names::DYNAMICJEPA_GET_PREDICTION,
+        tool_names::DYNAMICJEPA_GET_PLAN_TRACE,
+        tool_names::DYNAMICJEPA_GET_SURPRISE,
+        tool_names::DYNAMICJEPA_INSPECT_COUNTS,
+        tool_names::DYNAMICJEPA_INSPECT_CF,
+    ]
 }

@@ -18,7 +18,6 @@ path = "src/bin/context-graph.rs"
 
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
-context-graph-mcp = { path = "../context-graph-mcp" }
 context-graph-storage = { path = "../context-graph-storage" }
 context-graph-dynamicjepa = { path = "../context-graph-dynamicjepa" }
 # TASK-HOOKS-011: Required for semantic search (--query flag)
@@ -88,4 +87,4 @@ harness = false
 default = ["cuda"]
 # context-graph-core doesn't have cuda feature, only context-graph-mcp does
 # TASK-HOOKS-011: Added context-graph-embeddings/cuda for semantic search
-cuda = ["context-graph-mcp/cuda", "context-graph-embeddings/cuda"]
+cuda = ["context-graph-embeddings/cuda"]

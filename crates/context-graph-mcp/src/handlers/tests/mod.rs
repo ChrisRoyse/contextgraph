@@ -31,6 +31,7 @@ mod initialize;
 mod mcp_protocol_e2e_test;
 mod search_periodic_test;
 mod tcp_transport_integration;
+mod dynamicjepa_tools;
 mod tools_call;
 mod tools_list;
 mod topic_tools;

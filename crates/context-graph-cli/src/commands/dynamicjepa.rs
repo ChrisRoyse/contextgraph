@@ -751,6 +751,21 @@ struct CommandOutcome {
     exit_code: i32,
 }
 
+#[derive(Debug)]
+pub struct DynamicJepaCommandOutcome {
+    pub value: Value,
+    pub exit_code: i32,
+}
+
+pub async fn run_dynamicjepa_command(
+    action: DynamicJepaCommands,
+) -> DynamicJepaResult<DynamicJepaCommandOutcome> {
+    run(action).await.map(|outcome| DynamicJepaCommandOutcome {
+        value: outcome.value,
+        exit_code: outcome.exit_code,
+    })
+}
+
 async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
     match action {
         DynamicJepaCommands::RegisterDomain(args) => register_domain(args),

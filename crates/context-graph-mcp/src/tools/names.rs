@@ -269,3 +269,59 @@ pub const VALIDATE_LOW_CONFIDENCE_EDGES: &str = "validate_low_confidence_edges";
 /// List composite keys (`source`, `target`, `edge_type`) currently stored in
 /// `CF_TYPED_EDGE_RECORDS` with optional full-record hydration.
 pub const LIST_TYPED_EDGE_RECORDS: &str = "list_typed_edge_records";
+
+// ========== DYNAMICJEPA TOOLS (5090jepa Phase 9) ==========
+/// Register a DynamicJEPA domain pack TOML into the DynamicJEPA RocksDB CFs.
+pub const DYNAMICJEPA_REGISTER_DOMAIN_PACK: &str = "dynamicjepa_register_domain_pack";
+/// List registered DynamicJEPA domain packs.
+pub const DYNAMICJEPA_LIST_DOMAIN_PACKS: &str = "dynamicjepa_list_domain_packs";
+/// Read one registered DynamicJEPA domain pack.
+pub const DYNAMICJEPA_GET_DOMAIN_PACK: &str = "dynamicjepa_get_domain_pack";
+/// Ingest a JSONL fixture and run its registered adapter.
+pub const DYNAMICJEPA_INGEST_EVENT: &str = "dynamicjepa_ingest_event";
+/// Run the adapter for a persisted raw event.
+pub const DYNAMICJEPA_RUN_ADAPTER: &str = "dynamicjepa_run_adapter";
+/// Materialize one or more latent panels.
+pub const DYNAMICJEPA_MATERIALIZE_PANEL: &str = "dynamicjepa_materialize_panel";
+/// Read one latent panel.
+pub const DYNAMICJEPA_GET_PANEL: &str = "dynamicjepa_get_panel";
+/// List instrument readings for a raw event.
+pub const DYNAMICJEPA_LIST_INSTRUMENT_READINGS: &str = "dynamicjepa_list_instrument_readings";
+/// Persist a deterministic binding between source-of-truth rows.
+pub const DYNAMICJEPA_CREATE_BINDING: &str = "dynamicjepa_create_binding";
+/// List persisted DynamicJEPA bindings.
+pub const DYNAMICJEPA_LIST_BINDINGS: &str = "dynamicjepa_list_bindings";
+/// Compile transitions/panels into trajectories.
+pub const DYNAMICJEPA_COMPILE_TRAJECTORIES: &str = "dynamicjepa_compile_trajectories";
+/// Read one trajectory.
+pub const DYNAMICJEPA_GET_TRAJECTORY: &str = "dynamicjepa_get_trajectory";
+/// List trajectories for a domain.
+pub const DYNAMICJEPA_LIST_TRAJECTORIES: &str = "dynamicjepa_list_trajectories";
+/// Compile one-step dataset shards.
+pub const DYNAMICJEPA_COMPILE_DATASET: &str = "dynamicjepa_compile_dataset";
+/// Read one dataset shard.
+pub const DYNAMICJEPA_GET_DATASET_SHARD: &str = "dynamicjepa_get_dataset_shard";
+/// Inspect one dataset row with decoded linked records.
+pub const DYNAMICJEPA_INSPECT_DATASET_ROW: &str = "dynamicjepa_inspect_dataset_row";
+/// Train a CUDA-only tiny DynamicJEPA artifact from persisted dataset shards.
+pub const DYNAMICJEPA_TRAIN: &str = "dynamicjepa_train";
+/// Read one training run.
+pub const DYNAMICJEPA_GET_TRAINING_RUN: &str = "dynamicjepa_get_training_run";
+/// Read one model artifact and optionally verify files.
+pub const DYNAMICJEPA_GET_ARTIFACT: &str = "dynamicjepa_get_artifact";
+/// Persist one hash-verified prediction.
+pub const DYNAMICJEPA_PREDICT: &str = "dynamicjepa_predict";
+/// Persist a plan trace with candidates, predictions, and guards.
+pub const DYNAMICJEPA_PLAN: &str = "dynamicjepa_plan";
+/// Compare predicted and observed outcomes and persist surprise when needed.
+pub const DYNAMICJEPA_RECORD_SURPRISE: &str = "dynamicjepa_record_surprise";
+/// Read one persisted prediction.
+pub const DYNAMICJEPA_GET_PREDICTION: &str = "dynamicjepa_get_prediction";
+/// Read one persisted plan trace.
+pub const DYNAMICJEPA_GET_PLAN_TRACE: &str = "dynamicjepa_get_plan_trace";
+/// Read one persisted surprise event.
+pub const DYNAMICJEPA_GET_SURPRISE: &str = "dynamicjepa_get_surprise";
+/// Count all DynamicJEPA column families.
+pub const DYNAMICJEPA_INSPECT_COUNTS: &str = "dynamicjepa_inspect_counts";
+/// Decode rows from one DynamicJEPA column family.
+pub const DYNAMICJEPA_INSPECT_CF: &str = "dynamicjepa_inspect_cf";

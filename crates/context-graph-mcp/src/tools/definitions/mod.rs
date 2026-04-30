@@ -23,6 +23,7 @@ pub(crate) mod contrastive;
 pub(crate) mod core;
 pub(crate) mod curation;
 pub(crate) mod daemon;
+pub(crate) mod dynamicjepa;
 pub(crate) mod embedder;
 pub(crate) mod entity;
 pub(crate) mod file_watcher;
@@ -45,7 +46,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(105);
+    let mut tools = Vec::with_capacity(137);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -128,6 +129,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Typed-edge training tools (4) - Phase 4 (F1/F2/F4 + list)
     tools.extend(typed_edges::definitions());
 
+    // DynamicJEPA tools (27) - 5090jepa Phase 9 MCP surface for Phases 3-8
+    tools.extend(dynamicjepa::definitions());
+
     tools
 }
 
@@ -139,9 +143,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 110);
+        assert_eq!(tools.len(), 137);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 106);
+        assert_eq!(tools.len(), 133);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -189,6 +193,7 @@ mod tests {
         assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);
+        assert_eq!(dynamicjepa::definitions().len(), 27);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {
