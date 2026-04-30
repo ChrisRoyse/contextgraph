@@ -18,22 +18,24 @@ use context_graph_core::dynamicjepa::{
     DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord,
     DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue, InstrumentId,
     InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation, InvariantSpec,
-    LatentPanel, LeakageReport, Normalization, NormalizedAction, NormalizedOutcome,
-    NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId, PanelSlot, PanelSlotKind,
-    PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus, ShapeSummary, SourceKind, StateId,
-    StateSchema, StateTransition, TimeEncoding, TimeSchema, TrajectoryId, TrajectoryRecord,
-    TransitionId, Validate, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION,
-    DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
-    LATENT_PANEL_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION,
-    NORMALIZED_OUTCOME_RECORD_VERSION, NORMALIZED_STATE_RECORD_VERSION,
-    RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
+    LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
+    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
+    PanelSlot, PanelSlotKind, PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus,
+    ShapeSummary, SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema,
+    TrainingRunId, TrajectoryId, TrajectoryRecord, TransitionId, Validate, VerificationPolicy,
+    ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
+    DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
+    NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
+    NORMALIZED_STATE_RECORD_VERSION, RAW_DOMAIN_EVENT_RECORD_VERSION,
+    STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
+use context_graph_dynamicjepa::{train_dataset, verify_artifact_files, TrainConfig};
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
     CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
     CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
-    CF_DJ_LATENT_PANELS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
-    CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
+    CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES,
+    CF_DJ_RAW_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
@@ -41,13 +43,14 @@ use context_graph_storage::dynamicjepa::keys::{
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
     get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec,
-    get_latent_panel, get_normalized_state, get_outcome, get_raw_event, get_trajectory,
-    get_transition, inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings,
-    list_dataset_shards, list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
-    list_trajectories, list_transitions, put_adapter_run_failure_batch,
-    put_adapter_run_success_batch, put_audit_record, put_binding_with_audit_batch,
-    put_dataset_shard_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
-    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch, snapshot_dj_counts,
+    get_latent_panel, get_model_artifact, get_normalized_state, get_outcome, get_raw_event,
+    get_training_run, get_trajectory, get_transition, inspect_cf, inspect_cf_key,
+    list_adapter_runs, list_bindings, list_dataset_shards, list_domain_packs,
+    list_instrument_readings_for_event, list_latent_panels, list_trajectories, list_transitions,
+    put_adapter_run_failure_batch, put_adapter_run_success_batch, put_audit_record,
+    put_binding_with_audit_batch, put_dataset_shard_with_audit_batch, put_domain_pack,
+    put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
+    put_trajectory_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
@@ -95,6 +98,12 @@ pub enum DynamicJepaCommands {
     GetDatasetShard(GetDatasetShardArgs),
     /// Inspect one decoded dataset row and its linked source-of-truth records.
     InspectDataset(InspectDatasetArgs),
+    /// Train a tiny DynamicJEPA model from persisted dataset shards and register an artifact.
+    Train(TrainArgs),
+    /// Read a persisted DynamicJEPA training run.
+    GetTrainingRun(GetTrainingRunArgs),
+    /// Read a persisted DynamicJEPA model artifact and optionally verify files.
+    GetArtifact(GetArtifactArgs),
 }
 
 impl DynamicJepaCommands {
@@ -118,6 +127,9 @@ impl DynamicJepaCommands {
             Self::CompileDataset(_) => "dynamicjepa_compile_dataset",
             Self::GetDatasetShard(_) => "dynamicjepa_get_dataset_shard",
             Self::InspectDataset(_) => "dynamicjepa_inspect_dataset",
+            Self::Train(_) => "dynamicjepa_train",
+            Self::GetTrainingRun(_) => "dynamicjepa_get_training_run",
+            Self::GetArtifact(_) => "dynamicjepa_get_artifact",
         }
     }
 }
@@ -488,6 +500,63 @@ pub struct InspectDatasetArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct TrainArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Dataset id returned by compile-dataset.
+    #[arg(long = "dataset-id")]
+    pub dataset_id: String,
+
+    /// Strict tiny training config JSON.
+    #[arg(long)]
+    pub config: PathBuf,
+
+    /// Artifact root directory. The run writes <root>/<domain>/<training_run_id>/.
+    #[arg(long = "artifact-root")]
+    pub artifact_root: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetTrainingRunArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Training run id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetArtifactArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Model artifact id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Recompute file hashes from disk and compare to the registry row.
+    #[arg(long = "verify-files")]
+    pub verify_files: bool,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -557,6 +626,9 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::CompileDataset(args) => compile_dataset_command(args),
         DynamicJepaCommands::GetDatasetShard(args) => get_dataset_shard_command(args),
         DynamicJepaCommands::InspectDataset(args) => inspect_dataset_command(args),
+        DynamicJepaCommands::Train(args) => train_command(args),
+        DynamicJepaCommands::GetTrainingRun(args) => get_training_run_command(args),
+        DynamicJepaCommands::GetArtifact(args) => get_artifact_command(args),
     }
 }
 
@@ -2004,6 +2076,186 @@ fn inspect_dataset_command(args: InspectDatasetArgs) -> DynamicJepaResult<Comman
         }),
         exit_code: 0,
     })
+}
+
+fn train_command(args: TrainArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DATASET_SHARDS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_ACTIONS,
+        CF_DJ_TRAINING_RUNS,
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "train.db")?;
+    let config_path = canonical_existing_path(&args.config, "train.config")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let dataset_id = parse_dataset_id(&args.dataset_id, "train.dataset_id")?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let config = TrainConfig::from_path(&args.config)?;
+        let outcome = train_dataset(db, dataset_id, &config, &args.artifact_root)?;
+        let training_run = get_training_run(db, outcome.training_run_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_TRAINING_RUNS.to_string(),
+                key: outcome.training_run_id.into_bytes().to_vec(),
+            }
+        })?;
+        let artifact = get_model_artifact(db, outcome.artifact_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_MODEL_ARTIFACTS.to_string(),
+                key: outcome.artifact_id.into_bytes().to_vec(),
+            }
+        })?;
+        Ok(json!({
+            "created_ids": {
+                "training_run_id": outcome.training_run_id.to_string(),
+                "artifact_id": outcome.artifact_id.to_string(),
+            },
+            "summary": {
+                "artifact_root": outcome.artifact_root,
+                "row_count_by_split": outcome.row_count_by_split,
+                "metrics": outcome.metrics,
+            },
+            "decoded_records": {
+                "training_run": training_run,
+                "artifact": artifact,
+                "training_runs_cf": inspect_cf(db, CF_DJ_TRAINING_RUNS, 20, 0)?,
+                "model_artifacts_cf": inspect_cf(db, CF_DJ_MODEL_ARTIFACTS, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 200, 0)?,
+            },
+            "artifact_hashes": outcome.artifact_hashes,
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_train",
+                "status": "ok",
+                "db_path": db_path,
+                "config_path": config_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+                "artifact_hashes": value["artifact_hashes"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_train",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn get_training_run_command(args: GetTrainingRunArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-training-run.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let id = parse_training_run_id(&args.id, "get-training-run.id")?;
+    let record = get_training_run(db, id)?;
+    match record {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_training_run",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_TRAINING_RUNS],
+                "counts": counts,
+                "decoded_records": {
+                    "training_run": record,
+                },
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_training_run",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_TRAINING_RUNS],
+                "counts": counts,
+                "queried": {"training_run_id": args.id},
+                "remediation": "run dynamicjepa train before reading a training run",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn get_artifact_command(args: GetArtifactArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-artifact.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let id = parse_model_artifact_id(&args.id, "get-artifact.id")?;
+    let record = get_model_artifact(db, id)?;
+    match record {
+        Some(record) => {
+            let artifact_hashes = if args.verify_files {
+                let checks = verify_artifact_files(&record)?;
+                if let Some(mismatch) = checks.iter().find(|check| !check.equal) {
+                    return Err(DynamicJepaError::ArtifactHashMismatch {
+                        artifact_id: record.artifact_id.0,
+                        file: mismatch.relative_path.clone(),
+                        expected: mismatch.registry_sha256.clone(),
+                        actual: mismatch.recomputed_sha256.clone(),
+                    });
+                }
+                json!(checks)
+            } else {
+                json!({
+                    "verified": false,
+                    "warning": "files not verified - pass --verify-files for FSV evidence",
+                })
+            };
+            Ok(CommandOutcome {
+                value: json!({
+                    "operation": "dynamicjepa_get_artifact",
+                    "status": "ok",
+                    "db_path": db_path,
+                    "source_of_truth": [CF_DJ_MODEL_ARTIFACTS],
+                    "counts": counts,
+                    "decoded_records": {
+                        "artifact": record,
+                    },
+                    "artifact_hashes": artifact_hashes,
+                }),
+                exit_code: 0,
+            })
+        }
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_artifact",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_MODEL_ARTIFACTS],
+                "counts": counts,
+                "queried": {"artifact_id": args.id},
+                "remediation": "run dynamicjepa train before reading a model artifact",
+            }),
+            exit_code: 0,
+        }),
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -4902,6 +5154,14 @@ fn parse_dataset_shard_id(value: &str, field: &str) -> DynamicJepaResult<Dataset
     Ok(DatasetShardId(parse_uuid(value, field)?))
 }
 
+fn parse_training_run_id(value: &str, field: &str) -> DynamicJepaResult<TrainingRunId> {
+    Ok(TrainingRunId(parse_uuid(value, field)?))
+}
+
+fn parse_model_artifact_id(value: &str, field: &str) -> DynamicJepaResult<ModelArtifactId> {
+    Ok(ModelArtifactId(parse_uuid(value, field)?))
+}
+
 fn parse_hex_key(value: &str, field: &str) -> DynamicJepaResult<Vec<u8>> {
     let text = value.trim();
     if text.is_empty() || text.len() % 2 != 0 {
@@ -5418,6 +5678,26 @@ fn error_value(
         DynamicJepaError::DatasetLeakageDetected { dataset_id, .. } => {
             object.insert("dataset_id".to_string(), json!(dataset_id.to_string()));
         }
+        DynamicJepaError::TrainingFailed {
+            training_run_id, ..
+        } => {
+            object.insert(
+                "training_run_id".to_string(),
+                json!(training_run_id.to_string()),
+            );
+        }
+        DynamicJepaError::ArtifactHashMismatch {
+            artifact_id,
+            file,
+            expected,
+            actual,
+        } => {
+            object.insert("artifact_id".to_string(), json!(artifact_id.to_string()));
+            object.insert("file".to_string(), json!(file));
+            object.insert("expected".to_string(), json!(expected));
+            object.insert("actual".to_string(), json!(actual));
+            object.insert("wrote_prediction".to_string(), json!(false));
+        }
         DynamicJepaError::DomainPackVersionMismatch {
             id,
             expected,
@@ -5460,6 +5740,10 @@ fn remediation(err: &DynamicJepaError) -> Option<String> {
         ),
         DynamicJepaError::DatasetLeakageDetected { .. } => Some(
             "inspect the dataset shard inputs, target panels, negative panels, and split evidence; no dataset shard row is written when leakage or insufficient negatives is detected"
+                .to_string(),
+        ),
+        DynamicJepaError::ArtifactHashMismatch { .. } => Some(
+            "recompute the artifact files from the registry path; rerun training from a fresh artifact root if any file differs"
                 .to_string(),
         ),
         _ => None,

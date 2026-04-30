@@ -28,12 +28,11 @@
 //!
 //! Sparse embedders (E6, E13) and token-level (E12) are excluded from GPU batching.
 //!
-//! # CUDA 13.1 Note
+//! # CUDA 13.2 Note
 //!
-//! Currently using SIMD-optimized CPU implementation until candle-core supports CUDA 13.1.
-//! The cudarc crate (candle's CUDA backend) doesn't yet support compute capability 12.0.
-//! Performance is still significantly better than scalar CPU due to SIMD and cache-friendly
-//! memory access patterns.
+//! The workspace Candle stack targets CUDA 13.2 / compute capability 12.0.
+//! This module still validates GPU-batched behavior explicitly because silent
+//! CPU fallback is forbidden for production paths.
 
 use crate::error::{CudaError, CudaResult};
 
@@ -120,11 +119,10 @@ pub const DENSE_EMBEDDER_INDICES: [usize; 10] = [0, 1, 2, 3, 4, 6, 7, 8, 9, 10];
 /// Created once per query and reused for all candidate comparisons.
 /// Contains L2-normalized query vectors and their norms.
 ///
-/// # Note on CUDA 13.1
+/// # Note on CUDA 13.2
 ///
-/// Currently using CPU implementation because candle-core's cudarc backend
-/// doesn't support CUDA 13.1 / compute capability 12.0 yet.
-/// The structure is designed to easily migrate to GPU when support is added.
+/// CUDA 13.2 / sm_120 support is required for production. Callers must treat
+/// any unavailable GPU path as a hard error rather than falling back silently.
 pub struct BatchedQueryContext {
     /// Pre-normalized query vectors [E1, E2, E3, E4, E5, E7, E8, E9, E10, E11]
     normalized_vectors: [[f32; 1536]; 10], // Max dimension (E7) for all

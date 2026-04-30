@@ -18,7 +18,7 @@
 //! # Target Hardware
 //!
 //! - RTX 5090 (32GB GDDR7, 1.8 TB/s bandwidth)
-//! - CUDA 13.1 with Compute Capability 12.0
+//! - CUDA 13.2 with Compute Capability 12.0
 //! - Blackwell architecture optimizations
 //!
 //! # Example (Test Only)
@@ -104,7 +104,7 @@ pub use context::{
 };
 pub use ops::VectorOps;
 // GPU-batched similarity (ARCH-GPU-06: batch operations preferred)
-// Note: Currently using optimized CPU implementation until candle-core supports CUDA 13.1
+// Note: CUDA 13.2 / sm_120 support is provided by the workspace Candle + cudarc stack.
 pub use similarity::{
     compute_batch_cosine_similarity, compute_batch_cosine_similarity_chunked, embedder_to_group,
     should_use_gpu_batch, BatchedQueryContext, DimensionGroup, DENSE_EMBEDDER_INDICES,

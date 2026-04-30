@@ -1,10 +1,16 @@
 use context_graph_core::dynamicjepa::{
-    DynamicJepaResult, ModelArtifactId, ModelArtifactRecord, TrainingRunId, TrainingRunRecord,
+    DynamicJepaRecord, DynamicJepaResult, ModelArtifactId, ModelArtifactRecord, TrainingRunId,
+    TrainingRunRecord,
 };
-use rocksdb::DB;
+use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::column_families::{CF_DJ_MODEL_ARTIFACTS, CF_DJ_TRAINING_RUNS};
-use crate::dynamicjepa::common::{count_cf, get_record, list_records, put_record};
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::column_families::{
+    CF_DJ_AUDIT_LOG, CF_DJ_MODEL_ARTIFACTS, CF_DJ_TRAINING_RUNS,
+};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::audit_key;
 
 pub fn put_training_run(db: &DB, record: &TrainingRunRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -13,6 +19,27 @@ pub fn put_training_run(db: &DB, record: &TrainingRunRecord) -> DynamicJepaResul
         record.training_run_id.into_bytes(),
         record,
     )
+}
+
+pub fn put_training_run_with_audit_batch(
+    db: &DB,
+    record: &TrainingRunRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    record.validate_record()?;
+    audit.validate()?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(
+        cf(db, CF_DJ_TRAINING_RUNS)?,
+        record.training_run_id.into_bytes(),
+        encode_record(record)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_training_run_with_audit_batch")
 }
 
 pub fn get_training_run(
@@ -41,6 +68,34 @@ pub fn put_model_artifact(db: &DB, record: &ModelArtifactRecord) -> DynamicJepaR
         record.artifact_id.into_bytes(),
         record,
     )
+}
+
+pub fn put_model_artifact_completion_batch(
+    db: &DB,
+    artifact: &ModelArtifactRecord,
+    completed_run: &TrainingRunRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    artifact.validate_record()?;
+    completed_run.validate_record()?;
+    audit.validate()?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(
+        cf(db, CF_DJ_MODEL_ARTIFACTS)?,
+        artifact.artifact_id.into_bytes(),
+        encode_record(artifact)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_TRAINING_RUNS)?,
+        completed_run.training_run_id.into_bytes(),
+        encode_record(completed_run)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_model_artifact_completion_batch")
 }
 
 pub fn get_model_artifact(

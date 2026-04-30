@@ -1,0 +1,23 @@
+[package]
+name = "context-graph-dynamicjepa"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "DynamicJEPA service, tiny model training, artifact, and inference verification"
+license.workspace = true
+
+[dependencies]
+context-graph-core = { path = "../context-graph-core" }
+context-graph-storage = { path = "../context-graph-storage" }
+candle-core = { workspace = true }
+candle-nn = { workspace = true }
+rocksdb = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+sha2 = "0.10"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.10"

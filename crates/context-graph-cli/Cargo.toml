@@ -20,6 +20,7 @@ path = "src/bin/context-graph.rs"
 context-graph-core = { path = "../context-graph-core" }
 context-graph-mcp = { path = "../context-graph-mcp" }
 context-graph-storage = { path = "../context-graph-storage" }
+context-graph-dynamicjepa = { path = "../context-graph-dynamicjepa" }
 # TASK-HOOKS-011: Required for semantic search (--query flag)
 context-graph-embeddings = { path = "../context-graph-embeddings" }
 

@@ -29,9 +29,10 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel, Special};
+use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
+use llama_cpp_2::TokenToStringError;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use tracing::{debug, error, info, warn};
@@ -1093,12 +1094,12 @@ ws ::= [ \t\n\r]*"#
             current_pos += 1;
         }
 
-        // Decode generated tokens to string
-        let output = model
-            .tokens_to_str(&generated_tokens, Special::Tokenize)
-            .map_err(|e| CausalAgentError::LlmInferenceError {
+        // Decode generated tokens to string.
+        let output = decode_tokens(model, &generated_tokens).map_err(|e| {
+            CausalAgentError::LlmInferenceError {
                 message: format!("Token decoding failed: {}", e),
-            })?;
+            }
+        })?;
 
         let generation_time_ms = start_time.elapsed().as_millis() as u64;
         let tokens_consumed = generated_tokens.len() as u32;
@@ -1333,6 +1334,31 @@ ws ::= [ \t\n\r]*"#
         // Hermes 2 Pro Q5_K_M: ~5GB model + ~1GB KV cache
         5000 + (self.config.context_size as usize / 1024) * 256
     }
+}
+
+fn decode_tokens(
+    model: &LlamaModel,
+    tokens: &[LlamaToken],
+) -> Result<String, TokenToStringError> {
+    let mut bytes = Vec::with_capacity(tokens.len() * 4);
+
+    for token in tokens.iter().copied() {
+        let mut buffer_size = 8usize;
+        loop {
+            match model.token_to_piece_bytes(token, buffer_size, true, None) {
+                Ok(piece) => {
+                    bytes.extend_from_slice(&piece);
+                    break;
+                }
+                Err(TokenToStringError::InsufficientBufferSpace(size)) if size < 0 => {
+                    buffer_size = usize::try_from(-size).expect("buffer size is positive");
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    Ok(String::from_utf8(bytes)?)
 }
 
 impl std::fmt::Debug for CausalDiscoveryLLM {
