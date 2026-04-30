@@ -1,136 +1,223 @@
-# 14 - Remaining Work Master Plan
+# 14 - Monolith Master Plan
 
-This document is the index for everything still required between the current
-implemented state (smokedocs 13, 2026-04-30) and a paper-submittable +
-artifact-badged release. Docs 00-13 are the original plans and remain canonical
-for scope, claims, and evidence schema. Docs 15-25 below define the work that
-is **not yet implemented**.
+This document is the master plan for the **single mega-system** we are
+building. There is **one deliverable**: an integrated, source-of-truth-
+verified, identity-locked, meaning-compressed AI infrastructure that
+ships as one repository, one binary surface, one paper, one product.
 
-## Source Of Truth For "What Is Done"
+Smokedocs `00-13` are the original ME-JEPA smoke program (still
+canonical for scope, claims, evidence schema). Smokedocs `14-35`
+specify what remains between current state (paper-small 1K passing,
+ClipCannon vendored at `clipcannon/`, PAPER.md drafted) and the
+v1.0 monolith release.
 
-The current implementation status comes from:
+## What We Are Building (One Sentence)
 
-- `smokedocs/13_current_implementation_and_benchmark_status.md`;
-- `smokedocs/reports/20260430_paper_small_1k_fsv.md`;
-- `smokedocs/reports/20260430_multiseed_status.md`;
-- `smokedocs/reports/20260430_seed_control_patch.md`;
-- `smokedocs/reports/20260430_seed43_failure_analysis.md`;
-- `smokedocs/reports/20260430_web_research_notes.md`;
-- last 2 days of `git log` on `main`.
+> **One system that ingests any corpus, projects it through a fixed
+> 13-text-embedder + 7-video-modality panel, trains identity-locked
+> action-conditioned predictors with full source-of-truth provenance,
+> validates every output against frozen geometric centroids at runtime,
+> and ships as a single binary + MCP server + container — built on
+> commodity high-end hardware (single RTX 5090, 32 GB VRAM).**
 
-A single passed paper-small 1K bundle exists
-(`20260430T_paper_small_1k_v1`), one explicit-seed=42 passed bundle
-(`20260430T_paper_small_1k_seed42_v1`), one preserved failed seed=43 bundle,
-and one seed=42 v2 run in flight.
+That one sentence covers Context Graph + ClipCannon + ME-JEPA + DDA +
+TCT + Constellation Guard + FSV. It is the brand pitch and the
+engineering scope statement at once.
 
-## Gap Matrix
+## What "Done" Means For The Monolith
 
-| ID | Capability | Original Doc | Status | Plan Doc |
-| --- | --- | --- | --- | --- |
-| G1 | 3+ seed paper-small with mean/std + bootstrap CI | 07 §Statistical Reporting | partial (2 passed, 1 in flight, 1 failed) | 15 |
-| G2 | Decoder head for top-k occupation + skill-vector reconstruction | 07 §Core Metrics | not started | 16 |
-| G3 | Paper-full scaling (10K-250K events) | 02 §Feasible Demo Sizes | not started; envelope sketched only | 17 |
-| G4 | ESCO replication / crosswalk | 11 §Open Questions Q3 | not started | 18 |
-| G5 | arXiv paper drafting + figures + supplementary | 10 outline only | outline exists, no prose | 19 |
-| G6 | Reproducibility artifact (container, Zenodo DOI, ACM badging) | 12 (refs only) | not started | 20 |
-| G7 | Compliance / ethics / broader impact | 11 §Risks (compliance) | language placeholder only | 21 |
-| G8 | Hyperparameter sweeps + advanced collapse diagnostics | 06 §A5, 07 §Collapse | A5 only; rank/eigenvalue/alignment-uniformity not implemented | 22 |
-| G9 | CI smoke regression / drift detection | 09 (manual) | manual only | 23 |
-| G10 | Multi-step rollout + planning horizon | 02 §What Not To Spend GPU On Yet | one-step only | 24 |
-| G11 | Privacy gate / Phase 12 licensed-data path | 01 §Claims We Must Not Make | unbuilt | 25 |
+The v1.0 monolith ships when **all** of the following hold simultaneously:
+
+1. **One repo** at `/home/cabdru/contextgraph/` containing every
+   subsystem (Context Graph Rust workspace, ClipCannon Python at
+   `clipcannon/`, ME-JEPA `dynamicjepa` crate, shared constellation
+   crate, MCP server).
+2. **One binary surface**: `context-graph` CLI subcommands cover every
+   capability; one MCP server exposes every tool; one HTTP API mirrors
+   it (smokedoc 33).
+3. **One paper** (smokedoc 19) on arXiv with Zenodo DOI: covers DDA
+   + Meaning Compression + ME-JEPA + FSV + TCT + Constellation Guard,
+   measured end-to-end on the integrated system.
+4. **One bundle schema** (smokedoc 29) carrying provenance from any
+   raw corpus through any modality through any output.
+5. **One product** (smokedoc 34) sold as the integrated platform — not
+   a portfolio of unrelated SaaS products.
+6. **All four FSV-grade workstreams** completed:
+   - Multi-seed paper-small (smokedoc 15);
+   - Decoder head + top-k metrics (smokedoc 16);
+   - HP sweeps + collapse diagnostics (smokedoc 22);
+   - Reproducibility artifact + ACM badging (smokedoc 20).
+7. **Mutual-information audit** completed (smokedoc 30) so the
+   91-signal upper bound has measured tightness.
+8. **Constellation Guard** unified across ME-JEPA + ClipCannon
+   (smokedoc 28) so every emitted output (text, voice, video, plan)
+   passes the same per-output geometric test.
+9. **Container** (smokedoc 20) builds reproducibly twice; reviewer
+   recompute hash matches.
+10. **CI smoke regression** (smokedoc 23) protects the whole monolith
+    on every PR.
+
+No fragmentation. No "voice product" separate from "compliance product"
+separate from "agent platform". One thing.
+
+## Anti-Goals (Explicit)
+
+These are what the monolith is **not**:
+
+- Not a portfolio of products that share infrastructure. The portfolio
+  framing was rejected.
+- Not three separate papers. One paper covers everything (smokedoc 19).
+- Not a federation of microservices. The runtime is one process; the
+  MCP server is one server; the CLI is one binary.
+- Not a multi-repo with shared crates. One repo.
+- Not "Context Graph powered by ClipCannon". Both names dissolve into
+  one platform name (smokedoc 31 selects).
+- Not a Phase 12 privacy-gated real-data pipeline at v1.0. Phase 12
+  (smokedoc 25) is post-v1.0.
+- Not a multi-step rollout (smokedoc 24) at v1.0. Optional appendix
+  only.
+- Not paper_full 250K (smokedoc 17). 50K is the v1.0 headline.
+
+## Gap Matrix (Single Track)
+
+One track. No "products" column. Every gap serves the v1.0 monolith.
+
+| ID | Capability | Status | Plan Doc |
+| --- | --- | --- | --- |
+| M1 | ClipCannon vendored at `clipcannon/` | done (2026-04-30) | 32 |
+| M2 | Repo structure: one workspace, one MCP, one CLI | not started | 32 |
+| M3 | Cross-language build (Rust + Python in one repo) | not started | 32 |
+| M4 | Unified MCP tool namespace across CG / CC / ME-JEPA | not started | 33 |
+| M5 | One CLI binary covers every capability | not started | 33 |
+| M6 | DDA → ME-JEPA panel bridge | not started | 27 |
+| M7 | Constellation Guard for ME-JEPA outputs (shared crate w/ CC) | not started | 28 |
+| M8 | Unified bundle schema across DDA / CG / CC / ME-JEPA | not started | 29 |
+| M9 | Mutual-information embedder audit | not started | 30 |
+| M10 | Multi-seed paper-small with BCa CI + paired tests | partial | 15 |
+| M11 | Decoder head + top-k occupation + skill reconstruction | not started | 16 |
+| M12 | Paper-full scaling ladder to 50K | not started | 17 |
+| M13 | ESCO replication + crosswalk decoder | not started | 18 |
+| M14 | One-paper drafting (covers DDA + ME-JEPA + TCT + FSV) | outline only | 19 |
+| M15 | Reproducibility artifact (Apptainer + Docker + Zenodo + ACM) | not started | 20 |
+| M16 | Compliance + ethics + broader impact | not started | 21 |
+| M17 | HP sweeps + collapse diagnostics (rank, A+U) | not started | 22 |
+| M18 | CI smoke regression + drift detection | not started | 23 |
+| M19 | One-product GTM (replaces fragmented product portfolio) | not started | 34 |
+| M20 | Roadmap to v1.0 release | not started | 35 |
+
+20 gaps. One delivery date. One artifact.
 
 ## Dependency Graph
 
 ```text
-G1 multiseed ──────────────┐
-                           ├──> G5 paper drafting ──> G6 artifact ──> release
-G2 decoder + top-k ────────┤                          ▲
-G8 HP sweeps + collapse ───┤                          │
-G7 compliance/ethics ──────┴──────────────────────────┘
-                                                       │
-G4 ESCO replication ───────> G3 paper-full scaling ───┤
-G9 CI regression ──────> protects all above ──────────┤
-G10 multi-step ────> appendix/extension only ─────────┘
-G11 privacy gate ──> Phase 12 (out of paper scope)
+M1 (CC vendored) ──> M2 (repo structure) ──> M3 (cross-lang build)
+                                            │
+                                            ▼
+                          M4 (MCP) + M5 (CLI) ──┐
+                                                │
+M6 (DDA bridge) ──> M11 (decoder)               │
+M7 (CG for ME-JEPA) ──┐                         │
+M8 (unified bundle)  ─┤                         │
+M9 (MI audit)        ─┤                         │
+                      ├──> M10 (multi-seed) ────┤
+                      │                         │
+                      ▼                         │
+                  M17 (HP sweeps + collapse) ───┤
+                                                │
+                                                ▼
+                                         M14 (one paper)
+                                                │
+                                                ▼
+                                         M15 (artifact + DOI)
+                                                │
+                                                ▼
+                                         M19 (GTM)
+                                                │
+                                                ▼
+                                         M20 (v1.0 release)
+
+M18 (CI) ── protects all above ─ runs daily
+M16 (compliance) ── unblocks v1.0 release
+M12 (paper-full 50K) ── headline run for paper
+M13 (ESCO) ── replication strength for paper
 ```
 
-Critical path to paper submission: **G1 → G2 → G8 → G5 → G6**. ESCO (G4) and
-paper-full (G3) strengthen claims but are not blockers if the paper-small
-auditability story is the headline. Multi-step (G10) and Phase 12 (G11) are
-explicitly post-submission.
+Critical path: **M1 → M2 → M3 → M4/M5 → M6 → M10 → M14 → M15 → M19 → M20.**
 
 ## Recommended Execution Order
 
-| Order | Doc | Why First |
+| Order | Work | Why |
 | ---: | --- | --- |
-| 1 | 23 (CI smoke regression) | Protects every later run from silent drift |
-| 2 | 15 (multi-seed + stats) | Finish the basic ≥3-seed evidence floor |
-| 3 | 22 (HP sweeps + collapse diagnostics) | Tightens A0-A5 numbers + adds rank/uniformity |
-| 4 | 16 (decoder head + top-k) | Adds the metrics the paper currently disclaims |
-| 5 | 17 (paper-full scaling) | Optional headline: 10K events with full FSV |
-| 6 | 18 (ESCO crosswalk) | Demonstrates non-O*NET portability |
-| 7 | 21 (compliance/ethics) | Required before any external release |
-| 8 | 20 (artifact + Zenodo + ACM) | Locks in reproducibility for review |
-| 9 | 19 (paper drafting + figures) | Writes from finalized evidence bundle |
-| 10 | 24 (multi-step) | Appendix/extension; not blocker |
-| 11 | 25 (privacy gate) | Phase 12; explicitly future work |
+| 1 | M1 done; commit ClipCannon to repo | Already done; commit to lock state |
+| 2 | M2 / M3 (repo structure + cross-lang build) | Nothing else can integrate without this |
+| 3 | M18 (CI regression) | Defends every later step from drift |
+| 4 | M4 / M5 (unified MCP + CLI) | Surface for everything else |
+| 5 | M7 / M8 (Constellation Guard + bundle) | Required for any verifiable output |
+| 6 | M6 / M9 (DDA bridge + MI audit) | Empirical anchor for paper claim |
+| 7 | M10 (multi-seed) + M17 (HP sweeps) | Locks numerical floor |
+| 8 | M11 (decoder head) | Adds top-k + skill reconstruction metrics |
+| 9 | M12 / M13 (paper-full + ESCO) | Headline + replication for paper |
+| 10 | M14 (one paper drafting) | Writes from finalized evidence |
+| 11 | M15 (artifact + DOI + ACM badging) | Reviewer-ready release |
+| 12 | M16 (compliance) | Required for any external buyer |
+| 13 | M19 / M20 (GTM + release) | Ship |
 
-## Completion Criteria For "Paper-Ready"
+## What Smokedocs 15-25 Become Under The Monolith
 
-The release is paper-ready only when **all** of the following hold:
+The earlier paper-readiness docs are still valid — each describes a
+sub-task of the monolith. Their scopes are unchanged; only their
+framing shifts from "paper" to "v1.0 monolith":
 
-1. ≥3 paper-small seeds passed with mean/std + bootstrap CI in `paper_tables/`.
-2. Decoder head trained, top-k occupation + skill-vector cosine reported with
-   FSV evidence and not disclaimed.
-3. A0-A5 ablations replicated under multi-seed with paired bootstrap + sign-flip
-   permutation tests.
-4. Collapse diagnostics include VICReg variance, off-diagonal covariance,
-   effective rank, and alignment+uniformity from Wang & Isola.
-5. Container image (Apptainer + Docker) builds the binary, ingests an O*NET ZIP
-   from local mount, and reproduces a bundle whose hashes match the reference
-   bundle.
-6. Code + bundle archived to a Zenodo DOI; arXiv preprint links to the DOI.
-7. NIST AI RMF compliance statement, NeurIPS reproducibility checklist, and ACM
-   artifact-evaluation packet are all populated from `paper_tables/` and bundle
-   JSON, not hand-typed numbers.
-8. CI runs the research-smoke wrapper at least daily and on every PR that
-   touches `crates/context-graph-dynamicjepa` or `crates/context-graph-cli`.
-9. No paper claim depends on data the bundle cannot prove on disk.
+| Doc | Original Scope | Monolith Reframe |
+| --- | --- | --- |
+| 15 | Multi-seed for paper | Multi-seed for v1.0 evidence |
+| 16 | Decoder head for paper | Decoder head for v1.0 capability |
+| 17 | Paper-full scaling | Paper-full scaling for v1.0 headline |
+| 18 | ESCO crosswalk | ESCO replication for v1.0 portability claim |
+| 19 | Paper drafting | **One-paper** drafting (refactored) |
+| 20 | Reproducibility artifact | Reproducibility artifact for v1.0 release |
+| 21 | Compliance + ethics | Compliance baked into v1.0 |
+| 22 | HP sweeps | HP sweeps for v1.0 evidence |
+| 23 | CI smoke regression | CI for monolith |
+| 24 | Multi-step rollout | Optional v1.1 |
+| 25 | Privacy gate Phase 12 | Post-v1.0 |
+| 26 | Closed-loop architecture | **Monolith architecture** (refactored) |
+| 27 | DDA → ME-JEPA bridge | Same; in-monolith integration |
+| 28 | Constellation Guard for ME-JEPA | Shared crate across CG / CC / ME-JEPA |
+| 29 | Unified bundle schema | Single bundle for monolith |
+| 30 | MI audit | MI audit for monolith |
 
-## Anti-Goals
-
-These are **out of scope for the paper version** and must not block submission:
-
-- Real recruiting / licensed subject-level data (deferred to Phase 12, doc 25);
-- Multi-step planning horizons beyond H=1 (deferred to doc 24);
-- Production deletion propagation FSV against a vault (deferred to doc 25);
-- Large encoders or >5M-parameter career models (out of envelope per doc 02);
-- Replacement of VICReg with SIGReg / LeJEPA (research detour; track in doc 22
-  as optional);
-- Re-running counter_world / gridworld at larger scale (already saturated).
-
-## Document Map (15-25)
+## What Smokedocs 31-35 Are (New Monolith Docs)
 
 | Doc | Scope |
 | --- | --- |
-| 15 | Multi-seed completion, BCa bootstrap CI, paired sign-flip permutation tests |
-| 16 | Decoder head architecture, top-k occupation + skill-vector reconstruction, FSV extension |
-| 17 | Paper-full scaling: 1K → 10K → 50K-250K, VRAM/runtime budget |
-| 18 | ESCO replication + O*NET crosswalk; Karrierewege/JobHop/OpenResume optional |
-| 19 | Paper drafting plan: section-by-section prose targets, figure pipeline, supplementary materials |
-| 20 | Reproducibility artifact: Apptainer + Docker, Zenodo DOI, ACM artifact-evaluation packet |
-| 21 | Compliance: NIST AI RMF mapping, O*NET attribution, broader impact, dual-use disclosure |
-| 22 | HP sweeps (LR, latent dim, batch) + advanced collapse diagnostics (rank, alignment+uniformity) |
-| 23 | CI smoke regression + golden-bundle hash policy + drift detection |
-| 24 | Multi-step rollout (H>1), planning horizon, error compounding analysis |
-| 25 | Phase 12 privacy gate: licensed-data path, k-anonymity / DP, deletion FSV |
+| 31 | Monolith definition + brand + scope |
+| 32 | Merged repo structure (Rust + Python + ClipCannon vendored) |
+| 33 | Unified surface (one CLI, one MCP, one HTTP API) |
+| 34 | Single-product GTM (replaces 5 fragmented product docs) |
+| 35 | Roadmap to v1.0 release |
 
-## Cross-Reference Discipline
+## Deletions
 
-Every later doc must:
+Six docs were written and then deleted because they fragmented the
+work into separate products:
 
-- name the bundle JSON paths and CFs that will hold its evidence;
-- name the new CLI flags / verifiers that must be added;
-- name the failure modes it must fail closed on;
-- name which gate in doc 04 it extends or replaces;
-- record any new data sources in `data_manifest.json` schema (doc 03).
+- `31_voice_cloning_saas_productization.md` — DELETED
+- `32_dda_as_a_service_platform.md` — DELETED
+- `33_eu_ai_act_compliance_product.md` — DELETED
+- `34_identity_locked_agent_platform.md` — DELETED
+- `35_open_core_hosted_platform.md` — DELETED
+- `36_three_paper_joint_roadmap.md` — DELETED
+
+Their themes are subsumed into the new 31-35. Capabilities are
+preserved (voice cloning, agent runtime, compliance evidence are all
+features of the monolith). What is gone is the **product fragmentation
+framing**.
+
+## Cross-References
+
+- `docs2/PAPER.md` — DDA + Meaning Compression + TCT manuscript
+- `docs2/alldata.md` — ClipCannon + Phoenix + VoiceAgent architecture
+- `docs/5090jepa/00_TASK.md` — original ME-JEPA charter
+- `clipcannon/` — vendored ClipCannon tree (post-2026-04-30)
+- `crates/context-graph-dynamicjepa/` — ME-JEPA runtime
