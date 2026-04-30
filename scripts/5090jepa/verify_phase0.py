@@ -57,8 +57,8 @@ DJ_CF_NAMES = [
 ]
 
 REQUIRED_PHASE0_FILES = {
-    "configs/dynamicjepa/domain_packs/counter_world.v1.toml": "a29762572b70fc787a1b098c2b4e4def60ddfaa8c081a5be65731bfefa2d5062",
-    "configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml": "33b3603c6be4a56ff6c22eaf8446c48321abd40d6a3a3a9adf36aa500d3ee8b1",
+    "configs/dynamicjepa/domain_packs/counter_world.v1.toml": "46b8707285022da76221e445ed8d7b4e6e0ab87a707090a6ddf2759141a1d731",
+    "configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml": "ea6f27726ff4620e911289c9e82956423fac8f145b3fa20cac0c2013346d2572",
     "configs/dynamicjepa/verification/counter_world_happy_path.jsonl": "dcfad3dec2405a48020e1ac5bb48299ba0e9855a763bee04926507e100762d3c",
     "configs/dynamicjepa/verification/counter_world_edge_empty_input.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "configs/dynamicjepa/verification/counter_world_edge_invalid_action.jsonl": "33124ae82ccfc18b60a2302dd951abff737a049545bfcd833f10cd889674c8a3",
@@ -68,7 +68,7 @@ REQUIRED_PHASE0_FILES = {
     "configs/dynamicjepa/verification/gridworld_5x5_edge_invalid_action.jsonl": "1b15f6836c0847a51534a91a5ec559dba8d9939c3fea6bca8d1fba3f66618b17",
     "configs/dynamicjepa/verification/gridworld_5x5_edge_oob_state.jsonl": "26739226399d99eb0804579d5026ccf7fa4bf308f0ac9187dbdc607b30d85bc2",
     "configs/dynamicjepa/verification/tiny_train_config.json": "4b5bcdd881a72b9b330e605a618bf6d692f7ee3470f8d3c797a6bfdaed1eeff3",
-    "configs/dynamicjepa/verification/gridworld_5x5_train_config.json": "262e01f5316af8fbf2b9601d3b87e53893694968e04c56b32b5af7e71ebae374",
+    "configs/dynamicjepa/verification/gridworld_5x5_train_config.json": "5af5849c2c1e2dc940cec4c8365e0dfdedfcde5257a56992cdeb330cbe86cf3f",
 }
 
 COUNTER_HAPPY_ROWS = [
@@ -83,9 +83,10 @@ GRID_TRAJECTORIES = 1000
 GRID_TRAJ_LEN = 8
 
 PROTOCOL_SNIPPETS = [
-    "| `dj_raw_events` | 3 |",
-    "| `dj_adapter_runs` | 3 (all `Completed`) |",
-    "| `dj_dataset_shards` | 2 (train + val) |",
+    "| `dj_raw_events` | 60 |",
+    "| `dj_adapter_runs` | 60 (`Completed`) |",
+    "| `dj_instrument_readings` | 120 |",
+    "| `dj_dataset_shards` | 3 |",
     "| `dj_raw_events` | 8000 |",
     "| `dj_trajectories` | 1000 |",
     "| `dj_dataset_shards` | 3 (train/val/test) |",
@@ -380,21 +381,19 @@ def validate_domain_pack(path: Path, expected_id: str) -> dict[str, Any]:
     assert_equal("validate_domain", "planner_policy.guards", ["bounds_check"], data["planner_policy"]["guards"], "Phase 0 guard list is bounds_check only")
 
     verification = data["verification_policy"]
-    if domain["id"] == "counter_world":
-        required_verification = {"required_cfs", "expected_event_count", "expected_panel_count", "expected_dataset_row_count"}
-    else:
-        required_verification = {
-            "required_cfs",
-            "expected_trajectory_count",
-            "expected_event_count",
-            "expected_panel_count",
-            "expected_train_rows_min",
-            "expected_train_rows_max",
-            "expected_val_rows_min",
-            "expected_val_rows_max",
-            "expected_test_rows_min",
-            "expected_test_rows_max",
-        }
+    required_verification = {
+        "required_cfs",
+        "expected_trajectory_count",
+        "expected_event_count",
+        "expected_panel_count",
+        "expected_dataset_row_count",
+        "expected_train_rows_min",
+        "expected_train_rows_max",
+        "expected_val_rows_min",
+        "expected_val_rows_max",
+        "expected_test_rows_min",
+        "expected_test_rows_max",
+    }
     assert_keys(verification, required_verification, required_verification, "verification_policy")
 
     required_cfs = verification["required_cfs"]
@@ -601,9 +600,9 @@ def validate_train_configs() -> dict[str, Any]:
     expected_grid = {
         "model": {"encoder": {"kind": "mlp", "hidden": [64, 64], "out_dim": 32}, "predictor": {"kind": "mlp", "hidden": [64, 64], "in_action_dim": 5, "out_dim": 32}, "ema_momentum": 0.995},
         "loss": {"latent_mse_weight": 1.0, "vicreg_variance_weight": 1.0, "vicreg_covariance_weight": 0.04, "vicreg_target_std": 1.0},
-        "optim": {"kind": "adamw", "lr": 0.0005, "weight_decay": 0.0001, "warmup_steps": 200},
-        "schedule": {"epochs": 30, "batch_size": 256, "device": "cuda"},
-        "stopping": {"metric": "val_latent_mse", "target": 0.04, "max_seconds": 90},
+        "optim": {"kind": "adamw", "lr": 0.001, "weight_decay": 0.0001, "warmup_steps": 50},
+        "schedule": {"epochs": 120, "batch_size": 256, "device": "cuda"},
+        "stopping": {"metric": "val_latent_mse", "target": 0.04, "max_seconds": 240},
         "seed": 42,
     }
     assert_equal("validate_train_config", "tiny_train_config.json", expected_counter, counter, "restore locked counter_world train config")
@@ -618,16 +617,27 @@ def validate_expected_counts(counter_domain: dict[str, Any], grid_domain: dict[s
     counter_policy = counter_domain["verification_policy"]
     grid_policy = grid_domain["verification_policy"]
 
-    assert_equal("validate_expected_counts", "counter expected_event_count", 3, counter_policy["expected_event_count"], "counter policy must match happy fixture event count")
-    assert_equal("validate_expected_counts", "counter expected_panel_count", 3, counter_policy["expected_panel_count"], "counter policy must match expected materialized panels")
-    assert_equal("validate_expected_counts", "counter expected_dataset_row_count", 2, counter_policy["expected_dataset_row_count"], "counter policy must match t0->t1 and t1->t2 rows")
+    assert_equal("validate_expected_counts", "counter expected_trajectory_count", 1, counter_policy["expected_trajectory_count"], "counter policy must match the generated Phase 10 trajectory count")
+    assert_equal("validate_expected_counts", "counter expected_event_count", 60, counter_policy["expected_event_count"], "counter policy must match the generated Phase 10 counter fixture event count")
+    assert_equal("validate_expected_counts", "counter expected_panel_count", 60, counter_policy["expected_panel_count"], "counter policy must match expected materialized panels")
+    assert_equal("validate_expected_counts", "counter expected_dataset_row_count", 59, counter_policy["expected_dataset_row_count"], "counter policy must match one-step rows from the generated Phase 10 fixture")
+    counter_ranges = {
+        "train": [counter_policy["expected_train_rows_min"], counter_policy["expected_train_rows_max"]],
+        "val": [counter_policy["expected_val_rows_min"], counter_policy["expected_val_rows_max"]],
+        "test": [counter_policy["expected_test_rows_min"], counter_policy["expected_test_rows_max"]],
+    }
+    expected_counter_splits = {"train": 41, "val": 12, "test": 6}
+    for split, expected in expected_counter_splits.items():
+        lower, upper = counter_ranges[split]
+        if lower != expected or upper != expected:
+            fail("validate_expected_counts", f"counter {split} row range", [expected, expected], [lower, upper], "counter verification_policy split ranges must match deterministic Phase 10 rows exactly")
 
     assert_equal("validate_expected_counts", "grid expected_trajectory_count", GRID_TRAJECTORIES, grid_policy["expected_trajectory_count"], "grid policy must match generator trajectory count")
     assert_equal("validate_expected_counts", "grid expected_event_count", GRID_TRAJECTORIES * GRID_TRAJ_LEN, grid_policy["expected_event_count"], "grid policy must match generator event count")
     assert_equal("validate_expected_counts", "grid expected_panel_count", GRID_TRAJECTORIES * GRID_TRAJ_LEN, grid_policy["expected_panel_count"], "grid policy must match one panel per event")
 
     total_grid_rows = GRID_TRAJECTORIES * (GRID_TRAJ_LEN - 1)
-    expected_nominal = {"train": int(total_grid_rows * 0.70), "val": int(total_grid_rows * 0.20), "test": int(total_grid_rows * 0.10)}
+    expected_nominal = {"train": 4977, "val": 1330, "test": 693}
     ranges = {
         "train": [grid_policy["expected_train_rows_min"], grid_policy["expected_train_rows_max"]],
         "val": [grid_policy["expected_val_rows_min"], grid_policy["expected_val_rows_max"]],
@@ -643,27 +653,27 @@ def validate_expected_counts(counter_domain: dict[str, Any], grid_domain: dict[s
         "dj_domain_pack_by_nv": 1,
         "dj_instrument_registry": counter_domain["instrument_count"],
         "dj_adapter_registry": 1,
-        "dj_raw_events": 3,
-        "dj_adapter_runs": 3,
-        "dj_normalized_states": 3,
-        "dj_actions": 8,
-        "dj_outcomes": 3,
-        "dj_transitions": 3,
-        "dj_instrument_readings": 3 * counter_domain["instrument_count"],
-        "dj_latent_panels": 3,
+        "dj_raw_events": 62,
+        "dj_adapter_runs": 62,
+        "dj_normalized_states": 60,
+        "dj_actions": 65,
+        "dj_outcomes": 60,
+        "dj_transitions": 60,
+        "dj_instrument_readings": 60 * counter_domain["instrument_count"],
+        "dj_latent_panels": 60,
         "dj_bindings": 0,
         "dj_bindings_by_entity": 0,
         "dj_trajectories": 1,
-        "dj_dataset_shards": 2,
+        "dj_dataset_shards": 3,
         "dj_training_runs": 1,
         "dj_model_artifacts": 1,
         "dj_predictions": 6,
         "dj_skill_policies": 1,
         "dj_plan_traces": 1,
         "dj_guard_decisions": 5,
-        "dj_surprise_events": {"allowed_min": 0, "allowed_max": 1, "happy_path_expected": 0},
+        "dj_surprise_events": 1,
         "dj_verification_runs": 1,
-        "dj_audit_log": {"minimum": 30},
+        "dj_audit_log": 196,
     }
     grid_final_counts = {
         "dj_domain_packs": 1,
@@ -690,7 +700,7 @@ def validate_expected_counts(counter_domain: dict[str, Any], grid_domain: dict[s
         "dj_guard_decisions": 5,
         "dj_surprise_events": 0,
         "dj_verification_runs": 1,
-        "dj_audit_log": {"minimum": 8000},
+        "dj_audit_log": 25014,
     }
 
     assert_equal("validate_expected_counts", "counter CF coverage", sorted(DJ_CF_NAMES), sorted(counter_final_counts), "counter final count table must cover every DynamicJEPA CF")

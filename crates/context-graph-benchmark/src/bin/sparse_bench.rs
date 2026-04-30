@@ -17,19 +17,24 @@
 //!   --synthetic --num-documents 100 --num-queries 20
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing::{info, warn, Level};
+use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[cfg(feature = "real-embeddings")]
 use context_graph_benchmark::realdata::embedder::EmbeddedDataset;
 #[cfg(feature = "real-embeddings")]
+use context_graph_benchmark::realdata::loader::{DatasetLoader, RealDataset};
+#[cfg(feature = "real-embeddings")]
 use context_graph_benchmark::realdata::RealDataEmbedder;
+#[cfg(feature = "real-embeddings")]
+use uuid::Uuid;
 
 /// E6 Sparse Embedder Benchmark Suite
 #[derive(Parser, Debug)]
@@ -147,8 +152,8 @@ fn main() -> Result<()> {
         }
         #[cfg(not(feature = "real-embeddings"))]
         {
-            warn!("Real embeddings not enabled. Run with --features real-embeddings");
-            warn!("Falling back to synthetic benchmark...");
+            tracing::warn!("Real embeddings not enabled. Run with --features real-embeddings");
+            tracing::warn!("Falling back to synthetic benchmark...");
             run_synthetic_benchmark(&args)
         }
     }
@@ -156,8 +161,6 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "real-embeddings")]
 fn run_real_data_benchmark(args: &Args) -> Result<()> {
-    use context_graph_core::types::fingerprint::SemanticFingerprint;
-
     let total_start = Instant::now();
 
     // Step 1: Load dataset

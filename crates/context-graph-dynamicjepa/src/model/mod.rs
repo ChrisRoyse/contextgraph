@@ -34,8 +34,50 @@ pub struct EvaluationReport {
     pub vicreg_variance_per_dim_min: f64,
     pub vicreg_variance_per_dim_mean: f64,
     pub vicreg_covariance_off_diag_frobenius: f64,
+    pub collapse_diagnostics: CollapseDiagnostics,
     pub epoch_metrics: Vec<EpochMetric>,
     pub parameter_count_trainable: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CollapseDiagnostics {
+    pub computed: bool,
+    pub val_var_min: f64,
+    pub val_var_p25: f64,
+    pub val_var_median: f64,
+    pub val_var_p75: f64,
+    pub val_var_max: f64,
+    pub covar_frob: f64,
+    pub eff_rank: f64,
+    pub eff_rank_ratio: f64,
+    pub alignment: f64,
+    pub uniformity: f64,
+    pub sigreg_kl: f64,
+    pub sigreg_kl_clamped: bool,
+    pub latent_collapsed: bool,
+}
+
+impl CollapseDiagnostics {
+    fn not_computed(variance_metrics: &VarianceCovarianceMetrics) -> Self {
+        let mut variances = variance_metrics.variances.clone();
+        variances.sort_by(f64::total_cmp);
+        Self {
+            computed: false,
+            val_var_min: variance_metrics.var_min,
+            val_var_p25: sorted_quantile(&variances, 0.25),
+            val_var_median: sorted_quantile(&variances, 0.50),
+            val_var_p75: sorted_quantile(&variances, 0.75),
+            val_var_max: *variances.last().unwrap_or(&0.0),
+            covar_frob: variance_metrics.cov_off_diag_frobenius,
+            eff_rank: f64::NAN,
+            eff_rank_ratio: f64::NAN,
+            alignment: f64::NAN,
+            uniformity: f64::NAN,
+            sigreg_kl: f64::NAN,
+            sigreg_kl_clamped: false,
+            latent_collapsed: false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -380,6 +422,7 @@ pub fn train_tiny_jepa(
         &eval_target,
         &eval_action,
         &eval_negative,
+        false,
     )?;
 
     let mut opt = AdamW::new(
@@ -486,6 +529,7 @@ pub fn train_tiny_jepa(
             &eval_target,
             &eval_action,
             &eval_negative,
+            false,
         )?;
         let stopping_value = metric_value(&epoch_eval, &config.stopping.metric)?;
         if stopping_value <= config.stopping.target {
@@ -501,6 +545,7 @@ pub fn train_tiny_jepa(
         &eval_target,
         &eval_action,
         &eval_negative,
+        true,
     )?;
     let final_stopping_value = metric_value(&evaluation, &config.stopping.metric)?;
     if !converged && final_stopping_value > config.stopping.target {
@@ -745,6 +790,7 @@ fn evaluate_model(
     target: &Tensor,
     action: &Tensor,
     negative: &Tensor,
+    compute_collapse_diagnostics: bool,
 ) -> DynamicJepaResult<EvaluationReport> {
     let z_online = model
         .encode_online(input)
@@ -827,7 +873,12 @@ fn evaluate_model(
             ]),
         );
     }
-    let (var_min, var_mean, cov_off_diag) = variance_covariance_metrics(&online);
+    let variance_metrics = variance_covariance_metrics(&online);
+    let collapse_diagnostics = if compute_collapse_diagnostics {
+        collapse_diagnostics(&pred, &target, &online, &variance_metrics)
+    } else {
+        CollapseDiagnostics::not_computed(&variance_metrics)
+    };
     let shuffled_overall = split_metrics
         .values()
         .map(|metrics| metrics["shuffled_target_cosine"])
@@ -843,9 +894,10 @@ fn evaluate_model(
             "cosine".to_string(),
             shuffled_overall,
         )]),
-        vicreg_variance_per_dim_min: var_min,
-        vicreg_variance_per_dim_mean: var_mean,
-        vicreg_covariance_off_diag_frobenius: cov_off_diag,
+        vicreg_variance_per_dim_min: variance_metrics.var_min,
+        vicreg_variance_per_dim_mean: variance_metrics.var_mean,
+        vicreg_covariance_off_diag_frobenius: variance_metrics.cov_off_diag_frobenius,
+        collapse_diagnostics,
         epoch_metrics: Vec::new(),
         parameter_count_trainable: 0,
     })
@@ -911,15 +963,100 @@ fn flatten_metrics(report: &EvaluationReport) -> std::collections::BTreeMap<Stri
         report.vicreg_covariance_off_diag_frobenius,
     );
     out.insert(
+        "collapse_val_var_min".to_string(),
+        report.collapse_diagnostics.val_var_min,
+    );
+    out.insert(
+        "collapse_diagnostics_computed".to_string(),
+        if report.collapse_diagnostics.computed {
+            1.0
+        } else {
+            0.0
+        },
+    );
+    out.insert(
+        "collapse_val_var_p25".to_string(),
+        report.collapse_diagnostics.val_var_p25,
+    );
+    out.insert(
+        "collapse_val_var_median".to_string(),
+        report.collapse_diagnostics.val_var_median,
+    );
+    out.insert(
+        "collapse_val_var_p75".to_string(),
+        report.collapse_diagnostics.val_var_p75,
+    );
+    out.insert(
+        "collapse_val_var_max".to_string(),
+        report.collapse_diagnostics.val_var_max,
+    );
+    out.insert(
+        "collapse_covar_frob".to_string(),
+        report.collapse_diagnostics.covar_frob,
+    );
+    out.insert(
+        "collapse_eff_rank".to_string(),
+        report.collapse_diagnostics.eff_rank,
+    );
+    out.insert(
+        "collapse_eff_rank_ratio".to_string(),
+        report.collapse_diagnostics.eff_rank_ratio,
+    );
+    out.insert(
+        "collapse_alignment".to_string(),
+        report.collapse_diagnostics.alignment,
+    );
+    out.insert(
+        "collapse_uniformity".to_string(),
+        report.collapse_diagnostics.uniformity,
+    );
+    out.insert(
+        "collapse_sigreg_kl".to_string(),
+        report.collapse_diagnostics.sigreg_kl,
+    );
+    out.insert(
+        "collapse_sigreg_kl_clamped".to_string(),
+        if report.collapse_diagnostics.sigreg_kl_clamped {
+            1.0
+        } else {
+            0.0
+        },
+    );
+    out.insert(
+        "collapse_latent_collapsed".to_string(),
+        if report.collapse_diagnostics.latent_collapsed {
+            1.0
+        } else {
+            0.0
+        },
+    );
+    out.insert(
         "parameter_count_trainable".to_string(),
         report.parameter_count_trainable as f64,
     );
     out
 }
 
-fn variance_covariance_metrics(rows: &[Vec<f32>]) -> (f64, f64, f64) {
+#[derive(Debug, Clone)]
+struct VarianceCovarianceMetrics {
+    means: Vec<f64>,
+    variances: Vec<f64>,
+    covariance: Vec<Vec<f64>>,
+    var_min: f64,
+    var_mean: f64,
+    cov_off_diag_frobenius: f64,
+}
+
+fn variance_covariance_metrics(rows: &[Vec<f32>]) -> VarianceCovarianceMetrics {
     if rows.is_empty() || rows[0].is_empty() {
-        return (0.0, 0.0, 0.0);
+        return VarianceCovarianceMetrics {
+            means: Vec::new(),
+            variances: Vec::new(),
+            covariance: Vec::new(),
+            var_min: 0.0,
+            var_mean: 0.0,
+            cov_off_diag_frobenius: 0.0,
+        };
     }
     let n = rows.len();
     let d = rows[0].len();
@@ -944,23 +1081,318 @@ fn variance_covariance_metrics(rows: &[Vec<f32>]) -> (f64, f64, f64) {
     }
     let var_min = vars.iter().copied().fold(f64::INFINITY, f64::min);
     let var_mean = vars.iter().sum::<f64>() / d as f64;
+    let mut covariance = vec![vec![0.0f64; d]; d];
     let mut off_diag = 0.0;
     if n > 1 {
         for i in 0..d {
             for j in 0..d {
-                if i == j {
-                    continue;
-                }
                 let mut cov = 0.0;
                 for row in rows {
                     cov += (row[i] as f64 - means[i]) * (row[j] as f64 - means[j]);
                 }
                 cov /= (n - 1) as f64;
-                off_diag += cov * cov;
+                covariance[i][j] = cov;
+                if i != j {
+                    off_diag += cov * cov;
+                }
             }
         }
     }
-    (var_min, var_mean, off_diag.sqrt())
+    VarianceCovarianceMetrics {
+        means,
+        variances: vars,
+        covariance,
+        var_min,
+        var_mean,
+        cov_off_diag_frobenius: off_diag.sqrt(),
+    }
+}
+
+fn collapse_diagnostics(
+    pred: &[Vec<f32>],
+    target: &[Vec<f32>],
+    online: &[Vec<f32>],
+    variance_metrics: &VarianceCovarianceMetrics,
+) -> CollapseDiagnostics {
+    if online.is_empty() || online[0].is_empty() {
+        return CollapseDiagnostics {
+            computed: true,
+            val_var_min: 0.0,
+            val_var_p25: 0.0,
+            val_var_median: 0.0,
+            val_var_p75: 0.0,
+            val_var_max: 0.0,
+            covar_frob: 0.0,
+            eff_rank: 0.0,
+            eff_rank_ratio: 0.0,
+            alignment: 0.0,
+            uniformity: 0.0,
+            sigreg_kl: 0.0,
+            sigreg_kl_clamped: false,
+            latent_collapsed: true,
+        };
+    }
+    let mut variances = variance_metrics.variances.clone();
+    variances.sort_by(f64::total_cmp);
+    let val_var_min = *variances.first().unwrap_or(&0.0);
+    let val_var_p25 = sorted_quantile(&variances, 0.25);
+    let val_var_median = sorted_quantile(&variances, 0.50);
+    let val_var_p75 = sorted_quantile(&variances, 0.75);
+    let val_var_max = *variances.last().unwrap_or(&0.0);
+    let eigenvalues = jacobi_symmetric_eigenvalues(variance_metrics.covariance.clone());
+    let eff_rank = effective_rank_from_eigenvalues(&eigenvalues);
+    let eff_rank_ratio = eff_rank / online[0].len().max(1) as f64;
+    let alignment = alignment_metric(pred, target);
+    let uniformity = uniformity_metric(pred);
+    let (sigreg_kl, sigreg_kl_clamped) = sigreg_diagonal_kl(
+        &variance_metrics.means,
+        &variance_metrics.variances,
+        1.0e-12,
+        1.0e12,
+    );
+    let latent_collapsed = val_var_min < 1.0e-8
+        || eff_rank_ratio < 0.10
+        || !alignment.is_finite()
+        || !uniformity.is_finite()
+        || !sigreg_kl.is_finite();
+    CollapseDiagnostics {
+        computed: true,
+        val_var_min,
+        val_var_p25,
+        val_var_median,
+        val_var_p75,
+        val_var_max,
+        covar_frob: variance_metrics.cov_off_diag_frobenius,
+        eff_rank,
+        eff_rank_ratio,
+        alignment,
+        uniformity,
+        sigreg_kl,
+        sigreg_kl_clamped,
+        latent_collapsed,
+    }
+}
+
+fn sorted_quantile(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let q = q.clamp(0.0, 1.0);
+    let pos = q * (sorted.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    if lo == hi {
+        sorted[lo]
+    } else {
+        let weight = pos - lo as f64;
+        sorted[lo] * (1.0 - weight) + sorted[hi] * weight
+    }
+}
+
+fn effective_rank_from_eigenvalues(eigenvalues: &[f64]) -> f64 {
+    let values = eigenvalues
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite() && *value > 1.0e-12)
+        .collect::<Vec<_>>();
+    let sum = values.iter().sum::<f64>();
+    if sum <= f64::EPSILON {
+        return 0.0;
+    }
+    let entropy = values
+        .iter()
+        .map(|value| {
+            let p = *value / sum;
+            -p * p.ln()
+        })
+        .sum::<f64>();
+    entropy.exp()
+}
+
+fn jacobi_symmetric_eigenvalues(mut matrix: Vec<Vec<f64>>) -> Vec<f64> {
+    let n = matrix.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    if matrix.iter().any(|row| row.len() != n) {
+        return Vec::new();
+    }
+    let max_iter = (n * n * 32).max(64);
+    for _ in 0..max_iter {
+        let mut p = 0usize;
+        let mut q = 0usize;
+        let mut max_off = 0.0f64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let value = matrix[i][j].abs();
+                if value > max_off {
+                    max_off = value;
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        if max_off < 1.0e-12 {
+            break;
+        }
+        let app = matrix[p][p];
+        let aqq = matrix[q][q];
+        let apq = matrix[p][q];
+        if apq.abs() < 1.0e-18 {
+            continue;
+        }
+        let tau = (aqq - app) / (2.0 * apq);
+        let t = if tau >= 0.0 {
+            1.0 / (tau + (1.0 + tau * tau).sqrt())
+        } else {
+            -1.0 / (-tau + (1.0 + tau * tau).sqrt())
+        };
+        let c = 1.0 / (1.0 + t * t).sqrt();
+        let s = t * c;
+        for k in 0..n {
+            if k != p && k != q {
+                let akp = matrix[k][p];
+                let akq = matrix[k][q];
+                let next_kp = c * akp - s * akq;
+                let next_kq = s * akp + c * akq;
+                matrix[k][p] = next_kp;
+                matrix[p][k] = next_kp;
+                matrix[k][q] = next_kq;
+                matrix[q][k] = next_kq;
+            }
+        }
+        matrix[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
+        matrix[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;
+        matrix[p][q] = 0.0;
+        matrix[q][p] = 0.0;
+    }
+    matrix
+        .iter()
+        .enumerate()
+        .map(|(idx, row)| row[idx].max(0.0))
+        .collect()
+}
+
+fn alignment_metric(pred: &[Vec<f32>], target: &[Vec<f32>]) -> f64 {
+    if pred.is_empty() || target.is_empty() {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    let mut count = 0usize;
+    for (left, right) in pred.iter().zip(target.iter()) {
+        let left = normalize_vec(left);
+        let right = normalize_vec(right);
+        let dist_sq = left
+            .iter()
+            .zip(right.iter())
+            .map(|(l, r)| {
+                let diff = l - r;
+                diff * diff
+            })
+            .sum::<f64>();
+        if dist_sq.is_finite() {
+            sum += dist_sq;
+            count += 1;
+        }
+    }
+    if count == 0 {
+        0.0
+    } else {
+        sum / count as f64
+    }
+}
+
+fn uniformity_metric(rows: &[Vec<f32>]) -> f64 {
+    if rows.len() < 2 {
+        return 0.0;
+    }
+    let normalized = rows
+        .iter()
+        .map(|row| normalize_vec(row))
+        .collect::<Vec<_>>();
+    let mut terms = Vec::with_capacity(rows.len() * (rows.len() - 1) / 2);
+    for i in 0..normalized.len() {
+        for j in (i + 1)..normalized.len() {
+            let dist_sq = normalized[i]
+                .iter()
+                .zip(normalized[j].iter())
+                .map(|(l, r)| {
+                    let diff = l - r;
+                    diff * diff
+                })
+                .sum::<f64>();
+            terms.push(-2.0 * dist_sq);
+        }
+    }
+    log_mean_exp(&terms)
+}
+
+fn normalize_vec(row: &[f32]) -> Vec<f64> {
+    let norm = row
+        .iter()
+        .map(|value| {
+            let value = *value as f64;
+            value * value
+        })
+        .sum::<f64>()
+        .sqrt();
+    if norm <= f64::EPSILON {
+        vec![0.0; row.len()]
+    } else {
+        row.iter().map(|value| *value as f64 / norm).collect()
+    }
+}
+
+fn log_mean_exp(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let max = values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() {
+        return 0.0;
+    }
+    let sum = values
+        .iter()
+        .filter(|value| value.is_finite())
+        .map(|value| (*value - max).exp())
+        .sum::<f64>();
+    if sum <= f64::EPSILON {
+        0.0
+    } else {
+        max + (sum / values.len() as f64).ln()
+    }
+}
+
+fn sigreg_diagonal_kl(
+    means: &[f64],
+    variances: &[f64],
+    min_variance: f64,
+    max_kl: f64,
+) -> (f64, bool) {
+    let mut clamped = false;
+    let mut kl = 0.0;
+    for (mean, variance) in means.iter().zip(variances.iter()) {
+        let mut var = *variance;
+        if !var.is_finite() || var < min_variance {
+            var = min_variance;
+            clamped = true;
+        }
+        let mean = if mean.is_finite() { *mean } else { 0.0 };
+        let term = var + mean * mean - 1.0 - var.ln();
+        if !term.is_finite() {
+            clamped = true;
+            continue;
+        }
+        kl += 0.5 * term;
+        if kl > max_kl {
+            return (max_kl, true);
+        }
+    }
+    (kl, clamped)
 }
 
 fn mse_vec(lhs: &[f32], rhs: &[f32]) -> f64 {

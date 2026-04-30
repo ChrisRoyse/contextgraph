@@ -34,7 +34,7 @@ class Phase0FixtureTest(unittest.TestCase):
         self.assertEqual(evidence["decoded_records"]["fixtures"]["gridworld_5x5"]["corpus_events"], 8000)
         self.assertEqual(
             evidence["decoded_records"]["expected_count_contracts"]["counter_world_final_counts_from_protocol"]["dj_instrument_readings"],
-            6,
+            120,
         )
         self.assertEqual(
             evidence["decoded_records"]["expected_count_contracts"]["gridworld_5x5_final_counts_from_protocol"]["dj_instrument_readings"],

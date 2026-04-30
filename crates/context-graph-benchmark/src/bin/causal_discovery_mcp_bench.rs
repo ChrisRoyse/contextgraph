@@ -389,7 +389,7 @@ async fn run_benchmark(
         multi_array_provider.clone(),
         layer_status_provider,
         graph_discovery_service,
-    );
+    )?;
 
     println!(
         "  Handlers initialized in {:.2}s",

@@ -84,6 +84,24 @@ const ASYMMETRIC_EMBEDDERS: [u8; 2] = [4, 7]; // E5, E8
 /// All active embedders for K-NN graphs
 const ALL_ACTIVE_EMBEDDERS: [u8; 6] = [0, 4, 6, 7, 9, 10]; // E1, E5, E7, E8, E10, E11
 
+/// Embedding dimensions per embedder.
+const EMBEDDING_DIMS: [usize; 14] = [
+    1024, // E1 - semantic
+    512,  // E2 - recency (temporal)
+    512,  // E3 - periodic (temporal)
+    512,  // E4 - sequence (temporal)
+    768,  // E5 - causal
+    1024, // E6 - sparse placeholder
+    1536, // E7 - code
+    1024, // E8 - graph
+    1024, // E9 - HDC
+    768,  // E10 - intent
+    768,  // E11 - entity
+    128,  // E12 - ColBERT
+    1024, // E13 - SPLADE placeholder
+    1024, // E14 - BGE-M3 dense
+];
+
 /// Weighted agreement threshold per ARCH-09
 const WEIGHTED_AGREEMENT_THRESHOLD: f32 = 2.5;
 
@@ -1113,6 +1131,7 @@ async fn phase7_llm_causal_discovery(
         llm_config,
         scanner_config: ScannerConfig::default(),
         activator_config: ActivatorConfig::default(),
+        ..CausalDiscoveryConfig::default()
     };
 
     let service = CausalDiscoveryService::new(config)

@@ -14,6 +14,8 @@
 //!     - ~16GB VRAM for all 13 models
 
 use std::collections::HashMap;
+use std::io::Write;
+use std::time::Instant;
 use uuid::Uuid;
 
 use context_graph_core::types::fingerprint::SemanticFingerprint;

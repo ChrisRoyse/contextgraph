@@ -34,10 +34,12 @@ data and controlled career-transition events.
 
 ## Document Map
 
-Docs `00-13` are the original plan and current-state record. Docs `14-25`
-specify the work remaining between current state (smokedoc 13, 2026-04-30) and
-a paper-submittable + artifact-badged release. Start at `14` for the gap
-matrix, dependency graph, and recommended execution order.
+Docs `00-13` are the original ME-JEPA smoke plan and current-state record.
+Docs `14-35` specify the **monolith v1.0 release**: one repo (with
+ClipCannon vendored at `clipcannon/` since 2026-04-30), one binary surface,
+one paper, one product. Start at `14` for the monolith master plan, gap
+matrix, and dependency graph; then `26` for the architecture; then `35` for
+the 16-week roadmap.
 
 | File | Purpose |
 | --- | --- |
@@ -55,18 +57,28 @@ matrix, dependency graph, and recommended execution order.
 | `11_risks_open_questions_and_decisions.md` | Risks, unresolved items, locked choices |
 | `12_references.md` | Local and external references |
 | `13_current_implementation_and_benchmark_status.md` | Implemented smoke surface and latest FSV benchmark evidence |
-| `14_remaining_work_master_plan.md` | Gap matrix, dependency graph, recommended order, completion criteria |
-| `15_multiseed_completion_and_statistical_reporting.md` | Finish >=3 paper-small seeds, BCa bootstrap CI, paired sign-flip permutation tests |
+| `14_remaining_work_master_plan.md` | **Monolith master plan**: gap matrix, dependency graph, completion criteria |
+| `15_multiseed_completion_and_statistical_reporting.md` | Multi-seed paper-small with BCa CI + paired sign-flip permutation tests |
 | `16_decoder_head_and_topk_metrics.md` | Decoder head + top-k occupation + skill-vector reconstruction |
-| `17_paper_scaling_and_full_run.md` | 1K -> 10K -> 50K-250K scaling ladder, VRAM/runtime budget |
+| `17_paper_scaling_and_full_run.md` | 1K -> 10K -> 50K scaling ladder, VRAM/runtime budget |
 | `18_esco_crosswalk_and_replication_study.md` | ESCO replication + O*NET <-> ISCO crosswalk decoder |
-| `19_paper_drafting_figures_and_supplementary.md` | Section-by-section drafting plan, figure pipeline, supplementary materials |
+| `19_paper_drafting_figures_and_supplementary.md` | **One-paper** drafting (DDA + ME-JEPA + FSV + TCT in one manuscript) |
 | `20_reproducibility_artifact_and_release.md` | Apptainer + Docker, Zenodo DOI, ACM artifact-badging packet |
 | `21_compliance_ethics_broader_impact.md` | NIST AI RMF mapping, O*NET attribution, dual-use disclosure |
 | `22_hyperparameters_and_collapse_diagnostics.md` | LR/latent-dim/batch sweeps + rank/alignment/uniformity/SIGReg-residual |
 | `23_ci_smoke_regression_and_drift_detection.md` | Per-PR / nightly / release CI tiers + reference-hash drift gating |
-| `24_multistep_rollout_and_planning_horizon.md` | H>1 rollouts (direct vs autoregressive), error compounding analysis |
-| `25_privacy_gate_real_data_phase12.md` | Future Phase 12 licensed-data path, consent / pseudonymization / DP / deletion gates |
+| `24_multistep_rollout_and_planning_horizon.md` | Optional v1.1 H>1 rollouts (direct vs autoregressive) |
+| `25_privacy_gate_real_data_phase12.md` | Post-v1.0 Phase 12 privacy gate (real subject-level data) |
+| `26_closed_loop_master_architecture.md` | **Monolith architecture**: one process, six layers, in-host Rust↔Python boundary |
+| `27_dda_to_mejepa_panel_bridge.md` | DDA signals as ME-JEPA instrument readings; `dda_signals` adapter |
+| `28_constellation_guard_for_mejepa_outputs.md` | Per-output Constellation Guard wrapping predict/plan/surprise/decoder |
+| `29_unified_provenance_bundle_schema.md` | Single bundle schema covering DDA + ClipCannon + ME-JEPA + TCT |
+| `30_mutual_information_embedder_audit.md` | KSG/MINE pairwise MI audit measuring 91-signal upper bound tightness |
+| `31_monolith_definition_and_scope.md` | **What the monolith is**: one repo, one product, brand selection (Teleox) |
+| `32_merged_repo_structure.md` | Merged repo layout with vendored `clipcannon/`; cross-language Makefile, Dockerfile, .gitignore |
+| `33_unified_surface.md` | One CLI binary, one MCP server, one HTTP API; supervisor architecture for Rust↔Python |
+| `34_single_product_gtm.md` | **One product, three buyer framings, four deployment tiers**; replaces fragmented portfolio |
+| `35_roadmap_to_v1_monolith.md` | 16-week critical path to v1.0 release event |
 | `reports/` | Dated operator reports for paper-small runs, failures, fixes, and multi-seed results |
 
 ## Source Of Truth For The Smoke Program

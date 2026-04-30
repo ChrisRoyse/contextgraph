@@ -14,11 +14,16 @@
 //! 3. Searches via search_graph MCP tool
 //! 4. Compares MCP multi-space search vs E1-only cosine similarity baseline
 
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Instant;
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 // Challenging corpus with overlapping semantic domains
@@ -213,9 +218,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "real-embeddings")]
 async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
+    use context_graph_causal_agent::CausalDiscoveryLLM;
     use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
-    use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
+    use context_graph_core::traits::TeleologicalMemoryStore;
     use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
+    use context_graph_graph_agent::GraphDiscoveryService;
     use context_graph_mcp::handlers::Handlers;
     use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
     use context_graph_storage::teleological::RocksDbTeleologicalStore;
@@ -259,13 +266,17 @@ async fn run_mcp_benchmark() -> Result<(), Box<dyn std::error::Error>> {
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
     let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
+    let graph_discovery_service = Arc::new(GraphDiscoveryService::new(Arc::new(
+        CausalDiscoveryLLM::new()?,
+    )));
 
     // Create MCP handlers - this is the REAL MCP layer
     let handlers = Handlers::with_defaults(
         teleological_store.clone(),
         multi_array_provider.clone(),
         layer_status_provider,
-    );
+        graph_discovery_service,
+    )?;
 
     println!(
         "  Handlers initialized in {:.1}s",

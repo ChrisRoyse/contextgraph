@@ -295,9 +295,11 @@ async fn run_validation_benchmark(
     _test_all: bool,
     test_failfast: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use context_graph_causal_agent::CausalDiscoveryLLM;
     use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
     use context_graph_core::traits::TeleologicalMemoryStore;
     use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
+    use context_graph_graph_agent::GraphDiscoveryService;
     use context_graph_mcp::handlers::Handlers;
     use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
     use context_graph_storage::teleological::RocksDbTeleologicalStore;
@@ -322,13 +324,17 @@ async fn run_validation_benchmark(
     let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
     let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
+    let graph_discovery_service = Arc::new(GraphDiscoveryService::new(Arc::new(
+        CausalDiscoveryLLM::new()?,
+    )));
 
     // Create MCP handlers
     let handlers = Handlers::with_defaults(
         teleological_store.clone(),
         multi_array_provider.clone(),
         layer_status_provider,
-    );
+        graph_discovery_service,
+    )?;
 
     println!(
         "  Handlers initialized in {:.1}s",
@@ -342,12 +348,10 @@ async fn run_validation_benchmark(
     println!("PHASE 2: Setting up test prerequisites");
     println!("{}", "-".repeat(70));
 
-    // 2a. Configure session ID for get_session_timeline tests
-    // Per handlers.rs:153-165, session ID is required for session-dependent tools.
-    // get_session_timeline (sequence_tools.rs:280-283) checks session ID BEFORE limit validation.
-    const TEST_SESSION_ID: &str = "validation-bench-session";
-    handlers.set_session_id(Some(TEST_SESSION_ID.to_string()));
-    println!("  Session ID configured: {}", TEST_SESSION_ID);
+    // 2a. Initialize the current session ID for session-dependent tools.
+    // get_session_timeline checks session state before limit validation.
+    let session_id = handlers.get_or_init_session_id();
+    println!("  Session ID configured: {}", session_id);
 
     // 2b. Create a test anchor memory for hops validation tests
     // Per sequence_tools.rs:437-452, anchor existence is verified BEFORE hops validation.

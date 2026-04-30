@@ -16,6 +16,7 @@ use chrono::Utc;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -31,6 +32,8 @@ use context_graph_causal_agent::CausalDiscoveryLLM;
 
 #[cfg(feature = "real-embeddings")]
 use context_graph_embeddings::models::pretrained::CausalModel;
+#[cfg(feature = "real-embeddings")]
+use context_graph_embeddings::SingleModelConfig;
 
 // ============================================================================
 // Data types
@@ -768,7 +771,7 @@ async fn run_phase_7_1_gpu() -> Result<BenchmarkResult<GpuLatencyMetrics>> {
     let phase_start = Instant::now();
 
     // Load E5 CausalModel
-    let model = CausalModel::new()?;
+    let model = CausalModel::new(Path::new("models/causal"), SingleModelConfig::default())?;
     model.load().await?;
 
     let texts = causal_texts();

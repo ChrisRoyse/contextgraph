@@ -148,7 +148,7 @@ context-graph dynamicjepa record-surprise --db "$DJ_DB" --prediction-id $PREDICT
 context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
 ```
 
-Phase 8/10 expected final counts (for the three-event full-loop happy path; values are **exact** unless noted):
+Phase 10 expected final counts (for the generated 60-event counter verifier plus three edge-case probes; values are **exact** unless noted):
 
 | CF | Final count |
 | --- | --- |
@@ -156,27 +156,27 @@ Phase 8/10 expected final counts (for the three-event full-loop happy path; valu
 | `dj_domain_pack_by_nv` | 1 |
 | `dj_instrument_registry` | 2 |
 | `dj_adapter_registry` | 1 |
-| `dj_raw_events` | 3 |
-| `dj_adapter_runs` | 3 (all `Completed`) |
-| `dj_normalized_states` | 3 |
-| `dj_actions` | 3 observed + 5 hypothetical = 8 |
-| `dj_outcomes` | 3 |
-| `dj_transitions` | 3 |
-| `dj_instrument_readings` | 6 (3 events × 2 required instruments) |
-| `dj_latent_panels` | 3 |
+| `dj_raw_events` | 62 (60 generated happy-path events + 2 failed edge-case rows) |
+| `dj_adapter_runs` | 62 |
+| `dj_normalized_states` | 60 |
+| `dj_actions` | 60 observed + 5 hypothetical = 65 |
+| `dj_outcomes` | 60 |
+| `dj_transitions` | 60 |
+| `dj_instrument_readings` | 120 (60 events x 2 required instruments) |
+| `dj_latent_panels` | 60 |
 | `dj_bindings` | 0 (counter_world has no entities; demo skips binding step) |
 | `dj_bindings_by_entity` | 0 |
 | `dj_trajectories` | 1 |
-| `dj_dataset_shards` | 2 (train + val) |
+| `dj_dataset_shards` | 3 (train/val/test) |
 | `dj_training_runs` | 1 (`Completed`) |
 | `dj_model_artifacts` | 1 (`Active`) |
 | `dj_predictions` | 1 (manual `predict`) + 5 (from `plan`) = 6 |
 | `dj_skill_policies` | 1 (counter_increment_skill, written during `plan` if not already present) |
 | `dj_plan_traces` | 1 |
 | `dj_guard_decisions` | 5 (one per candidate) |
-| `dj_surprise_events` | 0 if cosine ≥ 0.85 else 1 |
+| `dj_surprise_events` | 1 (forced counter surprise edge) |
 | `dj_verification_runs` | 1 (`Passed`) |
-| `dj_audit_log` | ≥ 30 (every operation) |
+| `dj_audit_log` | 196 observed in the current Phase 10 FSV run |
 
 Required physical readbacks (the harness asserts each):
 
