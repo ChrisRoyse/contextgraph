@@ -136,6 +136,10 @@ pub enum DynamicJepaCommands {
     VerifyCareerTaxonomy(VerifyDomainArgs),
     /// Build one immutable 5090 ME-JEPA research-smoke bundle from real verifier runs.
     ResearchSmoke(ResearchSmokeArgs),
+    /// Capture a checked-in CI reference from an existing research-smoke bundle.
+    CaptureReference(CaptureReferenceArgs),
+    /// Compare a research-smoke bundle against a checked-in CI reference.
+    CheckReference(CheckReferenceArgs),
 }
 
 impl DynamicJepaCommands {
@@ -172,6 +176,8 @@ impl DynamicJepaCommands {
             Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
             Self::VerifyCareerTaxonomy(_) => "dynamicjepa_verify_career_taxonomy",
             Self::ResearchSmoke(_) => "dynamicjepa_research_smoke",
+            Self::CaptureReference(_) => "dynamicjepa_capture_reference",
+            Self::CheckReference(_) => "dynamicjepa_check_reference",
         }
     }
 }
@@ -797,6 +803,48 @@ pub struct ResearchSmokeArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CaptureReferenceArgs {
+    /// Existing research-smoke bundle directory to capture as a CI reference.
+    #[arg(long = "bundle")]
+    pub bundle: PathBuf,
+
+    /// Output JSON reference path. Parent directories are created.
+    #[arg(long = "output")]
+    pub output: PathBuf,
+
+    /// Stable reference identifier written into the JSON.
+    #[arg(long = "reference-id")]
+    pub reference_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CheckReferenceArgs {
+    /// Research-smoke bundle directory to compare.
+    #[arg(long = "bundle")]
+    pub bundle: PathBuf,
+
+    /// Checked-in JSON reference file.
+    #[arg(long = "reference")]
+    pub reference: PathBuf,
+
+    /// Checked-in tolerance JSON file.
+    #[arg(long = "tolerances")]
+    pub tolerances: PathBuf,
+
+    /// Require artifact registry hashes to match the reference exactly.
+    #[arg(long = "require-artifact-hash-match")]
+    pub require_artifact_hash_match: bool,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -894,6 +942,8 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
         DynamicJepaCommands::VerifyCareerTaxonomy(args) => verify_career_taxonomy_command(args),
         DynamicJepaCommands::ResearchSmoke(args) => research_smoke_command(args),
+        DynamicJepaCommands::CaptureReference(args) => capture_reference_command(args),
+        DynamicJepaCommands::CheckReference(args) => check_reference_command(args),
     }
 }
 
@@ -2948,6 +2998,1079 @@ fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandO
     match run_research_smoke(&mut ctx) {
         Ok(summary) => ctx.finish_passed(summary),
         Err(err) => ctx.finish_failed(err),
+    }
+}
+
+const CI_REFERENCE_SCHEMA_VERSION: u64 = 1;
+const CI_REFERENCE_REQUIRED_FILES: &[&str] = &[
+    "run_manifest.json",
+    "fsv_report.json",
+    "data_manifest.json",
+    "artifact_hashes.json",
+    "paper_tables/table_prediction_metrics.csv",
+    "paper_tables/table_ablation.csv",
+    "paper_tables/table_edge_cases.csv",
+    "plots/plot_manifest.json",
+    "plots/prediction_val_mse.svg",
+    "plots/career_ablation_val_mse.svg",
+];
+
+fn capture_reference_command(args: CaptureReferenceArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let bundle_path = canonical_existing_path(&args.bundle, "capture-reference.bundle")?;
+    let reference = capture_ci_reference_value(&args.reference_id, &args.bundle)?;
+    if let Some(parent) = args.output.parent() {
+        fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+            operation: "capture_reference.create_parent".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", parent.display()),
+            remediation: "choose a writable --output path under the repository reference directory"
+                .to_string(),
+        })?;
+    }
+    write_json_file(&args.output, &reference)?;
+    let output_path = canonical_existing_path(&args.output, "capture-reference.output")?;
+    let readback = read_json_file(&args.output)?;
+
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_capture_reference",
+            "status": "ok",
+            "source_of_truth": [output_path],
+            "input_bundle": bundle_path,
+            "readback": readback,
+        }),
+        exit_code: 0,
+    })
+}
+
+fn check_reference_command(args: CheckReferenceArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let operation = "dynamicjepa_check_reference";
+    let source_of_truth = json!({
+        "reference": args.reference.display().to_string(),
+        "tolerances": args.tolerances.display().to_string(),
+        "bundle": args.bundle.display().to_string(),
+    });
+    let before_state = json!({
+        "reference": ci_path_state(&args.reference)?,
+        "tolerances": ci_path_state(&args.tolerances)?,
+        "bundle": ci_path_state(&args.bundle)?,
+    });
+
+    let reference = match read_ci_json_for_check(&args.reference) {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(ci_reference_error(
+                operation,
+                "REFERENCE_CORRUPTED",
+                message,
+                "restore a valid checked-in reference JSON generated by dynamicjepa capture-reference",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+    let tolerances = match read_ci_json_for_check(&args.tolerances) {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(ci_reference_error(
+                operation,
+                "REFERENCE_CORRUPTED",
+                message,
+                "restore a valid checked-in tolerance JSON before rerunning CI",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+    if let Err(message) = validate_ci_reference_schema(&reference) {
+        return Ok(ci_reference_error(
+            operation,
+            "REFERENCE_CORRUPTED",
+            message,
+            "regenerate the reference with dynamicjepa capture-reference and commit the full JSON",
+            source_of_truth,
+            before_state,
+            None,
+        ));
+    }
+    if !tolerances.is_object() {
+        return Ok(ci_reference_error(
+            operation,
+            "REFERENCE_CORRUPTED",
+            "tolerances JSON root is not an object".to_string(),
+            "restore reference/tolerances.json with per-table numeric tolerances",
+            source_of_truth,
+            before_state,
+            None,
+        ));
+    }
+
+    let current = match capture_ci_reference_value("current_bundle_probe", &args.bundle) {
+        Ok(value) => value,
+        Err(err) => {
+            return Ok(ci_reference_error(
+                operation,
+                "BUNDLE_INCOMPLETE",
+                err.to_string(),
+                "inspect the run bundle and rerun research-smoke until all required FSV files, CSVs, hashes, and plots exist",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+
+    let comparison = match compare_ci_reference(&reference, &current, &tolerances) {
+        Ok(value) => value,
+        Err(CiReferenceCheckFailure { code, message }) => {
+            return Ok(ci_reference_error(
+                operation,
+                code,
+                message,
+                "inspect the drift report, fix the root cause, and only update references through the bundle-bump workflow",
+                source_of_truth,
+                before_state,
+                Some(json!({"current_probe": current})),
+            ));
+        }
+    };
+
+    if args.require_artifact_hash_match {
+        match compare_ci_artifact_hashes(&reference, &current) {
+            Ok(artifact_comparison) => {
+                if artifact_comparison["mismatches"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty())
+                {
+                    return Ok(ci_reference_error(
+                        operation,
+                        "ARTIFACT_HASH_DRIFT",
+                        "one or more registered artifact hashes differ from the reference".to_string(),
+                        "do not update the reference until the model artifact drift is explained and approved as a bundle-bump",
+                        source_of_truth,
+                        before_state,
+                        Some(json!({
+                            "comparison": comparison,
+                            "artifact_comparison": artifact_comparison,
+                            "current_probe": current,
+                        })),
+                    ));
+                }
+            }
+            Err(CiReferenceCheckFailure { code, message }) => {
+                return Ok(ci_reference_error(
+                    operation,
+                    code,
+                    message,
+                    "inspect artifact_hashes.json in both bundles; required artifact hashes must be complete and parseable",
+                    source_of_truth,
+                    before_state,
+                    Some(json!({"current_probe": current})),
+                ));
+            }
+        }
+    }
+
+    let bit_equal = comparison["file_hash_mismatches"]
+        .as_array()
+        .is_some_and(|items| items.is_empty());
+    let status = if bit_equal {
+        "bit_equal"
+    } else {
+        "within_tolerance"
+    };
+    let after_state = json!({
+        "reference": ci_path_state(&args.reference)?,
+        "tolerances": ci_path_state(&args.tolerances)?,
+        "bundle": ci_path_state(&args.bundle)?,
+    });
+
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": operation,
+            "status": status,
+            "source_of_truth": source_of_truth,
+            "before_state": before_state,
+            "after_state": after_state,
+            "comparison": comparison,
+            "current_probe": current,
+        }),
+        exit_code: 0,
+    })
+}
+
+#[derive(Debug)]
+struct CiReferenceCheckFailure {
+    code: &'static str,
+    message: String,
+}
+
+impl CiReferenceCheckFailure {
+    fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CiCsvTable {
+    headers: Vec<String>,
+    rows: Vec<BTreeMap<String, String>>,
+}
+
+fn capture_ci_reference_value(reference_id: &str, bundle: &Path) -> DynamicJepaResult<Value> {
+    let bundle_path = canonical_existing_path(bundle, "ci-reference.bundle")?;
+    let run_manifest = read_json_file(&bundle.join("run_manifest.json"))?;
+    let fsv_report = read_json_file(&bundle.join("fsv_report.json"))?;
+    require_json_status(&run_manifest, "passed", "run_manifest.json")?;
+    require_json_status(&fsv_report, "passed", "fsv_report.json")?;
+
+    let mut files = Vec::new();
+    for rel_path in CI_REFERENCE_REQUIRED_FILES {
+        let path = bundle.join(rel_path);
+        let metadata = fs::metadata(&path).map_err(|err| DynamicJepaError::Storage {
+            operation: "ci_reference.required_file".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("missing required bundle file {}: {err}", path.display()),
+            remediation:
+                "rerun research-smoke; CI references are only captured from complete passed bundles"
+                    .to_string(),
+        })?;
+        if !metadata.is_file() {
+            return Err(DynamicJepaError::validation(
+                "ci_reference.required_file",
+                format!("required bundle path is not a file: {}", path.display()),
+                "remove the invalid path and rerun research-smoke to produce the expected file",
+            ));
+        }
+        files.push(json!({
+            "path": rel_path,
+            "sha256": hex_bytes(&file_sha256(&path)?),
+            "size_bytes": metadata.len(),
+        }));
+    }
+
+    let prediction_table = read_ci_csv_table(
+        &bundle.join("paper_tables/table_prediction_metrics.csv"),
+        "table_prediction_metrics",
+    )?;
+    let ablation_table = read_ci_csv_table(
+        &bundle.join("paper_tables/table_ablation.csv"),
+        "table_ablation",
+    )?;
+    let edge_table = read_ci_csv_table(
+        &bundle.join("paper_tables/table_edge_cases.csv"),
+        "table_edge_cases",
+    )?;
+    let artifact_hashes = capture_ci_artifact_hashes(bundle)?;
+    let bundle_hash_input = files
+        .iter()
+        .filter_map(|file| {
+            Some(format!(
+                "{} {}\n",
+                file.get("sha256")?.as_str()?,
+                file.get("path")?.as_str()?
+            ))
+        })
+        .collect::<String>();
+
+    Ok(json!({
+        "schema_version": CI_REFERENCE_SCHEMA_VERSION,
+        "reference_id": reference_id,
+        "created_at_unix_ms": now_unix_ms()?,
+        "source_bundle": bundle_path,
+        "run": {
+            "run_id": run_manifest.get("run_id").cloned().unwrap_or(Value::Null),
+            "purpose": run_manifest.get("purpose").cloned().unwrap_or(Value::Null),
+            "status": run_manifest.get("status").cloned().unwrap_or(Value::Null),
+            "career_event_count": run_manifest.get("career_event_count").cloned().unwrap_or(Value::Null),
+        },
+        "fsv": {
+            "status": fsv_report.get("status").cloned().unwrap_or(Value::Null),
+            "verification_run_ids": fsv_report.get("verification_run_ids").cloned().unwrap_or(Value::Null),
+        },
+        "bundle_hash_sha256": hex_bytes(&sha256(bundle_hash_input.as_bytes())),
+        "files": files,
+        "artifact_hashes": artifact_hashes,
+        "tables": {
+            "table_prediction_metrics": ci_table_json(
+                "paper_tables/table_prediction_metrics.csv",
+                &["domain"],
+                prediction_table,
+            ),
+            "table_ablation": ci_table_json(
+                "paper_tables/table_ablation.csv",
+                &["ablation_id"],
+                ablation_table,
+            ),
+            "table_edge_cases": ci_table_json(
+                "paper_tables/table_edge_cases.csv",
+                &["domain", "edge_index", "name"],
+                edge_table,
+            ),
+        },
+    }))
+}
+
+fn require_json_status(value: &Value, expected: &str, label: &str) -> DynamicJepaResult<()> {
+    let actual = value.get("status").and_then(Value::as_str).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "ci_reference.status",
+            format!("{label} is missing string status"),
+            "capture references only from complete research-smoke bundles",
+        )
+    })?;
+    if actual != expected {
+        return Err(DynamicJepaError::validation(
+            "ci_reference.status",
+            format!("{label} status is {actual:?}, expected {expected:?}"),
+            "fix the failed bundle and rerun research-smoke before capturing a reference",
+        ));
+    }
+    Ok(())
+}
+
+fn ci_table_json(path: &str, key_columns: &[&str], table: CiCsvTable) -> Value {
+    json!({
+        "path": path,
+        "key_columns": key_columns,
+        "headers": table.headers,
+        "rows": table.rows,
+    })
+}
+
+fn read_ci_csv_table(path: &Path, table_name: &str) -> DynamicJepaResult<CiCsvTable> {
+    let text = fs::read_to_string(path).map_err(|err| DynamicJepaError::Storage {
+        operation: "ci_reference.read_csv".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {table_name} at {}: {err}", path.display()),
+        remediation: "rerun research-smoke; required paper table CSVs must exist".to_string(),
+    })?;
+    let mut lines = text.lines();
+    let header_line = lines.next().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "ci_reference.csv",
+            format!("{table_name} is empty: {}", path.display()),
+            "research-smoke must write a header and at least one data row",
+        )
+    })?;
+    let headers = split_ci_csv_line(header_line).map_err(|message| {
+        DynamicJepaError::validation(
+            "ci_reference.csv",
+            format!("{table_name} header parse failed: {message}"),
+            "paper table CSVs must be valid RFC-4180-style comma-separated text",
+        )
+    })?;
+    if headers.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "ci_reference.csv",
+            format!("{table_name} has zero headers"),
+            "paper table CSVs must include stable column headers",
+        ));
+    }
+    let mut rows = Vec::new();
+    for (line_idx, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let cells = split_ci_csv_line(line).map_err(|message| {
+            DynamicJepaError::validation(
+                "ci_reference.csv",
+                format!("{table_name} row {} parse failed: {message}", line_idx + 2),
+                "paper table CSVs must not contain malformed quoted fields",
+            )
+        })?;
+        if cells.len() != headers.len() {
+            return Err(DynamicJepaError::validation(
+                "ci_reference.csv",
+                format!(
+                    "{table_name} row {} has {} cells, expected {}",
+                    line_idx + 2,
+                    cells.len(),
+                    headers.len()
+                ),
+                "fix the table writer; CI drift checks require rectangular CSV tables",
+            ));
+        }
+        rows.push(
+            headers
+                .iter()
+                .cloned()
+                .zip(cells.into_iter())
+                .collect::<BTreeMap<_, _>>(),
+        );
+    }
+    if rows.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "ci_reference.csv",
+            format!("{table_name} has no data rows"),
+            "research-smoke must produce non-empty paper tables for drift detection",
+        ));
+    }
+    Ok(CiCsvTable { headers, rows })
+}
+
+fn split_ci_csv_line(line: &str) -> Result<Vec<String>, String> {
+    let mut fields = Vec::new();
+    let mut current = String::new();
+    let mut chars = line.chars().peekable();
+    let mut in_quotes = false;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                fields.push(current);
+                current = String::new();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if in_quotes {
+        return Err("unterminated quoted field".to_string());
+    }
+    fields.push(current);
+    Ok(fields)
+}
+
+fn capture_ci_artifact_hashes(bundle: &Path) -> DynamicJepaResult<Vec<Value>> {
+    let artifact_file = bundle.join("artifact_hashes.json");
+    let root = read_json_file(&artifact_file)?;
+    let groups = root.as_array().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "ci_reference.artifact_hashes",
+            "artifact_hashes.json root is not an array",
+            "rerun research-smoke; artifact hash evidence must be an array",
+        )
+    })?;
+    let mut rows = Vec::new();
+    for (group_idx, group) in groups.iter().enumerate() {
+        let domain = group.get("domain").and_then(Value::as_str).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "ci_reference.artifact_hashes.domain",
+                format!("artifact hash group {group_idx} missing domain"),
+                "fix artifact_hashes.json generation before capturing a reference",
+            )
+        })?;
+        let hashes = group
+            .get("artifact_hashes")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "ci_reference.artifact_hashes.items",
+                    format!("artifact hash group {domain} missing artifact_hashes array"),
+                    "fix artifact_hashes.json generation before capturing a reference",
+                )
+            })?;
+        for (item_idx, item) in hashes.iter().enumerate() {
+            let relative_path = item
+                .get("relative_path")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "ci_reference.artifact_hashes.relative_path",
+                        format!("artifact hash {domain}[{item_idx}] missing relative_path"),
+                        "artifact hash rows must name the artifact-relative file",
+                    )
+                })?;
+            let equal = item.get("equal").and_then(Value::as_bool).unwrap_or(false);
+            if !equal {
+                return Err(DynamicJepaError::validation(
+                    "ci_reference.artifact_hashes.equal",
+                    format!("artifact hash {domain}/{relative_path} was not verified equal"),
+                    "rerun FSV; references cannot be captured from bundles with corrupt artifacts",
+                ));
+            }
+            rows.push(json!({
+                "domain": domain,
+                "relative_path": relative_path,
+                "registry_sha256": ci_sha256_value_to_hex(
+                    item.get("registry_sha256"),
+                    &format!("{domain}/{relative_path}.registry_sha256"),
+                )?,
+                "recomputed_sha256": ci_sha256_value_to_hex(
+                    item.get("recomputed_sha256"),
+                    &format!("{domain}/{relative_path}.recomputed_sha256"),
+                )?,
+                "size_bytes": item.get("size_bytes").and_then(Value::as_u64).ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "ci_reference.artifact_hashes.size_bytes",
+                        format!("artifact hash {domain}/{relative_path} missing size_bytes"),
+                        "artifact hash rows must include physical artifact size evidence",
+                    )
+                })?,
+            }));
+        }
+    }
+    if rows.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "ci_reference.artifact_hashes",
+            "artifact_hashes.json contained no artifact hash rows",
+            "research-smoke must verify real artifacts before a reference is captured",
+        ));
+    }
+    Ok(rows)
+}
+
+fn ci_sha256_value_to_hex(value: Option<&Value>, field: &str) -> DynamicJepaResult<String> {
+    let array = value.and_then(Value::as_array).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "ci_reference.sha256",
+            format!("{field} is not a byte array"),
+            "artifact hash evidence must contain 32-byte SHA-256 arrays",
+        )
+    })?;
+    if array.len() != 32 {
+        return Err(DynamicJepaError::validation(
+            "ci_reference.sha256",
+            format!("{field} length is {}, expected 32", array.len()),
+            "artifact hash evidence must contain 32-byte SHA-256 arrays",
+        ));
+    }
+    let mut bytes = Vec::with_capacity(32);
+    for (idx, value) in array.iter().enumerate() {
+        let byte = value.as_u64().ok_or_else(|| {
+            DynamicJepaError::validation(
+                "ci_reference.sha256",
+                format!("{field}[{idx}] is not an unsigned byte"),
+                "artifact hash evidence must contain integer byte values",
+            )
+        })?;
+        if byte > u8::MAX as u64 {
+            return Err(DynamicJepaError::validation(
+                "ci_reference.sha256",
+                format!("{field}[{idx}]={byte} exceeds 255"),
+                "artifact hash evidence must contain byte values in 0..=255",
+            ));
+        }
+        bytes.push(byte as u8);
+    }
+    Ok(hex_bytes(&bytes))
+}
+
+fn read_ci_json_for_check(path: &Path) -> Result<Value, String> {
+    let bytes =
+        fs::read(path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|err| format!("failed to parse {} as JSON: {err}", path.display()))
+}
+
+fn validate_ci_reference_schema(reference: &Value) -> Result<(), String> {
+    if reference.get("schema_version").and_then(Value::as_u64) != Some(CI_REFERENCE_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "schema_version must be {CI_REFERENCE_SCHEMA_VERSION}"
+        ));
+    }
+    require_ci_array(reference, "files")?;
+    require_ci_array(reference, "artifact_hashes")?;
+    let tables = reference
+        .get("tables")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "tables object missing".to_string())?;
+    for table in [
+        "table_prediction_metrics",
+        "table_ablation",
+        "table_edge_cases",
+    ] {
+        let table_value = tables
+            .get(table)
+            .ok_or_else(|| format!("{table} missing from reference tables"))?;
+        require_ci_array(table_value, "headers")?;
+        require_ci_array(table_value, "key_columns")?;
+        require_ci_array(table_value, "rows")?;
+        if table_value
+            .get("path")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err(format!("{table}.path missing or empty"));
+        }
+    }
+    Ok(())
+}
+
+fn require_ci_array<'a>(value: &'a Value, key: &str) -> Result<&'a Vec<Value>, String> {
+    let array = value
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{key} array missing"))?;
+    if array.is_empty() {
+        return Err(format!("{key} array is empty"));
+    }
+    Ok(array)
+}
+
+fn compare_ci_reference(
+    reference: &Value,
+    current: &Value,
+    tolerances: &Value,
+) -> Result<Value, CiReferenceCheckFailure> {
+    let reference_files = ci_file_map(reference)?;
+    let current_files = ci_file_map(current)?;
+    let mut file_hash_mismatches = Vec::new();
+    for (path, (reference_sha, reference_size)) in &reference_files {
+        let Some((current_sha, current_size)) = current_files.get(path) else {
+            return Err(CiReferenceCheckFailure::new(
+                "BUNDLE_INCOMPLETE",
+                format!("current bundle is missing required file {path}"),
+            ));
+        };
+        if reference_sha != current_sha || reference_size != current_size {
+            file_hash_mismatches.push(json!({
+                "path": path,
+                "reference_sha256": reference_sha,
+                "current_sha256": current_sha,
+                "reference_size_bytes": reference_size,
+                "current_size_bytes": current_size,
+            }));
+        }
+    }
+
+    let mut numeric_diffs = Vec::new();
+    let mut out_of_tolerance = Vec::new();
+    let mut structural_diffs = Vec::new();
+    for table in [
+        "table_prediction_metrics",
+        "table_ablation",
+        "table_edge_cases",
+    ] {
+        compare_ci_table(
+            reference,
+            current,
+            tolerances,
+            table,
+            &mut numeric_diffs,
+            &mut out_of_tolerance,
+            &mut structural_diffs,
+        )?;
+    }
+
+    if !structural_diffs.is_empty() {
+        return Err(CiReferenceCheckFailure::new(
+            "STRUCTURAL_DRIFT",
+            serde_json::to_string_pretty(&structural_diffs)
+                .unwrap_or_else(|_| "structural drift detected".to_string()),
+        ));
+    }
+    if !out_of_tolerance.is_empty() {
+        return Err(CiReferenceCheckFailure::new(
+            "OUT_OF_TOLERANCE",
+            serde_json::to_string_pretty(&out_of_tolerance)
+                .unwrap_or_else(|_| "metric drift exceeded tolerance".to_string()),
+        ));
+    }
+
+    Ok(json!({
+        "file_hash_mismatches": file_hash_mismatches,
+        "numeric_diffs": numeric_diffs,
+        "out_of_tolerance": out_of_tolerance,
+        "structural_diffs": structural_diffs,
+    }))
+}
+
+fn ci_file_map(value: &Value) -> Result<BTreeMap<String, (String, u64)>, CiReferenceCheckFailure> {
+    let files = value
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", "files array missing")
+        })?;
+    let mut out = BTreeMap::new();
+    for file in files {
+        let path = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", "file path missing")
+        })?;
+        let sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", format!("{path} sha256 missing"))
+        })?;
+        let size = file
+            .get("size_bytes")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                CiReferenceCheckFailure::new(
+                    "REFERENCE_CORRUPTED",
+                    format!("{path} size_bytes missing"),
+                )
+            })?;
+        out.insert(path.to_string(), (sha.to_string(), size));
+    }
+    Ok(out)
+}
+
+fn compare_ci_table(
+    reference: &Value,
+    current: &Value,
+    tolerances: &Value,
+    table: &str,
+    numeric_diffs: &mut Vec<Value>,
+    out_of_tolerance: &mut Vec<Value>,
+    structural_diffs: &mut Vec<Value>,
+) -> Result<(), CiReferenceCheckFailure> {
+    let (reference_key_columns, reference_rows) = ci_table_rows(reference, table)?;
+    let (current_key_columns, current_rows) = ci_table_rows(current, table)?;
+    if reference_key_columns != current_key_columns {
+        structural_diffs.push(json!({
+            "table": table,
+            "kind": "key_columns_changed",
+            "reference": reference_key_columns,
+            "current": current_key_columns,
+        }));
+        return Ok(());
+    }
+    let reference_index = ci_index_rows(table, &reference_key_columns, &reference_rows)?;
+    let current_index = ci_index_rows(table, &reference_key_columns, &current_rows)?;
+    for key in current_index.keys() {
+        if !reference_index.contains_key(key) {
+            structural_diffs.push(json!({
+                "table": table,
+                "kind": "unexpected_row",
+                "key": key,
+            }));
+        }
+    }
+    for (key, reference_row) in &reference_index {
+        let Some(current_row) = current_index.get(key) else {
+            return Err(CiReferenceCheckFailure::new(
+                "BUNDLE_INCOMPLETE",
+                format!("{table} missing expected row {key}"),
+            ));
+        };
+        for (column, reference_value) in *reference_row {
+            if ci_ignored_column(table, column) {
+                continue;
+            }
+            let Some(current_value) = current_row.get(column) else {
+                return Err(CiReferenceCheckFailure::new(
+                    "BUNDLE_INCOMPLETE",
+                    format!("{table} row {key} missing column {column}"),
+                ));
+            };
+            if let Some(tolerance) = ci_tolerance(tolerances, table, column) {
+                let reference_number = reference_value.parse::<f64>().map_err(|err| {
+                    CiReferenceCheckFailure::new(
+                        "REFERENCE_CORRUPTED",
+                        format!("{table} {key} {column} reference value is not numeric: {err}"),
+                    )
+                })?;
+                let current_number = current_value.parse::<f64>().map_err(|err| {
+                    CiReferenceCheckFailure::new(
+                        "BUNDLE_INCOMPLETE",
+                        format!("{table} {key} {column} current value is not numeric: {err}"),
+                    )
+                })?;
+                let delta = (current_number - reference_number).abs();
+                let diff = json!({
+                    "table": table,
+                    "key": key,
+                    "column": column,
+                    "reference": reference_number,
+                    "current": current_number,
+                    "abs_delta": delta,
+                    "tolerance": tolerance,
+                });
+                if delta > tolerance {
+                    out_of_tolerance.push(diff.clone());
+                }
+                if delta > 0.0 {
+                    numeric_diffs.push(diff);
+                }
+            } else if reference_value != current_value {
+                structural_diffs.push(json!({
+                    "table": table,
+                    "kind": "cell_changed_without_tolerance",
+                    "key": key,
+                    "column": column,
+                    "reference": reference_value,
+                    "current": current_value,
+                }));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ci_table_rows(
+    value: &Value,
+    table: &str,
+) -> Result<(Vec<String>, Vec<BTreeMap<String, String>>), CiReferenceCheckFailure> {
+    let table_value = value
+        .get("tables")
+        .and_then(Value::as_object)
+        .and_then(|tables| tables.get(table))
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new(
+                "REFERENCE_CORRUPTED",
+                format!("{table} missing from reference JSON"),
+            )
+        })?;
+    let key_columns = ci_string_array(table_value, "key_columns").map_err(|message| {
+        CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", format!("{table}: {message}"))
+    })?;
+    let rows = table_value
+        .get("rows")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", format!("{table}.rows missing"))
+        })?;
+    let mut out = Vec::new();
+    for (idx, row) in rows.iter().enumerate() {
+        let object = row.as_object().ok_or_else(|| {
+            CiReferenceCheckFailure::new(
+                "REFERENCE_CORRUPTED",
+                format!("{table}.rows[{idx}] is not an object"),
+            )
+        })?;
+        let mut mapped = BTreeMap::new();
+        for (key, value) in object {
+            mapped.insert(
+                key.clone(),
+                ci_json_cell_to_string(value).ok_or_else(|| {
+                    CiReferenceCheckFailure::new(
+                        "REFERENCE_CORRUPTED",
+                        format!("{table}.rows[{idx}].{key} has unsupported JSON type"),
+                    )
+                })?,
+            );
+        }
+        out.push(mapped);
+    }
+    Ok((key_columns, out))
+}
+
+fn ci_string_array(value: &Value, key: &str) -> Result<Vec<String>, String> {
+    let array = value
+        .get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{key} missing or not an array"))?;
+    array
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| format!("{key} contains a non-string item"))
+        })
+        .collect()
+}
+
+fn ci_json_cell_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(flag) => Some(flag.to_string()),
+        _ => None,
+    }
+}
+
+fn ci_index_rows<'a>(
+    table: &str,
+    key_columns: &[String],
+    rows: &'a [BTreeMap<String, String>],
+) -> Result<BTreeMap<String, &'a BTreeMap<String, String>>, CiReferenceCheckFailure> {
+    let mut out = BTreeMap::new();
+    for row in rows {
+        let mut parts = Vec::new();
+        for column in key_columns {
+            parts.push(row.get(column).ok_or_else(|| {
+                CiReferenceCheckFailure::new(
+                    "REFERENCE_CORRUPTED",
+                    format!("{table} row missing key column {column}"),
+                )
+            })?);
+        }
+        let key = parts
+            .into_iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("|");
+        if out.insert(key.clone(), row).is_some() {
+            return Err(CiReferenceCheckFailure::new(
+                "REFERENCE_CORRUPTED",
+                format!("{table} has duplicate key {key}"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn ci_tolerance(tolerances: &Value, table: &str, column: &str) -> Option<f64> {
+    tolerances
+        .get(table)
+        .and_then(Value::as_object)
+        .and_then(|columns| columns.get(column))
+        .and_then(Value::as_f64)
+}
+
+fn ci_ignored_column(table: &str, column: &str) -> bool {
+    column == "verification_run_id" || (table == "table_edge_cases" && column == "evidence_file")
+}
+
+fn compare_ci_artifact_hashes(
+    reference: &Value,
+    current: &Value,
+) -> Result<Value, CiReferenceCheckFailure> {
+    let reference_rows = ci_artifact_hash_map(reference)?;
+    let current_rows = ci_artifact_hash_map(current)?;
+    let mut mismatches = Vec::new();
+    for (key, reference_row) in &reference_rows {
+        let Some(current_row) = current_rows.get(key) else {
+            return Err(CiReferenceCheckFailure::new(
+                "BUNDLE_INCOMPLETE",
+                format!("artifact hash row {key} missing from current bundle"),
+            ));
+        };
+        if reference_row != current_row {
+            mismatches.push(json!({
+                "key": key,
+                "reference": reference_row,
+                "current": current_row,
+            }));
+        }
+    }
+    for key in current_rows.keys() {
+        if !reference_rows.contains_key(key) {
+            mismatches.push(json!({
+                "key": key,
+                "reference": null,
+                "current": current_rows.get(key),
+            }));
+        }
+    }
+    Ok(json!({"mismatches": mismatches}))
+}
+
+fn ci_artifact_hash_map(
+    value: &Value,
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, CiReferenceCheckFailure> {
+    let rows = value
+        .get("artifact_hashes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new("REFERENCE_CORRUPTED", "artifact_hashes array missing")
+        })?;
+    let mut out = BTreeMap::new();
+    for (idx, row) in rows.iter().enumerate() {
+        let object = row.as_object().ok_or_else(|| {
+            CiReferenceCheckFailure::new(
+                "REFERENCE_CORRUPTED",
+                format!("artifact_hashes[{idx}] is not an object"),
+            )
+        })?;
+        let domain = object
+            .get("domain")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                CiReferenceCheckFailure::new(
+                    "REFERENCE_CORRUPTED",
+                    format!("artifact_hashes[{idx}].domain missing"),
+                )
+            })?;
+        let relative_path = object
+            .get("relative_path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                CiReferenceCheckFailure::new(
+                    "REFERENCE_CORRUPTED",
+                    format!("artifact_hashes[{idx}].relative_path missing"),
+                )
+            })?;
+        let key = format!("{domain}|{relative_path}");
+        let mut mapped = BTreeMap::new();
+        for field in ["registry_sha256", "recomputed_sha256", "size_bytes"] {
+            mapped.insert(
+                field.to_string(),
+                ci_json_cell_to_string(object.get(field).ok_or_else(|| {
+                    CiReferenceCheckFailure::new(
+                        "REFERENCE_CORRUPTED",
+                        format!("artifact_hashes[{idx}].{field} missing"),
+                    )
+                })?)
+                .ok_or_else(|| {
+                    CiReferenceCheckFailure::new(
+                        "REFERENCE_CORRUPTED",
+                        format!("artifact_hashes[{idx}].{field} unsupported type"),
+                    )
+                })?,
+            );
+        }
+        if out.insert(key.clone(), mapped).is_some() {
+            return Err(CiReferenceCheckFailure::new(
+                "REFERENCE_CORRUPTED",
+                format!("duplicate artifact hash key {key}"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn ci_reference_error(
+    operation: &'static str,
+    code: &'static str,
+    message: impl Into<String>,
+    remediation: &'static str,
+    source_of_truth: Value,
+    before_state: Value,
+    evidence: Option<Value>,
+) -> CommandOutcome {
+    let mut object = Map::new();
+    object.insert("operation".to_string(), json!(operation));
+    object.insert("status".to_string(), json!("error"));
+    object.insert("error_code".to_string(), json!(code));
+    object.insert("error_message".to_string(), json!(message.into()));
+    object.insert("remediation".to_string(), json!(remediation));
+    object.insert("source_of_truth".to_string(), source_of_truth);
+    object.insert("before_state".to_string(), before_state);
+    if let Some(evidence) = evidence {
+        object.insert("evidence".to_string(), evidence);
+    }
+    CommandOutcome {
+        value: Value::Object(object),
+        exit_code: 1,
+    }
+}
+
+fn ci_path_state(path: &Path) -> DynamicJepaResult<Value> {
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            let kind = if metadata.is_file() {
+                "file"
+            } else if metadata.is_dir() {
+                "directory"
+            } else {
+                "other"
+            };
+            let sha256 = if metadata.is_file() {
+                Some(hex_bytes(&file_sha256(path)?))
+            } else {
+                None
+            };
+            Ok(json!({
+                "path": path.display().to_string(),
+                "exists": true,
+                "kind": kind,
+                "size_bytes": metadata.len(),
+                "sha256": sha256,
+            }))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(json!({
+            "path": path.display().to_string(),
+            "exists": false,
+        })),
+        Err(err) => Err(DynamicJepaError::Storage {
+            operation: "ci_reference.path_state".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to inspect {}: {err}", path.display()),
+            remediation: "ensure the CI runner can stat the reference and bundle paths".to_string(),
+        }),
     }
 }
 

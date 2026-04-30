@@ -1,0 +1,20 @@
+{
+  "table_prediction_metrics": {
+    "val_latent_cosine": 0.005,
+    "val_latent_mse": 0.005,
+    "test_latent_cosine": 0.005,
+    "test_latent_mse": 0.005,
+    "val_action_contrast_acc": 0.02
+  },
+  "table_ablation": {
+    "val_latent_cosine": 0.01,
+    "val_latent_mse": 0.01,
+    "test_latent_cosine": 0.01,
+    "test_latent_mse": 0.01,
+    "val_action_contrast_acc": 0.02
+  },
+  "table_topk_occupation": {
+    "k_1_acc": 0.02,
+    "ece": 0.02
+  }
+}

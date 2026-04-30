@@ -150,6 +150,11 @@ debugging the career slice outside the consolidated bundle:
 
 ## Iteration Policy
 
+CI drift gates are defined in
+`docs/5090jepa/smokedocs/23_ci_smoke_regression_and_drift_detection.md`.
+Before promoting a changed bundle, run `dynamicjepa check-reference` against
+the checked-in `reference/*.json` files and keep the resulting drift report.
+
 When a gate fails:
 
 1. Stop the run.
