@@ -4,7 +4,7 @@ The 5090 demo persists everything to the existing physical RocksDB database open
 
 This file specifies CFs, key formats, batch boundaries, and the inspection API. Implementation lives under `crates/context-graph-storage/src/dynamicjepa/`.
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: all 25 CFs and the inspection API are implemented; Phase 4 atomic helpers are implemented for raw event + started adapter run, adapter success/failure terminalization, and panel + readings writes. Phase 5 atomic helpers are implemented for binding + secondary index + audit writes and trajectory + audit writes. Phase 6 adds dataset shard + audit atomic writes. Phase 7 adds training-run start/fail/complete and model-artifact completion batches with audit rows. Phase 8 adds prediction + audit, plan batch, and surprise + audit write paths. Verification-run write paths remain Phase 10 work.
+Current implementation status as of the Phase 10 review on 2026-04-30: all 25 CFs and the inspection API are implemented; Phase 4 atomic helpers are implemented for raw event + started adapter run, adapter success/failure terminalization, and panel + readings writes. Phase 5 atomic helpers are implemented for binding + secondary index + audit writes and trajectory + audit writes. Phase 6 adds dataset shard + audit atomic writes. Phase 7 adds training-run start/fail/complete and model-artifact completion batches with audit rows. Phase 8 adds prediction + audit, plan batch, and surprise + audit write paths. Phase 10 adds verification-run + audit atomic writes through `put_verification_run_with_audit_batch`.
 
 ## 1. Module Layout
 
@@ -159,7 +159,7 @@ Required batch boundaries (every operation listed below must be one `WriteBatch`
 11. **Run prediction**: 1 `dj_predictions` row + 1 audit row.
 12. **Plan run**: K hypothetical `dj_actions` rows (with `action_origin = Hypothetical`) + K `dj_predictions` rows + K `dj_guard_decisions` rows + 1 `dj_plan_traces` row + 1 audit row. **All in one batch.** Partial plans are not allowed.
 13. **Surprise event**: 1 `dj_surprise_events` row + 1 audit row.
-14. **Verification run**: 1 `dj_verification_runs` row + 1 audit row.
+14. **Verification run**: 1 `dj_verification_runs` row + 1 audit row. Implemented by `put_verification_run_with_audit_batch`.
 
 Pre‑persistence schema validation failure (for example a malformed domain TOML before any operation starts) writes **no** rows — neither to data CFs nor to audit. Once a CLI operation starts and can name a source-of-truth operation, failures are audit-visible: Phase 4 empty JSONL input writes one failed `dj_audit_log` row and no raw/adapter/normalized rows.
 

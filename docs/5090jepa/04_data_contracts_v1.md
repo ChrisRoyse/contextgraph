@@ -2,7 +2,7 @@
 
 The full DynamicJEPA contract is in `docs/dynamicjepa/implementationplan/03_core_data_contracts.md`. This file lists the *trimmed v1 subset* used by the 5090 demo. Every record below is added to `crates/context-graph-core/src/dynamicjepa/`. Module layout follows the full contract:
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: records needed through `RawDomainEvent`, `AdapterRunRecord`, normalized state/action/outcome/transition, `InstrumentReading`, `LatentPanel`, `BindingRecord`, `TrajectoryRecord`, `DatasetShardRecord`, `TrainingRunRecord`, `ModelArtifactRecord`, `PredictionRecord`, `PlanTraceRecord`, `GuardDecisionRecord`, `SkillPolicyRecord`, and `SurpriseEventRecord` are implemented and FSV-verified on the counter_world CLI path. Verification-run records remain defined for schema completeness and are wired in Phase 10.
+Current implementation status as of the Phase 10 review on 2026-04-30: records needed through `RawDomainEvent`, `AdapterRunRecord`, normalized state/action/outcome/transition, `InstrumentReading`, `LatentPanel`, `BindingRecord`, `TrajectoryRecord`, `DatasetShardRecord`, `TrainingRunRecord`, `ModelArtifactRecord`, `PredictionRecord`, `PlanTraceRecord`, `GuardDecisionRecord`, `SkillPolicyRecord`, `SurpriseEventRecord`, and `VerificationRunRecord` are implemented and FSV-verified. Phase 10 persists verification rows for both counter_world and gridworld bundled verifier runs.
 
 ```
 crates/context-graph-core/src/dynamicjepa/
@@ -30,7 +30,7 @@ crates/context-graph-core/src/dynamicjepa/
   tests.rs
 ```
 
-Records not used by the demo (`SkillPolicyRecord`, `SurpriseEventRecord` heavyweight fields) still get *defined* (so the storage schema is whole) but their write paths are wired in Phases 8/10 only. Definitions never use `Option<>` to paper over missing data — every required field is required.
+Records are implemented for the demo surface through Phase 10. Definitions never use `Option<>` to paper over missing data — every required field is required.
 
 ## 1. Shared Record Header
 
@@ -413,7 +413,7 @@ pub struct VerificationRunRecord {
 }
 ```
 
-Every FSV harness ends by writing one of these. Operator evidence logs are derived from `decoded_record_excerpts` + `actual_results`.
+Every bundled Phase 10 FSV harness ends by writing one of these and an audit row in the same batch. Operator evidence logs are derived from `decoded_record_excerpts` + `actual_results`.
 
 Phase 1 correction: use a local bincode-safe `DjJsonValue` enum instead of raw
 `serde_json::Value` inside persisted records. `serde_json::Value` requires

@@ -1,7 +1,8 @@
 use context_graph_core::dynamicjepa::{
-    DynamicJepaError, DynamicJepaResult, VerificationRunId, VerificationRunRecord,
+    DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, VerificationRunId,
+    VerificationRunRecord,
 };
-use rocksdb::{IteratorMode, DB};
+use rocksdb::{IteratorMode, WriteBatch, DB};
 use uuid::Uuid;
 
 use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
@@ -9,7 +10,7 @@ use crate::dynamicjepa::column_families::{CF_DJ_AUDIT_LOG, CF_DJ_VERIFICATION_RU
 use crate::dynamicjepa::common::{
     cf, count_cf, get_record, list_records, storage_error, write_batch,
 };
-use crate::dynamicjepa::encode::{decode_plain, encode_plain};
+use crate::dynamicjepa::encode::{decode_plain, encode_plain, encode_record};
 use crate::dynamicjepa::keys::audit_key;
 
 pub fn put_verification_run(db: &DB, record: &VerificationRunRecord) -> DynamicJepaResult<()> {
@@ -19,6 +20,27 @@ pub fn put_verification_run(db: &DB, record: &VerificationRunRecord) -> DynamicJ
         record.verification_run_id.into_bytes(),
         record,
     )
+}
+
+pub fn put_verification_run_with_audit_batch(
+    db: &DB,
+    record: &VerificationRunRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    record.validate_record()?;
+    audit.validate()?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(
+        cf(db, CF_DJ_VERIFICATION_RUNS)?,
+        record.verification_run_id.into_bytes(),
+        encode_record(record)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_verification_run_with_audit_batch")
 }
 
 pub fn get_verification_run(

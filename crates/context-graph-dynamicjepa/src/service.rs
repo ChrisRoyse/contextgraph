@@ -692,7 +692,18 @@ pub fn record_surprise(
             ));
         }
     }
-    let observed_vec = encode_panel_vector(&artifact, &observed_panel)?;
+    let candidate_action = get_action(db, prediction.candidate_action_id)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ACTIONS.to_string(),
+            key: prediction.candidate_action_id.into_bytes().to_vec(),
+        }
+    })?;
+    ensure_same_domain(
+        &domain,
+        candidate_action.header.domain_pack_id.as_str(),
+        "record-surprise.candidate_action",
+    )?;
+    let observed_vec = encode_panel_vector(&artifact, &domain, &observed_panel, &candidate_action)?;
     if observed_vec.len() != prediction.predicted_next_panel_vec.len() {
         return Err(DynamicJepaError::PanelShapeMismatch {
             domain_pack_id: domain.id.to_string(),
@@ -824,8 +835,8 @@ fn predict_vector(
     panel: &LatentPanel,
     action: &NormalizedAction,
 ) -> DynamicJepaResult<Vec<f32>> {
-    let input = flatten_panel(panel)?;
     let action = action_dense_vector(domain, action)?;
+    let input = flatten_panel_with_action_override(panel, Some(&action))?;
     if artifact.config.model.predictor.in_action_dim != action.len() {
         return Err(DynamicJepaError::PanelShapeMismatch {
             domain_pack_id: domain.id.to_string(),
@@ -860,13 +871,16 @@ fn predict_vector(
 
 fn encode_panel_vector(
     artifact: &InferenceArtifact,
+    domain: &DomainPack,
     panel: &LatentPanel,
+    action: &NormalizedAction,
 ) -> DynamicJepaResult<Vec<f32>> {
+    let action = action_dense_vector(domain, action)?;
     mlp_forward(
         &artifact.tensors,
         "online.encoder",
         artifact.config.model.encoder.hidden.len() + 1,
-        &flatten_panel(panel)?,
+        &flatten_panel_with_action_override(panel, Some(&action))?,
         artifact.loaded.registry.training_run_id,
     )
 }
@@ -1725,12 +1739,16 @@ fn collect_examples(
                     dataset_id: shard.dataset_id.0,
                 });
             }
+            let action = action_vector(&input_panel)?;
+            let target_panel = flatten_panel_with_action_override(&target_panel, Some(&action))?;
+            let negative_panel =
+                flatten_panel_with_action_override(&negative_panel, Some(&action))?;
             examples.push(TrainExample {
                 split_name: shard.split_name.clone(),
                 input_panel: flatten_panel(&input_panel)?,
-                target_panel: flatten_panel(&target_panel)?,
-                action: action_vector(&input_panel)?,
-                negative_panel: flatten_panel(&negative_panel)?,
+                target_panel,
+                action,
+                negative_panel,
             });
         }
     }
@@ -1754,7 +1772,15 @@ fn get_panel_or_missing(
 }
 
 fn flatten_panel(panel: &LatentPanel) -> DynamicJepaResult<Vec<f32>> {
+    flatten_panel_with_action_override(panel, None)
+}
+
+fn flatten_panel_with_action_override(
+    panel: &LatentPanel,
+    action_override: Option<&[f32]>,
+) -> DynamicJepaResult<Vec<f32>> {
     let mut out = Vec::new();
+    let mut action_offset = 0usize;
     for (idx, (slot, vector)) in panel
         .ordered_slots
         .iter()
@@ -1775,7 +1801,32 @@ fn flatten_panel(panel: &LatentPanel) -> DynamicJepaResult<Vec<f32>> {
                 actual: vec![vector.len()],
             });
         }
+        if matches!(slot.kind, PanelSlotKind::Action) {
+            if let Some(action_override) = action_override {
+                let next_offset = action_offset + slot.dim;
+                let action_slice =
+                    action_override
+                        .get(action_offset..next_offset)
+                        .ok_or_else(|| DynamicJepaError::PanelShapeMismatch {
+                            domain_pack_id: panel.header.domain_pack_id.to_string(),
+                            expected: vec![next_offset],
+                            actual: vec![action_override.len()],
+                        })?;
+                out.extend_from_slice(action_slice);
+                action_offset = next_offset;
+                continue;
+            }
+        }
         out.extend_from_slice(vector);
+    }
+    if let Some(action_override) = action_override {
+        if action_offset != action_override.len() {
+            return Err(DynamicJepaError::PanelShapeMismatch {
+                domain_pack_id: panel.header.domain_pack_id.to_string(),
+                expected: vec![action_offset],
+                actual: vec![action_override.len()],
+            });
+        }
     }
     if out.is_empty() {
         return Err(DynamicJepaError::PanelShapeMismatch {

@@ -2,7 +2,7 @@
 
 The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Phase 9 adds 27 operational DynamicJEPA MCP tools, bringing the current totals to 137 with `llm` enabled and 133 without. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
-Current implementation status as of the Phase 9 FSV run on 2026-04-30: the CLI implements and FSV-accepts Phases 3-8, and `context-graph-mcp` exposes the same operational Phases 3-8 surface through strict MCP tool definitions, DTOs, handlers, dispatch entries, and capability matrix runtime state. Bundled `verify-*` CLI/MCP commands remain future Phase 10 work.
+Current implementation status as of the Phase 10 FSV run on 2026-04-30: the CLI implements and FSV-accepts Phases 3-10, including bundled `verify-counter-world` and `verify-gridworld`. `context-graph-mcp` exposes the operational Phases 3-8 surface through strict MCP tool definitions, DTOs, handlers, dispatch entries, and capability matrix runtime state. Phase 10 verification commands are CLI-only at this point; MCP still reports verification rows/counts through capability/read tools rather than exposing `dynamicjepa_verify_*` tools.
 
 ## 1. Tool Name Constants
 
@@ -145,7 +145,7 @@ training/artifact subset is implemented and verified for counter_world:
 `train`, `get-training-run`, and `get-artifact --verify-files`. The Phase 8
 prediction/planning/surprise subset is implemented and FSV-tested:
 `predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and
-`get-surprise`. The MCP Phase 9 surface exposes these same commands as `dynamicjepa_*` tools. Bundled verification commands remain unimplemented future Phase 10 work.
+`get-surprise`. The MCP Phase 9 surface exposes these same commands as `dynamicjepa_*` tools. Phase 10 adds CLI-only bundled verification commands.
 
 Subcommands (all accept `--db PATH` and `--json`):
 
@@ -189,7 +189,6 @@ context-graph dynamicjepa get-surprise --id UUID
 context-graph dynamicjepa inspect-counts
 context-graph dynamicjepa inspect-cf --cf NAME --limit N
 
-# Future Phase 10:
 context-graph dynamicjepa verify-counter-world --fixtures-root PATH --artifact-root PATH
 context-graph dynamicjepa verify-gridworld     --fixtures-root PATH --artifact-root PATH
 ```
@@ -218,12 +217,12 @@ Extend `crates/context-graph-mcp/src/handlers/tools/capability_tools.rs::get_cap
   ],
   "model_artifact_count": 2,
   "training_run_count": 2,
-  "verification_run_count": 0,
-  "latest_verification": null
+  "verification_run_count": 2,
+  "latest_verification": { "test_name": "verify-gridworld", "status": "Passed" }
 }
 ```
 
-The capability matrix is the single MCP call an operator (or another agent) uses to confirm DynamicJEPA is alive, configured, and has run. `verification_run_count` remains `0` until the future Phase 10 bundled verification commands persist `VerificationRunRecord` rows.
+The capability matrix is the single MCP call an operator (or another agent) uses to confirm DynamicJEPA is alive, configured, and has run. After Phase 10 bundled verifier runs, `verification_run_count` reflects the persisted `dj_verification_runs` rows in the configured DB.
 
 ## 7. JSON Output Contract
 

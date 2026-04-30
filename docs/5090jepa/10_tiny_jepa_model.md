@@ -4,7 +4,7 @@ The demo's predictor is intentionally small. The point is to prove the *contract
 
 The full plan's open questions doc (`docs/dynamicjepa/implementationplan/15_open_questions_decisions.md`) recommends "tiny deterministic architecture first for FSV." This file makes that concrete.
 
-Current implementation status as of the Phase 7 review on 2026-04-30: the CUDA-only tiny JEPA trainer is implemented in `crates/context-graph-dynamicjepa/src/model/mod.rs` and is called through `dynamicjepa train`. It consumes real `DatasetShardRecord` rows and writes real artifact files. Counter_world Phase 7 FSV passes convergence/hash checks on a generated 60-event fixture; strict shuffled-target and covariance acceptance remain open.
+Current implementation status as of the Phase 10 review on 2026-04-30: the CUDA-only tiny JEPA trainer is implemented in `crates/context-graph-dynamicjepa/src/model/mod.rs` and is called through `dynamicjepa train` and the bundled `verify-*` commands. It consumes real `DatasetShardRecord` rows and writes real artifact files. Counter_world and gridworld Phase 10 FSV pass convergence/hash checks on real RocksDB rows; strict shuffled-target and covariance acceptance remain open model-quality audits.
 
 ## 1. Architecture (Single File of Truth)
 
@@ -90,10 +90,10 @@ AdamW (`candle-nn::optim::AdamW`) on the union of online encoder + predictor par
 
 | Hyperparameter | Counter_world | Gridworld |
 | --- | --- | --- |
-| Learning rate | 1e-3 | 5e-4 |
+| Learning rate | 1e-3 | 1e-3 |
 | Weight decay | 1e-4 | 1e-4 |
-| Warmup steps | 0 | 200 (linear) |
-| Epochs | 200 | 30 |
+| Warmup steps | 0 | 50 (linear) |
+| Epochs | 200 | 120 |
 | Batch size | 2 | 256 |
 | Device | `cuda:0` | `cuda:0` |
 | Seed | 42 | 42 |
@@ -167,7 +167,7 @@ Steps (5)–(7) (artifact write, hash compute, registry write) live in `11_train
 | counter_world | (2→16) + (16→8) ≈ 200 | (8+1→16) + (16→8) ≈ 280 | mirror of encoder (no grad) | ≈ 480 trainable, ≈ 680 total |
 | gridworld | (31→64) + (64→64) + (64→32) ≈ 6.5K | (32+5→64) + (64→64) + (64→32) ≈ 7K | mirror of encoder (no grad) | ≈ 13.5K trainable |
 
-The current Phase 7 FSV asserts `parameter_count_trainable == 480` for counter_world. A future gridworld model FSV should assert the gridworld count remains below 20K trainable params. Above that, the test should fail with the actual count and a remediation pointing to this section. The point: the demo is intentionally tiny, and the asserts protect against accidental architecture drift.
+The current Phase 7/10 FSV asserts `parameter_count_trainable == 480` for counter_world. Phase 10 gridworld FSV asserts the gridworld count remains below 20K trainable params; the observed run recorded `16960`. Above that, the test should fail with the actual count and a remediation pointing to this section. The point: the demo is intentionally tiny, and the asserts protect against accidental architecture drift.
 
 ## 6. Collapse Audits
 
@@ -178,6 +178,8 @@ Current Phase 7 counter_world FSV records and asserts:
 3. Artifact files hash-verified through `get-artifact --verify-files`.
 
 It also records `vicreg_covariance_off_diag_frobenius`. The documented strict covariance target (`<= 0.5`) is not yet an acceptance gate because the current run records ~4.87 on the generated counter fixture. This is an open model-quality issue, not a test workaround.
+
+Phase 10 gridworld FSV records validation/test metrics from `evaluation_report.json`, recomputes all artifact file hashes, and persists those hash checks in the `VerificationRunRecord`.
 
 ## 7. Leakage Audit
 

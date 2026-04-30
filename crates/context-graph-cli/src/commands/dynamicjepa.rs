@@ -13,22 +13,22 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
     ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
-    AdapterSpec, BindingId, BindingKind, BindingMethod, BindingRecord, BindingRef,
-    CandidateActionConfig, DatasetId, DatasetPolicy, DatasetShardId, DatasetShardRecord,
-    DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord,
-    DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue, InstrumentId,
-    InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation, InvariantSpec,
-    LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
+    AdapterSpec, ArtifactHashCheck, BindingId, BindingKind, BindingMethod, BindingRecord,
+    BindingRef, CandidateActionConfig, DatasetId, DatasetPolicy, DatasetShardId,
+    DatasetShardRecord, DjJsonValue, DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError,
+    DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue,
+    InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation,
+    InvariantSpec, LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
     NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
     PanelSlot, PanelSlotKind, PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId,
     RawDomainEvent, ReadingStatus, ShapeSummary, SkillId, SourceKind, StateId, StateSchema,
     StateTransition, SurpriseEventId, TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId,
-    TrajectoryRecord, TransitionId, Validate, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION,
-    BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION,
-    INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
-    NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
-    NORMALIZED_STATE_RECORD_VERSION, RAW_DOMAIN_EVENT_RECORD_VERSION,
-    STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
+    TrajectoryRecord, TransitionId, Validate, VerificationPolicy, VerificationRunId,
+    VerificationRunRecord, VerificationStatus, ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION,
+    DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
+    LATENT_PANEL_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION,
+    NORMALIZED_OUTCOME_RECORD_VERSION, NORMALIZED_STATE_RECORD_VERSION,
+    RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_dynamicjepa::{
     plan_next_action, predict_next_panel, record_surprise, train_dataset, verify_artifact_files,
@@ -40,22 +40,25 @@ use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS,
     CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES,
     CF_DJ_OUTCOMES, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES,
-    CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
+    CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS,
+    CF_DJ_VERIFICATION_RUNS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
-    adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
+    adapter_registry_key, instrument_reading_key, instrument_registry_key, name_version_key,
+    uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
     get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_guard_decision,
-    get_instrument_spec, get_latent_panel, get_model_artifact, get_normalized_state, get_outcome,
-    get_plan_trace, get_prediction, get_raw_event, get_surprise_event, get_training_run,
-    get_trajectory, get_transition, inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings,
-    list_dataset_shards, list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
-    list_trajectories, list_transitions, put_adapter_run_failure_batch,
-    put_adapter_run_success_batch, put_audit_record, put_binding_with_audit_batch,
-    put_dataset_shard_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
-    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch, snapshot_dj_counts,
+    get_instrument_reading, get_instrument_spec, get_latent_panel, get_model_artifact,
+    get_normalized_state, get_outcome, get_plan_trace, get_prediction, get_raw_event,
+    get_surprise_event, get_training_run, get_trajectory, get_transition, get_verification_run,
+    inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings, list_dataset_shards,
+    list_domain_packs, list_instrument_readings_for_event, list_latent_panels, list_trajectories,
+    list_transitions, put_adapter_run_failure_batch, put_adapter_run_success_batch,
+    put_audit_record, put_binding_with_audit_batch, put_dataset_shard_with_audit_batch,
+    put_domain_pack, put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
+    put_trajectory_with_audit_batch, put_verification_run_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
@@ -121,6 +124,10 @@ pub enum DynamicJepaCommands {
     GetPlanTrace(GetPlanTraceArgs),
     /// Read a persisted DynamicJEPA surprise event.
     GetSurprise(GetSurpriseArgs),
+    /// Run bundled counter_world end-to-end full-state verification.
+    VerifyCounterWorld(VerifyDomainArgs),
+    /// Run bundled gridworld_5x5 end-to-end full-state verification.
+    VerifyGridworld(VerifyDomainArgs),
 }
 
 impl DynamicJepaCommands {
@@ -153,6 +160,8 @@ impl DynamicJepaCommands {
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
+            Self::VerifyCounterWorld(_) => "dynamicjepa_verify_counter_world",
+            Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
         }
     }
 }
@@ -702,6 +711,29 @@ pub struct GetSurpriseArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct VerifyDomainArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Root containing domain_packs/ and verification/ fixtures.
+    #[arg(long = "fixtures-root", default_value = "configs/dynamicjepa")]
+    pub fixtures_root: PathBuf,
+
+    /// Artifact root directory. The run writes <root>/<domain>/<training_run_id>/.
+    #[arg(long = "artifact-root")]
+    pub artifact_root: PathBuf,
+
+    /// Evidence root. The harness writes <root>/<verification_run_uuid>/.
+    #[arg(long = "evidence-root")]
+    pub evidence_root: Option<PathBuf>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -795,6 +827,8 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
+        DynamicJepaCommands::VerifyCounterWorld(args) => verify_counter_world_command(args),
+        DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
     }
 }
 
@@ -1282,16 +1316,31 @@ fn materialize_panel_command(args: MaterializePanelArgs) -> DynamicJepaResult<Co
                 }
             })?;
             let transitions = list_transitions(db, 1_000_000, 0)?;
+            let mut existing_panel_keys = list_latent_panels(db, 1_000_000, 0)?
+                .into_iter()
+                .filter(|panel| panel.header.domain_pack_id == domain_pack.id)
+                .filter_map(|panel| {
+                    panel
+                        .outcome_id
+                        .map(|outcome_id| (panel.state_id, panel.action_id, outcome_id))
+                })
+                .collect::<BTreeSet<_>>();
             let mut skipped = 0u64;
             for transition in transitions
                 .into_iter()
                 .filter(|transition| transition.header.domain_pack_id == domain_pack.id)
             {
-                if panel_for_transition(db, &transition)?.is_some() {
+                let panel_key = (
+                    transition.prior_state,
+                    transition.action,
+                    transition.outcome,
+                );
+                if existing_panel_keys.contains(&panel_key) {
                     skipped += 1;
                     continue;
                 }
                 let evidence = materialize_one_panel(db, &domain_pack, transition)?;
+                existing_panel_keys.insert(panel_key);
                 created.push(evidence);
             }
             Ok(json!({
@@ -2787,6 +2836,1373 @@ fn get_surprise_command(args: GetSurpriseArgs) -> DynamicJepaResult<CommandOutco
             exit_code: 0,
         }),
     }
+}
+
+fn verify_counter_world_command(args: VerifyDomainArgs) -> DynamicJepaResult<CommandOutcome> {
+    verify_domain_command(VerificationDomain::CounterWorld, args)
+}
+
+fn verify_gridworld_command(args: VerifyDomainArgs) -> DynamicJepaResult<CommandOutcome> {
+    verify_domain_command(VerificationDomain::Gridworld, args)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum VerificationDomain {
+    CounterWorld,
+    Gridworld,
+}
+
+impl VerificationDomain {
+    fn id(self) -> &'static str {
+        match self {
+            Self::CounterWorld => "counter_world",
+            Self::Gridworld => "gridworld_5x5",
+        }
+    }
+
+    fn operation(self) -> &'static str {
+        match self {
+            Self::CounterWorld => "dynamicjepa_verify_counter_world",
+            Self::Gridworld => "dynamicjepa_verify_gridworld",
+        }
+    }
+
+    fn test_name(self) -> &'static str {
+        match self {
+            Self::CounterWorld => "phase10_verify_counter_world",
+            Self::Gridworld => "phase10_verify_gridworld",
+        }
+    }
+
+    fn default_evidence_root(self) -> PathBuf {
+        PathBuf::from("tmp/5090jepa_evidence").join(self.id())
+    }
+
+    fn domain_pack_path(self, fixtures_root: &Path) -> PathBuf {
+        fixtures_root
+            .join("domain_packs")
+            .join(format!("{}.v1.toml", self.id()))
+    }
+
+    fn train_config_path(self, fixtures_root: &Path) -> PathBuf {
+        match self {
+            Self::CounterWorld => fixtures_root.join("verification/tiny_train_config.json"),
+            Self::Gridworld => fixtures_root.join("verification/gridworld_5x5_train_config.json"),
+        }
+    }
+
+    fn corpus_path(self, fixtures_root: &Path, evidence_dir: &Path) -> DynamicJepaResult<PathBuf> {
+        match self {
+            Self::CounterWorld => write_generated_counter_verification_fixture(evidence_dir),
+            Self::Gridworld => Ok(fixtures_root.join("verification/gridworld_5x5_corpus.jsonl")),
+        }
+    }
+
+    fn edge_fixtures(self, fixtures_root: &Path) -> [(&'static str, PathBuf, EdgeExpectation); 3] {
+        match self {
+            Self::CounterWorld => [
+                (
+                    "empty_input",
+                    fixtures_root.join("verification/counter_world_edge_empty_input.jsonl"),
+                    EdgeExpectation::empty_input(),
+                ),
+                (
+                    "invalid_action",
+                    fixtures_root.join("verification/counter_world_edge_invalid_action.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+                (
+                    "max_panel",
+                    fixtures_root.join("verification/counter_world_edge_max_panel.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+            ],
+            Self::Gridworld => [
+                (
+                    "empty_input",
+                    fixtures_root.join("verification/gridworld_5x5_edge_empty.jsonl"),
+                    EdgeExpectation::empty_input(),
+                ),
+                (
+                    "invalid_action",
+                    fixtures_root.join("verification/gridworld_5x5_edge_invalid_action.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+                (
+                    "oob_state",
+                    fixtures_root.join("verification/gridworld_5x5_edge_oob_state.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+            ],
+        }
+    }
+
+    fn expected_happy_counts(self, surprise_count: u64) -> BTreeMap<String, u64> {
+        let mut counts = BTreeMap::from([
+            (CF_DJ_DOMAIN_PACKS.to_string(), 1),
+            (CF_DJ_DOMAIN_PACK_BY_NAME_VERSION.to_string(), 1),
+            (CF_DJ_ADAPTER_REGISTRY.to_string(), 1),
+            (CF_DJ_DATASET_SHARDS.to_string(), 3),
+            (CF_DJ_MODEL_ARTIFACTS.to_string(), 1),
+            (CF_DJ_PLAN_TRACES.to_string(), 1),
+            (CF_DJ_PREDICTIONS.to_string(), 6),
+            (CF_DJ_SKILL_POLICIES.to_string(), 1),
+            (CF_DJ_GUARD_DECISIONS.to_string(), 5),
+            (CF_DJ_SURPRISE_EVENTS.to_string(), surprise_count),
+            (CF_DJ_TRAINING_RUNS.to_string(), 1),
+            (CF_DJ_VERIFICATION_RUNS.to_string(), 1),
+        ]);
+        match self {
+            Self::CounterWorld => {
+                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 2);
+                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 62);
+                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 62);
+                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 60);
+                counts.insert(CF_DJ_ACTIONS.to_string(), 65);
+                counts.insert(CF_DJ_OUTCOMES.to_string(), 60);
+                counts.insert(CF_DJ_TRANSITIONS.to_string(), 60);
+                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 120);
+                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 60);
+                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1);
+            }
+            Self::Gridworld => {
+                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 3);
+                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 8002);
+                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 8002);
+                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 8000);
+                counts.insert(CF_DJ_ACTIONS.to_string(), 8005);
+                counts.insert(CF_DJ_OUTCOMES.to_string(), 8000);
+                counts.insert(CF_DJ_TRANSITIONS.to_string(), 8000);
+                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 24000);
+                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 8000);
+                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1000);
+            }
+        }
+        counts
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct EdgeExpectation {
+    raw_delta: i64,
+    adapter_delta: i64,
+    normalized_delta: i64,
+    transition_delta: i64,
+    audit_delta: i64,
+}
+
+impl EdgeExpectation {
+    fn empty_input() -> Self {
+        Self {
+            raw_delta: 0,
+            adapter_delta: 0,
+            normalized_delta: 0,
+            transition_delta: 0,
+            audit_delta: 1,
+        }
+    }
+
+    fn failed_adapter() -> Self {
+        Self {
+            raw_delta: 1,
+            adapter_delta: 1,
+            normalized_delta: 0,
+            transition_delta: 0,
+            audit_delta: 2,
+        }
+    }
+}
+
+struct VerificationContext {
+    domain: VerificationDomain,
+    db: PathBuf,
+    fixtures_root: PathBuf,
+    artifact_root: PathBuf,
+    evidence_dir: PathBuf,
+    verification_run_id: VerificationRunId,
+    before_counts: BTreeMap<String, u64>,
+    commands: Vec<String>,
+    fixture_hashes: Vec<[u8; 32]>,
+    artifact_hash_checks: Vec<ArtifactHashCheck>,
+    decoded: BTreeMap<String, Value>,
+    expected: BTreeMap<String, Value>,
+    actual: BTreeMap<String, Value>,
+    edges: Vec<Value>,
+    step_summaries: Vec<Value>,
+}
+
+fn verify_domain_command(
+    domain: VerificationDomain,
+    args: VerifyDomainArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let mut ctx = VerificationContext::new(domain, args)?;
+    let result = run_phase10_domain_verification(&mut ctx);
+    match result {
+        Ok(summary) => ctx.finish(VerificationStatus::Passed, summary, 0),
+        Err(err) => {
+            let failure = err.to_string();
+            let summary = json!({
+                "status": "error",
+                "error_code": err.code(),
+                "error_message": failure,
+                "evidence_dir": ctx.evidence_dir,
+            });
+            ctx.finish(
+                VerificationStatus::Failed {
+                    failure_details: failure,
+                },
+                summary,
+                1,
+            )
+        }
+    }
+}
+
+impl VerificationContext {
+    fn new(domain: VerificationDomain, args: VerifyDomainArgs) -> DynamicJepaResult<Self> {
+        let verification_run_id = VerificationRunId::new_v4();
+        let evidence_root = args
+            .evidence_root
+            .unwrap_or_else(|| domain.default_evidence_root());
+        let evidence_dir = evidence_root.join(verification_run_id.to_string());
+        fs::create_dir_all(evidence_dir.join("decoded")).map_err(|err| {
+            DynamicJepaError::Storage {
+                operation: "verify.create_evidence_dir".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to create {}: {err}", evidence_dir.display()),
+                remediation: "use a writable --evidence-root".to_string(),
+            }
+        })?;
+        let store = open_store(&args.db)?;
+        let before_counts = snapshot_dj_counts(store.dynamicjepa_db())?;
+        drop(store);
+        Ok(Self {
+            domain,
+            db: args.db,
+            fixtures_root: args.fixtures_root,
+            artifact_root: args.artifact_root,
+            evidence_dir,
+            verification_run_id,
+            before_counts,
+            commands: Vec::new(),
+            fixture_hashes: Vec::new(),
+            artifact_hash_checks: Vec::new(),
+            decoded: BTreeMap::new(),
+            expected: BTreeMap::new(),
+            actual: BTreeMap::new(),
+            edges: Vec::new(),
+            step_summaries: Vec::new(),
+        })
+    }
+
+    fn record_command(&mut self, command: String, label: &str, value: &Value) {
+        self.commands.push(command);
+        self.step_summaries.push(json!({
+            "label": label,
+            "status": value.get("status").cloned().unwrap_or(Value::Null),
+            "created_ids": value.get("created_ids").cloned().unwrap_or(Value::Null),
+            "summary": value.get("summary").cloned().unwrap_or(Value::Null),
+            "error_code": value.get("error_code").cloned().unwrap_or(Value::Null),
+            "counts": value
+                .get("counts")
+                .or_else(|| value.get("after_counts"))
+                .cloned()
+                .unwrap_or(Value::Null),
+        }));
+    }
+
+    fn add_fixture_hash(&mut self, path: &Path) -> DynamicJepaResult<()> {
+        self.fixture_hashes.push(file_sha256(path)?);
+        Ok(())
+    }
+
+    fn fail(&self, message: impl Into<String>) -> DynamicJepaError {
+        DynamicJepaError::VerificationFailed {
+            test_name: self.domain.test_name().to_string(),
+            message: message.into(),
+            evidence_path: self.evidence_dir.display().to_string(),
+        }
+    }
+
+    fn finish(
+        mut self,
+        status: VerificationStatus,
+        mut summary: Value,
+        exit_code: i32,
+    ) -> DynamicJepaResult<CommandOutcome> {
+        let store = open_store(&self.db)?;
+        let db = store.dynamicjepa_db();
+        let pre_record_counts = snapshot_dj_counts(db)?;
+        let mut after_counts = pre_record_counts.clone();
+        *after_counts
+            .entry(CF_DJ_VERIFICATION_RUNS.to_string())
+            .or_default() += 1;
+        *after_counts.entry(CF_DJ_AUDIT_LOG.to_string()).or_default() += 1;
+        self.actual
+            .insert("final_counts".to_string(), json!(after_counts.clone()));
+
+        let mut record = VerificationRunRecord {
+            header: DjRecordHeader::new(
+                self.verification_run_id.0,
+                context_graph_core::dynamicjepa::VERIFICATION_RUN_RECORD_VERSION,
+                DomainPackId::new(self.domain.id().to_string())?,
+                "1.0.0".to_string(),
+                now_unix_ms()?,
+                Some(self.verification_run_id.0),
+            ),
+            verification_run_id: self.verification_run_id,
+            test_name: self.domain.test_name().to_string(),
+            db_path_hash: sha256(self.db.display().to_string().as_bytes()),
+            fixture_hashes: self.fixture_hashes.clone(),
+            before_counts: self.before_counts.clone(),
+            after_counts: after_counts.clone(),
+            commands_executed: self.commands.clone(),
+            artifact_hash_checks: self.artifact_hash_checks.clone(),
+            decoded_record_excerpts: values_to_dj_json_map(self.decoded.clone())?,
+            expected_results: values_to_dj_json_map(self.expected.clone())?,
+            actual_results: values_to_dj_json_map(self.actual.clone())?,
+            status,
+            created_at_unix_ms: now_unix_ms()?,
+        };
+        record.refresh_content_hash()?;
+        let audit_status = match &record.status {
+            VerificationStatus::Passed => AuditStatus::Ok,
+            VerificationStatus::Failed { .. } => AuditStatus::Failed {
+                error_code: "VERIFICATION_FAILED".to_string(),
+            },
+        };
+        let audit = build_audit(
+            self.domain.operation(),
+            audit_status,
+            self.commands.clone(),
+            vec![self.verification_run_id.to_string()],
+            vec![
+                CF_DJ_VERIFICATION_RUNS.to_string(),
+                CF_DJ_AUDIT_LOG.to_string(),
+            ],
+            vec![record.header.content_hash],
+        )?;
+        put_verification_run_with_audit_batch(db, &record, &audit)?;
+        let stored = get_verification_run(db, self.verification_run_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_VERIFICATION_RUNS.to_string(),
+                key: self.verification_run_id.into_bytes().to_vec(),
+            }
+        })?;
+        if stored != record {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "verification run readback mismatch for {}",
+                    self.verification_run_id
+                ),
+            });
+        }
+        let final_counts = snapshot_dj_counts(db)?;
+        if final_counts != after_counts {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "verification final counts mismatch expected={after_counts:?} actual={final_counts:?}"
+                ),
+            });
+        }
+        drop(store);
+
+        write_json_file(
+            &self.evidence_dir.join("verification_run_record.json"),
+            &record,
+        )?;
+        write_json_file(
+            &self.evidence_dir.join("before_counts.json"),
+            &self.before_counts,
+        )?;
+        write_json_file(&self.evidence_dir.join("after_counts.json"), &final_counts)?;
+        write_json_file(
+            &self
+                .evidence_dir
+                .join("artifact_files_recomputed_hashes.json"),
+            &self.artifact_hash_checks,
+        )?;
+        write_json_file(
+            &self.evidence_dir.join("summary.json"),
+            &self.step_summaries,
+        )?;
+        for (idx, edge) in self.edges.iter().enumerate() {
+            write_json_file(&self.evidence_dir.join(format!("edge_{idx:02}.json")), edge)?;
+        }
+        for (name, value) in &self.decoded {
+            write_json_file(
+                &self
+                    .evidence_dir
+                    .join("decoded")
+                    .join(format!("{name}.json")),
+                value,
+            )?;
+        }
+        fs::write(
+            self.evidence_dir.join("command_log.txt"),
+            self.commands.join("\n") + "\n",
+        )
+        .map_err(|err| DynamicJepaError::Storage {
+            operation: "verify.write_command_log".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to write command_log.txt: {err}"),
+            remediation: "use a writable --evidence-root".to_string(),
+        })?;
+
+        if let Some(object) = summary.as_object_mut() {
+            object.insert(
+                "verification_run_id".to_string(),
+                json!(self.verification_run_id.to_string()),
+            );
+            object.insert("evidence_dir".to_string(), json!(self.evidence_dir));
+            object.insert("after_counts".to_string(), json!(final_counts));
+            object.insert(
+                "source_of_truth".to_string(),
+                json!([CF_DJ_VERIFICATION_RUNS, CF_DJ_AUDIT_LOG]),
+            );
+            object.insert(
+                "decoded_records".to_string(),
+                json!({
+                    "verification_run": {
+                        "verification_run_id": stored.verification_run_id.to_string(),
+                        "test_name": stored.test_name,
+                        "status": stored.status,
+                        "before_counts": stored.before_counts,
+                        "after_counts": stored.after_counts,
+                        "artifact_hash_checks": stored.artifact_hash_checks,
+                    }
+                }),
+            );
+        }
+        Ok(CommandOutcome {
+            value: summary,
+            exit_code,
+        })
+    }
+}
+
+fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepaResult<Value> {
+    let domain_path = ctx.domain.domain_pack_path(&ctx.fixtures_root);
+    let corpus_path = ctx
+        .domain
+        .corpus_path(&ctx.fixtures_root, &ctx.evidence_dir)?;
+    let train_config = ctx.domain.train_config_path(&ctx.fixtures_root);
+    ctx.add_fixture_hash(&domain_path)?;
+    ctx.add_fixture_hash(&corpus_path)?;
+    ctx.add_fixture_hash(&train_config)?;
+    for (_, path, _) in ctx.domain.edge_fixtures(&ctx.fixtures_root) {
+        ctx.add_fixture_hash(&path)?;
+    }
+
+    let initial = run_ok_step(
+        "initial_counts",
+        format!(
+            "context-graph dynamicjepa inspect-counts --db {} --json",
+            ctx.db.display()
+        ),
+        inspect_counts(InspectCountsArgs {
+            db: ctx.db.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded.insert(
+        "initial_counts".to_string(),
+        compact_command_output(&initial),
+    );
+
+    let registered = run_ok_step(
+        "register_domain",
+        format!(
+            "context-graph dynamicjepa register-domain --db {} --file {} --json",
+            ctx.db.display(),
+            domain_path.display()
+        ),
+        register_domain(RegisterDomainArgs {
+            db: ctx.db.clone(),
+            file: domain_path.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded.insert(
+        "registered_domain".to_string(),
+        compact_command_output(&registered),
+    );
+
+    run_adapter_edge_cases(ctx)?;
+
+    let ingest = run_ok_step(
+        "ingest_corpus",
+        format!(
+            "context-graph dynamicjepa ingest-event --db {} --domain {} --adapter json_event --file {} --json",
+            ctx.db.display(),
+            ctx.domain.id(),
+            corpus_path.display()
+        ),
+        ingest_event(IngestEventArgs {
+            db: ctx.db.clone(),
+            domain: ctx.domain.id().to_string(),
+            adapter: "json_event".to_string(),
+            file: corpus_path.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded
+        .insert("corpus_ingest".to_string(), compact_command_output(&ingest));
+
+    let panels = run_ok_step(
+        "materialize_panels",
+        format!(
+            "context-graph dynamicjepa materialize-panel --db {} --all-pending --domain {} --json",
+            ctx.db.display(),
+            ctx.domain.id()
+        ),
+        materialize_panel_command(MaterializePanelArgs {
+            db: ctx.db.clone(),
+            transition_id: None,
+            all_pending: true,
+            domain: Some(ctx.domain.id().to_string()),
+            json: true,
+        }),
+        ctx,
+    )?;
+    let expected_panel_count = match ctx.domain {
+        VerificationDomain::CounterWorld => 60,
+        VerificationDomain::Gridworld => 8000,
+    };
+    assert_json_u64(
+        ctx,
+        &panels["summary"]["materialized"],
+        expected_panel_count,
+        "materialized panel count",
+    )?;
+
+    let trajectories = run_ok_step(
+        "compile_trajectories",
+        format!(
+            "context-graph dynamicjepa compile-trajectories --db {} --domain {} --policy by_domain_session --json",
+            ctx.db.display(),
+            ctx.domain.id()
+        ),
+        compile_trajectories_command(CompileTrajectoriesArgs {
+            db: ctx.db.clone(),
+            domain: ctx.domain.id().to_string(),
+            policy: "by_domain_session".to_string(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    let expected_trajectory_count = match ctx.domain {
+        VerificationDomain::CounterWorld => 1,
+        VerificationDomain::Gridworld => 1000,
+    };
+    assert_json_u64(
+        ctx,
+        &trajectories["summary"]["trajectory_count"],
+        expected_trajectory_count,
+        "trajectory count",
+    )?;
+    ctx.decoded.insert(
+        "compiled_trajectories".to_string(),
+        compact_command_output(&trajectories),
+    );
+
+    let (dataset_id, train_shard_id, val_shard_id, split_counts) =
+        compile_all_splits_for_verification(ctx)?;
+    assert_split_counts(ctx, &split_counts)?;
+
+    let train = run_ok_step(
+        "train",
+        format!(
+            "context-graph dynamicjepa train --db {} --dataset-id {} --config {} --artifact-root {} --json",
+            ctx.db.display(),
+            dataset_id,
+            train_config.display(),
+            ctx.artifact_root.display()
+        ),
+        train_command(TrainArgs {
+            db: ctx.db.clone(),
+            dataset_id: dataset_id.clone(),
+            config: train_config.clone(),
+            artifact_root: ctx.artifact_root.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    let artifact_id = required_str(&train, &["created_ids", "artifact_id"], ctx)?;
+    let training_run_id = required_str(&train, &["created_ids", "training_run_id"], ctx)?;
+    assert_training_metrics(ctx, &train)?;
+    ctx.decoded.insert(
+        "training_summary".to_string(),
+        compact_training_summary(&train),
+    );
+
+    let artifact = run_ok_step(
+        "get_artifact_verify_files",
+        format!(
+            "context-graph dynamicjepa get-artifact --db {} --id {} --verify-files --json",
+            ctx.db.display(),
+            artifact_id
+        ),
+        get_artifact_command(GetArtifactArgs {
+            db: ctx.db.clone(),
+            id: artifact_id.clone(),
+            verify_files: true,
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.artifact_hash_checks = artifact_checks_from_json(ctx, &artifact)?;
+    ctx.decoded
+        .insert("artifact".to_string(), compact_command_output(&artifact));
+
+    let training_readback = run_ok_step(
+        "get_training_run",
+        format!(
+            "context-graph dynamicjepa get-training-run --db {} --id {} --json",
+            ctx.db.display(),
+            training_run_id
+        ),
+        get_training_run_command(GetTrainingRunArgs {
+            db: ctx.db.clone(),
+            id: training_run_id.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded.insert(
+        "training_run".to_string(),
+        compact_command_output(&training_readback),
+    );
+
+    let row0 = run_ok_step(
+        "inspect_train_row0",
+        format!(
+            "context-graph dynamicjepa inspect-dataset --db {} --dataset-id {} --shard-id {} --row 0 --json",
+            ctx.db.display(),
+            dataset_id,
+            train_shard_id
+        ),
+        inspect_dataset_command(InspectDatasetArgs {
+            db: ctx.db.clone(),
+            dataset_id: dataset_id.clone(),
+            shard_id: train_shard_id.clone(),
+            row: 0,
+            json: true,
+        }),
+        ctx,
+    )?;
+    let input_panel_id = required_str(&row0, &["decoded_records", "row", "input_panel_id"], ctx)?;
+    let action_id = required_str(&row0, &["decoded_records", "row", "input_action_id"], ctx)?;
+    let target_panel_id = required_str(&row0, &["decoded_records", "row", "target_panel_id"], ctx)?;
+    ctx.decoded.insert("dataset_row0".to_string(), row0);
+
+    let target_panel = get_panel_for_verification(ctx, &target_panel_id, "target_panel")?;
+    let target_outcome_id = required_str(
+        &target_panel,
+        &["decoded_records", "panel", "outcome_id"],
+        ctx,
+    )?;
+
+    let predict = run_ok_step(
+        "predict",
+        format!(
+            "context-graph dynamicjepa predict --db {} --artifact-id {} --panel-id {} --action-id {} --json",
+            ctx.db.display(),
+            artifact_id,
+            input_panel_id,
+            action_id
+        ),
+        predict_command(PredictArgs {
+            db: ctx.db.clone(),
+            artifact_id: artifact_id.clone(),
+            panel_id: input_panel_id.clone(),
+            action_id: action_id.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    let prediction_id = required_str(&predict, &["created_ids", "prediction_id"], ctx)?;
+    ctx.decoded
+        .insert("prediction".to_string(), predict.clone());
+
+    let plan = run_ok_step(
+        "plan",
+        format!(
+            "context-graph dynamicjepa plan --db {} --artifact-id {} --panel-id {} --skill-id 10000000-0000-0000-0000-000000000010 --json",
+            ctx.db.display(),
+            artifact_id,
+            input_panel_id
+        ),
+        plan_command(PlanArgs {
+            db: ctx.db.clone(),
+            artifact_id: artifact_id.clone(),
+            panel_id: input_panel_id.clone(),
+            skill_id: "10000000-0000-0000-0000-000000000010".to_string(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    assert_json_u64(
+        ctx,
+        &plan["summary"]["candidate_count"],
+        5,
+        "candidate count",
+    )?;
+    assert_json_u64(
+        ctx,
+        &plan["summary"]["prediction_count"],
+        5,
+        "plan prediction count",
+    )?;
+    assert_json_u64(
+        ctx,
+        &plan["summary"]["guard_decision_count"],
+        5,
+        "guard decision count",
+    )?;
+    let plan_trace_id = required_str(&plan, &["created_ids", "plan_trace_id"], ctx)?;
+    ctx.decoded.insert("plan".to_string(), plan);
+
+    let plan_readback = run_ok_step(
+        "get_plan_trace",
+        format!(
+            "context-graph dynamicjepa get-plan-trace --db {} --id {} --include-predictions --include-guards --json",
+            ctx.db.display(),
+            plan_trace_id
+        ),
+        get_plan_trace_command(GetPlanTraceArgs {
+            db: ctx.db.clone(),
+            id: plan_trace_id.clone(),
+            include_predictions: true,
+            include_guards: true,
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded
+        .insert("plan_trace_readback".to_string(), plan_readback);
+
+    let surprise_none = run_ok_step(
+        "record_surprise_expected_none",
+        format!(
+            "context-graph dynamicjepa record-surprise --db {} --prediction-id {} --observed-outcome-id {} --observed-panel-id {} --json",
+            ctx.db.display(),
+            prediction_id,
+            target_outcome_id,
+            target_panel_id
+        ),
+        record_surprise_command(RecordSurpriseArgs {
+            db: ctx.db.clone(),
+            prediction_id: prediction_id.clone(),
+            observed_outcome_id: target_outcome_id.clone(),
+            observed_panel_id: target_panel_id.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    if surprise_none["summary"]["wrote_surprise"].as_bool() != Some(false) {
+        return Err(ctx.fail("record-surprise wrote a surprise row for the known target row"));
+    }
+    ctx.decoded
+        .insert("record_surprise_expected_none".to_string(), surprise_none);
+
+    let surprise_count = if matches!(ctx.domain, VerificationDomain::CounterWorld) {
+        let val_row = run_ok_step(
+            "inspect_val_row0",
+            format!(
+                "context-graph dynamicjepa inspect-dataset --db {} --dataset-id {} --shard-id {} --row 0 --json",
+                ctx.db.display(),
+                dataset_id,
+                val_shard_id
+            ),
+            inspect_dataset_command(InspectDatasetArgs {
+                db: ctx.db.clone(),
+                dataset_id: dataset_id.clone(),
+                shard_id: val_shard_id.clone(),
+                row: 0,
+                json: true,
+            }),
+            ctx,
+        )?;
+        let far_panel_id = required_str(
+            &val_row,
+            &["decoded_records", "row", "target_panel_id"],
+            ctx,
+        )?;
+        let far_panel = get_panel_for_verification(ctx, &far_panel_id, "forced_surprise_panel")?;
+        let far_outcome_id =
+            required_str(&far_panel, &["decoded_records", "panel", "outcome_id"], ctx)?;
+        let surprise = run_ok_step(
+            "record_surprise_forced",
+            format!(
+                "context-graph dynamicjepa record-surprise --db {} --prediction-id {} --observed-outcome-id {} --observed-panel-id {} --json",
+                ctx.db.display(),
+                prediction_id,
+                far_outcome_id,
+                far_panel_id
+            ),
+            record_surprise_command(RecordSurpriseArgs {
+                db: ctx.db.clone(),
+                prediction_id: prediction_id.clone(),
+                observed_outcome_id: far_outcome_id.clone(),
+                observed_panel_id: far_panel_id.clone(),
+                json: true,
+            }),
+            ctx,
+        )?;
+        if surprise["summary"]["wrote_surprise"].as_bool() != Some(true) {
+            return Err(ctx.fail("counter_world forced surprise did not write a surprise row"));
+        }
+        let surprise_id = required_str(&surprise, &["created_ids", "surprise_event_id"], ctx)?;
+        ctx.decoded
+            .insert("record_surprise_forced".to_string(), surprise);
+        let surprise_readback = run_ok_step(
+            "get_surprise",
+            format!(
+                "context-graph dynamicjepa get-surprise --db {} --id {} --json",
+                ctx.db.display(),
+                surprise_id
+            ),
+            get_surprise_command(GetSurpriseArgs {
+                db: ctx.db.clone(),
+                id: surprise_id.clone(),
+                json: true,
+            }),
+            ctx,
+        )?;
+        ctx.decoded
+            .insert("surprise".to_string(), surprise_readback);
+        1
+    } else {
+        0
+    };
+
+    let pre_verification_counts = run_ok_step(
+        "pre_verification_counts",
+        format!(
+            "context-graph dynamicjepa inspect-counts --db {} --json",
+            ctx.db.display()
+        ),
+        inspect_counts(InspectCountsArgs {
+            db: ctx.db.clone(),
+            json: true,
+        }),
+        ctx,
+    )?;
+    let mut expected_counts = ctx.domain.expected_happy_counts(surprise_count);
+    expected_counts.insert(
+        CF_DJ_AUDIT_LOG.to_string(),
+        pre_verification_counts["counts"][CF_DJ_AUDIT_LOG]
+            .as_u64()
+            .unwrap_or(0)
+            + 1,
+    );
+    assert_counts_before_verification(ctx, &pre_verification_counts, &expected_counts)?;
+    ctx.expected
+        .insert("final_counts".to_string(), json!(expected_counts));
+    ctx.expected.insert(
+        "split_counts".to_string(),
+        json!(expected_split_counts(ctx.domain)),
+    );
+    ctx.actual
+        .insert("split_counts".to_string(), json!(split_counts));
+
+    Ok(json!({
+        "operation": ctx.domain.operation(),
+        "status": "ok",
+        "test_name": ctx.domain.test_name(),
+        "db_path": ctx.db,
+        "artifact_root": ctx.artifact_root,
+        "evidence_dir": ctx.evidence_dir,
+        "summary": {
+            "domain": ctx.domain.id(),
+            "dataset_id": dataset_id,
+            "training_run_id": training_run_id,
+            "artifact_id": artifact_id,
+            "prediction_id": prediction_id,
+            "plan_trace_id": plan_trace_id,
+            "surprise_count": surprise_count,
+            "split_counts": split_counts,
+        }
+    }))
+}
+
+fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()> {
+    for (name, path, expectation) in ctx.domain.edge_fixtures(&ctx.fixtures_root) {
+        let before = inspect_counts(InspectCountsArgs {
+            db: ctx.db.clone(),
+            json: true,
+        })?
+        .value;
+        let command = format!(
+            "context-graph dynamicjepa ingest-event --db {} --domain {} --adapter json_event --file {} --json",
+            ctx.db.display(),
+            ctx.domain.id(),
+            path.display()
+        );
+        let outcome = ingest_event(IngestEventArgs {
+            db: ctx.db.clone(),
+            domain: ctx.domain.id().to_string(),
+            adapter: "json_event".to_string(),
+            file: path.clone(),
+            json: true,
+        })?;
+        ctx.record_command(command, &format!("edge_{name}"), &outcome.value);
+        if outcome.exit_code == 0 {
+            return Err(ctx.fail(format!(
+                "edge case {name} succeeded but failure was expected"
+            )));
+        }
+        if outcome.value["error_code"].as_str() != Some("ADAPTER_FAILED") {
+            return Err(ctx.fail(format!(
+                "edge case {name} returned error_code {:?}, expected ADAPTER_FAILED",
+                outcome.value["error_code"].as_str()
+            )));
+        }
+        let after = inspect_counts(InspectCountsArgs {
+            db: ctx.db.clone(),
+            json: true,
+        })?
+        .value;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_RAW_EVENTS,
+            expectation.raw_delta,
+            name,
+        )?;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_ADAPTER_RUNS,
+            expectation.adapter_delta,
+            name,
+        )?;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_NORMALIZED_STATES,
+            expectation.normalized_delta,
+            name,
+        )?;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_TRANSITIONS,
+            expectation.transition_delta,
+            name,
+        )?;
+        assert_delta(
+            ctx,
+            &before,
+            &after,
+            CF_DJ_AUDIT_LOG,
+            expectation.audit_delta,
+            name,
+        )?;
+        ctx.edges.push(json!({
+            "name": name,
+            "fixture": path,
+            "before_counts": before["counts"],
+            "error": outcome.value,
+            "after_counts": after["counts"],
+            "expected_delta": {
+                CF_DJ_RAW_EVENTS: expectation.raw_delta,
+                CF_DJ_ADAPTER_RUNS: expectation.adapter_delta,
+                CF_DJ_NORMALIZED_STATES: expectation.normalized_delta,
+                CF_DJ_TRANSITIONS: expectation.transition_delta,
+                CF_DJ_AUDIT_LOG: expectation.audit_delta,
+            }
+        }));
+    }
+    Ok(())
+}
+
+fn compile_all_splits_for_verification(
+    ctx: &mut VerificationContext,
+) -> DynamicJepaResult<(String, String, String, BTreeMap<String, u64>)> {
+    let mut dataset_id = String::new();
+    let mut train_shard_id = String::new();
+    let mut val_shard_id = String::new();
+    let mut split_counts = BTreeMap::new();
+    for split in ["train", "val", "test"] {
+        let output = run_ok_step(
+            &format!("compile_dataset_{split}"),
+            format!(
+                "context-graph dynamicjepa compile-dataset --db {} --domain {} --policy one_step --split {} --json",
+                ctx.db.display(),
+                ctx.domain.id(),
+                split
+            ),
+            compile_dataset_command(CompileDatasetArgs {
+                db: ctx.db.clone(),
+                domain: ctx.domain.id().to_string(),
+                policy: "one_step".to_string(),
+                split: split.to_string(),
+                json: true,
+            }),
+            ctx,
+        )?;
+        let this_dataset_id = required_str(&output, &["created_ids", "dataset_id"], ctx)?;
+        let shard_id = required_str(&output, &["created_ids", "shard_id"], ctx)?;
+        if dataset_id.is_empty() {
+            dataset_id = this_dataset_id;
+        } else if dataset_id != this_dataset_id {
+            return Err(ctx.fail(format!(
+                "dataset id drift: expected {dataset_id}, got {this_dataset_id}"
+            )));
+        }
+        if split == "train" {
+            train_shard_id = shard_id;
+        } else if split == "val" {
+            val_shard_id = shard_id;
+        }
+        split_counts.insert(
+            split.to_string(),
+            output["summary"]["row_count"]
+                .as_u64()
+                .ok_or_else(|| ctx.fail(format!("compile-dataset {split} missing row_count")))?,
+        );
+        ctx.decoded
+            .insert(format!("dataset_{split}"), compact_dataset_summary(&output));
+    }
+    Ok((dataset_id, train_shard_id, val_shard_id, split_counts))
+}
+
+fn get_panel_for_verification(
+    ctx: &mut VerificationContext,
+    panel_id: &str,
+    label: &str,
+) -> DynamicJepaResult<Value> {
+    let output = run_ok_step(
+        label,
+        format!(
+            "context-graph dynamicjepa get-panel --db {} --panel-id {} --include-readings --json",
+            ctx.db.display(),
+            panel_id
+        ),
+        get_panel_command(GetPanelArgs {
+            db: ctx.db.clone(),
+            panel_id: panel_id.to_string(),
+            include_readings: true,
+            json: true,
+        }),
+        ctx,
+    )?;
+    ctx.decoded.insert(label.to_string(), output.clone());
+    Ok(output)
+}
+
+fn run_ok_step(
+    label: &str,
+    command: String,
+    outcome: DynamicJepaResult<CommandOutcome>,
+    ctx: &mut VerificationContext,
+) -> DynamicJepaResult<Value> {
+    let outcome = outcome?;
+    ctx.record_command(command, label, &outcome.value);
+    if outcome.exit_code != 0 || outcome.value["status"].as_str() != Some("ok") {
+        return Err(ctx.fail(format!(
+            "step {label} failed: {}",
+            serde_json::to_string(&outcome.value)
+                .unwrap_or_else(|_| "<unserializable>".to_string())
+        )));
+    }
+    Ok(outcome.value)
+}
+
+fn assert_split_counts(
+    ctx: &VerificationContext,
+    split_counts: &BTreeMap<String, u64>,
+) -> DynamicJepaResult<()> {
+    let expected = expected_split_counts(ctx.domain);
+    if split_counts != &expected {
+        return Err(ctx.fail(format!(
+            "split counts mismatch expected={expected:?} actual={split_counts:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn expected_split_counts(domain: VerificationDomain) -> BTreeMap<String, u64> {
+    match domain {
+        VerificationDomain::CounterWorld => BTreeMap::from([
+            ("train".to_string(), 41),
+            ("val".to_string(), 12),
+            ("test".to_string(), 6),
+        ]),
+        VerificationDomain::Gridworld => BTreeMap::from([
+            ("train".to_string(), 4977),
+            ("val".to_string(), 1330),
+            ("test".to_string(), 693),
+        ]),
+    }
+}
+
+fn assert_training_metrics(ctx: &VerificationContext, train: &Value) -> DynamicJepaResult<()> {
+    let metrics = &train["summary"]["metrics"];
+    let val_mse = metrics["val_latent_mse"]
+        .as_f64()
+        .ok_or_else(|| ctx.fail("training metrics missing val_latent_mse"))?;
+    let val_cosine = metrics["val_latent_cosine"]
+        .as_f64()
+        .ok_or_else(|| ctx.fail("training metrics missing val_latent_cosine"))?;
+    let action_contrast = metrics["val_action_contrast_acc"].as_f64().unwrap_or(1.0);
+    match ctx.domain {
+        VerificationDomain::CounterWorld => {
+            if val_mse > 0.005 || val_cosine < 0.99 {
+                return Err(ctx.fail(format!(
+                    "counter_world metrics outside gate: val_latent_mse={val_mse} val_latent_cosine={val_cosine}"
+                )));
+            }
+        }
+        VerificationDomain::Gridworld => {
+            if val_mse > 0.04 || val_cosine < 0.95 || action_contrast < 0.95 {
+                return Err(ctx.fail(format!(
+                    "gridworld metrics outside gate: val_latent_mse={val_mse} val_latent_cosine={val_cosine} val_action_contrast_acc={action_contrast}"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn assert_counts_before_verification(
+    ctx: &VerificationContext,
+    counts_value: &Value,
+    expected_after_verification: &BTreeMap<String, u64>,
+) -> DynamicJepaResult<()> {
+    let counts = counts_value["counts"]
+        .as_object()
+        .ok_or_else(|| ctx.fail("pre-verification inspect-counts missing counts object"))?;
+    for (cf, expected_final) in expected_after_verification {
+        let mut expected_before = *expected_final;
+        if cf == CF_DJ_VERIFICATION_RUNS || cf == CF_DJ_AUDIT_LOG {
+            expected_before = expected_before.saturating_sub(1);
+        }
+        let actual = counts
+            .get(cf)
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ctx.fail(format!("missing count for {cf}")))?;
+        if actual != expected_before {
+            return Err(ctx.fail(format!(
+                "pre-verification count mismatch for {cf}: expected {expected_before}, actual {actual}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn assert_delta(
+    ctx: &VerificationContext,
+    before: &Value,
+    after: &Value,
+    cf: &str,
+    expected: i64,
+    edge_name: &str,
+) -> DynamicJepaResult<()> {
+    let before_count = before["counts"][cf]
+        .as_i64()
+        .ok_or_else(|| ctx.fail(format!("edge {edge_name} before missing {cf}")))?;
+    let after_count = after["counts"][cf]
+        .as_i64()
+        .ok_or_else(|| ctx.fail(format!("edge {edge_name} after missing {cf}")))?;
+    let actual = after_count - before_count;
+    if actual != expected {
+        return Err(ctx.fail(format!(
+            "edge {edge_name} {cf} delta mismatch: expected {expected}, actual {actual}"
+        )));
+    }
+    Ok(())
+}
+
+fn assert_json_u64(
+    ctx: &VerificationContext,
+    value: &Value,
+    expected: u64,
+    field: &str,
+) -> DynamicJepaResult<()> {
+    let actual = value
+        .as_u64()
+        .ok_or_else(|| ctx.fail(format!("{field} missing or not u64")))?;
+    if actual != expected {
+        return Err(ctx.fail(format!(
+            "{field} mismatch: expected {expected}, actual {actual}"
+        )));
+    }
+    Ok(())
+}
+
+fn required_str(
+    value: &Value,
+    path: &[&str],
+    ctx: &VerificationContext,
+) -> DynamicJepaResult<String> {
+    let mut current = value;
+    for segment in path {
+        current = current
+            .get(*segment)
+            .ok_or_else(|| ctx.fail(format!("missing JSON path {}", path.join("."))))?;
+    }
+    current
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| ctx.fail(format!("JSON path {} is not a string", path.join("."))))
+}
+
+fn artifact_checks_from_json(
+    ctx: &VerificationContext,
+    artifact: &Value,
+) -> DynamicJepaResult<Vec<ArtifactHashCheck>> {
+    artifact["artifact_hashes"]
+        .as_array()
+        .ok_or_else(|| ctx.fail("get-artifact output missing artifact_hashes"))?
+        .iter()
+        .map(|item| {
+            let registry = item["registry_sha256"]
+                .as_str()
+                .ok_or_else(|| ctx.fail("artifact hash check missing registry_sha256"))?;
+            let recomputed = item["recomputed_sha256"]
+                .as_str()
+                .ok_or_else(|| ctx.fail("artifact hash check missing recomputed_sha256"))?;
+            let check = ArtifactHashCheck {
+                relative_path: item["relative_path"]
+                    .as_str()
+                    .ok_or_else(|| ctx.fail("artifact hash check missing relative_path"))?
+                    .to_string(),
+                registry_sha256: parse_sha256_hex(registry, "registry_sha256")?,
+                recomputed_sha256: parse_sha256_hex(recomputed, "recomputed_sha256")?,
+                size_bytes: item["registry_size_bytes"]
+                    .as_u64()
+                    .ok_or_else(|| ctx.fail("artifact hash check missing registry_size_bytes"))?,
+                equal: item["equal"].as_bool() == Some(true),
+            };
+            check.validate()?;
+            Ok(check)
+        })
+        .collect()
+}
+
+fn compact_training_summary(value: &Value) -> Value {
+    json!({
+        "created_ids": value["created_ids"],
+        "summary": value["summary"],
+        "artifact_hashes": value["artifact_hashes"],
+        "count_delta": value["count_delta"],
+    })
+}
+
+fn compact_command_output(value: &Value) -> Value {
+    json!({
+        "operation": value["operation"],
+        "status": value["status"],
+        "source_of_truth": value["source_of_truth"],
+        "counts": value.get("counts").or_else(|| value.get("after_counts")).cloned().unwrap_or(Value::Null),
+        "created_ids": value.get("created_ids").cloned().unwrap_or(Value::Null),
+        "summary": value.get("summary").cloned().unwrap_or(Value::Null),
+        "count_delta": value.get("count_delta").cloned().unwrap_or(Value::Null),
+        "artifact_hashes": value.get("artifact_hashes").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn compact_dataset_summary(value: &Value) -> Value {
+    json!({
+        "created_ids": value["created_ids"],
+        "summary": value["summary"],
+        "shape_summary": value["decoded_records"]["dataset_shard"]["shape_summary"],
+        "leakage_report": value["decoded_records"]["dataset_shard"]["leakage_report"],
+    })
+}
+
+fn values_to_dj_json_map(
+    values: BTreeMap<String, Value>,
+) -> DynamicJepaResult<BTreeMap<String, DjJsonValue>> {
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key, DjJsonValue::from_json(value)?)))
+        .collect()
+}
+
+fn write_generated_counter_verification_fixture(evidence_dir: &Path) -> DynamicJepaResult<PathBuf> {
+    let mut lines = Vec::new();
+    for counter in 0..60 {
+        lines.push(format!(
+            r#"{{"state":{{"counter":{counter}}},"action":{{"delta":1}},"outcome":{{"next_counter":{}}},"ts":{}}}"#,
+            counter + 1,
+            1_700_000_000_000i64 + counter as i64 * 1_000
+        ));
+    }
+    let path = evidence_dir.join("counter_world_phase10_generated_60.jsonl");
+    fs::write(&path, lines.join("\n") + "\n").map_err(|err| DynamicJepaError::Storage {
+        operation: "verify.write_counter_fixture".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", path.display()),
+        remediation: "use a writable --evidence-root".to_string(),
+    })?;
+    Ok(path)
+}
+
+fn write_json_file<T: Serialize>(path: &Path, value: &T) -> DynamicJepaResult<()> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|err| {
+        DynamicJepaError::validation(
+            "verification_evidence_json",
+            format!("failed to serialize {}: {err}", path.display()),
+            "verification evidence must be JSON serializable",
+        )
+    })?;
+    fs::write(path, bytes).map_err(|err| DynamicJepaError::Storage {
+        operation: "verify.write_json_file".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", path.display()),
+        remediation: "use a writable --evidence-root".to_string(),
+    })
+}
+
+fn file_sha256(path: &Path) -> DynamicJepaResult<[u8; 32]> {
+    let bytes = fs::read(path).map_err(|err| DynamicJepaError::Storage {
+        operation: "verify.file_sha256".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {}: {err}", path.display()),
+        remediation: "verify --fixtures-root points at the checked-in DynamicJEPA fixtures"
+            .to_string(),
+    })?;
+    Ok(sha256(&bytes))
+}
+
+fn parse_sha256_hex(value: &str, field: &str) -> DynamicJepaResult<[u8; 32]> {
+    if value.len() != 64 {
+        return Err(DynamicJepaError::validation(
+            field,
+            format!("expected 64 hex chars, got {}", value.len()),
+            "artifact hash evidence must contain SHA-256 hex",
+        ));
+    }
+    let mut out = [0u8; 32];
+    for (idx, chunk) in value.as_bytes().chunks(2).enumerate() {
+        let text = std::str::from_utf8(chunk).map_err(|err| {
+            DynamicJepaError::validation(
+                field,
+                format!("hash hex was not UTF-8: {err}"),
+                "artifact hash evidence must contain ASCII hex",
+            )
+        })?;
+        out[idx] = u8::from_str_radix(text, 16).map_err(|err| {
+            DynamicJepaError::validation(
+                field,
+                format!("invalid SHA-256 hex byte {text:?}: {err}"),
+                "artifact hash evidence must contain lowercase or uppercase hex",
+            )
+        })?;
+    }
+    Ok(out)
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -5119,16 +6535,20 @@ fn materialize_one_panel(
             message: format!("latent panel readback mismatch for panel {panel_id}"),
         });
     }
-    let stored_readings = list_instrument_readings_for_event(db, state.source_event_id)?;
-    if stored_readings.len() != domain_pack.instrument_specs.len() {
-        return Err(DynamicJepaError::StorageInvariantViolation {
-            message: format!(
-                "event {} expected {} instrument readings, found {}",
-                state.source_event_id,
-                domain_pack.instrument_specs.len(),
-                stored_readings.len()
-            ),
-        });
+    for reading in &readings {
+        let stored_reading = get_instrument_reading(db, reading.event_id, &reading.instrument_id)?
+            .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                key: instrument_reading_key(reading.event_id, &reading.instrument_id).to_vec(),
+            })?;
+        if stored_reading != *reading {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "instrument reading readback mismatch for event {} instrument {}",
+                    reading.event_id, reading.instrument_id
+                ),
+            });
+        }
     }
     Ok(MaterializedPanelEvidence {
         panel_id: panel_id.to_string(),

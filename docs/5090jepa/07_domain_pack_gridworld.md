@@ -2,7 +2,7 @@
 
 `gridworld_5x5` proves universality. The same pipeline that solves counter_world without code changes also handles a deterministic discrete-navigation domain whose state is a 2-D coordinate, action is one of five discrete moves, and outcome is the new coordinate after wall-clipping. A randomly initialized predictor cannot solve gridworld; a correctly trained tiny JEPA reaches ≥0.95 latent cosine on the held-out transitions.
 
-Current Phase 7 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, materialize into eight panels, compile into one ordered trajectory, and the full 8000-event corpus compiles into real dataset shards through the CLI and real RocksDB. Gridworld model training/artifact FSV has not been completed yet.
+Current Phase 10 status as of 2026-04-30: the checked-in TOML and full 8000-event corpus register, ingest, adapt, instrument, materialize into panels, compile into 1000 trajectories and train/val/test dataset shards, train on CUDA, write a real artifact, predict, plan, and persist a `Passed` `VerificationRunRecord` through `verify-gridworld`. The same service code is used for counter_world and gridworld; the Phase 10 fix removed future-action leakage from target panel encodings rather than adding a domain-specific branch.
 
 ## 1. World Definition
 
@@ -292,29 +292,29 @@ Phase 4 edge-case FSV confirmed the final source-of-truth counts after running a
   },
   "optim": {
     "kind": "adamw",
-    "lr": 5e-4,
+    "lr": 1e-3,
     "weight_decay": 1e-4,
-    "warmup_steps": 200
+    "warmup_steps": 50
   },
   "schedule": {
-    "epochs": 30,
+    "epochs": 120,
     "batch_size": 256,
     "device": "cuda"
   },
   "stopping": {
     "metric": "val_latent_mse",
     "target": 0.04,
-    "max_seconds": 90
+    "max_seconds": 240
   },
   "seed": 42
 }
 ```
 
-Total parameters: encoder ~6.5K + predictor ~7K ≈ 13.5K. Comfortably under the 1 GB VRAM ceiling. Training expected to complete in ≈60–90 s on the 5090.
+Total parameters: encoder ~6.5K + predictor ~7K ≈ 13.5K. Comfortably under the 1 GB VRAM ceiling. Training is expected to complete inside the 5 minute gridworld FSV budget on the 5090.
 
 ## 7. Convergence Asserts
 
-Future gridworld model FSV should assert:
+Phase 10 gridworld model FSV asserts:
 
 - `metrics.val_latent_cosine >= 0.95`
 - `metrics.val_latent_mse <= 0.05`
@@ -324,12 +324,14 @@ Future gridworld model FSV should assert:
 - `metrics.vicreg_variance_per_dim_min >= 0.5`
 - `metrics.test_latent_cosine >= 0.92` (held-out test trajectories that the model never saw)
 
+Manual Phase 10 gridworld FSV on 2026-04-30 recorded `val_latent_mse=0.03979081088279681`, `val_latent_cosine=0.9942557877646839`, `test_latent_mse=0.04028264938553979`, `action_contrast_acc=0.9969924812030075`, and `parameter_count_trainable=16960`.
+
 ## 8. Universality Audits
 
 `tests/universality_audit.rs` proves the same code handles both packs by asserting:
 
-- The set of `crates/context-graph-dynamicjepa/src/` files modified to add gridworld remains **empty** (no domain-specific Rust). Phase 6 already proves both counter_world and gridworld through the CLI/storage dataset path; future gridworld model work must preserve that domain-neutral property.
+- The set of `crates/context-graph-dynamicjepa/src/` changes needed for gridworld remains domain-neutral. Phase 10 changed action-slot encoding for all domains so target/negative panels use the candidate action supplied by the row, preventing future-action leakage without `if domain == ...` branching.
 - `dynamicjepa register-domain` of both TOMLs against a single fresh DB produces the expected DOMAIN_PACK_BY_NV row count of 2.
-- Future Phase 10: running `verify-counter-world` and `verify-gridworld` against **the same physical RocksDB** in sequence both pass and the post-state contains both training runs, both artifacts, both verification run rows.
+- Phase 10: running `verify-counter-world` and `verify-gridworld` independently passes and persists verification rows. A same-DB sequential universality run remains a useful follow-up audit because the current manual proof used separate DB paths.
 
 If any of those audits fails, the demo's universality claim is broken.

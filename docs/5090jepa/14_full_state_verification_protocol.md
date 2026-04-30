@@ -17,9 +17,9 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 7/8/9)
+## 2. Current Implemented FSV Scope (Phase 7/8/9/10)
 
-Phase 7 verifies the full real source-of-truth path through domain-pack registration, JSONL event ingestion, adapter runs, normalized records, instrument readings, latent panels, trajectory rows, one-step dataset shards, CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 extends the same real path through prediction, planning, guard decisions, and surprise recording. Phase 9 exposes the operational Phase 3-8 surface through MCP tool definitions, strict DTOs, handlers, dispatch entries, and capability matrix runtime state. Current Phase 7/8/9 FSV tests use a generated 60-event counter_world fixture so the trainer has enough train rows to converge without fitting on validation data.
+Phase 7 verifies the full real source-of-truth path through domain-pack registration, JSONL event ingestion, adapter runs, normalized records, instrument readings, latent panels, trajectory rows, one-step dataset shards, CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 extends the same real path through prediction, planning, guard decisions, and surprise recording. Phase 9 exposes the operational Phase 3-8 surface through MCP tool definitions, strict DTOs, handlers, dispatch entries, and capability matrix runtime state. Phase 10 adds bundled CLI verifiers for counter_world and gridworld that run the full loop, exercise three adapter edge cases per domain, persist `VerificationRunRecord`, and write evidence bundles. Current Phase 7/8/9/10 counter_world FSV tests use a generated 60-event counter_world fixture so the trainer has enough train rows to converge without fitting on validation data.
 
 The current completed source-of-truth surface is:
 
@@ -84,6 +84,12 @@ Current evidence:
 - Phase 9 final observed source-of-truth counts include `dj_domain_packs=1`, `dj_raw_events=61`, `dj_latent_panels=60`, `dj_trajectories=1`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=6`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=1`, `dj_actions=66`, `dj_outcomes=61`, `dj_transitions=61`, and `dj_audit_log=193`.
 - Phase 9 physical `ldb dump --count_only` proof matched decoded counts for `dj_domain_packs`, `dj_predictions`, `dj_surprise_events`, `dj_model_artifacts`, `dj_raw_events`, `dj_latent_panels`, `dj_training_runs`, and `dj_plan_traces`.
 - Phase 9 edge proof includes empty id rejected before storage, duplicate domain registration leaving counts unchanged, invalid CF leaving counts unchanged, and missing artifact prediction leaving prediction counts unchanged.
+- Current Phase 10 CLI evidence: `tmp/5090jepa_evidence/counter_world_final/4d2be585-cd38-4da7-9b57-d33dd611cc03/` and `tmp/5090jepa_evidence/gridworld_final/4d198b3b-1cd0-4268-a1e7-e4edefc13a17/`.
+- Current Phase 10 test: `crates/context-graph-cli/tests/dynamicjepa_phase10_fsv.rs`.
+- Phase 10 counter_world final source-of-truth counts include `dj_raw_events=62`, `dj_adapter_runs=62`, `dj_latent_panels=60`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=6`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=1`, `dj_verification_runs=1`, and `dj_audit_log=196`.
+- Phase 10 gridworld final source-of-truth counts include `dj_raw_events=8002`, `dj_adapter_runs=8002`, `dj_latent_panels=8000`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=6`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=0`, `dj_verification_runs=1`, and `dj_audit_log=25014`.
+- Phase 10 physical `ldb dump --count_only` proof matched decoded counts for both domains on `dj_raw_events`, `dj_adapter_runs`, `dj_latent_panels`, `dj_trajectories`, `dj_dataset_shards`, `dj_training_runs`, `dj_model_artifacts`, `dj_predictions`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_verification_runs`, and `dj_audit_log`.
+- Phase 10 artifact evidence recomputed every registered artifact file hash and recorded `equal=true` for all five files per domain.
 - Predecessor tests remain required: `dynamicjepa_phase3_fsv.rs`, `dynamicjepa_phase4_fsv.rs`, `dynamicjepa_phase5_fsv.rs`, and `dynamicjepa_phase6_fsv.rs`.
 
 ## 3. Required Fixtures
@@ -107,7 +113,7 @@ Every fixture file has a known SHA-256 listed in `tests/fixtures.rs`. If a fixtu
 
 ## 4. Full-Loop Verification (counter_world, Phase 8/10)
 
-This section is implemented today as the Phase 8 CLI FSV test and remains the target protocol for the future bundled `verify-counter-world` command. Use Section 2 for the current evidence paths.
+This section is implemented today as the Phase 8 CLI FSV test and the Phase 10 bundled `verify-counter-world` command. Use Section 2 for the current evidence paths.
 
 Setup:
 
@@ -308,7 +314,7 @@ Expected final counts (gridworld); ranges where the deterministic split bucket b
 | `dj_surprise_events` | 0 happy path |
 | `dj_verification_runs` | 1 (`Passed`) |
 
-The Phase 6 manual gridworld FSV observed the checked-in corpus split as train=4977, val=1330, test=693, totaling 7000 one-step rows. Future model harnesses may keep range assertions, but the current source-of-truth evidence records these exact counts.
+The Phase 6/10 manual gridworld FSV observed the checked-in corpus split as train=4977, val=1330, test=693, totaling 7000 one-step rows. Phase 10 records these exact counts in `summary.json` and in the persisted `VerificationRunRecord.actual_results`.
 
 ## 7. Edge Cases (gridworld_5x5)
 
@@ -330,8 +336,8 @@ Current Phase 7 counter_world asserts on the generated 60-event fixture (decoded
 
 ```text
 counter_world current: val_latent_cosine ≥ 0.99 ∧ val_latent_mse ≤ 0.005 ∧ vicreg_variance_per_dim_min ≥ 0.5 ∧ parameter_count_trainable = 480
-recorded but open:     shuffled_target_cosine ≤ 0.10 ∧ vicreg_covariance_off_diag_frobenius ≤ 0.5
-future gridworld:      val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_latent_cosine ≥ 0.92 ∧ action_contrast_acc ≥ 0.95
+gridworld current:     val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_latent_cosine ≥ 0.92 ∧ action_contrast_acc ≥ 0.95 ∧ parameter_count_trainable < 20000
+recorded but open:     shuffled_target_cosine/covariance strict bounds remain model-quality audit gaps
 ```
 
 ## 9. Artifact Hash Audit (Both Packs)
@@ -378,7 +384,7 @@ edge_*.json                      # one per edge case with before/after counts + 
 artifact_files_recomputed_hashes.json
 ```
 
-The future `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Current Phase 7/8/9 FSV does not yet write `dj_verification_runs`; it writes JSON evidence under `tmp/5090jepa_evidence/phase7/`, `tmp/5090jepa_evidence/phase8/`, and `tmp/5090jepa_evidence/phase9/` instead.
+The `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Phase 10 writes `dj_verification_runs` and the matching audit row atomically; earlier Phase 7/8/9 tests still write their standalone JSON evidence under `tmp/5090jepa_evidence/phase7/`, `tmp/5090jepa_evidence/phase8/`, and `tmp/5090jepa_evidence/phase9/`.
 
 ## 11. Operator Sign-Off Checklist (Per Run)
 
@@ -401,7 +407,7 @@ Paste this block into the closing PR description for each domain:
 [ ] EC2 invalid action: raw event +1, failed adapter run +1, no normalized
 [ ] EC3 OOB state/panel: raw event +1, failed adapter run +1, no normalized
 [ ] artifact hash mismatch test: load/verification call refused, no row written
-[ ] Future Phase 10 verification_run_record.json status=Passed
+[ ] Phase 10 verification_run_record.json status=Passed
 ```
 
 If a box is unchecked, the run is not done.

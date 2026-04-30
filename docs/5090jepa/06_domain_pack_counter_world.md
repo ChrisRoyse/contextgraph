@@ -2,7 +2,7 @@
 
 `counter_world` is the Occam's‑razor proof that the entire DynamicJEPA pipeline plumbs end‑to‑end. Three integer transitions, one scalar instrument, deterministic arithmetic, ground truth always equal to `state + action`. A correctly trained tiny JEPA reaches >0.99 cosine on the held‑out transition; a randomly initialized one cannot.
 
-Current Phase 7/8 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, materialize into three panels, compile into one ordered trajectory, compile one-step dataset shards, and support explicit binding through the real CLI and real RocksDB. Phase 7/8 FSV uses a generated 60-event counter_world fixture, not the three-event plumbing fixture, so train-only convergence and prediction/planning/surprise can be verified without fitting on validation rows. Bundled `verify-counter-world` remains later work.
+Current Phase 10 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, materialize into three panels, compile into one ordered trajectory, compile one-step dataset shards, and support explicit binding through the real CLI and real RocksDB. Phase 7/8/10 FSV uses a generated 60-event counter_world fixture, not the three-event plumbing fixture, so train-only convergence and prediction/planning/surprise can be verified without fitting on validation rows. Bundled `verify-counter-world` is implemented and persists a `Passed` `dj_verification_runs` row.
 
 ## 1. File Locations
 
@@ -206,7 +206,7 @@ Current Phase 8 FSV for `dynamicjepa plan --artifact-id <a> --panel-id <p1> --sk
 | `dj_guard_decisions` | +5 |
 | `dj_plan_traces` | +1 |
 
-Future Phase 10, after `dynamicjepa verify-counter-world` (the bundled FSV harness, runs everything above plus all edge cases):
+Phase 10 `dynamicjepa verify-counter-world` (the bundled FSV harness, runs everything above plus all edge cases):
 
 | CF | Δrows |
 | --- | --- |
@@ -293,7 +293,7 @@ The same report records `action_contrast_acc`, `shuffled_target_cosine`, `random
 
 Current Phase 7 evidence is written by the CLI FSV test to `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json` plus runtime DB/artifact files under `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`.
 
-Future Phase 10, after `dynamicjepa verify-counter-world --db /tmp/5090jepa-cw-fsv --json`, the harness writes:
+Phase 10, after `dynamicjepa verify-counter-world --db /tmp/5090jepa-cw-fsv --json`, the harness writes:
 
 ```
 tmp/5090jepa_evidence/counter_world/<verification_run_uuid>/
@@ -323,3 +323,5 @@ tmp/5090jepa_evidence/counter_world/<verification_run_uuid>/
 ```
 
 This evidence package is the operator's proof. Every JSON file is decoded from RocksDB *after* the operation, never the operation's return value.
+
+Manual Phase 10 counter_world FSV on 2026-04-30 used `/tmp/5090jepa-phase10-cw-fsv2` and evidence root `tmp/5090jepa_evidence/counter_world_final/4d2be585-cd38-4da7-9b57-d33dd611cc03/`. The final independent count read found `dj_raw_events=62`, `dj_adapter_runs=62`, `dj_latent_panels=60`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=6`, `dj_plan_traces=1`, `dj_surprise_events=1`, `dj_verification_runs=1`, and `dj_audit_log=196`.
