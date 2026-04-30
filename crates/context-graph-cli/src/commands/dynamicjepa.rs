@@ -6679,6 +6679,195 @@ fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJ
     Ok(fixtures)
 }
 
+fn write_onet_preflight_failure(
+    ctx: &ResearchSmokeContext,
+    onet_zip: &Path,
+    zip_hash_hex: Option<&str>,
+    err: &DynamicJepaError,
+) -> DynamicJepaResult<()> {
+    write_json_file(
+        &ctx.run_dir.join("onet_source_preflight.json"),
+        &json!({
+            "status": "failed",
+            "source_zip_path": onet_zip.display().to_string(),
+            "source_zip_sha256": zip_hash_hex,
+            "error_code": err.code(),
+            "error_message": err.to_string(),
+            "remediation": remediation(err),
+            "source_of_truth": {
+                "archive": onet_zip,
+                "expected_root": ONET_TEXT_ZIP_ROOT,
+                "required_release_marker": ONET_REQUIRED_RELEASE_MARKER,
+                "required_license_marker": ONET_REQUIRED_LICENSE_MARKER,
+                "required_members": ONET_REQUIRED_TSV_MEMBERS
+                    .iter()
+                    .map(|member| member.path)
+                    .collect::<Vec<_>>(),
+            },
+        }),
+    )
+}
+
+fn validate_onet_text_zip(
+    zip_path: &Path,
+    zip_hash_hex: &str,
+) -> DynamicJepaResult<OnetZipPreflight> {
+    let file = File::open(zip_path).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.onet.open_zip".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to open {}: {err}", zip_path.display()),
+        remediation: "pass a readable O*NET 30.2 text ZIP".to_string(),
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.zip",
+            format!("failed to read O*NET ZIP {}: {err}", zip_path.display()),
+            "pass the unmodified O*NET text ZIP downloaded from the Resource Center",
+        )
+    })?;
+    let archive_entry_count = archive.len();
+    if archive_entry_count == 0 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.zip",
+            format!("O*NET ZIP {} has no entries", zip_path.display()),
+            "pass the non-empty O*NET 30.2 text ZIP downloaded from the Resource Center",
+        ));
+    }
+
+    let mut names = BTreeSet::new();
+    let mut archive_file_count = 0usize;
+    for idx in 0..archive_entry_count {
+        let file = archive.by_index(idx).map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.zip_entry",
+                format!("failed to read O*NET ZIP entry {idx}: {err}"),
+                "pass a valid O*NET 30.2 text ZIP; every archive entry must be readable",
+            )
+        })?;
+        let raw_name = file.name().to_string();
+        if file.enclosed_name().is_none() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.zip_member_path",
+                format!("O*NET ZIP member has unsafe path: {raw_name:?}"),
+                "use the unmodified O*NET text ZIP; archive members must not be absolute paths or escape the archive root",
+            ));
+        }
+        if file.encrypted() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.zip_member_encrypted",
+                format!("O*NET ZIP member is encrypted: {raw_name}"),
+                "use the unmodified O*NET 30.2 text ZIP; required source files must be readable without passwords",
+            ));
+        }
+        if !raw_name.starts_with(ONET_TEXT_ZIP_ROOT) {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.zip_root",
+                format!("O*NET ZIP member {raw_name:?} is outside required root {ONET_TEXT_ZIP_ROOT:?}"),
+                "use the db_30_2_text.zip archive; all text database members must live under db_30_2_text/",
+            ));
+        }
+        if file.is_file() {
+            archive_file_count += 1;
+            names.insert(raw_name);
+        }
+    }
+    if archive_file_count != ONET_REQUIRED_FILE_COUNT {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.zip_file_count",
+            format!(
+                "O*NET 30.2 text ZIP has {archive_file_count} files, expected {ONET_REQUIRED_FILE_COUNT}"
+            ),
+            "use the complete unmodified O*NET 30.2 text database ZIP",
+        ));
+    }
+
+    let readme = read_onet_zip_member_text_from_archive(&mut archive, zip_path, ONET_README_MEMBER)?;
+    if !readme.text.contains(ONET_REQUIRED_RELEASE_MARKER) {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.readme_release",
+            format!("{ONET_README_MEMBER} does not contain {ONET_REQUIRED_RELEASE_MARKER:?}"),
+            "use the O*NET 30.2 text database ZIP, not another release or format",
+        ));
+    }
+    if !readme.text.contains(ONET_REQUIRED_LICENSE_MARKER) {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.readme_license",
+            format!("{ONET_README_MEMBER} does not contain the CC BY 4.0 license marker"),
+            "use the official O*NET 30.2 text ZIP so attribution and license provenance are auditable",
+        ));
+    }
+
+    let mut required_members = Vec::with_capacity(ONET_REQUIRED_TSV_MEMBERS.len() + 1);
+    required_members.push(OnetZipMemberEvidence {
+        path: ONET_README_MEMBER.to_string(),
+        size_bytes: readme.size_bytes,
+        compressed_size_bytes: readme.compressed_size_bytes,
+        crc32: readme.crc32,
+        row_count: None,
+        required_headers: Vec::new(),
+        header_columns: None,
+    });
+    for required in ONET_REQUIRED_TSV_MEMBERS {
+        if !names.contains(required.path) {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.zip_member",
+                format!("O*NET ZIP missing required member {}", required.path),
+                "use the complete db_30_2_text.zip archive with Occupation Data, Job Zones, Skills, and Related Occupations",
+            ));
+        }
+        let member = read_onet_zip_member_text_from_archive(&mut archive, zip_path, required.path)?;
+        let header_columns = tsv_header_columns(&member.text, required.label)?;
+        for header in required.required_headers {
+            if !header_columns.iter().any(|column| column == header) {
+                return Err(DynamicJepaError::validation(
+                    "research_smoke.onet.tsv_header",
+                    format!("{} missing required header {header:?}", required.path),
+                    "use the official O*NET 30.2 tab-delimited text database files without editing column names",
+                ));
+            }
+        }
+        let rows = parse_tsv_records(&member.text, required.label)?;
+        if rows.len() != required.exact_data_rows {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.tsv_row_count",
+                format!(
+                    "{} has {} data rows, expected {} for O*NET 30.2",
+                    required.path,
+                    rows.len(),
+                    required.exact_data_rows
+                ),
+                "use the unmodified O*NET 30.2 text database ZIP; row-count drift must be investigated before generation",
+            ));
+        }
+        required_members.push(OnetZipMemberEvidence {
+            path: required.path.to_string(),
+            size_bytes: member.size_bytes,
+            compressed_size_bytes: member.compressed_size_bytes,
+            crc32: member.crc32,
+            row_count: Some(rows.len()),
+            required_headers: required.required_headers.to_vec(),
+            header_columns: Some(header_columns),
+        });
+    }
+
+    Ok(OnetZipPreflight {
+        status: "passed",
+        source_zip_path: zip_path.display().to_string(),
+        source_zip_sha256: zip_hash_hex.to_string(),
+        archive_entry_count,
+        archive_file_count,
+        required_root: ONET_TEXT_ZIP_ROOT,
+        required_release_marker: ONET_REQUIRED_RELEASE_MARKER,
+        required_license_marker: ONET_REQUIRED_LICENSE_MARKER,
+        source_urls: vec![
+            "https://www.onetcenter.org/database.html",
+            "https://www.onetcenter.org/license_db.html",
+            "https://www.onetcenter.org/dl_files/database/db_30_2_text.zip",
+        ],
+        required_members,
+    })
+}
+
 fn build_onet_career_corpus(
     zip_path: &Path,
     event_count: u64,
@@ -6863,6 +7052,14 @@ fn read_onet_zip_text(zip_path: &Path, member: &str) -> DynamicJepaResult<String
             "pass the unmodified O*NET text ZIP downloaded from the Resource Center",
         )
     })?;
+    read_onet_zip_member_text_from_archive(&mut archive, zip_path, member).map(|member| member.text)
+}
+
+fn read_onet_zip_member_text_from_archive<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    zip_path: &Path,
+    member: &str,
+) -> DynamicJepaResult<OnetZipMemberRead> {
     let mut member_file = archive.by_name(member).map_err(|err| {
         DynamicJepaError::validation(
             "research_smoke.onet.zip_member",
@@ -6870,23 +7067,44 @@ fn read_onet_zip_text(zip_path: &Path, member: &str) -> DynamicJepaResult<String
             "use the db_30_2_text.zip archive with core text database files",
         )
     })?;
+    if member_file.enclosed_name().is_none() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.zip_member_path",
+            format!("O*NET ZIP member has unsafe path: {member:?}"),
+            "use the unmodified O*NET text ZIP; archive members must not be absolute paths or escape the archive root",
+        ));
+    }
+    if member_file.encrypted() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.zip_member_encrypted",
+            format!("O*NET ZIP member is encrypted: {member}"),
+            "use the unmodified O*NET 30.2 text ZIP; required source files must be readable without passwords",
+        ));
+    }
+    let size_bytes = member_file.size();
+    let compressed_size_bytes = member_file.compressed_size();
+    let crc32 = member_file.crc32();
     let mut text = String::new();
     member_file.read_to_string(&mut text).map_err(|err| {
         DynamicJepaError::validation(
             "research_smoke.onet.zip_member_utf8",
-            format!("required O*NET member {member} is not readable UTF-8 text: {err}"),
+            format!(
+                "required O*NET member {member} in {} is not readable UTF-8 text: {err}",
+                zip_path.display()
+            ),
             "use the tab-delimited text O*NET database ZIP",
         )
     })?;
-    Ok(text)
+    Ok(OnetZipMemberRead {
+        text,
+        size_bytes,
+        compressed_size_bytes,
+        crc32,
+    })
 }
 
-fn parse_tsv_records(
-    text: &str,
-    label: &'static str,
-) -> DynamicJepaResult<Vec<BTreeMap<String, String>>> {
-    let mut lines = text.lines();
-    let header = lines.next().ok_or_else(|| {
+fn tsv_header_columns(text: &str, label: &'static str) -> DynamicJepaResult<Vec<String>> {
+    let header = text.lines().next().ok_or_else(|| {
         DynamicJepaError::validation(
             "research_smoke.onet.tsv",
             format!("{label} is empty"),
@@ -6905,6 +7123,16 @@ fn parse_tsv_records(
             "inspect the O*NET text file header",
         ));
     }
+    Ok(headers)
+}
+
+fn parse_tsv_records(
+    text: &str,
+    label: &'static str,
+) -> DynamicJepaResult<Vec<BTreeMap<String, String>>> {
+    let mut lines = text.lines();
+    let headers = tsv_header_columns(text, label)?;
+    lines.next();
     let mut rows = Vec::new();
     for (idx, line) in lines.enumerate() {
         if line.trim().is_empty() {
@@ -7565,16 +7793,34 @@ fn write_data_manifest_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
         ctx.fixtures_root.join(local_fixture)
     };
     let local_hash = file_sha256(&fixture_path)?;
-    write_json_file(
-        &ctx.run_dir.join("data_manifest.json"),
-        &json!({
-            "source_manifest_path": path,
-            "source_manifest_sha256": hex_bytes(&file_sha256(&path)?),
-            "sources": [manifest],
-            "local_fixture_path": fixture_path,
-            "local_fixture_sha256": hex_bytes(&local_hash),
-        }),
-    )
+    let mut output = Map::new();
+    output.insert("source_manifest_path".to_string(), json!(path));
+    output.insert(
+        "source_manifest_sha256".to_string(),
+        json!(hex_bytes(&file_sha256(&path)?)),
+    );
+    output.insert("sources".to_string(), json!([manifest]));
+    output.insert("local_fixture_path".to_string(), json!(fixture_path));
+    output.insert(
+        "local_fixture_sha256".to_string(),
+        json!(hex_bytes(&local_hash)),
+    );
+    let onet_preflight_path = ctx.run_dir.join("onet_source_preflight.json");
+    if onet_preflight_path.exists() {
+        output.insert(
+            "onet_source_preflight_path".to_string(),
+            json!(onet_preflight_path),
+        );
+        output.insert(
+            "onet_source_preflight_sha256".to_string(),
+            json!(hex_bytes(&file_sha256(&onet_preflight_path)?)),
+        );
+        output.insert(
+            "onet_source_preflight".to_string(),
+            read_json_file(&onet_preflight_path)?,
+        );
+    }
+    write_json_file(&ctx.run_dir.join("data_manifest.json"), &output)
 }
 
 fn write_domain_pack_manifest_bundle(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
