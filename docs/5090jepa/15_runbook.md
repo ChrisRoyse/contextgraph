@@ -46,7 +46,69 @@ sha256sum configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl
 
 Record the hash; the test suite asserts it. If the hash drifts, revert the generator change.
 
-## 4. Counter_world Run
+## 4. Current Phase 3 Registry/Inspection Run
+
+This is the implemented runbook today. It proves the Phase 3 surface only:
+domain-pack registration, list/get, decoded CF inspection, strict validation,
+and physical RocksDB evidence. It intentionally does not call Phase 4+ commands.
+
+```bash
+export DJ_DB=/tmp/5090jepa-phase3-fsv
+rm -rf "$DJ_DB"
+mkdir -p tmp/5090jepa_evidence/phase3/manual
+
+./target/debug/context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json \
+  > tmp/5090jepa_evidence/phase3/manual/00_initial_counts.json
+
+./target/debug/context-graph dynamicjepa register-domain --db "$DJ_DB" \
+  --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json \
+  > tmp/5090jepa_evidence/phase3/manual/01_register_counter_world.json
+
+./target/debug/context-graph dynamicjepa register-domain --db "$DJ_DB" \
+  --file configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml --json \
+  > tmp/5090jepa_evidence/phase3/manual/02_register_gridworld.json
+
+./target/debug/context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json \
+  > tmp/5090jepa_evidence/phase3/manual/03_counts_after_both.json
+
+for cf in dj_domain_packs dj_domain_pack_by_nv dj_instrument_registry dj_adapter_registry dj_audit_log; do
+  ./target/debug/context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf "$cf" --limit 10 --json \
+    > "tmp/5090jepa_evidence/phase3/manual/inspect_${cf}.json"
+done
+```
+
+Expected counts after both registrations:
+
+```text
+dj_domain_packs 2
+dj_domain_pack_by_nv 2
+dj_instrument_registry 5
+dj_adapter_registry 2
+dj_audit_log 2
+```
+
+Independent physical check:
+
+```bash
+for cf in dj_domain_packs dj_domain_pack_by_nv dj_instrument_registry dj_adapter_registry dj_audit_log; do
+  /usr/bin/ldb --db="$DJ_DB" --column_family="$cf" dump --count_only | awk -v cf="$cf" '/Keys in range:/ {print cf, $4}'
+done
+```
+
+Phase 3 edge cases to run before claiming the phase still works:
+
+- Empty TOML registration fails and leaves counts unchanged.
+- Duplicate instrument id fails and leaves counts unchanged.
+- Unknown TOML key fails and leaves counts unchanged.
+- Invalid `inspect-cf --cf` fails and leaves counts unchanged.
+
+The automated equivalent is:
+
+```bash
+cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features -- --nocapture
+```
+
+## 5. Future Phase 10 Counter_world Run
 
 ```bash
 export DJ_DB=/tmp/5090jepa-cw-fsv
@@ -70,9 +132,9 @@ Expected exit code: `0`. Expected duration: ≤ 60 s. Inspect:
 ls tmp/5090jepa_evidence/counter_world/<verification_run_uuid>/decoded/
 ```
 
-If `inspect-counts` does not match Section 3 of `14_full_state_verification_protocol.md`, the run is not valid — read the verification_run_record.json `failure_details` and fix.
+If `inspect-counts` does not match the counter_world table in Section 4 of `14_full_state_verification_protocol.md`, the run is not valid — read the verification_run_record.json `failure_details` and fix.
 
-## 5. Gridworld Run
+## 6. Future Phase 10 Gridworld Run
 
 ```bash
 export DJ_DB=/tmp/5090jepa-gw-fsv
@@ -90,7 +152,7 @@ mkdir -p "$DJ_ARTIFACTS"
 
 Expected duration: ≤ 5 min. Same inspection step.
 
-## 6. Universality Audit
+## 7. Future Phase 10 Universality Audit
 
 Run both verifications against the **same** fresh DB to prove no hard-coded `if domain == ...` branches:
 
@@ -115,7 +177,7 @@ mkdir -p "$DJ_ARTIFACTS"
 
 Expected: domain pack count = 2, training runs = 2, artifacts = 2, verification runs = 2 — all in one DB.
 
-## 7. Capability Matrix Check
+## 8. Future Phase 9 Capability Matrix Check
 
 ```bash
 # Spawn a temp MCP server pointing at the shared demo DB:
@@ -135,14 +197,17 @@ kill $MCP_PID
 
 Expected: `tools/list` length = 136 (110 base + 26 dynamicjepa) with `llm` feature, or 132 without. `dynamicjepa.enabled = true` and CF counts populated.
 
-## 8. Test Suite
+## 9. Test Suite
 
 ```bash
 cargo test -p context-graph-core dynamicjepa --release --all-features
 cargo test -p context-graph-storage dynamicjepa --release --all-features
-cargo test -p context-graph-dynamicjepa --release --all-features
-cargo test -p context-graph-cli dynamicjepa --release --all-features
-cargo test -p context-graph-mcp dynamicjepa --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --release --all-features
+
+# Future phases, once the service crate and MCP DynamicJEPA surface exist:
+# cargo test -p context-graph-dynamicjepa --release --all-features
+# cargo test -p context-graph-cli dynamicjepa --release --all-features
+# cargo test -p context-graph-mcp dynamicjepa --release --all-features
 
 # Full workspace if you have time:
 cargo test --workspace --release --all-features
@@ -150,7 +215,7 @@ cargo test --workspace --release --all-features
 
 All targets must pass with **zero** ignored DynamicJEPA tests. If any are ignored, that is a bug — `#[ignore]` is reserved for cases the user has explicitly approved.
 
-## 9. Evidence Bundle
+## 10. Evidence Bundle
 
 ```bash
 ls tmp/5090jepa_evidence/
@@ -161,7 +226,7 @@ sha256sum /tmp/5090jepa_evidence.tar.gz
 
 Hand the tarball to the operator along with the `verification_run_record.json` of each run. That is the artifact reviewer expects.
 
-## 10. Failure Recovery
+## 11. Failure Recovery
 
 If a run fails:
 
@@ -169,6 +234,6 @@ If a run fails:
 2. Open the file at `evidence_path` to see the exact mismatch (count diff, decoded record, hash mismatch).
 3. Cross-reference against `14_full_state_verification_protocol.md`.
 4. Fix the lowest-level invariant and rebuild only the affected crate (`cargo build --release -p <crate>`).
-5. Re-run from Section 4 (or 5) — the harness wipes its `/tmp/` paths automatically.
+5. Re-run the relevant runbook section from a clean DB — the harness wipes its `/tmp/` paths automatically.
 
 Never re-run with stale `/tmp/` state. Never delete the evidence directory until you have the working run for comparison.

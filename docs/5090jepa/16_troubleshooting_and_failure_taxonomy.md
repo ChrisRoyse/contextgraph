@@ -40,25 +40,31 @@ Cause: TOML is in strict mode; an unknown key was added (typo or unsupported fea
 
 Fix: Either remove the unknown key from the TOML, or extend the schema parser to accept it (and bump the domain pack `schema_version`). Strict mode is intentional.
 
-### 2.3 `ingest-event` — `field_path = action.delta, expected = i64, actual = string`
+### 2.3 `register-domain` — duplicate instrument id
+
+Cause: two `[[instruments]]` entries in a domain pack use the same `id`. Phase 3 validation catches this before writing any domain, instrument, adapter, or audit rows.
+
+Fix: inspect the TOML, deduplicate the instrument ids, and rerun against a fresh demo DB. The expected source-of-truth proof is identical `inspect-counts` output before and after the failed command.
+
+### 2.4 `ingest-event` — `field_path = action.delta, expected = i64, actual = string`
 
 Cause: a JSONL line has the wrong type for a declared field. This is the **expected** output for the EC2 edge case fixtures; if it happens during a happy-path run, the fixture has been corrupted.
 
 Fix: Validate the fixture file with `jq -c .` to see if any line has type drift. Re-generate from the spec.
 
-### 2.4 `materialize-panel` — `RequiredInstrumentMissing`
+### 2.5 `materialize-panel` — `RequiredInstrumentMissing`
 
 Cause: a required instrument's input field is missing from the normalized state/action/outcome rows.
 
 Fix: Re-read `08_adapter_and_panel_pipeline.md` Section 4. The most likely cause is an adapter mapping that points to a JSON path that does not exist in the fixture. Confirm by `dynamicjepa get-state --id <state_id>` and inspect the field map.
 
-### 2.5 `compile-dataset` — `DatasetLeakageDetected: insufficient negatives`
+### 2.6 `compile-dataset` — `DatasetLeakageDetected: insufficient negatives`
 
 Cause: not enough panels with different outcomes to satisfy `min_negatives_per_row`.
 
 Fix: For counter_world this should never happen (3 distinct outcomes). For gridworld this should also not happen (8000 panels). If it does, the corpus is degenerate — re-generate.
 
-### 2.6 `train` — `TrainingFailed: max_seconds budget exceeded before convergence`
+### 2.7 `train` — `TrainingFailed: max_seconds budget exceeded before convergence`
 
 Cause: training did not hit `stopping.target` within `stopping.max_seconds`.
 
@@ -71,7 +77,7 @@ Fixes (in order):
 
 Do **not** bypass the convergence target by lowering it — the convergence asserts in `tests/*_fsv.rs` will still fail.
 
-### 2.7 `predict` — `ArtifactHashMismatch`
+### 2.8 `predict` — `ArtifactHashMismatch`
 
 Cause: the artifact files on disk do not match the registry. Either someone edited the file (intentional EC test) or the run was interrupted between file write and registry write.
 
@@ -80,7 +86,7 @@ Fix:
 - If intentional (EC test): the demo expects this and the harness records it.
 - Otherwise: drop the `ModelArtifactRecord` row, re-run training (the demo wipes its DB anyway).
 
-### 2.8 `verify-counter-world` — `VerificationFailed: count mismatch dj_panels expected=3 actual=2`
+### 2.9 `verify-counter-world` — `VerificationFailed: count mismatch dj_panels expected=3 actual=2`
 
 Cause: one panel did not materialize. Almost always a missing required instrument (see 2.4).
 

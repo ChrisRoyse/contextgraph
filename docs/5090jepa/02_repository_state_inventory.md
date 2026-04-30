@@ -2,13 +2,13 @@
 
 This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before Phase 0 and again before Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
-## 1. Branch & Commit Snapshot (Phase 2 Live Audit: 2026-04-30)
+## 1. Branch & Commit Snapshot (Phase 3 Live Audit: 2026-04-30)
 
 | Property | Value |
 | --- | --- |
 | Branch | `main` |
 | Latest commits at audit start | `a43c962f docs(5090jepa): add master context guide and AI prompt library` → `bcf6a297 feat(dynamicjepa): add Phase 2 storage data plane (25 RocksDB CFs)` → `d47b0e92 docs(5090jepa): add game-theory analysis of commercial opportunity` |
-| Working tree at audit start | Clean before verification fixes; local changes now only update stale CF/HNSW count tests and this status documentation |
+| Working tree at audit start | Clean before Phase 2 verification fixes; local changes now include stale CF/HNSW count fixes, Phase 3 CLI implementation/tests, stale CLI test fixes, and this status documentation |
 | `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
 
 ## 2. Workspace Layout (Verified)
@@ -64,7 +64,8 @@ test ! -d crates/context-graph-dynamicjepa
 test -d crates/context-graph-core/src/dynamicjepa
 test -d crates/context-graph-storage/src/dynamicjepa
 test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
-test ! -f crates/context-graph-cli/src/commands/dynamicjepa.rs
+test -f crates/context-graph-cli/src/commands/dynamicjepa.rs
+test -f crates/context-graph-cli/src/bin/context-graph.rs
 
 # Configs root
 ls config/                                # operator config (existing)
@@ -73,9 +74,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2 Verification Status (2026-04-30)
+## 4. Phase 2 And Phase 3 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane only. Phase 3+ CLI/MCP/model pipeline work is still not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4+ adapter/panel/MCP/model pipeline work is still not present.
 
 Source of truth verified:
 
@@ -97,6 +98,40 @@ Root-cause fixes made during this audit:
 
 - `crates/context-graph-storage/src/teleological/tests/column_family.rs` now derives the expected all-teleological descriptor count from `TELEOLOGICAL_CF_COUNT + QUANTIZED_EMBEDDER_CF_COUNT` (41 + 14 = 55) instead of the stale hard-coded 54.
 - HNSW doctest/comment examples now assert the current 16 HNSW-capable embedders after E14 BGE-M3 Dense, matching the runtime registry.
+
+Phase 3 source of truth verified:
+
+- Physical RocksDB DB: `/tmp/5090jepa-phase3-manual`
+- Decoded CLI evidence: `tmp/5090jepa_evidence/phase3/manual_fsv/`
+- Automated CLI FSV evidence: `tmp/5090jepa_evidence/phase3/cli_fsv.json`
+- Independent physical count read: `ldb --db /tmp/5090jepa-phase3-manual --column_family=<cf> dump --count_only`
+
+Phase 3 verification results:
+
+- `cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-cli dynamicjepa --all-features --no-run`: every CLI test target compiled after correcting stale non-DynamicJEPA test code.
+- Manual happy path registered `counter_world.v1.toml` and `gridworld_5x5.v1.toml` into one fresh DB. Final Phase 3 source-of-truth counts: `dj_domain_packs=2`, `dj_domain_pack_by_nv=2`, `dj_instrument_registry=5`, `dj_adapter_registry=2`, `dj_audit_log=2`.
+- `ldb list_column_families` confirms all 25 DynamicJEPA CFs are physically present in `/tmp/5090jepa-phase3-manual`.
+- `ldb dump --count_only` independently confirms the same Phase 3 counts above; `ldb dump --hex --max_keys=1` shows physical versioned bincode rows in `dj_domain_packs` and `dj_audit_log`, plus the 16-byte UUID value in `dj_domain_pack_by_nv`.
+- Edge cases manually exercised: empty TOML, duplicate instrument id, unknown TOML key, and invalid CF name. All failed with structured JSON errors and left before/after counts unchanged.
+
+Phase 3 re-audit results:
+
+- Fresh DB used for second-pass proof: `/tmp/5090jepa-phase3-doublecheck`.
+- Evidence path: `tmp/5090jepa_evidence/phase3/doublecheck/`.
+- CLI help exposes exactly the implemented Phase 3 commands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`.
+- Registering both checked-in domain packs again produced the expected final source-of-truth counts: `dj_domain_packs=2`, `dj_domain_pack_by_nv=2`, `dj_instrument_registry=5`, `dj_adapter_registry=2`, `dj_audit_log=2`.
+- Independent `ldb dump --count_only` against the same DB confirmed those five counts exactly.
+- Duplicate-instrument registration failed with `VALIDATION` on `DomainPack.instrument_specs.instrument_id` and left all 25 DynamicJEPA CF counts unchanged.
+- No Phase 4+ CLI commands are present yet; the next implementation phase starts at `ingest-event`, adapter runs, normalized records, readings, and panels.
+
+Root-cause fixes made during the Phase 3 audit:
+
+- `get-domain` now uses `--domain-version` because Clap's propagated global `--version` flag reserves the `version` argument id.
+- The CLI package exposes both `context-graph-cli` and the documented `context-graph` binary without Cargo duplicate-target warnings.
+- Phase 3 `count_delta` now treats missing or unexpected CF names in before/after snapshots as `StorageInvariantViolation` instead of substituting zero.
+- `crates/context-graph-cli/tests/export_training_integration.rs` now initializes the current `TrainingRecord::e14_bge_m3_dense` field.
+- `crates/context-graph-cli/tests/e14_phase_b_fsv.rs` now calls `EmbedderId::parse`, matching the live DTO API.
 
 ## 5. Existing Surfaces You Will Reuse
 
@@ -156,7 +191,9 @@ Tool registry surface:
 
 ### 5.4 CLI (`crates/context-graph-cli/src/`)
 
-Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`. Add `dynamicjepa.rs` with subcommands listed in `13_mcp_and_cli_surface.md`. Wire it through `commands/mod.rs` and the clap‑derive top‑level enum in `main.rs`.
+Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
+
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 4+ CLI subcommands remain unimplemented.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

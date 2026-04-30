@@ -130,12 +130,20 @@ crates/context-graph-cli/src/commands/dynamicjepa.rs
 
 Wire to `commands/mod.rs` and the top-level clap-derive enum in `main.rs`.
 
+Phase 3 status: the registry/inspection subset is implemented and verified:
+`register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and
+`inspect-cf`. Later subcommands below remain Phase 4+ work and should not be
+listed as operational until their source-of-truth FSV is complete.
+
 Subcommands (all accept `--db PATH` and `--json`):
 
 ```
-context-graph dynamicjepa register-domain --file PATH
-context-graph dynamicjepa list-domains
-context-graph dynamicjepa get-domain --id ID
+context-graph dynamicjepa register-domain --db PATH --file PATH --json
+context-graph dynamicjepa list-domains --db PATH --json
+context-graph dynamicjepa get-domain --db PATH --id ID --json
+context-graph dynamicjepa get-domain --db PATH --id ID --domain-version 1.0.0 --json
+context-graph dynamicjepa inspect-counts --db PATH --json
+context-graph dynamicjepa inspect-cf --db PATH --cf dj_domain_packs --limit N --json
 
 context-graph dynamicjepa ingest-event --domain ID --adapter ID --file PATH
 context-graph dynamicjepa run-adapter --event-id UUID
@@ -238,6 +246,7 @@ If the operator wants to call DynamicJEPA tools through the MCP server later, th
 
 Add:
 
+- Current Phase 3: `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs` — real CLI binary, real temp RocksDB, both checked-in domain TOMLs, decoded CF inspection, and empty TOML / duplicate instrument / unknown TOML key / invalid CF edge cases.
 - `crates/context-graph-mcp/tests/dynamicjepa_tools_dispatch_test.rs` — confirm every tool name maps to a handler.
 - `crates/context-graph-mcp/tests/dynamicjepa_capability_matrix_test.rs` — confirm the capability matrix includes DynamicJEPA fields after a `verify-counter-world` run.
 - `crates/context-graph-cli/tests/dynamicjepa_cli_smoke_test.rs` — CLI argument parsing, exit codes, JSON shape.

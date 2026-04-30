@@ -18,6 +18,7 @@ Decisions are locked where the demo's correctness depends on them. Where there i
 | Convergence acceptance | Asserted in tests, not in user docs | Test failure is the single source of truth |
 | Tests use real RocksDB under `tempfile::TempDir` | Required by R3 |
 | Hash algorithm | SHA-256 for files / payload hashes; BLAKE3-128 for short keys | SHA-256 for "audit me" hashes; BLAKE3 for performance-critical key derivation |
+| Phase 3 `get-domain` flag | `--domain-version`, not `--version` | Clap's propagated global `--version` flag reserves the short contract; using `--domain-version` avoids ambiguous parsing |
 
 ## 2. Open Questions (Demo Can Ship With Defaults; Revisit Later)
 
@@ -95,6 +96,7 @@ Brief mentions only — implementing any of these is out of demo scope.
 | WSL2 CUDA passthrough flake on first kernel launch | First-call warmup before training timer; documented in `16_…` §6 |
 | Tiny model overshoots into capacity that memorizes both training rows | Counter_world only has 1 train row; assert `random_init_baseline` and `shuffled_target_baseline` per `10_…` §7–8 |
 | Operator's `data/contextgraph_data` corruption from a misconfigured demo | Demo strictly uses `/tmp/5090jepa-*` paths; environment probes refuse to start if the demo path equals the production path |
+| Concurrent CLI reads on the same RocksDB path hit the DB lock | Run Phase 3 inspection commands sequentially or through one long-lived process; a lock error is a real `STORAGE` failure, not something to ignore |
 | A future contributor adds an `if domain == ...` branch | `tests/universality_audit.rs` runs both packs against the same DB; CI would catch domain-specific code |
 | FSV harness becomes flaky due to non-determinism in candle | Force `cudnn_benchmark = false`, fixed seeds; `10_…` §9 |
 

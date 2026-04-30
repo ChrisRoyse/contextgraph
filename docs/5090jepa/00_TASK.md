@@ -156,14 +156,17 @@ This rule is non‑negotiable because the user has explicitly said: *"if there i
 
 ## 8. What Already Exists (Anti‑Hallucination Anchor)
 
-Verified again during the Phase 2 storage audit on 2026-04-30. The live tree wins if anything below drifts:
+Verified again during the Phase 3 CLI audit and re-audit on 2026-04-30. The live tree wins if anything below drifts:
 
 - `crates/` still contains the original 10 packages. The DynamicJEPA service crate `context-graph-dynamicjepa` does **not** exist yet; it is still a Phase 7 task.
 - Phase 1 core contracts are present: `crates/context-graph-core/src/lib.rs` declares `pub mod dynamicjepa;`, and `crates/context-graph-core/src/dynamicjepa/` contains the v1 records, ids, validation, errors, and versioned bincode tests.
 - Phase 2 storage data plane is present: `crates/context-graph-storage/src/dynamicjepa/` defines 25 DynamicJEPA CFs, store modules, key helpers, codec helpers, inspection/count APIs, audit records, and a storage FSV test.
+- Phase 3 CLI registry/inspection is present: `crates/context-graph-cli/src/commands/dynamicjepa.rs` implements `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`; the package also exposes the documented `context-graph` binary alias.
+- Phase 3 is the current completed phase. Phase 4+ commands such as `ingest-event`, `materialize-panel`, `compile-trajectories`, `compile-dataset`, `train`, `predict`, `plan`, `verify-counter-world`, and `verify-gridworld` are still future work and must not be reported as operational yet.
 - The physical DB open path now opens **98 total CFs**: 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 25 DynamicJEPA. Fresh `/tmp` DBs open with all 25 DynamicJEPA CFs at zero rows.
 - `crates/context-graph-mcp/src/tools/names.rs` exposes the existing MCP tools only; DynamicJEPA MCP tools are still Phase 9.
-- `crates/context-graph-cli/src/commands/mod.rs` registers existing subcommands only; the `dynamicjepa` CLI surface is still Phase 3.
+- `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs` runs the real CLI binary against a real temp RocksDB, registers both Phase 0 TOMLs, verifies decoded source-of-truth rows, and proves empty TOML / duplicate instrument / unknown key / invalid CF edge cases leave counts unchanged.
+- The Phase 3 re-audit found and fixed one no-fallback hardening gap: `count_delta` now errors on missing or unexpected CF names instead of treating missing after-counts as zero.
 - `configs/dynamicjepa/` exists and contains the Phase 0 domain packs, verification fixtures, and generated gridworld corpus.
 - `data/contextgraph_data` (or wherever `CONTEXT_GRAPH_STORAGE_PATH` points) is the existing RocksDB physical database. **Do not corrupt it.** All FSV runs use a fresh `/tmp/` path.
 - `models/` already contains all 14 production embedder weights; do not redownload. The DynamicJEPA tiny model trains from scratch in candle and writes to `artifacts/dynamicjepa/...`, a new directory.

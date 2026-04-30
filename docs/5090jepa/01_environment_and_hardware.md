@@ -43,6 +43,7 @@ echo "== dynamicjepa current phase state =="
 test ! -d crates/context-graph-dynamicjepa || (echo "ERROR: Phase 7 service crate exists; audit before continuing" && exit 1)
 test -d crates/context-graph-core/src/dynamicjepa || (echo "ERROR: Phase 1 core module missing" && exit 1)
 test -d crates/context-graph-storage/src/dynamicjepa || (echo "ERROR: Phase 2 storage module missing" && exit 1)
+test -f crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 3 CLI module missing" && exit 1)
 echo "ENV OK"
 ```
 
@@ -77,10 +78,13 @@ cargo build --workspace --release
 # build with full features including dynamicjepa once the crate is added
 cargo build --workspace --release --all-features
 
-# run dynamicjepa-only tests (after Phase 1 lands)
+# run dynamicjepa-only tests through the current implemented phase
 cargo test -p context-graph-core dynamicjepa --all-features
 cargo test -p context-graph-storage dynamicjepa --all-features
-cargo test -p context-graph-dynamicjepa --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features
+
+# future Phase 7 service crate, once it exists
+# cargo test -p context-graph-dynamicjepa --all-features
 ```
 
 Expected first-build time on this hardware: ~3–5 minutes for incremental, ~12–15 minutes cold. If a cold build exceeds 20 minutes, something is recompiling LLVM IR — investigate (almost always `CUDA_COMPUTE_CAP` flapping between values).

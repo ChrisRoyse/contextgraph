@@ -17,7 +17,49 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Required Fixtures
+## 2. Current Implemented FSV Scope (Phase 3)
+
+Phase 3 verifies only domain-pack registration and physical inspection. The full
+adapter/model/harness protocol below remains binding for later phases, but the
+current completed source-of-truth surface is:
+
+```bash
+export DJ_DB=/tmp/5090jepa-phase3-fsv
+rm -rf "$DJ_DB"
+context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
+context-graph dynamicjepa register-domain --db "$DJ_DB" --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json
+context-graph dynamicjepa register-domain --db "$DJ_DB" --file configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml --json
+context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_domain_packs --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_domain_pack_by_nv --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_instrument_registry --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_registry --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_audit_log --limit 10 --json
+```
+
+Expected Phase 3 final counts after both packs are registered:
+
+| CF | Final count |
+| --- | --- |
+| `dj_domain_packs` | 2 |
+| `dj_domain_pack_by_nv` | 2 |
+| `dj_instrument_registry` | 5 |
+| `dj_adapter_registry` | 2 |
+| `dj_audit_log` | 2 |
+| every Phase 4+ data CF (`dj_raw_events`, `dj_adapter_runs`, panels, datasets, artifacts, predictions, etc.) | 0 |
+
+Required Phase 3 edge cases:
+
+- Empty TOML: fails with `VALIDATION`; all counts unchanged.
+- Duplicate instrument id: fails with `VALIDATION`; all counts unchanged.
+- Unknown TOML key: fails strict TOML parsing with `VALIDATION`; all counts unchanged.
+- Invalid `inspect-cf --cf`: fails with `VALIDATION`; all counts unchanged.
+
+The re-audit evidence for this phase lives at
+`tmp/5090jepa_evidence/phase3/doublecheck/` and includes CLI decoded reads plus
+independent `ldb dump --count_only` counts.
+
+## 3. Required Fixtures
 
 ```
 configs/dynamicjepa/domain_packs/counter_world.v1.toml
@@ -36,7 +78,7 @@ configs/dynamicjepa/verification/gridworld_5x5_train_config.json
 
 Every fixture file has a known SHA-256 listed in `tests/fixtures.rs`. If a fixture's hash does not match, the test fails with `Validation { field: "fixture_hash" }` — protects against accidental edits.
 
-## 3. Happy-Path Verification (counter_world)
+## 4. Happy-Path Verification (counter_world)
 
 Setup:
 
@@ -120,7 +162,7 @@ The harness asserts:
 - `prediction.model_artifact_hash_at_inference == artifact.files["model.safetensors"].sha256`.
 - `plan_trace.candidate_action_ids.len() == 5` and `plan_trace.selected_action_id` is set and references one of the candidates.
 
-## 4. Edge Cases (counter_world)
+## 5. Edge Cases (counter_world)
 
 For each edge case below the harness:
 
@@ -176,7 +218,7 @@ Fixture: `counter_world_edge_max_panel.jsonl` (`outcome.next_counter = 1032 > ma
 | `dj_normalized_*` / `dj_transitions` | 0 |
 | `dj_audit_log` | +2 |
 
-## 5. Happy-Path Verification (gridworld_5x5)
+## 6. Happy-Path Verification (gridworld_5x5)
 
 Setup:
 
@@ -187,7 +229,7 @@ rm -rf "$DJ_DB" "$DJ_ARTIFACTS"
 mkdir -p "$DJ_ARTIFACTS"
 ```
 
-Run the same command sequence as Section 3, substituting `gridworld_5x5` and the gridworld fixtures. Differences:
+Run the same command sequence as Section 4, substituting `gridworld_5x5` and the gridworld fixtures. Differences:
 
 - `ingest-event` consumes 8000 lines.
 - `materialize-panel --all-pending` produces 8000 panels.
@@ -224,7 +266,7 @@ Expected final counts (gridworld); ranges where the deterministic split bucket b
 
 The harness asserts dataset row counts within the declared ranges (`expected_train_rows_min..max`, etc.).
 
-## 6. Edge Cases (gridworld_5x5)
+## 7. Edge Cases (gridworld_5x5)
 
 EC1 empty input: same shape as counter_world EC1.
 
@@ -232,7 +274,7 @@ EC2 invalid action (`move = "diagonal"`): same shape as counter_world EC2 with `
 
 EC3 OOB state (`state.x = 7`): raw event +1, failed adapter run +1, no normalized state, `field_path = state.x`, `value = 7`, `max = 4`.
 
-## 7. Convergence Audits (Both Packs)
+## 8. Convergence Audits (Both Packs)
 
 After training:
 
@@ -248,7 +290,7 @@ gridworld:     val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_l
 both:          shuffled_target_cosine ≤ 0.30 (cw 0.10) ∧ random_init_cosine ≤ 0.30 (cw 0.10) ∧ vicreg_variance_per_dim_min ≥ 0.5
 ```
 
-## 8. Artifact Hash Audit (Both Packs)
+## 9. Artifact Hash Audit (Both Packs)
 
 ```bash
 ARTIFACT_JSON=$(context-graph dynamicjepa get-artifact --db "$DJ_DB" --id $ARTIFACT --verify-files --json)
@@ -278,7 +320,7 @@ Expected response:
 
 The `dj_predictions` count after this must equal the count before. If a prediction row was written, the no-fallback rule has been violated and the demo fails verification.
 
-## 9. Verification Run Record
+## 10. Verification Run Record
 
 After every harness run, `tmp/5090jepa_evidence/<domain>/<verification_run_uuid>/` must contain:
 
@@ -294,7 +336,7 @@ artifact_files_recomputed_hashes.json
 
 The `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Any mismatch sets status to `Failed { failure_details: ..., evidence_path: ... }` and writes the same evidence directory.
 
-## 10. Operator Sign-Off Checklist (Per Run)
+## 11. Operator Sign-Off Checklist (Per Run)
 
 Paste this block into the closing PR description for each domain:
 
