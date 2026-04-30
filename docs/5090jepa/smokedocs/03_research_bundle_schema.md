@@ -31,9 +31,11 @@ Implemented smoke entry point:
 
 ```bash
 CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
-  --run-id 20260430T_smokedocs_full_matrix_fsv_v4 \
+  --run-id 20260430T_onet30_demo_fsv_v11 \
   --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
+  --onet-text-zip tmp/onet_probe/db_30_2_text.zip \
+  --system-specs docs2/systemspecs.md \
   --json
 ```
 
@@ -56,6 +58,11 @@ Required fields:
   "db_path": "/tmp/mejepa-5090-smoke-...",
   "artifact_root": "/tmp/mejepa-5090-artifacts-...",
   "evidence_root": "tmp/mejepa_research_runs/<run_id>",
+  "fixtures_root": "configs/dynamicjepa",
+  "career_fixtures_root": "tmp/mejepa_research_runs/<run_id>/generated_fixtures/onet_30_2",
+  "onet_text_zip": "tmp/onet_probe/db_30_2_text.zip",
+  "career_event_count": 120,
+  "system_specs": "docs2/systemspecs.md",
   "status": "running|passed|failed",
   "failure_details": null
 }
@@ -75,6 +82,7 @@ Capture:
 - `cargo tree -p candle-core`;
 - OS/kernel;
 - CPU/RAM.
+- `docs2/systemspecs.md` path and SHA-256.
 
 ## `git_state.json`
 
@@ -106,8 +114,20 @@ Capture one object per data source:
 ```
 
 If a source license or provenance is missing, the smoke harness fails closed.
-The current career smoke manifest records `row_count: 15` and a local fixture
-SHA-256 in the generated bundle.
+The current O*NET-backed smoke manifest records `row_count: 120`, the source
+ZIP SHA-256, generated JSONL and walk CSV hashes, selected occupation/edge
+counts, allowed use, and the O*NET attribution/non-endorsement language.
+
+The bundle also writes generated real-source fixtures:
+
+```text
+generated_fixtures/onet_30_2/
+  verification/career_taxonomy_smoke.jsonl
+  verification/career_taxonomy_onet_walk.csv
+  verification/career_taxonomy_train_config.json
+  verification/career_taxonomy_data_manifest.json
+  domain_packs/career_taxonomy.v1.toml
+```
 
 ## `domain_pack_manifest.json`
 

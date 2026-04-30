@@ -18,6 +18,10 @@
   Learning. https://arxiv.org/abs/2105.04906
 - V-JEPA official code and model context. https://github.com/facebookresearch/jepa
 - O*NET database. https://www.onetcenter.org/database.html
+- O*NET OnLine content license and attribution/non-endorsement guidance.
+  https://www.onetonline.org/help/license
+- O*NET 30.2 text database ZIP used by the current smoke generator.
+  https://www.onetcenter.org/dl_files/database/db_30_2_text.zip
 - ESCO download page. https://esco.ec.europa.eu/en/use-esco/download
 - JobHop career trajectory dataset paper. https://arxiv.org/abs/2505.07653
 - KARRIEREWEGE career path prediction dataset paper.

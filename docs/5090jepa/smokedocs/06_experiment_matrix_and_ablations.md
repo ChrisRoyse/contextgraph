@@ -52,6 +52,14 @@ Current implementation note: the smoke harness is latent-panel only. It does not
 yet train a decoder/head for top-k occupation or skill-vector reconstruction, so
 those metrics are not emitted as paper claims.
 
+Current O*NET smoke metrics:
+
+| Domain | Train | Val | Test | Params | Val MSE | Val Cosine | Test MSE | Test Cosine |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| counter_world | 41 | 12 | 6 | 480 | 0.004330990884665671 | 0.9996336712676964 | 0.013100919986046714 | 0.9991602338714566 |
+| gridworld_5x5 | 4977 | 1330 | 693 | 16960 | 0.0393676577804223 | 0.9944587131724412 | 0.039363633903181136 | 0.9945823653158506 |
+| career_taxonomy | 83 | 24 | 12 | 15344 | 0.17999517062789205 | 0.8776115717741934 | 0.25307116609684355 | 0.867371052118299 |
+
 ## Experiment C - Action-Conditioned Planning
 
 Question:
@@ -111,6 +119,17 @@ Implementation details:
   `occupation_move_pair_onehot` with 20 declared occupation/action pairs.
 - A5 sets VICReg variance/covariance loss weights to zero in the persisted
   artifact config.
+
+Current O*NET smoke ablation metrics:
+
+| ID | Val MSE | Val Cosine | Test MSE | Test Cosine |
+| --- | ---: | ---: | ---: | ---: |
+| A0 | 0.07541437962770774 | 0.9745100258571918 | 0.15218315756551268 | 0.9637773457224168 |
+| A1 | 0.17999517062789205 | 0.8776115717741934 | 0.25307116609684355 | 0.867371052118299 |
+| A2 | 0.07861760961555968 | 0.9584134219819948 | 0.2269089035423139 | 0.9097942446694102 |
+| A3 | 0.35150993421354887 | 0.7115692482591077 | 0.6428963516399238 | 0.5567848258865903 |
+| A4 | 0.07653267888245231 | 0.9316788348516672 | 0.11159787261840416 | 0.9196961741053704 |
+| A5 | 0.07947118619845824 | 0.91059956073034 | 0.19526649207584376 | 0.8155035850933209 |
 
 ## Experiment E - Auditability Stress
 

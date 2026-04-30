@@ -4,7 +4,8 @@
 
 | Decision | Choice | Reason |
 | --- | --- | --- |
-| First paper demo data | Public career taxonomy benchmark | Safe and reproducible without private recruiting corpus |
+| First paper demo data | O*NET 30.2 public career taxonomy benchmark | Safe and reproducible without private recruiting corpus |
+| Initial taxonomy source | O*NET primary, ESCO later | O*NET provides one downloadable, hashable source used by the current generator |
 | Real recruiting claims | Not made unless licensed corpus exists | Avoid overclaiming |
 | Evidence format | Immutable research bundle | Supports paper, appendix, reproducibility |
 | Smoke before full run | Mandatory | Reduces wasted 5090 runs |
@@ -12,14 +13,14 @@
 
 ## Open Questions
 
-1. Which public taxonomy source is primary: O*NET, ESCO, or both?
-2. Do we have permissioned real career/recruiting data for a later Phase 12 run?
-3. What is the smallest career skill vector that is still meaningful?
-4. Should pairwise features be implemented in DynamicJEPA storage for the paper
-   run, or deferred and discussed as future ME-JEPA work?
-5. Should the first career benchmark use generated taxonomy walks or a public
-   career trajectory dataset if one is licensed and accessible?
-6. What exact paper claim should be promoted: systems auditability, career
+1. Do we have permissioned real career/recruiting data for a later Phase 12 run?
+2. What is the smallest career skill vector that is still meaningful beyond the
+   current 4-value smoke vector?
+3. Should ESCO be added as an external replication taxonomy after the O*NET
+   paper-small run?
+4. Should the first paper-small benchmark stay on generated taxonomy walks or
+   add a licensed public trajectory dataset if one is accessible?
+5. What exact paper claim should be promoted: systems auditability, career
    transition modeling, or single-GPU feasibility?
 
 ## Main Risks
@@ -53,4 +54,3 @@ No-go:
 - Any train/test leakage.
 - Any failure hidden by passing tests.
 - Any claim depends on unavailable real recruiting data.
-

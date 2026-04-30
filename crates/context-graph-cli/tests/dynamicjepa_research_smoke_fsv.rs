@@ -35,10 +35,101 @@ fn run_ok(args: &[&str]) -> Value {
         .unwrap_or_else(|err| panic!("stdout must be one JSON object: {err}\nstdout={stdout}"))
 }
 
+fn run_err(args: &[&str]) -> (String, String) {
+    let output = Command::new(context_graph_bin())
+        .args(args)
+        .env("CONTEXT_GRAPH_ENV", "development")
+        .env("CUDA_COMPUTE_CAP", "120")
+        .output()
+        .expect("execute context-graph binary");
+    let stdout = String::from_utf8(output.stdout).expect("CLI stdout is UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("CLI stderr is UTF-8");
+    assert!(
+        !output.status.success(),
+        "command unexpectedly succeeded\nargs={args:?}\nstdout={stdout}\nstderr={stderr}"
+    );
+    (stdout, stderr)
+}
+
 fn count(value: &Value, cf: &str) -> u64 {
     value["counts"][cf]
         .as_u64()
         .unwrap_or_else(|| panic!("missing count for {cf}: {value:#}"))
+}
+
+#[test]
+fn research_smoke_fails_closed_for_paper_purpose_without_onet_source() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!("test_research_smoke_no_onet_{}", std::process::id());
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+
+    let (_stdout, stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--purpose",
+        "paper_small",
+        "--json",
+    ]);
+    assert!(
+        stderr.contains("requires --onet-text-zip"),
+        "missing O*NET remediation in stderr: {stderr}"
+    );
+    assert!(
+        !run_dir.exists(),
+        "paper_small without O*NET source must fail before creating bundle source of truth"
+    );
+}
+
+#[test]
+fn research_smoke_fails_closed_for_custom_event_count_without_onet_source() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!(
+        "test_research_smoke_event_count_without_onet_{}",
+        std::process::id()
+    );
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+
+    let (_stdout, stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--career-event-count",
+        "120",
+        "--json",
+    ]);
+    assert!(
+        stderr.contains("supply --onet-text-zip"),
+        "missing custom-count remediation in stderr: {stderr}"
+    );
+    assert!(
+        !run_dir.exists(),
+        "custom career-event-count without O*NET source must fail before creating bundle source of truth"
+    );
 }
 
 #[test]

@@ -13,6 +13,7 @@ export PATH="$CUDA_HOME/bin:$PATH"
 export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
 export CONTEXT_GRAPH_ENV=development
 export RUST_LOG=info,context_graph_dynamicjepa=debug
+export ONET_TEXT_ZIP="tmp/onet_probe/db_30_2_text.zip"
 ```
 
 Build:
@@ -38,13 +39,15 @@ run directory already exists.
   --run-id "$RUN_ID" \
   --run-root "$RUN_ROOT" \
   --fixtures-root configs/dynamicjepa \
+  --onet-text-zip "$ONET_TEXT_ZIP" \
+  --system-specs docs2/systemspecs.md \
   --json
 ```
 
 This command runs environment capture, git state capture, counter_world,
-gridworld_5x5, career_taxonomy, career same-seed reproducibility, and the full
-career A0-A5 ablation matrix. It writes all source-of-truth evidence into
-`tmp/mejepa_research_runs/<run_id>/`.
+gridworld_5x5, O*NET-derived career_taxonomy, career same-seed
+reproducibility, and the full career A0-A5 ablation matrix. It writes all
+source-of-truth evidence into `tmp/mejepa_research_runs/<run_id>/`.
 
 Expected top-level files:
 
@@ -65,6 +68,7 @@ Expected top-level files:
 - `reproducibility.json`;
 - `paper_tables/*.csv`.
 - `plots/*.svg`.
+- `generated_fixtures/onet_30_2/*`.
 
 ## Manual Spot Checks
 
@@ -80,7 +84,14 @@ jq '{status, readback_counts:(.readbacks|to_entries|map({domain:.key, verificati
 ./target/debug/context-graph dynamicjepa inspect-counts \
   --db "tmp/mejepa_research_runs/$RUN_ID/dbs/${RUN_ID}_career_taxonomy_rocksdb" \
   --json
+
+jq '{source:.sources[0], local_fixture_sha256, source_manifest_sha256}' \
+  "tmp/mejepa_research_runs/$RUN_ID/data_manifest.json"
 ```
+
+Do not run multiple `inspect-cf` commands against the same RocksDB path in
+parallel. RocksDB lock failures are expected and useful diagnostics, but manual
+source-of-truth inspection should be sequential for one DB.
 
 ## Gate 2 - Existing Runtime Controls
 

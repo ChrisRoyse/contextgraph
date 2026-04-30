@@ -7,13 +7,24 @@ recruiting records are not available.
 
 Preferred public sources:
 
-- O*NET occupation/skills/work activities database.
-- ESCO occupations and skills classifications.
+- O*NET 30.2 occupation, job zone, skill, and related-occupation database.
+- ESCO occupations and skills classifications as a later crosswalk/replication
+  source.
 - Optional public career trajectory datasets only if license and provenance are
   acceptable and recorded.
 
 The smoke harness must record source URLs, license text/hash, local file hash,
 row counts, and allowed-use notes in `data_manifest.json`.
+
+Current implemented source:
+
+- `tmp/onet_probe/db_30_2_text.zip`, downloaded from the O*NET Resource Center;
+- required ZIP members: `Occupation Data.txt`, `Job Zones.txt`, `Skills.txt`,
+  and `Related Occupations.txt`;
+- generated smoke rows: 120;
+- selected source occupation rows with complete data: 218;
+- selected related-occupation edges: 330;
+- source occupation rows in O*NET 30.2: 1016.
 
 ## Domain ID
 
@@ -34,8 +45,8 @@ One event represents a subject or synthetic public-taxonomy trajectory step:
   "step": 0,
   "source": {
     "dataset": "onet",
-    "license": "recorded_in_manifest",
-    "source_hash": "..."
+    "license": "O*NET 30.2 Database CC BY 4.0",
+    "source_hash": "sha256:<source_zip_sha256>"
   },
   "state": {
     "occupation_code": "15-1252.00",
@@ -153,6 +164,12 @@ The public taxonomy graph walk is controlled but not a mock if it is generated
 from source-taxonomy rows, persisted through the real DynamicJEPA pipeline, and
 the generator/source hashes are recorded.
 
+The current generator starts at O*NET-SOC `15-1252.00` Software Developers and
+walks the core computer-occupation related graph. Each generated row records a
+stable source ZIP hash in the event and a per-edge hash in
+`career_taxonomy_onet_walk.csv`, so the same transition can be traced back to
+the local O*NET ZIP and generated walk evidence.
+
 ## Edge Cases
 
 Required:
@@ -167,4 +184,3 @@ Required:
 
 Use "career taxonomy benchmark" for this domain. Reserve "ME-JEPA on real career
 trajectories" for a run with licensed subject-level data and privacy gate FSV.
-

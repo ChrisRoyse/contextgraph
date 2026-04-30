@@ -142,6 +142,24 @@ Columns:
 - Career taxonomy transition graph sample.
 - Source-of-truth evidence diagram showing DB rows and artifact hashes.
 
+Current generated smoke artifacts:
+
+- `paper_tables/table_runtime.csv`;
+- `paper_tables/table_prediction_metrics.csv`;
+- `paper_tables/table_ablation.csv`;
+- `paper_tables/table_auditability.csv`;
+- `paper_tables/table_edge_cases.csv`;
+- `paper_tables/table_data_sources.csv`;
+- `paper_tables/table_domain_runtime_coverage.csv`;
+- `paper_tables/table_single_gpu_feasibility.csv`;
+- `plots/prediction_val_mse.svg`;
+- `plots/career_ablation_val_mse.svg`;
+- `plots/plot_manifest.json`.
+
+The O*NET smoke bundle `20260430T_onet30_demo_fsv_v11` writes all of these
+from persisted bundle data. Publication styling can change later, but the
+numbers must continue to come from the generated bundle tables.
+
 ## Statistical Reporting
 
 For smoke runs, one seed is enough only to catch integration errors.

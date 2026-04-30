@@ -9,7 +9,10 @@ The implemented one-command harness is:
 ```bash
 CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
   --run-id "$RUN_ID" \
+  --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
+  --onet-text-zip tmp/onet_probe/db_30_2_text.zip \
+  --system-specs docs2/systemspecs.md \
   --json
 ```
 
@@ -147,7 +150,7 @@ Source of truth:
 
 Pass criteria:
 
-- 10-50 events ingest for smoke;
+- 120 O*NET-derived events ingest for the current real-source smoke tier;
 - no unexpected extra JSON fields;
 - every event carries provenance/license fields;
 - decoded sample rows match expected career fixture values.
@@ -253,6 +256,9 @@ Pass criteria:
 
 - counter, gridworld, career, career same-seed reproducibility, and career
   A0-A5 ablations all pass real verifiers;
+- `data_manifest.json` records O*NET 30.2 source URLs, source ZIP hash,
+  generated fixture hash, generated walk hash, selected occupation count, and
+  selected related-edge count;
 - same-seed career metric deltas are zero within `1e-6`;
 - all artifact registry hashes equal recomputed file hashes;
 - generated paper tables exist and trace to bundle JSON paths;
@@ -273,6 +279,15 @@ Pass criteria:
 - every ablation has a run manifest, metrics, artifact hash, and FSV readback;
 - table rows are generated automatically;
 - failed ablations are recorded as failed, not omitted.
+
+Implemented smoke ablations:
+
+- A0 taxonomy-only;
+- A1 taxonomy + skill vector + action conditioning;
+- A2 taxonomy + skill vector + transition distance;
+- A3 no-action predictor with persisted `ignore_action=true`;
+- A4 pairwise occupation/action features;
+- A5 VICReg weights set to zero.
 
 ## Gate 10 - Reproducibility Details
 
