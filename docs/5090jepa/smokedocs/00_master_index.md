@@ -86,7 +86,7 @@ CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
 ```
 
 The latest fully verified bundle is
-`tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v11`. It uses real O*NET
+`tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12`. It uses real O*NET
 30.2 taxonomy rows to generate 120 career events, then verifies counter_world,
 gridworld_5x5, career_taxonomy, same-seed reproducibility, and career A0-A5
 ablations with RocksDB and artifact readbacks.

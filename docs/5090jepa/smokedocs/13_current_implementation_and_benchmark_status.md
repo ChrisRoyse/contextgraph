@@ -2,52 +2,41 @@
 
 Status date: 2026-04-30.
 
-This document records the first implemented 5090 ME-JEPA research-smoke slice
-after the planning docs. It is intentionally evidence-oriented: every result
-below points at a physical DB path, artifact root, or evidence directory.
+This is the current source-of-truth status for the 5090 ME-JEPA research demo.
+The implementation is ready for a paper-small dry run after one more operator
+choice: how large to make the O*NET-derived run.
 
 ## Implemented Surface
 
-Added career-domain smoke support to the DynamicJEPA runtime:
+DynamicJEPA now has a complete research-smoke path:
 
-- `dynamicjepa verify-career-taxonomy`
-- `dynamicjepa research-smoke`
-- `configs/dynamicjepa/domain_packs/career_taxonomy.v1.toml`
-- `configs/dynamicjepa/verification/career_taxonomy_smoke.jsonl`
-- career edge fixtures:
-  - empty input;
-  - missing source license/provenance;
-  - invalid action;
-  - wrong skill-vector dimension;
-  - out-of-bounds `job_zone`.
-- `configs/dynamicjepa/verification/career_taxonomy_train_config.json`
-- `configs/dynamicjepa/verification/career_taxonomy_data_manifest.json`
+- `dynamicjepa verify-counter-world`;
+- `dynamicjepa verify-gridworld`;
+- `dynamicjepa verify-career-taxonomy`;
+- `dynamicjepa research-smoke`;
+- O*NET 30.2-backed career fixture generation from the real text ZIP;
+- immutable research bundles under `tmp/mejepa_research_runs/<run_id>/`;
+- per-domain RocksDB source-of-truth DBs;
+- generated paper tables and SVG smoke plots;
+- career same-seed reproducibility;
+- career ablations A0-A5;
+- wrapper fail-closed validation for missing O*NET source, invalid run IDs,
+  duplicate run IDs, custom event counts without O*NET, and bad O*NET paths.
 
-Runtime support added:
+The O*NET generator reads these real source files from the ZIP:
 
-- vector instruments for fixed-dimension skill vectors;
-- adapter numeric min/max checks for vector components;
-- career `bounds_check` planning guard for `job_zone`/`move` schemas;
-- career utility score based on bounded predicted `job_zone` minus uncertainty.
-- immutable research bundle wrapper with environment capture, git state,
-  command log JSONL, per-domain DBs, decoded CF readbacks, artifact hash
-  readbacks, reproducibility, ablation, and generated paper tables.
-- full career ablation matrix A0-A5 with generated domain-pack/config/fixture
-  variants and independent RocksDB readback.
-- target-encoder surprise comparison, matching the JEPA training objective.
-- no-action ablation support through persisted `model.predictor.ignore_action`
-  with zeroed action vectors during training, prediction, and surprise
-  observation encoding.
+- `Occupation Data.txt`;
+- `Job Zones.txt`;
+- `Skills.txt`;
+- `Related Occupations.txt`.
 
-The existing real CLI FSV test now covers:
-
-- counter_world;
-- gridworld_5x5;
-- career_taxonomy.
+It starts from `15-1252.00` Software Developers, restricts the smoke walk to
+core computer occupations, writes generated fixtures into the run bundle, and
+records the source ZIP hash plus per-edge walk evidence.
 
 ## Environment Evidence
 
-Observed local hardware/software:
+Observed on 2026-04-30:
 
 | Item | Observed |
 | --- | --- |
@@ -58,141 +47,81 @@ Observed local hardware/software:
 | CUDA | 13.2, V13.2.78 |
 | Rust | rustc 1.95.0 |
 | Cargo | cargo 1.95.0 |
+| Kernel | Linux 6.6.87.2-microsoft-standard-WSL2 |
+| RAM | 110GiB visible to WSL2 |
 
-## Latest Manual FSV Runs
+`docs2/systemspecs.md` is hashed into every research-smoke bundle.
 
-### Counter World
-
-Command:
-
-```bash
-CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa verify-counter-world \
-  --db /tmp/mejepa-counter-smoke-20260430T145900Z \
-  --fixtures-root configs/dynamicjepa \
-  --artifact-root /tmp/mejepa-counter-artifacts-20260430T145900Z \
-  --evidence-root tmp/mejepa_research_runs/20260430T145900Z_counter_verify \
-  --json
-```
-
-Evidence:
-
-- DB: `/tmp/mejepa-counter-smoke-20260430T145900Z`
-- Artifact root: `/tmp/mejepa-counter-artifacts-20260430T145900Z`
-- Evidence directory:
-  `tmp/mejepa_research_runs/20260430T145900Z_counter_verify/e6c098e2-c215-472a-a42f-3c050b958a08`
-- Verification run: `e6c098e2-c215-472a-a42f-3c050b958a08`
-- Status: passed
-
-Key counts:
-
-| CF | Count |
-| --- | ---: |
-| `dj_raw_events` | 62 |
-| `dj_latent_panels` | 60 |
-| `dj_dataset_shards` | 3 |
-| `dj_training_runs` | 1 |
-| `dj_model_artifacts` | 1 |
-| `dj_predictions` | 6 |
-| `dj_plan_traces` | 1 |
-| `dj_guard_decisions` | 5 |
-| `dj_surprise_events` | 1 |
-| `dj_verification_runs` | 1 |
-
-Metrics:
-
-| Metric | Value |
-| --- | ---: |
-| params | 480 |
-| train rows | 41 |
-| val rows | 12 |
-| test rows | 6 |
-| val latent MSE | 0.004330990884665671 |
-| val latent cosine | 0.9996336712676964 |
-| test latent MSE | 0.013100919986046714 |
-| test latent cosine | 0.9991602338714566 |
-
-### Gridworld 5x5
+## Latest Full O*NET Smoke FSV
 
 Command:
 
 ```bash
-CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa verify-gridworld \
-  --db /tmp/mejepa-grid-smoke-20260430T150020Z \
+RUN_ID=20260430T_onet30_demo_fsv_v12
+CUDA_COMPUTE_CAP=120 target/debug/context-graph dynamicjepa research-smoke \
+  --run-id "$RUN_ID" \
+  --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
-  --artifact-root /tmp/mejepa-grid-artifacts-20260430T150020Z \
-  --evidence-root tmp/mejepa_research_runs/20260430T150020Z_grid_verify \
+  --purpose smoke \
+  --onet-text-zip tmp/onet_probe/db_30_2_text.zip \
+  --system-specs docs2/systemspecs.md \
   --json
 ```
 
-Evidence:
+Bundle source of truth:
 
-- DB: `/tmp/mejepa-grid-smoke-20260430T150020Z`
-- Artifact root: `/tmp/mejepa-grid-artifacts-20260430T150020Z`
-- Evidence directory:
-  `tmp/mejepa_research_runs/20260430T150020Z_grid_verify/4229ec40-09c1-4127-ac96-a7e9d08d8359`
-- Verification run: `4229ec40-09c1-4127-ac96-a7e9d08d8359`
-- Status: passed
+- bundle: `tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12`;
+- RocksDB root: `tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12/dbs`;
+- artifact root: `tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12/artifacts`;
+- FSV evidence root: `tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12/fsv_evidence`;
+- generated O*NET fixtures:
+  `tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12/generated_fixtures/onet_30_2`.
 
-Key counts:
+Run result:
 
-| CF | Count |
+| Item | Value |
 | --- | ---: |
-| `dj_raw_events` | 8002 |
-| `dj_latent_panels` | 8000 |
-| `dj_trajectories` | 1000 |
-| `dj_dataset_shards` | 3 |
-| `dj_training_runs` | 1 |
-| `dj_model_artifacts` | 1 |
-| `dj_predictions` | 6 |
-| `dj_plan_traces` | 1 |
-| `dj_guard_decisions` | 5 |
-| `dj_verification_runs` | 1 |
+| status | passed |
+| command count | 78 |
+| total elapsed ms | 169132 |
+| artifact hash rows | 9 |
+| edge case rows | 11 |
+| ablation rows | 6 |
+| career events | 120 |
+| selected O*NET occupations | 218 |
+| selected O*NET related edges | 330 |
+| O*NET source occupations | 1016 |
 
-Metrics:
+O*NET source evidence:
 
-| Metric | Value |
-| --- | ---: |
-| params | 16960 |
-| train rows | 4977 |
-| val rows | 1330 |
-| test rows | 693 |
-| val latent MSE | 0.039493253560132675 |
-| val latent cosine | 0.9944826529322832 |
-| val action contrast | 0.9977443609022556 |
-| test latent MSE | 0.03902848705576137 |
-| test latent cosine | 0.9946155877235692 |
+| Field | Value |
+| --- | --- |
+| source ZIP | `tmp/onet_probe/db_30_2_text.zip` |
+| source ZIP SHA-256 | `b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741` |
+| generated JSONL SHA-256 | `a789749be8987132cb98c264ca497bfe9f6287e67bf780023a360dbe6ca29a8d` |
+| generated walk CSV SHA-256 | `c837dc2b427ceab7c6eb61e9a5eb15f55c0c877c63263dec8e088a117d0459ba` |
+| source manifest SHA-256 | `7f1323cedcfdf8110e4acf251b1b9c581d3684068ecd67b2467d0aa3f43a5a58` |
+| allowed use | `research-demo` |
 
-### Career Taxonomy
+## Source-Of-Truth DB Readback
 
-Command:
+The primary career DB was independently inspected after the smoke run:
 
 ```bash
-CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa verify-career-taxonomy \
-  --db /tmp/mejepa-career-smoke-20260430T145720Z \
-  --fixtures-root configs/dynamicjepa \
-  --artifact-root /tmp/mejepa-career-artifacts-20260430T145720Z \
-  --evidence-root tmp/mejepa_research_runs/20260430T145720Z_career_verify \
+target/debug/context-graph dynamicjepa inspect-counts \
+  --db tmp/mejepa_research_runs/20260430T_onet30_demo_fsv_v12/dbs/20260430T_onet30_demo_fsv_v12_career_taxonomy_rocksdb \
   --json
 ```
 
-Evidence:
-
-- DB: `/tmp/mejepa-career-smoke-20260430T145720Z`
-- Artifact root: `/tmp/mejepa-career-artifacts-20260430T145720Z`
-- Evidence directory:
-  `tmp/mejepa_research_runs/20260430T145720Z_career_verify/5bd36a89-96b4-4b9a-9f93-2efb441981a3`
-- Verification run: `5bd36a89-96b4-4b9a-9f93-2efb441981a3`
-- Status: passed
-
-Key counts:
+Career counts:
 
 | CF | Count |
 | --- | ---: |
-| `dj_raw_events` | 19 |
-| `dj_adapter_runs` | 19 |
-| `dj_normalized_states` | 15 |
-| `dj_instrument_readings` | 150 |
-| `dj_latent_panels` | 15 |
+| `dj_raw_events` | 124 |
+| `dj_adapter_runs` | 124 |
+| `dj_normalized_states` | 120 |
+| `dj_instrument_readings` | 1200 |
+| `dj_latent_panels` | 120 |
 | `dj_trajectories` | 1 |
 | `dj_dataset_shards` | 3 |
 | `dj_training_runs` | 1 |
@@ -202,160 +131,102 @@ Key counts:
 | `dj_guard_decisions` | 5 |
 | `dj_verification_runs` | 1 |
 
-Metrics:
+Decoded readbacks confirmed:
 
-| Metric | Value |
-| --- | ---: |
-| params | 15344 |
-| train rows | 9 |
-| val rows | 3 |
-| test rows | 2 |
-| val latent MSE | 0.19737686395995757 |
-| val latent cosine | 0.7586874403033157 |
-| val action contrast | 1.0 |
-| test latent MSE | 0.2169700311804264 |
-| test latent cosine | 0.8023594464623571 |
+- normalized career state fields include `occupation_cluster`, `job_zone`,
+  `skill_vector`, `experience_years`, and `wage_band`;
+- dataset shards are `train=83`, `val=24`, `test=12` with zero leakage counts;
+- model artifact row references five hashed files including `model.safetensors`;
+- plan trace persisted five candidate actions, five guard decisions, five
+  predictions, selected action, utility scores, and model artifact hash.
 
-Artifact hash verification:
+## Prediction Metrics
 
-- all five files matched registry hashes:
-  `config.json`, `evaluation_report.json`, `manifest.json`, `metrics.json`,
-  `model.safetensors`.
+From `paper_tables/table_prediction_metrics.csv`:
 
-Edge-case evidence:
+| Domain | Train | Val | Test | Params | Val MSE | Val Cosine | Test MSE | Test Cosine |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| counter_world | 41 | 12 | 6 | 480 | 0.004330990884665671 | 0.9996336712676964 | 0.013100919986046714 | 0.9991602338714566 |
+| gridworld_5x5 | 4977 | 1330 | 693 | 16960 | 0.03936942384623141 | 0.9950110445426108 | 0.04023547898409154 | 0.9949794096655592 |
+| career_taxonomy | 83 | 24 | 12 | 15344 | 0.17999517062789205 | 0.8776115717741934 | 0.25307116609684355 | 0.867371052118299 |
 
-| Edge | Expected Delta |
-| --- | --- |
-| empty input | raw +0, adapter +0, normalized +0, transition +0, audit +1 |
-| missing source license | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
-| invalid action | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
-| wrong skill-vector dimension | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
-| out-of-bounds job zone | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
+## Career Ablations
 
-## Research-Smoke Wrapper FSV
+From `paper_tables/table_ablation.csv`:
 
-Command:
+| ID | Panel | Action | Pairwise | VICReg | Val MSE | Val Cosine | Test MSE | Test Cosine |
+| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| A0 | taxonomy only | yes | no | yes | 0.07541437962770774 | 0.9745100258571918 | 0.15218315756551268 | 0.9637773457224168 |
+| A1 | taxonomy + skills | yes | no | yes | 0.17999517062789205 | 0.8776115717741934 | 0.25307116609684355 | 0.867371052118299 |
+| A2 | taxonomy + skills + transition | yes | no | yes | 0.07861760961555968 | 0.9584134219819948 | 0.2269089035423139 | 0.9097942446694102 |
+| A3 | A2 | no | no | yes | 0.35150993421354887 | 0.7115692482591077 | 0.6428963516399238 | 0.5567848258865903 |
+| A4 | A2 + pairwise | yes | yes | yes | 0.07653267888245231 | 0.9316788348516672 | 0.11159787261840416 | 0.9196961741053704 |
+| A5 | A2 | yes | no | no | 0.07947118619845824 | 0.91059956073034 | 0.19526649207584376 | 0.8155035850933209 |
 
-```bash
-CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
-  --run-id 20260430T_smokedocs_full_matrix_fsv_v4 \
-  --run-root tmp/mejepa_research_runs \
-  --fixtures-root configs/dynamicjepa \
-  --json
-```
+The no-action ablation has an explicit generated training target of `0.50`.
+The generic career verifier reads that persisted config before applying the
+metric gate.
 
-Bundle source of truth:
+## Manual Edge FSV
 
-- Bundle:
-  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4`
-- RocksDB root:
-  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/dbs`
-- Artifact root:
-  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/artifacts`
-- Verifier evidence root:
-  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/fsv_evidence`
+Career edge cases in the current bundle:
 
-Wrapper result:
-
-| Item | Value |
-| --- | ---: |
-| command log rows | 78 |
-| training metric rows | 3 |
-| artifact hash rows | 9 |
-| edge case rows | 11 |
-| ablation rows | 6 |
-| same-seed repro metric deltas | 0.0 |
-
-Readback counts recorded in `fsv_report.json` and rechecked with
-`dynamicjepa inspect-counts`:
-
-| Domain | Verification Runs | Artifacts | Predictions | Plan Traces | Guard Decisions | Surprise |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| counter_world | 1 | 1 | 6 | 1 | 5 | 1 |
-| gridworld_5x5 | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_repro | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_ablation_A0_taxonomy_only | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_ablation_A2_transition | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_ablation_A3_no_action | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_ablation_A4_pairwise | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_ablation_A5_no_vicreg | 1 | 1 | 6 | 1 | 5 | 0 |
-
-Ablation DB readback highlights:
-
-| Ablation | Instruments | Readings | Input Dim | Val MSE | Val Cosine |
+| Edge | Raw Delta | Adapter Delta | State Delta | Transition Delta | Audit Delta |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| A0 taxonomy only | 8 | 120 | 22 | 0.07929272507681613 | 0.8989859668810602 |
-| A1 base | 10 | 150 | 30 | 0.19737686395995757 | 0.7586874403033157 |
-| A2 transition | 11 | 165 | 31 | 0.07951988157148059 | 0.8350982279978277 |
-| A3 no action | 11 | 165 | 31 | 0.07769318943716391 | 0.8615845653067465 |
-| A4 pairwise | 12 | 180 | 51 | 0.0779502250590159 | 0.8361759719794662 |
-| A5 no VICReg | 11 | 165 | 31 | 0.07685959563824735 | 0.8186410244156163 |
+| empty input | 0 | 0 | 0 | 0 | 1 |
+| missing source license | 1 | 1 | 0 | 0 | 2 |
+| invalid action | 1 | 1 | 0 | 0 | 2 |
+| wrong skill-vector dimension | 1 | 1 | 0 | 0 | 2 |
+| out-of-bounds job zone | 1 | 1 | 0 | 0 | 2 |
 
-Generated tables:
+Wrapper edge cases manually verified:
 
-- `paper_tables/table_runtime.csv` - 79 lines;
-- `paper_tables/table_prediction_metrics.csv` - 4 lines;
-- `paper_tables/table_ablation.csv` - 7 lines;
-- `paper_tables/table_auditability.csv` - 10 lines;
-- `paper_tables/table_edge_cases.csv` - 12 lines;
-- `paper_tables/table_data_sources.csv` - 2 lines.
-- `paper_tables/table_domain_runtime_coverage.csv` - 10 lines;
-- `paper_tables/table_single_gpu_feasibility.csv` - 2 lines.
+| Edge | Source-Of-Truth Outcome |
+| --- | --- |
+| `paper_small` without `--onet-text-zip` | typed `VALIDATION`, no bundle dir created |
+| `--career-event-count` without `--onet-text-zip` | typed `VALIDATION`, no bundle dir created |
+| bad O*NET ZIP path | typed `VALIDATION`, failed bundle with `run_manifest.json` and `fsv_report.json` |
 
-Generated plots:
+## Root-Cause Fixes Closed
 
-- `plots/prediction_val_mse.svg` - 1620 bytes;
-- `plots/career_ablation_val_mse.svg` - 1331 bytes;
-- `plots/plot_manifest.json` - status `rendered`.
-
-Manual wrapper edge tests:
-
-| Edge | Before State | After State |
-| --- | --- | --- |
-| invalid run id `../bad_smoke_edge` | no matching bundle dirs | typed `VALIDATION`, no bundle dir created |
-| duplicate run id | manifest SHA-256 `70072d343be37d09f8d0418aad25027a6b1e328fbfb43e84d1981e6340faa4cf` | same manifest SHA-256, typed `VALIDATION` |
-| missing fixtures root | run dir absent | failed bundle with `run_manifest.json` and `fsv_report.json`; status `failed` |
-
-Root-cause fix found during FSV:
-
-- The first A0 ablation trained to the generic smoke target but produced a
-  known-target surprise (`cosine=0.4463`, threshold `0.5`). Fixed by giving the
-  weaker A0 panel a stricter generated training target.
-- A2 exposed a JEPA consistency bug: training evaluated predictions against the
-  target encoder, while surprise encoded observations with the online encoder.
-  Fixed by using the persisted target encoder for surprise observation vectors.
-- A4 pairwise fixture generation initially failed on the intentionally invalid
-  action edge because the derived pair contained `unsupported_move`. Fixed by
-  keeping the invalid action as the edge trigger while deriving a schema-valid
-  neutral pair for that state feature.
+- Removed undeclared O*NET event fields from adapter input and moved per-edge
+  provenance to the generated walk CSV.
+- Stabilized event-level source hashes so the generated walk compiles into one
+  trajectory instead of one trajectory per transition.
+- Scaled generated `experience_years` to remain within the domain max of 40.0.
+- Restricted the O*NET smoke walk to core computer occupations and required the
+  Software Developers start node.
+- Prioritized occupation title semantics before description semantics during
+  cluster classification.
+- Added explicit no-action ablation training target and verifier config
+  readback.
+- Moved `--career-event-count` without O*NET validation before bundle creation.
 
 ## Automated Test Evidence
 
-Commands:
+Commands to run before promotion:
 
 ```bash
-cargo test -p context-graph-cli --test dynamicjepa_phase10_fsv --all-features -- --nocapture
+cargo check -p context-graph-cli --all-features
 cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
 ```
 
-Result:
+The integration test uses the real CLI binary, real RocksDB stores, the real
+O*NET 30.2 ZIP, and real CUDA training. Additional fail-closed tests assert
+that paper runs without O*NET and custom event counts without O*NET do not
+create a bundle source of truth.
 
-- Phase 10 real CLI FSV test passed;
-- domains covered: counter_world, gridworld_5x5, career_taxonomy;
-- finished in 95.91 seconds after test binary build;
-- research-smoke real CLI FSV test passed;
-- wrapper test finished in 176.57 seconds;
-- no mocks were used.
+Latest result:
 
-## Current Remaining Work
+- `cargo check -p context-graph-cli --all-features`: passed;
+- `cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv
+  --all-features -- --nocapture`: 3 passed, 0 failed, 177.74 seconds.
 
-The smoke harness is implemented and passing. Remaining work before a full
-paper run:
+## Remaining Work Before Full Demo Run
 
-- finalize paper figure styling/dimensions if the generated SVG smoke plots are
-  not the desired publication layout;
-- add larger public-taxonomy/career benchmark data if a licensed source is
-  selected;
-- keep controlled taxonomy results clearly separated from claims about real
-  recruiting histories.
+- Choose `paper_small` event count, starting at 1000 O*NET-derived events.
+- Run at least three seeds for the career benchmark if runtime allows.
+- Keep the paper claim scoped to an auditable public-taxonomy benchmark, not
+  real recruiting prediction.
+- Decide whether ESCO is added as a replication/crosswalk source after the
+  O*NET paper-small run.

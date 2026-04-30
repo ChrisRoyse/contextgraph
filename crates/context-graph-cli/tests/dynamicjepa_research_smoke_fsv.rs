@@ -1,7 +1,7 @@
 //! 5090 ME-JEPA research-smoke bundle full-state verification.
 //!
-//! This invokes the real CLI binary, real RocksDB stores, real checked-in
-//! DynamicJEPA fixtures, real CUDA training, and then independently inspects the
+//! This invokes the real CLI binary, real RocksDB stores, the real O*NET-backed
+//! career smoke source, real CUDA training, and then independently inspects the
 //! persisted bundle and DB source-of-truth state.
 
 use std::fs;
@@ -142,6 +142,12 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     if run_dir.exists() {
         fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
     }
+    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
+    assert!(
+        onet_zip.exists(),
+        "real O*NET 30.2 text ZIP is required for research smoke FSV: {}",
+        onet_zip.display()
+    );
 
     let result = run_ok(&[
         "dynamicjepa",
@@ -154,6 +160,12 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         root.join("configs/dynamicjepa")
             .to_str()
             .expect("fixtures path utf8"),
+        "--onet-text-zip",
+        onet_zip.to_str().expect("O*NET ZIP path utf8"),
+        "--system-specs",
+        root.join("docs2/systemspecs.md")
+            .to_str()
+            .expect("system specs path utf8"),
         "--json",
     ]);
     assert_eq!(result["status"], "ok");

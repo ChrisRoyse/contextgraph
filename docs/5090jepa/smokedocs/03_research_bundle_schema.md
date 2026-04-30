@@ -31,7 +31,7 @@ Implemented smoke entry point:
 
 ```bash
 CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
-  --run-id 20260430T_onet30_demo_fsv_v11 \
+  --run-id 20260430T_onet30_demo_fsv_v12 \
   --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
   --onet-text-zip tmp/onet_probe/db_30_2_text.zip \

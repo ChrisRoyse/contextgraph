@@ -156,7 +156,7 @@ Current generated smoke artifacts:
 - `plots/career_ablation_val_mse.svg`;
 - `plots/plot_manifest.json`.
 
-The O*NET smoke bundle `20260430T_onet30_demo_fsv_v11` writes all of these
+The O*NET smoke bundle `20260430T_onet30_demo_fsv_v12` writes all of these
 from persisted bundle data. Publication styling can change later, but the
 numbers must continue to come from the generated bundle tables.
 

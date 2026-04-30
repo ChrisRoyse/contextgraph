@@ -80,7 +80,7 @@ Current O*NET smoke result:
 - career panel dimensions: 30 input, 30 target, 5 action;
 - career trainable params: 15344;
 - career splits: 83 train, 24 validation, 12 test;
-- complete research-smoke wall time: 210385 ms;
+- complete research-smoke wall time: 169132 ms;
 - command count: 78;
 - artifact hash rows: 9;
 - edge-case rows: 11;

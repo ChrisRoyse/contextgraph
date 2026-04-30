@@ -36,3 +36,38 @@ Device Name	NVIDIA GeForce RTX 5090
 Compute Units	170
 Maximum Frequency	2467 MHz
 Device Memory	31.8 GB
+
+# Local ME-JEPA Runtime Observation - 2026-04-30
+
+The 5090 ME-JEPA research-smoke harness hashes this file into
+`environment.json` so paper runs can cite both the original host specification
+and the active Linux/WSL runtime observation.
+
+| Component | Observed |
+| --- | --- |
+| GPU | NVIDIA GeForce RTX 5090 |
+| Driver | 596.21 |
+| Compute capability | 12.0 |
+| VRAM | 32607 MiB |
+| CUDA compiler | 13.2, V13.2.78 |
+| Rust | rustc 1.95.0 |
+| Cargo | cargo 1.95.0 |
+| Kernel | Linux cabdru 6.6.87.2-microsoft-standard-WSL2 |
+| Memory visible to Linux | 110GiB |
+| Swap visible to Linux | 32GiB |
+
+Command evidence:
+
+```text
+nvidia-smi --query-gpu=name,driver_version,compute_cap,memory.total --format=csv,noheader
+NVIDIA GeForce RTX 5090, 596.21, 12.0, 32607 MiB
+
+nvcc --version
+Cuda compilation tools, release 13.2, V13.2.78
+
+rustc --version
+rustc 1.95.0 (59807616e 2026-04-14)
+
+cargo --version
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+```
