@@ -386,6 +386,7 @@ pub fn train_tiny_jepa(
         .max(1);
     let mut converged = false;
     for epoch in 0..config.schedule.epochs {
+        let epoch_indices = shuffled_epoch_indices(&train_indices, config.seed, epoch as u64);
         let mut epoch_loss = 0.0;
         let mut epoch_mse = 0.0;
         let mut epoch_var = 0.0;
@@ -395,7 +396,7 @@ pub fn train_tiny_jepa(
             apply_lr_schedule(&mut opt, config, global_step);
             let batch = build_batch_tensors(
                 examples,
-                &train_indices,
+                &epoch_indices,
                 step * config.schedule.batch_size,
                 config.schedule.batch_size,
                 input_dim,
@@ -612,6 +613,22 @@ fn split_indices(examples: &[TrainExample], split: &str) -> Vec<usize> {
         .enumerate()
         .filter_map(|(idx, example)| (example.split_name == split).then_some(idx))
         .collect()
+}
+
+fn shuffled_epoch_indices(indices: &[usize], seed: u64, epoch: u64) -> Vec<usize> {
+    let mut out = indices.to_vec();
+    if out.len() <= 1 {
+        return out;
+    }
+    let mut state = seed ^ epoch.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    for idx in (1..out.len()).rev() {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let swap_idx = (state as usize) % (idx + 1);
+        out.swap(idx, swap_idx);
+    }
+    out
 }
 
 fn ensure_stopping_split_available(
