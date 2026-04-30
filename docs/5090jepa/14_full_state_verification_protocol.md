@@ -17,9 +17,9 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 7/8)
+## 2. Current Implemented FSV Scope (Phase 7/8/9)
 
-Phase 7 verifies the full real source-of-truth path through domain-pack registration, JSONL event ingestion, adapter runs, normalized records, instrument readings, latent panels, trajectory rows, one-step dataset shards, CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 extends the same real path through prediction, planning, guard decisions, and surprise recording. Both current FSV tests use a generated 60-event counter_world fixture so the trainer has enough train rows to converge without fitting on validation data.
+Phase 7 verifies the full real source-of-truth path through domain-pack registration, JSONL event ingestion, adapter runs, normalized records, instrument readings, latent panels, trajectory rows, one-step dataset shards, CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 extends the same real path through prediction, planning, guard decisions, and surprise recording. Phase 9 exposes the operational Phase 3-8 surface through MCP tool definitions, strict DTOs, handlers, dispatch entries, and capability matrix runtime state. Current Phase 7/8/9 FSV tests use a generated 60-event counter_world fixture so the trainer has enough train rows to converge without fitting on validation data.
 
 The current completed source-of-truth surface is:
 
@@ -78,6 +78,12 @@ Current evidence:
 - Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, and `dj_audit_log=194`.
 - Phase 8 decoded proof includes `get-prediction`, `get-plan-trace --include-predictions --include-guards`, `get-surprise`, and direct `ldb dump --count_only` counts against `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
 - Phase 8 edge proof includes selected counter_world hypothetical action `delta=2`, observed outcome/panel mismatch failing with `VALIDATION`, and corrupt artifact failures for `predict`, `plan`, and `record-surprise` leaving prediction/plan/surprise/audit counts unchanged.
+- Current Phase 9 MCP evidence: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv.json`.
+- Current Phase 9 MCP test: `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs`.
+- Phase 9 calls all 27 DynamicJEPA tools through real MCP `tools/call`, verifies 137 total tool definitions with the `llm` feature, trains on CUDA, then independently opens the RocksDB source of truth and reads counts plus decoded rows from `dj_predictions`, `dj_surprise_events`, and `dj_model_artifacts`.
+- Phase 9 final observed source-of-truth counts include `dj_domain_packs=1`, `dj_raw_events=61`, `dj_latent_panels=60`, `dj_trajectories=1`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=6`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=1`, `dj_actions=66`, `dj_outcomes=61`, `dj_transitions=61`, and `dj_audit_log=193`.
+- Phase 9 physical `ldb dump --count_only` proof matched decoded counts for `dj_domain_packs`, `dj_predictions`, `dj_surprise_events`, `dj_model_artifacts`, `dj_raw_events`, `dj_latent_panels`, `dj_training_runs`, and `dj_plan_traces`.
+- Phase 9 edge proof includes empty id rejected before storage, duplicate domain registration leaving counts unchanged, invalid CF leaving counts unchanged, and missing artifact prediction leaving prediction counts unchanged.
 - Predecessor tests remain required: `dynamicjepa_phase3_fsv.rs`, `dynamicjepa_phase4_fsv.rs`, `dynamicjepa_phase5_fsv.rs`, and `dynamicjepa_phase6_fsv.rs`.
 
 ## 3. Required Fixtures
@@ -372,7 +378,7 @@ edge_*.json                      # one per edge case with before/after counts + 
 artifact_files_recomputed_hashes.json
 ```
 
-The future `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Current Phase 7/8 CLI FSV does not yet write `dj_verification_runs`; it writes JSON evidence under `tmp/5090jepa_evidence/phase7/` and `tmp/5090jepa_evidence/phase8/` instead.
+The future `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Current Phase 7/8/9 FSV does not yet write `dj_verification_runs`; it writes JSON evidence under `tmp/5090jepa_evidence/phase7/`, `tmp/5090jepa_evidence/phase8/`, and `tmp/5090jepa_evidence/phase9/` instead.
 
 ## 11. Operator Sign-Off Checklist (Per Run)
 

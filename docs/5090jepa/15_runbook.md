@@ -511,7 +511,60 @@ mkdir -p "$DJ_ARTIFACTS"
 
 Expected: domain pack count = 2, training runs = 2, artifacts = 2, verification runs = 2 — all in one DB.
 
-## 8. Future Phase 9 Capability Matrix Check
+## 8. Phase 9 MCP FSV And Capability Matrix Check
+
+Run the in-process Phase 9 MCP FSV first. It calls all 27 DynamicJEPA tools through real `tools/call`, trains on CUDA, inspects the real RocksDB source of truth, and writes the evidence bundle under `tmp/5090jepa_evidence/phase9/`.
+
+```bash
+cargo test -p context-graph-mcp --all-features test_dynamicjepa_phase9_mcp_full_state_verification -- --nocapture
+```
+
+Expected Phase 9 evidence:
+
+```text
+tmp/5090jepa_evidence/phase9/mcp_phase9_fsv.json
+tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/
+```
+
+Independent CLI readback against the Phase 9 source-of-truth DB:
+
+```bash
+./target/debug/context-graph dynamicjepa inspect-counts \
+  --db tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_mcp_rocksdb \
+  --json | jq '{status, db_path, counts}'
+```
+
+Physical RocksDB row-count proof can be reproduced with:
+
+```bash
+ldb --db=tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_mcp_rocksdb \
+  --column_family=dj_predictions dump --count_only
+ldb --db=tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_mcp_rocksdb \
+  --column_family=dj_model_artifacts dump --count_only
+ldb --db=tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_mcp_rocksdb \
+  --column_family=dj_surprise_events dump --count_only
+```
+
+Expected Phase 9 source-of-truth highlights:
+
+```text
+tool definitions 137 with llm, 133 without
+dynamicjepa tool count 27
+dj_domain_packs 1
+dj_raw_events 61
+dj_latent_panels 60
+dj_trajectories 1
+dj_dataset_shards 3
+dj_training_runs 1
+dj_model_artifacts 1
+dj_predictions 6
+dj_guard_decisions 5
+dj_plan_traces 1
+dj_surprise_events 1
+dj_audit_log 193
+```
+
+Optional daemon-level check after creating a populated DB:
 
 ```bash
 # Spawn a temp MCP server pointing at the shared demo DB:
@@ -529,7 +582,7 @@ curl -sS -X POST http://127.0.0.1:3199 -d '{"jsonrpc":"2.0","id":2,"method":"too
 kill $MCP_PID
 ```
 
-Expected: `tools/list` length = 136 (110 base + 26 dynamicjepa) with `llm` feature, or 132 without. `dynamicjepa.enabled = true` and CF counts populated.
+Expected: `tools/list` length = 137 (110 base + 27 dynamicjepa) with `llm` feature, or 133 without. `dynamicjepa.enabled = true` and CF counts populated.
 
 ## 9. Test Suite
 
@@ -542,10 +595,8 @@ cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --release --all-fe
 cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase7_fsv --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase8_fsv --release --all-features
+cargo test -p context-graph-mcp --all-features test_dynamicjepa_phase9_mcp_full_state_verification -- --nocapture
 cargo test -p context-graph-dynamicjepa --release --all-features
-
-# Future phases, once MCP DynamicJEPA surface exists:
-# cargo test -p context-graph-mcp dynamicjepa --release --all-features
 
 # Full workspace if you have time:
 cargo test --workspace --release --all-features

@@ -52,7 +52,7 @@ fn test_total_tool_count_and_no_duplicates() {
 }
 ```
 
-(Numbers match the spec doc baseline. If the baseline drifts before Phase 9, update this assertion at audit time.)
+(Numbers match the current Phase 9 implementation baseline. If the baseline drifts, update this assertion during the audit that changes the tool set.)
 
 ## 2. Tool Definitions Module
 
@@ -218,12 +218,12 @@ Extend `crates/context-graph-mcp/src/handlers/tools/capability_tools.rs::get_cap
   ],
   "model_artifact_count": 2,
   "training_run_count": 2,
-  "verification_run_count": 2,
-  "latest_verification": { "test_name": "verify-gridworld", "status": "Passed", "completed_at_unix_ms": ... }
+  "verification_run_count": 0,
+  "latest_verification": null
 }
 ```
 
-The capability matrix is the single MCP call an operator (or another agent) uses to confirm DynamicJEPA is alive, configured, and has run.
+The capability matrix is the single MCP call an operator (or another agent) uses to confirm DynamicJEPA is alive, configured, and has run. `verification_run_count` remains `0` until the future Phase 10 bundled verification commands persist `VerificationRunRecord` rows.
 
 ## 7. JSON Output Contract
 
@@ -254,9 +254,9 @@ Every DynamicJEPA tool definition sets `additionalProperties: false` in its JSON
 
 ## 9. Daemon Vs Standalone
 
-The demo runs CLI commands against `/tmp/5090jepa-cw-fsv` and `/tmp/5090jepa-gw-fsv`, which the operator's daemon does not own. CLI commands open the DB directly, hold the flock for the duration of the command, and release it on exit. The MCP daemon never touches the demo paths.
+CLI commands open the `--db` path directly, hold the RocksDB lock for the duration of the command, and release it on exit. DynamicJEPA MCP command tools also open the supplied `dbPath` directly for the duration of each tool call and return source-of-truth ids, before/after counts, and decoded evidence from that path.
 
-If the operator wants to call DynamicJEPA tools through the MCP server later, the daemon’s storage path would need to be the demo path (set via `CONTEXT_GRAPH_STORAGE_PATH=/tmp/5090jepa-cw-fsv` before launching the MCP server). The demo's verification harness explicitly does **not** require the MCP server to be running — every CLI subcommand is self-sufficient.
+The Phase 9 FSV uses a separate handler database for MCP dispatch plus a dedicated DynamicJEPA database path for command tools, so the server-owned store is never locked while the DynamicJEPA command runner opens the target DB. `get_capability_matrix` reports runtime counts from the MCP handler's own store; the Phase 9 FSV opens a fresh handler on the populated DynamicJEPA DB after the write path completes to verify capability runtime state against the real source-of-truth database.
 
 ## 10. Test Surface
 
