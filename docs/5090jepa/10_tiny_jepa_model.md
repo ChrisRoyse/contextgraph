@@ -4,11 +4,11 @@ The demo's predictor is intentionally small. The point is to prove the *contract
 
 The full plan's open questions doc (`docs/dynamicjepa/implementationplan/15_open_questions_decisions.md`) recommends "tiny deterministic architecture first for FSV." This file makes that concrete.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: model code is not implemented yet. Phases 4-6 now supply verified panel, trajectory, and dataset source-of-truth records that Phase 7 training will consume.
+Current implementation status as of the Phase 7 review on 2026-04-30: the CUDA-only tiny JEPA trainer is implemented in `crates/context-graph-dynamicjepa/src/model/mod.rs` and is called through `dynamicjepa train`. It consumes real `DatasetShardRecord` rows and writes real artifact files. Counter_world Phase 7 FSV passes convergence/hash checks on a generated 60-event fixture; strict shuffled-target and covariance acceptance remain open.
 
 ## 1. Architecture (Single File of Truth)
 
-Both encoder and predictor are MLPs implemented in candle. Implementation lives in `crates/context-graph-dynamicjepa/src/model/`.
+Both encoder and predictor are MLPs implemented in candle. The current implementation is a single module, `crates/context-graph-dynamicjepa/src/model/mod.rs`, with `LinearLayer`, `MlpNetwork`, and `TinyMlpJepa`. The split below is the planned long-term module shape, not the current file layout.
 
 ```
 encoder.rs       — input panel → latent embedding
@@ -27,8 +27,8 @@ Encoder(panel_dense: f32[D_in]) -> z: f32[D_z]
 D_in = panel.total_dense_dim    // counter_world: 2; gridworld: 31 (25 state + 5 action + 1 step)
 D_z  = config.model.encoder.out_dim   // 8 for counter_world, 32 for gridworld
 
-layer_0: Linear(D_in, hidden[0]) + GELU + LayerNorm
-layer_1: Linear(hidden[0], hidden[1]) + GELU + LayerNorm  // gridworld only
+layer_0: Linear(D_in, hidden[0]) + ReLU
+layer_1: Linear(hidden[0], hidden[1]) + ReLU  // gridworld only
 layer_out: Linear(hidden[-1], D_z)
 ```
 
@@ -38,8 +38,8 @@ layer_out: Linear(hidden[-1], D_z)
 Predictor(z: f32[D_z], action_dense: f32[D_a]) -> z_hat: f32[D_z]
 
 cat = concat(z, action_dense)           // shape [D_z + D_a]
-layer_0: Linear(D_z + D_a, hidden[0]) + GELU + LayerNorm
-layer_1: Linear(hidden[0], hidden[1]) + GELU + LayerNorm
+layer_0: Linear(D_z + D_a, hidden[0]) + ReLU
+layer_1: Linear(hidden[0], hidden[1]) + ReLU
 layer_out: Linear(hidden[-1], D_z)
 ```
 
@@ -98,7 +98,7 @@ AdamW (`candle-nn::optim::AdamW`) on the union of online encoder + predictor par
 | Device | `cuda:0` | `cuda:0` |
 | Seed | 42 | 42 |
 
-Counter_world has 1 train row + 1 val row, so each epoch is a single step. With batch size 2 and only one train row, the trainer pads with one repetition (acceptable for the verification toy domain — explicitly logged).
+The checked-in three-event counter_world fixture has 1 train row + 1 val row and is too small to verify train-only convergence without leakage. The current Phase 7 FSV therefore generates a deterministic 60-event counter_world fixture, compiles train/val/test shards from it, trains only on train rows, and evaluates all splits.
 
 ## 4. Training Loop (Pseudocode)
 
@@ -120,7 +120,8 @@ fn train(cfg: TrainConfig, shard: DatasetShardRecord) -> Result<TrainingArtifact
     let start = Instant::now();
     let mut metrics = Metrics::new();
     'epoch: for epoch in 0..cfg.schedule.epochs {
-        for batch in shard.iter_batches(cfg.schedule.batch_size, "train") {
+        let epoch_indices = shuffled_epoch_indices(train_indices, cfg.seed, epoch);
+        for batch in batches(epoch_indices, cfg.schedule.batch_size) {
             let z_online = online.forward(&batch.input_panels)?;
             let z_target = target.forward_no_grad(&batch.target_panels)?;
             let z_hat    = predictor.forward(&z_online, &batch.actions)?;
@@ -166,33 +167,33 @@ Steps (5)–(7) (artifact write, hash compute, registry write) live in `11_train
 | counter_world | (2→16) + (16→8) ≈ 200 | (8+1→16) + (16→8) ≈ 280 | mirror of encoder (no grad) | ≈ 480 trainable, ≈ 680 total |
 | gridworld | (31→64) + (64→64) + (64→32) ≈ 6.5K | (32+5→64) + (64→64) + (64→32) ≈ 7K | mirror of encoder (no grad) | ≈ 13.5K trainable |
 
-`tests/parameter_count_audit.rs` asserts each model is below 20K trainable params. Above that, the test fails with the actual count and a remediation pointing to this section. The point: the demo is intentionally tiny, the asserts protect against accidental architecture drift.
+The current Phase 7 FSV asserts `parameter_count_trainable == 480` for counter_world. A future gridworld model FSV should assert the gridworld count remains below 20K trainable params. Above that, the test should fail with the actual count and a remediation pointing to this section. The point: the demo is intentionally tiny, and the asserts protect against accidental architecture drift.
 
-## 6. Collapse Audits (`tests/collapse_audit.rs`)
+## 6. Collapse Audits
 
-After a successful training run, the test:
+Current Phase 7 counter_world FSV records and asserts:
 
-1. Computes `var_per_dim = var(encoder.forward(val_panels), dim=0)`. Asserts `min(var_per_dim) >= 0.5`.
-2. Computes the off-diagonal covariance Frobenius norm. Asserts `<= 0.5`.
-3. Forwards two unrelated val panels and asserts `cosine(z_a, z_b) < 0.99` (i.e. the encoder is not collapsing all inputs to a single point).
-4. Forwards a panel through online and target encoders and asserts `cosine(z_online, z_target) < 1.0` (the EMA actually lags the online encoder).
+1. `vicreg_variance_per_dim_min >= 0.5`.
+2. Validation metrics read back from `evaluation_report.json` and the `TrainingRunRecord`.
+3. Artifact files hash-verified through `get-artifact --verify-files`.
 
-If any assert fails, training has collapsed; the test fails with the actual values.
+It also records `vicreg_covariance_off_diag_frobenius`. The documented strict covariance target (`<= 0.5`) is not yet an acceptance gate because the current run records ~4.87 on the generated counter fixture. This is an open model-quality issue, not a test workaround.
 
-## 7. Leakage Audit (`tests/leakage_audit.rs`)
+## 7. Leakage Audit
 
-After a successful training run, the test:
+After a successful training run, the current FSV:
 
-1. Reloads the artifact, runs inference on every val row.
-2. Records `cosine(z_hat, z_target) -> baseline_cosine_avg`.
-3. **Shuffles** the target panel ids in the val shard, reruns inference and compares predictions to the *shuffled* targets. Records `shuffled_cosine_avg`.
-4. Asserts `baseline_cosine_avg >= 0.95 (or 0.99 for counter_world)` AND `shuffled_cosine_avg <= 0.30 (or 0.10 for counter_world)`.
+1. Trains only on rows marked `train`; validation and test rows are never included in optimizer batches.
+2. Uses a seeded `shuffled_epoch_indices` function so training order changes per epoch without relying on nondeterministic host state.
+3. Records random-init and shuffled-target baselines in `evaluation_report.json`.
 
-If shuffled cosine is anywhere near baseline, the model is reading the answer from the input — input panels include the target panel id or a near-leak feature. Halt and audit `08_adapter_and_panel_pipeline.md` step 6.
+The strict shuffled-target bound (`<= 0.10` for counter_world) is not currently passing on the monotonic 60-event fixture; the recorded `shuffled_target_cosine` remains high. Treat this as a remaining audit gap before claiming full Phase 7 model-quality acceptance.
 
 ## 8. Random-Init Baseline (`tests/random_init_audit.rs`)
 
-The test instantiates an encoder + predictor with the same architecture but **without training**, runs inference on val, and asserts:
+The current FSV instantiates an encoder + predictor with the same architecture but **without training**, runs evaluation, records `random_init_cosine`, and asserts the trained run is materially better. The latest counter_world evidence records `random_init_cosine = -0.4014871659000763`.
+
+Future stricter gates should restore the original bounds:
 
 - counter_world: `cosine_avg <= 0.10`.
 - gridworld: `cosine_avg <= 0.30`.
@@ -201,7 +202,7 @@ Both bounds are well above zero because randomly initialized linear layers can p
 
 ## 9. Determinism
 
-All random sources (data shuffling, weight init, dropout if any) are seeded from `cfg.seed`. Two runs of the same config on the same hardware produce identical loss curves and identical final artifact hashes. Training metrics are recorded to 6 significant figures; comparison in tests uses tolerance `1e-4`.
+All model-side random sources currently flow from `cfg.seed`: CUDA weight initialization plus deterministic epoch shuffling. The current FSV checks that the run converges and records artifact hashes, but it does not yet assert byte-identical artifact hashes across two independent runs.
 
 If a run is non-deterministic, the most likely cause is `cuda_graph` or `cudnn_benchmark` flags. Disable them in candle's `Device::Cuda` configuration for the demo.
 

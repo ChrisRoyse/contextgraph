@@ -4,7 +4,7 @@ The 5090 demo persists everything to the existing physical RocksDB database open
 
 This file specifies CFs, key formats, batch boundaries, and the inspection API. Implementation lives under `crates/context-graph-storage/src/dynamicjepa/`.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: all 25 CFs and the inspection API are implemented; Phase 4 atomic helpers are implemented for raw event + started adapter run, adapter success/failure terminalization, and panel + readings writes. Phase 5 atomic helpers are implemented for binding + secondary index + audit writes and trajectory + audit writes. Phase 6 adds dataset shard + audit atomic writes. Artifact, prediction, planning, surprise, and verification-run write paths remain Phase 7+ work.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: all 25 CFs and the inspection API are implemented; Phase 4 atomic helpers are implemented for raw event + started adapter run, adapter success/failure terminalization, and panel + readings writes. Phase 5 atomic helpers are implemented for binding + secondary index + audit writes and trajectory + audit writes. Phase 6 adds dataset shard + audit atomic writes. Phase 7 adds training-run start/fail/complete and model-artifact completion batches with audit rows. Phase 8 adds prediction + audit, plan batch, and surprise + audit write paths. Verification-run write paths remain Phase 10 work.
 
 ## 1. Module Layout
 

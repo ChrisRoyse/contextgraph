@@ -19,10 +19,11 @@ Decisions are locked where the demo's correctness depends on them. Where there i
 | Tests use real RocksDB under `tempfile::TempDir` | Required by R3 |
 | Hash algorithm | SHA-256 for files / payload hashes; BLAKE3-128 for short keys | SHA-256 for "audit me" hashes; BLAKE3 for performance-critical key derivation |
 | Phase 3 `get-domain` flag | `--domain-version`, not `--version` | Clap's propagated global `--version` flag reserves the short contract; using `--domain-version` avoids ambiguous parsing |
-| Phase 4 implementation location | CLI-local adapter/instrument/panel code until Phase 7 service crate exists | Keeps Phase 4 independently verifiable without prematurely creating the service crate |
+| Phase 4 implementation location | CLI-local adapter/instrument/panel code remains in the CLI; Phase 7 service crate owns training/artifacts | Keeps the verified adapter/panel behavior stable while Phase 7 adds model code |
 | Phase 4 adapter validation order | Registered schema order before mapping-table order | Edge-case FSV must identify the root invalid input field, e.g. gridworld `state.x` before mirrored outcome fields |
 | Empty JSONL behavior | Failed audit row only; no raw/adapter/normalized/readings/panels | Operation-level failure is audit-visible while preserving data CF invariants |
 | Optional failed panel slot | `slot_masks=false` with an empty vector | Explicit absence is allowed; zero-vector fallback is forbidden |
+| Phase 7 artifact verification command | `get-artifact --verify-files` | Phase 8 also verifies the same hash check through `predict`; Phase 7 keeps a direct artifact read path |
 
 ## 2. Open Questions (Demo Can Ship With Defaults; Revisit Later)
 
@@ -98,7 +99,8 @@ Brief mentions only — implementing any of these is out of demo scope.
 | --- | --- |
 | Candle/CUDA stack could regress on Blackwell | Pin `candle-core`/`candle-nn` at 0.10.2; record actual `cargo tree -p candle-core` output in evidence; surface any `Could not start backend: Runtime compute cap` in `16_…` §2.1 |
 | WSL2 CUDA passthrough flake on first kernel launch | First-call warmup before training timer; documented in `16_…` §6 |
-| Tiny model overshoots into capacity that memorizes both training rows | Counter_world only has 1 train row; assert `random_init_baseline` and `shuffled_target_baseline` per `10_…` §7–8 |
+| Tiny model quality audit is not fully closed | The three-event fixture cannot prove train-only convergence; current Phase 7 FSV uses a generated 60-event counter_world fixture. Strict shuffled-target and covariance targets remain open and are recorded in evidence rather than hidden. |
+| Gridworld Phase 7 training is unverified | Keep gridworld model FSV listed as open until `dynamicjepa_phase7_fsv.rs` or a successor trains and hash-verifies a real gridworld artifact. |
 | Operator's `data/contextgraph_data` corruption from a misconfigured demo | Demo strictly uses `/tmp/5090jepa-*` paths; environment probes refuse to start if the demo path equals the production path |
 | Concurrent CLI reads on the same RocksDB path hit the DB lock | Run Phase 3/4 inspection commands sequentially or through one long-lived process; a lock error is a real `STORAGE` failure, not something to ignore |
 | A future contributor adds an `if domain == ...` branch | `tests/universality_audit.rs` runs both packs against the same DB; CI would catch domain-specific code |

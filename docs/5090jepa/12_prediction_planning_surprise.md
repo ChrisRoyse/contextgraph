@@ -2,7 +2,7 @@
 
 After a model is trained and an artifact is registered, the demo proves that predictions, plans, and surprise events all persist independently readable rows. Planning is a recorded process, not a function call.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: prediction, planning, guard, and surprise commands are not implemented yet. The storage CFs exist, but these rows stay at zero during Phase 6 FSV.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: training and artifact hash verification are FSV-accepted, and prediction, planning, guard, and surprise command code is FSV-tested in the working tree (`predict`, `plan`, `record-surprise`, plus read commands). Phase 7 FSV leaves these rows at zero; Phase 8 FSV writes and reads them as source-of-truth rows.
 
 ## 1. Prediction
 

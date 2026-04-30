@@ -17,42 +17,32 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 6)
+## 2. Current Implemented FSV Scope (Phase 7/8)
 
-Phase 6 verifies domain-pack registration, JSONL event ingestion, adapter runs,
-normalized state/action/outcome/transition rows, instrument readings, latent
-panels, deterministic bindings, trajectory rows, one-step dataset shards, and
-physical inspection. The full model/harness protocol below remains binding for
-later phases, but the current completed source-of-truth surface is:
+Phase 7 verifies the full real source-of-truth path through domain-pack registration, JSONL event ingestion, adapter runs, normalized records, instrument readings, latent panels, trajectory rows, one-step dataset shards, CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 extends the same real path through prediction, planning, guard decisions, and surprise recording. Both current FSV tests use a generated 60-event counter_world fixture so the trainer has enough train rows to converge without fitting on validation data.
+
+The current completed source-of-truth surface is:
 
 ```bash
-export DJ_DB=/tmp/5090jepa-phase4-fsv
-rm -rf "$DJ_DB"
+export DJ_DB=tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/dynamicjepa_phase7_counter_rocksdb
+export DJ_ARTIFACTS=tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/dynamicjepa_phase7_artifacts
+rm -rf "$DJ_DB" "$DJ_ARTIFACTS"
 context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
 context-graph dynamicjepa register-domain --db "$DJ_DB" --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json
-context-graph dynamicjepa ingest-event --db "$DJ_DB" --domain counter_world --adapter json_event --file configs/dynamicjepa/verification/counter_world_happy_path.jsonl --json
+context-graph dynamicjepa ingest-event --db "$DJ_DB" --domain counter_world --adapter json_event --file <generated_60_event_counter_world.jsonl> --json
 context-graph dynamicjepa materialize-panel --db "$DJ_DB" --all-pending --domain counter_world --json
-context-graph dynamicjepa get-panel --db "$DJ_DB" --panel-id <panel-id> --include-readings --json
-context-graph dynamicjepa list-instrument-readings --db "$DJ_DB" --event-id <event-id> --json
 context-graph dynamicjepa compile-trajectories --db "$DJ_DB" --domain counter_world --policy by_domain_session --json
-context-graph dynamicjepa get-trajectory --db "$DJ_DB" --id <trajectory-id> --json
-context-graph dynamicjepa list-trajectories --db "$DJ_DB" --domain counter_world --json
 context-graph dynamicjepa compile-dataset --db "$DJ_DB" --domain counter_world --policy one_step --split train --json
 context-graph dynamicjepa compile-dataset --db "$DJ_DB" --domain counter_world --policy one_step --split val --json
+context-graph dynamicjepa compile-dataset --db "$DJ_DB" --domain counter_world --policy one_step --split test --json
 context-graph dynamicjepa get-dataset-shard --db "$DJ_DB" --dataset-id <dataset-id> --shard-id <shard-id> --json
 context-graph dynamicjepa inspect-dataset --db "$DJ_DB" --dataset-id <dataset-id> --shard-id <shard-id> --row 0 --json
-context-graph dynamicjepa bind --db "$DJ_DB" --left-cf dj_raw_events --left-key <key_hex> --right-cf dj_trajectories --right-key <key_hex> --method explicit_mapping --json
-context-graph dynamicjepa list-bindings --db "$DJ_DB" --entity <key_hex> --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_raw_events --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_runs --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_latent_panels --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_trajectories --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_dataset_shards --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_bindings --limit 10 --json
+context-graph dynamicjepa train --db "$DJ_DB" --dataset-id <dataset-id> --config configs/dynamicjepa/verification/tiny_train_config.json --artifact-root "$DJ_ARTIFACTS" --json
+context-graph dynamicjepa get-training-run --db "$DJ_DB" --id <training-run-id> --json
+context-graph dynamicjepa get-artifact --db "$DJ_DB" --id <artifact-id> --verify-files --json
 ```
 
-Expected Phase 4 counter_world happy-path counts after registration, ingest, and
-panel materialization:
+Expected current Phase 7 counter_world training/artifact counts after the happy path:
 
 | CF | Final count |
 | --- | --- |
@@ -60,62 +50,33 @@ panel materialization:
 | `dj_domain_pack_by_nv` | 1 |
 | `dj_instrument_registry` | 2 |
 | `dj_adapter_registry` | 1 |
-| `dj_raw_events` | 3 |
-| `dj_adapter_runs` | 3 (`Completed`) |
-| `dj_normalized_states` | 3 |
-| `dj_actions` | 3 |
-| `dj_outcomes` | 3 |
-| `dj_transitions` | 3 |
-| `dj_instrument_readings` | 6 |
-| `dj_latent_panels` | 3 |
-| `dj_audit_log` | 10 |
-| every Phase 5+ data CF (`dj_trajectories`, datasets, artifacts, predictions, etc.) | 0 |
-
-Expected Phase 4 gridworld one-trajectory happy-path counts after registration,
-ingest of the first eight corpus rows, and panel materialization:
-
-| CF | Final count |
-| --- | --- |
-| `dj_domain_packs` | 1 |
-| `dj_domain_pack_by_nv` | 1 |
-| `dj_instrument_registry` | 3 |
-| `dj_adapter_registry` | 1 |
-| `dj_raw_events` | 8 |
-| `dj_adapter_runs` | 8 (`Completed`) |
-| `dj_normalized_states` | 8 |
-| `dj_actions` | 8 |
-| `dj_outcomes` | 8 |
-| `dj_transitions` | 8 |
-| `dj_instrument_readings` | 24 |
-| `dj_latent_panels` | 8 |
-| `dj_audit_log` | 25 |
-| every Phase 5+ data CF (`dj_trajectories`, datasets, artifacts, predictions, etc.) | 0 |
-
-Required Phase 4 edge cases for each domain:
-
-- Empty JSONL input: fails with `ADAPTER_FAILED`; no raw, adapter, normalized, reading, or panel rows; `dj_audit_log` +1.
-- Invalid action format: writes one raw event and one failed adapter run, writes no normalized rows, readings, or panels, and `dj_audit_log` +2.
-- Declared maximum violation: counter_world `outcome.next_counter=1032` fails at `outcome.next_counter`; gridworld `state.x=7` fails at `state.x`. Both write one raw event, one failed adapter run, no normalized rows, and `dj_audit_log` +2.
+| `dj_raw_events` | 60 |
+| `dj_adapter_runs` | 60 (`Completed`) |
+| `dj_normalized_states` | 60 |
+| `dj_actions` | 60 |
+| `dj_outcomes` | 60 |
+| `dj_transitions` | 60 |
+| `dj_instrument_readings` | 120 |
+| `dj_latent_panels` | 60 |
+| `dj_trajectories` | 1 |
+| `dj_dataset_shards` | 3 |
+| `dj_training_runs` | 1 (`Completed`) |
+| `dj_model_artifacts` | 1 (`Active`) |
+| `dj_predictions` | 0 |
+| `dj_plan_traces` | 0 |
+| `dj_surprise_events` | 0 |
+| `dj_verification_runs` | 0 |
+| `dj_audit_log` | 187 |
 
 Current evidence:
 
-- Manual counter_world evidence: `tmp/5090jepa_evidence/phase4/manual_counter/`, DB `/tmp/5090jepa-phase4-manual-cw`.
-- Manual gridworld evidence: `tmp/5090jepa_evidence/phase4/manual_gridworld/`, DB `/tmp/5090jepa-phase4-manual-gw`.
-- Automated CLI evidence: `tmp/5090jepa_evidence/phase4/cli_phase4_fsv.json`.
-- Independent physical proof: `ldb dump --count_only` was run against each touched CF and matched the decoded CLI evidence.
-- Manual Phase 5 evidence: `tmp/5090jepa_evidence/phase5/manual/`, DBs `/tmp/5090jepa-phase5-manual-cw`, `/tmp/5090jepa-phase5-manual-gw`, and `/tmp/5090jepa-phase5-manual-missing-panel`.
-- Automated Phase 5 CLI evidence: `tmp/5090jepa_evidence/phase5/cli_phase5_fsv.json`.
-- Phase 5 independent physical proof: `ldb dump --count_only` was run against `dj_raw_events`, `dj_transitions`, `dj_latent_panels`, `dj_bindings`, `dj_bindings_by_entity`, `dj_trajectories`, and `dj_audit_log` and matched the decoded CLI evidence.
-- Manual Phase 6 counter evidence: `tmp/5090jepa_evidence/phase6/manual_counter/`, DBs `/tmp/5090jepa-phase6-manual-cw`, `/tmp/5090jepa-phase6-manual-no-traj`, and `/tmp/5090jepa-phase6-manual-badneg`.
-- Manual Phase 6 full-gridworld evidence: `tmp/5090jepa_evidence/phase6/manual_gridworld/`, DB `/tmp/5090jepa-phase6-manual-gw-full`.
-- Automated Phase 6 CLI evidence: `tmp/5090jepa_evidence/phase6/cli_phase6_fsv.json`.
-- Phase 6 independent physical proof: `ldb dump --count_only` was run against `dj_dataset_shards`, `dj_audit_log`, `dj_trajectories`, `dj_latent_panels`, `dj_actions`, and `dj_outcomes` and matched the decoded CLI evidence.
-
-Phase 3 remains verified by `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs`
-and `tmp/5090jepa_evidence/phase3/doublecheck/`; Phase 4 remains verified by
-`crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs`; Phase 5 remains
-verified by `crates/context-graph-cli/tests/dynamicjepa_phase5_fsv.rs`. All are
-prerequisites for the Phase 6 FSV rather than the current endpoint.
+- Automated Phase 7 CLI evidence: `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json`.
+- Runtime source-of-truth DB/artifact files: `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`.
+- Current Phase 7 test: `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs`.
+- Current Phase 8 evidence: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json`.
+- Current Phase 8 test: `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs`.
+- Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, and `dj_audit_log=194`; corrupt-artifact prediction leaves prediction/audit counts unchanged.
+- Predecessor tests remain required: `dynamicjepa_phase3_fsv.rs`, `dynamicjepa_phase4_fsv.rs`, `dynamicjepa_phase5_fsv.rs`, and `dynamicjepa_phase6_fsv.rs`.
 
 ## 3. Required Fixtures
 
@@ -136,7 +97,9 @@ configs/dynamicjepa/verification/gridworld_5x5_train_config.json
 
 Every fixture file has a known SHA-256 listed in `tests/fixtures.rs`. If a fixture's hash does not match, the test fails with `Validation { field: "fixture_hash" }` — protects against accidental edits.
 
-## 4. Happy-Path Verification (counter_world)
+## 4. Full-Loop Verification (counter_world, Phase 8/10)
+
+This section is implemented today as the Phase 8 CLI FSV test and remains the target protocol for the future bundled `verify-counter-world` command. Use Section 2 for the current evidence paths.
 
 Setup:
 
@@ -147,7 +110,7 @@ rm -rf "$DJ_DB" "$DJ_ARTIFACTS"
 mkdir -p "$DJ_ARTIFACTS"
 ```
 
-Required command sequence (each line is one `dynamicjepa` subcommand; harness records the JSON output of each):
+Phase 8/10 required command sequence (each line is one `dynamicjepa` subcommand; harness records the JSON output of each):
 
 ```bash
 context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
@@ -171,7 +134,7 @@ context-graph dynamicjepa record-surprise --db "$DJ_DB" --prediction-id $PREDICT
 context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
 ```
 
-Expected final counts (for the three-event happy path; values are **exact** unless noted):
+Phase 8/10 expected final counts (for the three-event full-loop happy path; values are **exact** unless noted):
 
 | CF | Final count |
 | --- | --- |
@@ -229,6 +192,14 @@ For each edge case below the harness:
 3. Records `after_counts`.
 4. Confirms the deltas in the table match exactly.
 5. Decodes the relevant audit/error rows for evidence.
+
+Current Phase 7 model/artifact edge cases:
+
+- Missing dataset id: `dynamicjepa train` fails with `SOURCE_OF_TRUTH_MISSING`; `dj_training_runs`, `dj_model_artifacts`, and `dj_audit_log` stay unchanged.
+- Invalid training device: a config with `schedule.device = "cpu"` fails with a typed training/config error; no artifact row is written.
+- Corrupted artifact: after a successful train, mutate one byte of `model.safetensors`; `get-artifact --verify-files` fails with `ARTIFACT_HASH_MISMATCH`, reports `wrote_prediction=false`, and `dj_predictions` remains unchanged at zero.
+
+The adapter edge cases below remain prerequisites inherited from Phase 4:
 
 ### EC1: Empty Input
 
@@ -332,7 +303,7 @@ EC2 invalid action (`move = "diagonal"`): same shape as counter_world EC2 with `
 
 EC3 OOB state (`state.x = 7`): raw event +1, failed adapter run +1, no normalized state, `field_path = state.x`, `value = 7`, `max = 4`.
 
-## 8. Convergence Audits (Both Packs)
+## 8. Convergence Audits
 
 After training:
 
@@ -340,12 +311,12 @@ After training:
 context-graph dynamicjepa get-artifact --db "$DJ_DB" --id $ARTIFACT --verify-files --json | jq '.evaluation_report'
 ```
 
-Asserts (decoded JSON, not return values):
+Current Phase 7 counter_world asserts on the generated 60-event fixture (decoded JSON, not return values):
 
 ```text
-counter_world: val_latent_cosine ≥ 0.99 ∧ val_latent_mse ≤ 0.01 ∧ action_contrast_acc ≥ 0.99
-gridworld:     val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_latent_cosine ≥ 0.92 ∧ action_contrast_acc ≥ 0.95
-both:          shuffled_target_cosine ≤ 0.30 (cw 0.10) ∧ random_init_cosine ≤ 0.30 (cw 0.10) ∧ vicreg_variance_per_dim_min ≥ 0.5
+counter_world current: val_latent_cosine ≥ 0.99 ∧ val_latent_mse ≤ 0.005 ∧ vicreg_variance_per_dim_min ≥ 0.5 ∧ parameter_count_trainable = 480
+recorded but open:     shuffled_target_cosine ≤ 0.10 ∧ vicreg_covariance_off_diag_frobenius ≤ 0.5
+future gridworld:      val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_latent_cosine ≥ 0.92 ∧ action_contrast_acc ≥ 0.95
 ```
 
 ## 9. Artifact Hash Audit (Both Packs)
@@ -355,18 +326,18 @@ ARTIFACT_JSON=$(context-graph dynamicjepa get-artifact --db "$DJ_DB" --id $ARTIF
 echo "$ARTIFACT_JSON" | jq '.artifact_hashes'
 ```
 
-Every entry must have `equal: true`. The harness then **mutates** one byte of `model.safetensors`:
+Every entry must have `equal: true`. The current Phase 7 harness then **mutates** one byte of `model.safetensors`:
 
 ```bash
 printf '\xff' | dd of="$DJ_ARTIFACTS/<artifact dir>/model.safetensors" bs=1 count=1 conv=notrunc seek=128
-context-graph dynamicjepa predict --db "$DJ_DB" --artifact-id $ARTIFACT --panel-id $PANEL_T0 --action-id $ACTION_T0 --json
+context-graph dynamicjepa get-artifact --db "$DJ_DB" --id $ARTIFACT --verify-files --json
 ```
 
 Expected response:
 
 ```json
 {
-  "operation": "dynamicjepa_predict",
+  "operation": "dynamicjepa_get_artifact",
   "status": "error",
   "error_code": "ARTIFACT_HASH_MISMATCH",
   "file": "model.safetensors",
@@ -376,7 +347,7 @@ Expected response:
 }
 ```
 
-The `dj_predictions` count after this must equal the count before. If a prediction row was written, the no-fallback rule has been violated and the demo fails verification.
+The `dj_predictions` count after this must equal the count before. Phase 8 FSV proves `predict` refuses to write any prediction row on artifact hash mismatch.
 
 ## 10. Verification Run Record
 
@@ -392,7 +363,7 @@ edge_*.json                      # one per edge case with before/after counts + 
 artifact_files_recomputed_hashes.json
 ```
 
-The `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Any mismatch sets status to `Failed { failure_details: ..., evidence_path: ... }` and writes the same evidence directory.
+The future `VerificationRunRecord.status` is `Passed` only if every count assertion, every readback, every convergence target, and every edge-case error body matched the spec. Current Phase 7/8 CLI FSV does not yet write `dj_verification_runs`; it writes JSON evidence under `tmp/5090jepa_evidence/phase7/` and `tmp/5090jepa_evidence/phase8/` instead.
 
 ## 11. Operator Sign-Off Checklist (Per Run)
 
@@ -405,16 +376,17 @@ Paste this block into the closing PR description for each domain:
 [ ] materialize-panel success: <M> panels written
 [ ] compile-trajectories success: <K> trajectories
 [ ] compile-dataset success: train/val/test row counts in spec
-[ ] train success: metrics meet convergence targets
+[ ] train success: metrics meet current convergence targets
 [ ] artifact recomputed hashes equal registry
-[ ] predict success: prediction row present, hash-at-inference matches artifact
-[ ] plan success: plan trace present, candidate count = 5, selected action set
-[ ] record-surprise success: surprise row written iff cosine < threshold
+[ ] Phase 7 corrupt artifact: get-artifact --verify-files refused, no prediction row written
+[ ] Phase 8 predict success: prediction row present, hash-at-inference matches artifact
+[ ] Phase 8 plan success: plan trace present, candidate count = 5, selected action set
+[ ] Phase 8 record-surprise success: surprise row written iff cosine < threshold
 [ ] EC1 empty input: counts unchanged, error code ADAPTER_FAILED
 [ ] EC2 invalid action: raw event +1, failed adapter run +1, no normalized
 [ ] EC3 OOB state/panel: raw event +1, failed adapter run +1, no normalized
-[ ] artifact hash mismatch test: prediction call refused, no row written
-[ ] verification_run_record.json status=Passed
+[ ] artifact hash mismatch test: load/verification call refused, no row written
+[ ] Future Phase 10 verification_run_record.json status=Passed
 ```
 
 If a box is unchecked, the run is not done.

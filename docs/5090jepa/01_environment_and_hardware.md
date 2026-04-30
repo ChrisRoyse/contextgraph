@@ -2,7 +2,7 @@
 
 The 5090jepa demo is targeted at exactly one machine. Before any phase you must verify the environment matches. If anything diverges from the values below, halt and resolve before writing code. No "should work" assumptions.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: Phases 0-6 are implemented and FSV-verified through the CLI/storage path. The DynamicJEPA service crate and MCP tool surface remain future Phase 7/9 work.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: Phases 0-8 are implemented through the CLI/storage/training/prediction path in the working tree. The `context-graph-dynamicjepa` service crate exists, CUDA-only training and artifact hash verification are wired, and counter_world Phase 7 and Phase 8 FSV evidence exists. Bundled `verify-*` harnesses and the MCP tool surface remain future Phase 10/9 work.
 
 ## 1. Operator Hardware (Verified)
 
@@ -42,12 +42,14 @@ ls crates/
 echo "== existing storage =="
 ls crates/context-graph-storage/src/
 echo "== dynamicjepa current phase state =="
-test ! -d crates/context-graph-dynamicjepa || (echo "ERROR: Phase 7 service crate exists; audit before continuing" && exit 1)
+test -d crates/context-graph-dynamicjepa || (echo "ERROR: Phase 7 service crate missing" && exit 1)
 test -d crates/context-graph-core/src/dynamicjepa || (echo "ERROR: Phase 1 core module missing" && exit 1)
 test -d crates/context-graph-storage/src/dynamicjepa || (echo "ERROR: Phase 2 storage module missing" && exit 1)
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 3 CLI module missing" && exit 1)
 rg -q "IngestEvent" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 ingest CLI missing" && exit 1)
 rg -q "MaterializePanel" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 panel CLI missing" && exit 1)
+rg -q "Train" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 7 train CLI missing" && exit 1)
+rg -q "train_dataset" crates/context-graph-dynamicjepa/src/service.rs || (echo "ERROR: Phase 7 service training entry missing" && exit 1)
 echo "ENV OK"
 ```
 
@@ -79,7 +81,7 @@ If `CUDA_COMPUTE_CAP=120` causes a candle build error, capture the full error an
 # clean release build of all default-members (excludes benchmark crate)
 cargo build --workspace --release
 
-# build with full features including dynamicjepa once the crate is added
+# build with full features including dynamicjepa
 cargo build --workspace --release --all-features
 
 # run dynamicjepa-only tests through the current implemented phase
@@ -87,9 +89,11 @@ cargo test -p context-graph-core dynamicjepa --all-features
 cargo test -p context-graph-storage dynamicjepa --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features
-
-# future Phase 7 service crate, once it exists
-# cargo test -p context-graph-dynamicjepa --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase7_fsv --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase8_fsv --all-features
+cargo test -p context-graph-dynamicjepa --all-features
 ```
 
 Expected first-build time on this hardware: ~3–5 minutes for incremental, ~12–15 minutes cold. If a cold build exceeds 20 minutes, something is recompiling LLVM IR — investigate (almost always `CUDA_COMPUTE_CAP` flapping between values).

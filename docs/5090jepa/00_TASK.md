@@ -130,8 +130,8 @@ Follow `docs/dynamicjepa/implementationplan/14_phase_task_breakdown.md` Phases 0
 - **Phase 4** (≈3 days): `json_event` adapter + scalar/categorical/onehot/time instruments + panel materialization for both domain packs. Three counter_world events and one eight-event gridworld trajectory round‑trip through `raw → adapter run → normalized → readings → panel`.
 - **Phase 5** (≈2 days): Deterministic binding (id‑equality and explicit‑mapping) + trajectory compiler. One trajectory per pack with the expected ordered transitions.
 - **Phase 6** (completed): One‑step dataset compiler + `by_domain_key_hash`/entity-key + `by_time` splits + `same_domain_different_outcome` negatives. Counter_world produces 2 rows; gridworld produces N rows where N = `event_count - 1` per trajectory. Insufficient negatives fails explicitly.
-- **Phase 7** (≈4 days): Add `crates/context-graph-dynamicjepa/`. Tiny encoder + tiny predictor (per `10_tiny_jepa_model.md`), EMA target, VICReg loss, training loop on candle CUDA, artifact writer. Counter_world tiny config converges in <30 seconds on the 5090; gridworld in <5 minutes. Hash recomputation matches registry rows. Corrupt artifact load fails before any prediction row is written.
-- **Phase 8** (≈2 days): Prediction → plan → guard → surprise. Hypothetical actions stored with `action_origin = hypothetical`. Rejected guard creates evidence; threshold breach creates surprise event linked to prediction + outcome.
+- **Phase 7** (implemented with caveats): Add `crates/context-graph-dynamicjepa/`. Tiny encoder + tiny predictor (per `10_tiny_jepa_model.md`), EMA target, VICReg loss, training loop on candle CUDA, artifact writer, training-run/artifact persistence, and hash verification are present. Counter_world converges on the generated 60-event FSV fixture and hash recomputation matches registry rows. Gridworld model FSV and strict shuffled-target/covariance acceptance remain open.
+- **Phase 8** (implemented in the working tree): Prediction → plan → guard → surprise are present through CLI/service/storage code and covered by `dynamicjepa_phase8_fsv.rs`. Hypothetical actions are stored with `action_origin = hypothetical`; rejected guards create persisted evidence; threshold breaches create surprise events linked to prediction + outcome. The test file is currently untracked and must be added before this is durable committed repo state.
 - **Phase 9** (≈2 days): MCP tool definitions, handlers, DTOs, dispatch entries, capability matrix updates, tool count tests.
 - **Phase 10** (≈1 day): `verify-counter-world` and `verify-gridworld` end‑to‑end FSV harness commands that run the full loop, persist a `VerificationRunRecord`, and write JSON evidence to `tmp/5090jepa_evidence/<domain>/`.
 
@@ -156,25 +156,29 @@ This rule is non‑negotiable because the user has explicitly said: *"if there i
 
 ## 8. What Already Exists (Anti‑Hallucination Anchor)
 
-Verified again during the Phase 6 dataset audit and FSV double-check on 2026-04-30. The live tree wins if anything below drifts:
+Verified again during the Phase 7 implementation review and FSV double-check on 2026-04-30. The live tree wins if anything below drifts:
 
-- `crates/` still contains the original 10 packages. The DynamicJEPA service crate `context-graph-dynamicjepa` does **not** exist yet; it is still a Phase 7 task.
+- `crates/` contains 11 workspace packages including the Phase 7 service crate `crates/context-graph-dynamicjepa`; it is included in workspace members and default members.
 - Phase 1 core contracts are present: `crates/context-graph-core/src/lib.rs` declares `pub mod dynamicjepa;`, and `crates/context-graph-core/src/dynamicjepa/` contains the v1 records, ids, validation, errors, and versioned bincode tests.
 - Phase 2 storage data plane is present: `crates/context-graph-storage/src/dynamicjepa/` defines 25 DynamicJEPA CFs, store modules, key helpers, codec helpers, inspection/count APIs, audit records, and a storage FSV test.
 - Phase 3 CLI registry/inspection is present: `crates/context-graph-cli/src/commands/dynamicjepa.rs` implements `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`; the package also exposes the documented `context-graph` binary alias.
 - Phase 4 CLI adapter/panel materialization is present in the same module: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`.
 - Phase 5 CLI binding/trajectory compilation is present in the same module: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`.
 - Phase 6 CLI dataset compilation is present in the same module: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. These are operational only through the CLI/storage path; DynamicJEPA MCP tools remain Phase 9.
-- Phase 6 is the current completed phase. Phase 7+ commands such as `train`, `predict`, `plan`, `verify-counter-world`, and `verify-gridworld` are still future work and must not be reported as operational yet.
+- Phase 7 training/artifact commands are present: `train`, `get-training-run`, and `get-artifact --verify-files`. They call `crates/context-graph-dynamicjepa` for CUDA-only training, artifact writing, hash registration, and hash verification.
+- Phase 8 prediction/planning/surprise commands are present and have a working-tree FSV test: `predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and `get-surprise`. `verify-counter-world` and `verify-gridworld` are not present.
 - The physical DB open path now opens **98 total CFs**: 11 base + 41 teleological + 14 quantized + 5 code + 2 causal + 25 DynamicJEPA. Fresh `/tmp` DBs open with all 25 DynamicJEPA CFs at zero rows.
 - `crates/context-graph-mcp/src/tools/names.rs` exposes the existing MCP tools only; DynamicJEPA MCP tools are still Phase 9.
 - `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs` runs the real CLI binary against a real temp RocksDB, registers both Phase 0 TOMLs, verifies decoded source-of-truth rows, and proves empty TOML / duplicate instrument / unknown key / invalid CF edge cases leave counts unchanged.
 - `crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs` runs the real CLI binary against real temp RocksDB, ingests checked-in counter_world and gridworld fixtures, materializes panels, verifies decoded source-of-truth rows, and proves empty input / invalid action / max or out-of-bounds edge-case count deltas.
 - `crates/context-graph-cli/tests/dynamicjepa_phase5_fsv.rs` runs the real CLI binary against real temp RocksDB, compiles counter_world and gridworld trajectories, verifies decoded ordered transition/panel rows, writes a binding plus secondary index, and proves unsupported policy / duplicate compile / missing binding evidence / missing panel edge cases leave source-of-truth counts unchanged.
 - `crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs` runs the real CLI binary against real temp RocksDB, compiles one-step dataset shards, verifies `dj_dataset_shards` through `get-dataset-shard` and `inspect-dataset`, and proves duplicate split / invalid policy / no trajectories / insufficient negatives leave source-of-truth counts unchanged.
+- `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` runs the real CLI binary against real temp RocksDB, generates a 60-event counter_world trajectory, compiles train/val/test shards, trains on CUDA, verifies `dj_training_runs` and `dj_model_artifacts` through read commands, recomputes artifact file hashes, and proves missing dataset / invalid CPU config / corrupted artifact edge cases leave the source of truth in the expected state.
 - Phase 4 manual source-of-truth evidence lives under `tmp/5090jepa_evidence/phase4/manual_counter/` and `tmp/5090jepa_evidence/phase4/manual_gridworld/`, with independent RocksDB count reads from `/tmp/5090jepa-phase4-manual-cw` and `/tmp/5090jepa-phase4-manual-gw`.
 - Phase 5 manual source-of-truth evidence lives under `tmp/5090jepa_evidence/phase5/manual/`, with independent RocksDB count reads from `/tmp/5090jepa-phase5-manual-cw`, `/tmp/5090jepa-phase5-manual-gw`, and `/tmp/5090jepa-phase5-manual-missing-panel`.
 - Phase 6 manual source-of-truth evidence lives under `tmp/5090jepa_evidence/phase6/manual_counter/` and `tmp/5090jepa_evidence/phase6/manual_gridworld/`, with independent RocksDB count reads from `/tmp/5090jepa-phase6-manual-cw`, `/tmp/5090jepa-phase6-manual-no-traj`, `/tmp/5090jepa-phase6-manual-badneg`, and `/tmp/5090jepa-phase6-manual-gw-full`.
+- Phase 7 automated source-of-truth evidence lives at `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json`, with runtime RocksDB/artifact paths under `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`.
+- Phase 8 automated source-of-truth evidence lives at `tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json`, with runtime RocksDB/artifact paths under `tmp/5090jepa_evidence/phase8/cli_phase8_fsv_runtime/`.
 - The Phase 3 re-audit found and fixed one no-fallback hardening gap: `count_delta` now errors on missing or unexpected CF names instead of treating missing after-counts as zero.
 - `configs/dynamicjepa/` exists and contains the Phase 0 domain packs, verification fixtures, and generated gridworld corpus.
 - `data/contextgraph_data` (or wherever `CONTEXT_GRAPH_STORAGE_PATH` points) is the existing RocksDB physical database. **Do not corrupt it.** All FSV runs use a fresh `/tmp/` path.
@@ -186,7 +190,7 @@ If any of those statements is wrong when you re‑audit before a later phase, th
 
 ## 9. Dataset & Synthetic‑Input Strategy
 
-**Counter_world** is fully deterministic, hand‑authored, three transitions. Inputs are integer `(state, action, outcome)` triples whose arithmetic is always `outcome = state + action`. A correctly trained tiny JEPA must achieve >0.99 next‑state cosine on the held‑out transition. A model with shuffled targets must score near 0.0. If a randomly initialized model scores >0.5 on this task, you have a leakage bug.
+**Counter_world** is fully deterministic arithmetic. The checked-in three-event fixture remains the plumbing fixture for registration, adapter, panel, trajectory, and dataset FSV. Phase 7 train-only model verification currently uses a generated 60-event counter_world trajectory so there are enough train rows to converge without fitting on validation data. Current Phase 7 FSV achieves validation cosine >0.99 and MSE <0.005 on that generated fixture, but the strict shuffled-target and covariance audit bounds are not yet passing gates and remain open.
 
 **Gridworld_5x5** is also fully deterministic, generated by `scripts/5090jepa/generate_gridworld_corpus.py` (you create this; it lives in `scripts/`, not `tests/`, per CLAUDE.md). Inputs are 5×5 grid coordinates `(x, y)` ∈ {0..4}², a one‑hot action `{up, down, left, right, noop}`, and the outcome `(x', y')` after applying the action with wall‑clipping. The generator emits 1000 trajectories of length 8 each, train/val/test split 700/200/100 by trajectory hash. Expected metrics from `10_tiny_jepa_model.md`: latent MSE < 0.05 on val, action‑contrast accuracy > 0.95.
 
@@ -200,7 +204,7 @@ Both domains are synthetic but real — they pass through the *actual* adapter, 
 2. Open `docs/dynamicjepa/implementationplan/00_master_implementation_plan.md` and `14_phase_task_breakdown.md`. Re‑read `12_full_state_verification_manual_tests.md` carefully — it is your FSV template.
 3. Run the environment probe in `01_environment_and_hardware.md` Section 2 and confirm every assertion.
 4. Run the inventory in `02_repository_state_inventory.md` Section 3 and update Section 8 of *this* file with anything that has drifted.
-5. Begin the next incomplete phase only when (1)–(4) are clean. Phase 7 is next as of the Phase 6 double-check. Each phase must end with the FSV evidence log per `14_full_state_verification_protocol.md`.
+5. Begin the next incomplete phase only when (1)–(4) are clean. Phase 9 MCP or Phase 10 bundled `verify-*` harnesses are next after the current Phase 7/8 review; Phase 7 still has documented strict shuffled-target/covariance and gridworld-training caveats. Each phase must end with the FSV evidence log per `14_full_state_verification_protocol.md`.
 
 After every user correction, append a one‑line lesson to `tasks/lessons.md` and update memory.
 

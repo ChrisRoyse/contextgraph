@@ -2,7 +2,7 @@
 
 `counter_world` is the Occam's‑razor proof that the entire DynamicJEPA pipeline plumbs end‑to‑end. Three integer transitions, one scalar instrument, deterministic arithmetic, ground truth always equal to `state + action`. A correctly trained tiny JEPA reaches >0.99 cosine on the held‑out transition; a randomly initialized one cannot.
 
-Current Phase 5 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, materialize into three panels, compile into one ordered trajectory, and support explicit binding through the real CLI and real RocksDB. Dataset, training, prediction, planning, and bundled `verify-counter-world` remain later phases.
+Current Phase 7/8 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, materialize into three panels, compile into one ordered trajectory, compile one-step dataset shards, and support explicit binding through the real CLI and real RocksDB. Phase 7/8 FSV uses a generated 60-event counter_world fixture, not the three-event plumbing fixture, so train-only convergence and prediction/planning/surprise can be verified without fitting on validation rows. Bundled `verify-counter-world` remains later work.
 
 ## 1. File Locations
 
@@ -178,26 +178,26 @@ After `dynamicjepa compile-trajectories --domain counter_world --policy by_domai
 | --- | --- |
 | `dj_trajectories` | +1 |
 
-After `dynamicjepa compile-dataset --domain counter_world --policy one_step --split train`:
+After `dynamicjepa compile-dataset --domain counter_world --policy one_step --split train` on the checked-in three-event fixture:
 
 | CF | Δrows |
 | --- | --- |
-| `dj_dataset_shards` | +1 (`row_count=2`, panel pairs `(t0→t1)` and `(t1→t2)`) |
+| `dj_dataset_shards` | +1 (`row_count=1`, panel pair `t0→t1`) |
 
-After `dynamicjepa train --dataset-id <id> --config tiny_train_config.json --artifact-root /tmp/5090jepa_artifacts`:
+After `dynamicjepa train --dataset-id <id> --config tiny_train_config.json --artifact-root /tmp/5090jepa_artifacts` on the current 60-event Phase 7 fixture:
 
 | CF | Δrows |
 | --- | --- |
 | `dj_training_runs` | +1 (`completed`) |
 | `dj_model_artifacts` | +1 |
 
-After `dynamicjepa predict --artifact-id <a> --panel-id <p1> --action-id <a1>`:
+Current Phase 8 FSV for `dynamicjepa predict --artifact-id <a> --panel-id <p1> --action-id <a1>`:
 
 | CF | Δrows |
 | --- | --- |
 | `dj_predictions` | +1 |
 
-After `dynamicjepa plan --artifact-id <a> --panel-id <p1> --skill-id <skill>`:
+Current Phase 8 FSV for `dynamicjepa plan --artifact-id <a> --panel-id <p1> --skill-id <skill>`:
 
 | CF | Δrows |
 | --- | --- |
@@ -206,7 +206,7 @@ After `dynamicjepa plan --artifact-id <a> --panel-id <p1> --skill-id <skill>`:
 | `dj_guard_decisions` | +5 |
 | `dj_plan_traces` | +1 |
 
-After `dynamicjepa verify-counter-world` (the bundled FSV harness, runs everything above plus all edge cases):
+Future Phase 10, after `dynamicjepa verify-counter-world` (the bundled FSV harness, runs everything above plus all edge cases):
 
 | CF | Δrows |
 | --- | --- |
@@ -276,24 +276,24 @@ Phase 4 edge-case FSV confirmed the final source-of-truth counts after running a
 }
 ```
 
-Runs on the 5090 in well under 30 seconds. Encoder 8‑dim latent space is enough to distinguish the 5 distinct counter values across three transitions plus negatives. If training time exceeds 30 s, halt with `TrainingFailed { remediation: "check device=cuda; nvidia-smi shows GPU utilization >0% during training" }`.
+Runs on the 5090 in well under 30 seconds for the current generated 60-event Phase 7 fixture. The original three-event fixture remains useful for plumbing, but it is not enough to prove train-only convergence. If training time exceeds 30 s, halt with `TrainingFailed { remediation: "check device=cuda; nvidia-smi shows GPU utilization >0% during training" }`.
 
 ## 6. Convergence Asserts
 
-`tests/counter_world_fsv.rs` asserts (after training):
+`crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` currently asserts after training:
 
 - `metrics.val_latent_cosine >= 0.99`
-- `metrics.val_latent_mse <= 0.01`
-- `metrics.action_contrast_acc >= 0.99`
-- `metrics.shuffled_target_cosine <= 0.10` (the leakage audit)
-- `metrics.random_init_cosine <= 0.10`
+- `metrics.val_latent_mse <= 0.005`
+- `metrics.parameter_count_trainable == 480`
 - `metrics.vicreg_variance_per_dim_min >= 0.5`
 
-If any assert fails, the test fails with the actual metric in the error message — operator never has to re‑run to see the value.
+The same report records `action_contrast_acc`, `shuffled_target_cosine`, `random_init_cosine`, and covariance. The strict shuffled-target and covariance gates are not yet passing and remain open; do not remove those metrics or lower the future acceptance bar to hide the issue.
 
 ## 7. Verification Run Evidence
 
-After `dynamicjepa verify-counter-world --db /tmp/5090jepa-cw-fsv --json`, the harness writes:
+Current Phase 7 evidence is written by the CLI FSV test to `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json` plus runtime DB/artifact files under `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`.
+
+Future Phase 10, after `dynamicjepa verify-counter-world --db /tmp/5090jepa-cw-fsv --json`, the harness writes:
 
 ```
 tmp/5090jepa_evidence/counter_world/<verification_run_uuid>/

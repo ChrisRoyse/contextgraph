@@ -1,13 +1,17 @@
 use context_graph_core::dynamicjepa::{
-    DynamicJepaResult, GuardDecisionId, GuardDecisionRecord, PlanTraceId, PlanTraceRecord, SkillId,
-    SkillPolicyRecord,
+    DynamicJepaRecord, DynamicJepaResult, GuardDecisionId, GuardDecisionRecord, NormalizedAction,
+    PlanTraceId, PlanTraceRecord, PredictionRecord, SkillId, SkillPolicyRecord,
 };
-use rocksdb::DB;
+use rocksdb::{WriteBatch, DB};
 
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
 use crate::dynamicjepa::column_families::{
-    CF_DJ_GUARD_DECISIONS, CF_DJ_PLAN_TRACES, CF_DJ_SKILL_POLICIES,
+    CF_DJ_ACTIONS, CF_DJ_AUDIT_LOG, CF_DJ_GUARD_DECISIONS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
+    CF_DJ_SKILL_POLICIES,
 };
-use crate::dynamicjepa::common::{count_cf, get_record, list_records, put_record};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::audit_key;
 
 pub fn put_skill_policy(db: &DB, record: &SkillPolicyRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -66,6 +70,72 @@ pub fn put_guard_decision(db: &DB, record: &GuardDecisionRecord) -> DynamicJepaR
         record.guard_decision_id.into_bytes(),
         record,
     )
+}
+
+pub fn put_plan_batch(
+    db: &DB,
+    skill_policy: Option<&SkillPolicyRecord>,
+    actions: &[NormalizedAction],
+    predictions: &[PredictionRecord],
+    guard_decisions: &[GuardDecisionRecord],
+    plan_trace: &PlanTraceRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    if let Some(skill_policy) = skill_policy {
+        skill_policy.validate_record()?;
+    }
+    for action in actions {
+        action.validate_record()?;
+    }
+    for prediction in predictions {
+        prediction.validate_record()?;
+    }
+    for guard in guard_decisions {
+        guard.validate_record()?;
+    }
+    plan_trace.validate_record()?;
+    audit.validate()?;
+
+    let mut batch = WriteBatch::default();
+    if let Some(skill_policy) = skill_policy {
+        batch.put_cf(
+            cf(db, CF_DJ_SKILL_POLICIES)?,
+            skill_policy.skill_id.into_bytes(),
+            encode_record(skill_policy)?,
+        );
+    }
+    for action in actions {
+        batch.put_cf(
+            cf(db, CF_DJ_ACTIONS)?,
+            action.action_id.into_bytes(),
+            encode_record(action)?,
+        );
+    }
+    for prediction in predictions {
+        batch.put_cf(
+            cf(db, CF_DJ_PREDICTIONS)?,
+            prediction.prediction_id.into_bytes(),
+            encode_record(prediction)?,
+        );
+    }
+    for guard in guard_decisions {
+        batch.put_cf(
+            cf(db, CF_DJ_GUARD_DECISIONS)?,
+            guard.guard_decision_id.into_bytes(),
+            encode_record(guard)?,
+        );
+    }
+    batch.put_cf(
+        cf(db, CF_DJ_PLAN_TRACES)?,
+        plan_trace.plan_trace_id.into_bytes(),
+        encode_record(plan_trace)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_plan_batch")
 }
 
 pub fn get_guard_decision(

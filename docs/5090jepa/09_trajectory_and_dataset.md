@@ -2,7 +2,7 @@
 
 After events become panels, trajectories order them and dataset shards turn pairs of panels into training rows. The demo uses a single segmentation policy and a single objective; everything is deterministic.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, `dj_latent_panels`, and `dj_trajectories`) are written and FSV-verified, and the trajectory plus one-step dataset compiler commands are operational through the CLI/storage path.
+Current implementation status as of the Phase 7 review on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, `dj_latent_panels`, and `dj_trajectories`) are written and FSV-verified, and the trajectory plus one-step dataset compiler commands are operational through the CLI/storage path. Phase 7 training consumes those real dataset shards directly from RocksDB and verifies source hashes before training.
 
 ## 1. Trajectory Compilation
 
@@ -89,8 +89,8 @@ The training loop reads this off the shard record so it never needs to re-walk t
 ## 4. APIs
 
 ```rust
-// Current Phase 6 implementation lives in the CLI/storage path.
-// The service crate wrapper is Phase 7+.
+// Current trajectory/dataset implementation lives in the CLI/storage path.
+// The Phase 7 service crate consumes the resulting DatasetShardRecord for training.
 pub fn compile_trajectories(...) -> Result<Vec<TrajectoryId>, DynamicJepaError>;
 pub fn compile_dataset_shard(...) -> Result<DatasetShardId, DynamicJepaError>;
 pub fn inspect_dataset_row(...) -> Result<DatasetRowSnapshot, DynamicJepaError>;

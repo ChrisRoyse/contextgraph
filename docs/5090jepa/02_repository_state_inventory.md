@@ -1,19 +1,19 @@
 # 02 — Repository State Inventory
 
-This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 9/10. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
-## 1. Branch & Commit Snapshot (Phase 4 Double-Check: 2026-04-30)
+## 1. Branch & Commit Snapshot (Phase 7/8 Review: 2026-04-30)
 
 | Property | Value |
 | --- | --- |
 | Branch | `main` |
-| Latest commits at audit start | `5c907530 feat(dynamicjepa): add Phase 4 adapter/panel materialization CLI` → `7bc9d6e1 docs(5090jepa): refresh docs to reflect Phase 4 completion` |
-| Working tree at audit start | Clean before the Phase 5 implementation work |
+| Latest commits at audit start | `e19b014a feat(dynamicjepa): add Phase 7 tiny model service crate, training CLI, and CUDA 13.2 stack` → `bb717ade fix(dynamicjepa): shuffle training indices per epoch with seeded LCG` → `d1c9071a feat(cuda): migrate to CUDA 13.2 native sm_120a cubin pipeline` |
+| Working tree at audit start | Dirty: DynamicJEPA Phase 8 CLI/service/storage changes and docs are present; `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs` is untracked. Do not revert unrelated user changes. |
 | `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
 
 ## 2. Workspace Layout (Verified)
 
-`Cargo.toml` workspace members (10):
+`Cargo.toml` workspace members (11):
 
 ```
 crates/context-graph-mcp
@@ -21,6 +21,7 @@ crates/context-graph-core
 crates/context-graph-cuda
 crates/context-graph-embeddings
 crates/context-graph-storage
+crates/context-graph-dynamicjepa
 crates/context-graph-cli
 crates/context-graph-benchmark        # excluded from default-members
 crates/context-graph-causal-agent
@@ -28,15 +29,7 @@ crates/context-graph-graph-agent
 crates/context-graph-test-utils
 ```
 
-Default members exclude `context-graph-benchmark`. Build order (per `docs2/contextgraphspecs/02_source_code_map.md`): `core → cuda → embeddings → test-utils → storage → causal-agent → graph-agent → mcp → cli → benchmark`.
-
-`docs/5090jepa` adds **one** new crate:
-
-```
-crates/context-graph-dynamicjepa
-```
-
-To be added to `[workspace] members` and (after Phase 7 stabilizes) to `default-members`. Phase 1‑6 land before the new crate exists; those phases live in `context-graph-core` (records) and `context-graph-storage` (CFs + stores) and `context-graph-cli` (CLI).
+Default members exclude `context-graph-benchmark` and include `context-graph-dynamicjepa`. Phase 1-6 live in `context-graph-core` (records), `context-graph-storage` (CFs + stores), and `context-graph-cli` (CLI); Phase 7 training/artifact logic lives in `context-graph-dynamicjepa` and is called by the CLI.
 
 ## 3. Audit Commands (Run Before The Next Phase)
 
@@ -60,13 +53,17 @@ grep -c "^pub const " crates/context-graph-mcp/src/tools/names.rs
 ls crates/context-graph-cli/src/commands/
 
 # DynamicJEPA current phase state
-test ! -d crates/context-graph-dynamicjepa
+test -d crates/context-graph-dynamicjepa
 test -d crates/context-graph-core/src/dynamicjepa
 test -d crates/context-graph-storage/src/dynamicjepa
 test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs
+test -f crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs
+test -f crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs
+test -f crates/context-graph-dynamicjepa/src/service.rs
+test -f crates/context-graph-dynamicjepa/src/model/mod.rs
 test -f crates/context-graph-cli/src/bin/context-graph.rs
 
 # Configs root
@@ -76,9 +73,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2 Through Phase 6 Verification Status (2026-04-30)
+## 4. Phase 2 Through Phase 8 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6 is implemented and manually verified as the deterministic one-step dataset shard compiler. Phase 7+ service/model/MCP work is still not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6 is implemented and manually verified as the deterministic one-step dataset shard compiler. Phase 7 is implemented for CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 prediction/planning/surprise code is present in the working tree and passed its CLI FSV on rerun. Phase 9 MCP and Phase 10 bundled `verify-*` harnesses are not present.
 
 Source of truth verified:
 
@@ -95,6 +92,24 @@ Verification results:
 - `ldb list_column_families` on the Phase 2 FSV DB shows 98 total CFs, including all 25 DynamicJEPA CFs.
 - `ldb dump --count_only` on the Phase 2 FSV DB matches the evidence counts: one row in every DynamicJEPA data CF touched by the synthetic happy path, two instrument readings, two audit records, and one persisted `VerificationRunRecord`.
 - Edge cases manually exercised in the FSV DB: empty payload, wrong version byte, and corrupt bincode body. Each leaves a physical corrupt source-of-truth row and fails decode with `CODEC`; no fallback/default decode path is present.
+
+Phase 7 source of truth verified:
+
+- Automated CLI FSV evidence: `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json`.
+- Runtime source-of-truth DB/artifact root: `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`.
+- `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` generated a 60-event counter_world fixture, registered the real domain pack, ingested/materialized/compiled real rows, trained on CUDA, read `dj_training_runs` and `dj_model_artifacts` back through CLI read paths, and recomputed every artifact hash.
+- Observed Phase 7 happy-path counts after training: `dj_raw_events=60`, `dj_latent_panels=60`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_predictions=0`, `dj_audit_log=187`.
+- Observed Phase 7 model metrics include `parameter_count_trainable=480`, `val_latent_mse=0.004330990884665671`, `val_latent_cosine=0.9996336712676964`, and `vicreg_variance_per_dim_min=0.5537294066496572`.
+- Phase 7 caveat: strict shuffled-target and covariance acceptance are not yet met by the current tiny model on the monotonic generated counter fixture (`shuffled_target_cosine` remains high and covariance Frobenius is above the target). The FSV records those metrics instead of masking them.
+- Phase 7 edge cases verified: missing dataset id leaves training/artifact/audit counts unchanged; invalid `schedule.device="cpu"` fails with a training error and writes no artifact; corrupted `model.safetensors` fails `get-artifact --verify-files` with `ARTIFACT_HASH_MISMATCH` and leaves `dj_predictions=0`.
+
+Phase 8 source of truth verified:
+
+- Automated CLI FSV evidence: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json`.
+- Runtime source-of-truth DB/artifact root: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv_runtime/`.
+- `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs` runs real CLI/RocksDB/CUDA training, then verifies `predict`, `get-prediction`, `plan`, `get-plan-trace --include-predictions --include-guards`, `record-surprise`, and `get-surprise`.
+- Observed Phase 8 deltas include `predict: dj_predictions +1, dj_audit_log +1`; `plan: dj_actions +5, dj_predictions +5, dj_guard_decisions +5, dj_plan_traces +1, dj_skill_policies +1`; forced surprise: `dj_surprise_events +1, dj_audit_log +1`.
+- Phase 8 edge cases verified: missing artifact leaves `dj_predictions` and `dj_audit_log` unchanged; corrupted `model.safetensors` makes `predict` fail with `ARTIFACT_HASH_MISMATCH`, `wrote_prediction=false`, and unchanged prediction/audit counts.
 
 Root-cause fixes made during this audit:
 
@@ -259,7 +274,7 @@ Tool registry surface:
 
 Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
 
-Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. Phase 6 dataset subcommands now present: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 7+ model/MCP CLI subcommands remain unimplemented.
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. Phase 6 dataset subcommands now present: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. Phase 7 model/artifact subcommands now present: `train`, `get-training-run`, and `get-artifact --verify-files`. Phase 8 subcommands now present and FSV-tested in the working tree: `predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and `get-surprise`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 10 verification and Phase 9 MCP subcommands remain unimplemented.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

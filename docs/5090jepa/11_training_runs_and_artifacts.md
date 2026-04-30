@@ -2,12 +2,12 @@
 
 The model file on disk is *not* proof that a training run succeeded. The proof is the `dj_training_runs` row plus the `dj_model_artifacts` row plus a recomputed file hash that matches the registry value. This file specifies the lifecycle and the FSV requirements.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: training and artifact commands are not implemented yet. The storage CFs exist, but `dj_training_runs` and `dj_model_artifacts` stay at zero during Phase 6 FSV.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: `dynamicjepa train`, `get-training-run`, and `get-artifact --verify-files` are implemented and FSV-accepted. The Phase 7 FSV writes and reads real `dj_training_runs` and `dj_model_artifacts` rows, recomputes artifact file hashes from disk, and proves corrupted artifact verification fails without writing predictions. The Phase 8 FSV verifies `predict` writes `model_artifact_hash_at_inference` from the verified artifact and refuses to write a prediction after artifact corruption.
 
 ## 1. Lifecycle Steps
 
 ```
-Phase 7 / Phase 8 training command:
+Phase 7 training command:
 
 (1) read DomainPack                  ─ source-of-truth: dj_domain_packs
 (2) read DatasetShardRecord          ─ source-of-truth: dj_dataset_shards
@@ -36,7 +36,7 @@ artifacts/dynamicjepa/<domain_pack_id>/<training_run_uuid>/
 Rules:
 
 - The directory must not exist before step (6). If it does, fail with `Validation { field: "artifact_root", message: "artifact root directory already exists" }`.
-- `model.safetensors` is candle’s safetensors format — single file with named tensors `online.layer_0.weight`, …, `target.layer_out.bias`, etc. No pickle.
+- `model.safetensors` is candle’s safetensors format — single file with named tensors such as `online.encoder.layer0.weight`, `online.encoder.layer0.bias`, `target.encoder.layer0.weight`, and `predictor.layer0.weight`. No pickle.
 - `config.json` is the *canonical* serialization of the config struct (sorted keys, no whitespace) so the hash is reproducible.
 - `manifest.json` is written **last** after every other file's hash is computed, so a partial directory has no manifest and is therefore not "complete".
 
@@ -79,9 +79,9 @@ pub enum ArtifactStatus { Active, Quarantined { reason: String } }
 
 `compute_artifact_hashes(artifact_root) -> Vec<ArtifactFile>` walks the directory in sorted order and produces the list. The same function is called at registration time and at FSV time; they must produce byte-identical output.
 
-## 5. Inference-Time Hash Verification
+## 5. Artifact Load / Verification
 
-Implementation in `crates/context-graph-dynamicjepa/src/model/inference.rs`:
+Implementation in `crates/context-graph-dynamicjepa/src/artifact.rs`:
 
 ```rust
 pub fn load_artifact_for_inference(
@@ -109,9 +109,9 @@ pub fn load_artifact_for_inference(
 }
 ```
 
-The inference path **never** loads weights without first verifying every file hash. Mismatch → typed error → no `PredictionRecord` is written.
+The artifact load path **never** loads weights without first verifying every file hash. Mismatch → typed error. In Phase 7 the CLI exercises this through `get-artifact --verify-files`; Phase 8 exercises the same check through `predict` and verifies no `PredictionRecord` is written on mismatch.
 
-The corrupted-artifact edge case (`tests/artifact_hash_fsv.rs`) explicitly rewrites one byte of `model.safetensors` after registration and asserts that the next `predict` call returns `ArtifactHashMismatch` and writes no prediction row.
+The current corrupted-artifact edge cases explicitly rewrite one byte of `model.safetensors` after registration. Phase 7 asserts that `get-artifact --verify-files` returns `ARTIFACT_HASH_MISMATCH`; Phase 8 asserts that `predict` returns `ARTIFACT_HASH_MISMATCH`, reports `wrote_prediction=false`, and leaves `dj_predictions` unchanged.
 
 ## 6. Loading "Latest" Is Forbidden
 
@@ -121,8 +121,6 @@ There is no "latest" model resolution by name. Every inference call must referen
 
 ```rust
 pub struct EvaluationReport {
-    pub training_run_id: TrainingRunId,
-    pub artifact_id: ModelArtifactId,
     pub objective_id: String,
     pub split_metrics: BTreeMap<String, BTreeMap<String, f64>>,
     pub skipped_row_count: u32,
@@ -132,10 +130,12 @@ pub struct EvaluationReport {
     pub vicreg_variance_per_dim_min: f64,
     pub vicreg_variance_per_dim_mean: f64,
     pub vicreg_covariance_off_diag_frobenius: f64,
+    pub epoch_metrics: Vec<EpochMetric>,
+    pub parameter_count_trainable: usize,
 }
 ```
 
-`split_metrics["val"]["latent_mse"]`, etc. The skipped baselines are computed by the same `evaluate(...)` function that scored the trained model — they are recorded in the same report so a reviewer can see in one place "trained: cosine 0.99, shuffled: 0.07, random-init: 0.05". This is the model's anti-leakage proof.
+`split_metrics["val"]["latent_mse"]`, etc. The baselines are computed by the same `evaluate(...)` path that scored the trained model and are recorded in the same report. Current evidence shows good trained validation MSE/cosine and variance floor, but the shuffled-target metric remains high; do not describe the current model as fully passing the strict leakage audit yet.
 
 If `skipped_row_count > 0`, every reason must have a count and an example row id. Silent skips are forbidden; a row is either evaluated or accounted for.
 
@@ -151,14 +151,13 @@ dynamicjepa train \
 
 dynamicjepa get-training-run --db ... --id <UUID> --json
 dynamicjepa get-artifact      --db ... --id <UUID> --verify-files --json
-dynamicjepa register-artifact --db ... --training-run-id <UUID> --path PATH --json   # only if a manual artifact write is needed; demo never uses this
 ```
 
 `--verify-files` is the FSV-critical flag: with it, the CLI recomputes every file hash and includes a `verified: true|false` field per file in the JSON output. Without it, the CLI returns the registry values as-is and prints a warning "files not verified — pass --verify-files for FSV evidence".
 
 ## 9. FSV Evidence (Per Run)
 
-After training, `tmp/5090jepa_evidence/<domain>/<run_id>/decoded/` contains:
+Current Phase 7 evidence is written by `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` to `tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json`, with runtime DB/artifact files under `tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/`. After training, the evidence contains decoded output equivalent to:
 
 ```
 training_run.json                  # decoded TrainingRunRecord

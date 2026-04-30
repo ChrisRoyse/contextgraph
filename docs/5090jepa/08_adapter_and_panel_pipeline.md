@@ -2,7 +2,7 @@
 
 This file specifies how raw JSONL fixture lines become normalized state/action/outcome/transition records, then instrument readings, then a latent panel — for the v1 demo. The pipeline is identical for both domain packs; the only difference is which TOML is registered.
 
-Current Phase 4 status as of 2026-04-30: the adapter, instrument execution, and panel materialization path is implemented in `crates/context-graph-cli/src/commands/dynamicjepa.rs`, backed by atomic storage helpers in `crates/context-graph-storage/src/dynamicjepa/{event_store.rs,panel_store.rs}`. The future service-crate implementation remains Phase 7.
+Current Phase 7 status as of 2026-04-30: the adapter, instrument execution, and panel materialization path remains implemented in `crates/context-graph-cli/src/commands/dynamicjepa.rs`, backed by atomic storage helpers in `crates/context-graph-storage/src/dynamicjepa/{event_store.rs,panel_store.rs}`. The Phase 7 service crate owns training/artifacts only; this adapter/panel code has not been moved into the service crate.
 
 ## 1. Pipeline Stages
 
@@ -23,7 +23,7 @@ Every stage persists to its CF before the next stage begins. Failure at any stag
 
 ## 2. Adapter: `json_event`
 
-Input: a JSONL file path. Output: per-line `RawDomainEvent` + `AdapterRunRecord`. The Phase 4 implementation lives in `crates/context-graph-cli/src/commands/dynamicjepa.rs`; the future reusable service implementation belongs in `crates/context-graph-dynamicjepa/src/adapters/json_event.rs` when Phase 7 adds that crate.
+Input: a JSONL file path. Output: per-line `RawDomainEvent` + `AdapterRunRecord`. The implementation lives in `crates/context-graph-cli/src/commands/dynamicjepa.rs`; a reusable service implementation under `crates/context-graph-dynamicjepa/src/adapters/` remains a future refactor and must preserve the verified CLI behavior.
 
 Algorithm:
 
@@ -43,8 +43,8 @@ The line offset is captured in `RawDomainEvent.source_offset` so an operator ins
 JSON path resolution (demo subset):
 
 ```rust
-// Phase 4: crates/context-graph-cli/src/commands/dynamicjepa.rs
-// Phase 7 target: crates/context-graph-dynamicjepa/src/adapters/jsonpath.rs
+// Current implementation: crates/context-graph-cli/src/commands/dynamicjepa.rs
+// Future refactor target: crates/context-graph-dynamicjepa/src/adapters/jsonpath.rs
 pub fn resolve(root: &serde_json::Value, path: &str) -> Result<serde_json::Value, DynamicJepaError>;
 ```
 
@@ -80,7 +80,7 @@ Audit invariant: every `event_id` in `dj_raw_events` has exactly one `dj_adapter
 
 ## 4. Instrument Execution
 
-Phase 4 implementation is in `crates/context-graph-cli/src/commands/dynamicjepa.rs`. Phase 7 should move this into `crates/context-graph-dynamicjepa/src/instruments/` without changing the verified behavior.
+Current implementation is in `crates/context-graph-cli/src/commands/dynamicjepa.rs`. Moving this into `crates/context-graph-dynamicjepa/src/instruments/` remains a future refactor and must not change the verified behavior.
 
 Per `InstrumentSpec`, for an event with normalized records:
 

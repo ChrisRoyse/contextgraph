@@ -2,7 +2,7 @@
 
 This file is a debugging reference. The first job when something fails is to identify the *category* of failure — that determines which evidence to gather and which fix to apply.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, `compile-trajectories`, and `compile-dataset` are operational and covered by FSV. Later model/planning failures are specified here for future phases.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, `compile-trajectories`, `compile-dataset`, `train`, `get-training-run`, `get-artifact --verify-files`, `predict`, `plan`, and `record-surprise` are operational and covered by CLI FSV. MCP and bundled `verify-*` failures are specified here for future phases.
 
 ## 1. Categories
 
@@ -97,16 +97,30 @@ Fixes (in order):
 
 Do **not** bypass the convergence target by lowering it — the convergence asserts in `tests/*_fsv.rs` will still fail.
 
-### 2.8 `predict` — `ArtifactHashMismatch`
+### 2.7a `train` — unsupported device `cpu`
 
-Cause: the artifact files on disk do not match the registry. Either someone edited the file (intentional EC test) or the run was interrupted between file write and registry write.
+Cause: Phase 7 is CUDA-only. The config validator rejects `schedule.device` values other than `"cuda"` rather than falling back to CPU.
+
+Fix: Set `"device": "cuda"` in the train config and rerun. The Phase 7 edge-case FSV expects the invalid CPU config to leave `dj_model_artifacts` unchanged.
+
+### 2.7b `train` — missing dataset id
+
+Cause: the supplied `--dataset-id` has no matching `dj_dataset_shards` rows.
+
+Fix: Run `dynamicjepa inspect-counts --db <path> --json` and `dynamicjepa inspect-cf --cf dj_dataset_shards --limit 10 --json`, then use the dataset id emitted by `compile-dataset`. The expected edge-case outcome is no new training run, no artifact row, and no audit row.
+
+### 2.8 `get-artifact --verify-files` / future `predict` — `ArtifactHashMismatch`
+
+Cause: the artifact files on disk do not match the registry. Either someone edited the file (intentional Phase 7 EC test) or the run was interrupted between file write and registry write.
 
 Fix:
 
 - If intentional (EC test): the demo expects this and the harness records it.
 - Otherwise: drop the `ModelArtifactRecord` row, re-run training (the demo wipes its DB anyway).
 
-### 2.9 `verify-counter-world` — `VerificationFailed: count mismatch dj_panels expected=3 actual=2`
+Current Phase 7 surfaces this through `get-artifact --verify-files`. Current Phase 8 surfaces it through `predict`, which is FSV-tested to fail before writing any `PredictionRecord`.
+
+### 2.9 Future Phase 10 `verify-counter-world` — `VerificationFailed: count mismatch dj_panels expected=3 actual=2`
 
 Cause: one panel did not materialize. Almost always a missing required instrument (see 2.4).
 

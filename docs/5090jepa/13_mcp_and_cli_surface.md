@@ -2,7 +2,7 @@
 
 The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
-Current implementation status as of the Phase 6 double-check on 2026-04-30: the CLI implements Phases 3-6, including dataset shard compilation/read/inspection. DynamicJEPA MCP tools are still Phase 9 and are not present in `context-graph-mcp` yet.
+Current implementation status as of the Phase 7/8 review on 2026-04-30: the CLI implements and FSV-accepts Phases 3-8 in the working tree, including dataset shard compilation/read/inspection, CUDA training, training-run reads, artifact hash verification, prediction, planning, guard decisions, and surprise recording. DynamicJEPA MCP tools are still Phase 9 and are not present in `context-graph-mcp` yet. Bundled `verify-*` CLI commands remain future Phase 10 work.
 
 ## 1. Tool Name Constants
 
@@ -139,9 +139,12 @@ Current CLI status: the registry/inspection subset is implemented and verified:
 `list-instrument-readings`. The Phase 5 binding/trajectory subset is implemented
 and verified: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`,
 and `list-trajectories`. The Phase 6 dataset subset is implemented and verified:
-`compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. Later subcommands
-below remain Phase 7+ work and should not be listed as operational until their
-source-of-truth FSV is complete.
+`compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. The Phase 7
+training/artifact subset is implemented and verified for counter_world:
+`train`, `get-training-run`, and `get-artifact --verify-files`. The Phase 8
+prediction/planning/surprise subset is implemented and FSV-tested:
+`predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and
+`get-surprise`. Bundled verification commands and MCP tools remain unimplemented.
 
 Subcommands (all accept `--db PATH` and `--json`):
 
@@ -178,10 +181,14 @@ context-graph dynamicjepa get-artifact --id UUID --verify-files
 context-graph dynamicjepa predict --artifact-id UUID --panel-id UUID --action-id UUID
 context-graph dynamicjepa plan --artifact-id UUID --panel-id UUID --skill-id UUID
 context-graph dynamicjepa record-surprise --prediction-id UUID --observed-outcome-id UUID --observed-panel-id UUID
+context-graph dynamicjepa get-prediction --id UUID
+context-graph dynamicjepa get-plan-trace --id UUID --include-predictions --include-guards
+context-graph dynamicjepa get-surprise --id UUID
 
 context-graph dynamicjepa inspect-counts
 context-graph dynamicjepa inspect-cf --cf NAME --limit N
 
+# Future Phase 10:
 context-graph dynamicjepa verify-counter-world --fixtures-root PATH --artifact-root PATH
 context-graph dynamicjepa verify-gridworld     --fixtures-root PATH --artifact-root PATH
 ```
@@ -256,6 +263,10 @@ Add or keep current:
 
 - Current Phase 3: `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs` — real CLI binary, real temp RocksDB, both checked-in domain TOMLs, decoded CF inspection, and empty TOML / duplicate instrument / unknown TOML key / invalid CF edge cases.
 - Current Phase 4: `crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs` — real CLI binary, real temp RocksDB, checked-in domain packs and fixtures, decoded CF inspection for adapter/panel rows, and empty input / invalid action / max or out-of-bounds edge cases.
+- Current Phase 5: `crates/context-graph-cli/tests/dynamicjepa_phase5_fsv.rs` — real CLI binary, real temp RocksDB, trajectories, bindings, and edge-case source-of-truth count checks.
+- Current Phase 6: `crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs` — real CLI binary, real temp RocksDB, dataset shards, row inspection, and dataset edge cases.
+- Current Phase 7: `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` — real CLI binary, real temp RocksDB, generated counter_world training data, CUDA training, artifact hash verification, and missing dataset / invalid CPU config / corrupted artifact edge cases.
+- Current Phase 8: `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs` — real CLI binary, real temp RocksDB, generated counter_world training data, CUDA training, prediction, plan, guard decision, surprise, readback, missing artifact, and corrupt artifact edge cases.
 - `crates/context-graph-mcp/tests/dynamicjepa_tools_dispatch_test.rs` — confirm every tool name maps to a handler.
 - `crates/context-graph-mcp/tests/dynamicjepa_capability_matrix_test.rs` — confirm the capability matrix includes DynamicJEPA fields after a `verify-counter-world` run.
 - `crates/context-graph-cli/tests/dynamicjepa_cli_smoke_test.rs` — CLI argument parsing, exit codes, JSON shape.

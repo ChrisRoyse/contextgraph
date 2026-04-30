@@ -46,14 +46,16 @@ sha256sum configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl
 
 Record the hash; the test suite asserts it. If the hash drifts, revert the generator change.
 
-## 4. Current Phase 6 Registry/Adapter/Panel/Trajectory/Dataset Run
+## 4. Current Phase 7 Registry/Adapter/Panel/Trajectory/Dataset/Training Run
 
 This is the implemented runbook today. It proves the Phase 3, Phase 4, and
 Phase 5/6 surfaces: domain-pack registration, decoded CF inspection, strict
 validation, JSONL ingestion, adapter success/failure, instrument readings,
 latent panels, deterministic bindings, trajectories, and physical RocksDB
 evidence. Phase 6 adds deterministic one-step dataset shards, decoded dataset
-row inspection, and independent `ldb` count proof.
+row inspection, and independent `ldb` count proof. Phase 7 adds CUDA-only
+training, `dj_training_runs`, `dj_model_artifacts`, on-disk artifact hashes,
+and corrupted-artifact verification.
 
 ```bash
 # Phase 3 registry regression run; Phase 4 depends on these rows.
@@ -357,7 +359,77 @@ dataset rows train=4977 val=1330 test=693 total=7000
 Phase 6 manual evidence lives in `tmp/5090jepa_evidence/phase6/manual_counter/`
 and `tmp/5090jepa_evidence/phase6/manual_gridworld/`.
 
-## 5. Future Phase 10 Counter_world Run
+Phase 7 counter_world training/artifact FSV is currently driven by the CLI test
+because it generates a deterministic 60-event counter_world fixture before
+running the real CLI pipeline:
+
+```bash
+cargo test -p context-graph-cli --test dynamicjepa_phase7_fsv --all-features -- --nocapture
+```
+
+Expected Phase 7 evidence:
+
+```text
+tmp/5090jepa_evidence/phase7/cli_phase7_fsv.json
+tmp/5090jepa_evidence/phase7/cli_phase7_fsv_runtime/
+```
+
+Expected happy-path source-of-truth counts after training:
+
+```text
+dj_raw_events 60
+dj_latent_panels 60
+dj_trajectories 1
+dj_dataset_shards 3
+dj_training_runs 1
+dj_model_artifacts 1
+dj_predictions 0
+dj_audit_log 187
+```
+
+Expected current model evidence in `happy_train.summary.metrics`:
+
+```text
+parameter_count_trainable 480
+val_latent_mse <= 0.005
+val_latent_cosine >= 0.99
+vicreg_variance_per_dim_min >= 0.5
+```
+
+Known caveats: the strict shuffled-target and covariance targets are recorded but
+not yet passing acceptance gates, gridworld model training FSV has not been
+completed, and bundled `verify-*` commands are still future work.
+
+Phase 8 counter_world prediction/planning/surprise FSV is:
+
+```bash
+cargo test -p context-graph-cli --test dynamicjepa_phase8_fsv --all-features -- --nocapture
+```
+
+Expected Phase 8 evidence:
+
+```text
+tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json
+tmp/5090jepa_evidence/phase8/cli_phase8_fsv_runtime/
+```
+
+Expected Phase 8 final source-of-truth counts include:
+
+```text
+dj_actions 71
+dj_predictions 11
+dj_guard_decisions 10
+dj_plan_traces 2
+dj_skill_policies 1
+dj_surprise_events 1
+dj_training_runs 1
+dj_model_artifacts 1
+dj_audit_log 194
+```
+
+## 5. Future Phase 10 Bundled Counter_world Run
+
+Current Phase 8 evidence is produced by `dynamicjepa_phase8_fsv.rs` in Section 4. The bundled `verify-counter-world` command below is still future Phase 10 work.
 
 ```bash
 export DJ_DB=/tmp/5090jepa-cw-fsv
@@ -455,9 +527,11 @@ cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --release --all-fe
 cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase7_fsv --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase8_fsv --release --all-features
+cargo test -p context-graph-dynamicjepa --release --all-features
 
-# Future phases, once the service crate and MCP DynamicJEPA surface exist:
-# cargo test -p context-graph-dynamicjepa --release --all-features
+# Future phases, once MCP DynamicJEPA surface exists:
 # cargo test -p context-graph-mcp dynamicjepa --release --all-features
 
 # Full workspace if you have time:

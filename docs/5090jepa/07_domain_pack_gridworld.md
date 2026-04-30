@@ -2,7 +2,7 @@
 
 `gridworld_5x5` proves universality. The same pipeline that solves counter_world without code changes also handles a deterministic discrete-navigation domain whose state is a 2-D coordinate, action is one of five discrete moves, and outcome is the new coordinate after wall-clipping. A randomly initialized predictor cannot solve gridworld; a correctly trained tiny JEPA reaches ≥0.95 latent cosine on the held-out transitions.
 
-Current Phase 5 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, materialize into eight panels, and compile into one ordered trajectory through the real CLI and real RocksDB. Full 8000-event dataset/model verification remains later phases.
+Current Phase 7 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, materialize into eight panels, compile into one ordered trajectory, and the full 8000-event corpus compiles into real dataset shards through the CLI and real RocksDB. Gridworld model training/artifact FSV has not been completed yet.
 
 ## 1. World Definition
 
@@ -314,7 +314,7 @@ Total parameters: encoder ~6.5K + predictor ~7K ≈ 13.5K. Comfortably under the
 
 ## 7. Convergence Asserts
 
-`tests/gridworld_fsv.rs` asserts:
+Future gridworld model FSV should assert:
 
 - `metrics.val_latent_cosine >= 0.95`
 - `metrics.val_latent_mse <= 0.05`
@@ -328,8 +328,8 @@ Total parameters: encoder ~6.5K + predictor ~7K ≈ 13.5K. Comfortably under the
 
 `tests/universality_audit.rs` proves the same code handles both packs by asserting:
 
-- The set of `crates/context-graph-dynamicjepa/src/` files modified to add gridworld is **empty** (no domain-specific Rust). Phase 6 already proves both counter_world and gridworld through the CLI/storage dataset path; future Phase 7+ model work must preserve that domain-neutral property.
+- The set of `crates/context-graph-dynamicjepa/src/` files modified to add gridworld remains **empty** (no domain-specific Rust). Phase 6 already proves both counter_world and gridworld through the CLI/storage dataset path; future gridworld model work must preserve that domain-neutral property.
 - `dynamicjepa register-domain` of both TOMLs against a single fresh DB produces the expected DOMAIN_PACK_BY_NV row count of 2.
-- Running `verify-counter-world` and `verify-gridworld` against **the same physical RocksDB** in sequence both pass and the post-state contains both training runs, both artifacts, both verification run rows.
+- Future Phase 10: running `verify-counter-world` and `verify-gridworld` against **the same physical RocksDB** in sequence both pass and the post-state contains both training runs, both artifacts, both verification run rows.
 
 If any of those audits fails, the demo's universality claim is broken.

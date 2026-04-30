@@ -20,37 +20,42 @@ use context_graph_core::dynamicjepa::{
     InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation, InvariantSpec,
     LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
     NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
-    PanelSlot, PanelSlotKind, PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus,
-    ShapeSummary, SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema,
-    TrainingRunId, TrajectoryId, TrajectoryRecord, TransitionId, Validate, VerificationPolicy,
-    ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
-    DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
+    PanelSlot, PanelSlotKind, PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId,
+    RawDomainEvent, ReadingStatus, ShapeSummary, SkillId, SourceKind, StateId, StateSchema,
+    StateTransition, SurpriseEventId, TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId,
+    TrajectoryRecord, TransitionId, Validate, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION,
+    BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION,
+    INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
     NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
     NORMALIZED_STATE_RECORD_VERSION, RAW_DOMAIN_EVENT_RECORD_VERSION,
     STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
-use context_graph_dynamicjepa::{train_dataset, verify_artifact_files, TrainConfig};
+use context_graph_dynamicjepa::{
+    plan_next_action, predict_next_panel, record_surprise, train_dataset, verify_artifact_files,
+    TrainConfig,
+};
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
     CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
-    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
-    CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES,
-    CF_DJ_RAW_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
+    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS,
+    CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES,
+    CF_DJ_OUTCOMES, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES,
+    CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
-    get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec,
-    get_latent_panel, get_model_artifact, get_normalized_state, get_outcome, get_raw_event,
-    get_training_run, get_trajectory, get_transition, inspect_cf, inspect_cf_key,
-    list_adapter_runs, list_bindings, list_dataset_shards, list_domain_packs,
-    list_instrument_readings_for_event, list_latent_panels, list_trajectories, list_transitions,
-    put_adapter_run_failure_batch, put_adapter_run_success_batch, put_audit_record,
-    put_binding_with_audit_batch, put_dataset_shard_with_audit_batch, put_domain_pack,
-    put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
-    put_trajectory_with_audit_batch, snapshot_dj_counts,
+    get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_guard_decision,
+    get_instrument_spec, get_latent_panel, get_model_artifact, get_normalized_state, get_outcome,
+    get_plan_trace, get_prediction, get_raw_event, get_surprise_event, get_training_run,
+    get_trajectory, get_transition, inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings,
+    list_dataset_shards, list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
+    list_trajectories, list_transitions, put_adapter_run_failure_batch,
+    put_adapter_run_success_batch, put_audit_record, put_binding_with_audit_batch,
+    put_dataset_shard_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
+    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
@@ -104,6 +109,18 @@ pub enum DynamicJepaCommands {
     GetTrainingRun(GetTrainingRunArgs),
     /// Read a persisted DynamicJEPA model artifact and optionally verify files.
     GetArtifact(GetArtifactArgs),
+    /// Run a hash-verified DynamicJEPA artifact prediction and persist the row.
+    Predict(PredictArgs),
+    /// Enumerate candidate actions, predict them, evaluate guards, and persist a plan trace.
+    Plan(PlanArgs),
+    /// Compare a prediction with an observed outcome/panel and persist surprise when threshold is breached.
+    RecordSurprise(RecordSurpriseArgs),
+    /// Read a persisted DynamicJEPA prediction.
+    GetPrediction(GetPredictionArgs),
+    /// Read a persisted DynamicJEPA plan trace.
+    GetPlanTrace(GetPlanTraceArgs),
+    /// Read a persisted DynamicJEPA surprise event.
+    GetSurprise(GetSurpriseArgs),
 }
 
 impl DynamicJepaCommands {
@@ -130,6 +147,12 @@ impl DynamicJepaCommands {
             Self::Train(_) => "dynamicjepa_train",
             Self::GetTrainingRun(_) => "dynamicjepa_get_training_run",
             Self::GetArtifact(_) => "dynamicjepa_get_artifact",
+            Self::Predict(_) => "dynamicjepa_predict",
+            Self::Plan(_) => "dynamicjepa_plan",
+            Self::RecordSurprise(_) => "dynamicjepa_record_surprise",
+            Self::GetPrediction(_) => "dynamicjepa_get_prediction",
+            Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
+            Self::GetSurprise(_) => "dynamicjepa_get_surprise",
         }
     }
 }
@@ -557,6 +580,128 @@ pub struct GetArtifactArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct PredictArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Model artifact id to verify and run.
+    #[arg(long = "artifact-id")]
+    pub artifact_id: String,
+
+    /// Input latent panel id.
+    #[arg(long = "panel-id")]
+    pub panel_id: String,
+
+    /// Candidate action id.
+    #[arg(long = "action-id")]
+    pub action_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct PlanArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Model artifact id to verify and run.
+    #[arg(long = "artifact-id")]
+    pub artifact_id: String,
+
+    /// Current latent panel id.
+    #[arg(long = "panel-id")]
+    pub panel_id: String,
+
+    /// Skill policy id. If missing, plan writes enumerate_declared_actions under this id.
+    #[arg(long = "skill-id")]
+    pub skill_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RecordSurpriseArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Prediction id to compare against the observed rows.
+    #[arg(long = "prediction-id")]
+    pub prediction_id: String,
+
+    /// Observed outcome id.
+    #[arg(long = "observed-outcome-id")]
+    pub observed_outcome_id: String,
+
+    /// Observed panel id.
+    #[arg(long = "observed-panel-id")]
+    pub observed_panel_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetPredictionArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Prediction id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetPlanTraceArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Plan trace id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Include decoded prediction rows referenced by the trace.
+    #[arg(long = "include-predictions")]
+    pub include_predictions: bool,
+
+    /// Include decoded guard decision rows referenced by the trace.
+    #[arg(long = "include-guards")]
+    pub include_guards: bool,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetSurpriseArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Surprise event id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -629,6 +774,12 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::Train(args) => train_command(args),
         DynamicJepaCommands::GetTrainingRun(args) => get_training_run_command(args),
         DynamicJepaCommands::GetArtifact(args) => get_artifact_command(args),
+        DynamicJepaCommands::Predict(args) => predict_command(args),
+        DynamicJepaCommands::Plan(args) => plan_command(args),
+        DynamicJepaCommands::RecordSurprise(args) => record_surprise_command(args),
+        DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
+        DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
+        DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
     }
 }
 
@@ -2252,6 +2403,370 @@ fn get_artifact_command(args: GetArtifactArgs) -> DynamicJepaResult<CommandOutco
                 "counts": counts,
                 "queried": {"artifact_id": args.id},
                 "remediation": "run dynamicjepa train before reading a model artifact",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn predict_command(args: PredictArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_ACTIONS,
+        CF_DJ_PREDICTIONS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "predict.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let artifact_id = parse_model_artifact_id(&args.artifact_id, "predict.artifact_id")?;
+    let panel_id = parse_panel_id(&args.panel_id, "predict.panel_id")?;
+    let action_id = parse_action_id(&args.action_id, "predict.action_id")?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let outcome = predict_next_panel(db, artifact_id, panel_id, action_id)?;
+        Ok(json!({
+            "created_ids": {
+                "prediction_id": outcome.prediction_id.to_string(),
+            },
+            "summary": {
+                "predicted_dim": outcome.prediction.predicted_next_panel_vec.len(),
+                "uncertainty": outcome.prediction.uncertainty,
+                "model_artifact_hash_at_inference": hex_bytes(&outcome.prediction.model_artifact_hash_at_inference),
+            },
+            "decoded_records": {
+                "prediction": outcome.prediction,
+                "artifact": outcome.artifact,
+                "predictions_cf": inspect_cf(db, CF_DJ_PREDICTIONS, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 200, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_predict",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_predict",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_ACTIONS,
+        CF_DJ_PREDICTIONS,
+        CF_DJ_SKILL_POLICIES,
+        CF_DJ_GUARD_DECISIONS,
+        CF_DJ_PLAN_TRACES,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "plan.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let artifact_id = parse_model_artifact_id(&args.artifact_id, "plan.artifact_id")?;
+    let panel_id = parse_panel_id(&args.panel_id, "plan.panel_id")?;
+    let skill_id = parse_skill_id(&args.skill_id, "plan.skill_id")?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let outcome = plan_next_action(db, artifact_id, panel_id, skill_id)?;
+        Ok(json!({
+            "created_ids": {
+                "plan_trace_id": outcome.plan_trace_id.to_string(),
+                "candidate_action_ids": outcome.candidate_actions.iter().map(|action| action.action_id.to_string()).collect::<Vec<_>>(),
+                "prediction_ids": outcome.predictions.iter().map(|prediction| prediction.prediction_id.to_string()).collect::<Vec<_>>(),
+                "guard_decision_ids": outcome.guard_decisions.iter().map(|guard| guard.guard_decision_id.to_string()).collect::<Vec<_>>(),
+                "selected_action_id": outcome.plan_trace.selected_action_id.map(|id| id.to_string()),
+                "skill_id": outcome.skill_policy.skill_id.to_string(),
+            },
+            "summary": {
+                "candidate_count": outcome.candidate_actions.len(),
+                "prediction_count": outcome.predictions.len(),
+                "guard_decision_count": outcome.guard_decisions.len(),
+                "status": outcome.plan_trace.status,
+                "utility_scores": outcome.plan_trace.utility_scores,
+            },
+            "decoded_records": {
+                "plan_trace": outcome.plan_trace,
+                "skill_policy": outcome.skill_policy,
+                "candidate_actions": outcome.candidate_actions,
+                "predictions": outcome.predictions,
+                "guard_decisions": outcome.guard_decisions,
+                "actions_cf": inspect_cf(db, CF_DJ_ACTIONS, 100, 0)?,
+                "predictions_cf": inspect_cf(db, CF_DJ_PREDICTIONS, 100, 0)?,
+                "guard_decisions_cf": inspect_cf(db, CF_DJ_GUARD_DECISIONS, 100, 0)?,
+                "plan_traces_cf": inspect_cf(db, CF_DJ_PLAN_TRACES, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 300, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_plan",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_plan",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn record_surprise_command(args: RecordSurpriseArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_PREDICTIONS,
+        CF_DJ_OUTCOMES,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_SURPRISE_EVENTS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "record-surprise.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let prediction_id = parse_prediction_id(&args.prediction_id, "record-surprise.prediction_id")?;
+    let observed_outcome_id = parse_outcome_id(
+        &args.observed_outcome_id,
+        "record-surprise.observed_outcome_id",
+    )?;
+    let observed_panel_id =
+        parse_panel_id(&args.observed_panel_id, "record-surprise.observed_panel_id")?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let outcome = record_surprise(db, prediction_id, observed_outcome_id, observed_panel_id)?;
+        Ok(json!({
+            "created_ids": {
+                "surprise_event_id": outcome.surprise_event_id.map(|id| id.to_string()),
+            },
+            "summary": {
+                "wrote_surprise": outcome.wrote_surprise,
+                "cosine": outcome.cosine,
+                "threshold": outcome.threshold,
+                "error_norm": outcome.error_norm,
+            },
+            "decoded_records": {
+                "surprise_event": outcome.surprise_event,
+                "surprise_events_cf": inspect_cf(db, CF_DJ_SURPRISE_EVENTS, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 300, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_record_surprise",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_record_surprise",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn get_prediction_command(args: GetPredictionArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-prediction.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let id = parse_prediction_id(&args.id, "get-prediction.id")?;
+    match get_prediction(db, id)? {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_prediction",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_PREDICTIONS],
+                "counts": counts,
+                "decoded_records": {"prediction": record},
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_prediction",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_PREDICTIONS],
+                "counts": counts,
+                "queried": {"prediction_id": args.id},
+                "remediation": "run dynamicjepa predict or plan before reading a prediction",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn get_plan_trace_command(args: GetPlanTraceArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-plan-trace.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let id = parse_plan_trace_id(&args.id, "get-plan-trace.id")?;
+    match get_plan_trace(db, id)? {
+        Some(record) => {
+            let mut decoded = Map::new();
+            decoded.insert("plan_trace".to_string(), json!(record));
+            if args.include_predictions {
+                let records = record
+                    .prediction_ids
+                    .iter()
+                    .map(|prediction_id| {
+                        get_prediction(db, *prediction_id)?.ok_or_else(|| {
+                            DynamicJepaError::SourceOfTruthMissing {
+                                cf: CF_DJ_PREDICTIONS.to_string(),
+                                key: prediction_id.into_bytes().to_vec(),
+                            }
+                        })
+                    })
+                    .collect::<DynamicJepaResult<Vec<_>>>()?;
+                decoded.insert("predictions".to_string(), json!(records));
+            }
+            if args.include_guards {
+                let records = record
+                    .guard_decision_ids
+                    .iter()
+                    .map(|guard_id| {
+                        get_guard_decision(
+                            db,
+                            context_graph_core::dynamicjepa::GuardDecisionId(*guard_id),
+                        )?
+                        .ok_or_else(|| {
+                            DynamicJepaError::SourceOfTruthMissing {
+                                cf: CF_DJ_GUARD_DECISIONS.to_string(),
+                                key: guard_id.as_bytes().to_vec(),
+                            }
+                        })
+                    })
+                    .collect::<DynamicJepaResult<Vec<_>>>()?;
+                decoded.insert("guard_decisions".to_string(), json!(records));
+            }
+            Ok(CommandOutcome {
+                value: json!({
+                    "operation": "dynamicjepa_get_plan_trace",
+                    "status": "ok",
+                    "db_path": db_path,
+                    "source_of_truth": [CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_GUARD_DECISIONS],
+                    "counts": counts,
+                    "decoded_records": decoded,
+                }),
+                exit_code: 0,
+            })
+        }
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_plan_trace",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_PLAN_TRACES],
+                "counts": counts,
+                "queried": {"plan_trace_id": args.id},
+                "remediation": "run dynamicjepa plan before reading a plan trace",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn get_surprise_command(args: GetSurpriseArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-surprise.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let id = parse_surprise_event_id(&args.id, "get-surprise.id")?;
+    match get_surprise_event(db, id)? {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_surprise",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_SURPRISE_EVENTS],
+                "counts": counts,
+                "decoded_records": {"surprise_event": record},
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_surprise",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_SURPRISE_EVENTS],
+                "counts": counts,
+                "queried": {"surprise_event_id": args.id},
+                "remediation": "run dynamicjepa record-surprise before reading a surprise event",
             }),
             exit_code: 0,
         }),
@@ -5162,6 +5677,22 @@ fn parse_model_artifact_id(value: &str, field: &str) -> DynamicJepaResult<ModelA
     Ok(ModelArtifactId(parse_uuid(value, field)?))
 }
 
+fn parse_prediction_id(value: &str, field: &str) -> DynamicJepaResult<PredictionId> {
+    Ok(PredictionId(parse_uuid(value, field)?))
+}
+
+fn parse_skill_id(value: &str, field: &str) -> DynamicJepaResult<SkillId> {
+    Ok(SkillId(parse_uuid(value, field)?))
+}
+
+fn parse_plan_trace_id(value: &str, field: &str) -> DynamicJepaResult<PlanTraceId> {
+    Ok(PlanTraceId(parse_uuid(value, field)?))
+}
+
+fn parse_surprise_event_id(value: &str, field: &str) -> DynamicJepaResult<SurpriseEventId> {
+    Ok(SurpriseEventId(parse_uuid(value, field)?))
+}
+
 fn parse_hex_key(value: &str, field: &str) -> DynamicJepaResult<Vec<u8>> {
     let text = value.trim();
     if text.is_empty() || text.len() % 2 != 0 {
@@ -5698,6 +6229,20 @@ fn error_value(
             object.insert("actual".to_string(), json!(actual));
             object.insert("wrote_prediction".to_string(), json!(false));
         }
+        DynamicJepaError::PredictionInputMissing { target_id, cf } => {
+            object.insert("target_id".to_string(), json!(target_id));
+            object.insert("cf".to_string(), json!(cf));
+            object.insert("wrote_prediction".to_string(), json!(false));
+        }
+        DynamicJepaError::GuardRejected {
+            guard_id,
+            reason_code,
+            action_id,
+        } => {
+            object.insert("guard_id".to_string(), json!(guard_id));
+            object.insert("reason_code".to_string(), json!(reason_code));
+            object.insert("action_id".to_string(), json!(action_id.to_string()));
+        }
         DynamicJepaError::DomainPackVersionMismatch {
             id,
             expected,
@@ -5744,6 +6289,14 @@ fn remediation(err: &DynamicJepaError) -> Option<String> {
         ),
         DynamicJepaError::ArtifactHashMismatch { .. } => Some(
             "recompute the artifact files from the registry path; rerun training from a fresh artifact root if any file differs"
+                .to_string(),
+        ),
+        DynamicJepaError::PredictionInputMissing { .. } => Some(
+            "inspect the referenced artifact, panel, and action source-of-truth rows before prediction or planning"
+                .to_string(),
+        ),
+        DynamicJepaError::GuardRejected { .. } => Some(
+            "inspect dj_guard_decisions for the rejected action and choose a candidate within the registered bounds"
                 .to_string(),
         ),
         _ => None,
