@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -6483,6 +6483,92 @@ struct OnetGeneratedCorpus {
     source_occupation_count: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct OnetRequiredTsvMember {
+    path: &'static str,
+    label: &'static str,
+    required_headers: &'static [&'static str],
+    exact_data_rows: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OnetZipPreflight {
+    status: &'static str,
+    source_zip_path: String,
+    source_zip_sha256: String,
+    archive_entry_count: usize,
+    archive_file_count: usize,
+    required_root: &'static str,
+    required_release_marker: &'static str,
+    required_license_marker: &'static str,
+    source_urls: Vec<&'static str>,
+    required_members: Vec<OnetZipMemberEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OnetZipMemberEvidence {
+    path: String,
+    size_bytes: u64,
+    compressed_size_bytes: u64,
+    crc32: u32,
+    row_count: Option<usize>,
+    required_headers: Vec<&'static str>,
+    header_columns: Option<Vec<String>>,
+}
+
+struct OnetZipMemberRead {
+    text: String,
+    size_bytes: u64,
+    compressed_size_bytes: u64,
+    crc32: u32,
+}
+
+const ONET_TEXT_ZIP_ROOT: &str = "db_30_2_text/";
+const ONET_REQUIRED_RELEASE_MARKER: &str = "O*NET 30.2 Database";
+const ONET_REQUIRED_LICENSE_MARKER: &str =
+    "Creative Commons Attribution 4.0 International License";
+const ONET_README_MEMBER: &str = "db_30_2_text/Read Me.txt";
+const ONET_REQUIRED_FILE_COUNT: usize = 41;
+const ONET_REQUIRED_TSV_MEMBERS: &[OnetRequiredTsvMember] = &[
+    OnetRequiredTsvMember {
+        path: "db_30_2_text/Occupation Data.txt",
+        label: "Occupation Data",
+        required_headers: &["O*NET-SOC Code", "Title", "Description"],
+        exact_data_rows: 1016,
+    },
+    OnetRequiredTsvMember {
+        path: "db_30_2_text/Job Zones.txt",
+        label: "Job Zones",
+        required_headers: &["O*NET-SOC Code", "Job Zone", "Date", "Domain Source"],
+        exact_data_rows: 923,
+    },
+    OnetRequiredTsvMember {
+        path: "db_30_2_text/Skills.txt",
+        label: "Skills",
+        required_headers: &[
+            "O*NET-SOC Code",
+            "Element ID",
+            "Element Name",
+            "Scale ID",
+            "Data Value",
+            "Date",
+            "Domain Source",
+        ],
+        exact_data_rows: 62580,
+    },
+    OnetRequiredTsvMember {
+        path: "db_30_2_text/Related Occupations.txt",
+        label: "Related Occupations",
+        required_headers: &[
+            "O*NET-SOC Code",
+            "Related O*NET-SOC Code",
+            "Relatedness Tier",
+            "Index",
+        ],
+        exact_data_rows: 18460,
+    },
+];
+
 fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJepaResult<PathBuf> {
     let onet_zip = ctx.onet_text_zip.as_ref().ok_or_else(|| {
         DynamicJepaError::validation(
@@ -6492,14 +6578,30 @@ fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJ
         )
     })?;
     if !onet_zip.exists() {
-        return Err(DynamicJepaError::validation(
+        let err = DynamicJepaError::validation(
             "research_smoke.onet_text_zip",
             format!("O*NET text ZIP does not exist: {}", onet_zip.display()),
             "download https://www.onetcenter.org/dl_files/database/db_30_2_text.zip and pass its local path",
-        ));
+        );
+        write_onet_preflight_failure(ctx, onet_zip, None, &err)?;
+        return Err(err);
     }
-    let zip_hash = file_sha256(onet_zip)?;
+    let zip_hash = match file_sha256(onet_zip) {
+        Ok(hash) => hash,
+        Err(err) => {
+            write_onet_preflight_failure(ctx, onet_zip, None, &err)?;
+            return Err(err);
+        }
+    };
     let zip_hash_hex = hex_bytes(&zip_hash);
+    let preflight = match validate_onet_text_zip(onet_zip, &zip_hash_hex) {
+        Ok(preflight) => preflight,
+        Err(err) => {
+            write_onet_preflight_failure(ctx, onet_zip, Some(&zip_hash_hex), &err)?;
+            return Err(err);
+        }
+    };
+    write_json_file(&ctx.run_dir.join("onet_source_preflight.json"), &preflight)?;
     let generated = build_onet_career_corpus(onet_zip, ctx.career_event_count, &zip_hash_hex)?;
     let fixtures = ctx.run_dir.join("generated_fixtures/onet_30_2");
     fs::create_dir_all(fixtures.join("domain_packs")).map_err(|err| DynamicJepaError::Storage {
