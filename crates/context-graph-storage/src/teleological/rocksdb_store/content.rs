@@ -224,7 +224,7 @@ impl RocksDbTeleologicalStore {
             let mut contents = Vec::with_capacity(ids.len());
             for (i, (content_result, fp_result)) in content_results
                 .into_iter()
-                .zip(fp_results.into_iter())
+                .zip(fp_results)
                 .enumerate()
             {
                 match content_result {

@@ -73,7 +73,7 @@ impl WarmModelRegistry {
             .collect();
 
         // Sort by expected_bytes descending (largest first)
-        entries.sort_by(|a, b| b.1.cmp(&a.1));
+        entries.sort_by_key(|(_, expected_bytes)| std::cmp::Reverse(*expected_bytes));
 
         entries.into_iter().map(|(id, _)| id).collect()
     }

@@ -1877,7 +1877,7 @@ impl RocksDbTeleologicalStore {
         let source_metadata_batch = self.get_source_metadata_batch_async(&result_ids).await?;
 
         let mut sequences: HashMap<Uuid, Option<u64>> = HashMap::new();
-        for (id, maybe_meta) in result_ids.iter().zip(source_metadata_batch.into_iter()) {
+        for (id, maybe_meta) in result_ids.iter().zip(source_metadata_batch) {
             let seq = maybe_meta.and_then(|m| m.session_sequence);
             sequences.insert(*id, seq);
         }

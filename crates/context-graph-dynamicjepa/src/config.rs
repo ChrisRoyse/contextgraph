@@ -208,7 +208,7 @@ fn validate_mlp(
             "Phase 7 supports kind=\"mlp\" only",
         ));
     }
-    if hidden.is_empty() || hidden.iter().any(|dim| *dim == 0) || out_dim == 0 {
+    if hidden.is_empty() || hidden.contains(&0) || out_dim == 0 {
         return Err(DynamicJepaError::validation(
             field,
             "hidden dimensions and out_dim must be positive",

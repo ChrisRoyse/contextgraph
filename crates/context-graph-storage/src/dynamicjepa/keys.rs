@@ -7,7 +7,7 @@ use context_graph_core::dynamicjepa::{
 use uuid::Uuid;
 
 pub const DYNAMIC_JEPA_DOMAIN_PACK_NAMESPACE: Uuid =
-    Uuid::from_u128(0x5090_0000_0000_4000_8000_000000000002);
+    Uuid::from_u128(0x5090_0000_0000_4000_8000_0000_0000_0002);
 
 pub fn blake3_128(bytes: &[u8]) -> [u8; 16] {
     let hash = blake3::hash(bytes);

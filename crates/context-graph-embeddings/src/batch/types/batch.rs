@@ -139,7 +139,7 @@ impl Batch {
             self.response_txs.len()
         );
 
-        for (tx, result) in self.response_txs.into_iter().zip(results.into_iter()) {
+        for (tx, result) in self.response_txs.into_iter().zip(results) {
             // Ignore send errors (receiver may have dropped)
             let _ = tx.send(result);
         }

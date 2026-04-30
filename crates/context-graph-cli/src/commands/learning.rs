@@ -3,7 +3,7 @@
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand};
@@ -591,7 +591,7 @@ async fn load_training_datasets(
     Ok(datasets)
 }
 
-fn prepare_output_path(out: &PathBuf, overwrite: bool) -> Result<PathBuf> {
+fn prepare_output_path(out: &Path, overwrite: bool) -> Result<PathBuf> {
     let parent = out
         .parent()
         .ok_or_else(|| anyhow!("--out path has no parent directory: {}", out.display()))?;
@@ -607,7 +607,7 @@ fn prepare_output_path(out: &PathBuf, overwrite: bool) -> Result<PathBuf> {
             out.display()
         ));
     }
-    let mut tmp = out.clone();
+    let mut tmp = out.to_path_buf();
     match out.extension().and_then(|ext| ext.to_str()) {
         Some(ext) => tmp.set_extension(format!("{ext}.tmp")),
         None => tmp.set_extension("tmp"),

@@ -3224,6 +3224,9 @@ struct CiCsvTable {
     rows: Vec<BTreeMap<String, String>>,
 }
 
+type CiTableRows = Vec<BTreeMap<String, String>>;
+type CiTableWithKeys = (Vec<String>, CiTableRows);
+
 fn capture_ci_reference_value(reference_id: &str, bundle: &Path) -> DynamicJepaResult<Value> {
     let bundle_path = canonical_existing_path(bundle, "ci-reference.bundle")?;
     let run_manifest = read_json_file(&bundle.join("run_manifest.json"))?;
@@ -3402,7 +3405,7 @@ fn read_ci_csv_table(path: &Path, table_name: &str) -> DynamicJepaResult<CiCsvTa
             headers
                 .iter()
                 .cloned()
-                .zip(cells.into_iter())
+                .zip(cells)
                 .collect::<BTreeMap<_, _>>(),
         );
     }
@@ -3799,10 +3802,7 @@ fn compare_ci_table(
     Ok(())
 }
 
-fn ci_table_rows(
-    value: &Value,
-    table: &str,
-) -> Result<(Vec<String>, Vec<BTreeMap<String, String>>), CiReferenceCheckFailure> {
+fn ci_table_rows(value: &Value, table: &str) -> Result<CiTableWithKeys, CiReferenceCheckFailure> {
     let table_value = value
         .get("tables")
         .and_then(Value::as_object)
@@ -5109,7 +5109,7 @@ fn parse_tsv_records(
             headers
                 .iter()
                 .cloned()
-                .zip(values.into_iter())
+                .zip(values)
                 .collect::<BTreeMap<_, _>>(),
         );
     }
@@ -5397,7 +5397,7 @@ fn onet_experience_years(step: u64, event_count: u64) -> f64 {
 }
 
 fn onet_wage_band(job_zone: i64, step: u64) -> &'static str {
-    if job_zone >= 5 || step % 17 == 0 {
+    if job_zone >= 5 || step.is_multiple_of(17) {
         "high"
     } else if job_zone >= 3 {
         "mid"
@@ -5413,11 +5413,11 @@ fn onet_action_for_transition(
 ) -> &'static str {
     if current.cluster != next.cluster {
         "role_move_near"
-    } else if step % 13 == 0 {
+    } else if step.is_multiple_of(13) {
         "experience_gain"
     } else if skill_sum(next.skill_vector) > skill_sum(current.skill_vector) + 0.03 {
         "skill_gain_high_demand"
-    } else if step % 11 == 0 {
+    } else if step.is_multiple_of(11) {
         "noop"
     } else {
         "skill_gain_adjacent"
@@ -6570,15 +6570,17 @@ fn push_career_ablation_row_from_evidence(
         })?;
     push_career_ablation_row(
         ctx,
-        spec,
-        report["verification_run_id"].clone(),
-        report["db_path"].clone(),
-        report["artifact_root"].clone(),
-        report["evidence_dir"].clone(),
-        report["after_counts"].clone(),
-        domain_pack_path,
-        train_config_path,
-        record_artifact_row,
+        CareerAblationRowInput {
+            spec,
+            verification_run_id: report["verification_run_id"].clone(),
+            db_path: report["db_path"].clone(),
+            artifact_root: report["artifact_root"].clone(),
+            evidence_dir_value: report["evidence_dir"].clone(),
+            after_counts: report["after_counts"].clone(),
+            domain_pack_path,
+            train_config_path,
+            record_artifact_row,
+        },
     )
 }
 
@@ -6593,58 +6595,64 @@ fn push_career_ablation_row_from_output(
 ) -> DynamicJepaResult<()> {
     push_career_ablation_row(
         ctx,
-        spec,
-        output["verification_run_id"].clone(),
-        output["db_path"].clone(),
-        output["artifact_root"].clone(),
-        output["evidence_dir"].clone(),
-        after_counts.clone(),
-        domain_pack_path,
-        train_config_path,
-        record_artifact_row,
+        CareerAblationRowInput {
+            spec,
+            verification_run_id: output["verification_run_id"].clone(),
+            db_path: output["db_path"].clone(),
+            artifact_root: output["artifact_root"].clone(),
+            evidence_dir_value: output["evidence_dir"].clone(),
+            after_counts: after_counts.clone(),
+            domain_pack_path,
+            train_config_path,
+            record_artifact_row,
+        },
     )
 }
 
-fn push_career_ablation_row(
-    ctx: &mut ResearchSmokeContext,
+struct CareerAblationRowInput<'a> {
     spec: CareerAblationSpec,
     verification_run_id: Value,
     db_path: Value,
     artifact_root: Value,
     evidence_dir_value: Value,
     after_counts: Value,
-    domain_pack_path: &Path,
-    train_config_path: &Path,
+    domain_pack_path: &'a Path,
+    train_config_path: &'a Path,
     record_artifact_row: bool,
+}
+
+fn push_career_ablation_row(
+    ctx: &mut ResearchSmokeContext,
+    input: CareerAblationRowInput<'_>,
 ) -> DynamicJepaResult<()> {
-    let evidence_dir = path_value(&evidence_dir_value, "ablation.evidence_dir")?;
+    let evidence_dir = path_value(&input.evidence_dir_value, "ablation.evidence_dir")?;
     let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
     let dataset_train = read_json_file(&evidence_dir.join("decoded/dataset_train.json"))?;
     let artifact_hashes =
         read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
-    let domain_pack = parse_domain_pack_file(domain_pack_path)?;
-    let train_config = read_json_file(train_config_path)?;
-    if record_artifact_row {
+    let domain_pack = parse_domain_pack_file(input.domain_pack_path)?;
+    let train_config = read_json_file(input.train_config_path)?;
+    if input.record_artifact_row {
         ctx.artifact_rows.push(json!({
-            "domain": spec.domain_label,
-            "verification_run_id": verification_run_id.clone(),
+            "domain": input.spec.domain_label,
+            "verification_run_id": input.verification_run_id.clone(),
             "artifact_hashes": artifact_hashes.clone(),
         }));
     }
     let metrics = training_summary["summary"]["metrics"].clone();
     ctx.ablation_rows.push(json!({
-        "ablation_id": spec.ablation_id,
+        "ablation_id": input.spec.ablation_id,
         "domain": "career_taxonomy",
-        "domain_run_label": spec.domain_label,
-        "panel": spec.panel,
+        "domain_run_label": input.spec.domain_label,
+        "panel": input.spec.panel,
         "panel_slots": domain_pack.instrument_specs.len(),
         "input_dim": dataset_train["summary"]["input_dim"],
         "target_dim": dataset_train["summary"]["target_dim"],
         "latent_dim": train_config["model"]["encoder"]["out_dim"],
         "action_dim": dataset_train["summary"]["action_dim"],
-        "action_conditioning": spec.action_conditioning,
-        "pairwise_features": spec.include_pairwise_features,
-        "vicreg": spec.vicreg,
+        "action_conditioning": input.spec.action_conditioning,
+        "pairwise_features": input.spec.include_pairwise_features,
+        "vicreg": input.spec.vicreg,
         "objective_configuration": {
             "vicreg_variance_weight": train_config["loss"]["vicreg_variance_weight"],
             "vicreg_covariance_weight": train_config["loss"]["vicreg_covariance_weight"],
@@ -6656,14 +6664,14 @@ fn push_career_ablation_row(
         "metrics": metrics,
         "artifact_id": training_summary["created_ids"]["artifact_id"],
         "artifact_hashes": artifact_hashes,
-        "source_verification_run_id": verification_run_id,
-        "db_counts_after": after_counts,
+        "source_verification_run_id": input.verification_run_id,
+        "db_counts_after": input.after_counts,
         "source_of_truth": {
-            "db_path": db_path,
-            "evidence_dir": evidence_dir_value,
-            "artifact_root": artifact_root,
-            "domain_pack": domain_pack_path,
-            "train_config": train_config_path,
+            "db_path": input.db_path,
+            "evidence_dir": input.evidence_dir_value,
+            "artifact_root": input.artifact_root,
+            "domain_pack": input.domain_pack_path,
+            "train_config": input.train_config_path,
             "dataset_train": evidence_dir.join("decoded/dataset_train.json"),
         },
     }));
@@ -9892,7 +9900,7 @@ fn build_negative_pool(
             })
         })
         .collect::<DynamicJepaResult<Vec<_>>>()?;
-    pool.sort_by(|left, right| left.panel.panel_id.cmp(&right.panel.panel_id));
+    pool.sort_by_key(|item| item.panel.panel_id);
     Ok(pool)
 }
 
@@ -10347,30 +10355,42 @@ fn ingest_jsonl_fixture(
     for line in bytes.split_inclusive(|byte| *byte == b'\n') {
         let line_offset = offset;
         offset += line.len() as u64;
-        process_fixture_line(
+        process_fixture_line(FixtureLineRequest {
             db,
             domain_pack,
             adapter,
             source_uri,
-            line_offset,
-            line,
+            source_offset: line_offset,
+            line_bytes: line,
             run_id,
             created,
-        )?;
+        })?;
     }
     Ok(())
 }
 
-fn process_fixture_line(
-    db: &rocksdb::DB,
-    domain_pack: &DomainPack,
-    adapter: &AdapterSpec,
-    source_uri: &str,
+struct FixtureLineRequest<'a> {
+    db: &'a rocksdb::DB,
+    domain_pack: &'a DomainPack,
+    adapter: &'a AdapterSpec,
+    source_uri: &'a str,
     source_offset: u64,
-    line_bytes: &[u8],
+    line_bytes: &'a [u8],
     run_id: Uuid,
-    created: &mut IngestCreatedIds,
-) -> DynamicJepaResult<()> {
+    created: &'a mut IngestCreatedIds,
+}
+
+fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()> {
+    let FixtureLineRequest {
+        db,
+        domain_pack,
+        adapter,
+        source_uri,
+        source_offset,
+        line_bytes,
+        run_id,
+        created,
+    } = request;
     let now = now_unix_ms()?;
     let event_id = EventId::new_v4();
     let adapter_run_id = Uuid::new_v4();
@@ -10656,7 +10676,6 @@ fn run_adapter_for_event(
         .header
         .source_run_id
         .unwrap_or_else(Uuid::new_v4);
-    let source_uri = raw_event.source_uri.clone();
     process_existing_raw_event(
         db,
         &domain_pack,
@@ -10664,7 +10683,6 @@ fn run_adapter_for_event(
         &raw_event,
         started_run,
         run_id,
-        &source_uri,
         created,
     )
 }
@@ -10676,7 +10694,6 @@ fn process_existing_raw_event(
     raw_event: &RawDomainEvent,
     started_run: AdapterRunRecord,
     run_id: Uuid,
-    _source_uri: &str,
     created: &mut IngestCreatedIds,
 ) -> DynamicJepaResult<()> {
     match adapt_payload(domain_pack, adapter, &raw_event.payload_bytes) {
@@ -12161,7 +12178,7 @@ fn parse_surprise_event_id(value: &str, field: &str) -> DynamicJepaResult<Surpri
 
 fn parse_hex_key(value: &str, field: &str) -> DynamicJepaResult<Vec<u8>> {
     let text = value.trim();
-    if text.is_empty() || text.len() % 2 != 0 {
+    if text.is_empty() || !text.len().is_multiple_of(2) {
         return Err(DynamicJepaError::validation(
             field,
             format!("hex key must have a non-empty even number of characters, got {text:?}"),

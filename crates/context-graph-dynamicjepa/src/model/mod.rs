@@ -409,16 +409,16 @@ pub fn train_tiny_jepa(
         for step in 0..steps_per_epoch {
             global_step += 1;
             apply_lr_schedule(&mut opt, config, global_step);
-            let batch = build_batch_tensors(
+            let batch = build_batch_tensors(BatchTensorRequest {
                 examples,
-                &epoch_indices,
-                step * config.schedule.batch_size,
-                config.schedule.batch_size,
+                train_indices: &epoch_indices,
+                start: step * config.schedule.batch_size,
+                batch_size: config.schedule.batch_size,
                 input_dim,
                 target_dim,
                 action_dim,
-                &device,
-            )?;
+                device: &device,
+            })?;
             let z_online = model
                 .encode_online(&batch.input)
                 .map_err(|err| training_err(format!("encoder forward failed: {err}")))?;
@@ -536,37 +536,51 @@ struct BatchTensors {
     action: Tensor,
 }
 
-fn build_batch_tensors(
-    examples: &[TrainExample],
-    train_indices: &[usize],
+struct BatchTensorRequest<'a> {
+    examples: &'a [TrainExample],
+    train_indices: &'a [usize],
     start: usize,
     batch_size: usize,
     input_dim: usize,
     target_dim: usize,
     action_dim: usize,
-    device: &Device,
-) -> DynamicJepaResult<BatchTensors> {
-    if train_indices.is_empty() {
+    device: &'a Device,
+}
+
+fn build_batch_tensors(request: BatchTensorRequest<'_>) -> DynamicJepaResult<BatchTensors> {
+    if request.train_indices.is_empty() {
         return Err(training_err(
             "cannot build a batch with zero train rows".to_string(),
         ));
     }
-    let mut inputs = Vec::with_capacity(batch_size * input_dim);
-    let mut targets = Vec::with_capacity(batch_size * target_dim);
-    let mut actions = Vec::with_capacity(batch_size * action_dim);
-    for offset in 0..batch_size {
-        let idx = train_indices[(start + offset) % train_indices.len()];
-        inputs.extend_from_slice(&examples[idx].input_panel);
-        targets.extend_from_slice(&examples[idx].target_panel);
-        actions.extend_from_slice(&examples[idx].action);
+    let mut inputs = Vec::with_capacity(request.batch_size * request.input_dim);
+    let mut targets = Vec::with_capacity(request.batch_size * request.target_dim);
+    let mut actions = Vec::with_capacity(request.batch_size * request.action_dim);
+    for offset in 0..request.batch_size {
+        let idx = request.train_indices[(request.start + offset) % request.train_indices.len()];
+        inputs.extend_from_slice(&request.examples[idx].input_panel);
+        targets.extend_from_slice(&request.examples[idx].target_panel);
+        actions.extend_from_slice(&request.examples[idx].action);
     }
     Ok(BatchTensors {
-        input: Tensor::from_vec(inputs, (batch_size, input_dim), device)
-            .map_err(|err| training_err(format!("failed to create batch input tensor: {err}")))?,
-        target: Tensor::from_vec(targets, (batch_size, target_dim), device)
-            .map_err(|err| training_err(format!("failed to create batch target tensor: {err}")))?,
-        action: Tensor::from_vec(actions, (batch_size, action_dim), device)
-            .map_err(|err| training_err(format!("failed to create batch action tensor: {err}")))?,
+        input: Tensor::from_vec(
+            inputs,
+            (request.batch_size, request.input_dim),
+            request.device,
+        )
+        .map_err(|err| training_err(format!("failed to create batch input tensor: {err}")))?,
+        target: Tensor::from_vec(
+            targets,
+            (request.batch_size, request.target_dim),
+            request.device,
+        )
+        .map_err(|err| training_err(format!("failed to create batch target tensor: {err}")))?,
+        action: Tensor::from_vec(
+            actions,
+            (request.batch_size, request.action_dim),
+            request.device,
+        )
+        .map_err(|err| training_err(format!("failed to create batch action tensor: {err}")))?,
     })
 }
 

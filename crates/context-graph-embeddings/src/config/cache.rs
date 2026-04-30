@@ -183,10 +183,6 @@ impl CacheConfig {
 
     /// Calculate the average bytes per entry based on current configuration.
     pub fn bytes_per_entry(&self) -> usize {
-        if self.max_entries == 0 {
-            0
-        } else {
-            self.max_bytes / self.max_entries
-        }
+        self.max_bytes.checked_div(self.max_entries).unwrap_or(0)
     }
 }

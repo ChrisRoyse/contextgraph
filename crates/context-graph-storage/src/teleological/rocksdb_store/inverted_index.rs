@@ -228,7 +228,7 @@ impl RocksDbTeleologicalStore {
 
         // Sort by term overlap count (descending) and take top candidates
         let mut candidates: Vec<(Uuid, usize)> = candidate_counts.into_iter().collect();
-        candidates.sort_by(|a, b| b.1.cmp(&a.1));
+        candidates.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         candidates.truncate(max_candidates);
 
         Ok(candidates)

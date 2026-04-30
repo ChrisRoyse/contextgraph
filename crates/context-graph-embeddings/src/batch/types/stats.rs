@@ -107,7 +107,7 @@ impl BatchQueueStats {
             } else {
                 0.0
             },
-            avg_wait_time_us: if batches > 0 { wait_sum / batches } else { 0 },
+            avg_wait_time_us: wait_sum.checked_div(batches).unwrap_or(0),
         }
     }
 
