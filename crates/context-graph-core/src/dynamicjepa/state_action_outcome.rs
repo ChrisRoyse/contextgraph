@@ -67,14 +67,12 @@ pub enum FieldValue {
 impl FieldValue {
     pub fn validate(&self, field: &str) -> DynamicJepaResult<()> {
         match self {
-            FieldValue::F64(value) => {
-                if !value.is_finite() {
-                    return Err(DynamicJepaError::validation(
-                        field,
-                        format!("f64 value must be finite, got {value}"),
-                        "reject NaN and infinity before normalization",
-                    ));
-                }
+            FieldValue::F64(value) if !value.is_finite() => {
+                return Err(DynamicJepaError::validation(
+                    field,
+                    format!("f64 value must be finite, got {value}"),
+                    "reject NaN and infinity before normalization",
+                ));
             }
             FieldValue::Vector(values) => {
                 if values.is_empty() {
@@ -88,14 +86,12 @@ impl FieldValue {
                     ensure_finite(*value, &format!("{field}[{idx}]"))?;
                 }
             }
-            FieldValue::String(value) => {
-                if value.contains("${") {
-                    return Err(DynamicJepaError::validation(
-                        field,
-                        "environment variable substitution is forbidden",
-                        "write explicit fixture values",
-                    ));
-                }
+            FieldValue::String(value) if value.contains("${") => {
+                return Err(DynamicJepaError::validation(
+                    field,
+                    "environment variable substitution is forbidden",
+                    "write explicit fixture values",
+                ));
             }
             FieldValue::Categorical { variant } if variant.trim().is_empty() => {
                 return Err(DynamicJepaError::validation(

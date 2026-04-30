@@ -85,7 +85,7 @@ impl Validate for InstrumentSpec {
                 "add dotted input fields produced by the adapter",
             ));
         }
-        if self.output_shape.is_empty() || self.output_shape.iter().any(|dim| *dim == 0) {
+        if self.output_shape.is_empty() || self.output_shape.contains(&0) {
             return Err(DynamicJepaError::validation(
                 "InstrumentSpec.output_shape",
                 format!("invalid output shape {:?}", self.output_shape),
@@ -109,23 +109,19 @@ impl Validate for InstrumentSpec {
                     });
                 }
             }
-            InstrumentKind::Onehot { dim } => {
-                if *dim == 0 || self.output_shape != [*dim] {
-                    return Err(DynamicJepaError::PanelShapeMismatch {
-                        domain_pack_id: "instrument_spec".to_string(),
-                        expected: vec![*dim],
-                        actual: self.output_shape.clone(),
-                    });
-                }
+            InstrumentKind::Onehot { dim } if *dim == 0 || self.output_shape != [*dim] => {
+                return Err(DynamicJepaError::PanelShapeMismatch {
+                    domain_pack_id: "instrument_spec".to_string(),
+                    expected: vec![*dim],
+                    actual: self.output_shape.clone(),
+                });
             }
-            InstrumentKind::Vector { dim } => {
-                if *dim == 0 || self.output_shape != [*dim] {
-                    return Err(DynamicJepaError::PanelShapeMismatch {
-                        domain_pack_id: "instrument_spec".to_string(),
-                        expected: vec![*dim],
-                        actual: self.output_shape.clone(),
-                    });
-                }
+            InstrumentKind::Vector { dim } if *dim == 0 || self.output_shape != [*dim] => {
+                return Err(DynamicJepaError::PanelShapeMismatch {
+                    domain_pack_id: "instrument_spec".to_string(),
+                    expected: vec![*dim],
+                    actual: self.output_shape.clone(),
+                });
             }
             _ => {}
         }
