@@ -522,11 +522,10 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
         grid_row["decoded_records"]["row"]["source_hash_checks"]["target_equal"],
         true
     );
-    assert_eq!(
+    assert!(
         grid_row["decoded_records"]["row"]["input_action_fields"]["move"]["Categorical"]["variant"]
             .as_str()
-            .is_some(),
-        true
+            .is_some()
     );
     evidence.push(json!({"step": "grid_inspect_train_row_0", "output": grid_row}));
 

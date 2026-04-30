@@ -587,7 +587,7 @@ fn fsv_c10_warmup_registry_registers_bge_m3_dense() {
 
     let size = got.expect("E14_BgeM3Dense missing from MODEL_SIZES");
     assert!(
-        size >= 1024 * 1024 * 1024 && size <= 2 * 1024 * 1024 * 1024,
+        (1024 * 1024 * 1024..=2 * 1024 * 1024 * 1024).contains(&size),
         "E14 size out of plausible range (1-2 GB): got {} bytes",
         size
     );
