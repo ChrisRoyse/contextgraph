@@ -2,7 +2,7 @@
 
 The 5090jepa demo is targeted at exactly one machine. Before any phase you must verify the environment matches. If anything diverges from the values below, halt and resolve before writing code. No "should work" assumptions.
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: Phases 0-8 are implemented through the CLI/storage/training/prediction path in the working tree. The `context-graph-dynamicjepa` service crate exists, CUDA-only training and artifact hash verification are wired, and counter_world Phase 7 and Phase 8 FSV evidence exists. Bundled `verify-*` harnesses and the MCP tool surface remain future Phase 10/9 work.
+Current implementation status as of the Phase 10 review on 2026-04-30: Phases 0-10 are implemented through the CLI/storage/training/prediction/MCP/verification path in the working tree. The `context-graph-dynamicjepa` service crate exists, CUDA-only training and artifact hash verification are wired, Phase 9 MCP evidence exists, and bundled `verify-counter-world` / `verify-gridworld` FSV evidence exists.
 
 ## 1. Operator Hardware (Verified)
 
@@ -49,6 +49,8 @@ test -f crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Ph
 rg -q "IngestEvent" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 ingest CLI missing" && exit 1)
 rg -q "MaterializePanel" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 panel CLI missing" && exit 1)
 rg -q "Train" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 7 train CLI missing" && exit 1)
+rg -q "VerifyCounterWorld" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 10 counter verifier missing" && exit 1)
+rg -q "VerifyGridworld" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 10 gridworld verifier missing" && exit 1)
 rg -q "train_dataset" crates/context-graph-dynamicjepa/src/service.rs || (echo "ERROR: Phase 7 service training entry missing" && exit 1)
 echo "ENV OK"
 ```
@@ -93,6 +95,8 @@ cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase6_fsv --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase7_fsv --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase8_fsv --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase10_fsv --all-features
+cargo test -p context-graph-mcp --all-features test_dynamicjepa_phase9_mcp_full_state_verification -- --nocapture
 cargo test -p context-graph-dynamicjepa --all-features
 ```
 
