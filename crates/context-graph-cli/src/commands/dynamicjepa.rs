@@ -2564,6 +2564,7 @@ fn plan_command(args: PlanArgs) -> DynamicJepaResult<CommandOutcome> {
 fn record_surprise_command(args: RecordSurpriseArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
     let source_cfs = [
+        CF_DJ_MODEL_ARTIFACTS,
         CF_DJ_PREDICTIONS,
         CF_DJ_OUTCOMES,
         CF_DJ_LATENT_PANELS,
@@ -6228,11 +6229,14 @@ fn error_value(
             object.insert("expected".to_string(), json!(expected));
             object.insert("actual".to_string(), json!(actual));
             object.insert("wrote_prediction".to_string(), json!(false));
+            object.insert("wrote_plan_trace".to_string(), json!(false));
+            object.insert("wrote_surprise".to_string(), json!(false));
         }
         DynamicJepaError::PredictionInputMissing { target_id, cf } => {
             object.insert("target_id".to_string(), json!(target_id));
             object.insert("cf".to_string(), json!(cf));
             object.insert("wrote_prediction".to_string(), json!(false));
+            object.insert("wrote_plan_trace".to_string(), json!(false));
         }
         DynamicJepaError::GuardRejected {
             guard_id,

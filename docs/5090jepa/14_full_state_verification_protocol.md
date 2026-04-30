@@ -75,7 +75,9 @@ Current evidence:
 - Current Phase 7 test: `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs`.
 - Current Phase 8 evidence: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json`.
 - Current Phase 8 test: `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs`.
-- Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, and `dj_audit_log=194`; corrupt-artifact prediction leaves prediction/audit counts unchanged.
+- Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, and `dj_audit_log=194`.
+- Phase 8 decoded proof includes `get-prediction`, `get-plan-trace --include-predictions --include-guards`, `get-surprise`, and direct `ldb dump --count_only` counts against `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
+- Phase 8 edge proof includes selected counter_world hypothetical action `delta=2`, observed outcome/panel mismatch failing with `VALIDATION`, and corrupt artifact failures for `predict`, `plan`, and `record-surprise` leaving prediction/plan/surprise/audit counts unchanged.
 - Predecessor tests remain required: `dynamicjepa_phase3_fsv.rs`, `dynamicjepa_phase4_fsv.rs`, `dynamicjepa_phase5_fsv.rs`, and `dynamicjepa_phase6_fsv.rs`.
 
 ## 3. Required Fixtures
@@ -198,6 +200,13 @@ Current Phase 7 model/artifact edge cases:
 - Missing dataset id: `dynamicjepa train` fails with `SOURCE_OF_TRUTH_MISSING`; `dj_training_runs`, `dj_model_artifacts`, and `dj_audit_log` stay unchanged.
 - Invalid training device: a config with `schedule.device = "cpu"` fails with a typed training/config error; no artifact row is written.
 - Corrupted artifact: after a successful train, mutate one byte of `model.safetensors`; `get-artifact --verify-files` fails with `ARTIFACT_HASH_MISMATCH`, reports `wrote_prediction=false`, and `dj_predictions` remains unchanged at zero.
+
+Current Phase 8 prediction/planning/surprise edge cases:
+
+- Mismatched observed outcome/panel: `record-surprise` fails with `VALIDATION` at `record-surprise.observed_outcome_id`; `dj_surprise_events` and `dj_audit_log` stay unchanged.
+- Corrupted artifact at prediction: `predict` fails with `ARTIFACT_HASH_MISMATCH`; `dj_predictions` and `dj_audit_log` stay unchanged.
+- Corrupted artifact at planning: `plan` fails with `ARTIFACT_HASH_MISMATCH`; `dj_actions`, `dj_predictions`, `dj_guard_decisions`, `dj_plan_traces`, and `dj_audit_log` stay unchanged.
+- Corrupted artifact at surprise comparison: `record-surprise` fails with `ARTIFACT_HASH_MISMATCH`; `dj_surprise_events` and `dj_audit_log` stay unchanged.
 
 The adapter edge cases below remain prerequisites inherited from Phase 4:
 

@@ -649,25 +649,49 @@ pub fn record_surprise(
             key: prediction_id.into_bytes().to_vec(),
         }
     })?;
-    get_outcome(db, observed_outcome_id)?.ok_or_else(|| {
+    let artifact = load_inference_artifact(db, prediction.model_artifact_id)?;
+    let domain = domain_for_artifact(db, &artifact.loaded.registry)?;
+    let observed_outcome = get_outcome(db, observed_outcome_id)?.ok_or_else(|| {
         DynamicJepaError::SourceOfTruthMissing {
             cf: CF_DJ_OUTCOMES.to_string(),
             key: observed_outcome_id.into_bytes().to_vec(),
         }
     })?;
+    ensure_same_domain(
+        &domain,
+        observed_outcome.header.domain_pack_id.as_str(),
+        "record-surprise.observed_outcome",
+    )?;
     let observed_panel = get_latent_panel(db, observed_panel_id)?.ok_or_else(|| {
         DynamicJepaError::SourceOfTruthMissing {
             cf: CF_DJ_LATENT_PANELS.to_string(),
             key: observed_panel_id.into_bytes().to_vec(),
         }
     })?;
-    let artifact = load_inference_artifact(db, prediction.model_artifact_id)?;
-    let domain = domain_for_artifact(db, &artifact.loaded.registry)?;
     ensure_same_domain(
         &domain,
         observed_panel.header.domain_pack_id.as_str(),
         "record-surprise.observed_panel",
     )?;
+    match observed_panel.outcome_id {
+        Some(panel_outcome_id) if panel_outcome_id == observed_outcome_id => {}
+        Some(panel_outcome_id) => {
+            return Err(DynamicJepaError::validation(
+                "record-surprise.observed_outcome_id",
+                format!(
+                    "observed outcome {observed_outcome_id} does not match observed panel {observed_panel_id} outcome {panel_outcome_id}"
+                ),
+                "pass the outcome id physically linked to the observed panel row",
+            ));
+        }
+        None => {
+            return Err(DynamicJepaError::validation(
+                "record-surprise.observed_panel_id",
+                format!("observed panel {observed_panel_id} has no outcome_id"),
+                "materialize the observed panel from a transition that includes an outcome",
+            ));
+        }
+    }
     let observed_vec = encode_panel_vector(&artifact, &observed_panel)?;
     if observed_vec.len() != prediction.predicted_next_panel_vec.len() {
         return Err(DynamicJepaError::PanelShapeMismatch {

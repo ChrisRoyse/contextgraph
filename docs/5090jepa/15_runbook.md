@@ -427,6 +427,19 @@ dj_model_artifacts 1
 dj_audit_log 194
 ```
 
+Additional Phase 8 assertions now covered by the FSV test:
+
+```text
+happy plan selected_action.fields.delta.I64 = 2
+happy plan utility_scores = [-2, -1, 0, 1, 2]
+mismatched record-surprise outcome/panel -> VALIDATION, surprise/audit deltas 0
+corrupt artifact predict -> ARTIFACT_HASH_MISMATCH, prediction/audit deltas 0
+corrupt artifact plan -> ARTIFACT_HASH_MISMATCH, action/prediction/guard/plan/audit deltas 0
+corrupt artifact record-surprise -> ARTIFACT_HASH_MISMATCH, surprise/audit deltas 0
+```
+
+Independent physical `ldb dump --count_only` after the current run matched the decoded source-of-truth counts for `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
+
 ## 5. Future Phase 10 Bundled Counter_world Run
 
 Current Phase 8 evidence is produced by `dynamicjepa_phase8_fsv.rs` in Section 4. The bundled `verify-counter-world` command below is still future Phase 10 work.

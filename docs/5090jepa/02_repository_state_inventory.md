@@ -109,7 +109,8 @@ Phase 8 source of truth verified:
 - Runtime source-of-truth DB/artifact root: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv_runtime/`.
 - `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs` runs real CLI/RocksDB/CUDA training, then verifies `predict`, `get-prediction`, `plan`, `get-plan-trace --include-predictions --include-guards`, `record-surprise`, and `get-surprise`.
 - Observed Phase 8 deltas include `predict: dj_predictions +1, dj_audit_log +1`; `plan: dj_actions +5, dj_predictions +5, dj_guard_decisions +5, dj_plan_traces +1, dj_skill_policies +1`; forced surprise: `dj_surprise_events +1, dj_audit_log +1`.
-- Phase 8 edge cases verified: missing artifact leaves `dj_predictions` and `dj_audit_log` unchanged; corrupted `model.safetensors` makes `predict` fail with `ARTIFACT_HASH_MISMATCH`, `wrote_prediction=false`, and unchanged prediction/audit counts.
+- Observed Phase 8 deterministic planning proof: counter_world candidates `[-2, -1, 0, 1, 2]` produce utility scores `[-2, -1, 0, 1, 2]`, and the persisted selected hypothetical action has `fields.delta.I64 = 2`.
+- Phase 8 edge cases verified: missing artifact leaves `dj_predictions` and `dj_audit_log` unchanged; observed outcome/panel mismatch fails with `VALIDATION` and leaves surprise/audit counts unchanged; corrupted `model.safetensors` makes `predict`, `plan`, and `record-surprise` fail with `ARTIFACT_HASH_MISMATCH` and unchanged prediction/plan/surprise/audit counts as applicable.
 
 Root-cause fixes made during this audit:
 

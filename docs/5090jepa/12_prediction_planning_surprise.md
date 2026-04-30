@@ -2,7 +2,7 @@
 
 After a model is trained and an artifact is registered, the demo proves that predictions, plans, and surprise events all persist independently readable rows. Planning is a recorded process, not a function call.
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: training and artifact hash verification are FSV-accepted, and prediction, planning, guard, and surprise command code is FSV-tested in the working tree (`predict`, `plan`, `record-surprise`, plus read commands). Phase 7 FSV leaves these rows at zero; Phase 8 FSV writes and reads them as source-of-truth rows.
+Current implementation status as of the Phase 8 FSV pass on 2026-04-30: training and artifact hash verification are FSV-accepted, and prediction, planning, guard, and surprise command code is FSV-tested in the working tree (`predict`, `plan`, `record-surprise`, plus read commands). Phase 7 FSV leaves these rows at zero; Phase 8 FSV writes and reads them as source-of-truth rows. The current Phase 8 FSV also proves counter_world selects the persisted hypothetical `delta=2` action, rejects mismatched observed outcome/panel ids, and refuses predict/plan/record-surprise when the registered artifact file hash is stale.
 
 ## 1. Prediction
 
@@ -20,7 +20,7 @@ Current implementation status as of the Phase 7/8 review on 2026-04-30: training
 
 ## 2. Candidate Action Generation
 
-The demo's only skill is `enumerate_declared_actions`. Implementation in `crates/context-graph-dynamicjepa/src/planner/skill_policy.rs`:
+The demo's only skill is `enumerate_declared_actions`. Current implementation lives in `crates/context-graph-dynamicjepa/src/service.rs` (`ensure_skill_policy`, `enumerate_candidate_actions`, and `build_hypothetical_action`):
 
 ```rust
 pub fn enumerate_candidates(
@@ -53,7 +53,7 @@ Hypothetical actions are written to `dj_actions` with `action_origin = Hypotheti
 
 ## 3. Guards
 
-`crates/context-graph-dynamicjepa/src/planner/guard.rs`:
+Current implementation lives in `crates/context-graph-dynamicjepa/src/service.rs` (`build_guard_decision`, `predicted_state_after_action`, and `select_allowed_action`):
 
 ```rust
 pub fn evaluate_guards(
@@ -91,7 +91,7 @@ pub struct GuardDecisionRecord {
 2. Generate candidate actions (Section 2). One batch writes K action rows.
 3. For each candidate, run `predict(...)` (Section 1). One batch writes K prediction rows.
 4. For each candidate+prediction, run `evaluate_guards(...)` (Section 3). Persist all guard decision rows in one batch.
-5. Score each candidate. Demo scoring: `score = utility(predicted_next_panel)` where `utility` is a plug-in function declared by the domain pack. Counter_world utility: `score = next_counter_value` (higher is better). Gridworld utility: `score = -manhattan_distance(predicted_xy, goal_xy)` if a `goal` is supplied, else `score = 0` and the planner picks the lowest-uncertainty candidate.
+5. Score each candidate. Demo scoring: `score = utility(predicted_state_after_action)`. Counter_world utility is the predicted counter value, so the generated candidates `[-2, -1, 0, 1, 2]` produce utility scores `[-2, -1, 0, 1, 2]` for the FSV input and select `delta=2`. Gridworld utility currently picks the lowest-uncertainty candidate.
 6. Select the highest-scoring candidate that has Allow on every required guard. If no candidate passes guards, status = `Rejected` with `selected_action_id = None`. **The plan trace row is still written.**
 7. One batch writes the `PlanTraceRecord` + audit row.
 
@@ -132,9 +132,13 @@ A surprise is the comparison of a prediction against the *observed* outcome. The
 4. `record_surprise(prediction_id, observed_outcome_id, observed_panel_id)`:
 
 ```rust
-pub fn record_surprise(...) -> Result<Option<SurpriseEventId>, DynamicJepaError> {
+pub fn record_surprise(...) -> Result<SurpriseServiceOutcome, DynamicJepaError> {
     let pred = get_prediction(...)?.ok_or(SoT_missing)?;
+    let observed_outcome = get_outcome(...)?.ok_or(SoT_missing)?;
     let observed_panel = get_latent_panel(...)?.ok_or(SoT_missing)?;
+    if observed_panel.outcome_id != Some(observed_outcome_id) {
+        return Err(Validation { field: "record-surprise.observed_outcome_id", ... });
+    }
     // Re-encode observed panel via the artifact's online encoder (registry hash check still applies).
     let z_observed = encode_panel(...);
     let cosine = cosine(&pred.predicted_next_panel_vec, &z_observed);
@@ -158,9 +162,9 @@ Surprise events are inputs to future training runs — when surprises accumulate
 
 ```rust
 // service
-pub fn predict(...) -> Result<PredictionId, DynamicJepaError>;
-pub fn plan(...)    -> Result<PlanTraceId, DynamicJepaError>;
-pub fn record_surprise(...) -> Result<Option<SurpriseEventId>, DynamicJepaError>;
+pub fn predict_next_panel(...) -> Result<PredictServiceOutcome, DynamicJepaError>;
+pub fn plan_next_action(...) -> Result<PlanServiceOutcome, DynamicJepaError>;
+pub fn record_surprise(...) -> Result<SurpriseServiceOutcome, DynamicJepaError>;
 
 // storage
 pub fn get_prediction(db, id)   -> Result<Option<PredictionRecord>>;
@@ -191,6 +195,7 @@ Counter_world planning:
 - `panel_t0` → 5 candidates (deltas -2..2) → 5 predictions → 5 guard decisions → 1 plan trace.
 - Best score: `delta = 2` (utility = predicted next_counter, highest = 2). `selected_action_id` references the hypothetical action with `delta=2`.
 - Surprise event for the selected action vs `panel_t1`: cosine should be high (the model is correctly trained), so `record_surprise` returns `None` (no surprise row written) for the happy path. Edge case: shuffle the prediction vec to force a surprise — verify that the surprise row is written and links prediction → outcome → panel.
+- Edge cases: observed outcome/panel mismatch fails with `VALIDATION` and leaves `dj_surprise_events`/`dj_audit_log` unchanged; stale artifact fails `predict`, `plan`, and `record-surprise` with `ARTIFACT_HASH_MISMATCH` and leaves prediction/plan/surprise/audit counts unchanged.
 
 Gridworld planning:
 
@@ -200,9 +205,10 @@ Gridworld planning:
 
 ## 8. Failure Modes (And What They Should Look Like)
 
-- Missing artifact: `PredictionInputMissing { target_id: artifact_id }`. No prediction or plan trace row.
-- Stale artifact (registry says hash X, disk says hash Y): `ArtifactHashMismatch`. No prediction row. **No plan trace row** — plan does not start without a verified artifact.
+- Missing artifact registry row: `SOURCE_OF_TRUTH_MISSING`. No prediction or plan trace row.
+- Stale artifact (registry says hash X, disk says hash Y): `ArtifactHashMismatch`. No prediction row, no plan trace row, no surprise row — all three Phase 8 entry points verify the registered artifact before writing.
 - Missing input panel: `PredictionInputMissing { target_id: panel_id }`. No row.
+- Observed outcome/panel mismatch during `record-surprise`: `VALIDATION` with `field = record-surprise.observed_outcome_id`. No surprise or audit row.
 - Domain pack missing for action validation: `DomainPackNotFound`. No hypothetical actions written.
 - All candidates rejected by guards: plan trace row is written with `status = Rejected`, `selected_action_id = None`. Guard decision rows exist for every candidate.
 - Encoder/predictor numerical NaN at inference (extremely rare for tiny models, but possible): `TrainingFailed { remediation: "model produced NaN at inference; retrain with seed change" }`. No prediction row.

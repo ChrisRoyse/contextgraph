@@ -237,6 +237,12 @@ fn get_panel(db: &str, panel_id: &str) -> Value {
     ])
 }
 
+fn action_delta(action: &Value) -> i64 {
+    action["fields"]["delta"]["I64"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("candidate action missing delta field: {action:#}"))
+}
+
 #[test]
 fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
     let root = repo_root();
@@ -390,10 +396,33 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
     assert_eq!(plan["summary"]["candidate_count"], 5);
     assert_eq!(plan["summary"]["prediction_count"], 5);
     assert_eq!(plan["summary"]["guard_decision_count"], 5);
+    assert_eq!(plan["summary"]["status"], "Selected");
+    assert_eq!(
+        plan["summary"]["utility_scores"],
+        json!([-2.0, -1.0, 0.0, 1.0, 2.0])
+    );
     assert_eq!(
         plan["decoded_records"]["plan_trace"]["selected_action_id"],
         plan["created_ids"]["selected_action_id"]
     );
+    let selected_action_id = plan["created_ids"]["selected_action_id"]
+        .as_str()
+        .expect("selected action id")
+        .to_string();
+    let selected_action = plan["decoded_records"]["candidate_actions"]
+        .as_array()
+        .expect("candidate actions")
+        .iter()
+        .find(|action| action["action_id"].as_str() == Some(selected_action_id.as_str()))
+        .unwrap_or_else(|| panic!("selected action {selected_action_id} missing from candidates"));
+    assert_eq!(action_delta(selected_action), 2);
+    assert_eq!(selected_action["action_origin"], "Hypothetical");
+    for action in plan["decoded_records"]["candidate_actions"]
+        .as_array()
+        .expect("candidate actions")
+    {
+        assert_eq!(action["action_origin"], "Hypothetical");
+    }
     let plan_trace_id = plan["created_ids"]["plan_trace_id"]
         .as_str()
         .expect("plan trace id")
@@ -492,6 +521,46 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
         .expect("high outcome id")
         .to_string();
     evidence.push(json!({"step": "edge_setup_high_boundary_panel", "ingest": high_ingest, "materialize": high_panel_out, "panel": high_panel}));
+
+    let before_mismatched_surprise =
+        run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    let mismatched_surprise = run_err(&[
+        "dynamicjepa",
+        "record-surprise",
+        "--db",
+        &db,
+        "--prediction-id",
+        &prediction_id,
+        "--observed-outcome-id",
+        &high_outcome_id,
+        "--observed-panel-id",
+        &target_panel_id,
+        "--json",
+    ]);
+    let after_mismatched_surprise =
+        run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    assert_eq!(mismatched_surprise["error_code"], "VALIDATION");
+    assert_eq!(
+        mismatched_surprise["field"],
+        "record-surprise.observed_outcome_id"
+    );
+    assert_eq!(
+        delta(
+            &before_mismatched_surprise,
+            &after_mismatched_surprise,
+            "dj_surprise_events"
+        ),
+        0
+    );
+    assert_eq!(
+        delta(
+            &before_mismatched_surprise,
+            &after_mismatched_surprise,
+            "dj_audit_log"
+        ),
+        0
+    );
+    evidence.push(json!({"step": "edge_mismatched_outcome_panel_surprise", "before": before_mismatched_surprise, "error": mismatched_surprise, "after": after_mismatched_surprise}));
 
     let before_guard_edge = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
     let guard_plan = run_ok(&[
@@ -638,6 +707,84 @@ fn dynamicjepa_phase8_cli_fsv_real_prediction_plan_surprise() {
     assert_eq!(delta(&corrupt_before, &corrupt_after, "dj_predictions"), 0);
     assert_eq!(delta(&corrupt_before, &corrupt_after, "dj_audit_log"), 0);
     evidence.push(json!({"step": "edge_corrupt_artifact_predict", "before": corrupt_before, "error": corrupt_predict, "after": corrupt_after}));
+
+    let corrupt_plan_before = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    let corrupt_plan = run_err(&[
+        "dynamicjepa",
+        "plan",
+        "--db",
+        &db,
+        "--artifact-id",
+        &artifact_id,
+        "--panel-id",
+        &input_panel_id,
+        "--skill-id",
+        skill_id,
+        "--json",
+    ]);
+    let corrupt_plan_after = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    assert_eq!(corrupt_plan["error_code"], "ARTIFACT_HASH_MISMATCH");
+    assert_eq!(corrupt_plan["wrote_plan_trace"], false);
+    assert_eq!(
+        delta(&corrupt_plan_before, &corrupt_plan_after, "dj_actions"),
+        0
+    );
+    assert_eq!(
+        delta(&corrupt_plan_before, &corrupt_plan_after, "dj_predictions"),
+        0
+    );
+    assert_eq!(
+        delta(
+            &corrupt_plan_before,
+            &corrupt_plan_after,
+            "dj_guard_decisions"
+        ),
+        0
+    );
+    assert_eq!(
+        delta(&corrupt_plan_before, &corrupt_plan_after, "dj_plan_traces"),
+        0
+    );
+    assert_eq!(
+        delta(&corrupt_plan_before, &corrupt_plan_after, "dj_audit_log"),
+        0
+    );
+    evidence.push(json!({"step": "edge_corrupt_artifact_plan", "before": corrupt_plan_before, "error": corrupt_plan, "after": corrupt_plan_after}));
+
+    let corrupt_surprise_before = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    let corrupt_surprise = run_err(&[
+        "dynamicjepa",
+        "record-surprise",
+        "--db",
+        &db,
+        "--prediction-id",
+        &prediction_id,
+        "--observed-outcome-id",
+        &target_outcome_id,
+        "--observed-panel-id",
+        &target_panel_id,
+        "--json",
+    ]);
+    let corrupt_surprise_after = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    assert_eq!(corrupt_surprise["error_code"], "ARTIFACT_HASH_MISMATCH");
+    assert_eq!(corrupt_surprise["wrote_surprise"], false);
+    assert_eq!(
+        delta(
+            &corrupt_surprise_before,
+            &corrupt_surprise_after,
+            "dj_surprise_events"
+        ),
+        0
+    );
+    assert_eq!(
+        delta(
+            &corrupt_surprise_before,
+            &corrupt_surprise_after,
+            "dj_audit_log"
+        ),
+        0
+    );
+    evidence.push(json!({"step": "edge_corrupt_artifact_record_surprise", "before": corrupt_surprise_before, "error": corrupt_surprise, "after": corrupt_surprise_after}));
 
     fs::write(
         evidence_dir.join("cli_phase8_fsv.json"),
