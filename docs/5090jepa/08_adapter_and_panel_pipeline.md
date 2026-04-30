@@ -2,7 +2,7 @@
 
 This file specifies how raw JSONL fixture lines become normalized state/action/outcome/transition records, then instrument readings, then a latent panel — for the v1 demo. The pipeline is identical for both domain packs; the only difference is which TOML is registered.
 
-Current Phase 7 status as of 2026-04-30: the adapter, instrument execution, and panel materialization path remains implemented in `crates/context-graph-cli/src/commands/dynamicjepa.rs`, backed by atomic storage helpers in `crates/context-graph-storage/src/dynamicjepa/{event_store.rs,panel_store.rs}`. The Phase 7 service crate owns training/artifacts only; this adapter/panel code has not been moved into the service crate.
+Current Phase 10 status as of 2026-04-30: the adapter, instrument execution, and panel materialization path remains implemented in `crates/context-graph-cli/src/commands/dynamicjepa.rs`, backed by atomic storage helpers in `crates/context-graph-storage/src/dynamicjepa/{event_store.rs,panel_store.rs}`. The Phase 7 service crate owns training/artifacts and Phase 8 inference logic; this adapter/panel code has not been moved into the service crate.
 
 ## 1. Pipeline Stages
 

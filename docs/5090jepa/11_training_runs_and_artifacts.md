@@ -2,7 +2,7 @@
 
 The model file on disk is *not* proof that a training run succeeded. The proof is the `dj_training_runs` row plus the `dj_model_artifacts` row plus a recomputed file hash that matches the registry value. This file specifies the lifecycle and the FSV requirements.
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: `dynamicjepa train`, `get-training-run`, and `get-artifact --verify-files` are implemented and FSV-accepted. The Phase 7 FSV writes and reads real `dj_training_runs` and `dj_model_artifacts` rows, recomputes artifact file hashes from disk, and proves corrupted artifact verification fails without writing predictions. The Phase 8 FSV verifies `predict` writes `model_artifact_hash_at_inference` from the verified artifact and refuses to write a prediction after artifact corruption.
+Current implementation status as of the Phase 10 review on 2026-04-30: `dynamicjepa train`, `get-training-run`, and `get-artifact --verify-files` are implemented and FSV-accepted. The Phase 7 FSV writes and reads real `dj_training_runs` and `dj_model_artifacts` rows, recomputes artifact file hashes from disk, and proves corrupted artifact verification fails without writing predictions. The Phase 8 FSV verifies `predict` writes `model_artifact_hash_at_inference` from the verified artifact and refuses to write a prediction after artifact corruption. Phase 10 reruns those hash checks inside bundled counter_world and gridworld verifier evidence and stores the checks in `VerificationRunRecord.artifact_hash_checks`.
 
 ## 1. Lifecycle Steps
 

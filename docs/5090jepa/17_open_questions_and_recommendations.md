@@ -99,8 +99,8 @@ Brief mentions only — implementing any of these is out of demo scope.
 | --- | --- |
 | Candle/CUDA stack could regress on Blackwell | Pin `candle-core`/`candle-nn` at 0.10.2; record actual `cargo tree -p candle-core` output in evidence; surface any `Could not start backend: Runtime compute cap` in `16_…` §2.1 |
 | WSL2 CUDA passthrough flake on first kernel launch | First-call warmup before training timer; documented in `16_…` §6 |
-| Tiny model quality audit is not fully closed | The three-event fixture cannot prove train-only convergence; current Phase 7 FSV uses a generated 60-event counter_world fixture. Strict shuffled-target and covariance targets remain open and are recorded in evidence rather than hidden. |
-| Gridworld Phase 7 training is unverified | Keep gridworld model FSV listed as open until `dynamicjepa_phase7_fsv.rs` or a successor trains and hash-verifies a real gridworld artifact. |
+| Tiny model quality audit is not fully closed | The three-event fixture cannot prove train-only convergence; current Phase 7/10 FSV uses a generated 60-event counter_world fixture and the full gridworld corpus. Strict shuffled-target and covariance targets remain open and are recorded in evidence rather than hidden. |
+| Gridworld training could regress | Phase 10 now trains and hash-verifies a real gridworld artifact. Keep `dynamicjepa_phase10_fsv.rs`, the gridworld train config, and the causal action-slot encoding tests in sync so future target-panel leakage does not reappear. |
 | Operator's `data/contextgraph_data` corruption from a misconfigured demo | Demo strictly uses `/tmp/5090jepa-*` paths; environment probes refuse to start if the demo path equals the production path |
 | Concurrent CLI reads on the same RocksDB path hit the DB lock | Run Phase 3/4 inspection commands sequentially or through one long-lived process; a lock error is a real `STORAGE` failure, not something to ignore |
 | A future contributor adds an `if domain == ...` branch | `tests/universality_audit.rs` runs both packs against the same DB; CI would catch domain-specific code |

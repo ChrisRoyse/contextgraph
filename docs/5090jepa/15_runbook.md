@@ -397,8 +397,8 @@ vicreg_variance_per_dim_min >= 0.5
 ```
 
 Known caveats: the strict shuffled-target and covariance targets are recorded but
-not yet passing acceptance gates, gridworld model training FSV has not been
-completed, and bundled `verify-*` commands are still future work.
+not yet passing acceptance gates. Gridworld model training and bundled
+`verify-*` commands are implemented and FSV-tested in Phase 10.
 
 Phase 8 counter_world prediction/planning/surprise FSV is:
 
@@ -440,9 +440,9 @@ corrupt artifact record-surprise -> ARTIFACT_HASH_MISMATCH, surprise/audit delta
 
 Independent physical `ldb dump --count_only` after the current run matched the decoded source-of-truth counts for `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
 
-## 5. Future Phase 10 Bundled Counter_world Run
+## 5. Phase 10 Bundled Counter_world Run
 
-Current Phase 8 evidence is produced by `dynamicjepa_phase8_fsv.rs` in Section 4. The bundled `verify-counter-world` command below is still future Phase 10 work.
+Current Phase 10 evidence is produced by `dynamicjepa_phase10_fsv.rs` and by manual runs of the bundled `verify-counter-world` command below.
 
 ```bash
 export DJ_DB=/tmp/5090jepa-cw-fsv
@@ -468,7 +468,9 @@ ls tmp/5090jepa_evidence/counter_world/<verification_run_uuid>/decoded/
 
 If `inspect-counts` does not match the counter_world table in Section 4 of `14_full_state_verification_protocol.md`, the run is not valid — read the verification_run_record.json `failure_details` and fix.
 
-## 6. Future Phase 10 Gridworld Run
+Latest manual counter_world proof on 2026-04-30: DB `/tmp/5090jepa-phase10-cw-fsv2`, evidence `tmp/5090jepa_evidence/counter_world_final/4d2be585-cd38-4da7-9b57-d33dd611cc03/`, status `Passed`, `dj_verification_runs=1`, and artifact hash checks all `equal=true`.
+
+## 6. Phase 10 Gridworld Run
 
 ```bash
 export DJ_DB=/tmp/5090jepa-gw-fsv
@@ -486,7 +488,9 @@ mkdir -p "$DJ_ARTIFACTS"
 
 Expected duration: ≤ 5 min. Same inspection step.
 
-## 7. Future Phase 10 Universality Audit
+Latest manual gridworld proof on 2026-04-30: DB `/tmp/5090jepa-phase10-gw-fsv`, evidence `tmp/5090jepa_evidence/gridworld_final/4d198b3b-1cd0-4268-a1e7-e4edefc13a17/`, status `Passed`, split counts `train=4977`, `val=1330`, `test=693`, `dj_verification_runs=1`, and artifact hash checks all `equal=true`.
+
+## 7. Phase 10 Universality Audit
 
 Run both verifications against the **same** fresh DB to prove no hard-coded `if domain == ...` branches:
 

@@ -2,7 +2,7 @@
 
 This file is a debugging reference. The first job when something fails is to identify the *category* of failure — that determines which evidence to gather and which fix to apply.
 
-Current implementation status as of the Phase 7/8 review on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, `compile-trajectories`, `compile-dataset`, `train`, `get-training-run`, `get-artifact --verify-files`, `predict`, `plan`, and `record-surprise` are operational and covered by CLI FSV. MCP and bundled `verify-*` failures are specified here for future phases.
+Current implementation status as of the Phase 10 review on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, `compile-trajectories`, `compile-dataset`, `train`, `get-training-run`, `get-artifact --verify-files`, `predict`, `plan`, `record-surprise`, MCP Phase 9 tool dispatch, and bundled `verify-*` commands are operational and covered by FSV.
 
 ## 1. Categories
 
@@ -109,7 +109,7 @@ Cause: the supplied `--dataset-id` has no matching `dj_dataset_shards` rows.
 
 Fix: Run `dynamicjepa inspect-counts --db <path> --json` and `dynamicjepa inspect-cf --cf dj_dataset_shards --limit 10 --json`, then use the dataset id emitted by `compile-dataset`. The expected edge-case outcome is no new training run, no artifact row, and no audit row.
 
-### 2.8 `get-artifact --verify-files` / future `predict` — `ArtifactHashMismatch`
+### 2.8 `get-artifact --verify-files` / `predict` — `ArtifactHashMismatch`
 
 Cause: the artifact files on disk do not match the registry. Either someone edited the file (intentional Phase 7 EC test) or the run was interrupted between file write and registry write.
 
@@ -120,7 +120,7 @@ Fix:
 
 Current Phase 7 surfaces this through `get-artifact --verify-files`. Current Phase 8 surfaces it through `predict`, which is FSV-tested to fail before writing any `PredictionRecord`.
 
-### 2.9 Future Phase 10 `verify-counter-world` — `VerificationFailed: count mismatch dj_panels expected=3 actual=2`
+### 2.9 Phase 10 `verify-counter-world` / `verify-gridworld` — `VerificationFailed: count mismatch dj_latent_panels expected=<n> actual=<m>`
 
 Cause: one panel did not materialize. Almost always a missing required instrument (see 2.4).
 

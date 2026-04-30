@@ -2,7 +2,7 @@
 
 After events become panels, trajectories order them and dataset shards turn pairs of panels into training rows. The demo uses a single segmentation policy and a single objective; everything is deterministic.
 
-Current implementation status as of the Phase 7 review on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, `dj_latent_panels`, and `dj_trajectories`) are written and FSV-verified, and the trajectory plus one-step dataset compiler commands are operational through the CLI/storage path. Phase 7 training consumes those real dataset shards directly from RocksDB and verifies source hashes before training.
+Current implementation status as of the Phase 10 review on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, `dj_latent_panels`, and `dj_trajectories`) are written and FSV-verified, and the trajectory plus one-step dataset compiler commands are operational through the CLI/storage path. Phase 7/10 training consumes those real dataset shards directly from RocksDB and verifies source hashes before training; Phase 10 records split counts in the persisted `VerificationRunRecord`.
 
 ## 1. Trajectory Compilation
 

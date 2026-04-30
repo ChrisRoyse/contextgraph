@@ -1,6 +1,6 @@
 # 02 — Repository State Inventory
 
-This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 9/10. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before any follow-up phase or refactor. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
 ## 1. Branch & Commit Snapshot (Phase 7/8 Review: 2026-04-30)
 
@@ -56,12 +56,13 @@ ls crates/context-graph-cli/src/commands/
 test -d crates/context-graph-dynamicjepa
 test -d crates/context-graph-core/src/dynamicjepa
 test -d crates/context-graph-storage/src/dynamicjepa
-test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
+test -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs
 test -f crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs
+test -f crates/context-graph-cli/tests/dynamicjepa_phase10_fsv.rs
 test -f crates/context-graph-dynamicjepa/src/service.rs
 test -f crates/context-graph-dynamicjepa/src/model/mod.rs
 test -f crates/context-graph-cli/src/bin/context-graph.rs
@@ -73,9 +74,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2 Through Phase 8 Verification Status (2026-04-30)
+## 4. Phase 2 Through Phase 10 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6 is implemented and manually verified as the deterministic one-step dataset shard compiler. Phase 7 is implemented for CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 prediction/planning/surprise code is present in the working tree and passed its CLI FSV on rerun. Phase 9 MCP and Phase 10 bundled `verify-*` harnesses are not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6 is implemented and manually verified as the deterministic one-step dataset shard compiler. Phase 7 is implemented for CUDA-only training, training-run persistence, model-artifact registration, and artifact hash verification. Phase 8 prediction/planning/surprise code is present and passed CLI FSV. Phase 9 MCP tooling is present and passed MCP FSV. Phase 10 bundled `verify-*` harnesses are present and passed CLI FSV for both domains.
 
 Source of truth verified:
 
@@ -111,6 +112,14 @@ Phase 8 source of truth verified:
 - Observed Phase 8 deltas include `predict: dj_predictions +1, dj_audit_log +1`; `plan: dj_actions +5, dj_predictions +5, dj_guard_decisions +5, dj_plan_traces +1, dj_skill_policies +1`; forced surprise: `dj_surprise_events +1, dj_audit_log +1`.
 - Observed Phase 8 deterministic planning proof: counter_world candidates `[-2, -1, 0, 1, 2]` produce utility scores `[-2, -1, 0, 1, 2]`, and the persisted selected hypothetical action has `fields.delta.I64 = 2`.
 - Phase 8 edge cases verified: missing artifact leaves `dj_predictions` and `dj_audit_log` unchanged; observed outcome/panel mismatch fails with `VALIDATION` and leaves surprise/audit counts unchanged; corrupted `model.safetensors` makes `predict`, `plan`, and `record-surprise` fail with `ARTIFACT_HASH_MISMATCH` and unchanged prediction/plan/surprise/audit counts as applicable.
+
+Phase 10 source of truth verified:
+
+- Automated CLI FSV test: `crates/context-graph-cli/tests/dynamicjepa_phase10_fsv.rs`.
+- Manual counter_world DB/artifact/evidence: `/tmp/5090jepa-phase10-cw-fsv2`, `/tmp/5090jepa-phase10-artifacts-cw2`, and `tmp/5090jepa_evidence/counter_world_final/4d2be585-cd38-4da7-9b57-d33dd611cc03/`.
+- Manual gridworld DB/artifact/evidence: `/tmp/5090jepa-phase10-gw-fsv`, `/tmp/5090jepa-phase10-artifacts-gw`, and `tmp/5090jepa_evidence/gridworld_final/4d198b3b-1cd0-4268-a1e7-e4edefc13a17/`.
+- Both manual runs persisted `VerificationRunRecord.status = Passed`, recomputed all artifact hashes with `equal=true`, and wrote `command_log.txt`, `before_counts.json`, `after_counts.json`, `edge_*.json`, `decoded/`, `summary.json`, and `verification_run_record.json`.
+- Independent CLI `inspect-counts` and physical `ldb dump --count_only` reads matched the final evidence counts, including `dj_verification_runs=1` for each DB.
 
 Root-cause fixes made during this audit:
 
