@@ -181,7 +181,7 @@ impl InMemoryTeleologicalStore {
         }
 
         // Sort by overlap count descending
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|(_, overlap_count)| std::cmp::Reverse(*overlap_count));
         results.truncate(max_candidates);
         debug!("E6 sparse recall returned {} candidates", results.len());
         Ok(results)

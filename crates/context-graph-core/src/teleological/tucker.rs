@@ -510,7 +510,7 @@ fn power_iteration_top_k(m_flat: &[f32], n: usize, k: usize) -> Result<Vec<Vec<f
             // Mix seed and index so different eigenpair attempts start from
             // different directions (helps when deflated is empty).
             let s = ((i.wrapping_add(seed * 7919)) % 1024) as f32 + 1.0;
-            x[i] = if (i + seed) % 2 == 0 { s } else { -s };
+            x[i] = if (i + seed).is_multiple_of(2) { s } else { -s };
         }
         normalize_f32(&mut x);
         x

@@ -307,7 +307,7 @@ impl GraphLinkService {
             .typed_edges
             .iter()
             .filter(|e| e.source() == node_id)
-            .filter(|e| edge_type.map_or(true, |t| e.edge_type() == t))
+            .filter(|e| edge_type.is_none_or(|t| e.edge_type() == t))
             .map(|e| TypedEdgeInfo {
                 target: e.target(),
                 edge_type: e.edge_type(),

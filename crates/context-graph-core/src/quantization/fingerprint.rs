@@ -420,7 +420,7 @@ fn quantize_pq8(
         });
     }
 
-    if data.len() % num_subvectors != 0 {
+    if !data.len().is_multiple_of(num_subvectors) {
         return Err(FingerprintQuantizeError::InvalidInput {
             embedder,
             message: format!(
