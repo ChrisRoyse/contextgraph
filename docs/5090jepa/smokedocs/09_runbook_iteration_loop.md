@@ -25,79 +25,97 @@ cargo build -p context-graph-cli --bin context-graph --all-features
 
 ```bash
 export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_mejepa_5090_smoke"
-export RUN_ROOT="tmp/mejepa_research_runs/$RUN_ID"
-export DB="/tmp/mejepa-5090-smoke-$RUN_ID"
-export ARTIFACT_ROOT="/tmp/mejepa-5090-artifacts-$RUN_ID"
-rm -rf "$DB" "$ARTIFACT_ROOT" "$RUN_ROOT"
-mkdir -p "$RUN_ROOT" "$ARTIFACT_ROOT"
+export RUN_ROOT="tmp/mejepa_research_runs"
+rm -rf "$RUN_ROOT/$RUN_ID"
 ```
 
-## Gate 0/1 - Environment And Storage
+## One-Command Research Smoke
 
 ```bash
-nvidia-smi --query-gpu=name,driver_version,compute_cap,memory.total --format=csv,noheader
-nvcc --version
-rustc --version
-cargo --version
-./target/debug/context-graph dynamicjepa inspect-counts --db "$DB" --json
+./target/debug/context-graph dynamicjepa research-smoke \
+  --run-id "$RUN_ID" \
+  --run-root "$RUN_ROOT" \
+  --fixtures-root configs/dynamicjepa \
+  --json
 ```
 
-Write outputs into `environment.json`, `hardware.json`, and
-`db_counts_before.json`.
+This command runs environment capture, git state capture, counter_world,
+gridworld_5x5, career_taxonomy, career same-seed reproducibility, and the
+career no-VICReg ablation. It writes all source-of-truth evidence into
+`tmp/mejepa_research_runs/<run_id>/`.
+
+Expected top-level files:
+
+- `run_manifest.json`;
+- `environment.json`;
+- `hardware.json`;
+- `git_state.json`;
+- `data_manifest.json`;
+- `domain_pack_manifest.json`;
+- `command_log.jsonl`;
+- `fsv_report.json`;
+- `db_counts_before.json`;
+- `db_counts_after.json`;
+- `training_metrics.json`;
+- `evaluation_report.json`;
+- `ablation_results.json`;
+- `edge_case_results.json`;
+- `reproducibility.json`;
+- `paper_tables/*.csv`.
+
+## Manual Spot Checks
+
+After the command passes:
+
+```bash
+jq '{status, run_id, db_path, artifact_root}' \
+  "tmp/mejepa_research_runs/$RUN_ID/run_manifest.json"
+
+jq '{status, readback_counts:(.readbacks|to_entries|map({domain:.key, verification_runs:.value.after_counts.dj_verification_runs, model_artifacts:.value.after_counts.dj_model_artifacts, predictions:.value.after_counts.dj_predictions}))}' \
+  "tmp/mejepa_research_runs/$RUN_ID/fsv_report.json"
+
+./target/debug/context-graph dynamicjepa inspect-counts \
+  --db "tmp/mejepa_research_runs/$RUN_ID/dbs/${RUN_ID}_career_taxonomy_rocksdb" \
+  --json
+```
 
 ## Gate 2 - Existing Runtime Controls
 
+The one-command harness runs these controls. Use the explicit commands below
+only when isolating a failing gate:
+
 ```bash
 ./target/debug/context-graph dynamicjepa verify-counter-world \
-  --db "$DB-counter" \
+  --db "/tmp/mejepa-counter-debug-$RUN_ID" \
   --fixtures-root configs/dynamicjepa \
-  --artifact-root "$ARTIFACT_ROOT/counter" \
-  --evidence-root "$RUN_ROOT/control_counter" \
+  --artifact-root "/tmp/mejepa-counter-artifacts-$RUN_ID" \
+  --evidence-root "tmp/mejepa_research_runs/${RUN_ID}_counter_debug" \
   --json
 
 ./target/debug/context-graph dynamicjepa verify-gridworld \
-  --db "$DB-grid" \
+  --db "/tmp/mejepa-grid-debug-$RUN_ID" \
   --fixtures-root configs/dynamicjepa \
-  --artifact-root "$ARTIFACT_ROOT/gridworld" \
-  --evidence-root "$RUN_ROOT/control_gridworld" \
+  --artifact-root "/tmp/mejepa-grid-artifacts-$RUN_ID" \
+  --evidence-root "tmp/mejepa_research_runs/${RUN_ID}_grid_debug" \
   --json
 ```
 
 For a later universality run, use one shared DB. For smoke iteration, separate
 DBs reduce lock and cleanup risk.
 
-## Gate 3+ - Career Taxonomy
+## Gate 3+ - Career Taxonomy Debug Path
 
-Planned commands after the career domain pack and fixture generator are added:
+The career taxonomy verifier is implemented. Use it directly only when
+debugging the career slice outside the consolidated bundle:
 
 ```bash
-./target/debug/context-graph dynamicjepa register-domain \
-  --db "$DB-career" \
-  --file configs/dynamicjepa/domain_packs/career_taxonomy.v1.toml \
-  --json
-
-./target/debug/context-graph dynamicjepa ingest-event \
-  --db "$DB-career" \
-  --domain career_taxonomy \
-  --adapter json_event \
-  --file "$RUN_ROOT/career_taxonomy_smoke.jsonl" \
-  --json
-
-./target/debug/context-graph dynamicjepa materialize-panel \
-  --db "$DB-career" \
-  --all-pending \
-  --domain career_taxonomy \
-  --json
-
-./target/debug/context-graph dynamicjepa compile-trajectories \
-  --db "$DB-career" \
-  --domain career_taxonomy \
-  --policy by_domain_session \
+./target/debug/context-graph dynamicjepa verify-career-taxonomy \
+  --db "/tmp/mejepa-career-debug-$RUN_ID" \
+  --fixtures-root configs/dynamicjepa \
+  --artifact-root "/tmp/mejepa-career-artifacts-$RUN_ID" \
+  --evidence-root "tmp/mejepa_research_runs/${RUN_ID}_career_debug" \
   --json
 ```
-
-Then compile train/val/test, train, verify artifact, predict, plan, and record
-surprise using the same pattern as Phase 10.
 
 ## Iteration Policy
 
@@ -120,4 +138,3 @@ Promote only when:
 - all generated tables trace to bundle paths;
 - edge cases pass;
 - no paper claim depends on unavailable real recruiting data.
-

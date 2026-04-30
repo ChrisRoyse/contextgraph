@@ -6,9 +6,12 @@
 //! inspection paths.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::env;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::Command;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
@@ -130,6 +133,8 @@ pub enum DynamicJepaCommands {
     VerifyGridworld(VerifyDomainArgs),
     /// Run bundled career_taxonomy end-to-end research-smoke full-state verification.
     VerifyCareerTaxonomy(VerifyDomainArgs),
+    /// Build one immutable 5090 ME-JEPA research-smoke bundle from real verifier runs.
+    ResearchSmoke(ResearchSmokeArgs),
 }
 
 impl DynamicJepaCommands {
@@ -165,6 +170,7 @@ impl DynamicJepaCommands {
             Self::VerifyCounterWorld(_) => "dynamicjepa_verify_counter_world",
             Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
             Self::VerifyCareerTaxonomy(_) => "dynamicjepa_verify_career_taxonomy",
+            Self::ResearchSmoke(_) => "dynamicjepa_research_smoke",
         }
     }
 }
@@ -737,6 +743,37 @@ pub struct VerifyDomainArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct ResearchSmokeArgs {
+    /// Stable run id. Must contain only ASCII letters, digits, dot, dash, or underscore.
+    #[arg(long = "run-id")]
+    pub run_id: Option<String>,
+
+    /// Root under which the immutable research bundle directory is created.
+    #[arg(long = "run-root", default_value = "tmp/mejepa_research_runs")]
+    pub run_root: PathBuf,
+
+    /// Root containing domain_packs/ and verification/ fixtures.
+    #[arg(long = "fixtures-root", default_value = "configs/dynamicjepa")]
+    pub fixtures_root: PathBuf,
+
+    /// Optional RocksDB root. Defaults to <run_dir>/dbs for a self-contained smoke bundle.
+    #[arg(long = "db-root")]
+    pub db_root: Option<PathBuf>,
+
+    /// Optional artifact root. Defaults to <run_dir>/artifacts.
+    #[arg(long = "artifact-root")]
+    pub artifact_root: Option<PathBuf>,
+
+    /// Research run purpose. The smoke harness intentionally accepts only smoke.
+    #[arg(long, default_value = "smoke")]
+    pub purpose: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -833,6 +870,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::VerifyCounterWorld(args) => verify_counter_world_command(args),
         DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
         DynamicJepaCommands::VerifyCareerTaxonomy(args) => verify_career_taxonomy_command(args),
+        DynamicJepaCommands::ResearchSmoke(args) => research_smoke_command(args),
     }
 }
 
@@ -2852,6 +2890,1623 @@ fn verify_gridworld_command(args: VerifyDomainArgs) -> DynamicJepaResult<Command
 
 fn verify_career_taxonomy_command(args: VerifyDomainArgs) -> DynamicJepaResult<CommandOutcome> {
     verify_domain_command(VerificationDomain::CareerTaxonomy, args)
+}
+
+fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    if args.purpose != "smoke" {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.purpose",
+            format!(
+                "research-smoke only supports purpose=smoke; got {}",
+                args.purpose
+            ),
+            "run the smoke harness first; paper_small and paper_full require explicit scaling commands after smoke passes",
+        ));
+    }
+    let run_id = args
+        .run_id
+        .clone()
+        .unwrap_or_else(|| format!("{}_{}", now_unix_ms().unwrap_or(0), Uuid::new_v4()));
+    validate_research_run_id(&run_id)?;
+    let mut ctx = ResearchSmokeContext::new(run_id, args)?;
+    match run_research_smoke(&mut ctx) {
+        Ok(summary) => ctx.finish_passed(summary),
+        Err(err) => ctx.finish_failed(err),
+    }
+}
+
+struct ResearchSmokeContext {
+    run_id: String,
+    purpose: String,
+    run_root: PathBuf,
+    run_dir: PathBuf,
+    fixtures_root: PathBuf,
+    db_root: PathBuf,
+    artifact_root: PathBuf,
+    command_log_path: PathBuf,
+    command_output_dir: PathBuf,
+    decoded_records_dir: PathBuf,
+    fsv_evidence_root: PathBuf,
+    paper_tables_dir: PathBuf,
+    plots_dir: PathBuf,
+    bin: PathBuf,
+    created_at_unix_ms: i64,
+    command_index: usize,
+    command_rows: Vec<Value>,
+    domain_reports: BTreeMap<String, Value>,
+    training_rows: Vec<Value>,
+    artifact_rows: Vec<Value>,
+    edge_rows: Vec<Value>,
+    ablation_rows: Vec<Value>,
+}
+
+#[derive(Debug)]
+struct ResearchCommandCapture {
+    index: usize,
+    name: String,
+    exit_code: i32,
+    stdout: String,
+    row: Value,
+}
+
+impl ResearchSmokeContext {
+    fn new(run_id: String, args: ResearchSmokeArgs) -> DynamicJepaResult<Self> {
+        let run_root = args.run_root;
+        fs::create_dir_all(&run_root).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.create_run_root".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", run_root.display()),
+            remediation: "choose a writable --run-root".to_string(),
+        })?;
+        let run_dir = run_root.join(&run_id);
+        if run_dir.exists() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.run_id",
+                format!("research run directory already exists: {}", run_dir.display()),
+                "use a fresh --run-id; research smoke bundles are immutable and are never overwritten",
+            ));
+        }
+        fs::create_dir(&run_dir).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.create_run_dir".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", run_dir.display()),
+            remediation: "use a fresh --run-id under a writable --run-root".to_string(),
+        })?;
+
+        let db_root = args.db_root.unwrap_or_else(|| run_dir.join("dbs"));
+        let artifact_root = args
+            .artifact_root
+            .unwrap_or_else(|| run_dir.join("artifacts"));
+        ensure_absent_or_empty_dir(&db_root, "research_smoke.db_root")?;
+        ensure_absent_or_empty_dir(&artifact_root, "research_smoke.artifact_root")?;
+
+        let command_output_dir = run_dir.join("command_outputs");
+        let decoded_records_dir = run_dir.join("decoded_records");
+        let fsv_evidence_root = run_dir.join("fsv_evidence");
+        let paper_tables_dir = run_dir.join("paper_tables");
+        let plots_dir = run_dir.join("plots");
+        for path in [
+            &db_root,
+            &artifact_root,
+            &command_output_dir,
+            &decoded_records_dir,
+            &fsv_evidence_root,
+            &paper_tables_dir,
+            &plots_dir,
+            &run_dir.join("ablations"),
+        ] {
+            fs::create_dir_all(path).map_err(|err| DynamicJepaError::Storage {
+                operation: "research_smoke.create_bundle_subdir".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to create {}: {err}", path.display()),
+                remediation: "choose writable run, DB, and artifact roots".to_string(),
+            })?;
+        }
+
+        let bin = env::current_exe().map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.current_exe",
+                format!("failed to locate current context-graph binary: {err}"),
+                "run research-smoke from a built context-graph CLI binary",
+            )
+        })?;
+
+        let mut ctx = Self {
+            run_id,
+            purpose: args.purpose,
+            run_root,
+            run_dir,
+            fixtures_root: args.fixtures_root,
+            db_root,
+            artifact_root,
+            command_log_path: PathBuf::new(),
+            command_output_dir,
+            decoded_records_dir,
+            fsv_evidence_root,
+            paper_tables_dir,
+            plots_dir,
+            bin,
+            created_at_unix_ms: now_unix_ms()?,
+            command_index: 0,
+            command_rows: Vec::new(),
+            domain_reports: BTreeMap::new(),
+            training_rows: Vec::new(),
+            artifact_rows: Vec::new(),
+            edge_rows: Vec::new(),
+            ablation_rows: Vec::new(),
+        };
+        ctx.command_log_path = ctx.run_dir.join("command_log.jsonl");
+        ctx.write_run_manifest("running", Value::Null)?;
+        Ok(ctx)
+    }
+
+    fn db_path(&self, label: &str) -> DynamicJepaResult<PathBuf> {
+        let path = self
+            .db_root
+            .join(format!("{}_{}_rocksdb", self.run_id, label));
+        if path.exists() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.db_path",
+                format!("DB path already exists: {}", path.display()),
+                "use a fresh --run-id or empty --db-root; research smoke never reuses DB source-of-truth paths",
+            ));
+        }
+        Ok(path)
+    }
+
+    fn write_run_manifest(&self, status: &str, failure_details: Value) -> DynamicJepaResult<()> {
+        let operator = env::var("USER").unwrap_or_else(|_| "local".to_string());
+        let repo = env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+        write_json_file(
+            &self.run_dir.join("run_manifest.json"),
+            &json!({
+                "run_id": self.run_id,
+                "created_at_unix_ms": self.created_at_unix_ms,
+                "updated_at_unix_ms": now_unix_ms()?,
+                "purpose": self.purpose,
+                "operator": operator,
+                "repo": repo,
+                "run_root": self.run_root,
+                "run_dir": self.run_dir,
+                "db_path": self.db_root,
+                "artifact_root": self.artifact_root,
+                "evidence_root": self.fsv_evidence_root,
+                "status": status,
+                "failure_details": failure_details,
+            }),
+        )
+    }
+
+    fn run_required(
+        &mut self,
+        name: &str,
+        program: &Path,
+        args: &[String],
+    ) -> DynamicJepaResult<ResearchCommandCapture> {
+        self.run_command(name, program, args, true)
+    }
+
+    fn run_command(
+        &mut self,
+        name: &str,
+        program: &Path,
+        args: &[String],
+        required_success: bool,
+    ) -> DynamicJepaResult<ResearchCommandCapture> {
+        let index = self.command_index;
+        self.command_index += 1;
+        let started_at_unix_ms = now_unix_ms()?;
+        let started = Instant::now();
+        let mut command = Command::new(program);
+        command.args(args);
+        command.env("CONTEXT_GRAPH_ENV", "development");
+        command.env("CUDA_COMPUTE_CAP", "120");
+        let argv = std::iter::once(program.display().to_string())
+            .chain(args.iter().cloned())
+            .collect::<Vec<_>>();
+        let output = match command.output() {
+            Ok(output) => output,
+            Err(err) => {
+                let finished_at_unix_ms = now_unix_ms()?;
+                let stderr = format!("failed to spawn {}: {err}", program.display());
+                let capture = self.write_command_capture(CommandCaptureInput {
+                    index,
+                    name,
+                    argv,
+                    started_at_unix_ms,
+                    finished_at_unix_ms,
+                    elapsed_ms: started.elapsed().as_millis(),
+                    exit_code: -1,
+                    stdout: Vec::new(),
+                    stderr: stderr.into_bytes(),
+                    spawn_error: true,
+                })?;
+                return Err(DynamicJepaError::validation(
+                    "research_smoke.command_spawn",
+                    format!("command {} could not start", capture.name),
+                    "inspect command_log.jsonl and command_outputs/*.stderr for the exact executable and OS error",
+                ));
+            }
+        };
+        let finished_at_unix_ms = now_unix_ms()?;
+        let exit_code = output.status.code().unwrap_or(-1);
+        let capture = self.write_command_capture(CommandCaptureInput {
+            index,
+            name,
+            argv,
+            started_at_unix_ms,
+            finished_at_unix_ms,
+            elapsed_ms: started.elapsed().as_millis(),
+            exit_code,
+            stdout: output.stdout,
+            stderr: output.stderr,
+            spawn_error: false,
+        })?;
+        if required_success && capture.exit_code != 0 {
+            return Err(DynamicJepaError::VerificationFailed {
+                test_name: "mejepa_research_smoke".to_string(),
+                message: format!(
+                    "required command {} exited {}; stderr_tail={:?}",
+                    capture.name, capture.exit_code, capture.row["stderr_tail"]
+                ),
+                evidence_path: self.run_dir.display().to_string(),
+            });
+        }
+        Ok(capture)
+    }
+
+    fn write_command_capture(
+        &mut self,
+        input: CommandCaptureInput<'_>,
+    ) -> DynamicJepaResult<ResearchCommandCapture> {
+        let safe = safe_filename(input.name);
+        let stdout_path = self
+            .command_output_dir
+            .join(format!("{:03}_{safe}.stdout", input.index));
+        let stderr_path = self
+            .command_output_dir
+            .join(format!("{:03}_{safe}.stderr", input.index));
+        fs::write(&stdout_path, &input.stdout).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.write_stdout".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to write {}: {err}", stdout_path.display()),
+            remediation: "choose a writable --run-root".to_string(),
+        })?;
+        fs::write(&stderr_path, &input.stderr).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.write_stderr".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to write {}: {err}", stderr_path.display()),
+            remediation: "choose a writable --run-root".to_string(),
+        })?;
+        let stdout = String::from_utf8_lossy(&input.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&input.stderr).to_string();
+        let row = json!({
+            "index": input.index,
+            "name": input.name,
+            "argv": input.argv,
+            "started_at_unix_ms": input.started_at_unix_ms,
+            "finished_at_unix_ms": input.finished_at_unix_ms,
+            "elapsed_ms": input.elapsed_ms as u64,
+            "exit_code": input.exit_code,
+            "spawn_error": input.spawn_error,
+            "stdout_path": stdout_path,
+            "stderr_path": stderr_path,
+            "stdout_sha256": hex_bytes(&sha256(&input.stdout)),
+            "stderr_sha256": hex_bytes(&sha256(&input.stderr)),
+            "stdout_tail": tail_lines(&stdout, 20),
+            "stderr_tail": tail_lines(&stderr, 20),
+        });
+        append_jsonl(&self.command_log_path, &row)?;
+        self.command_rows.push(row.clone());
+        Ok(ResearchCommandCapture {
+            index: input.index,
+            name: input.name.to_string(),
+            exit_code: input.exit_code,
+            stdout,
+            row,
+        })
+    }
+
+    fn run_cli_json(&mut self, name: &str, args: Vec<String>) -> DynamicJepaResult<Value> {
+        let bin = self.bin.clone();
+        let capture = self.run_required(name, &bin, &args)?;
+        serde_json::from_str(&capture.stdout).map_err(|err| DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke".to_string(),
+            message: format!(
+                "command {name} did not emit one JSON object: {err}; stdout_path={}",
+                capture.row["stdout_path"]
+            ),
+            evidence_path: self.run_dir.display().to_string(),
+        })
+    }
+
+    fn finish_passed(self, summary: Value) -> DynamicJepaResult<CommandOutcome> {
+        self.write_run_manifest("passed", Value::Null)?;
+        Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_research_smoke",
+                "status": "ok",
+                "run_id": self.run_id,
+                "run_dir": self.run_dir,
+                "source_of_truth": {
+                    "bundle": self.run_dir,
+                    "rocksdb_root": self.db_root,
+                    "artifact_root": self.artifact_root,
+                    "evidence_root": self.fsv_evidence_root,
+                },
+                "summary": summary,
+            }),
+            exit_code: 0,
+        })
+    }
+
+    fn finish_failed(self, err: DynamicJepaError) -> DynamicJepaResult<CommandOutcome> {
+        let failure = json!({
+            "error_code": err.code(),
+            "error_message": err.to_string(),
+            "remediation": remediation(&err),
+        });
+        self.write_run_manifest("failed", failure.clone())?;
+        let fsv_path = self.run_dir.join("fsv_report.json");
+        if !fsv_path.exists() {
+            write_json_file(
+                &fsv_path,
+                &json!({
+                    "status": "failed",
+                    "source_of_truth": {
+                        "bundle": self.run_dir,
+                        "rocksdb_root": self.db_root,
+                        "artifact_root": self.artifact_root,
+                        "evidence_root": self.fsv_evidence_root,
+                    },
+                    "failure_details": failure,
+                    "domain_reports": self.domain_reports,
+                }),
+            )?;
+        }
+        Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_research_smoke",
+                "status": "error",
+                "run_id": self.run_id,
+                "run_dir": self.run_dir,
+                "error_code": err.code(),
+                "error_message": err.to_string(),
+                "remediation": remediation(&err),
+                "source_of_truth": {
+                    "bundle": self.run_dir,
+                    "command_log": self.command_log_path,
+                    "run_manifest": self.run_dir.join("run_manifest.json"),
+                },
+            }),
+            exit_code: 1,
+        })
+    }
+}
+
+struct CommandCaptureInput<'a> {
+    index: usize,
+    name: &'a str,
+    argv: Vec<String>,
+    started_at_unix_ms: i64,
+    finished_at_unix_ms: i64,
+    elapsed_ms: u128,
+    exit_code: i32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    spawn_error: bool,
+}
+
+fn run_research_smoke(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<Value> {
+    validate_research_fixture_root(ctx)?;
+    write_environment_bundle(ctx)?;
+    write_git_state_bundle(ctx)?;
+    write_data_manifest_bundle(ctx)?;
+    write_domain_pack_manifest_bundle(ctx)?;
+
+    let mut db_counts_before = BTreeMap::new();
+    let mut db_counts_after = BTreeMap::new();
+    let domain_runs = [
+        ("counter_world", "verify-counter-world"),
+        ("gridworld_5x5", "verify-gridworld"),
+        ("career_taxonomy", "verify-career-taxonomy"),
+    ];
+    for (domain, command_name) in domain_runs {
+        let db = ctx.db_path(domain)?;
+        let before = ctx.run_cli_json(
+            &format!("{domain}_inspect_counts_before"),
+            vec![
+                "dynamicjepa".to_string(),
+                "inspect-counts".to_string(),
+                "--db".to_string(),
+                db.display().to_string(),
+                "--json".to_string(),
+            ],
+        )?;
+        db_counts_before.insert(domain.to_string(), before["counts"].clone());
+        let artifact_root = ctx.artifact_root.clone();
+        let output = run_research_domain_verifier(ctx, domain, command_name, &db, &artifact_root)?;
+        let after = verify_domain_source_of_truth(ctx, domain, &db, &output)?;
+        db_counts_after.insert(domain.to_string(), after["counts"].clone());
+        collect_domain_evidence(ctx, domain, &output)?;
+    }
+
+    run_career_reproducibility(ctx)?;
+    run_career_novicreg_ablation(ctx)?;
+
+    write_json_file(
+        &ctx.run_dir.join("db_counts_before.json"),
+        &db_counts_before,
+    )?;
+    write_json_file(&ctx.run_dir.join("db_counts_after.json"), &db_counts_after)?;
+    write_json_file(
+        &ctx.run_dir.join("training_metrics.json"),
+        &ctx.training_rows,
+    )?;
+    write_json_file(
+        &ctx.run_dir.join("artifact_hashes.json"),
+        &ctx.artifact_rows,
+    )?;
+    write_json_file(&ctx.run_dir.join("edge_case_results.json"), &ctx.edge_rows)?;
+    write_json_file(
+        &ctx.run_dir.join("ablation_results.json"),
+        &ctx.ablation_rows,
+    )?;
+    write_evaluation_report(ctx)?;
+    write_fsv_report(ctx, "passed", Value::Null)?;
+    write_paper_tables(ctx)?;
+    write_plot_manifest(ctx)?;
+
+    Ok(json!({
+        "domains": ctx.domain_reports.keys().cloned().collect::<Vec<_>>(),
+        "verification_runs": ctx.domain_reports
+            .iter()
+            .map(|(domain, report)| json!({
+                "domain": domain,
+                "verification_run_id": report["verification_run_id"],
+                "db_path": report["db_path"],
+                "evidence_dir": report["evidence_dir"],
+                "status": report["status"],
+            }))
+            .collect::<Vec<_>>(),
+        "training_metric_rows": ctx.training_rows.len(),
+        "artifact_hash_rows": ctx.artifact_rows.len(),
+        "edge_case_rows": ctx.edge_rows.len(),
+        "ablation_rows": ctx.ablation_rows.len(),
+        "command_count": ctx.command_rows.len(),
+    }))
+}
+
+fn validate_research_run_id(run_id: &str) -> DynamicJepaResult<()> {
+    if run_id.is_empty()
+        || run_id == "."
+        || run_id == ".."
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.run_id",
+            format!("invalid research run id: {run_id:?}"),
+            "use only ASCII letters, digits, dot, dash, or underscore; do not include slashes or empty IDs",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_research_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    if !ctx.fixtures_root.exists() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.fixtures_root",
+            format!(
+                "fixtures root does not exist: {}",
+                ctx.fixtures_root.display()
+            ),
+            "point --fixtures-root at configs/dynamicjepa from this repository",
+        ));
+    }
+    let mut required = Vec::new();
+    for domain in [
+        VerificationDomain::CounterWorld,
+        VerificationDomain::Gridworld,
+        VerificationDomain::CareerTaxonomy,
+    ] {
+        required.push(domain.domain_pack_path(&ctx.fixtures_root));
+        required.push(domain.train_config_path(&ctx.fixtures_root));
+        for (_, path, _) in domain.edge_fixtures(&ctx.fixtures_root) {
+            required.push(path);
+        }
+        if let Some(path) = domain.data_manifest_path(&ctx.fixtures_root) {
+            required.push(path);
+        }
+    }
+    required.push(
+        ctx.fixtures_root
+            .join("verification/gridworld_5x5_corpus.jsonl"),
+    );
+    required.push(
+        ctx.fixtures_root
+            .join("verification/career_taxonomy_smoke.jsonl"),
+    );
+    for path in required {
+        if !path.exists() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.fixture_file",
+                format!("required fixture file is missing: {}", path.display()),
+                "restore the checked-in DynamicJEPA fixture set before running research smoke",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn write_environment_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let smi = ctx.run_required(
+        "env_nvidia_smi",
+        Path::new("nvidia-smi"),
+        &[
+            "--query-gpu=name,driver_version,compute_cap,memory.total".to_string(),
+            "--format=csv,noheader".to_string(),
+        ],
+    )?;
+    let nvcc = ctx.run_required(
+        "env_nvcc_version",
+        Path::new("nvcc"),
+        &["--version".to_string()],
+    )?;
+    let rustc = ctx.run_required(
+        "env_rustc_version",
+        Path::new("rustc"),
+        &["--version".to_string()],
+    )?;
+    let cargo = ctx.run_required(
+        "env_cargo_version",
+        Path::new("cargo"),
+        &["--version".to_string()],
+    )?;
+    let candle_tree = ctx.run_required(
+        "env_cargo_tree_candle_core",
+        Path::new("cargo"),
+        &[
+            "tree".to_string(),
+            "-p".to_string(),
+            "candle-core".to_string(),
+        ],
+    )?;
+    let uname = ctx.run_required("env_uname", Path::new("uname"), &["-a".to_string()])?;
+    let lscpu = ctx.run_required("env_lscpu", Path::new("lscpu"), &[])?;
+    let free = ctx.run_required("env_free", Path::new("free"), &["-h".to_string()])?;
+
+    let nvidia_fields = smi
+        .stdout
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split(',')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    if nvidia_fields.len() < 4
+        || !nvidia_fields[0].contains("RTX 5090")
+        || nvidia_fields[2] != "12.0"
+    {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_environment".to_string(),
+            message: format!(
+                "expected RTX 5090 compute capability 12.0, got nvidia-smi row {:?}",
+                smi.stdout.lines().next().unwrap_or("")
+            ),
+            evidence_path: ctx.run_dir.display().to_string(),
+        });
+    }
+    if !nvcc.stdout.contains("release 13.2") {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_environment".to_string(),
+            message: "expected nvcc release 13.2 in environment smoke".to_string(),
+            evidence_path: ctx.run_dir.display().to_string(),
+        });
+    }
+
+    let env_json = json!({
+        "effective_cuda_compute_cap": "120",
+        "CUDA_COMPUTE_CAP_env": env::var("CUDA_COMPUTE_CAP").ok(),
+        "CUDA_HOME": env::var("CUDA_HOME").ok(),
+        "LD_LIBRARY_PATH_present": env::var("LD_LIBRARY_PATH").map(|v| !v.is_empty()).unwrap_or(false),
+        "rustc": rustc.stdout.trim(),
+        "cargo": cargo.stdout.trim(),
+        "candle_tree_stdout_sha256": candle_tree.row["stdout_sha256"],
+        "uname": uname.stdout.trim(),
+        "free": free.stdout,
+        "command_indices": {
+            "nvidia_smi": smi.index,
+            "nvcc": nvcc.index,
+            "rustc": rustc.index,
+            "cargo": cargo.index,
+            "candle_tree": candle_tree.index,
+            "uname": uname.index,
+            "lscpu": lscpu.index,
+            "free": free.index,
+        },
+    });
+    let hardware_json = json!({
+        "gpu": {
+            "name": nvidia_fields[0],
+            "driver_version": nvidia_fields[1],
+            "compute_capability": nvidia_fields[2],
+            "memory_total": nvidia_fields[3],
+        },
+        "nvidia_smi_raw": smi.stdout,
+        "nvcc_version_raw": nvcc.stdout,
+        "cpu_raw": lscpu.stdout,
+        "memory_raw": free.stdout,
+    });
+    write_json_file(&ctx.run_dir.join("environment.json"), &env_json)?;
+    write_json_file(&ctx.run_dir.join("hardware.json"), &hardware_json)?;
+    Ok(())
+}
+
+fn write_git_state_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let head = ctx.run_required(
+        "git_rev_parse_head",
+        Path::new("git"),
+        &["rev-parse".to_string(), "HEAD".to_string()],
+    )?;
+    let status = ctx.run_required(
+        "git_status_short",
+        Path::new("git"),
+        &[
+            "status".to_string(),
+            "--short".to_string(),
+            "--untracked-files=all".to_string(),
+        ],
+    )?;
+    let diff = ctx.run_required("git_diff", Path::new("git"), &["diff".to_string()])?;
+    let ls_files = ctx.run_required(
+        "git_ls_files_smokedocs",
+        Path::new("git"),
+        &[
+            "ls-files".to_string(),
+            "docs/5090jepa/smokedocs".to_string(),
+            "configs/dynamicjepa".to_string(),
+        ],
+    )?;
+    write_json_file(
+        &ctx.run_dir.join("git_state.json"),
+        &json!({
+            "head": head.stdout.trim(),
+            "status_short": status.stdout.lines().collect::<Vec<_>>(),
+            "dirty_tree": !status.stdout.trim().is_empty(),
+            "tracked_diff_sha256": hex_bytes(&sha256(diff.stdout.as_bytes())),
+            "relevant_files": ls_files.stdout.lines().collect::<Vec<_>>(),
+            "command_indices": {
+                "head": head.index,
+                "status": status.index,
+                "diff": diff.index,
+                "ls_files": ls_files.index,
+            },
+        }),
+    )
+}
+
+fn write_data_manifest_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let path = ctx
+        .fixtures_root
+        .join("verification/career_taxonomy_data_manifest.json");
+    let manifest: Value = read_json_file(&path)?;
+    for field in [
+        "name",
+        "source_urls",
+        "license",
+        "local_fixture",
+        "allowed_use",
+        "row_count",
+    ] {
+        if manifest.get(field).is_none() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.data_manifest",
+                format!("{} missing required field {field}", path.display()),
+                "restore complete source URL, license, fixture, allowed-use, and row-count metadata",
+            ));
+        }
+    }
+    let local_fixture = manifest["local_fixture"].as_str().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.data_manifest.local_fixture",
+            "local_fixture must be a string",
+            "fix career_taxonomy_data_manifest.json",
+        )
+    })?;
+    let fixture_candidate = PathBuf::from(local_fixture);
+    let fixture_path = if fixture_candidate.exists() {
+        fixture_candidate
+    } else if let Ok(relative_to_fixtures_root) =
+        fixture_candidate.strip_prefix(Path::new("configs/dynamicjepa"))
+    {
+        ctx.fixtures_root.join(relative_to_fixtures_root)
+    } else {
+        ctx.fixtures_root.join(local_fixture)
+    };
+    let local_hash = file_sha256(&fixture_path)?;
+    write_json_file(
+        &ctx.run_dir.join("data_manifest.json"),
+        &json!({
+            "source_manifest_path": path,
+            "source_manifest_sha256": hex_bytes(&file_sha256(&path)?),
+            "sources": [manifest],
+            "local_fixture_path": fixture_path,
+            "local_fixture_sha256": hex_bytes(&local_hash),
+        }),
+    )
+}
+
+fn write_domain_pack_manifest_bundle(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let mut domains = Vec::new();
+    for domain in [
+        VerificationDomain::CounterWorld,
+        VerificationDomain::Gridworld,
+        VerificationDomain::CareerTaxonomy,
+    ] {
+        let path = domain.domain_pack_path(&ctx.fixtures_root);
+        let pack = parse_domain_pack_file(&path)?;
+        domains.push(json!({
+            "domain": pack.id.0,
+            "version": pack.version,
+            "title": pack.title,
+            "file": path,
+            "sha256": hex_bytes(&file_sha256(&path)?),
+            "instrument_count": pack.instrument_specs.len(),
+            "adapter_count": pack.adapter_specs.len(),
+            "objective_count": pack.objective_specs.len(),
+            "verification_policy": pack.verification_policy,
+            "source_hash_sha256": hex_bytes(&pack.source_hash),
+        }));
+    }
+    write_json_file(
+        &ctx.run_dir.join("domain_pack_manifest.json"),
+        &json!({ "domains": domains }),
+    )
+}
+
+fn run_research_domain_verifier(
+    ctx: &mut ResearchSmokeContext,
+    domain: &str,
+    command_name: &str,
+    db: &Path,
+    artifact_root: &Path,
+) -> DynamicJepaResult<Value> {
+    ctx.run_cli_json(
+        &format!("{domain}_{command_name}"),
+        vec![
+            "dynamicjepa".to_string(),
+            command_name.to_string(),
+            "--db".to_string(),
+            db.display().to_string(),
+            "--fixtures-root".to_string(),
+            ctx.fixtures_root.display().to_string(),
+            "--artifact-root".to_string(),
+            artifact_root.display().to_string(),
+            "--evidence-root".to_string(),
+            ctx.fsv_evidence_root.join(domain).display().to_string(),
+            "--json".to_string(),
+        ],
+    )
+}
+
+fn verify_domain_source_of_truth(
+    ctx: &mut ResearchSmokeContext,
+    domain: &str,
+    db: &Path,
+    verifier_output: &Value,
+) -> DynamicJepaResult<Value> {
+    if verifier_output["status"].as_str() != Some("ok") {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_domain".to_string(),
+            message: format!("domain {domain} verifier returned non-ok status"),
+            evidence_path: ctx.run_dir.display().to_string(),
+        });
+    }
+    let after = ctx.run_cli_json(
+        &format!("{domain}_inspect_counts_after"),
+        vec![
+            "dynamicjepa".to_string(),
+            "inspect-counts".to_string(),
+            "--db".to_string(),
+            db.display().to_string(),
+            "--json".to_string(),
+        ],
+    )?;
+    if after["counts"] != verifier_output["after_counts"] {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "research smoke count readback mismatch for {domain}: verifier_after={} inspect_counts={}",
+                verifier_output["after_counts"], after["counts"]
+            ),
+        });
+    }
+    for cf in [
+        CF_DJ_VERIFICATION_RUNS,
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_TRAINING_RUNS,
+        CF_DJ_PLAN_TRACES,
+        CF_DJ_GUARD_DECISIONS,
+    ] {
+        let readback = ctx.run_cli_json(
+            &format!("{domain}_inspect_cf_{cf}"),
+            vec![
+                "dynamicjepa".to_string(),
+                "inspect-cf".to_string(),
+                "--db".to_string(),
+                db.display().to_string(),
+                "--cf".to_string(),
+                cf.to_string(),
+                "--limit".to_string(),
+                "20".to_string(),
+                "--json".to_string(),
+            ],
+        )?;
+        write_json_file(
+            &ctx.decoded_records_dir.join(format!("{domain}_{cf}.json")),
+            &readback,
+        )?;
+        let expected = after["counts"][cf].as_u64().unwrap_or(0);
+        if expected > 0 {
+            let rows = readback["decoded_records"]["rows"]
+                .as_array()
+                .map(Vec::len)
+                .unwrap_or(0);
+            if rows == 0 {
+                return Err(DynamicJepaError::SourceOfTruthMissing {
+                    cf: cf.to_string(),
+                    key: Vec::new(),
+                });
+            }
+        }
+    }
+    Ok(after)
+}
+
+fn collect_domain_evidence(
+    ctx: &mut ResearchSmokeContext,
+    domain: &str,
+    verifier_output: &Value,
+) -> DynamicJepaResult<()> {
+    let evidence_dir = evidence_dir_from_output(verifier_output)?;
+    let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
+    let artifact_hashes =
+        read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
+    let summary_json = read_json_file(&evidence_dir.join("summary.json"))?;
+    let verification_record = read_json_file(&evidence_dir.join("verification_run_record.json"))?;
+    write_json_file(
+        &ctx.decoded_records_dir
+            .join(format!("{domain}_verification_run_record.json")),
+        &verification_record,
+    )?;
+    write_json_file(
+        &ctx.decoded_records_dir
+            .join(format!("{domain}_step_summary.json")),
+        &summary_json,
+    )?;
+    ctx.training_rows.push(json!({
+        "domain": domain,
+        "verification_run_id": verifier_output["verification_run_id"],
+        "db_path": verifier_output["db_path"],
+        "evidence_dir": verifier_output["evidence_dir"],
+        "artifact_root": verifier_output["artifact_root"],
+        "split_counts": verifier_output["summary"]["split_counts"],
+        "metrics": training_summary["summary"]["metrics"],
+        "parameter_count": training_summary["summary"]["metrics"]["parameter_count_trainable"],
+        "created_ids": training_summary["created_ids"],
+    }));
+    ctx.artifact_rows.push(json!({
+        "domain": domain,
+        "verification_run_id": verifier_output["verification_run_id"],
+        "artifact_hashes": artifact_hashes,
+    }));
+
+    let mut edge_idx = 0usize;
+    loop {
+        let path = evidence_dir.join(format!("edge_{edge_idx:02}.json"));
+        if !path.exists() {
+            break;
+        }
+        let edge = read_json_file(&path)?;
+        ctx.edge_rows.push(json!({
+            "domain": domain,
+            "edge_index": edge_idx,
+            "evidence_file": path,
+            "edge": edge,
+        }));
+        edge_idx += 1;
+    }
+    ctx.domain_reports.insert(
+        domain.to_string(),
+        json!({
+            "status": "passed",
+            "verification_run_id": verifier_output["verification_run_id"],
+            "db_path": verifier_output["db_path"],
+            "artifact_root": verifier_output["artifact_root"],
+            "evidence_dir": verifier_output["evidence_dir"],
+            "after_counts": verifier_output["after_counts"],
+            "summary": verifier_output["summary"],
+            "edge_case_count": edge_idx,
+        }),
+    );
+    Ok(())
+}
+
+fn run_career_reproducibility(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let base = ctx
+        .training_rows
+        .iter()
+        .find(|row| row["domain"] == "career_taxonomy")
+        .cloned()
+        .ok_or_else(|| DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_reproducibility".to_string(),
+            message: "career base metrics missing before reproducibility run".to_string(),
+            evidence_path: ctx.run_dir.display().to_string(),
+        })?;
+    let db = ctx.db_path("career_taxonomy_repro")?;
+    let artifact_root = ctx.artifact_root.join("reproducibility");
+    fs::create_dir_all(&artifact_root).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.create_repro_artifact_root".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", artifact_root.display()),
+        remediation: "use a writable artifact root".to_string(),
+    })?;
+    let output = run_research_domain_verifier(
+        ctx,
+        "career_taxonomy_repro",
+        "verify-career-taxonomy",
+        &db,
+        &artifact_root,
+    )?;
+    let after = verify_domain_source_of_truth(ctx, "career_taxonomy_repro", &db, &output)?;
+    let evidence_dir = evidence_dir_from_output(&output)?;
+    let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
+    let metrics = &training_summary["summary"]["metrics"];
+    let mut metric_deltas = BTreeMap::new();
+    for metric in [
+        "val_latent_mse",
+        "val_latent_cosine",
+        "test_latent_mse",
+        "test_latent_cosine",
+    ] {
+        let lhs = base["metrics"][metric].as_f64().ok_or_else(|| {
+            DynamicJepaError::VerificationFailed {
+                test_name: "mejepa_research_smoke_reproducibility".to_string(),
+                message: format!("base career metric {metric} missing"),
+                evidence_path: ctx.run_dir.display().to_string(),
+            }
+        })?;
+        let rhs = metrics[metric]
+            .as_f64()
+            .ok_or_else(|| DynamicJepaError::VerificationFailed {
+                test_name: "mejepa_research_smoke_reproducibility".to_string(),
+                message: format!("repro career metric {metric} missing"),
+                evidence_path: ctx.run_dir.display().to_string(),
+            })?;
+        let delta = (lhs - rhs).abs();
+        metric_deltas.insert(metric.to_string(), delta);
+        if delta > 1e-6 {
+            return Err(DynamicJepaError::VerificationFailed {
+                test_name: "mejepa_research_smoke_reproducibility".to_string(),
+                message: format!(
+                    "same-seed career reproducibility drift exceeded 1e-6 for {metric}: base={lhs} repro={rhs} delta={delta}"
+                ),
+                evidence_path: ctx.run_dir.display().to_string(),
+            });
+        }
+    }
+    write_json_file(
+        &ctx.run_dir.join("reproducibility.json"),
+        &json!({
+            "status": "passed",
+            "base_verification_run_id": base["verification_run_id"],
+            "repro_verification_run_id": output["verification_run_id"],
+            "db_counts_after_repro": after["counts"],
+            "metric_deltas": metric_deltas,
+            "tolerance": 1e-6,
+            "source_of_truth": {
+                "base_evidence_dir": base["evidence_dir"],
+                "repro_evidence_dir": output["evidence_dir"],
+                "repro_db_path": db,
+            },
+        }),
+    )?;
+    ctx.domain_reports.insert(
+        "career_taxonomy_repro".to_string(),
+        json!({
+            "status": "passed",
+            "verification_run_id": output["verification_run_id"],
+            "db_path": output["db_path"],
+            "artifact_root": output["artifact_root"],
+            "evidence_dir": output["evidence_dir"],
+            "after_counts": output["after_counts"],
+            "summary": output["summary"],
+        }),
+    );
+    Ok(())
+}
+
+fn run_career_novicreg_ablation(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let fixtures = ctx
+        .run_dir
+        .join("ablations/career_taxonomy_novicreg_fixtures");
+    fs::create_dir_all(fixtures.join("domain_packs")).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.create_ablation_fixtures".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create ablation fixtures: {err}"),
+        remediation: "use a writable --run-root".to_string(),
+    })?;
+    fs::create_dir_all(fixtures.join("verification")).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.create_ablation_fixtures".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create ablation verification fixtures: {err}"),
+        remediation: "use a writable --run-root".to_string(),
+    })?;
+    let files = [
+        "domain_packs/career_taxonomy.v1.toml",
+        "verification/career_taxonomy_smoke.jsonl",
+        "verification/career_taxonomy_edge_empty.jsonl",
+        "verification/career_taxonomy_edge_missing_license.jsonl",
+        "verification/career_taxonomy_edge_invalid_action.jsonl",
+        "verification/career_taxonomy_edge_wrong_vector_dim.jsonl",
+        "verification/career_taxonomy_edge_oob_job_zone.jsonl",
+        "verification/career_taxonomy_data_manifest.json",
+    ];
+    for rel in files {
+        copy_fixture_file(&ctx.fixtures_root.join(rel), &fixtures.join(rel))?;
+    }
+    let config_src = ctx
+        .fixtures_root
+        .join("verification/career_taxonomy_train_config.json");
+    let config_dst = fixtures.join("verification/career_taxonomy_train_config.json");
+    let mut config = read_json_file(&config_src)?;
+    if config.get("loss").and_then(Value::as_object).is_none() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_config.loss",
+            format!("{} is missing required loss object", config_src.display()),
+            "fix the checked-in training config before generating ablation configs",
+        ));
+    }
+    config["loss"]["vicreg_variance_weight"] = json!(0.0);
+    config["loss"]["vicreg_covariance_weight"] = json!(0.0);
+    write_json_file(&config_dst, &config)?;
+
+    let db = ctx.db_path("career_taxonomy_novicreg")?;
+    let artifact_root = ctx.artifact_root.join("ablations/career_taxonomy_novicreg");
+    fs::create_dir_all(&artifact_root).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.create_ablation_artifact_root".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", artifact_root.display()),
+        remediation: "use a writable artifact root".to_string(),
+    })?;
+    let old_fixtures_root = ctx.fixtures_root.clone();
+    ctx.fixtures_root = fixtures.clone();
+    let output = run_research_domain_verifier(
+        ctx,
+        "career_taxonomy_novicreg",
+        "verify-career-taxonomy",
+        &db,
+        &artifact_root,
+    );
+    ctx.fixtures_root = old_fixtures_root;
+    let output = output?;
+    let after = verify_domain_source_of_truth(ctx, "career_taxonomy_novicreg", &db, &output)?;
+    let evidence_dir = evidence_dir_from_output(&output)?;
+    let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
+    ctx.ablation_rows.push(json!({
+        "ablation_id": "career_taxonomy_no_vicreg",
+        "domain": "career_taxonomy",
+        "objective_configuration": {
+            "vicreg_variance_weight": 0.0,
+            "vicreg_covariance_weight": 0.0,
+        },
+        "parameter_count": training_summary["summary"]["metrics"]["parameter_count_trainable"],
+        "metrics": training_summary["summary"]["metrics"],
+        "artifact_id": output["summary"]["artifact_id"],
+        "source_verification_run_id": output["verification_run_id"],
+        "db_counts_after": after["counts"],
+        "source_of_truth": {
+            "db_path": db,
+            "evidence_dir": output["evidence_dir"],
+            "artifact_root": output["artifact_root"],
+            "train_config": config_dst,
+        },
+    }));
+    ctx.domain_reports.insert(
+        "career_taxonomy_novicreg".to_string(),
+        json!({
+            "status": "passed",
+            "verification_run_id": output["verification_run_id"],
+            "db_path": output["db_path"],
+            "artifact_root": output["artifact_root"],
+            "evidence_dir": output["evidence_dir"],
+            "after_counts": output["after_counts"],
+            "summary": output["summary"],
+        }),
+    );
+    Ok(())
+}
+
+fn write_evaluation_report(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let rows = ctx
+        .training_rows
+        .iter()
+        .map(|row| {
+            json!({
+                "domain": row["domain"],
+                "verification_run_id": row["verification_run_id"],
+                "split_counts": row["split_counts"],
+                "metrics": row["metrics"],
+                "planning": ctx.domain_reports
+                    .get(row["domain"].as_str().unwrap_or(""))
+                    .map(|report| json!({
+                        "plan_trace_id": report["summary"]["plan_trace_id"],
+                        "prediction_id": report["summary"]["prediction_id"],
+                        "surprise_count": report["summary"]["surprise_count"],
+                    }))
+                    .unwrap_or(Value::Null),
+            })
+        })
+        .collect::<Vec<_>>();
+    write_json_file(
+        &ctx.run_dir.join("evaluation_report.json"),
+        &json!({
+            "status": "passed",
+            "metric_rows": rows,
+            "ablation_rows": ctx.ablation_rows,
+            "edge_case_count": ctx.edge_rows.len(),
+        }),
+    )
+}
+
+fn write_fsv_report(
+    ctx: &ResearchSmokeContext,
+    status: &str,
+    failure_details: Value,
+) -> DynamicJepaResult<()> {
+    write_json_file(
+        &ctx.run_dir.join("fsv_report.json"),
+        &json!({
+            "status": status,
+            "source_of_truth": {
+                "bundle": ctx.run_dir,
+                "rocksdb_root": ctx.db_root,
+                "artifact_root": ctx.artifact_root,
+                "evidence_root": ctx.fsv_evidence_root,
+                "column_families": DJ_CF_NAMES,
+            },
+            "failure_details": failure_details,
+            "readbacks": ctx.domain_reports,
+            "edge_cases": ctx.edge_rows,
+            "artifact_hash_checks": ctx.artifact_rows,
+            "verification_run_ids": ctx.domain_reports
+                .values()
+                .map(|report| report["verification_run_id"].clone())
+                .collect::<Vec<_>>(),
+        }),
+    )
+}
+
+fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let mut runtime = "name,index,exit_code,elapsed_ms,stdout_sha256,stderr_sha256\n".to_string();
+    for row in &ctx.command_rows {
+        runtime.push_str(&format!(
+            "{},{},{},{},{},{}\n",
+            csv_escape(row["name"].as_str().unwrap_or("")),
+            row["index"].as_u64().unwrap_or(0),
+            row["exit_code"].as_i64().unwrap_or(-1),
+            row["elapsed_ms"].as_u64().unwrap_or(0),
+            csv_escape(row["stdout_sha256"].as_str().unwrap_or("")),
+            csv_escape(row["stderr_sha256"].as_str().unwrap_or(""))
+        ));
+    }
+    write_text_file(&ctx.paper_tables_dir.join("table_runtime.csv"), &runtime)?;
+
+    let mut metrics =
+        "domain,verification_run_id,train_rows,val_rows,test_rows,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine,val_action_contrast_acc\n"
+            .to_string();
+    for row in &ctx.training_rows {
+        metrics.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(row["domain"].as_str().unwrap_or("")),
+            csv_escape(row["verification_run_id"].as_str().unwrap_or("")),
+            row["split_counts"]["train"].as_u64().unwrap_or(0),
+            row["split_counts"]["val"].as_u64().unwrap_or(0),
+            row["split_counts"]["test"].as_u64().unwrap_or(0),
+            row["metrics"]["val_latent_mse"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["val_latent_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["test_latent_mse"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["test_latent_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["val_action_contrast_acc"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+        ));
+    }
+    write_text_file(
+        &ctx.paper_tables_dir.join("table_prediction_metrics.csv"),
+        &metrics,
+    )?;
+
+    let mut ablation =
+        "ablation_id,domain,verification_run_id,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine\n"
+            .to_string();
+    for row in &ctx.ablation_rows {
+        ablation.push_str(&format!(
+            "{},{},{},{},{},{},{}\n",
+            csv_escape(row["ablation_id"].as_str().unwrap_or("")),
+            csv_escape(row["domain"].as_str().unwrap_or("")),
+            csv_escape(row["source_verification_run_id"].as_str().unwrap_or("")),
+            row["metrics"]["val_latent_mse"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["val_latent_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["test_latent_mse"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["test_latent_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+        ));
+    }
+    write_text_file(&ctx.paper_tables_dir.join("table_ablation.csv"), &ablation)?;
+
+    let mut audit = "domain,verification_run_id,db_path,evidence_dir,dj_verification_runs,dj_model_artifacts,dj_predictions,dj_plan_traces,dj_guard_decisions\n".to_string();
+    for (domain, report) in &ctx.domain_reports {
+        audit.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(domain),
+            csv_escape(report["verification_run_id"].as_str().unwrap_or("")),
+            csv_escape(report["db_path"].as_str().unwrap_or("")),
+            csv_escape(report["evidence_dir"].as_str().unwrap_or("")),
+            report["after_counts"][CF_DJ_VERIFICATION_RUNS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_MODEL_ARTIFACTS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_PREDICTIONS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_PLAN_TRACES]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_GUARD_DECISIONS]
+                .as_u64()
+                .unwrap_or(0),
+        ));
+    }
+    write_text_file(&ctx.paper_tables_dir.join("table_auditability.csv"), &audit)?;
+
+    let mut edges = "domain,edge_index,name,raw_delta,adapter_delta,normalized_delta,transition_delta,audit_delta,evidence_file\n".to_string();
+    for row in &ctx.edge_rows {
+        let expected = &row["edge"]["expected_delta"];
+        edges.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(row["domain"].as_str().unwrap_or("")),
+            row["edge_index"].as_u64().unwrap_or(0),
+            csv_escape(row["edge"]["name"].as_str().unwrap_or("")),
+            expected[CF_DJ_RAW_EVENTS].as_i64().unwrap_or(0),
+            expected[CF_DJ_ADAPTER_RUNS].as_i64().unwrap_or(0),
+            expected[CF_DJ_NORMALIZED_STATES].as_i64().unwrap_or(0),
+            expected[CF_DJ_TRANSITIONS].as_i64().unwrap_or(0),
+            expected[CF_DJ_AUDIT_LOG].as_i64().unwrap_or(0),
+            csv_escape(row["evidence_file"].as_str().unwrap_or("")),
+        ));
+    }
+    write_text_file(&ctx.paper_tables_dir.join("table_edge_cases.csv"), &edges)?;
+
+    let data = read_json_file(&ctx.run_dir.join("data_manifest.json"))?;
+    let mut sources = "name,license,allowed_use,fixture_sha256,row_count\n".to_string();
+    for source in data["sources"].as_array().cloned().unwrap_or_default() {
+        sources.push_str(&format!(
+            "{},{},{},{},{}\n",
+            csv_escape(source["name"].as_str().unwrap_or("")),
+            csv_escape(source["license"].as_str().unwrap_or("")),
+            csv_escape(source["allowed_use"].as_str().unwrap_or("")),
+            csv_escape(data["local_fixture_sha256"].as_str().unwrap_or("")),
+            source["row_count"].as_u64().unwrap_or(0),
+        ));
+    }
+    write_text_file(
+        &ctx.paper_tables_dir.join("table_data_sources.csv"),
+        &sources,
+    )?;
+    Ok(())
+}
+
+fn write_plot_manifest(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let prediction_plot = ctx.plots_dir.join("prediction_val_mse.svg");
+    let ablation_plot = ctx.plots_dir.join("career_ablation_val_mse.svg");
+    write_metric_bar_svg(
+        &prediction_plot,
+        "Validation latent MSE by domain",
+        ctx.training_rows
+            .iter()
+            .map(|row| {
+                (
+                    row["domain"].as_str().unwrap_or("").to_string(),
+                    row["metrics"]["val_latent_mse"].as_f64().unwrap_or(0.0),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )?;
+    let base_career = ctx
+        .training_rows
+        .iter()
+        .find(|row| row["domain"] == "career_taxonomy")
+        .and_then(|row| row["metrics"]["val_latent_mse"].as_f64())
+        .unwrap_or(0.0);
+    let no_vicreg = ctx
+        .ablation_rows
+        .iter()
+        .find(|row| row["ablation_id"] == "career_taxonomy_no_vicreg")
+        .and_then(|row| row["metrics"]["val_latent_mse"].as_f64())
+        .unwrap_or(0.0);
+    write_metric_bar_svg(
+        &ablation_plot,
+        "Career validation latent MSE ablation",
+        vec![
+            ("career_base".to_string(), base_career),
+            ("career_no_vicreg".to_string(), no_vicreg),
+        ],
+    )?;
+    write_json_file(
+        &ctx.plots_dir.join("plot_manifest.json"),
+        &json!({
+            "status": "rendered",
+            "plots": [
+                {
+                    "id": "prediction_val_mse",
+                    "source_table": ctx.paper_tables_dir.join("table_prediction_metrics.csv"),
+                    "output": prediction_plot
+                },
+                {
+                    "id": "career_ablation_val_mse",
+                    "source_table": ctx.paper_tables_dir.join("table_ablation.csv"),
+                    "output": ablation_plot
+                }
+            ]
+        }),
+    )
+}
+
+fn write_metric_bar_svg(
+    path: &Path,
+    title: &str,
+    rows: Vec<(String, f64)>,
+) -> DynamicJepaResult<()> {
+    if rows.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.plot_rows",
+            format!("cannot render {} with zero rows", path.display()),
+            "ensure metric rows are generated before writing plots",
+        ));
+    }
+    let width = 720.0;
+    let height = 420.0;
+    let left = 72.0;
+    let right = 24.0;
+    let top = 54.0;
+    let bottom = 96.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+    let max_value = rows
+        .iter()
+        .map(|(_, value)| *value)
+        .fold(0.0f64, f64::max)
+        .max(1e-9);
+    let slot_width = plot_width / rows.len() as f64;
+    let bar_width = (slot_width * 0.62).max(18.0);
+    let mut bars = String::new();
+    for (idx, (label, value)) in rows.iter().enumerate() {
+        let bar_height = plot_height * (*value / max_value);
+        let x = left + idx as f64 * slot_width + (slot_width - bar_width) / 2.0;
+        let y = top + plot_height - bar_height;
+        let label_x = left + idx as f64 * slot_width + slot_width / 2.0;
+        let value_y = (y - 8.0).max(18.0);
+        bars.push_str(&format!(
+            r##"<rect x="{x:.2}" y="{y:.2}" width="{bar_width:.2}" height="{bar_height:.2}" fill="#2563eb"/>
+<text x="{label_x:.2}" y="{value_y:.2}" text-anchor="middle" font-size="12" fill="#111827">{value:.4}</text>
+<text x="{label_x:.2}" y="350" text-anchor="middle" font-size="12" fill="#111827" transform="rotate(-22 {label_x:.2} 350)">{}</text>
+"##,
+            xml_escape(label)
+        ));
+    }
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" role="img" aria-label="{}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="{left:.0}" y="30" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="#111827">{}</text>
+<line x1="{left:.0}" y1="{top:.0}" x2="{left:.0}" y2="{:.0}" stroke="#374151" stroke-width="1"/>
+<line x1="{left:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="#374151" stroke-width="1"/>
+<text x="18" y="{:.0}" font-size="12" font-family="Arial, sans-serif" fill="#111827" transform="rotate(-90 18 {:.0})">latent MSE</text>
+<text x="18" y="{top:.0}" font-size="11" font-family="Arial, sans-serif" fill="#374151">{max_value:.4}</text>
+{bars}</svg>
+"##,
+        xml_escape(title),
+        xml_escape(title),
+        top + plot_height,
+        top + plot_height,
+        width - right,
+        top + plot_height,
+        top + plot_height / 2.0,
+        top + plot_height / 2.0
+    );
+    write_text_file(path, &svg)
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn evidence_dir_from_output(output: &Value) -> DynamicJepaResult<PathBuf> {
+    let raw =
+        output["evidence_dir"]
+            .as_str()
+            .ok_or_else(|| DynamicJepaError::VerificationFailed {
+                test_name: "mejepa_research_smoke_evidence".to_string(),
+                message: "verifier output missing evidence_dir".to_string(),
+                evidence_path: ".".to_string(),
+            })?;
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        env::current_dir().map(|cwd| cwd.join(path)).map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.cwd",
+                format!("failed to resolve current directory for evidence path: {err}"),
+                "run from a valid working directory",
+            )
+        })
+    }
+}
+
+fn ensure_absent_or_empty_dir(path: &Path, field: &str) -> DynamicJepaResult<()> {
+    if path.exists() {
+        let mut entries = fs::read_dir(path).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.read_dir".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to read {}: {err}", path.display()),
+            remediation: "choose a readable fresh path".to_string(),
+        })?;
+        if entries
+            .next()
+            .transpose()
+            .map_err(|err| DynamicJepaError::Storage {
+                operation: "research_smoke.read_dir_entry".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to inspect {}: {err}", path.display()),
+                remediation: "choose a readable fresh path".to_string(),
+            })?
+            .is_some()
+        {
+            return Err(DynamicJepaError::validation(
+                field,
+                format!("path exists and is not empty: {}", path.display()),
+                "use a fresh empty path; research smoke does not merge evidence with prior runs",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn read_json_file(path: &Path) -> DynamicJepaResult<Value> {
+    let bytes = fs::read(path).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.read_json_file".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {}: {err}", path.display()),
+        remediation: "inspect the referenced evidence path; required JSON evidence must exist"
+            .to_string(),
+    })?;
+    serde_json::from_slice(&bytes).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.json_file",
+            format!("failed to parse {}: {err}", path.display()),
+            "fix the JSON evidence source before rerunning research smoke",
+        )
+    })
+}
+
+fn write_text_file(path: &Path, text: &str) -> DynamicJepaResult<()> {
+    fs::write(path, text).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.write_text_file".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", path.display()),
+        remediation: "use a writable --run-root".to_string(),
+    })
+}
+
+fn append_jsonl(path: &Path, value: &Value) -> DynamicJepaResult<()> {
+    let text = serde_json::to_string(value).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.command_log_json",
+            format!("failed to serialize command log row: {err}"),
+            "command log rows must be JSON serializable",
+        )
+    })?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.open_command_log".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to open {}: {err}", path.display()),
+            remediation: "use a writable --run-root".to_string(),
+        })?;
+    writeln!(file, "{text}").map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.write_command_log".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to write {}: {err}", path.display()),
+        remediation: "use a writable --run-root".to_string(),
+    })
+}
+
+fn tail_lines(text: &str, limit: usize) -> Vec<String> {
+    let lines = text.lines().map(str::to_string).collect::<Vec<_>>();
+    let start = lines.len().saturating_sub(limit);
+    lines[start..].to_vec()
+}
+
+fn safe_filename(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn csv_escape(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn copy_fixture_file(src: &Path, dst: &Path) -> DynamicJepaResult<()> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.copy_fixture_parent".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", parent.display()),
+            remediation: "use a writable --run-root".to_string(),
+        })?;
+    }
+    fs::copy(src, dst).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.copy_fixture".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!(
+            "failed to copy {} to {}: {err}",
+            src.display(),
+            dst.display()
+        ),
+        remediation: "restore checked-in fixtures and use a writable --run-root".to_string(),
+    })?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]

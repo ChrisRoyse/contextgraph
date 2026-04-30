@@ -55,14 +55,15 @@ data and controlled career-transition events.
 
 Primary:
 
-- Fresh RocksDB DB under `/tmp/mejepa-5090-smoke-*`.
+- Fresh RocksDB DBs under `tmp/mejepa_research_runs/<run_id>/dbs/` when
+  using `dynamicjepa research-smoke`.
 - DynamicJEPA CFs listed by `dynamicjepa inspect-counts`.
 - `dj_verification_runs` rows from Phase 10 verifiers and ME-JEPA smoke runs.
 - Decoded rows from `dynamicjepa inspect-cf` and `get-*` commands.
 
 Secondary:
 
-- Artifact files under `/tmp/mejepa-5090-artifacts-*`.
+- Artifact files under `tmp/mejepa_research_runs/<run_id>/artifacts/`.
 - Research bundle files under `tmp/mejepa_research_runs/<run_id>/`.
 - SHA-256 hashes for domain packs, fixtures, data sources, model artifacts,
   command logs, and evaluation reports.

@@ -4,6 +4,18 @@ The smoke ladder is the iteration loop before any full paper run. A gate can
 only pass when the command succeeds and the source of truth is independently
 read back.
 
+The implemented one-command harness is:
+
+```bash
+CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
+  --run-id "$RUN_ID" \
+  --fixtures-root configs/dynamicjepa \
+  --json
+```
+
+It runs the gates below, then writes the consolidated bundle at
+`tmp/mejepa_research_runs/<run_id>/`.
+
 ## Gate 0 - Environment
 
 Trigger:
@@ -220,7 +232,33 @@ Pass criteria:
 - forced surprise writes exactly one surprise row;
 - invalid observed panel/outcome mismatch fails without mutation.
 
-## Gate 8 - Ablation Smoke
+## Gate 8 - Research Bundle, Reproducibility, Ablation
+
+Trigger:
+
+```bash
+./target/debug/context-graph dynamicjepa research-smoke --run-id "$RUN_ID" --json
+```
+
+Source of truth:
+
+- `tmp/mejepa_research_runs/<run_id>/run_manifest.json`;
+- `command_log.jsonl` plus full command stdout/stderr files;
+- per-domain RocksDB DBs under `dbs/`;
+- verifier evidence directories under `fsv_evidence/`;
+- model artifacts under `artifacts/`;
+- generated `paper_tables/*.csv`.
+
+Pass criteria:
+
+- counter, gridworld, career, career same-seed reproducibility, and career
+  no-VICReg ablation all pass real verifiers;
+- same-seed career metric deltas are zero within `1e-6`;
+- all artifact registry hashes equal recomputed file hashes;
+- generated paper tables exist and trace to bundle JSON paths;
+- wrapper edge cases fail closed with typed errors.
+
+## Gate 9 - Ablation Details
 
 Run a tiny matrix:
 
@@ -236,7 +274,7 @@ Pass criteria:
 - table rows are generated automatically;
 - failed ablations are recorded as failed, not omitted.
 
-## Gate 9 - Reproducibility
+## Gate 10 - Reproducibility Details
 
 Run the same smoke config twice with the same seed.
 
@@ -247,4 +285,3 @@ Pass criteria:
 - metric variance is recorded;
 - artifact hashes either match exactly or the nondeterminism is explained and
   bounded in `reproducibility.json`.
-

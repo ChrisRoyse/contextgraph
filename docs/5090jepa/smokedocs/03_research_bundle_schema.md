@@ -27,6 +27,20 @@ tmp/mejepa_research_runs/<run_id>/
 
 The bundle is the paper source of truth. Terminal output is not evidence.
 
+Implemented smoke entry point:
+
+```bash
+CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
+  --run-id 20260430T_smoke_wrapper_fsv_v4 \
+  --fixtures-root configs/dynamicjepa \
+  --json
+```
+
+The command fails if `<run_id>` already exists, if the fixture/provenance files
+are incomplete, if CUDA/5090 environment checks fail, if any verifier fails, if
+independent `inspect-counts` readback differs from verifier output, or if paper
+tables cannot be written.
+
 ## `run_manifest.json`
 
 Required fields:
@@ -91,6 +105,8 @@ Capture one object per data source:
 ```
 
 If a source license or provenance is missing, the smoke harness fails closed.
+The current career smoke manifest records `row_count: 15` and a local fixture
+SHA-256 in the generated bundle.
 
 ## `domain_pack_manifest.json`
 
@@ -208,3 +224,13 @@ Generated CSV/Markdown:
 
 The paper should cite tables from this directory, not hand-copied numbers.
 
+## `plots/`
+
+The smoke harness renders deterministic SVG plots from generated table data:
+
+- `prediction_val_mse.svg`;
+- `career_ablation_val_mse.svg`;
+- `plot_manifest.json`.
+
+Publication styling can be revised later, but the smoke bundle must contain
+renderable plot artifacts traced to table sources.

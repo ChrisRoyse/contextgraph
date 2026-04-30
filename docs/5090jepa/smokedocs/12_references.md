@@ -22,6 +22,17 @@
 - JobHop career trajectory dataset paper. https://arxiv.org/abs/2505.07653
 - KARRIEREWEGE career path prediction dataset paper.
   https://arxiv.org/abs/2412.14612
+- ACM Artifact Review and Badging policy for artifact inventory,
+  documentation, auditability, and validation expectations.
+  https://www.acm.org/publications/policies/artifact-review-and-badging-current
+- NeurIPS Paper Checklist Guidelines for reproducibility, transparency,
+  research ethics, and societal impact expectations.
+  https://nips.cc/public/guides/PaperChecklist
+- Improving Reproducibility in Machine Learning Research: NeurIPS 2019
+  reproducibility program report. https://arxiv.org/abs/2003.12206
+- NIST AI RMF Core for documenting risks, measurement, testing, evaluation,
+  verification, validation, and third-party data/software risks.
+  https://airc.nist.gov/airmf-resources/airmf/5-sec-core/
 
 ## Citation Discipline
 
@@ -31,4 +42,3 @@
   provenance, and privacy posture.
 - Cite JEPA/VICReg sources for architecture framing, not for claims that this
   system achieves their scale or benchmark results.
-

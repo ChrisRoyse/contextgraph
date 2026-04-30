@@ -11,6 +11,7 @@ below points at a physical DB path, artifact root, or evidence directory.
 Added career-domain smoke support to the DynamicJEPA runtime:
 
 - `dynamicjepa verify-career-taxonomy`
+- `dynamicjepa research-smoke`
 - `configs/dynamicjepa/domain_packs/career_taxonomy.v1.toml`
 - `configs/dynamicjepa/verification/career_taxonomy_smoke.jsonl`
 - career edge fixtures:
@@ -28,6 +29,9 @@ Runtime support added:
 - adapter numeric min/max checks for vector components;
 - career `bounds_check` planning guard for `job_zone`/`move` schemas;
 - career utility score based on bounded predicted `job_zone` minus uncertainty.
+- immutable research bundle wrapper with environment capture, git state,
+  command log JSONL, per-domain DBs, decoded CF readbacks, artifact hash
+  readbacks, reproducibility, ablation, and generated paper tables.
 
 The existing real CLI FSV test now covers:
 
@@ -222,34 +226,118 @@ Edge-case evidence:
 | wrong skill-vector dimension | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
 | out-of-bounds job zone | raw +1, adapter +1, normalized +0, transition +0, audit +2 |
 
-## Automated Test Evidence
+## Research-Smoke Wrapper FSV
 
 Command:
 
 ```bash
+CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
+  --run-id 20260430T_smoke_wrapper_fsv_v4 \
+  --fixtures-root configs/dynamicjepa \
+  --json
+```
+
+Bundle source of truth:
+
+- Bundle:
+  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4`
+- RocksDB root:
+  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/dbs`
+- Artifact root:
+  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/artifacts`
+- Verifier evidence root:
+  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/fsv_evidence`
+
+Wrapper result:
+
+| Item | Value |
+| --- | ---: |
+| command log rows | 50 |
+| training metric rows | 3 |
+| artifact hash rows | 3 |
+| edge case rows | 11 |
+| ablation rows | 1 |
+| same-seed repro metric deltas | 0.0 |
+
+Readback counts recorded in `fsv_report.json` and rechecked with
+`dynamicjepa inspect-counts`:
+
+| Domain | Verification Runs | Artifacts | Predictions | Plan Traces | Guard Decisions | Surprise |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| counter_world | 1 | 1 | 6 | 1 | 5 | 1 |
+| gridworld_5x5 | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_repro | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_novicreg | 1 | 1 | 6 | 1 | 5 | 0 |
+
+Generated tables:
+
+- `paper_tables/table_runtime.csv` - 51 lines;
+- `paper_tables/table_prediction_metrics.csv` - 4 lines;
+- `paper_tables/table_ablation.csv` - 2 lines;
+- `paper_tables/table_auditability.csv` - 6 lines;
+- `paper_tables/table_edge_cases.csv` - 12 lines;
+- `paper_tables/table_data_sources.csv` - 2 lines.
+
+Generated plots:
+
+- `plots/prediction_val_mse.svg` - 1620 bytes;
+- `plots/career_ablation_val_mse.svg` - 1331 bytes;
+- `plots/plot_manifest.json` - status `rendered`.
+
+Career no-VICReg ablation:
+
+| Metric | Value |
+| --- | ---: |
+| val latent MSE | 0.19326753743273745 |
+| val latent cosine | 0.7278618324366706 |
+| test latent MSE | 0.25560600898946906 |
+| test latent cosine | 0.7674361887679086 |
+
+Manual wrapper edge tests:
+
+| Edge | Before State | After State |
+| --- | --- | --- |
+| invalid run id `../bad` | no matching bundle dirs | typed `VALIDATION`, no bundle dir created |
+| duplicate run id | manifest SHA-256 `f476b1cce9de8c54b6fb06320720130b0d002de83551ffe43d1a53726e84abc9` | same manifest SHA-256, typed `VALIDATION` |
+| missing fixtures root | run dir absent | failed bundle with `run_manifest.json` and `fsv_report.json`; status `failed` |
+
+Root-cause fix found during FSV:
+
+- Initial no-VICReg ablation mutation wrote strict training-config keys at the
+  wrong level. The trainer rejected the unknown keys and left
+  `dj_training_runs=0` and `dj_model_artifacts=0`. Fixed by mutating
+  `loss.vicreg_variance_weight` and `loss.vicreg_covariance_weight`.
+- The automated test caught repository-relative `local_fixture` path handling
+  when launched from a crate working directory. Fixed by resolving
+  `configs/dynamicjepa/...` against the supplied `--fixtures-root`.
+
+## Automated Test Evidence
+
+Commands:
+
+```bash
 cargo test -p context-graph-cli --test dynamicjepa_phase10_fsv --all-features -- --nocapture
+cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
 ```
 
 Result:
 
-- one real CLI FSV test passed;
+- Phase 10 real CLI FSV test passed;
 - domains covered: counter_world, gridworld_5x5, career_taxonomy;
-- finished in 91.58 seconds after test binary build;
+- finished in 93.50 seconds after test binary build;
+- research-smoke real CLI FSV test passed;
+- wrapper test finished in 128.24 seconds;
 - no mocks were used.
 
-## Remaining Harness Gap
+## Current Remaining Work
 
-The domain verifiers now create strong per-domain FSV evidence. The remaining
-research-paper harness work is to wrap these verifiers with one immutable
-`tmp/mejepa_research_runs/<run_id>/` bundle containing:
+The smoke harness is implemented and passing. Remaining work before a full
+paper run:
 
-- `run_manifest.json`;
-- `environment.json`;
-- `git_state.json`;
-- `hardware.json`;
-- consolidated `command_log.jsonl`;
-- generated `paper_tables/`;
-- ablation/reproducibility rows.
-
-Do not run paper-small or paper-full until that wrapper exists and reproduces
-the same source-of-truth checks recorded above.
+- finalize paper figure styling/dimensions if the generated SVG smoke plots are
+  not the desired publication layout;
+- add larger public-taxonomy/career benchmark data if a licensed source is
+  selected;
+- keep controlled taxonomy results clearly separated from claims about real
+  recruiting histories.
