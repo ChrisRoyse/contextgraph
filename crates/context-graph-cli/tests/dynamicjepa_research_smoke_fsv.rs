@@ -73,6 +73,17 @@ fn write_incomplete_onet_zip(path: &Path) {
     zip.finish().expect("finish incomplete O*NET ZIP");
 }
 
+fn write_unsafe_onet_zip(path: &Path) {
+    let file = fs::File::create(path).expect("create unsafe O*NET ZIP");
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default();
+    zip.start_file("../evil.txt", options)
+        .expect("start unsafe member");
+    zip.write_all(b"not an O*NET source file")
+        .expect("write unsafe member");
+    zip.finish().expect("finish unsafe O*NET ZIP");
+}
+
 #[test]
 fn research_smoke_fails_closed_for_paper_purpose_without_onet_source() {
     let root = repo_root();
@@ -302,6 +313,67 @@ fn research_smoke_fails_closed_for_incomplete_onet_zip_preflight() {
     assert_eq!(
         db_entry_count, 0,
         "O*NET preflight failure must happen before any RocksDB source-of-truth path is created"
+    );
+}
+
+#[test]
+fn research_smoke_fails_closed_for_unsafe_onet_zip_member_path() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!("test_research_smoke_unsafe_onet_zip_{}", std::process::id());
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+    let tmp = tempfile::tempdir().expect("create temp dir for unsafe O*NET ZIP");
+    let bad_zip = tmp.path().join("db_30_2_text_unsafe.zip");
+    write_unsafe_onet_zip(&bad_zip);
+
+    let (stdout, _stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--onet-text-zip",
+        bad_zip.to_str().expect("bad O*NET ZIP path utf8"),
+        "--career-event-count",
+        "120",
+        "--json",
+    ]);
+    let result: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("stdout must be one JSON object: {err}\nstdout={stdout}"));
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["error_code"], "VALIDATION");
+    assert!(
+        result["error_message"]
+            .as_str()
+            .expect("error_message is string")
+            .contains("unsafe path"),
+        "missing unsafe ZIP path detail in stdout: {stdout}"
+    );
+
+    let preflight_path = run_dir.join("onet_source_preflight.json");
+    let preflight: Value =
+        serde_json::from_slice(&fs::read(&preflight_path).expect("read failed O*NET preflight"))
+            .expect("parse failed O*NET preflight");
+    assert_eq!(preflight["status"], "failed");
+    assert!(preflight["error_message"]
+        .as_str()
+        .expect("preflight error_message is string")
+        .contains("unsafe path"));
+    let db_entry_count = fs::read_dir(run_dir.join("dbs"))
+        .expect("read failed bundle DB root")
+        .count();
+    assert_eq!(
+        db_entry_count, 0,
+        "unsafe O*NET ZIP path failure must happen before any RocksDB source-of-truth path is created"
     );
 }
 
