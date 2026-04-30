@@ -33,6 +33,9 @@
 - NIST AI RMF Core for documenting risks, measurement, testing, evaluation,
   verification, validation, and third-party data/software risks.
   https://airc.nist.gov/airmf-resources/airmf/5-sec-core/
+- MLflow Tracking documentation for run metadata, artifact, metric, and
+  experiment lineage patterns that informed the local immutable bundle design.
+  https://mlflow.org/docs/latest/ml/tracking/
 
 ## Citation Discipline
 

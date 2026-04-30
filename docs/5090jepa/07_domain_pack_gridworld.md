@@ -181,14 +181,13 @@ required_cfs = [
 expected_trajectory_count = 1000
 expected_event_count = 8000
 expected_panel_count = 8000
-# train/val/test row counts: each trajectory yields 7 one-step pairs ⇒ 7000 rows total
-# train ≈ 0.70 * 7000 = 4900, val ≈ 1400, test ≈ 700 (plus or minus boundary).
-expected_train_rows_min = 4800
-expected_train_rows_max = 5000
-expected_val_rows_min = 1300
-expected_val_rows_max = 1500
-expected_test_rows_min = 600
-expected_test_rows_max = 800
+expected_dataset_row_count = 7000
+expected_train_rows_min = 4977
+expected_train_rows_max = 4977
+expected_val_rows_min = 1330
+expected_val_rows_max = 1330
+expected_test_rows_min = 693
+expected_test_rows_max = 693
 ```
 
 ## 4. Corpus Generator (deterministic Python)

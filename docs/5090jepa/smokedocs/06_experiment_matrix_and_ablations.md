@@ -43,12 +43,14 @@ Metrics:
 
 - validation/test latent MSE;
 - validation/test cosine;
-- top-k next occupation cluster accuracy;
-- skill-vector cosine;
 - action-contrast accuracy;
 - random-init baseline;
 - shuffled-target baseline;
 - VICReg variance/covariance diagnostics.
+
+Current implementation note: the smoke harness is latent-panel only. It does not
+yet train a decoder/head for top-k occupation or skill-vector reconstruction, so
+those metrics are not emitted as paper claims.
 
 ## Experiment C - Action-Conditioned Planning
 
@@ -84,11 +86,31 @@ Minimum ablations:
 | A1 | taxonomy + skill vector | yes | no | yes |
 | A2 | taxonomy + skill + transition distance | yes | no | yes |
 | A3 | A2 | no | no | yes |
-| A4 | A2 | yes | yes, if implemented | yes |
-| A5 | A2 | yes | no | no, if config-supported |
+| A4 | A2 | yes | occupation/action pair one-hot | yes |
+| A5 | A2 | yes | no | no |
 
 Do not include an ablation row unless it is backed by a real run artifact and
 source-of-truth readback.
+
+Implemented smoke IDs in `ablation_results.json`:
+
+- `A0_taxonomy_only_action_vicreg`
+- `A1_taxonomy_skill_action_vicreg`
+- `A2_taxonomy_skill_transition_action_vicreg`
+- `A3_taxonomy_skill_transition_no_action_vicreg`
+- `A4_taxonomy_skill_transition_pairwise_action_vicreg`
+- `A5_taxonomy_skill_transition_action_no_vicreg`
+
+Implementation details:
+
+- A0 removes skill-vector schema fields, adapter mappings, and instruments.
+- A2 adds `state.transition_distance` and `transition_distance_scalar`.
+- A3 persists `model.predictor.ignore_action=true`; training and inference zero
+  the action vector instead of inventing a fallback path.
+- A4 adds `state.occupation_move_pair` and
+  `occupation_move_pair_onehot` with 20 declared occupation/action pairs.
+- A5 sets VICReg variance/covariance loss weights to zero in the persisted
+  artifact config.
 
 ## Experiment E - Auditability Stress
 
@@ -140,4 +162,3 @@ A smoke run is promoted to paper-small only if:
 - no source/provenance gaps exist;
 - edge cases match expected deltas;
 - paper tables are generated from bundle data.
-

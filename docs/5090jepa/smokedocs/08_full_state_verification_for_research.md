@@ -33,6 +33,10 @@ For every stage:
 | Surprise | `dj_surprise_events` |
 | Verification | `dj_verification_runs`, evidence bundle |
 
+Surprise verification encodes observed panels with the persisted target encoder,
+matching the JEPA training objective. The no-action ablation also zeroes the
+action vector during training, prediction, and surprise observation encoding.
+
 ## Mandatory Edge Cases
 
 Environment:
@@ -79,6 +83,8 @@ Planning/surprise:
 - Every data claim must map to `data_manifest.json`.
 - Every failure claim must map to `edge_case_results.json`.
 - Every "single GPU" claim must map to `hardware.json` and runtime metrics.
+- Every ablation claim must map to `ablation_results.json`, a model artifact
+  config, and a RocksDB count readback.
 
 ## Fail-Closed Rules
 
@@ -91,4 +97,3 @@ The smoke harness must stop if:
 - training uses CPU when config says CUDA;
 - split leakage is non-zero;
 - generated paper tables cannot be traced to bundle paths.
-

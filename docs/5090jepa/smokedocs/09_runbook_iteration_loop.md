@@ -26,8 +26,10 @@ cargo build -p context-graph-cli --bin context-graph --all-features
 ```bash
 export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_mejepa_5090_smoke"
 export RUN_ROOT="tmp/mejepa_research_runs"
-rm -rf "$RUN_ROOT/$RUN_ID"
 ```
+
+Use a fresh run ID. The research-smoke bundle is immutable and will fail if the
+run directory already exists.
 
 ## One-Command Research Smoke
 
@@ -40,8 +42,8 @@ rm -rf "$RUN_ROOT/$RUN_ID"
 ```
 
 This command runs environment capture, git state capture, counter_world,
-gridworld_5x5, career_taxonomy, career same-seed reproducibility, and the
-career no-VICReg ablation. It writes all source-of-truth evidence into
+gridworld_5x5, career_taxonomy, career same-seed reproducibility, and the full
+career A0-A5 ablation matrix. It writes all source-of-truth evidence into
 `tmp/mejepa_research_runs/<run_id>/`.
 
 Expected top-level files:
@@ -62,6 +64,7 @@ Expected top-level files:
 - `edge_case_results.json`;
 - `reproducibility.json`;
 - `paper_tables/*.csv`.
+- `plots/*.svg`.
 
 ## Manual Spot Checks
 

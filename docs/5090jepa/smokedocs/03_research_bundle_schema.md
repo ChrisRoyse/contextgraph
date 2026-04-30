@@ -31,7 +31,8 @@ Implemented smoke entry point:
 
 ```bash
 CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
-  --run-id 20260430T_smoke_wrapper_fsv_v4 \
+  --run-id 20260430T_smokedocs_full_matrix_fsv_v4 \
+  --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
   --json
 ```
@@ -204,12 +205,13 @@ Each row includes:
 
 - ablation ID;
 - panel configuration;
+- panel slots and input/target/action dimensions;
 - objective configuration;
 - parameter count;
-- data split;
-- metrics;
+- latent metrics and baselines;
 - artifact ID/hash;
 - source verification run ID.
+- DB count readback and source-of-truth paths.
 
 ## `paper_tables/`
 
@@ -220,7 +222,9 @@ Generated CSV/Markdown:
 - `table_ablation.csv`;
 - `table_auditability.csv`;
 - `table_edge_cases.csv`;
-- `table_data_sources.csv`.
+- `table_data_sources.csv`;
+- `table_domain_runtime_coverage.csv`;
+- `table_single_gpu_feasibility.csv`.
 
 The paper should cite tables from this directory, not hand-copied numbers.
 

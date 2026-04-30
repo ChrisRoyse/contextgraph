@@ -9,10 +9,12 @@ Prediction:
 - latent MSE by split;
 - latent cosine by split;
 - action-contrast accuracy;
-- top-k next occupation cluster accuracy;
-- skill-vector cosine;
 - shuffled-target cosine;
 - random-init cosine.
+
+Current smoke limitation: top-k occupation and skill-vector cosine require a
+decoder/head that is not part of the current latent-only JEPA smoke. Do not
+claim those metrics until that head exists and is verified.
 
 Collapse diagnostics:
 
@@ -64,10 +66,11 @@ Columns:
 Columns:
 
 - domain;
-- config ID;
+- verification run ID;
 - train rows;
 - val rows;
 - test rows;
+- parameter count;
 - val MSE;
 - val cosine;
 - test MSE;
@@ -81,16 +84,25 @@ Columns:
 Columns:
 
 - ablation ID;
+- domain run label;
+- panel name;
 - panel slots;
 - input dim;
+- target dim;
 - latent dim;
+- action dim;
+- action conditioning;
+- pairwise features;
+- VICReg;
 - params;
+- source verification run ID;
 - val MSE;
 - val cosine;
-- top-k occupation;
-- skill cosine;
-- wall time;
-- peak VRAM.
+- test MSE;
+- test cosine;
+- action contrast;
+- random-init cosine;
+- shuffled-target cosine.
 
 ### Table 4 - Auditability And Failure Behavior
 
@@ -110,14 +122,14 @@ Columns:
 Columns:
 
 - run tier;
-- events;
-- rows;
-- params;
-- train time;
-- total time;
-- peak VRAM;
-- artifact size;
-- evidence size.
+- command count;
+- total elapsed ms;
+- artifact hash rows;
+- edge-case rows;
+- ablation rows;
+- RocksDB root;
+- artifact root;
+- evidence root.
 
 ## Required Figures
 
@@ -145,4 +157,3 @@ For paper tables:
 
 Failed runs are useful if they reveal strict failure behavior. Include an
 appendix table of intentional failures and their typed error codes.
-

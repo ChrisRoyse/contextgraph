@@ -32,6 +32,12 @@ Runtime support added:
 - immutable research bundle wrapper with environment capture, git state,
   command log JSONL, per-domain DBs, decoded CF readbacks, artifact hash
   readbacks, reproducibility, ablation, and generated paper tables.
+- full career ablation matrix A0-A5 with generated domain-pack/config/fixture
+  variants and independent RocksDB readback.
+- target-encoder surprise comparison, matching the JEPA training objective.
+- no-action ablation support through persisted `model.predictor.ignore_action`
+  with zeroed action vectors during training, prediction, and surprise
+  observation encoding.
 
 The existing real CLI FSV test now covers:
 
@@ -232,7 +238,8 @@ Command:
 
 ```bash
 CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
-  --run-id 20260430T_smoke_wrapper_fsv_v4 \
+  --run-id 20260430T_smokedocs_full_matrix_fsv_v4 \
+  --run-root tmp/mejepa_research_runs \
   --fixtures-root configs/dynamicjepa \
   --json
 ```
@@ -240,23 +247,23 @@ CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa research-smoke \
 Bundle source of truth:
 
 - Bundle:
-  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4`
+  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4`
 - RocksDB root:
-  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/dbs`
+  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/dbs`
 - Artifact root:
-  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/artifacts`
+  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/artifacts`
 - Verifier evidence root:
-  `tmp/mejepa_research_runs/20260430T_smoke_wrapper_fsv_v4/fsv_evidence`
+  `tmp/mejepa_research_runs/20260430T_smokedocs_full_matrix_fsv_v4/fsv_evidence`
 
 Wrapper result:
 
 | Item | Value |
 | --- | ---: |
-| command log rows | 50 |
+| command log rows | 78 |
 | training metric rows | 3 |
-| artifact hash rows | 3 |
+| artifact hash rows | 9 |
 | edge case rows | 11 |
-| ablation rows | 1 |
+| ablation rows | 6 |
 | same-seed repro metric deltas | 0.0 |
 
 Readback counts recorded in `fsv_report.json` and rechecked with
@@ -268,16 +275,33 @@ Readback counts recorded in `fsv_report.json` and rechecked with
 | gridworld_5x5 | 1 | 1 | 6 | 1 | 5 | 0 |
 | career_taxonomy | 1 | 1 | 6 | 1 | 5 | 0 |
 | career_taxonomy_repro | 1 | 1 | 6 | 1 | 5 | 0 |
-| career_taxonomy_novicreg | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_ablation_A0_taxonomy_only | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_ablation_A2_transition | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_ablation_A3_no_action | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_ablation_A4_pairwise | 1 | 1 | 6 | 1 | 5 | 0 |
+| career_taxonomy_ablation_A5_no_vicreg | 1 | 1 | 6 | 1 | 5 | 0 |
+
+Ablation DB readback highlights:
+
+| Ablation | Instruments | Readings | Input Dim | Val MSE | Val Cosine |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A0 taxonomy only | 8 | 120 | 22 | 0.07929272507681613 | 0.8989859668810602 |
+| A1 base | 10 | 150 | 30 | 0.19737686395995757 | 0.7586874403033157 |
+| A2 transition | 11 | 165 | 31 | 0.07951988157148059 | 0.8350982279978277 |
+| A3 no action | 11 | 165 | 31 | 0.07769318943716391 | 0.8615845653067465 |
+| A4 pairwise | 12 | 180 | 51 | 0.0779502250590159 | 0.8361759719794662 |
+| A5 no VICReg | 11 | 165 | 31 | 0.07685959563824735 | 0.8186410244156163 |
 
 Generated tables:
 
-- `paper_tables/table_runtime.csv` - 51 lines;
+- `paper_tables/table_runtime.csv` - 79 lines;
 - `paper_tables/table_prediction_metrics.csv` - 4 lines;
-- `paper_tables/table_ablation.csv` - 2 lines;
-- `paper_tables/table_auditability.csv` - 6 lines;
+- `paper_tables/table_ablation.csv` - 7 lines;
+- `paper_tables/table_auditability.csv` - 10 lines;
 - `paper_tables/table_edge_cases.csv` - 12 lines;
 - `paper_tables/table_data_sources.csv` - 2 lines.
+- `paper_tables/table_domain_runtime_coverage.csv` - 10 lines;
+- `paper_tables/table_single_gpu_feasibility.csv` - 2 lines.
 
 Generated plots:
 
@@ -285,32 +309,26 @@ Generated plots:
 - `plots/career_ablation_val_mse.svg` - 1331 bytes;
 - `plots/plot_manifest.json` - status `rendered`.
 
-Career no-VICReg ablation:
-
-| Metric | Value |
-| --- | ---: |
-| val latent MSE | 0.19326753743273745 |
-| val latent cosine | 0.7278618324366706 |
-| test latent MSE | 0.25560600898946906 |
-| test latent cosine | 0.7674361887679086 |
-
 Manual wrapper edge tests:
 
 | Edge | Before State | After State |
 | --- | --- | --- |
-| invalid run id `../bad` | no matching bundle dirs | typed `VALIDATION`, no bundle dir created |
-| duplicate run id | manifest SHA-256 `f476b1cce9de8c54b6fb06320720130b0d002de83551ffe43d1a53726e84abc9` | same manifest SHA-256, typed `VALIDATION` |
+| invalid run id `../bad_smoke_edge` | no matching bundle dirs | typed `VALIDATION`, no bundle dir created |
+| duplicate run id | manifest SHA-256 `70072d343be37d09f8d0418aad25027a6b1e328fbfb43e84d1981e6340faa4cf` | same manifest SHA-256, typed `VALIDATION` |
 | missing fixtures root | run dir absent | failed bundle with `run_manifest.json` and `fsv_report.json`; status `failed` |
 
 Root-cause fix found during FSV:
 
-- Initial no-VICReg ablation mutation wrote strict training-config keys at the
-  wrong level. The trainer rejected the unknown keys and left
-  `dj_training_runs=0` and `dj_model_artifacts=0`. Fixed by mutating
-  `loss.vicreg_variance_weight` and `loss.vicreg_covariance_weight`.
-- The automated test caught repository-relative `local_fixture` path handling
-  when launched from a crate working directory. Fixed by resolving
-  `configs/dynamicjepa/...` against the supplied `--fixtures-root`.
+- The first A0 ablation trained to the generic smoke target but produced a
+  known-target surprise (`cosine=0.4463`, threshold `0.5`). Fixed by giving the
+  weaker A0 panel a stricter generated training target.
+- A2 exposed a JEPA consistency bug: training evaluated predictions against the
+  target encoder, while surprise encoded observations with the online encoder.
+  Fixed by using the persisted target encoder for surprise observation vectors.
+- A4 pairwise fixture generation initially failed on the intentionally invalid
+  action edge because the derived pair contained `unsupported_move`. Fixed by
+  keeping the invalid action as the edge trigger while deriving a schema-valid
+  neutral pair for that state feature.
 
 ## Automated Test Evidence
 
@@ -325,9 +343,9 @@ Result:
 
 - Phase 10 real CLI FSV test passed;
 - domains covered: counter_world, gridworld_5x5, career_taxonomy;
-- finished in 93.50 seconds after test binary build;
+- finished in 95.91 seconds after test binary build;
 - research-smoke real CLI FSV test passed;
-- wrapper test finished in 128.24 seconds;
+- wrapper test finished in 176.57 seconds;
 - no mocks were used.
 
 ## Current Remaining Work

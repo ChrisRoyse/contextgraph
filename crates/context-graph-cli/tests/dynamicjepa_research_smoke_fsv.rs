@@ -67,9 +67,9 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     ]);
     assert_eq!(result["status"], "ok");
     assert_eq!(result["summary"]["training_metric_rows"], 3);
-    assert_eq!(result["summary"]["artifact_hash_rows"], 3);
+    assert_eq!(result["summary"]["artifact_hash_rows"], 9);
     assert_eq!(result["summary"]["edge_case_rows"], 11);
-    assert_eq!(result["summary"]["ablation_rows"], 1);
+    assert_eq!(result["summary"]["ablation_rows"], 6);
 
     let manifest: Value = serde_json::from_slice(
         &fs::read(run_dir.join("run_manifest.json")).expect("read run manifest"),
@@ -91,8 +91,13 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         1
     );
     assert_eq!(
-        fsv["readbacks"]["career_taxonomy_novicreg"]["after_counts"]["dj_plan_traces"],
+        fsv["readbacks"]["career_taxonomy_ablation_A5_no_vicreg"]["after_counts"]["dj_plan_traces"],
         1
+    );
+    assert_eq!(
+        fsv["readbacks"]["career_taxonomy_ablation_A4_pairwise"]["after_counts"]
+            ["dj_instrument_registry"],
+        12
     );
 
     for table in [
@@ -102,6 +107,8 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         "table_auditability.csv",
         "table_edge_cases.csv",
         "table_data_sources.csv",
+        "table_domain_runtime_coverage.csv",
+        "table_single_gpu_feasibility.csv",
     ] {
         assert!(
             run_dir.join("paper_tables").join(table).exists(),
@@ -140,4 +147,26 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     .expect("parse reproducibility report");
     assert_eq!(repro["status"], "passed");
     assert_eq!(repro["metric_deltas"]["val_latent_mse"], 0.0);
+
+    let ablations: Value = serde_json::from_slice(
+        &fs::read(run_dir.join("ablation_results.json")).expect("read ablations"),
+    )
+    .expect("parse ablations");
+    let ids = ablations
+        .as_array()
+        .expect("ablation_results is array")
+        .iter()
+        .map(|row| row["ablation_id"].as_str().expect("ablation id"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        vec![
+            "A1_taxonomy_skill_action_vicreg",
+            "A0_taxonomy_only_action_vicreg",
+            "A2_taxonomy_skill_transition_action_vicreg",
+            "A3_taxonomy_skill_transition_no_action_vicreg",
+            "A4_taxonomy_skill_transition_pairwise_action_vicreg",
+            "A5_taxonomy_skill_transition_action_no_vicreg",
+        ]
+    );
 }

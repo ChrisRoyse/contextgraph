@@ -134,14 +134,24 @@ required_cfs = [
   "dj_predictions", "dj_plan_traces", "dj_guard_decisions",
   "dj_verification_runs", "dj_audit_log"
 ]
-expected_event_count = 3
-expected_panel_count = 3
-expected_dataset_row_count = 2
+expected_trajectory_count = 1
+expected_event_count = 60
+expected_panel_count = 60
+expected_dataset_row_count = 59
+expected_train_rows_min = 41
+expected_train_rows_max = 41
+expected_val_rows_min = 12
+expected_val_rows_max = 12
+expected_test_rows_min = 6
+expected_test_rows_max = 6
 ```
 
 Validation rejects any unknown TOML key (strict mode). Comments are allowed. Environment variable substitution is forbidden — registration fails on any `${...}` substring.
 
-## 3. Happy‑Path Fixture (3 events)
+## 3. Happy‑Path Fixture
+
+The Phase 10 verifier generates a 60-event deterministic fixture in its evidence
+directory. The three-row JSONL below remains the minimal contract example.
 
 ```jsonl
 # configs/dynamicjepa/verification/counter_world_happy_path.jsonl

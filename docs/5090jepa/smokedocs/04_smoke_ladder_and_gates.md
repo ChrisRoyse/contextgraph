@@ -252,7 +252,7 @@ Source of truth:
 Pass criteria:
 
 - counter, gridworld, career, career same-seed reproducibility, and career
-  no-VICReg ablation all pass real verifiers;
+  A0-A5 ablations all pass real verifiers;
 - same-seed career metric deltas are zero within `1e-6`;
 - all artifact registry hashes equal recomputed file hashes;
 - generated paper tables exist and trace to bundle JSON paths;
