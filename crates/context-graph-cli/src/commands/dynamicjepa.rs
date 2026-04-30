@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -70,6 +70,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tracing::{error, info};
 use uuid::Uuid;
+use zip::ZipArchive;
 
 #[derive(Subcommand, Debug)]
 pub enum DynamicJepaCommands {
@@ -765,9 +766,22 @@ pub struct ResearchSmokeArgs {
     #[arg(long = "artifact-root")]
     pub artifact_root: Option<PathBuf>,
 
-    /// Research run purpose. The smoke harness intentionally accepts only smoke.
+    /// Research run purpose: smoke, paper_small, or paper_full.
     #[arg(long, default_value = "smoke")]
     pub purpose: String,
+
+    /// Optional O*NET 30.2 text ZIP. When present, the career benchmark fixture
+    /// is generated from this real public taxonomy source inside the bundle.
+    #[arg(long = "onet-text-zip")]
+    pub onet_text_zip: Option<PathBuf>,
+
+    /// Number of O*NET-derived career events to generate when --onet-text-zip is supplied.
+    #[arg(long = "career-event-count")]
+    pub career_event_count: Option<u64>,
+
+    /// Local system specification document to hash into the research bundle.
+    #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
+    pub system_specs: PathBuf,
 
     /// Emit one machine-readable JSON object.
     #[arg(long)]
@@ -2894,14 +2908,16 @@ fn verify_career_taxonomy_command(args: VerifyDomainArgs) -> DynamicJepaResult<C
 
 fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
-    if args.purpose != "smoke" {
+    validate_research_purpose(&args.purpose)?;
+    if matches!(args.purpose.as_str(), "paper_small" | "paper_full") && args.onet_text_zip.is_none()
+    {
         return Err(DynamicJepaError::validation(
-            "research_smoke.purpose",
+            "research_smoke.onet_text_zip",
             format!(
-                "research-smoke only supports purpose=smoke; got {}",
+                "purpose={} requires --onet-text-zip with the O*NET 30.2 text database",
                 args.purpose
             ),
-            "run the smoke harness first; paper_small and paper_full require explicit scaling commands after smoke passes",
+            "download https://www.onetcenter.org/dl_files/database/db_30_2_text.zip and pass its local path",
         ));
     }
     let run_id = args
@@ -2922,8 +2938,12 @@ struct ResearchSmokeContext {
     run_root: PathBuf,
     run_dir: PathBuf,
     fixtures_root: PathBuf,
+    career_fixtures_root: PathBuf,
     db_root: PathBuf,
     artifact_root: PathBuf,
+    onet_text_zip: Option<PathBuf>,
+    career_event_count: u64,
+    system_specs: PathBuf,
     command_log_path: PathBuf,
     command_output_dir: PathBuf,
     decoded_records_dir: PathBuf,
@@ -3012,14 +3032,24 @@ impl ResearchSmokeContext {
             )
         })?;
 
+        let career_event_count = research_career_event_count(
+            &args.purpose,
+            args.career_event_count,
+            args.onet_text_zip.is_some(),
+        )?;
+
         let mut ctx = Self {
             run_id,
             purpose: args.purpose,
             run_root,
             run_dir,
+            career_fixtures_root: args.fixtures_root.clone(),
             fixtures_root: args.fixtures_root,
             db_root,
             artifact_root,
+            onet_text_zip: args.onet_text_zip,
+            career_event_count,
+            system_specs: args.system_specs,
             command_log_path: PathBuf::new(),
             command_output_dir,
             decoded_records_dir,
@@ -3055,6 +3085,14 @@ impl ResearchSmokeContext {
         Ok(path)
     }
 
+    fn fixtures_root_for_domain(&self, domain: &str) -> PathBuf {
+        if domain.starts_with("career_taxonomy") {
+            self.career_fixtures_root.clone()
+        } else {
+            self.fixtures_root.clone()
+        }
+    }
+
     fn write_run_manifest(&self, status: &str, failure_details: Value) -> DynamicJepaResult<()> {
         let operator = env::var("USER").unwrap_or_else(|_| "local".to_string());
         let repo = env::current_dir()
@@ -3074,6 +3112,11 @@ impl ResearchSmokeContext {
                 "db_path": self.db_root,
                 "artifact_root": self.artifact_root,
                 "evidence_root": self.fsv_evidence_root,
+                "fixtures_root": self.fixtures_root,
+                "career_fixtures_root": self.career_fixtures_root,
+                "onet_text_zip": self.onet_text_zip,
+                "career_event_count": self.career_event_count,
+                "system_specs": self.system_specs,
                 "status": status,
                 "failure_details": failure_details,
             }),
@@ -3302,6 +3345,11 @@ struct CommandCaptureInput<'a> {
 
 fn run_research_smoke(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<Value> {
     validate_research_fixture_root(ctx)?;
+    if ctx.onet_text_zip.is_some() {
+        let career_fixtures = materialize_onet_career_demo_fixtures(ctx)?;
+        ctx.career_fixtures_root = career_fixtures;
+        validate_career_fixture_root(ctx)?;
+    }
     write_environment_bundle(ctx)?;
     write_git_state_bundle(ctx)?;
     write_data_manifest_bundle(ctx)?;
@@ -3328,7 +3376,15 @@ fn run_research_smoke(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<Value
         )?;
         db_counts_before.insert(domain.to_string(), before["counts"].clone());
         let artifact_root = ctx.artifact_root.clone();
-        let output = run_research_domain_verifier(ctx, domain, command_name, &db, &artifact_root)?;
+        let fixtures_root = ctx.fixtures_root_for_domain(domain);
+        let output = run_research_domain_verifier(
+            ctx,
+            domain,
+            command_name,
+            &db,
+            &artifact_root,
+            &fixtures_root,
+        )?;
         let after = verify_domain_source_of_truth(ctx, domain, &db, &output)?;
         db_counts_after.insert(domain.to_string(), after["counts"].clone());
         collect_domain_evidence(ctx, domain, &output)?;
@@ -3397,6 +3453,62 @@ fn validate_research_run_id(run_id: &str) -> DynamicJepaResult<()> {
     Ok(())
 }
 
+fn validate_research_purpose(purpose: &str) -> DynamicJepaResult<()> {
+    if !matches!(purpose, "smoke" | "paper_small" | "paper_full") {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.purpose",
+            format!("unsupported research purpose {purpose:?}"),
+            "use smoke, paper_small, or paper_full",
+        ));
+    }
+    Ok(())
+}
+
+fn research_career_event_count(
+    purpose: &str,
+    requested: Option<u64>,
+    uses_onet: bool,
+) -> DynamicJepaResult<u64> {
+    if !uses_onet {
+        if let Some(count) = requested {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.career_event_count",
+                format!("--career-event-count={count} was supplied without --onet-text-zip"),
+                "supply --onet-text-zip to generate an O*NET-backed career fixture, or omit --career-event-count for the checked-in smoke fixture",
+            ));
+        }
+        return Ok(0);
+    }
+    let count = requested.unwrap_or(match purpose {
+        "smoke" => 120,
+        "paper_small" => 1000,
+        "paper_full" => 10000,
+        _ => unreachable!("validated research purpose"),
+    });
+    if count < 15 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.career_event_count",
+            format!("O*NET-backed career_event_count must be at least 15, got {count}"),
+            "use enough rows to populate train, validation, and test splits plus edge-case verification",
+        ));
+    }
+    if purpose == "paper_small" && count < 1000 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.career_event_count",
+            format!("paper_small requires at least 1000 O*NET-derived career events, got {count}"),
+            "use --purpose smoke for bounded generator tests, or raise --career-event-count for paper_small",
+        ));
+    }
+    if purpose == "paper_full" && count < 10000 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.career_event_count",
+            format!("paper_full requires at least 10000 O*NET-derived career events, got {count}"),
+            "use --purpose paper_small for 1K-10K event runs or raise --career-event-count for paper_full",
+        ));
+    }
+    Ok(count)
+}
+
 fn validate_research_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     if !ctx.fixtures_root.exists() {
         return Err(DynamicJepaError::validation(
@@ -3443,7 +3555,714 @@ fn validate_research_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResu
     Ok(())
 }
 
+fn validate_career_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    for path in [
+        VerificationDomain::CareerTaxonomy.domain_pack_path(&ctx.career_fixtures_root),
+        VerificationDomain::CareerTaxonomy.train_config_path(&ctx.career_fixtures_root),
+        ctx.career_fixtures_root
+            .join("verification/career_taxonomy_data_manifest.json"),
+        ctx.career_fixtures_root
+            .join("verification/career_taxonomy_smoke.jsonl"),
+    ] {
+        if !path.exists() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.career_fixture_file",
+                format!("required generated career fixture file is missing: {}", path.display()),
+                "inspect the O*NET fixture generator output; all generated career files must exist before verification",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct OnetOccupation {
+    code: String,
+    title: String,
+    cluster: &'static str,
+    job_zone: i64,
+    skill_vector: [f64; 4],
+}
+
+#[derive(Debug)]
+struct OnetGeneratedCorpus {
+    jsonl: String,
+    walk_csv: String,
+    selected_occupation_count: usize,
+    selected_related_edge_count: usize,
+    source_occupation_count: usize,
+}
+
+fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJepaResult<PathBuf> {
+    let onet_zip = ctx.onet_text_zip.as_ref().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.onet_text_zip",
+            "O*NET fixture generation was requested without --onet-text-zip",
+            "pass the local O*NET 30.2 text ZIP path",
+        )
+    })?;
+    if !onet_zip.exists() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet_text_zip",
+            format!("O*NET text ZIP does not exist: {}", onet_zip.display()),
+            "download https://www.onetcenter.org/dl_files/database/db_30_2_text.zip and pass its local path",
+        ));
+    }
+    let zip_hash = file_sha256(onet_zip)?;
+    let zip_hash_hex = hex_bytes(&zip_hash);
+    let generated = build_onet_career_corpus(onet_zip, ctx.career_event_count, &zip_hash_hex)?;
+    let fixtures = ctx.run_dir.join("generated_fixtures/onet_30_2");
+    fs::create_dir_all(fixtures.join("domain_packs")).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.onet.create_domain_pack_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create generated domain pack dir: {err}"),
+        remediation: "choose a writable --run-root".to_string(),
+    })?;
+    fs::create_dir_all(fixtures.join("verification")).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.onet.create_verification_dir".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create generated verification dir: {err}"),
+        remediation: "choose a writable --run-root".to_string(),
+    })?;
+
+    write_onet_career_domain_pack(
+        &ctx.fixtures_root
+            .join("domain_packs/career_taxonomy.v1.toml"),
+        &fixtures.join("domain_packs/career_taxonomy.v1.toml"),
+        ctx.career_event_count,
+    )?;
+    write_onet_career_train_config(
+        &ctx.fixtures_root
+            .join("verification/career_taxonomy_train_config.json"),
+        &fixtures.join("verification/career_taxonomy_train_config.json"),
+        &ctx.purpose,
+    )?;
+
+    let corpus_path = fixtures.join("verification/career_taxonomy_smoke.jsonl");
+    write_text_file(&corpus_path, &generated.jsonl)?;
+    let corpus_hash_hex = hex_bytes(&file_sha256(&corpus_path)?);
+    let walk_path = fixtures.join("verification/career_taxonomy_onet_walk.csv");
+    write_text_file(&walk_path, &generated.walk_csv)?;
+    let walk_hash_hex = hex_bytes(&file_sha256(&walk_path)?);
+
+    for rel in [
+        "career_taxonomy_edge_empty.jsonl",
+        "career_taxonomy_edge_missing_license.jsonl",
+        "career_taxonomy_edge_invalid_action.jsonl",
+        "career_taxonomy_edge_wrong_vector_dim.jsonl",
+        "career_taxonomy_edge_oob_job_zone.jsonl",
+    ] {
+        copy_fixture_file(
+            &ctx.fixtures_root.join("verification").join(rel),
+            &fixtures.join("verification").join(rel),
+        )?;
+    }
+
+    write_json_file(
+        &fixtures.join("verification/career_taxonomy_data_manifest.json"),
+        &json!({
+            "name": "onet_30_2_generated_career_taxonomy_v1",
+            "source_urls": [
+                "https://www.onetcenter.org/database.html",
+                "https://www.onetcenter.org/license_db.html",
+                "https://www.onetcenter.org/dl_files/database/db_30_2_text.zip"
+            ],
+            "license": "O*NET 30.2 Database, Creative Commons Attribution 4.0 International License (CC BY 4.0). Generated fixture modifies O*NET database information for a public taxonomy benchmark; USDOL/ETA has not approved, endorsed, or tested these modifications.",
+            "local_fixture": corpus_path.display().to_string(),
+            "row_count": ctx.career_event_count,
+            "allowed_use": "research-demo",
+            "provenance_notes": "Generated deterministically from O*NET 30.2 downloadable text database files: Occupation Data, Job Zones, Skills, and Related Occupations. This is a public taxonomy benchmark, not real recruiting history.",
+            "source_zip_path": onet_zip.display().to_string(),
+            "source_zip_sha256": zip_hash_hex,
+            "generated_fixture_sha256": corpus_hash_hex,
+            "generated_walk_path": walk_path.display().to_string(),
+            "generated_walk_sha256": walk_hash_hex,
+            "generator": "dynamicjepa research-smoke O*NET career taxonomy generator v1",
+            "source_occupation_count": generated.source_occupation_count,
+            "selected_occupation_count": generated.selected_occupation_count,
+            "selected_related_edge_count": generated.selected_related_edge_count,
+        }),
+    )?;
+    Ok(fixtures)
+}
+
+fn build_onet_career_corpus(
+    zip_path: &Path,
+    event_count: u64,
+    zip_hash_hex: &str,
+) -> DynamicJepaResult<OnetGeneratedCorpus> {
+    let occupation_text = read_onet_zip_text(zip_path, "db_30_2_text/Occupation Data.txt")?;
+    let job_zone_text = read_onet_zip_text(zip_path, "db_30_2_text/Job Zones.txt")?;
+    let skills_text = read_onet_zip_text(zip_path, "db_30_2_text/Skills.txt")?;
+    let related_text = read_onet_zip_text(zip_path, "db_30_2_text/Related Occupations.txt")?;
+
+    let job_zones = parse_onet_job_zones(&job_zone_text)?;
+    let skill_vectors = parse_onet_skill_vectors(&skills_text)?;
+    let mut occupations = BTreeMap::new();
+    let occupation_rows = parse_tsv_records(&occupation_text, "Occupation Data")?;
+    let source_occupation_count = occupation_rows.len();
+    for row in occupation_rows {
+        let code = required_tsv_value(&row, "O*NET-SOC Code", "Occupation Data")?.to_string();
+        let title = required_tsv_value(&row, "Title", "Occupation Data")?.to_string();
+        let description = required_tsv_value(&row, "Description", "Occupation Data")?.to_string();
+        let Some(cluster) = classify_onet_occupation(&code, &title, &description) else {
+            continue;
+        };
+        let Some(job_zone) = job_zones.get(&code).copied() else {
+            continue;
+        };
+        let Some(skill_vector) = skill_vectors.get(&code).copied() else {
+            continue;
+        };
+        occupations.insert(
+            code.clone(),
+            OnetOccupation {
+                code,
+                title,
+                cluster,
+                job_zone,
+                skill_vector,
+            },
+        );
+    }
+    if occupations.len() < 8 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.selected_occupations",
+            format!(
+                "O*NET source produced only {} selected occupations with complete job-zone and skill data",
+                occupations.len()
+            ),
+            "inspect the O*NET ZIP contents; the generator requires complete Occupation Data, Job Zones, Skills, and Related Occupations files",
+        ));
+    }
+
+    let related = parse_onet_related_edges(&related_text, &occupations)?;
+    let selected_related_edge_count = related.values().map(Vec::len).sum::<usize>();
+    if selected_related_edge_count < 8 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.related_edges",
+            format!("O*NET selected related graph has only {selected_related_edge_count} edges"),
+            "inspect Related Occupations.txt; selected public taxonomy occupations must have related occupation links",
+        ));
+    }
+
+    let mut current_code = related.keys().next().cloned().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.walk_start",
+            "no selected O*NET occupation has an eligible outgoing related-occupation edge",
+            "inspect the generated related graph",
+        )
+    })?;
+    let mut out = String::new();
+    let mut walk_csv =
+        "step,current_code,current_title,current_cluster,next_code,next_title,next_cluster,action,mobility_label,edge_hash\n"
+            .to_string();
+    for step in 0..event_count {
+        let neighbors = related.get(&current_code).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.walk",
+                format!("walk reached occupation {current_code} with no eligible outgoing edge"),
+                "the selected related graph must be closed over generated walk states",
+            )
+        })?;
+        let neighbor_index = (step as usize + current_code.bytes().map(usize::from).sum::<usize>())
+            % neighbors.len();
+        let next_code = neighbors[neighbor_index].clone();
+        let current = occupations.get(&current_code).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.current_occupation",
+                format!("missing selected occupation {current_code}"),
+                "inspect generated O*NET occupation map",
+            )
+        })?;
+        let next = occupations.get(&next_code).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.next_occupation",
+                format!("missing selected occupation {next_code}"),
+                "inspect generated O*NET occupation map",
+            )
+        })?;
+        let action = onet_action_for_transition(current, next, step);
+        let mobility_label = onet_mobility_label(current, next);
+        let edge_hash = format!("sha256:{zip_hash_hex}:{}:{}", current.code, next.code);
+        walk_csv.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{}\n",
+            step,
+            csv_escape(&current.code),
+            csv_escape(&current.title),
+            csv_escape(current.cluster),
+            csv_escape(&next.code),
+            csv_escape(&next.title),
+            csv_escape(next.cluster),
+            csv_escape(action),
+            csv_escape(mobility_label),
+            csv_escape(&edge_hash),
+        ));
+        let event = json!({
+            "trajectory_id": "onet_30_2_public_taxonomy_walk_0001",
+            "step": step,
+            "source": {
+                "dataset": "onet_30_2_text",
+                "license": "O*NET 30.2 Database CC BY 4.0",
+                "url": "https://www.onetcenter.org/database.html",
+                "source_hash": format!("sha256:{zip_hash_hex}"),
+            },
+            "state": {
+                "occupation_cluster": current.cluster,
+                "job_zone": current.job_zone,
+                "skill_vector": rounded_skill_vector(current.skill_vector),
+                "experience_years": onet_experience_years(step, event_count),
+                "wage_band": onet_wage_band(current.job_zone, step),
+            },
+            "action": {
+                "move": action,
+            },
+            "outcome": {
+                "next_occupation_cluster": next.cluster,
+                "next_job_zone": next.job_zone,
+                "next_skill_vector": rounded_skill_vector(next.skill_vector),
+                "mobility_label": mobility_label,
+            },
+        });
+        out.push_str(&serde_json::to_string(&event).map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.event_json",
+                format!("failed to serialize generated O*NET event: {err}"),
+                "generated career events must remain JSON serializable",
+            )
+        })?);
+        out.push('\n');
+        current_code = next_code;
+    }
+    Ok(OnetGeneratedCorpus {
+        jsonl: out,
+        walk_csv,
+        selected_occupation_count: occupations.len(),
+        selected_related_edge_count,
+        source_occupation_count,
+    })
+}
+
+fn read_onet_zip_text(zip_path: &Path, member: &str) -> DynamicJepaResult<String> {
+    let file = File::open(zip_path).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.onet.open_zip".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to open {}: {err}", zip_path.display()),
+        remediation: "pass a readable O*NET 30.2 text ZIP".to_string(),
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.zip",
+            format!("failed to read O*NET ZIP {}: {err}", zip_path.display()),
+            "pass the unmodified O*NET text ZIP downloaded from the Resource Center",
+        )
+    })?;
+    let mut member_file = archive.by_name(member).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.zip_member",
+            format!("O*NET ZIP missing required member {member}: {err}"),
+            "use the db_30_2_text.zip archive with core text database files",
+        )
+    })?;
+    let mut text = String::new();
+    member_file.read_to_string(&mut text).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.zip_member_utf8",
+            format!("required O*NET member {member} is not readable UTF-8 text: {err}"),
+            "use the tab-delimited text O*NET database ZIP",
+        )
+    })?;
+    Ok(text)
+}
+
+fn parse_tsv_records(
+    text: &str,
+    label: &'static str,
+) -> DynamicJepaResult<Vec<BTreeMap<String, String>>> {
+    let mut lines = text.lines();
+    let header = lines.next().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.tsv",
+            format!("{label} is empty"),
+            "O*NET source files must contain a header row and data rows",
+        )
+    })?;
+    let headers = header
+        .trim_end_matches('\r')
+        .split('\t')
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if headers.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.onet.tsv_header",
+            format!("{label} has no TSV columns"),
+            "inspect the O*NET text file header",
+        ));
+    }
+    let mut rows = Vec::new();
+    for (idx, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let values = line
+            .trim_end_matches('\r')
+            .split('\t')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if values.len() != headers.len() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.tsv_width",
+                format!(
+                    "{label} line {} has {} columns, expected {}",
+                    idx + 2,
+                    values.len(),
+                    headers.len()
+                ),
+                "do not edit the O*NET tab-delimited text files before generation",
+            ));
+        }
+        rows.push(
+            headers
+                .iter()
+                .cloned()
+                .zip(values.into_iter())
+                .collect::<BTreeMap<_, _>>(),
+        );
+    }
+    Ok(rows)
+}
+
+fn required_tsv_value<'a>(
+    row: &'a BTreeMap<String, String>,
+    field: &str,
+    label: &'static str,
+) -> DynamicJepaResult<&'a str> {
+    row.get(field)
+        .map(String::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.tsv_field",
+                format!("{label} row is missing required field {field:?}"),
+                "inspect the O*NET source file columns",
+            )
+        })
+}
+
+fn parse_onet_job_zones(text: &str) -> DynamicJepaResult<BTreeMap<String, i64>> {
+    let mut out = BTreeMap::new();
+    for row in parse_tsv_records(text, "Job Zones")? {
+        let code = required_tsv_value(&row, "O*NET-SOC Code", "Job Zones")?.to_string();
+        let zone = required_tsv_value(&row, "Job Zone", "Job Zones")?
+            .parse::<i64>()
+            .map_err(|err| {
+                DynamicJepaError::validation(
+                    "research_smoke.onet.job_zone",
+                    format!("invalid O*NET job zone for {code}: {err}"),
+                    "Job Zones.txt must contain integer zones",
+                )
+            })?;
+        if !(1..=5).contains(&zone) {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.job_zone",
+                format!("O*NET job zone for {code} is outside 1..5: {zone}"),
+                "inspect Job Zones.txt before generation",
+            ));
+        }
+        out.insert(code, zone);
+    }
+    Ok(out)
+}
+
+fn parse_onet_skill_vectors(text: &str) -> DynamicJepaResult<BTreeMap<String, [f64; 4]>> {
+    let skill_ids = ["2.B.3.e", "2.A.1.e", "2.B.4.g", "2.A.2.a"];
+    let mut partial: BTreeMap<String, [Option<f64>; 4]> = BTreeMap::new();
+    for row in parse_tsv_records(text, "Skills")? {
+        if required_tsv_value(&row, "Scale ID", "Skills")? != "LV" {
+            continue;
+        }
+        let element_id = required_tsv_value(&row, "Element ID", "Skills")?;
+        let Some(index) = skill_ids.iter().position(|id| *id == element_id) else {
+            continue;
+        };
+        let code = required_tsv_value(&row, "O*NET-SOC Code", "Skills")?.to_string();
+        let raw = required_tsv_value(&row, "Data Value", "Skills")?
+            .parse::<f64>()
+            .map_err(|err| {
+                DynamicJepaError::validation(
+                    "research_smoke.onet.skill_value",
+                    format!("invalid O*NET skill value for {code}/{element_id}: {err}"),
+                    "Skills.txt Data Value must be numeric",
+                )
+            })?;
+        if !raw.is_finite() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.onet.skill_value",
+                format!("non-finite O*NET skill value for {code}/{element_id}: {raw}"),
+                "Skills.txt Data Value must be finite",
+            ));
+        }
+        let normalized = (raw / 7.0).clamp(0.0, 1.0);
+        partial.entry(code).or_insert([None; 4])[index] = Some(normalized);
+    }
+    let mut out = BTreeMap::new();
+    for (code, values) in partial {
+        if values.iter().all(Option::is_some) {
+            out.insert(
+                code,
+                [
+                    values[0].expect("checked"),
+                    values[1].expect("checked"),
+                    values[2].expect("checked"),
+                    values[3].expect("checked"),
+                ],
+            );
+        }
+    }
+    Ok(out)
+}
+
+fn parse_onet_related_edges(
+    text: &str,
+    occupations: &BTreeMap<String, OnetOccupation>,
+) -> DynamicJepaResult<BTreeMap<String, Vec<String>>> {
+    let mut raw: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for row in parse_tsv_records(text, "Related Occupations")? {
+        let src = required_tsv_value(&row, "O*NET-SOC Code", "Related Occupations")?.to_string();
+        let dst =
+            required_tsv_value(&row, "Related O*NET-SOC Code", "Related Occupations")?.to_string();
+        if occupations.contains_key(&src) && occupations.contains_key(&dst) && src != dst {
+            raw.entry(src).or_default().insert(dst);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for (src, dsts) in &raw {
+        let filtered = dsts
+            .iter()
+            .filter(|dst| raw.contains_key(*dst))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !filtered.is_empty() {
+            out.insert(src.clone(), filtered);
+        }
+    }
+    Ok(out)
+}
+
+fn classify_onet_occupation(code: &str, title: &str, description: &str) -> Option<&'static str> {
+    let haystack = format!(
+        "{} {}",
+        title.to_ascii_lowercase(),
+        description.to_ascii_lowercase()
+    );
+    if code.starts_with("11-")
+        && (haystack.contains("manager")
+            || haystack.contains("chief")
+            || haystack.contains("director"))
+    {
+        return Some("management");
+    }
+    if haystack.contains("data")
+        || haystack.contains("database")
+        || haystack.contains("statistic")
+        || haystack.contains("analytics")
+        || haystack.contains("business intelligence")
+    {
+        return Some("data");
+    }
+    if haystack.contains("software")
+        || haystack.contains("developer")
+        || haystack.contains("programmer")
+        || haystack.contains("web ")
+        || haystack.contains("application")
+    {
+        return Some("software");
+    }
+    if haystack.contains("systems")
+        || haystack.contains("network")
+        || haystack.contains("security")
+        || haystack.contains("administrator")
+        || haystack.contains("architect")
+    {
+        return Some("systems");
+    }
+    if code.starts_with("15-") {
+        return Some("systems");
+    }
+    None
+}
+
+fn rounded_skill_vector(values: [f64; 4]) -> [f64; 4] {
+    [
+        round4(values[0]),
+        round4(values[1]),
+        round4(values[2]),
+        round4(values[3]),
+    ]
+}
+
+fn round4(value: f64) -> f64 {
+    (value * 10000.0).round() / 10000.0
+}
+
+fn onet_experience_years(step: u64, event_count: u64) -> f64 {
+    let denominator = event_count
+        .checked_sub(1)
+        .expect("O*NET event_count is validated before corpus generation");
+    let progress = (step as f64) / (denominator as f64);
+    round4(1.0 + 39.0 * progress)
+}
+
+fn onet_wage_band(job_zone: i64, step: u64) -> &'static str {
+    if job_zone >= 5 || step % 17 == 0 {
+        "high"
+    } else if job_zone >= 3 {
+        "mid"
+    } else {
+        "low"
+    }
+}
+
+fn onet_action_for_transition(
+    current: &OnetOccupation,
+    next: &OnetOccupation,
+    step: u64,
+) -> &'static str {
+    if current.cluster != next.cluster {
+        "role_move_near"
+    } else if step % 13 == 0 {
+        "experience_gain"
+    } else if skill_sum(next.skill_vector) > skill_sum(current.skill_vector) + 0.03 {
+        "skill_gain_high_demand"
+    } else if step % 11 == 0 {
+        "noop"
+    } else {
+        "skill_gain_adjacent"
+    }
+}
+
+fn skill_sum(values: [f64; 4]) -> f64 {
+    values.iter().sum()
+}
+
+fn onet_mobility_label(current: &OnetOccupation, next: &OnetOccupation) -> &'static str {
+    if current.cluster == next.cluster && current.job_zone == next.job_zone {
+        "same"
+    } else if current.cluster == next.cluster || (current.job_zone - next.job_zone).abs() <= 1 {
+        "near_transition"
+    } else {
+        "far_transition"
+    }
+}
+
+fn write_onet_career_domain_pack(
+    src: &Path,
+    dst: &Path,
+    event_count: u64,
+) -> DynamicJepaResult<()> {
+    let text = read_text_file(src, "O*NET generated career domain pack")?;
+    let mut value: toml::Value = toml::from_str(&text).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.domain_pack",
+            format!(
+                "failed to parse base career domain pack {}: {err}",
+                src.display()
+            ),
+            "fix the checked-in career domain pack before generating O*NET demo fixtures",
+        )
+    })?;
+    let dataset_rows = event_count.checked_sub(1).ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.event_count",
+            "event_count must be at least 1",
+            "use a positive generated career event count",
+        )
+    })?;
+    let splits = split_counts_for_row_count(dataset_rows);
+    let policy = value
+        .get_mut("verification_policy")
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.onet.domain_pack.verification_policy",
+                "base career domain pack missing verification_policy table",
+                "fix the checked-in career domain pack before generation",
+            )
+        })?;
+    set_toml_integer(policy, "expected_trajectory_count", 1);
+    set_toml_integer(policy, "expected_event_count", event_count);
+    set_toml_integer(policy, "expected_panel_count", event_count);
+    set_toml_integer(policy, "expected_dataset_row_count", dataset_rows);
+    set_toml_integer(policy, "expected_train_rows_min", splits["train"]);
+    set_toml_integer(policy, "expected_train_rows_max", splits["train"]);
+    set_toml_integer(policy, "expected_val_rows_min", splits["val"]);
+    set_toml_integer(policy, "expected_val_rows_max", splits["val"]);
+    set_toml_integer(policy, "expected_test_rows_min", splits["test"]);
+    set_toml_integer(policy, "expected_test_rows_max", splits["test"]);
+    let serialized = toml::to_string_pretty(&value).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.domain_pack.serialize",
+            format!("failed to serialize generated career domain pack: {err}"),
+            "inspect the O*NET domain-pack mutation",
+        )
+    })?;
+    write_text_file(dst, &serialized)?;
+    parse_domain_pack_file(dst)?;
+    Ok(())
+}
+
+fn split_counts_for_row_count(total_rows: u64) -> BTreeMap<String, u64> {
+    let train = ((total_rows * 7) / 10).max(1);
+    let remaining = total_rows.saturating_sub(train);
+    let val = if remaining == 0 {
+        0
+    } else {
+        ((total_rows * 2).div_ceil(10)).max(1).min(remaining)
+    };
+    BTreeMap::from([
+        ("train".to_string(), train),
+        ("val".to_string(), val),
+        ("test".to_string(), total_rows.saturating_sub(train + val)),
+    ])
+}
+
+fn set_toml_integer(table: &mut toml::map::Map<String, toml::Value>, key: &str, value: u64) {
+    table.insert(key.to_string(), toml::Value::Integer(value as i64));
+}
+
+fn write_onet_career_train_config(src: &Path, dst: &Path, purpose: &str) -> DynamicJepaResult<()> {
+    let mut config = read_json_file(src)?;
+    let max_seconds = match purpose {
+        "smoke" => 180,
+        "paper_small" => 1800,
+        "paper_full" => 7200,
+        _ => unreachable!("validated research purpose"),
+    };
+    config["stopping"]["max_seconds"] = json!(max_seconds);
+    config["stopping"]["target"] = json!(0.20);
+    if matches!(purpose, "paper_small" | "paper_full") {
+        config["schedule"]["batch_size"] = json!(64);
+    }
+    let parsed: TrainConfig = serde_json::from_value(config.clone()).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.onet.train_config",
+            format!("generated O*NET career train config is invalid: {err}"),
+            "fix the checked-in career training config before generation",
+        )
+    })?;
+    parsed.validate()?;
+    write_json_file(dst, &config)
+}
+
 fn write_environment_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    if !ctx.system_specs.exists() {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.system_specs",
+            format!("system specs file does not exist: {}", ctx.system_specs.display()),
+            "pass --system-specs with a local hardware specification document, or restore docs2/systemspecs.md",
+        ));
+    }
+    let system_specs_sha256 = hex_bytes(&file_sha256(&ctx.system_specs)?);
     let smi = ctx.run_required(
         "env_nvidia_smi",
         Path::new("nvidia-smi"),
@@ -3519,6 +4338,10 @@ fn write_environment_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult
         "candle_tree_stdout_sha256": candle_tree.row["stdout_sha256"],
         "uname": uname.stdout.trim(),
         "free": free.stdout,
+        "system_specs": {
+            "path": ctx.system_specs.display().to_string(),
+            "sha256": system_specs_sha256,
+        },
         "command_indices": {
             "nvidia_smi": smi.index,
             "nvcc": nvcc.index,
@@ -3592,7 +4415,7 @@ fn write_git_state_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<(
 
 fn write_data_manifest_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
     let path = ctx
-        .fixtures_root
+        .career_fixtures_root
         .join("verification/career_taxonomy_data_manifest.json");
     let manifest: Value = read_json_file(&path)?;
     for field in [
@@ -3648,7 +4471,12 @@ fn write_domain_pack_manifest_bundle(ctx: &ResearchSmokeContext) -> DynamicJepaR
         VerificationDomain::Gridworld,
         VerificationDomain::CareerTaxonomy,
     ] {
-        let path = domain.domain_pack_path(&ctx.fixtures_root);
+        let fixture_root = if matches!(domain, VerificationDomain::CareerTaxonomy) {
+            &ctx.career_fixtures_root
+        } else {
+            &ctx.fixtures_root
+        };
+        let path = domain.domain_pack_path(fixture_root);
         let pack = parse_domain_pack_file(&path)?;
         domains.push(json!({
             "domain": pack.id.0,
@@ -3675,6 +4503,7 @@ fn run_research_domain_verifier(
     command_name: &str,
     db: &Path,
     artifact_root: &Path,
+    fixtures_root: &Path,
 ) -> DynamicJepaResult<Value> {
     ctx.run_cli_json(
         &format!("{domain}_{command_name}"),
@@ -3684,7 +4513,7 @@ fn run_research_domain_verifier(
             "--db".to_string(),
             db.display().to_string(),
             "--fixtures-root".to_string(),
-            ctx.fixtures_root.display().to_string(),
+            fixtures_root.display().to_string(),
             "--artifact-root".to_string(),
             artifact_root.display().to_string(),
             "--evidence-root".to_string(),
@@ -3855,12 +4684,14 @@ fn run_career_reproducibility(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
         message: format!("failed to create {}: {err}", artifact_root.display()),
         remediation: "use a writable artifact root".to_string(),
     })?;
+    let repro_fixtures = ctx.career_fixtures_root.clone();
     let output = run_research_domain_verifier(
         ctx,
         "career_taxonomy_repro",
         "verify-career-taxonomy",
         &db,
         &artifact_root,
+        &repro_fixtures,
     )?;
     let after = verify_domain_source_of_truth(ctx, "career_taxonomy_repro", &db, &output)?;
     let evidence_dir = evidence_dir_from_output(&output)?;
@@ -3965,10 +4796,10 @@ fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
         max_seconds: 120,
     };
     let base_domain_pack = ctx
-        .fixtures_root
+        .career_fixtures_root
         .join("domain_packs/career_taxonomy.v1.toml");
     let base_train_config = ctx
-        .fixtures_root
+        .career_fixtures_root
         .join("verification/career_taxonomy_train_config.json");
     push_career_ablation_row_from_evidence(
         ctx,
@@ -4051,16 +4882,14 @@ fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
             message: format!("failed to create {}: {err}", artifact_root.display()),
             remediation: "use a writable artifact root".to_string(),
         })?;
-        let old_fixtures_root = ctx.fixtures_root.clone();
-        ctx.fixtures_root = fixtures.clone();
         let output = run_research_domain_verifier(
             ctx,
             spec.domain_label,
             "verify-career-taxonomy",
             &db,
             &artifact_root,
+            &fixtures,
         );
-        ctx.fixtures_root = old_fixtures_root;
         let output = output?;
         let after = verify_domain_source_of_truth(ctx, spec.domain_label, &db, &output)?;
         ctx.domain_reports.insert(
@@ -4106,21 +4935,19 @@ fn materialize_career_ablation_fixtures(
         remediation: "use a writable --run-root".to_string(),
     })?;
 
+    let source_fixtures_root = &ctx.career_fixtures_root;
     mutate_career_domain_pack_for_ablation(
-        &ctx.fixtures_root
-            .join("domain_packs/career_taxonomy.v1.toml"),
+        &source_fixtures_root.join("domain_packs/career_taxonomy.v1.toml"),
         &fixtures.join("domain_packs/career_taxonomy.v1.toml"),
         spec,
     )?;
     write_career_ablation_train_config(
-        &ctx.fixtures_root
-            .join("verification/career_taxonomy_train_config.json"),
+        &source_fixtures_root.join("verification/career_taxonomy_train_config.json"),
         &fixtures.join("verification/career_taxonomy_train_config.json"),
         spec,
     )?;
     copy_fixture_file(
-        &ctx.fixtures_root
-            .join("verification/career_taxonomy_data_manifest.json"),
+        &source_fixtures_root.join("verification/career_taxonomy_data_manifest.json"),
         &fixtures.join("verification/career_taxonomy_data_manifest.json"),
     )?;
     for rel in [
@@ -4132,7 +4959,7 @@ fn materialize_career_ablation_fixtures(
         "career_taxonomy_edge_oob_job_zone.jsonl",
     ] {
         transform_career_jsonl_for_ablation(
-            &ctx.fixtures_root.join("verification").join(rel),
+            &source_fixtures_root.join("verification").join(rel),
             &fixtures.join("verification").join(rel),
             spec,
             rel,

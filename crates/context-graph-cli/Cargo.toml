@@ -43,6 +43,7 @@ anyhow = "1.0"
 uuid = "1.0"
 sha2 = "0.10"
 rocksdb = "0.22"
+zip = "7.2.0"
 
 # Logging
 tracing = { workspace = true }
