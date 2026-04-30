@@ -63,6 +63,7 @@ serial_test = "3"
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
 context-graph-storage = { path = "../context-graph-storage" }
 context-graph-test-utils = { path = "../context-graph-test-utils" }
+context-graph-mcp = { path = "../context-graph-mcp" }
 
 # Performance benchmarking (TASK-P6-010)
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
