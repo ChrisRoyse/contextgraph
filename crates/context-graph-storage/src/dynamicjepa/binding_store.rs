@@ -1,14 +1,16 @@
 use context_graph_core::dynamicjepa::{
-    BindingId, BindingRecord, BindingRef, DynamicJepaError, DynamicJepaResult, Validate,
+    BindingId, BindingRecord, BindingRef, DynamicJepaError, DynamicJepaRecord, DynamicJepaResult,
+    Validate,
 };
 use rocksdb::{IteratorMode, WriteBatch, DB};
 
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
 use crate::dynamicjepa::column_families::{CF_DJ_BINDINGS, CF_DJ_BINDINGS_BY_ENTITY};
 use crate::dynamicjepa::common::{
     cf, count_cf, get_record, list_records, storage_error, write_batch,
 };
-use crate::dynamicjepa::encode::encode_record;
-use crate::dynamicjepa::keys::binding_entity_key;
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::{audit_key, binding_entity_key};
 
 pub fn put_binding(db: &DB, record: &BindingRecord) -> DynamicJepaResult<()> {
     let encoded = encode_record(record)?;
@@ -24,6 +26,33 @@ pub fn put_binding(db: &DB, record: &BindingRecord) -> DynamicJepaResult<()> {
         [],
     );
     write_batch(db, batch, "put_binding")
+}
+
+pub fn put_binding_with_audit_batch(
+    db: &DB,
+    record: &BindingRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    record.validate_record()?;
+    audit.validate()?;
+    let encoded = encode_record(record)?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(
+        cf(db, CF_DJ_BINDINGS)?,
+        record.binding_id.into_bytes(),
+        encoded,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_BINDINGS_BY_ENTITY)?,
+        binding_entity_key(&record.left_ref, record.binding_id),
+        [],
+    );
+    batch.put_cf(
+        cf(db, crate::dynamicjepa::column_families::CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_binding_with_audit_batch")
 }
 
 pub fn get_binding(db: &DB, id: BindingId) -> DynamicJepaResult<Option<BindingRecord>> {

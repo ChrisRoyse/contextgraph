@@ -1,8 +1,13 @@
-use context_graph_core::dynamicjepa::{DynamicJepaResult, TrajectoryId, TrajectoryRecord};
-use rocksdb::DB;
+use context_graph_core::dynamicjepa::{
+    DynamicJepaRecord, DynamicJepaResult, TrajectoryId, TrajectoryRecord,
+};
+use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::column_families::CF_DJ_TRAJECTORIES;
-use crate::dynamicjepa::common::{count_cf, get_record, list_records, put_record};
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::column_families::{CF_DJ_AUDIT_LOG, CF_DJ_TRAJECTORIES};
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::audit_key;
 
 pub fn put_trajectory(db: &DB, record: &TrajectoryRecord) -> DynamicJepaResult<()> {
     put_record(
@@ -11,6 +16,27 @@ pub fn put_trajectory(db: &DB, record: &TrajectoryRecord) -> DynamicJepaResult<(
         record.trajectory_id.into_bytes(),
         record,
     )
+}
+
+pub fn put_trajectory_with_audit_batch(
+    db: &DB,
+    record: &TrajectoryRecord,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    record.validate_record()?;
+    audit.validate()?;
+    let mut batch = WriteBatch::default();
+    batch.put_cf(
+        cf(db, CF_DJ_TRAJECTORIES)?,
+        record.trajectory_id.into_bytes(),
+        encode_record(record)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_trajectory_with_audit_batch")
 }
 
 pub fn get_trajectory(db: &DB, id: TrajectoryId) -> DynamicJepaResult<Option<TrajectoryRecord>> {

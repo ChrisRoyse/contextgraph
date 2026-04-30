@@ -13,36 +13,39 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
     ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
-    AdapterSpec, CandidateActionConfig, DatasetPolicy, DjRecordHeader, DomainPack, DomainPackId,
+    AdapterSpec, BindingId, BindingKind, BindingMethod, BindingRecord, BindingRef,
+    CandidateActionConfig, DatasetPolicy, DjRecordHeader, DomainPack, DomainPackId,
     DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind,
     FieldSpec, FieldValue, InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec,
     InstrumentValidation, InvariantSpec, LatentPanel, Normalization, NormalizedAction,
     NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
     PanelSlot, PanelSlotKind, PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus,
-    SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema, TransitionId,
-    VerificationPolicy, ADAPTER_RUN_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION,
-    INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
-    NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
+    SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema, TrajectoryId,
+    TrajectoryRecord, TransitionId, VerificationPolicy, ADAPTER_RUN_RECORD_VERSION,
+    BINDING_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
+    LATENT_PANEL_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
     NORMALIZED_STATE_RECORD_VERSION, RAW_DOMAIN_EVENT_RECORD_VERSION,
-    STATE_TRANSITION_RECORD_VERSION,
+    STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
-    CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS,
-    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
-    CF_DJ_LATENT_PANELS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
+    CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
+    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
+    CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS,
+    CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS, CF_DJ_TRAJECTORIES,
     CF_DJ_TRANSITIONS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
-    get_action, get_adapter_run, get_adapter_spec, get_domain_pack, get_domain_pack_by_storage_id,
-    get_instrument_spec, get_latent_panel, get_normalized_state, get_outcome, get_raw_event,
-    get_transition, inspect_cf, list_adapter_runs, list_domain_packs,
-    list_instrument_readings_for_event, list_latent_panels, list_transitions,
+    binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
+    get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec, get_latent_panel,
+    get_normalized_state, get_outcome, get_raw_event, get_trajectory, get_transition, inspect_cf,
+    inspect_cf_key, list_adapter_runs, list_bindings, list_domain_packs,
+    list_instrument_readings_for_event, list_latent_panels, list_trajectories, list_transitions,
     put_adapter_run_failure_batch, put_adapter_run_success_batch, put_audit_record,
-    put_domain_pack, put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
-    snapshot_dj_counts,
+    put_binding_with_audit_batch, put_domain_pack, put_panel_with_readings_batch,
+    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
@@ -74,6 +77,16 @@ pub enum DynamicJepaCommands {
     GetPanel(GetPanelArgs),
     /// List instrument readings for one event.
     ListInstrumentReadings(ListInstrumentReadingsArgs),
+    /// Create a deterministic binding between two decoded source-of-truth rows.
+    Bind(BindArgs),
+    /// List persisted bindings.
+    ListBindings(ListBindingsArgs),
+    /// Compile latent panels and transitions into deterministic trajectories.
+    CompileTrajectories(CompileTrajectoriesArgs),
+    /// Read one compiled trajectory.
+    GetTrajectory(GetTrajectoryArgs),
+    /// List compiled trajectories for a domain.
+    ListTrajectories(ListTrajectoriesArgs),
 }
 
 impl DynamicJepaCommands {
@@ -89,6 +102,11 @@ impl DynamicJepaCommands {
             Self::MaterializePanel(_) => "dynamicjepa_materialize_panel",
             Self::GetPanel(_) => "dynamicjepa_get_panel",
             Self::ListInstrumentReadings(_) => "dynamicjepa_list_instrument_readings",
+            Self::Bind(_) => "dynamicjepa_bind",
+            Self::ListBindings(_) => "dynamicjepa_list_bindings",
+            Self::CompileTrajectories(_) => "dynamicjepa_compile_trajectories",
+            Self::GetTrajectory(_) => "dynamicjepa_get_trajectory",
+            Self::ListTrajectories(_) => "dynamicjepa_list_trajectories",
         }
     }
 }
@@ -275,6 +293,125 @@ pub struct ListInstrumentReadingsArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct BindArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Left source-of-truth DynamicJEPA CF name.
+    #[arg(long = "left-cf")]
+    pub left_cf: String,
+
+    /// Left source-of-truth key as lowercase or uppercase hex bytes.
+    #[arg(long = "left-key")]
+    pub left_key: String,
+
+    /// Right source-of-truth DynamicJEPA CF name.
+    #[arg(long = "right-cf")]
+    pub right_cf: String,
+
+    /// Right source-of-truth key as lowercase or uppercase hex bytes.
+    #[arg(long = "right-key")]
+    pub right_key: String,
+
+    /// Deterministic binding method: id_equality or explicit_mapping.
+    #[arg(long, default_value = "explicit_mapping")]
+    pub method: String,
+
+    /// Binding kind: event_to_trajectory, entity_to_entity, state_to_goal, or panel_to_memory.
+    #[arg(long, default_value = "event_to_trajectory")]
+    pub kind: String,
+
+    /// Calibrated score in [0,1].
+    #[arg(long, default_value_t = 1.0)]
+    pub score: f32,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ListBindingsArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Optional filter matching a binding CF name or key hex.
+    #[arg(long)]
+    pub entity: Option<String>,
+
+    /// Maximum decoded bindings to return.
+    #[arg(long, default_value_t = 100)]
+    pub limit: usize,
+
+    /// Number of decoded bindings to skip.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct CompileTrajectoriesArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Segmentation policy id. Phase 5 supports by_domain_session.
+    #[arg(long, default_value = "by_domain_session")]
+    pub policy: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetTrajectoryArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Trajectory id to read.
+    #[arg(long)]
+    pub id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ListTrajectoriesArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Maximum decoded trajectories to return.
+    #[arg(long, default_value_t = 100)]
+    pub limit: usize,
+
+    /// Number of decoded trajectories to skip.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -336,6 +473,11 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::MaterializePanel(args) => materialize_panel_command(args),
         DynamicJepaCommands::GetPanel(args) => get_panel_command(args),
         DynamicJepaCommands::ListInstrumentReadings(args) => list_instrument_readings_command(args),
+        DynamicJepaCommands::Bind(args) => bind_command(args),
+        DynamicJepaCommands::ListBindings(args) => list_bindings_command(args),
+        DynamicJepaCommands::CompileTrajectories(args) => compile_trajectories_command(args),
+        DynamicJepaCommands::GetTrajectory(args) => get_trajectory_command(args),
+        DynamicJepaCommands::ListTrajectories(args) => list_trajectories_command(args),
     }
 }
 
@@ -999,6 +1141,487 @@ fn list_instrument_readings_command(
     })
 }
 
+fn bind_command(args: BindArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [CF_DJ_BINDINGS, CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_AUDIT_LOG];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "bind.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let left_cf = resolve_bindable_cf_name(&args.left_cf, "bind.left_cf")?;
+        let right_cf = resolve_bindable_cf_name(&args.right_cf, "bind.right_cf")?;
+        let left_key = parse_hex_key(&args.left_key, "bind.left_key")?;
+        let right_key = parse_hex_key(&args.right_key, "bind.right_key")?;
+        let method = parse_binding_method(&args.method)?;
+        let binding_kind = parse_binding_kind(&args.kind)?;
+        if matches!(method, BindingMethod::IdEquality) && left_key != right_key {
+            return Err(DynamicJepaError::validation(
+                "bind.method",
+                "id_equality requires left-key and right-key to be byte-identical",
+                "use --method explicit_mapping when binding distinct source-of-truth rows",
+            ));
+        }
+
+        let binding_id = BindingId::new_v4();
+        let left_decoded = inspect_cf_key(db, left_cf, &left_key)?.ok_or_else(|| {
+            DynamicJepaError::BindingEvidenceMissing {
+                binding_id: binding_id.0,
+                evidence_ref: format!("{}:{}", left_cf, hex_bytes(&left_key)),
+            }
+        })?;
+        let right_decoded = inspect_cf_key(db, right_cf, &right_key)?.ok_or_else(|| {
+            DynamicJepaError::BindingEvidenceMissing {
+                binding_id: binding_id.0,
+                evidence_ref: format!("{}:{}", right_cf, hex_bytes(&right_key)),
+            }
+        })?;
+        let (left_domain, left_version) =
+            decoded_domain_identity(&left_decoded, "bind.left_ref")?;
+        let (right_domain, _right_version) =
+            decoded_domain_identity(&right_decoded, "bind.right_ref")?;
+        if left_version.trim().is_empty() {
+            return Err(DynamicJepaError::validation(
+                "bind.left_ref.header.domain_pack_version",
+                "left reference decoded without a domain version",
+                "bind only records with a DynamicJEPA record header",
+            ));
+        }
+
+        let left_ref = BindingRef {
+            cf: left_cf.to_string(),
+            key_bytes: left_key,
+        };
+        let right_ref = BindingRef {
+            cf: right_cf.to_string(),
+            key_bytes: right_key,
+        };
+        let now = now_unix_ms()?;
+        let run_id = Uuid::new_v4();
+        let mut record = BindingRecord {
+            header: DjRecordHeader::new(
+                binding_id.0,
+                BINDING_RECORD_VERSION,
+                left_domain.clone(),
+                left_version,
+                now,
+                Some(run_id),
+            ),
+            binding_id,
+            binding_kind,
+            left_ref: left_ref.clone(),
+            right_ref: right_ref.clone(),
+            evidence_refs: vec![left_ref.clone(), right_ref.clone()],
+            score: args.score,
+            method,
+            left_domain_pack_id: left_domain,
+            right_domain_pack_id: right_domain,
+            created_by_run_id: run_id,
+            version: 1,
+        };
+        record.refresh_content_hash()?;
+        let audit = build_audit(
+            "create_binding",
+            AuditStatus::Ok,
+            vec![
+                format!("{}:{}", record.left_ref.cf, hex_bytes(&record.left_ref.key_bytes)),
+                format!(
+                    "{}:{}",
+                    record.right_ref.cf,
+                    hex_bytes(&record.right_ref.key_bytes)
+                ),
+            ],
+            vec![binding_id.to_string()],
+            vec![
+                CF_DJ_BINDINGS.to_string(),
+                CF_DJ_BINDINGS_BY_ENTITY.to_string(),
+                CF_DJ_AUDIT_LOG.to_string(),
+            ],
+            vec![record.header.content_hash],
+        )?;
+        put_binding_with_audit_batch(db, &record, &audit)?;
+
+        let stored = get_binding(db, binding_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_BINDINGS.to_string(),
+                key: binding_id.into_bytes().to_vec(),
+            }
+        })?;
+        if stored != record {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!("binding readback mismatch for binding {binding_id}"),
+            });
+        }
+        if !binding_entity_index_exists(db, &record.left_ref, binding_id)? {
+            return Err(DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_BINDINGS_BY_ENTITY.to_string(),
+                key: context_graph_storage::dynamicjepa::binding_entity_index_key(
+                    &record.left_ref,
+                    binding_id,
+                )?
+                .to_vec(),
+            });
+        }
+
+        Ok(json!({
+            "created_ids": {
+                "binding_id": binding_id.to_string(),
+                "audit_id": audit.audit_id.to_string(),
+            },
+            "decoded_records": {
+                "binding": stored,
+                "left_ref": left_decoded,
+                "right_ref": right_decoded,
+                "bindings_cf": inspect_cf(db, CF_DJ_BINDINGS, 20, 0)?,
+                "bindings_by_entity_cf": inspect_cf(db, CF_DJ_BINDINGS_BY_ENTITY, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 80, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_bind",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_bind",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn list_bindings_command(args: ListBindingsArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    if args.limit == 0 {
+        return Err(DynamicJepaError::validation(
+            "list-bindings.limit",
+            "--limit must be greater than zero",
+            "request at least one row so the source-of-truth read has observable output",
+        ));
+    }
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "list-bindings.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let mut bindings = list_bindings(db, 1_000_000, 0)?;
+    if let Some(entity) = &args.entity {
+        let needle = entity.to_ascii_lowercase();
+        bindings.retain(|binding| binding_matches_entity_filter(binding, &needle));
+    }
+    let total_after_filter = bindings.len();
+    let bindings = bindings
+        .into_iter()
+        .skip(args.offset)
+        .take(args.limit)
+        .collect::<Vec<_>>();
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_list_bindings",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": [CF_DJ_BINDINGS, CF_DJ_BINDINGS_BY_ENTITY],
+            "counts": counts,
+            "limit": args.limit,
+            "offset": args.offset,
+            "filter": args.entity,
+            "decoded_records": {
+                "total_after_filter": total_after_filter,
+                "bindings": bindings,
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
+fn compile_trajectories_command(
+    args: CompileTrajectoriesArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_TRANSITIONS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_TRAJECTORIES,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "compile-trajectories.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        if args.policy != "by_domain_session" {
+            return Err(DynamicJepaError::validation(
+                "compile-trajectories.policy",
+                format!("unsupported segmentation policy {:?}", args.policy),
+                "Phase 5 supports exactly by_domain_session",
+            ));
+        }
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain_pack = get_domain_pack(db, &domain_id, "1.0.0")?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let existing = list_trajectories(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|trajectory| trajectory.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        if !existing.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "compile-trajectories.domain",
+                format!(
+                    "domain {} already has {} compiled trajectories",
+                    domain_pack.id,
+                    existing.len()
+                ),
+                "wipe the pre-production demo DB before recompiling trajectories; Phase 5 does not delete or merge existing source-of-truth rows",
+            ));
+        }
+
+        let transitions = list_transitions(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|transition| transition.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        if transitions.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "compile-trajectories.transitions",
+                format!("domain {} has no transitions to compile", domain_pack.id),
+                "run ingest-event successfully before compiling trajectories",
+            ));
+        }
+        let panels = list_latent_panels(db, 1_000_000, 0)?
+            .into_iter()
+            .filter(|panel| panel.header.domain_pack_id == domain_pack.id)
+            .collect::<Vec<_>>();
+        let panel_by_transition = panel_index_by_transition(panels)?;
+        let mut groups: BTreeMap<String, TrajectoryGroup> = BTreeMap::new();
+        for transition in transitions {
+            let panel_key = (
+                transition.prior_state.0,
+                transition.action.0,
+                transition.outcome.0,
+            );
+            let panel = panel_by_transition.get(&panel_key).cloned().ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_LATENT_PANELS.to_string(),
+                    key: transition.transition_id.into_bytes().to_vec(),
+                }
+            })?;
+            let (group_key, entity_refs) =
+                trajectory_group_key(db, &domain_pack, &transition)?;
+            groups
+                .entry(group_key)
+                .or_insert_with(|| TrajectoryGroup {
+                    entity_refs,
+                    members: Vec::new(),
+                })
+                .members
+                .push(TrajectoryMember { transition, panel });
+        }
+        if groups.is_empty() {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "domain {} had transitions but no trajectory groups were produced",
+                    domain_pack.id
+                ),
+            });
+        }
+
+        let run_id = Uuid::new_v4();
+        let mut created_ids = Vec::new();
+        let mut decoded = Vec::new();
+        for (group_key, group) in groups {
+            let record = build_trajectory_record(
+                &domain_pack,
+                &args.policy,
+                &group_key,
+                group,
+                run_id,
+            )?;
+            let audit = build_audit(
+                "compile_trajectory",
+                AuditStatus::Ok,
+                record
+                    .ordered_transition_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                vec![record.trajectory_id.to_string()],
+                vec![CF_DJ_TRAJECTORIES.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+                vec![record.header.content_hash],
+            )?;
+            put_trajectory_with_audit_batch(db, &record, &audit)?;
+            let stored = get_trajectory(db, record.trajectory_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_TRAJECTORIES.to_string(),
+                    key: record.trajectory_id.into_bytes().to_vec(),
+                }
+            })?;
+            if stored != record {
+                return Err(DynamicJepaError::StorageInvariantViolation {
+                    message: format!(
+                        "trajectory readback mismatch for trajectory {}",
+                        record.trajectory_id
+                    ),
+                });
+            }
+            verify_trajectory_sources(db, &stored)?;
+            created_ids.push(stored.trajectory_id.to_string());
+            decoded.push(stored);
+        }
+
+        Ok(json!({
+            "created_ids": {
+                "trajectory_ids": created_ids,
+                "run_id": run_id.to_string(),
+            },
+            "summary": {
+                "trajectory_count": decoded.len(),
+            },
+            "decoded_records": {
+                "trajectories": decoded,
+                "trajectories_cf": inspect_cf(db, CF_DJ_TRAJECTORIES, 20, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 120, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_compile_trajectories",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_compile_trajectories",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn get_trajectory_command(args: GetTrajectoryArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-trajectory.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let trajectory_id = parse_trajectory_id(&args.id, "get-trajectory.id")?;
+    let record = get_trajectory(db, trajectory_id)?;
+    match record {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_trajectory",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_TRAJECTORIES],
+                "counts": counts,
+                "decoded_records": {
+                    "trajectory": record,
+                },
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_trajectory",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_TRAJECTORIES],
+                "counts": counts,
+                "queried": {"trajectory_id": args.id},
+                "remediation": "compile trajectories before reading a trajectory id",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn list_trajectories_command(args: ListTrajectoriesArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    if args.limit == 0 {
+        return Err(DynamicJepaError::validation(
+            "list-trajectories.limit",
+            "--limit must be greater than zero",
+            "request at least one row so the source-of-truth read has observable output",
+        ));
+    }
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "list-trajectories.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let domain_id = DomainPackId::new(args.domain.clone())?;
+    let mut trajectories = list_trajectories(db, 1_000_000, 0)?
+        .into_iter()
+        .filter(|trajectory| trajectory.header.domain_pack_id == domain_id)
+        .collect::<Vec<_>>();
+    trajectories.sort_by(|left, right| {
+        left.start_time_unix_ms
+            .cmp(&right.start_time_unix_ms)
+            .then_with(|| left.trajectory_id.cmp(&right.trajectory_id))
+    });
+    let total = trajectories.len();
+    let trajectories = trajectories
+        .into_iter()
+        .skip(args.offset)
+        .take(args.limit)
+        .collect::<Vec<_>>();
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_list_trajectories",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": [CF_DJ_TRAJECTORIES],
+            "counts": counts,
+            "queried": {"domain": args.domain},
+            "limit": args.limit,
+            "offset": args.offset,
+            "decoded_records": {
+                "total_for_domain": total,
+                "trajectories": trajectories,
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
 #[derive(Debug, Default, Clone, Serialize)]
 struct IngestCreatedIds {
     raw_event_ids: Vec<String>,
@@ -1035,6 +1658,17 @@ struct MaterializedPanelEvidence {
     instrument_reading_ids: Vec<String>,
 }
 
+#[derive(Clone)]
+struct TrajectoryMember {
+    transition: StateTransition,
+    panel: LatentPanel,
+}
+
+struct TrajectoryGroup {
+    entity_refs: Vec<String>,
+    members: Vec<TrajectoryMember>,
+}
+
 #[derive(Debug)]
 struct AdapterLineError {
     message: String,
@@ -1061,6 +1695,342 @@ fn phase4_ingest_cfs() -> [&'static str; 7] {
         CF_DJ_TRANSITIONS,
         CF_DJ_AUDIT_LOG,
     ]
+}
+
+fn resolve_bindable_cf_name(name: &str, field: &str) -> DynamicJepaResult<&'static str> {
+    let cf_name = resolve_dynamic_cf_name(name)?;
+    if matches!(cf_name, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION | CF_DJ_BINDINGS_BY_ENTITY) {
+        return Err(DynamicJepaError::validation(
+            field,
+            format!("column family {cf_name} is a secondary index, not a concrete record CF"),
+            "bind concrete decoded source-of-truth records such as dj_raw_events, dj_latent_panels, or dj_trajectories",
+        ));
+    }
+    Ok(cf_name)
+}
+
+fn parse_binding_method(value: &str) -> DynamicJepaResult<BindingMethod> {
+    match value {
+        "id_equality" => Ok(BindingMethod::IdEquality),
+        "explicit_mapping" => Ok(BindingMethod::ExplicitMapping),
+        other => Err(DynamicJepaError::validation(
+            "bind.method",
+            format!("unsupported binding method {other:?}"),
+            "use id_equality or explicit_mapping",
+        )),
+    }
+}
+
+fn parse_binding_kind(value: &str) -> DynamicJepaResult<BindingKind> {
+    match value {
+        "entity_to_entity" => Ok(BindingKind::EntityToEntity),
+        "event_to_trajectory" => Ok(BindingKind::EventToTrajectory),
+        "state_to_goal" => Ok(BindingKind::StateToGoal),
+        "panel_to_memory" => Ok(BindingKind::PanelToMemory),
+        other => Err(DynamicJepaError::validation(
+            "bind.kind",
+            format!("unsupported binding kind {other:?}"),
+            "use entity_to_entity, event_to_trajectory, state_to_goal, or panel_to_memory",
+        )),
+    }
+}
+
+fn decoded_domain_identity(
+    inspected: &Value,
+    field: &str,
+) -> DynamicJepaResult<(DomainPackId, String)> {
+    let header = inspected
+        .get("decoded")
+        .and_then(|decoded| decoded.get("header"))
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                field,
+                "decoded binding reference does not contain a DynamicJEPA record header",
+                "bind only concrete DynamicJEPA records with DjRecordHeader",
+            )
+        })?;
+    let domain = header
+        .get("domain_pack_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                format!("{field}.header.domain_pack_id"),
+                "decoded binding reference is missing domain_pack_id",
+                "bind only records decoded from DynamicJEPA source-of-truth CFs",
+            )
+        })?;
+    let version = header
+        .get("domain_pack_version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                format!("{field}.header.domain_pack_version"),
+                "decoded binding reference is missing domain_pack_version",
+                "bind only records decoded from DynamicJEPA source-of-truth CFs",
+            )
+        })?;
+    Ok((DomainPackId::new(domain.to_string())?, version.to_string()))
+}
+
+fn binding_matches_entity_filter(binding: &BindingRecord, needle: &str) -> bool {
+    let left_key = hex_bytes(&binding.left_ref.key_bytes).to_ascii_lowercase();
+    let right_key = hex_bytes(&binding.right_ref.key_bytes).to_ascii_lowercase();
+    binding.left_ref.cf.to_ascii_lowercase().contains(needle)
+        || binding.right_ref.cf.to_ascii_lowercase().contains(needle)
+        || left_key == needle
+        || right_key == needle
+        || binding
+            .evidence_refs
+            .iter()
+            .any(|evidence| hex_bytes(&evidence.key_bytes).to_ascii_lowercase() == needle)
+}
+
+fn panel_index_by_transition(
+    panels: Vec<LatentPanel>,
+) -> DynamicJepaResult<BTreeMap<(Uuid, Uuid, Uuid), LatentPanel>> {
+    let mut out = BTreeMap::new();
+    for panel in panels {
+        let outcome_id = panel.outcome_id.ok_or_else(|| {
+            DynamicJepaError::StorageInvariantViolation {
+                message: format!("panel {} has no outcome id", panel.panel_id),
+            }
+        })?;
+        let key = (panel.state_id.0, panel.action_id.0, outcome_id.0);
+        if out.insert(key, panel).is_some() {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: "multiple latent panels matched one transition key".to_string(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn trajectory_group_key(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    transition: &StateTransition,
+) -> DynamicJepaResult<(String, Vec<String>)> {
+    if domain_pack.entity_schema.fields.is_empty() {
+        return Ok((format!("domain:{}", domain_pack.id), Vec::new()));
+    }
+    let state = get_normalized_state(db, transition.prior_state)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: transition.prior_state.into_bytes().to_vec(),
+        }
+    })?;
+    let raw_event =
+        get_raw_event(db, state.source_event_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_RAW_EVENTS.to_string(),
+            key: state.source_event_id.into_bytes().to_vec(),
+        })?;
+    let adapter = domain_pack.adapter_specs.first().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "compile-trajectories.adapter",
+            format!("domain {} has no adapter specs", domain_pack.id),
+            "register a domain pack with a json_event adapter before compiling trajectories",
+        )
+    })?;
+    let root: Value = serde_json::from_slice(trim_jsonl_newline(&raw_event.payload_bytes)).map_err(
+        |err| DynamicJepaError::AdapterFailed {
+            adapter_id: adapter.adapter_id.to_string(),
+            event_id: raw_event.event_id.0,
+            message: format!("raw event payload could not be re-parsed for entity grouping: {err}"),
+            field_path: "$".to_string(),
+        },
+    )?;
+
+    let mut refs = Vec::new();
+    for field in &domain_pack.entity_schema.fields {
+        let target_path = format!("entity.{}", field.name);
+        let source_path = adapter.mapping.get(&target_path).ok_or_else(|| {
+            DynamicJepaError::validation(
+                format!("compile-trajectories.{target_path}"),
+                format!("adapter {} does not map {target_path}", adapter.adapter_id),
+                "add the entity mapping to the domain pack and re-register it",
+            )
+        })?;
+        let raw_value = resolve_json_path(&root, source_path).ok_or_else(|| {
+            DynamicJepaError::AdapterFailed {
+                adapter_id: adapter.adapter_id.to_string(),
+                event_id: raw_event.event_id.0,
+                message: format!("JSON path {source_path:?} did not resolve for {target_path}"),
+                field_path: target_path.clone(),
+            }
+        })?;
+        let coerced = coerce_json_value(raw_value, field, &target_path).map_err(|err| {
+            DynamicJepaError::AdapterFailed {
+                adapter_id: adapter.adapter_id.to_string(),
+                event_id: raw_event.event_id.0,
+                message: err.message,
+                field_path: err.field_path,
+            }
+        })?;
+        refs.push(format!(
+            "{}={}",
+            field.name,
+            entity_field_value_to_string(&coerced)
+        ));
+    }
+    if refs.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "compile-trajectories.entity_refs",
+            "entity schema was non-empty but no entity refs were produced",
+            "inspect the domain pack entity schema and adapter mapping",
+        ));
+    }
+    Ok((format!("entity:{}", refs.join("|")), refs))
+}
+
+fn entity_field_value_to_string(value: &FieldValue) -> String {
+    match value {
+        FieldValue::I64(value) | FieldValue::UnixMs(value) => value.to_string(),
+        FieldValue::F64(value) => value.to_string(),
+        FieldValue::Bool(value) => value.to_string(),
+        FieldValue::String(value) => value.clone(),
+        FieldValue::Categorical { variant } => variant.clone(),
+        FieldValue::Vector(values) => values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    }
+}
+
+fn build_trajectory_record(
+    domain_pack: &DomainPack,
+    policy: &str,
+    group_key: &str,
+    mut group: TrajectoryGroup,
+    run_id: Uuid,
+) -> DynamicJepaResult<TrajectoryRecord> {
+    group.members.sort_by(|left, right| {
+        left.transition
+            .timestamp_ms
+            .cmp(&right.transition.timestamp_ms)
+            .then_with(|| left.transition.transition_id.cmp(&right.transition.transition_id))
+    });
+    for pair in group.members.windows(2) {
+        if pair[0].transition.timestamp_ms >= pair[1].transition.timestamp_ms {
+            return Err(DynamicJepaError::TrajectoryInvariantViolation {
+                message: format!(
+                    "trajectory group {group_key} has non-strict timestamps {} then {}",
+                    pair[0].transition.timestamp_ms, pair[1].transition.timestamp_ms
+                ),
+                trajectory_id: Uuid::nil(),
+            });
+        }
+    }
+    let first = group.members.first().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "compile-trajectories.group",
+            format!("trajectory group {group_key} was empty"),
+            "compile only groups with at least one transition and panel",
+        )
+    })?;
+    let last = group.members.last().expect("first checked");
+    let record_count = u32::try_from(group.members.len()).map_err(|_| {
+        DynamicJepaError::validation(
+            "compile-trajectories.record_count",
+            format!("trajectory group {group_key} has too many records"),
+            "split huge groups before compiling trajectories",
+        )
+    })?;
+    let ordered_transition_ids = group
+        .members
+        .iter()
+        .map(|member| member.transition.transition_id)
+        .collect::<Vec<_>>();
+    let ordered_panel_ids = group
+        .members
+        .iter()
+        .map(|member| member.panel.panel_id)
+        .collect::<Vec<_>>();
+    let trajectory_id = TrajectoryId::new_v4();
+    let trajectory_hash = trajectory_hash(
+        &domain_pack.id,
+        policy,
+        group_key,
+        &ordered_transition_ids,
+        &ordered_panel_ids,
+    )?;
+    let mut record = TrajectoryRecord {
+        header: DjRecordHeader::new(
+            trajectory_id.0,
+            TRAJECTORY_RECORD_VERSION,
+            domain_pack.id.clone(),
+            domain_pack.version.clone(),
+            now_unix_ms()?,
+            Some(run_id),
+        ),
+        trajectory_id,
+        segmentation_policy_id: policy.to_string(),
+        ordered_transition_ids,
+        ordered_panel_ids,
+        start_time_unix_ms: first.transition.timestamp_ms,
+        end_time_unix_ms: last.transition.timestamp_ms,
+        entity_refs: group.entity_refs,
+        binding_refs: Vec::new(),
+        trajectory_hash,
+        record_count,
+    };
+    record.refresh_content_hash()?;
+    Ok(record)
+}
+
+fn trajectory_hash(
+    domain_pack_id: &DomainPackId,
+    policy: &str,
+    group_key: &str,
+    transition_ids: &[TransitionId],
+    panel_ids: &[PanelId],
+) -> DynamicJepaResult<[u8; 32]> {
+    let bytes = serde_json::to_vec(&json!({
+        "domain_pack_id": domain_pack_id.to_string(),
+        "segmentation_policy_id": policy,
+        "group_key": group_key,
+        "ordered_transition_ids": transition_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "ordered_panel_ids": panel_ids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+    }))
+    .map_err(|err| {
+        DynamicJepaError::validation(
+            "trajectory_hash",
+            format!("failed to serialize trajectory hash payload: {err}"),
+            "trajectory hash payload must remain JSON serializable",
+        )
+    })?;
+    Ok(sha256(&bytes))
+}
+
+fn verify_trajectory_sources(db: &rocksdb::DB, record: &TrajectoryRecord) -> DynamicJepaResult<()> {
+    let mut previous_timestamp = None;
+    for transition_id in &record.ordered_transition_ids {
+        let transition = get_transition(db, *transition_id)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_TRANSITIONS.to_string(),
+                key: transition_id.into_bytes().to_vec(),
+            }
+        })?;
+        if let Some(previous) = previous_timestamp {
+            if previous >= transition.timestamp_ms {
+                return Err(DynamicJepaError::TrajectoryInvariantViolation {
+                    message: format!(
+                        "trajectory {} timestamps are not strictly ascending",
+                        record.trajectory_id
+                    ),
+                    trajectory_id: record.trajectory_id.0,
+                });
+            }
+        }
+        previous_timestamp = Some(transition.timestamp_ms);
+    }
+    for panel_id in &record.ordered_panel_ids {
+        get_latent_panel(db, *panel_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: panel_id.into_bytes().to_vec(),
+        })?;
+    }
+    Ok(())
 }
 
 fn ingest_jsonl_fixture(

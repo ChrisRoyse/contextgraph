@@ -66,6 +66,28 @@ pub fn inspect_cf(
     Ok(rows)
 }
 
+pub fn inspect_cf_key(
+    db: &DB,
+    cf_name: &'static str,
+    key: &[u8],
+) -> DynamicJepaResult<Option<serde_json::Value>> {
+    match db.get_cf(cf(db, cf_name)?, key) {
+        Ok(Some(value)) => Ok(Some(json!({
+            "cf": cf_name,
+            "key_hex": hex(key),
+            "value_len": value.len(),
+            "decoded": decode_row(cf_name, key, &value)?,
+        }))),
+        Ok(None) => Ok(None),
+        Err(err) => Err(storage_error(
+            "inspect_cf_key",
+            cf_name,
+            err.to_string(),
+            "inspect RocksDB LOG files and verify the key encoder before retrying",
+        )),
+    }
+}
+
 fn decode_core_row<R>(bytes: &[u8], type_name: &'static str) -> DynamicJepaResult<serde_json::Value>
 where
     R: DynamicJepaRecord + DeserializeOwned + serde::Serialize,
