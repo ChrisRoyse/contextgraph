@@ -1222,15 +1222,19 @@ fn jacobi_symmetric_eigenvalues(mut matrix: Vec<Vec<f64>>) -> Vec<f64> {
         let mut p = 0usize;
         let mut q = 0usize;
         let mut max_off = 0.0f64;
-        for i in 0..n {
-            for j in (i + 1)..n {
+        let mut i = 0usize;
+        while i < n {
+            let mut j = i + 1;
+            while j < n {
                 let value = matrix[i][j].abs();
                 if value > max_off {
                     max_off = value;
                     p = i;
                     q = j;
                 }
+                j += 1;
             }
+            i += 1;
         }
         if max_off < 1.0e-12 {
             break;
@@ -1249,7 +1253,8 @@ fn jacobi_symmetric_eigenvalues(mut matrix: Vec<Vec<f64>>) -> Vec<f64> {
         };
         let c = 1.0 / (1.0 + t * t).sqrt();
         let s = t * c;
-        for k in 0..n {
+        let mut k = 0usize;
+        while k < n {
             if k != p && k != q {
                 let akp = matrix[k][p];
                 let akq = matrix[k][q];
@@ -1260,6 +1265,7 @@ fn jacobi_symmetric_eigenvalues(mut matrix: Vec<Vec<f64>>) -> Vec<f64> {
                 matrix[k][q] = next_kq;
                 matrix[q][k] = next_kq;
             }
+            k += 1;
         }
         matrix[p][p] = c * c * app - 2.0 * s * c * apq + s * s * aqq;
         matrix[q][q] = s * s * app + 2.0 * s * c * apq + c * c * aqq;

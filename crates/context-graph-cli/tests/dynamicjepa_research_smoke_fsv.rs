@@ -238,6 +238,161 @@ fn research_smoke_fails_closed_for_ablation_seed_without_onet_source() {
 }
 
 #[test]
+fn hp_sweep_fails_closed_for_unknown_axis_before_bundle_creation() {
+    let root = repo_root();
+    let output_root = root
+        .join("tmp/5090jepa_evidence/hp_sweep/test_runtime")
+        .join(format!("test_hp_sweep_unknown_axis_{}", std::process::id()));
+    if output_root.exists() {
+        fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
+    }
+    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
+    assert!(
+        onet_zip.exists(),
+        "real O*NET ZIP required for HP sweep validation"
+    );
+
+    let (stdout, _stderr) = run_err(&[
+        "dynamicjepa",
+        "hp-sweep",
+        "--base-config",
+        root.join("configs/dynamicjepa/verification/career_taxonomy_train_config.json")
+            .to_str()
+            .expect("base config path utf8"),
+        "--sweep-axis",
+        "unknown_axis",
+        "--sweep-values",
+        "16",
+        "--output-root",
+        output_root.to_str().expect("output root utf8"),
+        "--onet-text-zip",
+        onet_zip.to_str().expect("O*NET ZIP path utf8"),
+        "--system-specs",
+        root.join("docs2/systemspecs.md")
+            .to_str()
+            .expect("system specs path utf8"),
+        "--json",
+    ]);
+    let result: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("stdout must be JSON: {err}\nstdout={stdout}"));
+    assert_eq!(result["error_code"], "VALIDATION");
+    assert!(result["error_message"]
+        .as_str()
+        .expect("error message")
+        .contains("unknown HP sweep axis"));
+    assert!(
+        !output_root.exists(),
+        "invalid axis must fail before creating sweep source-of-truth bundle"
+    );
+}
+
+#[test]
+fn hp_sweep_fails_closed_for_invalid_value_before_bundle_creation() {
+    let root = repo_root();
+    let output_root = root
+        .join("tmp/5090jepa_evidence/hp_sweep/test_runtime")
+        .join(format!(
+            "test_hp_sweep_invalid_value_{}",
+            std::process::id()
+        ));
+    if output_root.exists() {
+        fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
+    }
+    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
+    assert!(
+        onet_zip.exists(),
+        "real O*NET ZIP required for HP sweep validation"
+    );
+
+    let (stdout, _stderr) = run_err(&[
+        "dynamicjepa",
+        "hp-sweep",
+        "--base-config",
+        root.join("configs/dynamicjepa/verification/career_taxonomy_train_config.json")
+            .to_str()
+            .expect("base config path utf8"),
+        "--sweep-axis",
+        "lr",
+        "--sweep-values",
+        "not-a-float",
+        "--output-root",
+        output_root.to_str().expect("output root utf8"),
+        "--onet-text-zip",
+        onet_zip.to_str().expect("O*NET ZIP path utf8"),
+        "--system-specs",
+        root.join("docs2/systemspecs.md")
+            .to_str()
+            .expect("system specs path utf8"),
+        "--json",
+    ]);
+    let result: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("stdout must be JSON: {err}\nstdout={stdout}"));
+    assert_eq!(result["error_code"], "VALIDATION");
+    assert!(result["error_message"]
+        .as_str()
+        .expect("error message")
+        .contains("not numeric"));
+    assert!(
+        !output_root.exists(),
+        "invalid sweep value must fail before creating sweep source-of-truth bundle"
+    );
+}
+
+#[test]
+fn hp_sweep_fails_closed_for_existing_output_root() {
+    let root = repo_root();
+    let output_root = root
+        .join("tmp/5090jepa_evidence/hp_sweep/test_runtime")
+        .join(format!(
+            "test_hp_sweep_existing_root_{}",
+            std::process::id()
+        ));
+    if output_root.exists() {
+        fs::remove_dir_all(&output_root).expect("remove previous HP sweep test output");
+    }
+    fs::create_dir_all(&output_root).expect("create existing HP sweep output root");
+    let onet_zip = root.join("tmp/onet_probe/db_30_2_text.zip");
+    assert!(
+        onet_zip.exists(),
+        "real O*NET ZIP required for HP sweep validation"
+    );
+
+    let (stdout, _stderr) = run_err(&[
+        "dynamicjepa",
+        "hp-sweep",
+        "--base-config",
+        root.join("configs/dynamicjepa/verification/career_taxonomy_train_config.json")
+            .to_str()
+            .expect("base config path utf8"),
+        "--sweep-axis",
+        "batch_size",
+        "--sweep-values",
+        "16",
+        "--output-root",
+        output_root.to_str().expect("output root utf8"),
+        "--onet-text-zip",
+        onet_zip.to_str().expect("O*NET ZIP path utf8"),
+        "--system-specs",
+        root.join("docs2/systemspecs.md")
+            .to_str()
+            .expect("system specs path utf8"),
+        "--json",
+    ]);
+    let result: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("stdout must be JSON: {err}\nstdout={stdout}"));
+    assert_eq!(result["error_code"], "VALIDATION");
+    assert!(result["error_message"]
+        .as_str()
+        .expect("error message")
+        .contains("output root already exists"));
+    assert!(
+        output_root.exists(),
+        "existing output root must be preserved for operator inspection"
+    );
+    fs::remove_dir_all(&output_root).expect("cleanup existing HP sweep output root");
+}
+
+#[test]
 fn research_smoke_fails_closed_for_incomplete_onet_zip_preflight() {
     let root = repo_root();
     let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
@@ -501,6 +656,7 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         "table_runtime.csv",
         "table_prediction_metrics.csv",
         "table_ablation.csv",
+        "table_collapse_diagnostics.csv",
         "table_auditability.csv",
         "table_edge_cases.csv",
         "table_data_sources.csv",
@@ -522,6 +678,20 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
             "missing generated plot artifact {plot}"
         );
     }
+    let collapse_table = fs::read_to_string(
+        run_dir
+            .join("paper_tables")
+            .join("table_collapse_diagnostics.csv"),
+    )
+    .expect("read collapse diagnostics table");
+    assert!(
+        collapse_table.contains("career_taxonomy"),
+        "collapse table must include the career source-of-truth run"
+    );
+    assert!(
+        collapse_table.contains("collapse_eff_rank") || collapse_table.contains("eff_rank_ratio"),
+        "collapse table must expose rank diagnostics"
+    );
 
     let career_db = run_dir
         .join("dbs")

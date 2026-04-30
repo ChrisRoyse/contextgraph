@@ -136,6 +136,8 @@ pub enum DynamicJepaCommands {
     VerifyCareerTaxonomy(VerifyDomainArgs),
     /// Build one immutable 5090 ME-JEPA research-smoke bundle from real verifier runs.
     ResearchSmoke(ResearchSmokeArgs),
+    /// Run immutable research-smoke cells across one hyperparameter axis and verify the sweep bundle.
+    HpSweep(HpSweepArgs),
     /// Aggregate immutable paper-small research-smoke bundles across real training seeds.
     MultiseedAggregate(MultiseedAggregateArgs),
     /// Capture a checked-in CI reference from an existing research-smoke bundle.
@@ -178,6 +180,7 @@ impl DynamicJepaCommands {
             Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
             Self::VerifyCareerTaxonomy(_) => "dynamicjepa_verify_career_taxonomy",
             Self::ResearchSmoke(_) => "dynamicjepa_research_smoke",
+            Self::HpSweep(_) => "dynamicjepa_hp_sweep",
             Self::MultiseedAggregate(_) => "dynamicjepa_multiseed_aggregate",
             Self::CaptureReference(_) => "dynamicjepa_capture_reference",
             Self::CheckReference(_) => "dynamicjepa_check_reference",
@@ -797,7 +800,74 @@ pub struct ResearchSmokeArgs {
     #[arg(long = "career-ablation-training-seed")]
     pub career_ablation_training_seed: Option<u64>,
 
+    /// Override generated O*NET career training learning rate. Used by hp-sweep; never silently ignored.
+    #[arg(long = "hp-learning-rate", hide = true)]
+    pub hp_learning_rate: Option<f64>,
+
+    /// Override generated O*NET career latent dimension. Used by hp-sweep; never silently ignored.
+    #[arg(long = "hp-latent-dim", hide = true)]
+    pub hp_latent_dim: Option<u64>,
+
+    /// Override generated O*NET career training batch size. Used by hp-sweep; never silently ignored.
+    #[arg(long = "hp-batch-size", hide = true)]
+    pub hp_batch_size: Option<u64>,
+
+    /// Record the upstream sweep or promotion source for generated hyperparameters.
+    #[arg(long = "hyperparameter-origin", hide = true)]
+    pub hyperparameter_origin: Option<String>,
+
     /// Local system specification document to hash into the research bundle.
+    #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
+    pub system_specs: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct HpSweepArgs {
+    /// Strict training config used as the centerpoint for non-varied hyperparameters.
+    #[arg(long = "base-config")]
+    pub base_config: PathBuf,
+
+    /// Hyperparameter axis to vary: lr, latent_dim, or batch_size.
+    #[arg(long = "sweep-axis")]
+    pub sweep_axis: String,
+
+    /// Comma-delimited values for the selected axis.
+    #[arg(long = "sweep-values", value_delimiter = ',')]
+    pub sweep_values: Vec<String>,
+
+    /// Fresh sweep bundle directory. Existing paths are rejected.
+    #[arg(long = "output-root")]
+    pub output_root: PathBuf,
+
+    /// Root containing domain_packs/ and verification/ fixtures.
+    #[arg(long = "fixtures-root", default_value = "configs/dynamicjepa")]
+    pub fixtures_root: PathBuf,
+
+    /// Research run purpose for each cell: smoke, paper_small, or paper_full.
+    #[arg(long, default_value = "paper_small")]
+    pub purpose: String,
+
+    /// Real O*NET 30.2 text ZIP. HP sweeps do not run against mock data.
+    #[arg(long = "onet-text-zip")]
+    pub onet_text_zip: PathBuf,
+
+    /// Number of O*NET-derived career events to generate in each cell.
+    #[arg(long = "career-event-count")]
+    pub career_event_count: Option<u64>,
+
+    /// One training seed for each sweep value.
+    #[arg(long = "career-training-seed")]
+    pub career_training_seed: Option<u64>,
+
+    /// Comma-delimited training seeds. Produces values x seeds immutable cells.
+    #[arg(long = "career-training-seeds", value_delimiter = ',')]
+    pub career_training_seeds: Vec<u64>,
+
+    /// Local system specification document to hash into each child research bundle.
     #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
     pub system_specs: PathBuf,
 
@@ -1000,6 +1070,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
         DynamicJepaCommands::VerifyCareerTaxonomy(args) => verify_career_taxonomy_command(args),
         DynamicJepaCommands::ResearchSmoke(args) => research_smoke_command(args),
+        DynamicJepaCommands::HpSweep(args) => hp_sweep_command(args),
         DynamicJepaCommands::MultiseedAggregate(args) => multiseed_aggregate_command(args),
         DynamicJepaCommands::CaptureReference(args) => capture_reference_command(args),
         DynamicJepaCommands::CheckReference(args) => check_reference_command(args),
@@ -3048,16 +3119,889 @@ fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandO
         args.career_ablation_training_seed,
         args.onet_text_zip.is_some(),
     )?;
+    let hp_overrides = ResearchHyperparameterOverrides::from_research_args(&args)?;
     let run_id = args
         .run_id
         .clone()
         .unwrap_or_else(|| format!("{}_{}", now_unix_ms().unwrap_or(0), Uuid::new_v4()));
     validate_research_run_id(&run_id)?;
-    let mut ctx = ResearchSmokeContext::new(run_id, args)?;
+    let mut ctx = ResearchSmokeContext::new(run_id, args, hp_overrides)?;
     match run_research_smoke(&mut ctx) {
         Ok(summary) => ctx.finish_passed(summary),
         Err(err) => ctx.finish_failed(err),
     }
+}
+
+const HP_SWEEP_SCHEMA_VERSION: u64 = 1;
+const HP_SWEEP_CHILD_REQUIRED_FILES: &[&str] = &[
+    "run_manifest.json",
+    "fsv_report.json",
+    "training_metrics.json",
+    "artifact_hashes.json",
+    "paper_tables/table_prediction_metrics.csv",
+    "paper_tables/table_ablation.csv",
+    "paper_tables/table_collapse_diagnostics.csv",
+    "plots/plot_manifest.json",
+];
+const HP_SWEEP_OUTPUT_REQUIRED_FILES: &[&str] = &[
+    "sweep_manifest.json",
+    "paper_tables/table_hp_sensitivity.csv",
+    "paper_tables/table_collapse_diagnostics.csv",
+    "plots/hp_sensitivity.svg",
+    "plots/collapse_diagnostic_f5.svg",
+    "plots/plot_manifest.json",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HpSweepAxis {
+    LearningRate,
+    LatentDim,
+    BatchSize,
+}
+
+impl HpSweepAxis {
+    fn parse(value: &str) -> DynamicJepaResult<Self> {
+        match value {
+            "lr" => Ok(Self::LearningRate),
+            "latent_dim" => Ok(Self::LatentDim),
+            "batch_size" => Ok(Self::BatchSize),
+            other => Err(DynamicJepaError::validation(
+                "hp_sweep.sweep_axis",
+                format!("unknown HP sweep axis {other:?}"),
+                "use one of: lr, latent_dim, batch_size",
+            )),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::LearningRate => "lr",
+            Self::LatentDim => "latent_dim",
+            Self::BatchSize => "batch_size",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct HpSweepValue {
+    raw: String,
+    normalized: String,
+    safe: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct HpSweepHyperparameters {
+    lr: f64,
+    latent_dim: u64,
+    batch_size: u64,
+}
+
+impl HpSweepHyperparameters {
+    fn from_train_config(config: &TrainConfig) -> Self {
+        Self {
+            lr: config.optim.lr,
+            latent_dim: config.model.encoder.out_dim as u64,
+            batch_size: config.schedule.batch_size as u64,
+        }
+    }
+
+    fn with_swept_value(self, axis: HpSweepAxis, value: &HpSweepValue) -> DynamicJepaResult<Self> {
+        let mut next = self;
+        match axis {
+            HpSweepAxis::LearningRate => {
+                next.lr = value.normalized.parse::<f64>().map_err(|err| {
+                    DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!(
+                            "failed to parse normalized learning rate {:?}: {err}",
+                            value.normalized
+                        ),
+                        "rerun with finite positive learning-rate values",
+                    )
+                })?;
+            }
+            HpSweepAxis::LatentDim => {
+                next.latent_dim = value.normalized.parse::<u64>().map_err(|err| {
+                    DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!(
+                            "failed to parse normalized latent_dim {:?}: {err}",
+                            value.normalized
+                        ),
+                        "rerun with positive integer latent dimensions",
+                    )
+                })?;
+            }
+            HpSweepAxis::BatchSize => {
+                next.batch_size = value.normalized.parse::<u64>().map_err(|err| {
+                    DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!(
+                            "failed to parse normalized batch_size {:?}: {err}",
+                            value.normalized
+                        ),
+                        "rerun with positive integer batch sizes",
+                    )
+                })?;
+            }
+        }
+        Ok(next)
+    }
+
+    fn manifest_value(self) -> Value {
+        json!({
+            "lr": self.lr,
+            "latent_dim": self.latent_dim,
+            "batch_size": self.batch_size,
+        })
+    }
+}
+
+fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let operation = "dynamicjepa_hp_sweep";
+    let before_state = json!({
+        "base_config": ci_path_state(&args.base_config)?,
+        "onet_text_zip": ci_path_state(&args.onet_text_zip)?,
+        "output_root": ci_path_state(&args.output_root)?,
+    });
+    validate_research_purpose(&args.purpose)?;
+    if args.output_root.exists() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.output_root",
+            format!("output root already exists: {}", args.output_root.display()),
+            "choose a fresh sweep bundle path; HP sweeps never overwrite prior evidence",
+        ));
+    }
+    if !args.onet_text_zip.exists() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.onet_text_zip",
+            format!("O*NET text ZIP does not exist: {}", args.onet_text_zip.display()),
+            "download the O*NET 30.2 text database ZIP locally and pass --onet-text-zip; HP sweeps do not use mock data",
+        ));
+    }
+    if !args.system_specs.exists() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.system_specs",
+            format!(
+                "system specs file does not exist: {}",
+                args.system_specs.display()
+            ),
+            "pass --system-specs with a local hardware specification document",
+        ));
+    }
+    let base_config = TrainConfig::from_path(&args.base_config)?;
+    let base_hp = HpSweepHyperparameters::from_train_config(&base_config);
+    let axis = HpSweepAxis::parse(&args.sweep_axis)?;
+    let values = parse_hp_sweep_values(axis, &args.sweep_values)?;
+    let seeds = parse_hp_sweep_seeds(&args)?;
+    let career_event_count =
+        research_career_event_count(&args.purpose, args.career_event_count, true)?;
+
+    fs::create_dir_all(args.output_root.join("cells")).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: "hp_sweep.create_cells_dir".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "failed to create {}: {err}",
+                args.output_root.join("cells").display()
+            ),
+            remediation: "choose a writable fresh --output-root".to_string(),
+        }
+    })?;
+    fs::create_dir_all(args.output_root.join("paper_tables")).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: "hp_sweep.create_paper_tables".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "failed to create {}: {err}",
+                args.output_root.join("paper_tables").display()
+            ),
+            remediation: "choose a writable fresh --output-root".to_string(),
+        }
+    })?;
+    fs::create_dir_all(args.output_root.join("plots")).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: "hp_sweep.create_plots".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "failed to create {}: {err}",
+                args.output_root.join("plots").display()
+            ),
+            remediation: "choose a writable fresh --output-root".to_string(),
+        }
+    })?;
+
+    let mut cells = Vec::new();
+    for seed in &seeds {
+        for value in &values {
+            let hp = base_hp.with_swept_value(axis, value)?;
+            let cell_id = format!("{}_{}_seed{}", axis.as_str(), value.safe, seed);
+            validate_research_run_id(&cell_id)?;
+            let cell_args = ResearchSmokeArgs {
+                run_id: Some(cell_id.clone()),
+                run_root: args.output_root.join("cells"),
+                fixtures_root: args.fixtures_root.clone(),
+                db_root: None,
+                artifact_root: None,
+                purpose: args.purpose.clone(),
+                onet_text_zip: Some(args.onet_text_zip.clone()),
+                career_event_count: Some(career_event_count),
+                career_training_seed: Some(*seed),
+                career_ablation_training_seed: None,
+                hp_learning_rate: Some(hp.lr),
+                hp_latent_dim: Some(hp.latent_dim),
+                hp_batch_size: Some(hp.batch_size),
+                hyperparameter_origin: Some(format!(
+                    "hp_sweep:{}:{}:{}",
+                    args.output_root.display(),
+                    axis.as_str(),
+                    value.raw
+                )),
+                system_specs: args.system_specs.clone(),
+                json: true,
+            };
+            let outcome = research_smoke_command(cell_args)?;
+            if outcome.exit_code != 0 {
+                let failure = json!({
+                    "cell_id": cell_id,
+                    "seed": seed,
+                    "sweep_axis": axis.as_str(),
+                    "sweep_value": value.raw,
+                    "cell_outcome": outcome.value,
+                });
+                write_hp_sweep_failure_bundle(&args, &before_state, &cells, failure.clone())?;
+                let after_state = hp_sweep_after_state(&args.output_root)?;
+                return Ok(CommandOutcome {
+                    value: json!({
+                        "operation": operation,
+                        "status": "error",
+                        "source_of_truth": args.output_root,
+                        "before_state": before_state,
+                        "after_state": after_state,
+                        "failure_details": failure,
+                    }),
+                    exit_code: 1,
+                });
+            }
+            let cell_dir = args.output_root.join("cells").join(&cell_id);
+            let cell = read_hp_sweep_cell(&cell_dir, &cell_id, axis, value, *seed, hp)?;
+            cells.push(cell);
+        }
+    }
+
+    write_hp_sweep_tables(&args.output_root, &cells)?;
+    write_hp_sensitivity_svg(
+        &args.output_root.join("plots/hp_sensitivity.svg"),
+        axis,
+        &cells,
+    )?;
+    write_hp_collapse_f5_svg(
+        &args.output_root.join("plots/collapse_diagnostic_f5.svg"),
+        &cells,
+    )?;
+    write_hp_sweep_plot_manifest(&args.output_root)?;
+
+    let manifest = json!({
+        "schema_version": HP_SWEEP_SCHEMA_VERSION,
+        "status": "passed",
+        "created_at_unix_ms": now_unix_ms()?,
+        "operation": operation,
+        "base_config": args.base_config,
+        "base_hyperparameters": base_hp.manifest_value(),
+        "purpose": args.purpose,
+        "career_event_count": career_event_count,
+        "sweep_axis": axis.as_str(),
+        "sweep_values": values.iter().map(|value| value.raw.clone()).collect::<Vec<_>>(),
+        "career_training_seeds": seeds,
+        "onet_text_zip": args.onet_text_zip,
+        "cell_count": cells.len(),
+        "cells": cells,
+    });
+    write_json_file(&args.output_root.join("sweep_manifest.json"), &manifest)?;
+    let required_file_states =
+        hp_sweep_relative_file_states(&args.output_root, HP_SWEEP_OUTPUT_REQUIRED_FILES)?;
+    let fsv_report = json!({
+        "schema_version": HP_SWEEP_SCHEMA_VERSION,
+        "status": "passed",
+        "source_of_truth": {
+            "sweep_bundle": args.output_root,
+            "child_bundles": args.output_root.join("cells"),
+            "paper_tables": args.output_root.join("paper_tables"),
+            "plots": args.output_root.join("plots"),
+        },
+        "created_at_unix_ms": now_unix_ms()?,
+        "required_file_states": required_file_states,
+        "readback_checks": {
+            "cell_count": manifest["cell_count"],
+            "hp_sensitivity_rows": read_ci_csv_table(
+                &args.output_root.join("paper_tables/table_hp_sensitivity.csv"),
+                "table_hp_sensitivity",
+            )?.rows.len(),
+            "collapse_rows": read_ci_csv_table(
+                &args.output_root.join("paper_tables/table_collapse_diagnostics.csv"),
+                "table_collapse_diagnostics",
+            )?.rows.len(),
+        },
+    });
+    write_json_file(&args.output_root.join("sweep_fsv_report.json"), &fsv_report)?;
+
+    let manifest_readback = read_json_file(&args.output_root.join("sweep_manifest.json"))?;
+    let fsv_readback = read_json_file(&args.output_root.join("sweep_fsv_report.json"))?;
+    let sensitivity_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_hp_sensitivity.csv"),
+        "table_hp_sensitivity",
+    )?;
+    let collapse_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_collapse_diagnostics.csv"),
+        "table_collapse_diagnostics",
+    )?;
+    let after_state = hp_sweep_after_state(&args.output_root)?;
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": operation,
+            "status": "ok",
+            "source_of_truth": args.output_root,
+            "before_state": before_state,
+            "after_state": after_state,
+            "sweep_manifest": manifest_readback,
+            "sweep_fsv_report": fsv_readback,
+            "readback_row_counts": {
+                "table_hp_sensitivity": sensitivity_readback.rows.len(),
+                "table_collapse_diagnostics": collapse_readback.rows.len(),
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
+fn parse_hp_sweep_values(
+    axis: HpSweepAxis,
+    values: &[String],
+) -> DynamicJepaResult<Vec<HpSweepValue>> {
+    if values.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.sweep_values",
+            "--sweep-values must contain at least one value",
+            "pass a comma-delimited value list such as 1e-4,3e-4 or 16,32",
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    let mut parsed = Vec::new();
+    for raw in values {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "hp_sweep.sweep_values",
+                "empty sweep value was supplied",
+                "remove empty elements from --sweep-values",
+            ));
+        }
+        let normalized = match axis {
+            HpSweepAxis::LearningRate => {
+                let lr = trimmed.parse::<f64>().map_err(|err| {
+                    DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!("learning-rate value {trimmed:?} is not numeric: {err}"),
+                        "use finite positive floating point values for lr",
+                    )
+                })?;
+                if !lr.is_finite() || lr <= 0.0 {
+                    return Err(DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!("learning-rate value must be finite and positive, got {trimmed:?}"),
+                        "use finite positive floating point values for lr",
+                    ));
+                }
+                format!("{lr:.12e}")
+            }
+            HpSweepAxis::LatentDim | HpSweepAxis::BatchSize => {
+                let value = trimmed.parse::<u64>().map_err(|err| {
+                    DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!("integer sweep value {trimmed:?} is invalid: {err}"),
+                        "use positive integer values for latent_dim and batch_size",
+                    )
+                })?;
+                if value == 0 {
+                    return Err(DynamicJepaError::validation(
+                        "hp_sweep.sweep_values",
+                        format!("integer sweep value must be positive, got {trimmed:?}"),
+                        "use positive integer values for latent_dim and batch_size",
+                    ));
+                }
+                value.to_string()
+            }
+        };
+        if !seen.insert(normalized.clone()) {
+            return Err(DynamicJepaError::validation(
+                "hp_sweep.sweep_values",
+                format!("duplicate sweep value after normalization: {trimmed:?}"),
+                "deduplicate --sweep-values before running an immutable sweep",
+            ));
+        }
+        parsed.push(HpSweepValue {
+            raw: trimmed.to_string(),
+            normalized,
+            safe: safe_filename(trimmed),
+        });
+    }
+    Ok(parsed)
+}
+
+fn parse_hp_sweep_seeds(args: &HpSweepArgs) -> DynamicJepaResult<Vec<u64>> {
+    if args.career_training_seed.is_some() && !args.career_training_seeds.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.career_training_seed",
+            "provide either --career-training-seed or --career-training-seeds, not both",
+            "use one deterministic seed selection for the sweep bundle",
+        ));
+    }
+    let seeds = if args.career_training_seeds.is_empty() {
+        vec![args.career_training_seed.unwrap_or(42)]
+    } else {
+        args.career_training_seeds.clone()
+    };
+    let mut seen = BTreeSet::new();
+    for seed in &seeds {
+        if !seen.insert(*seed) {
+            return Err(DynamicJepaError::validation(
+                "hp_sweep.career_training_seeds",
+                format!("duplicate career training seed: {seed}"),
+                "deduplicate the seed list before running an immutable sweep",
+            ));
+        }
+    }
+    Ok(seeds)
+}
+
+fn read_hp_sweep_cell(
+    cell_dir: &Path,
+    cell_id: &str,
+    axis: HpSweepAxis,
+    value: &HpSweepValue,
+    seed: u64,
+    expected_hp: HpSweepHyperparameters,
+) -> DynamicJepaResult<Value> {
+    let manifest_path = cell_dir.join("run_manifest.json");
+    let fsv_path = cell_dir.join("fsv_report.json");
+    let manifest = read_json_file(&manifest_path)?;
+    let fsv = read_json_file(&fsv_path)?;
+    require_json_status(&manifest, "passed", "hp_sweep cell run_manifest.json")?;
+    require_json_status(&fsv, "passed", "hp_sweep cell fsv_report.json")?;
+    let run_id = required_json_string(&manifest, "run_id", "run_manifest.json")?;
+    let training_rows = read_json_file(&cell_dir.join("training_metrics.json"))?;
+    let career = training_rows
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["domain"] == "career_taxonomy"))
+        .cloned()
+        .ok_or_else(|| DynamicJepaError::VerificationFailed {
+            test_name: "hp_sweep.cell_training_metrics".to_string(),
+            message: format!(
+                "cell {cell_id} did not contain a career_taxonomy training_metrics row"
+            ),
+            evidence_path: cell_dir.display().to_string(),
+        })?;
+    verify_hp_sweep_cell_hyperparameters(cell_id, &career["hyperparameters"], expected_hp)?;
+    let career_db = path_value(&career["db_path"], "hp_sweep.cell.db_path")?;
+    let store = open_store(&career_db)?;
+    let db_counts = snapshot_dj_counts(store.dynamicjepa_db())?;
+    if db_counts.get(CF_DJ_MODEL_ARTIFACTS).copied().unwrap_or(0) == 0 {
+        return Err(DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_MODEL_ARTIFACTS.to_string(),
+            key: Vec::new(),
+        });
+    }
+    let child_required_files =
+        hp_sweep_relative_file_states(cell_dir, HP_SWEEP_CHILD_REQUIRED_FILES)?;
+    let collapse_table = read_ci_csv_table(
+        &cell_dir.join("paper_tables/table_collapse_diagnostics.csv"),
+        "cell_table_collapse_diagnostics",
+    )?;
+    let career_collapse_rows = collapse_table
+        .rows
+        .iter()
+        .filter(|row| row.get("domain").map(String::as_str) == Some("career_taxonomy"))
+        .count();
+    if career_collapse_rows == 0 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "hp_sweep.cell_collapse_table".to_string(),
+            message: format!("cell {cell_id} collapse table has no career_taxonomy row"),
+            evidence_path: cell_dir.display().to_string(),
+        });
+    }
+    let metrics = &career["metrics"];
+    Ok(json!({
+        "cell_id": cell_id,
+        "run_id": run_id,
+        "run_dir": cell_dir,
+        "seed": seed,
+        "sweep_axis": axis.as_str(),
+        "sweep_value": value.raw,
+        "hyperparameters": expected_hp.manifest_value(),
+        "status": manifest["status"],
+        "fsv_status": fsv["status"],
+        "career_db_path": career_db,
+        "career_db_counts": db_counts,
+        "career_verification_run_id": career["verification_run_id"],
+        "metrics": {
+            "val_latent_cosine": required_metric_f64(metrics, "val_latent_cosine")?,
+            "val_latent_mse": required_metric_f64(metrics, "val_latent_mse")?,
+            "test_latent_cosine": required_metric_f64(metrics, "test_latent_cosine")?,
+            "test_latent_mse": required_metric_f64(metrics, "test_latent_mse")?,
+            "collapse_val_var_min": metric_json_value(metrics, "collapse_val_var_min")?,
+            "collapse_val_var_p25": metric_json_value(metrics, "collapse_val_var_p25")?,
+            "collapse_val_var_median": metric_json_value(metrics, "collapse_val_var_median")?,
+            "collapse_val_var_p75": metric_json_value(metrics, "collapse_val_var_p75")?,
+            "collapse_val_var_max": metric_json_value(metrics, "collapse_val_var_max")?,
+            "collapse_covar_frob": metric_json_value(metrics, "collapse_covar_frob")?,
+            "collapse_eff_rank": metric_json_value(metrics, "collapse_eff_rank")?,
+            "collapse_eff_rank_ratio": metric_json_value(metrics, "collapse_eff_rank_ratio")?,
+            "collapse_alignment": metric_json_value(metrics, "collapse_alignment")?,
+            "collapse_uniformity": metric_json_value(metrics, "collapse_uniformity")?,
+            "collapse_sigreg_kl": metric_json_value(metrics, "collapse_sigreg_kl")?,
+            "collapse_sigreg_kl_clamped": metric_json_value(metrics, "collapse_sigreg_kl_clamped")?,
+            "collapse_latent_collapsed": metric_json_value(metrics, "collapse_latent_collapsed")?,
+        },
+        "run_manifest_sha256": hex_bytes(&file_sha256(&manifest_path)?),
+        "fsv_report_sha256": hex_bytes(&file_sha256(&fsv_path)?),
+        "required_file_states": child_required_files,
+        "collapse_table_career_rows": career_collapse_rows,
+    }))
+}
+
+fn verify_hp_sweep_cell_hyperparameters(
+    cell_id: &str,
+    hp: &Value,
+    expected: HpSweepHyperparameters,
+) -> DynamicJepaResult<()> {
+    let actual_lr = hp["lr"].as_f64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "hp_sweep.cell.hyperparameters.lr",
+            format!("cell {cell_id} is missing numeric lr hyperparameter"),
+            "inspect the child training artifact config.json",
+        )
+    })?;
+    let actual_latent = hp["latent_dim"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "hp_sweep.cell.hyperparameters.latent_dim",
+            format!("cell {cell_id} is missing numeric latent_dim hyperparameter"),
+            "inspect the child training artifact config.json",
+        )
+    })?;
+    let actual_batch = hp["batch_size"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "hp_sweep.cell.hyperparameters.batch_size",
+            format!("cell {cell_id} is missing numeric batch_size hyperparameter"),
+            "inspect the child training artifact config.json",
+        )
+    })?;
+    if (actual_lr - expected.lr).abs() > expected.lr.abs().max(1.0) * 1.0e-12
+        || actual_latent != expected.latent_dim
+        || actual_batch != expected.batch_size
+    {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "cell {cell_id} persisted HPs do not match requested HPs: actual=({actual_lr},{actual_latent},{actual_batch}) expected=({},{},{})",
+                expected.lr, expected.latent_dim, expected.batch_size
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn metric_json_value(metrics: &Value, key: &str) -> DynamicJepaResult<Value> {
+    let raw = metrics.get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("metrics.{key}"),
+            format!("missing training metric {key}"),
+            "inspect training artifact metrics.json; HP sweep tables require collapse diagnostics",
+        )
+    })?;
+    if raw.is_null() {
+        return Ok(json!("nan"));
+    }
+    let value = raw.as_f64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("metrics.{key}"),
+            format!("training metric {key} is not numeric or null: {raw}"),
+            "inspect training artifact metrics.json; HP sweep tables require numeric metrics",
+        )
+    })?;
+    Ok(if value.is_finite() {
+        json!(value)
+    } else {
+        json!("nan")
+    })
+}
+
+fn write_hp_sweep_tables(output_root: &Path, cells: &[Value]) -> DynamicJepaResult<()> {
+    let mut sensitivity = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,val_latent_cosine,val_latent_mse,test_latent_cosine,test_latent_mse,eff_rank_ratio,alignment,uniformity,latent_collapsed,career_db_path,run_dir\n".to_string();
+    let mut collapse = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,val_var_min,val_var_p25,val_var_median,val_var_p75,val_var_max,covar_frob,eff_rank,eff_rank_ratio,alignment,uniformity,sigreg_kl,sigreg_kl_clamped,latent_collapsed,val_latent_cosine,val_latent_mse\n".to_string();
+    for cell in cells {
+        sensitivity.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(cell["cell_id"].as_str().unwrap_or("")),
+            csv_escape(cell["run_id"].as_str().unwrap_or("")),
+            cell["seed"].as_u64().unwrap_or(0),
+            csv_escape(cell["sweep_axis"].as_str().unwrap_or("")),
+            csv_escape(cell["sweep_value"].as_str().unwrap_or("")),
+            hp_cell_f64(cell, "lr")?,
+            hp_cell_u64(cell, "latent_dim")?,
+            hp_cell_u64(cell, "batch_size")?,
+            metric_cell_from_cell(cell, "val_latent_cosine")?,
+            metric_cell_from_cell(cell, "val_latent_mse")?,
+            metric_cell_from_cell(cell, "test_latent_cosine")?,
+            metric_cell_from_cell(cell, "test_latent_mse")?,
+            metric_cell_from_cell(cell, "collapse_eff_rank_ratio")?,
+            metric_cell_from_cell(cell, "collapse_alignment")?,
+            metric_cell_from_cell(cell, "collapse_uniformity")?,
+            metric_cell_from_cell(cell, "collapse_latent_collapsed")?,
+            csv_escape(cell["career_db_path"].as_str().unwrap_or("")),
+            csv_escape(cell["run_dir"].as_str().unwrap_or("")),
+        ));
+        collapse.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(cell["cell_id"].as_str().unwrap_or("")),
+            csv_escape(cell["run_id"].as_str().unwrap_or("")),
+            cell["seed"].as_u64().unwrap_or(0),
+            csv_escape(cell["sweep_axis"].as_str().unwrap_or("")),
+            csv_escape(cell["sweep_value"].as_str().unwrap_or("")),
+            hp_cell_f64(cell, "lr")?,
+            hp_cell_u64(cell, "latent_dim")?,
+            hp_cell_u64(cell, "batch_size")?,
+            metric_cell_from_cell(cell, "collapse_val_var_min")?,
+            metric_cell_from_cell(cell, "collapse_val_var_p25")?,
+            metric_cell_from_cell(cell, "collapse_val_var_median")?,
+            metric_cell_from_cell(cell, "collapse_val_var_p75")?,
+            metric_cell_from_cell(cell, "collapse_val_var_max")?,
+            metric_cell_from_cell(cell, "collapse_covar_frob")?,
+            metric_cell_from_cell(cell, "collapse_eff_rank")?,
+            metric_cell_from_cell(cell, "collapse_eff_rank_ratio")?,
+            metric_cell_from_cell(cell, "collapse_alignment")?,
+            metric_cell_from_cell(cell, "collapse_uniformity")?,
+            metric_cell_from_cell(cell, "collapse_sigreg_kl")?,
+            metric_cell_from_cell(cell, "collapse_sigreg_kl_clamped")?,
+            metric_cell_from_cell(cell, "collapse_latent_collapsed")?,
+            metric_cell_from_cell(cell, "val_latent_cosine")?,
+            metric_cell_from_cell(cell, "val_latent_mse")?,
+        ));
+    }
+    write_text_file(
+        &output_root.join("paper_tables/table_hp_sensitivity.csv"),
+        &sensitivity,
+    )?;
+    write_text_file(
+        &output_root.join("paper_tables/table_collapse_diagnostics.csv"),
+        &collapse,
+    )
+}
+
+fn hp_cell_f64(cell: &Value, key: &str) -> DynamicJepaResult<String> {
+    required_json_f64_cell(&cell["hyperparameters"], key)
+}
+
+fn hp_cell_u64(cell: &Value, key: &str) -> DynamicJepaResult<String> {
+    required_json_u64_cell(&cell["hyperparameters"], key)
+}
+
+fn metric_cell_from_cell(cell: &Value, key: &str) -> DynamicJepaResult<String> {
+    let raw = cell["metrics"].get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("hp_sweep.cell.metrics.{key}"),
+            format!("missing cell metric {key}"),
+            "inspect the child training_metrics.json and sweep_manifest.json",
+        )
+    })?;
+    value_to_f64_cell(raw, &format!("hp_sweep.cell.metrics.{key}"))
+}
+
+fn write_hp_sensitivity_svg(
+    path: &Path,
+    axis: HpSweepAxis,
+    cells: &[Value],
+) -> DynamicJepaResult<()> {
+    let rows = cells
+        .iter()
+        .map(|cell| {
+            Ok((
+                format!(
+                    "{} s{}",
+                    cell["sweep_value"].as_str().unwrap_or(""),
+                    cell["seed"].as_u64().unwrap_or(0)
+                ),
+                cell["metrics"]["val_latent_cosine"]
+                    .as_f64()
+                    .ok_or_else(|| {
+                        DynamicJepaError::schema(
+                            "hp_sweep.plot.val_latent_cosine",
+                            "cell metric val_latent_cosine is missing or not numeric",
+                            "inspect sweep_manifest.json before plotting",
+                        )
+                    })?,
+            ))
+        })
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    write_metric_bar_svg(
+        path,
+        &format!("{} sensitivity: validation latent cosine", axis.as_str()),
+        rows,
+    )
+}
+
+fn write_hp_collapse_f5_svg(path: &Path, cells: &[Value]) -> DynamicJepaResult<()> {
+    if cells.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.f5_plot",
+            "cannot render F5 collapse plot with zero cells",
+            "run at least one HP sweep cell before rendering plots",
+        ));
+    }
+    let width = 960.0;
+    let height = 640.0;
+    let mut marks = String::new();
+    let panels = [
+        ("collapse_eff_rank_ratio", 70.0, 70.0),
+        ("collapse_covar_frob", 370.0, 70.0),
+        ("val_latent_cosine", 670.0, 70.0),
+        ("collapse_alignment", 70.0, 360.0),
+        ("collapse_uniformity", 370.0, 360.0),
+        ("collapse_val_var_min", 670.0, 360.0),
+    ];
+    for (metric, x0, y0) in panels {
+        let values = cells
+            .iter()
+            .map(|cell| cell["metrics"][metric].as_f64().unwrap_or(0.0))
+            .collect::<Vec<_>>();
+        let max_value = values.iter().copied().fold(0.0f64, f64::max).max(1.0e-9);
+        marks.push_str(&format!(
+            r##"<text x="{x0:.0}" y="{:.0}" font-size="13" font-family="Arial, sans-serif" font-weight="700" fill="#111827">{}</text>
+<rect x="{x0:.0}" y="{:.0}" width="230" height="190" fill="#ffffff" stroke="#d1d5db"/>
+"##,
+            y0 - 18.0,
+            xml_escape(metric),
+            y0,
+        ));
+        let slot = 230.0 / cells.len() as f64;
+        for (idx, value) in values.iter().enumerate() {
+            let bar_height = 160.0 * (*value / max_value);
+            let x = x0 + idx as f64 * slot + slot * 0.2;
+            let y = y0 + 178.0 - bar_height;
+            marks.push_str(&format!(
+                r##"<rect x="{x:.2}" y="{y:.2}" width="{:.2}" height="{bar_height:.2}" fill="#0f766e"/>
+"##,
+                (slot * 0.6).max(4.0),
+            ));
+        }
+    }
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" role="img" aria-label="F5 collapse diagnostics">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="34" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="#111827">F5 collapse diagnostics across HP sweep cells</text>
+{marks}</svg>
+"##
+    );
+    write_text_file(path, &svg)
+}
+
+fn write_hp_sweep_plot_manifest(output_root: &Path) -> DynamicJepaResult<()> {
+    write_json_file(
+        &output_root.join("plots/plot_manifest.json"),
+        &json!({
+            "status": "rendered",
+            "plots": [
+                {
+                    "id": "hp_sensitivity",
+                    "source_table": output_root.join("paper_tables/table_hp_sensitivity.csv"),
+                    "output": output_root.join("plots/hp_sensitivity.svg"),
+                },
+                {
+                    "id": "collapse_diagnostic_f5",
+                    "source_table": output_root.join("paper_tables/table_collapse_diagnostics.csv"),
+                    "output": output_root.join("plots/collapse_diagnostic_f5.svg"),
+                }
+            ]
+        }),
+    )
+}
+
+fn write_hp_sweep_failure_bundle(
+    args: &HpSweepArgs,
+    before_state: &Value,
+    completed_cells: &[Value],
+    failure: Value,
+) -> DynamicJepaResult<()> {
+    write_json_file(
+        &args.output_root.join("sweep_manifest.json"),
+        &json!({
+            "schema_version": HP_SWEEP_SCHEMA_VERSION,
+            "status": "failed",
+            "created_at_unix_ms": now_unix_ms()?,
+            "operation": "dynamicjepa_hp_sweep",
+            "source_of_truth": args.output_root,
+            "before_state": before_state,
+            "completed_cells": completed_cells,
+            "failure_details": failure,
+        }),
+    )?;
+    write_json_file(
+        &args.output_root.join("sweep_fsv_report.json"),
+        &json!({
+            "schema_version": HP_SWEEP_SCHEMA_VERSION,
+            "status": "failed",
+            "source_of_truth": args.output_root,
+            "created_at_unix_ms": now_unix_ms()?,
+            "completed_cell_count": completed_cells.len(),
+            "failure_details": failure,
+        }),
+    )
+}
+
+fn hp_sweep_after_state(output_root: &Path) -> DynamicJepaResult<Value> {
+    Ok(json!({
+        "output_root": ci_path_state(output_root)?,
+        "sweep_manifest": ci_path_state(&output_root.join("sweep_manifest.json"))?,
+        "sweep_fsv_report": ci_path_state(&output_root.join("sweep_fsv_report.json"))?,
+        "hp_sensitivity_table": ci_path_state(&output_root.join("paper_tables/table_hp_sensitivity.csv"))?,
+        "collapse_table": ci_path_state(&output_root.join("paper_tables/table_collapse_diagnostics.csv"))?,
+        "plots": [
+            ci_path_state(&output_root.join("plots/hp_sensitivity.svg"))?,
+            ci_path_state(&output_root.join("plots/collapse_diagnostic_f5.svg"))?,
+            ci_path_state(&output_root.join("plots/plot_manifest.json"))?,
+        ],
+    }))
+}
+
+fn hp_sweep_relative_file_states(root: &Path, rel_paths: &[&str]) -> DynamicJepaResult<Vec<Value>> {
+    let mut states = Vec::new();
+    for rel_path in rel_paths {
+        let path = root.join(rel_path);
+        let metadata = fs::metadata(&path).map_err(|err| DynamicJepaError::Storage {
+            operation: "hp_sweep.required_file".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("missing HP sweep file {}: {err}", path.display()),
+            remediation:
+                "fix the HP sweep writer; all declared manifests, tables, and plots must exist"
+                    .to_string(),
+        })?;
+        if !metadata.is_file() {
+            return Err(DynamicJepaError::validation(
+                "hp_sweep.required_file",
+                format!("HP sweep output path is not a file: {}", path.display()),
+                "fix the HP sweep writer so required outputs are regular files",
+            ));
+        }
+        states.push(json!({
+            "path": rel_path,
+            "sha256": hex_bytes(&file_sha256(&path)?),
+            "size_bytes": metadata.len(),
+        }));
+    }
+    Ok(states)
 }
 
 const MULTISEED_AGGREGATE_SCHEMA_VERSION: u64 = 1;
@@ -5807,6 +6751,8 @@ struct ResearchSmokeContext {
     career_event_count: u64,
     career_training_seed: Option<u64>,
     career_ablation_training_seed: Option<u64>,
+    hp_overrides: ResearchHyperparameterOverrides,
+    hyperparameter_origin: Option<String>,
     system_specs: PathBuf,
     command_log_path: PathBuf,
     command_output_dir: PathBuf,
@@ -5835,7 +6781,11 @@ struct ResearchCommandCapture {
 }
 
 impl ResearchSmokeContext {
-    fn new(run_id: String, args: ResearchSmokeArgs) -> DynamicJepaResult<Self> {
+    fn new(
+        run_id: String,
+        args: ResearchSmokeArgs,
+        hp_overrides: ResearchHyperparameterOverrides,
+    ) -> DynamicJepaResult<Self> {
         let run_root = args.run_root;
         fs::create_dir_all(&run_root).map_err(|err| DynamicJepaError::Storage {
             operation: "research_smoke.create_run_root".to_string(),
@@ -5915,6 +6865,8 @@ impl ResearchSmokeContext {
             career_event_count,
             career_training_seed: args.career_training_seed,
             career_ablation_training_seed: args.career_ablation_training_seed,
+            hp_overrides,
+            hyperparameter_origin: args.hyperparameter_origin,
             system_specs: args.system_specs,
             command_log_path: PathBuf::new(),
             command_output_dir,
@@ -5984,6 +6936,8 @@ impl ResearchSmokeContext {
                 "career_event_count": self.career_event_count,
                 "career_training_seed": self.career_training_seed,
                 "career_ablation_training_seed": self.career_ablation_training_seed,
+                "hyperparameters": self.hp_overrides.manifest_value(),
+                "hyperparameter_origin": self.hyperparameter_origin,
                 "system_specs": self.system_specs,
                 "status": status,
                 "failure_details": failure_details,
@@ -6377,6 +7331,82 @@ fn research_career_event_count(
     Ok(count)
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+struct ResearchHyperparameterOverrides {
+    learning_rate: Option<f64>,
+    latent_dim: Option<u64>,
+    batch_size: Option<u64>,
+}
+
+impl ResearchHyperparameterOverrides {
+    fn from_research_args(args: &ResearchSmokeArgs) -> DynamicJepaResult<Self> {
+        let overrides = Self {
+            learning_rate: args.hp_learning_rate,
+            latent_dim: args.hp_latent_dim,
+            batch_size: args.hp_batch_size,
+        };
+        validate_research_hyperparameter_overrides(&overrides, args.onet_text_zip.is_some())?;
+        Ok(overrides)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.learning_rate.is_none() && self.latent_dim.is_none() && self.batch_size.is_none()
+    }
+
+    fn manifest_value(&self) -> Value {
+        json!({
+            "learning_rate": self.learning_rate,
+            "latent_dim": self.latent_dim,
+            "batch_size": self.batch_size,
+            "overridden": !self.is_empty(),
+        })
+    }
+}
+
+fn validate_research_hyperparameter_overrides(
+    overrides: &ResearchHyperparameterOverrides,
+    uses_onet: bool,
+) -> DynamicJepaResult<()> {
+    if overrides.is_empty() {
+        return Ok(());
+    }
+    if !uses_onet {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.hyperparameters",
+            "hyperparameter overrides were supplied without --onet-text-zip",
+            "supply --onet-text-zip so generated O*NET training configs receive the overrides; overrides are never silently ignored",
+        ));
+    }
+    if let Some(lr) = overrides.learning_rate {
+        if !lr.is_finite() || lr <= 0.0 {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.hp_learning_rate",
+                format!("learning rate must be finite and positive, got {lr}"),
+                "use a positive finite learning-rate value",
+            ));
+        }
+    }
+    if let Some(latent_dim) = overrides.latent_dim {
+        if latent_dim == 0 {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.hp_latent_dim",
+                "latent dimension must be positive",
+                "use a positive latent dimension compatible with encoder and predictor heads",
+            ));
+        }
+    }
+    if let Some(batch_size) = overrides.batch_size {
+        if batch_size == 0 {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.hp_batch_size",
+                "batch size must be positive",
+                "use a positive batch size",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_research_career_training_seed(
     career_seed: Option<u64>,
     ablation_seed: Option<u64>,
@@ -6628,6 +7658,7 @@ fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJ
         &fixtures.join("verification/career_taxonomy_train_config.json"),
         &ctx.purpose,
         ctx.career_training_seed,
+        &ctx.hp_overrides,
     )?;
 
     let corpus_path = fixtures.join("verification/career_taxonomy_smoke.jsonl");
@@ -7568,6 +8599,7 @@ fn write_onet_career_train_config(
     dst: &Path,
     purpose: &str,
     career_training_seed: Option<u64>,
+    hp_overrides: &ResearchHyperparameterOverrides,
 ) -> DynamicJepaResult<()> {
     let mut config = read_json_file(src)?;
     let max_seconds = match purpose {
@@ -7584,6 +8616,11 @@ fn write_onet_career_train_config(
     if let Some(seed) = career_training_seed {
         config["seed"] = json!(seed);
     }
+    apply_research_hp_overrides(
+        &mut config,
+        hp_overrides,
+        "research_smoke.onet.train_config",
+    )?;
     let parsed: TrainConfig = serde_json::from_value(config.clone()).map_err(|err| {
         DynamicJepaError::validation(
             "research_smoke.onet.train_config",
@@ -7593,6 +8630,59 @@ fn write_onet_career_train_config(
     })?;
     parsed.validate()?;
     write_json_file(dst, &config)
+}
+
+fn apply_research_hp_overrides(
+    config: &mut Value,
+    overrides: &ResearchHyperparameterOverrides,
+    field_prefix: &str,
+) -> DynamicJepaResult<()> {
+    if overrides.is_empty() {
+        return Ok(());
+    }
+    if let Some(lr) = overrides.learning_rate {
+        require_json_object_path(config, &["optim"], field_prefix)?;
+        config["optim"]["lr"] = json!(lr);
+    }
+    if let Some(latent_dim) = overrides.latent_dim {
+        require_json_object_path(config, &["model", "encoder"], field_prefix)?;
+        require_json_object_path(config, &["model", "predictor"], field_prefix)?;
+        config["model"]["encoder"]["out_dim"] = json!(latent_dim);
+        config["model"]["predictor"]["out_dim"] = json!(latent_dim);
+    }
+    if let Some(batch_size) = overrides.batch_size {
+        require_json_object_path(config, &["schedule"], field_prefix)?;
+        config["schedule"]["batch_size"] = json!(batch_size);
+    }
+    Ok(())
+}
+
+fn require_json_object_path(
+    value: &Value,
+    path: &[&str],
+    field_prefix: &str,
+) -> DynamicJepaResult<()> {
+    let mut cursor = value;
+    let mut field = field_prefix.to_string();
+    for segment in path {
+        field.push('.');
+        field.push_str(segment);
+        cursor = cursor.get(*segment).ok_or_else(|| {
+            DynamicJepaError::schema(
+                field.clone(),
+                format!("generated train config is missing object path {field}"),
+                "restore the checked-in DynamicJEPA train config schema before applying HP overrides",
+            )
+        })?;
+        if !cursor.is_object() {
+            return Err(DynamicJepaError::schema(
+                field,
+                "generated train config path exists but is not a JSON object",
+                "restore the checked-in DynamicJEPA train config schema before applying HP overrides",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn write_environment_bundle(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
@@ -7964,6 +9054,13 @@ fn collect_domain_evidence(
     let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
     let artifact_hashes =
         read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
+    let train_config_path = path_value(
+        &training_summary["summary"]["artifact_root"],
+        "training_summary.summary.artifact_root",
+    )?
+    .join("config.json");
+    let train_config = read_json_file(&train_config_path)?;
+    let hyperparameters = training_hyperparameters_from_config(&train_config)?;
     let summary_json = read_json_file(&evidence_dir.join("summary.json"))?;
     let verification_record = read_json_file(&evidence_dir.join("verification_run_record.json"))?;
     write_json_file(
@@ -7985,6 +9082,8 @@ fn collect_domain_evidence(
         "split_counts": verifier_output["summary"]["split_counts"],
         "metrics": training_summary["summary"]["metrics"],
         "parameter_count": training_summary["summary"]["metrics"]["parameter_count_trainable"],
+        "train_config_path": train_config_path,
+        "hyperparameters": hyperparameters,
         "created_ids": training_summary["created_ids"],
     }));
     ctx.artifact_rows.push(json!({
@@ -8331,6 +9430,7 @@ fn materialize_career_ablation_fixtures(
         &fixtures.join("verification/career_taxonomy_train_config.json"),
         spec,
         ablation_training_seed,
+        &ctx.hp_overrides,
     )?;
     copy_fixture_file(
         &source_fixtures_root.join("verification/career_taxonomy_data_manifest.json"),
@@ -8437,6 +9537,7 @@ fn write_career_ablation_train_config(
     dst: &Path,
     spec: CareerAblationSpec,
     ablation_training_seed: Option<u64>,
+    hp_overrides: &ResearchHyperparameterOverrides,
 ) -> DynamicJepaResult<()> {
     let mut config = read_json_file(src)?;
     if config.get("loss").and_then(Value::as_object).is_none() {
@@ -8471,6 +9572,7 @@ fn write_career_ablation_train_config(
         config["loss"]["vicreg_variance_weight"] = json!(0.0);
         config["loss"]["vicreg_covariance_weight"] = json!(0.0);
     }
+    apply_research_hp_overrides(&mut config, hp_overrides, "research_smoke.ablation_config")?;
     let parsed: TrainConfig = serde_json::from_value(config.clone()).map_err(|err| {
         DynamicJepaError::validation(
             "research_smoke.ablation_config",
@@ -8700,6 +9802,7 @@ fn push_career_ablation_row(
         read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
     let domain_pack = parse_domain_pack_file(input.domain_pack_path)?;
     let train_config = read_json_file(input.train_config_path)?;
+    let hyperparameters = training_hyperparameters_from_config(&train_config)?;
     if input.record_artifact_row {
         ctx.artifact_rows.push(json!({
             "domain": input.spec.domain_label,
@@ -8728,6 +9831,7 @@ fn push_career_ablation_row(
             "stopping_target": train_config["stopping"]["target"],
             "max_seconds": train_config["stopping"]["max_seconds"],
         },
+        "hyperparameters": hyperparameters,
         "parameter_count": metrics["parameter_count_trainable"],
         "metrics": metrics,
         "artifact_id": training_summary["created_ids"]["artifact_id"],
@@ -8744,6 +9848,57 @@ fn push_career_ablation_row(
         },
     }));
     Ok(())
+}
+
+fn training_hyperparameters_from_config(config: &Value) -> DynamicJepaResult<Value> {
+    let lr = config["optim"]["lr"].as_f64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.optim.lr",
+            "training config is missing numeric optim.lr",
+            "inspect the generated or artifact config.json; HP tables require the exact persisted training hyperparameters",
+        )
+    })?;
+    let latent_dim = config["model"]["encoder"]["out_dim"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.model.encoder.out_dim",
+            "training config is missing numeric model.encoder.out_dim",
+            "inspect the generated or artifact config.json; HP tables require the exact persisted training hyperparameters",
+        )
+    })?;
+    let predictor_dim = config["model"]["predictor"]["out_dim"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.model.predictor.out_dim",
+            "training config is missing numeric model.predictor.out_dim",
+            "inspect the generated or artifact config.json; HP tables require matching encoder/predictor dimensions",
+        )
+    })?;
+    if predictor_dim != latent_dim {
+        return Err(DynamicJepaError::schema(
+            "train_config.model.predictor.out_dim",
+            format!("predictor out_dim {predictor_dim} does not match encoder out_dim {latent_dim}"),
+            "repair the generated train config mutation; HP sweeps require matched latent dimensions",
+        ));
+    }
+    let batch_size = config["schedule"]["batch_size"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.schedule.batch_size",
+            "training config is missing numeric schedule.batch_size",
+            "inspect the generated or artifact config.json; HP tables require the exact persisted training hyperparameters",
+        )
+    })?;
+    let seed = config["seed"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.seed",
+            "training config is missing numeric seed",
+            "restore train config seed recording before creating research bundles",
+        )
+    })?;
+    Ok(json!({
+        "lr": lr,
+        "latent_dim": latent_dim,
+        "batch_size": batch_size,
+        "seed": seed,
+    }))
 }
 
 fn path_value(value: &Value, field: &str) -> DynamicJepaResult<PathBuf> {
@@ -9283,6 +10438,8 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     }
     write_text_file(&ctx.paper_tables_dir.join("table_ablation.csv"), &ablation)?;
 
+    write_collapse_diagnostics_table(ctx)?;
+
     let mut coverage = "domain,verification_run_id,events,panels,trajectories,dataset_shards,training_runs,artifacts,predictions,plan_traces,guard_decisions,surprises,verification_status\n".to_string();
     for (domain, report) in &ctx.domain_reports {
         coverage.push_str(&format!(
@@ -9416,6 +10573,158 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
         &sources,
     )?;
     Ok(())
+}
+
+fn write_collapse_diagnostics_table(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let mut csv = "run_id,row_kind,domain,ablation_id,verification_run_id,seed,lr,latent_dim,batch_size,val_var_min,val_var_p25,val_var_median,val_var_p75,val_var_max,covar_frob,eff_rank,eff_rank_ratio,alignment,uniformity,sigreg_kl,sigreg_kl_clamped,latent_collapsed,val_latent_cosine,val_latent_mse\n".to_string();
+    let mut row_count = 0usize;
+    for row in &ctx.training_rows {
+        append_collapse_row(&mut csv, &ctx.run_id, "domain", row, "")?;
+        row_count += 1;
+    }
+    for row in &ctx.ablation_rows {
+        let ablation_id = row["ablation_id"].as_str().unwrap_or("");
+        append_collapse_row(&mut csv, &ctx.run_id, "ablation", row, ablation_id)?;
+        row_count += 1;
+    }
+    if row_count == 0 {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.collapse_table",
+            "cannot write collapse diagnostics table with zero rows",
+            "ensure training and ablation evidence is collected before writing paper tables",
+        ));
+    }
+    write_text_file(
+        &ctx.paper_tables_dir.join("table_collapse_diagnostics.csv"),
+        &csv,
+    )
+}
+
+fn append_collapse_row(
+    csv: &mut String,
+    run_id: &str,
+    row_kind: &str,
+    row: &Value,
+    ablation_id: &str,
+) -> DynamicJepaResult<()> {
+    let metrics = &row["metrics"];
+    let hp = &row["hyperparameters"];
+    let computed = required_metric_f64(metrics, "collapse_diagnostics_computed")?;
+    if computed != 1.0 {
+        return Err(DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_collapse_diagnostics".to_string(),
+            message: format!(
+                "collapse diagnostics were not computed for row_kind={row_kind} domain={} ablation_id={ablation_id}",
+                row["domain"].as_str().unwrap_or("")
+            ),
+            evidence_path: row["evidence_dir"]
+                .as_str()
+                .unwrap_or("research_smoke_table")
+                .to_string(),
+        });
+    }
+    csv.push_str(&format!(
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+        csv_escape(run_id),
+        csv_escape(row_kind),
+        csv_escape(row["domain"].as_str().unwrap_or("")),
+        csv_escape(ablation_id),
+        csv_escape(row["verification_run_id"].as_str().unwrap_or("")),
+        required_json_u64_cell(hp, "seed")?,
+        required_json_f64_cell(hp, "lr")?,
+        required_json_u64_cell(hp, "latent_dim")?,
+        required_json_u64_cell(hp, "batch_size")?,
+        required_metric_cell(metrics, "collapse_val_var_min")?,
+        required_metric_cell(metrics, "collapse_val_var_p25")?,
+        required_metric_cell(metrics, "collapse_val_var_median")?,
+        required_metric_cell(metrics, "collapse_val_var_p75")?,
+        required_metric_cell(metrics, "collapse_val_var_max")?,
+        required_metric_cell(metrics, "collapse_covar_frob")?,
+        required_metric_cell(metrics, "collapse_eff_rank")?,
+        required_metric_cell(metrics, "collapse_eff_rank_ratio")?,
+        required_metric_cell(metrics, "collapse_alignment")?,
+        required_metric_cell(metrics, "collapse_uniformity")?,
+        required_metric_cell(metrics, "collapse_sigreg_kl")?,
+        required_metric_cell(metrics, "collapse_sigreg_kl_clamped")?,
+        required_metric_cell(metrics, "collapse_latent_collapsed")?,
+        required_metric_cell(metrics, "val_latent_cosine")?,
+        required_metric_cell(metrics, "val_latent_mse")?,
+    ));
+    Ok(())
+}
+
+fn required_json_f64_cell(value: &Value, key: &str) -> DynamicJepaResult<String> {
+    let raw = value.get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("hyperparameters.{key}"),
+            format!("missing hyperparameter {key}"),
+            "inspect generated config.json; paper tables require explicit HP provenance",
+        )
+    })?;
+    value_to_f64_cell(raw, &format!("hyperparameters.{key}"))
+}
+
+fn required_json_u64_cell(value: &Value, key: &str) -> DynamicJepaResult<String> {
+    let raw = value.get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("hyperparameters.{key}"),
+            format!("missing hyperparameter {key}"),
+            "inspect generated config.json; paper tables require explicit HP provenance",
+        )
+    })?;
+    raw.as_u64().map(|item| item.to_string()).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("hyperparameters.{key}"),
+            format!("hyperparameter {key} is not an unsigned integer: {raw}"),
+            "inspect generated config.json; paper tables require typed HP provenance",
+        )
+    })
+}
+
+fn required_metric_f64(metrics: &Value, key: &str) -> DynamicJepaResult<f64> {
+    let raw = metrics.get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("metrics.{key}"),
+            format!("missing training metric {key}"),
+            "inspect training artifact metrics.json; collapse diagnostics must be emitted by training",
+        )
+    })?;
+    raw.as_f64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("metrics.{key}"),
+            format!("training metric {key} is not numeric: {raw}"),
+            "inspect training artifact metrics.json; finite collapse flags must be serialized as numbers",
+        )
+    })
+}
+
+fn required_metric_cell(metrics: &Value, key: &str) -> DynamicJepaResult<String> {
+    let raw = metrics.get(key).ok_or_else(|| {
+        DynamicJepaError::schema(
+            format!("metrics.{key}"),
+            format!("missing training metric {key}"),
+            "inspect training artifact metrics.json; collapse diagnostics must be emitted by training",
+        )
+    })?;
+    value_to_f64_cell(raw, &format!("metrics.{key}"))
+}
+
+fn value_to_f64_cell(raw: &Value, field: &str) -> DynamicJepaResult<String> {
+    if raw.is_null() {
+        return Ok("nan".to_string());
+    }
+    let value = raw.as_f64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            field,
+            format!("{field} is not numeric or null: {raw}"),
+            "inspect the source JSON; paper tables require numeric metrics or null for NaN diagnostics",
+        )
+    })?;
+    Ok(if value.is_finite() {
+        value.to_string()
+    } else {
+        "nan".to_string()
+    })
 }
 
 fn write_plot_manifest(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
