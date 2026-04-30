@@ -1501,10 +1501,63 @@ fn predicted_state_after_action(
         y = y.clamp(min_y, max_y);
         return Ok(BTreeMap::from([("x".to_string(), x), ("y".to_string(), y)]));
     }
+    if state.fields.contains_key("job_zone") && action.fields.contains_key("move") {
+        let job_zone = numeric_field_value(state.fields.get("job_zone").expect("checked"))
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "bounds_check.job_zone",
+                    "state.job_zone is not numeric",
+                    "career_taxonomy bounds guard requires numeric job_zone state",
+                )
+            })?;
+        let mut experience_years = state
+            .fields
+            .get("experience_years")
+            .and_then(numeric_field_value);
+        let movement = match action.fields.get("move").expect("checked") {
+            FieldValue::Categorical { variant } | FieldValue::String(variant) => variant.as_str(),
+            other => {
+                return Err(DynamicJepaError::validation(
+                    "bounds_check.move",
+                    format!(
+                        "career action.move must be categorical/string, got {}",
+                        field_value_kind(other)
+                    ),
+                    "career_taxonomy bounds guard requires a declared career move action",
+                ));
+            }
+        };
+        let mut next_job_zone = job_zone;
+        match movement {
+            "skill_gain_adjacent" => {}
+            "skill_gain_high_demand" => next_job_zone += 0.25,
+            "role_move_near" => {}
+            "experience_gain" => {
+                next_job_zone += 0.10;
+                experience_years = experience_years.map(|value| value + 0.5);
+            }
+            "noop" => {}
+            other => {
+                return Err(DynamicJepaError::validation(
+                    "bounds_check.move",
+                    format!("unsupported career move {other:?}"),
+                    "generate career moves from the registered domain pack",
+                ));
+            }
+        }
+        let max_zone = state_field(domain, "job_zone")
+            .and_then(|field| field.max)
+            .unwrap_or(next_job_zone);
+        let mut predicted = BTreeMap::from([("job_zone".to_string(), next_job_zone.min(max_zone))]);
+        if let Some(experience_years) = experience_years {
+            predicted.insert("experience_years".to_string(), experience_years);
+        }
+        return Ok(predicted);
+    }
     Err(DynamicJepaError::validation(
         "bounds_check",
         "cannot infer predicted state from the registered state/action schema",
-        "Phase 8 bounds_check supports counter/delta and x/y/move domain-pack schemas",
+        "bounds_check supports counter/delta, grid x/y/move, and career job_zone/move schemas",
     ))
 }
 
@@ -1527,10 +1580,13 @@ fn utility_score(
     if predicted_state.contains_key("x") && predicted_state.contains_key("y") {
         return Ok(-uncertainty);
     }
+    if let Some(job_zone) = predicted_state.get("job_zone") {
+        return Ok((*job_zone as f32) - uncertainty);
+    }
     Err(DynamicJepaError::validation(
         "plan.utility",
         format!("no v1 utility rule matched domain {}", domain.id),
-        "Phase 8 demo supports counter utility and gridworld lowest-uncertainty utility",
+        "v1 utility supports counter score, gridworld lowest uncertainty, and career job_zone score",
     ))
 }
 

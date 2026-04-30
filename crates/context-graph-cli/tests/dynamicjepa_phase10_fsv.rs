@@ -82,7 +82,24 @@ fn phase10_verify_commands_persist_real_verification_rows() {
     assert_eq!(gridworld["after_counts"]["dj_verification_runs"], 1);
     assert_eq!(gridworld["after_counts"]["dj_surprise_events"], 0);
 
-    for (domain, value) in [("counter_world", counter), ("gridworld_5x5", gridworld)] {
+    let career = run_verify_command(
+        &root,
+        &run_root,
+        "verify-career-taxonomy",
+        "career_taxonomy",
+    );
+    assert_eq!(career["status"], "ok");
+    assert_eq!(career["summary"]["split_counts"]["train"], 9);
+    assert_eq!(career["after_counts"]["dj_verification_runs"], 1);
+    assert_eq!(career["after_counts"]["dj_model_artifacts"], 1);
+    assert_eq!(career["after_counts"]["dj_plan_traces"], 1);
+    assert_eq!(career["after_counts"]["dj_guard_decisions"], 5);
+
+    for (domain, value, expected_edges) in [
+        ("counter_world", counter, 3usize),
+        ("gridworld_5x5", gridworld, 3usize),
+        ("career_taxonomy", career, 5usize),
+    ] {
         let db_path = run_root.join(format!("{domain}_rocksdb"));
         let counts = run_ok(&[
             "dynamicjepa",
@@ -107,11 +124,13 @@ fn phase10_verify_commands_persist_real_verification_rows() {
             evidence_dir.join("verification_run_record.json").exists(),
             "missing verification evidence for {domain}"
         );
-        assert!(
-            evidence_dir.join("edge_00.json").exists()
-                && evidence_dir.join("edge_01.json").exists()
-                && evidence_dir.join("edge_02.json").exists(),
-            "missing edge evidence files for {domain}"
-        );
+        for edge_idx in 0..expected_edges {
+            assert!(
+                evidence_dir
+                    .join(format!("edge_{edge_idx:02}.json"))
+                    .exists(),
+                "missing edge {edge_idx} evidence file for {domain}"
+            );
+        }
     }
 }

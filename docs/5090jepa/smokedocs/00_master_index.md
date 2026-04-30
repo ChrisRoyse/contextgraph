@@ -49,6 +49,7 @@ data and controlled career-transition events.
 | `10_arxiv_paper_outline.md` | Proposed arXiv paper structure |
 | `11_risks_open_questions_and_decisions.md` | Risks, unresolved items, locked choices |
 | `12_references.md` | Local and external references |
+| `13_current_implementation_and_benchmark_status.md` | Implemented smoke surface and latest FSV benchmark evidence |
 
 ## Source Of Truth For The Smoke Program
 
@@ -68,4 +69,3 @@ Secondary:
 
 Passing a smoke gate requires both command success and independent readback from
 the source of truth.
-
