@@ -1,233 +1,236 @@
-# 26 - Closed-Loop Master Architecture
+# 26 - Monolith Architecture
 
-This document is the entry point for the **system-of-systems** layer: the
-unified architecture that combines Context Graph (DDA substrate),
-ClipCannon (multi-modal pipeline), ME-JEPA (auditable runtime), and the
-TCT / Constellation Guard (per-output verifiability) into one closed-loop,
-fail-closed, meaning-compressed, identity-locked AI infrastructure.
+This is the architecture of the **single mega-system** at v1.0. Not a
+composition of four products. Not a closed loop linking separate
+codebases. **One system** with internal layers, internal contracts,
+and one external surface.
 
-Docs 00-13 are the original ME-JEPA smoke program. Docs 14-25 specify the
-work to make ME-JEPA paper-ready and artifact-badged. Docs 26-41 specify
-**how the four systems compose into a single product surface and a
-commercial platform**.
+The previous version of this doc framed Context Graph + ClipCannon +
+ME-JEPA + TCT as four systems composing into a closed loop. That
+framing is gone. They are layers of one runtime now, vendored together
+in a single repo (smokedoc 32).
 
-## The Closed Loop
-
-```text
-                       Fixed real corpus
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   Context Graph DDA substrate              │
-       │   13 frozen embedders × n inputs           │
-       │   = up to 91 structured signals/input      │
-       │   (provenance hashed at every projection)  │
-       └────────────────────────────────────────────┘
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   ClipCannon 7-modality pipeline           │
-       │   (when corpus is video; 28 signals/input) │
-       └────────────────────────────────────────────┘
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   ME-JEPA panel ingest                     │
-       │   DDA signals → instrument readings        │
-       │   Domain pack defines panel composition    │
-       │   FSV verifies every CF write              │
-       └────────────────────────────────────────────┘
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   ME-JEPA training                         │
-       │   Action-conditioned latent predictor      │
-       │   VICReg + collapse diagnostics (doc 22)   │
-       │   TCT loss against frozen centroid set     │
-       └────────────────────────────────────────────┘
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   Inference                                │
-       │   ME-JEPA predict / plan / surprise        │
-       │   Constellation Guard rejects out-of-      │
-       │   manifold outputs                         │
-       │   Decoder heads emit top-k + reconstruct   │
-       │   (doc 16)                                 │
-       └────────────────────────────────────────────┘
-                              │
-                              ▼
-       ┌────────────────────────────────────────────┐
-       │   Bundle (immutable, hash-verified)        │
-       │   DDA + ME-JEPA + Decoder + CG + Audit     │
-       │   Reviewer can recompute end-to-end        │
-       └────────────────────────────────────────────┘
-```
-
-Every arrow has provenance. Every output is checkable. The training data
-never went through a generator-in-loop, so Shumailov-form recursion does
-not apply.
-
-## Why The Synthesis Matters
-
-Each system on its own is paradigm-shifting. Together they are
-category-defining:
-
-| System | Without Synthesis | With Synthesis |
-| --- | --- | --- |
-| Context Graph | 13-embedder retrieval substrate | 91-signal-per-input training-data factory |
-| ClipCannon | Video understanding/editing pipeline | Identity-locked clone factory with runtime guard |
-| ME-JEPA | Auditable latent world-model runtime | Verifiable predictor *fed* by DDA signals, *guarded* by TCT |
-| TCT / CG | Frozen geometric alignment target | Cross-domain runtime acceptance predicate |
-| FSV | ME-JEPA bundle audit trail | Whole-stack provenance from raw corpus to deployed clone |
-
-Nobody else has all four layers. The triple role-flip (retriever +
-labeller + runtime guard, all from the same frozen embedders, no
-parameter updates) is structurally absent from the locked 88-citation
-pool that anchors PAPER.md.
-
-## Three Locked Constructs (PAPER.md)
-
-This architecture is the operational realization of three paper
-constructs:
-
-1. **Derived Data Abundance (DDA)**: $|D'| = n \cdot (N + \binom{N}{2})$.
-   For Context Graph at $N=13$, **up to 91 signals per input**.
-2. **Meaning Compression**: signals-per-raw-data-unit. Fourth taxonomic
-   category alongside bit-, weight-, and activation-compression.
-3. **Teleological Constellation Training (TCT)**: same frozen embedders
-   used as **retriever + labeller + runtime guard**, with per-output
-   geometric verifiability.
-
-Smokedocs 26-41 turn the three constructs into shippable code, products,
-and contracts.
-
-## Document Map (26-41)
-
-### Architecture & Integration
-
-| Doc | Scope |
-| --- | --- |
-| 26 (this doc) | Closed-loop master architecture, document map, gap matrix |
-| 27 | DDA → ME-JEPA panel bridge (signals as instrument readings) |
-| 28 | Constellation Guard for ME-JEPA outputs (per-output verifiability) |
-| 29 | Unified provenance bundle schema across DDA + ME-JEPA + TCT + ClipCannon |
-| 30 | Mutual-information embedder audit (closes PAPER.md §3.1 open problem) |
-
-### Products
-
-| Doc | Scope |
-| --- | --- |
-| 31 | Voice cloning SaaS productization (Case 3 → revenue) |
-| 32 | DDA-as-a-Service (corpus enrichment platform) |
-| 33 | EU AI Act compliance product |
-| 34 | Identity-locked agent platform (VoiceAgent + Constellation + ME-JEPA) |
-| 35 | Open-core hosted platform |
-
-### Research & Ecosystem
-
-| Doc | Scope |
-| --- | --- |
-| 36 | Three-paper joint roadmap (DDA, ME-JEPA-FSV, TCT) |
-| 37 | Domain pack registry + marketplace |
-| 38 | Cross-encoder SECS triangulation (closes PAPER.md §1 open problem) |
-
-### Operational
-
-| Doc | Scope |
-| --- | --- |
-| 39 | Unified MCP tool surface across Context Graph + ClipCannon + ME-JEPA |
-| 40 | Three-paths-around-data-wall positioning + per-buyer sales playbook |
-| 41 | 18-month execution roadmap with sequencing and dependencies |
-
-## Gap Matrix (Synthesis Layer)
-
-Distinct from doc 14's gap matrix (which scoped only the ME-JEPA paper):
-
-| ID | Capability | Status | Plan Doc |
-| --- | --- | --- | --- |
-| S1 | DDA signals fed as ME-JEPA instrument readings | not started | 27 |
-| S2 | Constellation Guard wrapping ME-JEPA predict / plan | not started | 28 |
-| S3 | Unified bundle schema covering all four systems | partial (ME-JEPA bundle only) | 29 |
-| S4 | Mutual-information audit measuring 91-signal tightness | not started; named in PAPER.md | 30 |
-| S5 | Voice cloning SaaS surface | Case 3 measured; product not started | 31 |
-| S6 | DDA-as-a-Service corpus enrichment platform | substrate exists; productized API not started | 32 |
-| S7 | EU AI Act compliance product | NIST RMF mapping in doc 21; productization not started | 33 |
-| S8 | Identity-locked agent platform | VoiceAgent + Constellation exist standalone; not unified | 34 |
-| S9 | Open-core hosting tier | OSS path exists; managed tier not started | 35 |
-| S10 | Three-paper arXiv preprints with cross-cite | PAPER.md ready; ME-JEPA paper drafted in doc 19; TCT case-2 measurement pending | 36 |
-| S11 | Domain pack registry / marketplace | individual packs only; no registry | 37 |
-| S12 | Cross-encoder SECS triangulation (ECAPA-TDNN) | open in PAPER.md | 38 |
-| S13 | Unified MCP surface | three separate tool surfaces | 39 |
-| S14 | Per-buyer positioning playbook | implicit only | 40 |
-| S15 | Sequenced 18-month execution roadmap | implicit only | 41 |
-
-## Dependency Graph
+## What The Monolith Is
 
 ```text
-S4 (MI audit) ─────┐
-S3 (unified bundle)├──> S1 (DDA→ME-JEPA bridge) ─┐
-                   │                               ├──> S5/S6/S7 products
-S2 (CG for ME-JEPA)┘                               │
-                                                   │
-S12 (cross-encoder) ──> S5 voice product           │
-                                                   │
-S10 (three papers) ──> credibility for all products┘
-S11 (domain registry) ──> S6/S7/S8 vertical reach
-S13 (unified MCP) ──> developer adoption
-S14/S15 (GTM/roadmap) ──> sequencing
+                          External surface
+                          (one CLI, one MCP, one HTTP API)
+                                  │
+   ┌──────────────────────────────┴───────────────────────────────┐
+   │                  THE MONOLITH (one process)                   │
+   │                                                               │
+   │  ┌──────────────────────────────────────────────────────────┐ │
+   │  │  Output layer                                            │ │
+   │  │  ─ Predictions, plans, surprises, voice, video, text     │ │
+   │  │  ─ Every output passes Constellation Guard               │ │
+   │  │  ─ Every output carries provenance hash                  │ │
+   │  └────────────────────────▲─────────────────────────────────┘ │
+   │                           │                                   │
+   │  ┌────────────────────────┴─────────────────────────────────┐ │
+   │  │  Inference + alignment layer                             │ │
+   │  │  ─ ME-JEPA predictor (action-conditioned, latent JEPA)   │ │
+   │  │  ─ Decoder heads (top-k occupation, skill reconstruct)   │ │
+   │  │  ─ Voice generation (Qwen3-TTS + LoRA per-identity)      │ │
+   │  │  ─ Video generation (Phoenix avatar engine)              │ │
+   │  │  ─ Constellation Guard (per-output cosine vs centroids)  │ │
+   │  └────────────────────────▲─────────────────────────────────┘ │
+   │                           │                                   │
+   │  ┌────────────────────────┴─────────────────────────────────┐ │
+   │  │  Training layer                                          │ │
+   │  │  ─ ME-JEPA training (CUDA, candle 0.10.2, RTX 5090)      │ │
+   │  │  ─ TCT 3-phase: panel build, geometric loss, runtime gd  │ │
+   │  │  ─ LoRA fine-tuning per-identity                         │ │
+   │  │  ─ Frozen centroid construction from reference subset    │ │
+   │  └────────────────────────▲─────────────────────────────────┘ │
+   │                           │                                   │
+   │  ┌────────────────────────┴─────────────────────────────────┐ │
+   │  │  DDA panel layer                                         │ │
+   │  │  ─ 13 frozen text embedders (E1..E13) ─ Context Graph    │ │
+   │  │  ─ 7 frozen video modalities ─ ClipCannon                │ │
+   │  │  ─ Pairwise interaction features (78 + 21 = 99 pairs)    │ │
+   │  │  ─ Up-to 91 signals/text-input + 28/video-clip           │ │
+   │  └────────────────────────▲─────────────────────────────────┘ │
+   │                           │                                   │
+   │  ┌────────────────────────┴─────────────────────────────────┐ │
+   │  │  Storage + provenance layer                              │ │
+   │  │  ─ RocksDB column families (~75 across all systems)      │ │
+   │  │  ─ Audit log (tamper-evident, OpenTimestamps anchored)   │ │
+   │  │  ─ Bundle assembly (one schema; smokedoc 29)             │ │
+   │  │  ─ FSV protocol (smokedoc 08)                            │ │
+   │  └────────────────────────▲─────────────────────────────────┘ │
+   │                           │                                   │
+   │  ┌────────────────────────┴─────────────────────────────────┐ │
+   │  │  Ingest layer                                            │ │
+   │  │  ─ Domain packs (career, voice, video, text-style, ...)  │ │
+   │  │  ─ Typed event adapters                                  │ │
+   │  │  ─ Corpus manifest + license + hash                      │ │
+   │  └──────────────────────────────────────────────────────────┘ │
+   └───────────────────────────────────────────────────────────────┘
 ```
 
-Critical path to **revenue**: **S5 (voice clone product) is the fastest
-$ → product → market path.** Critical path to **credibility**:
-**S10 → S4 → S3 → S1 → S2** (paper + audits + integration).
-Critical path to **enterprise**: **S3 + S7 (compliance product)**.
+Six layers. One process. One repo. Every horizontal arrow is in-process
+function call; no cross-service network hops in the inner loop.
 
-## What "Done" Means For This Layer
+## Why One Process, Not Microservices
 
-The synthesis layer is complete when **every output from any of the four
-systems carries a provenance chain back to the raw corpus**, and **every
-inference is bounded by a frozen geometric guard**, and **the same MCP
-surface exposes operations across all four systems**.
+- Latency: cross-language calls between Rust (Context Graph + ME-JEPA)
+  and Python (ClipCannon) are tolerable when in-process; intolerable
+  over network for streaming inference (voice / video).
+- Provenance: in-process calls trivially share the same bundle handle;
+  microservices need RPC + shared state, which is more code and more
+  failure modes.
+- Operational simplicity: one process to deploy, one process to
+  monitor, one process to restart.
+- Honest about scope: a "platform" is sometimes vapor for "five
+  different services that share a logo". The monolith refuses that.
 
-Concrete completion criteria:
+## Cross-Language Boundary (Rust ↔ Python)
 
-1. A user can issue one MCP call that:
-   - Ingests a video corpus through ClipCannon (28 signals/clip).
-   - Routes signals through Context Graph (91 signals/text input).
-   - Trains a ME-JEPA predictor on the merged DDA dataset.
-   - Deploys an inference endpoint with Constellation Guard.
-   - Receives the full bundle hash for provenance check.
+The Rust workspace owns the storage + provenance + DDA panel + ME-JEPA
++ Constellation crate. The Python `clipcannon/` tree owns the 23-stage
+video pipeline + Phoenix avatar + VoiceAgent meeting bot.
 
-2. Three arXiv preprints exist (DDA, ME-JEPA-FSV, TCT) with a shared
-   citation graph and a unified Zenodo DOI per paper.
+The monolith is **one process** at runtime via:
 
-3. At least one revenue-generating product (voice clone, DDA service,
-   compliance, agent platform) is live and measured.
+- **Embedded Python interpreter** in the Rust process via `pyo3`,
+  invoked for ClipCannon stages that need Python ML libs (PyTorch,
+  diffusers, faster-whisper, demucs);
+- **OR**: a single MCP supervisor process spawns one Rust subprocess +
+  one Python subprocess and routes; the **MCP boundary is in-host
+  IPC, not network**.
 
-4. The mutual-information audit (doc 30) reports the actual signal
-   density vs the 91-signal upper bound on at least three corpora.
+Smokedoc 33 picks one. The pyo3 path is technically cleaner; the
+supervisor path is operationally simpler. Decision is in smokedoc 33.
 
-5. The unified bundle schema (doc 29) is satisfied by every release.
+## What Each Layer Owns
 
-6. Every claim made in any product page, paper, or sales material has a
-   bundle path that supports it.
+### Ingest
 
-## Anti-Goals
+- Domain pack TOML schemas + adapters.
+- Corpus manifest with license + hash.
+- Typed event ingest with FSV at-rest.
+- Code: `crates/context-graph-dynamicjepa/src/ingest/` +
+  `clipcannon/src/clipcannon/pipeline/` (ingest stages of 23-DAG).
 
-- Do not pursue all 16 docs in parallel; doc 41 sequences them.
-- Do not productize anything before its underlying audit (S4 / S12 /
-  S2) is complete; that risks selling unverified claims.
-- Do not collapse DDA, ME-JEPA, and TCT into one paper; the three-paper
-  structure (doc 36) is what gives each construct its citation gravity.
-- Do not chase consumer voice-cloning UX competition with ElevenLabs;
-  use the verifiable-runtime moat as the differentiator (doc 31).
-- Do not build a horizontal data-labeling marketplace; verticalize first
-  (docs 32, 37).
+### Storage + Provenance
 
-## Cross-References
+- RocksDB CFs across all subsystems.
+- Audit log + tamper-evident chain + OpenTimestamps anchoring.
+- Bundle assembly (smokedoc 29).
+- FSV evaluator.
+- Code: `crates/context-graph-storage/` + `clipcannon/src/clipcannon/
+  storage/` (sqlite-vec for video pipeline state).
 
-- `docs/5090jepa/smokedocs/14_remaining_work_master_plan.md` — paper-ready milestone within ME-JEPA scope only
-- `docs2/PAPER.md` (teleoxwebsite) — source for DDA, Meaning Compression, TCT
-- `docs2/alldata.md` (teleoxwebsite) — ClipCannon + Phoenix + VoiceAgent architecture
-- `docs2/leapableai_youtube_transcripts.md` — public framing and demos for sales narrative
+### DDA Panel
+
+- 13 frozen text embedders (E1-E13) hosted in-process.
+- 7 frozen video modalities hosted in-process.
+- Pairwise interaction adapters.
+- MI audit (smokedoc 30) on demand.
+- Code: `crates/context-graph-embedders/` +
+  `clipcannon/src/clipcannon/embeddings/`.
+
+### Training
+
+- ME-JEPA trainer (Rust + candle).
+- LoRA fine-tuner (Python or Rust depending on model).
+- TCT 3-phase orchestrator.
+- Frozen centroid builder.
+- Code: `crates/context-graph-dynamicjepa/src/training/` +
+  `clipcannon/src/clipcannon/training/` (for video LoRAs).
+
+### Inference + Alignment
+
+- ME-JEPA predict / plan / surprise.
+- Decoder heads.
+- Voice + video generation.
+- Constellation Guard.
+- Code: `crates/context-graph-dynamicjepa/src/inference/` +
+  `crates/context-graph-constellation/` (shared crate; smokedoc 28) +
+  `clipcannon/src/clipcannon/generation/`.
+
+### Output
+
+- One emission contract: `(payload, provenance_hash, guard_decision)`.
+- Persisted to `dj_predictions` / `dj_plan_traces` / `dj_surprise_events`
+  / `dj_constellation_guard_decisions`.
+- One streaming format for voice + video (chunked + per-chunk guard).
+
+## What Lives Where In The Repo
+
+After smokedoc 32 (merged repo structure):
+
+```text
+contextgraph/
+  crates/                       # Rust workspace
+    context-graph-core/
+    context-graph-storage/
+    context-graph-dynamicjepa/  # ME-JEPA
+    context-graph-embedders/    # 13-embedder DDA panel
+    context-graph-constellation/# shared CG crate (smokedoc 28)
+    context-graph-cli/          # one CLI binary
+    context-graph-mcp/          # one MCP server
+    ...
+  clipcannon/                   # Python tree (vendored 2026-04-30)
+    src/
+      clipcannon/               # 23-stage DAG
+      phoenix/                  # avatar engine
+      voiceagent/               # meeting bot
+      license_server/           # billing
+    ...
+  configs/                      # domain packs, train configs, centroids
+  docs/
+    5090jepa/smokedocs/         # this directory
+  paper/                        # one-paper LaTeX
+  Cargo.toml                    # Rust workspace root
+  Cargo.lock
+  pyproject.toml                # top-level Python workspace pointer
+  Makefile                      # cross-language build
+  Dockerfile                    # one container
+```
+
+The Rust workspace and the Python tree coexist at the same level. A
+top-level `Makefile` (smokedoc 32) orchestrates both.
+
+## Single External Surface
+
+Three thin wrappers over the same internal calls:
+
+- **CLI**: `context-graph <subcommand>` covers every capability.
+  ME-JEPA, voice clone, video clone, DDA enrichment, agent runtime,
+  bundle hash, MI audit — all subcommands of one binary.
+- **MCP server**: `context-graph mcp serve` exposes ~150 tools (75 CG
+  + 58 CC + new ME-JEPA) under one namespace (smokedoc 33).
+- **HTTP API**: thin REST/JSON-RPC mirror of the MCP surface for
+  non-LLM clients.
+
+Smokedoc 33 specifies the surface design.
+
+## What Was Removed
+
+The previous version of this doc had a "Document Map (26-41)" and
+gestured toward five product docs (31-35) and a three-paper roadmap
+(36). All of that was deleted on 2026-04-30 when the monolith pivot
+landed. The current monolith doc map is in smokedoc 14.
+
+## Dependencies On Other Docs
+
+- Smokedoc 27 (DDA → ME-JEPA bridge) — internal layer plumbing.
+- Smokedoc 28 (Constellation Guard for ME-JEPA) — shared crate.
+- Smokedoc 29 (unified bundle schema) — output contract.
+- Smokedoc 30 (MI audit) — empirical anchor.
+- Smokedoc 32 (merged repo structure) — this architecture's filesystem.
+- Smokedoc 33 (unified surface) — this architecture's surface.
+
+## Acceptance
+
+The monolith architecture is **realized** when:
+
+- one `cargo build` + `pip install -e clipcannon` produces a working
+  binary that exposes every capability;
+- one `context-graph mcp serve` registers tools from every subsystem
+  under one namespace;
+- one `reproduce.sh` end-to-end runs the integrated pipeline against
+  a sample corpus on the operator's RTX 5090;
+- the bundle root hash (smokedoc 29) covers every output of every
+  layer.

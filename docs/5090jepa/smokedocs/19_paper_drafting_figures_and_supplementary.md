@@ -1,227 +1,245 @@
-# 19 - Paper Drafting, Figures, And Supplementary Materials
+# 19 - One-Paper Drafting, Figures, And Supplementary Materials
 
 ## Goal
 
-Turn smokedoc 10's section outline into a concrete, evidence-backed manuscript
-plan. The paper is a systems paper with an empirical demonstration; the
-narrative spine is auditability + single-GPU feasibility, with the
-career-taxonomy benchmark as the empirical anchor.
+Draft **one comprehensive paper** that covers the entire monolith:
+DDA + Meaning Compression + ME-JEPA + FSV + TCT + Constellation Guard
++ the integrated runtime as measured on the unified codebase. Replaces
+the prior three-paper roadmap. The paper is the v1.0 monolith's
+academic deliverable; everything in smokedocs 14-35 ultimately serves
+this one document and its archived artifact.
+
+## Why One Paper, Not Three
+
+A single paper has:
+
+- **One citation gravity**: every reader hits the synthesis at once.
+- **One DOI**: simpler artifact + Zenodo + ACM badging story.
+- **One submission cycle**: aligns with one venue calendar; no
+  cross-paper revision drift.
+- **One brand anchor**: future work cites "the monolith paper", not
+  three sub-papers.
+
+The 9-page-main-body limit (NeurIPS 2026 / MLSys / ICLR) is achievable
+because the paper is **systems-first**: the empirical anchors (Case 3
+voice 0.961 SECS, Case 1 Shakespeare 5/5 FSV, ME-JEPA paper-full 50K
+evidence, MI audit numbers) are concise; the architecture is the bulk.
+Detailed measurements + ablations live in the appendix (no page
+limit).
+
+## Working Title
+
+```text
+Auditable Identity-Locked AI on a Single RTX 5090:
+Meaning Compression, Source-of-Truth Verification, and Constellation Guard
+on an Integrated 437,000-Line Stack
+```
+
+The 437K LOC number = ~370K Context Graph + ~67K ClipCannon (pulled
+from PAPER.md and `docs2/alldata.md` accounting). Update at
+submission time with the actual unified count.
 
 ## Venue Targeting
 
-Primary target: **arXiv preprint** + **NeurIPS Datasets & Benchmarks** track or
-**MLSys**. NeurIPS D&B is well-aligned because the contribution is a benchmark
-+ runtime, not a new model. MLSys is well-aligned because of the systems +
-single-GPU framing.
+Primary: **NeurIPS Datasets & Benchmarks** track (the contribution is
+benchmark + runtime + verifiability protocol). Secondary: **MLSys**
+(systems framing). Tertiary: **ICLR** with substantial ablations.
 
-Secondary target: workshop submission to a **reproducibility-focused** venue
-(e.g. NeurIPS Reproducibility track, ML Reproducibility Challenge) that
-specifically values the FSV protocol.
+The paper must satisfy NeurIPS Paper Checklist (mandatory; desk reject
+if missing). 9-page main body + appendix; checklist does not count
+toward page limit.
 
-The paper must satisfy NeurIPS Paper Checklist (mandatory, included in the
-LaTeX style file, papers without it are desk-rejected). 9-page main body +
-appendix; checklist does not count toward page limit.
-
-## Section-By-Section Drafting Plan
-
-Word counts are targets, not contracts.
+## Section Structure (9 Pages Main Body)
 
 ### Abstract (≤200 words)
 
-Lead: "single-GPU auditable latent world-model runtime with a career-taxonomy
-benchmark." State the three claims (universality, auditability,
-single-RTX-5090). Cite the headline number from the multi-seed aggregate
-(BCa CI). State the artifact DOI in the abstract footer.
+Lead: "single-system auditable, identity-locked, meaning-compressed AI
+infrastructure on commodity hardware." State three constructs (DDA,
+TCT, FSV) and the headline numbers: Case 3 voice SECS, Case 1
+Shakespeare 5/5, ME-JEPA paper-full top-k acc, MI audit
+$k_{\text{eff}}$, Constellation Guard rejection rate. State the DOI
+in the abstract footer.
 
-Anti-pattern: do not lead with the model architecture. Lead with the systems
-contribution.
+### 1. Introduction (~1 page)
 
-### 1. Introduction (~1.5 pages)
+- The data wall + Shumailov collapse + auditability gap + alignment-
+  verifiability gap, framed as **one** problem with **one** answer.
+- The integrated stack as the answer: same frozen embedder panel
+  serves as retriever + labeller + runtime guard, with FSV at every
+  step and ME-JEPA as the predictor on top.
+- Contributions list (5-6 items), all from the same monolith.
 
-- Para 1: latent prediction over reconstruction, why JEPA family matters.
-- Para 2: the auditability gap — most JEPA work reports metrics without
-  source-of-truth evidence.
-- Para 3: the career-domain motivation — why an auditable benchmark matters
-  for any work that touches occupations.
-- Para 4: single-GPU feasibility — democratizing the experimental setup.
-- Para 5: contributions, ending with "all evidence in this paper is
-  recoverable from a Zenodo-archived bundle".
+### 2. Related Work (~0.75 page)
 
-### 2. Related Work (~1 page)
+- JEPA family + collapse mitigations.
+- Career trajectory benchmarks (O*NET, ESCO).
+- Compression-as-intelligence + auditable ML systems.
+- Scalar-reward alignment as the comparison anchor for §5
+  per-output verifiability.
 
-Three subsections:
+Tighter than the three-paper structure would have been; this is the
+trade-off.
 
-- **JEPA family**: I-JEPA, V-JEPA, V-JEPA 2, V-JEPA 2.1, T-JEPA, LeJEPA, and
-  Apple's Rethinking-JEPA frozen-teacher work. Cite VICReg as collapse
-  prevention, and SIGReg / LeJEPA as alternatives we did not adopt and why.
-- **Career trajectory datasets**: O*NET, ESCO, Karrierewege, JobHop,
-  OpenResume. Position our benchmark as **complementary**, not competitive —
-  ours is an auditable taxonomy benchmark, not a trajectory prediction
-  dataset.
-- **Auditability and reproducibility in ML systems**: NIST AI RMF, ACM
-  artifact-evaluation, NeurIPS reproducibility checklist, MLflow patterns.
+### 3. The Monolith System (~1.5 pages)
 
-### 3. System (~2 pages)
+This is the systems half. One architecture diagram (F1).
 
-This is the systems half of the paper. Write to figure F1 (architecture
-diagram).
-
-- Domain packs as the universality lever.
+- Domain packs as the universal lever.
 - Typed event ingest path.
-- Multi-instrument latent panels.
-- Trajectory + dataset compiler.
-- JEPA trainer + artifact registry + recomputed file hashes.
-- Prediction / planning / surprise events.
-- **Full State Verification protocol** — explain why every claim in §6 has a
-  bundle path.
+- DDA substrate (13 frozen text embedders + 7 video modalities).
+- ClipCannon 23-stage pipeline as the video specialization.
+- ME-JEPA panel + trainer + artifact registry.
+- Constellation Guard predicate at inference.
+- FSV bundle schema as the output contract.
 
-### 4. Career Taxonomy Benchmark (~1.5 pages)
+### 4. DDA + Meaning Compression (~1 page)
 
-- Data sources and provenance (O*NET, optionally ESCO).
-- Event / state / action / outcome schema (cite smokedoc 05 verbatim).
-- Why "public taxonomy benchmark" not "recruiting model" (cite smokedoc 01).
+- Counting identity (PAPER.md §3.1).
+- Up-to 91 signals per input at $N=13$; up-to 28 per video clip at
+  $M=7$.
+- Mutual-information audit (smokedoc 30) result: measured
+  $k_{\text{eff}}$ on three corpora.
+- Fourth-category positioning vs bit / weight / activation
+  compression.
+
+### 5. TCT + Constellation Guard (~1 page)
+
+- Three-phase TCT method (PAPER.md §5).
+- Per-output guard predicate $G_\tau$.
+- Per-output verifiability vs scalar-reward alignment
+  (InstructGPT / DPO / Constitutional AI) — pool-relative, not a
+  benchmark contest.
+
+### 6. ME-JEPA Career Benchmark (~0.75 page)
+
+- Public taxonomy benchmark grounded in O*NET (+ optional ESCO
+  crosswalk per smokedoc 18).
+- Event / state / action / outcome schema (verbatim from smokedoc 05).
+- Why public-taxonomy benchmark, not recruiting model.
 - Walk generator + per-edge hash.
-- Splits and leakage policy.
 
-### 5. Experiments (~1 page)
+### 7. Experiments + Results (~2 pages)
 
-Concise listing tied to smokedoc 06:
+Six measured anchors:
 
-- Experiment A — Runtime universality (counter_world, gridworld, career).
-- Experiment B — Career next-state prediction.
-- Experiment C — Action-conditioned planning.
-- Experiment D — A0-A5 ablations.
-- Experiment E — Auditability / failure stress.
-- Experiment F — 5090 feasibility.
+1. Case 3 voice SECS multi-speaker (smokedoc 32 in old plan; folded
+   in here): mean ± BCa CI, with cross-encoder triangulation.
+2. Case 1 Shakespeare LoRA: 5/5 FSV pass + emergent zero-shot
+   cross-lingual transfer (PAPER.md).
+3. Case 2 talking-head (after smokedoc-deleted-33 fix): SECS / FVD /
+   LSE numbers.
+4. ME-JEPA paper-full 50K headline: prediction metrics, top-k acc,
+   skill reconstruction, all multi-seed BCa CI.
+5. ESCO crosswalk replication: parity table.
+6. Constellation Guard rejection rate per case.
 
-Tables named here, not pasted. Pasted into §6.
+Auto-generated from `paper_tables/`. Hand-typed numbers forbidden.
 
-### 6. Results (~2 pages)
+### 8. Discussion + Limitations (~0.75 page)
 
-Generated from `paper_tables/` only. Manual numbers are forbidden. Six tables:
+- What the monolith proves.
+- What is bounded: public-taxonomy benchmark, not real recruiting;
+  single hardware platform; single sample-complexity operating
+  point on Case 3.
+- Where Phase 12 (smokedoc 25) is required for real subject-level
+  data.
 
-1. T1 Domain Runtime Coverage.
-2. T2 Prediction Metrics (multi-seed, BCa CI).
-3. T3 Career Ablations (multi-seed, paired tests).
-4. T4 Auditability And Failure Behavior.
-5. T5 Single-GPU Feasibility.
-6. T6 Top-k Occupation + Skill Reconstruction (from doc 16).
+### 9. Reproducibility (~0.25 page)
 
-Three figures:
+Hardware, software, dataset hashes, container DOI, command log,
+reproduce script. One paragraph; everything traceable to artifact
+DOI.
 
-- F1 System architecture diagram (already named).
-- F2 Validation cosine across epochs, multi-seed band.
-- F3 Ablation forest plot (paired delta + BCa CI per ablation row).
-
-### 7. Discussion (~1 page)
-
-What the system proves, what it does not. Failure modes (use the failed
-seed-43 bundle as a worked example of fail-closed behavior). Generalization
-ceilings.
-
-### 8. Limitations (~0.5 pages)
-
-- Public-taxonomy benchmark is not real hiring outcome prediction.
-- Small models are demonstration-scale.
-- Single hardware platform (Blackwell sm_120).
-- 250K tier may be single-seed only.
-- Privacy/legal gates depend on Phase 12 (doc 25), not on this paper.
-
-### 9. Reproducibility (~0.5 pages)
-
-Hardware, software, data sources and hashes, command log, evidence bundle
-schema, container image, Zenodo DOI. One paragraph per item; everything
-traceable to docs 09 and 20.
-
-### Appendices
+## Appendices (No Page Limit)
 
 - A — Domain pack specs (verbatim TOML excerpts).
-- B — Full State Verification evidence summary.
-- C — Failed runs and root-cause diagnostics (worked example: seed-43).
-- D — Hyperparameter sweeps and collapse diagnostics (doc 22).
-- E — ESCO replication and crosswalk (doc 18).
-- F — NIST AI RMF + NeurIPS Checklist mapping (doc 21, 20).
+- B — Full bundle schema (smokedoc 29).
+- C — Failed runs and root-cause diagnostics (worked example: seed-43
+  ablation failure).
+- D — HP sweeps + collapse diagnostics (smokedoc 22).
+- E — ESCO replication + crosswalk decoder (smokedoc 18).
+- F — Compliance mapping: NIST AI RMF + EU AI Act + NeurIPS Checklist
+  (smokedoc 21).
+- G — Cross-encoder SECS triangulation results.
+- H — Pairwise mutual-information audit per (corpus, embedder pair).
+- I — Per-output Constellation Guard cosine distributions.
+- J — Multi-step rollout compounding analysis (if smokedoc 24
+  optional work is included).
 
 ## Figure Pipeline
 
-Figures are generated, not hand-drawn except F1.
+Generated from bundles, not hand-drawn except F1.
 
 | Figure | Source | Generator |
 | --- | --- | --- |
-| F1 architecture | hand-drawn (TikZ or SVG) | `figures/architecture.tex` |
-| F2 val cosine band | `paper_tables/training_metrics.json` per seed | `scripts/figures/plot_val_cosine_band.py` |
-| F3 ablation forest | `aggregate_*/paper_tables/table_paired_ablation_tests.csv` | `scripts/figures/plot_ablation_forest.py` |
-| F4 walk graph sample | bundle's walk CSV + occupation labels | `scripts/figures/plot_walk_sample.py` |
-| F5 collapse diagnostics | `paper_tables/collapse_diagnostics.csv` (doc 22) | `scripts/figures/plot_collapse.py` |
-| F6 evidence diagram | bundle layout + CF list | `scripts/figures/plot_evidence_diagram.py` |
+| F1 monolith architecture | hand-drawn (TikZ) | `figures/architecture.tex` |
+| F2 val cosine band, multi-seed | `paper_tables/training_metrics.json` | `scripts/figures/plot_val_cosine_band.py` |
+| F3 ablation forest | aggregate paired tests | `scripts/figures/plot_ablation_forest.py` |
+| F4 walk graph sample | bundle walk CSV | `scripts/figures/plot_walk_sample.py` |
+| F5 collapse diagnostics (rank, A+U scatter) | sweep bundle | `scripts/figures/plot_collapse.py` |
+| F6 evidence diagram (CFs + bundle layout) | bundle structure | `scripts/figures/plot_evidence_diagram.py` |
+| F7 SECS distribution (cross-encoder) | voice eval bundle | `scripts/figures/plot_secs.py` |
+| F8 Constellation Guard cosine histogram | guard decision parquet | `scripts/figures/plot_guard_hist.py` |
 
-All generators take a bundle path or aggregate path as their only argument and
-emit deterministic output (set Python random seed; lock matplotlib version).
+All generators take bundle path as their only argument; deterministic
+output; matplotlib version locked.
 
 ## Table Pipeline
 
-LaTeX `\input{}` from CSVs through `csvsimple` or `pgfplotstable`. The Makefile
-target `make tables` regenerates all `.tex` table fragments from the bundle
-CSVs. Hand-edited table files in the paper repo are forbidden.
-
-```text
-paper/
-  tables/
-    auto/
-      table_prediction_metrics.tex
-      table_ablation.tex
-      table_topk.tex
-      ...
-    Makefile
-    generator.py
-```
-
-The CI step runs `make tables` and fails if `git diff` is non-empty after,
-catching any drift between bundle and paper.
+LaTeX `\input{}` from CSVs through `csvsimple` or `pgfplotstable`.
+The Makefile target `make tables` regenerates all `.tex` table fragments
+from the bundle CSVs. Hand-edited table files in the paper repo are
+forbidden. CI step (smokedoc 23) runs `make tables` and fails if
+`git diff` is non-empty after — catching any drift between bundle and
+paper.
 
 ## Supplementary Materials
 
-The supplementary archive (one ZIP):
+The supplementary archive (one ZIP, archived to Zenodo with the same
+DOI as the paper):
 
-- full bundle directory for the headline run;
-- aggregate bundle directory;
-- container image (squashfs `.sif` or Docker image tarball, also DOI-archived);
+- full bundle directory for the v1.0 headline run;
+- aggregate bundle directory (multi-seed);
+- Apptainer SIF + Docker image tarball;
 - LaTeX source of the paper;
-- generated table CSVs (already in bundles, included for reviewer convenience);
-- README with one-command reproduction script (`make reproduce`).
-
-The supplementary is also archived to Zenodo with its own DOI; the paper cites
-both the code DOI and the supplementary DOI.
+- generated table CSVs;
+- README with `reproduce.sh paper_full_50k --seeds 42,43,44,45,46`;
+- video walkthrough of the monolith (5-10 min) for reviewer
+  on-ramping.
 
 ## Writing Schedule
 
 | Week | Activity |
 | --- | --- |
-| 1 | Doc 22 (collapse diagnostics) + multi-seed (doc 15) finalized; tables auto-generate |
-| 2 | Doc 16 (decoder head) finalized; T6 added; figures F2/F3 generated |
-| 3 | Doc 18 (ESCO) finalized if path holds; appendix E drafted |
-| 4 | First full draft (sections 1-9 + appendices A-F) |
-| 5 | Internal review; figure polish; checklist completion |
-| 6 | Final pass; arXiv submission; Zenodo DOI; venue submission |
+| 1-2 | Smokedocs 14-35 sub-tasks complete; tables auto-generate |
+| 3-4 | Sections 3-7 drafted from finalized bundle evidence |
+| 5 | Sections 1, 2, 8, 9 drafted; appendices populated |
+| 6 | Internal review; figure polish; checklist completion |
+| 7 | Final pass; arXiv submission; Zenodo DOI; venue submission |
 
-This is the budget for a focused single-author paper. With co-authors, parallel
-drafting of §3 and §6 saves ~1 week.
+7 weeks of focused writing assuming all smokedoc-14-35 sub-tasks are
+complete. Realistic given multi-seed + decoder + HP sweeps + paper-full
++ ESCO + audit are all parallelizable on the integrated runtime.
 
-## Anti-Patterns To Avoid
+## Anti-Patterns
 
 - Hand-typed numbers anywhere in the manuscript.
-- Claims about "the model predicts careers" without taxonomy qualifier.
-- Architecture-first framing in the abstract.
-- Ablations reported without paired tests.
+- Architecture-first abstract.
+- Claims about "predicts careers" without taxonomy qualifier.
+- Ablations without paired tests + BCa CI.
 - Top-k accuracy without ECE.
-- Plots without bundle path in the caption.
-- Reproducibility section that points to GitHub instead of a DOI.
+- Reproducibility section pointing to GitHub instead of DOI.
+- Section 7 reading as a list of numbers without per-anchor narrative.
+- Splitting the work back into multiple papers under reviewer
+  pressure.
 
 ## Acceptance
 
 This work is done when:
 
-- the paper repo (`paper/`) exists and Makefile regenerates tables/figures from
-  the headline bundle and aggregate bundle;
-- arXiv preprint is uploaded with a Zenodo DOI cross-link;
-- venue submission packet (PDF + supplementary + checklist) is prepared.
+- the paper repo (`paper/`) exists and `make all` regenerates
+  tables/figures from the headline + aggregate bundles deterministically;
+- arXiv preprint is uploaded with Zenodo DOI cross-link;
+- venue submission packet is prepared (PDF + supplementary +
+  checklist);
+- a future reader can hit one DOI and reach the entire monolith story.
