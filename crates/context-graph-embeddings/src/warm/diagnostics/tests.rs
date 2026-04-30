@@ -47,7 +47,7 @@ fn test_gpu_diagnostics_from_info() {
         "NVIDIA GeForce RTX 5090".to_string(),
         (12, 0),
         32 * 1024 * 1024 * 1024,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     let diagnostics = GpuDiagnostics::from_gpu_info(&gpu_info, 8 * 1024 * 1024 * 1024);
@@ -57,7 +57,7 @@ fn test_gpu_diagnostics_from_info() {
     assert_eq!(diagnostics.compute_capability, "12.0");
     assert_eq!(diagnostics.total_vram_bytes, 32 * 1024 * 1024 * 1024);
     assert_eq!(diagnostics.available_vram_bytes, 8 * 1024 * 1024 * 1024);
-    assert_eq!(diagnostics.driver_version, "13.1.0");
+    assert_eq!(diagnostics.driver_version, "13.2.0");
 }
 
 #[test]

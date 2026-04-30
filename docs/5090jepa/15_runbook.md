@@ -13,7 +13,7 @@ nvcc --version | grep release
 rustc --version
 ```
 
-Confirm: branch `main`, RTX 5090 / driver 596+ / sm_120 / 32 GB VRAM, CUDA 13.x, rustc 1.75+.
+Confirm: branch `main`, RTX 5090 / driver 596+ / sm_120 / 32 GB VRAM, CUDA 13.2, rustc 1.95+.
 
 ```bash
 mkdir -p tmp/5090jepa_evidence

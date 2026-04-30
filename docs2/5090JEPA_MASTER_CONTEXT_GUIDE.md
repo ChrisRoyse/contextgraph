@@ -135,7 +135,7 @@ Repo: `/home/cabdru/contextgraph` on `main` branch. Current head: `dc599e69 docs
 | CPU | AMD Ryzen 9 9950X3D (16 cores / 32 threads, AVX-512) |
 | RAM | 128 GB DDR5 |
 | Rust | 1.75 MSRV (1.92.0 installed) |
-| Candle | 0.9.2-alpha (CUDA 13.x / Blackwell) |
+| Candle | 0.10.2 (CUDA 13.2 / Blackwell via cudarc 0.19.x) |
 
 ### 4.3 The 14 production embedders
 
@@ -808,7 +808,7 @@ These rules are also marketing assets — the discipline shows up in product rel
 - **Annex IV** — section of the EU AI Act listing required technical documentation for high-risk AI systems.
 - **BFSI** — Banking, Financial Services, Insurance.
 - **BLAKE3-128** — fast cryptographic hash, truncated to 16 bytes used for short keys.
-- **Candle** — Hugging Face's Rust-native ML framework (CUDA, CPU, Metal). Pinned at 0.9.2-alpha.
+- **Candle** — Hugging Face's Rust-native ML framework (CUDA, CPU, Metal). Pinned at 0.10.2.
 - **CF / Column Family** — RocksDB namespace for keyed records. Context Graph has 73; DynamicJEPA adds 25.
 - **Constellation** — aggregate centroid + spread over a memory selector (topic/session/tag/explicit ids), persisted in `CF_CONSTELLATIONS`.
 - **CRO** — Chief Risk Officer.

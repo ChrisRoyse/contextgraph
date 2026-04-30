@@ -26,7 +26,7 @@
 //!
 //! - **Compute Capability**: 12.0 (required)
 //! - **VRAM**: 32GB GDDR7
-//! - **CUDA Version**: 13.1+
+//! - **CUDA Version**: 13.2+
 //! - **Memory Bandwidth**: 1.8 TB/s
 //!
 //! # CUDA Required - No Fallbacks

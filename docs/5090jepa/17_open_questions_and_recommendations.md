@@ -96,7 +96,7 @@ Brief mentions only — implementing any of these is out of demo scope.
 
 | Risk | Mitigation |
 | --- | --- |
-| Candle 0.9.2-alpha is alpha; could regress on Blackwell | Pin the version; record actual `cargo tree -p candle-core` output in evidence; surface any `Could not start backend: Runtime compute cap` in `16_…` §2.1 |
+| Candle/CUDA stack could regress on Blackwell | Pin `candle-core`/`candle-nn` at 0.10.2; record actual `cargo tree -p candle-core` output in evidence; surface any `Could not start backend: Runtime compute cap` in `16_…` §2.1 |
 | WSL2 CUDA passthrough flake on first kernel launch | First-call warmup before training timer; documented in `16_…` §6 |
 | Tiny model overshoots into capacity that memorizes both training rows | Counter_world only has 1 train row; assert `random_init_baseline` and `shuffled_target_baseline` per `10_…` §7–8 |
 | Operator's `data/contextgraph_data` corruption from a misconfigured demo | Demo strictly uses `/tmp/5090jepa-*` paths; environment probes refuse to start if the demo path equals the production path |

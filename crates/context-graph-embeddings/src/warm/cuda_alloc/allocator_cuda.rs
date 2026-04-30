@@ -59,7 +59,7 @@ impl WarmCudaAllocator {
     ///
     /// Uses consolidated CUDA FFI from context-graph-cuda crate.
     /// Uses CUDA Driver API (cuDeviceGetAttribute) instead of Runtime API
-    /// to avoid CUDA 13.1 WSL2 segfault bug on RTX 5090 (Blackwell).
+    /// to avoid CUDA 13.2 WSL2 segfault bug on RTX 5090 (Blackwell).
     ///
     /// All values are queried from real hardware. NO hardcoded fallbacks.
     fn query_gpu_info_internal(device_id: u32) -> WarmResult<GpuInfo> {

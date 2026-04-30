@@ -12,7 +12,7 @@ You are **not** building a parallel demo project. You add the DynamicJEPA crates
 
 The deliverable proves three claims:
 
-1. The DynamicJEPA contract works end‑to‑end on the operator's RTX 5090 (Blackwell, sm_120, CUDA 13.2, WSL2 Linux), with `candle 0.9.2-alpha` already wired into the workspace.
+1. The DynamicJEPA contract works end‑to‑end on the operator's RTX 5090 (Blackwell, sm_120, CUDA 13.2, WSL2 Linux), with `candle 0.10.2` already wired into the workspace.
 2. The contract is universal: at least **two** unrelated domain packs (`counter_world.v1` arithmetic and `gridworld_5x5.v1` discrete navigation) feed the same pipeline without code changes.
 3. Every stage has independent physical evidence — RocksDB column‑family reads, decoded records, file‑hash recomputation, before/after counts — not just success return values.
 
@@ -59,14 +59,14 @@ These are the operator's *actual* numbers, verified at the start of this plannin
 | CPU | AMD Ryzen 9 9950X3D — 16 cores / 32 threads, AVX‑512 |
 | System RAM | 128 GB DDR5 |
 | Rust toolchain | stable 1.92.0 (workspace pinned) |
-| Candle | `candle-core 0.9.2-alpha`, `candle-nn 0.9.2-alpha`, both with `cuda` feature; comment in `Cargo.toml` confirms "Using 0.9.2-alpha for CUDA 13.x support (RTX 5090 Blackwell)" |
+| Candle | `candle-core 0.10.2`, `candle-nn 0.10.2`, both with `cuda` feature; comment in `Cargo.toml` confirms cudarc 0.19.x CUDA 13.2 support for RTX 5090 Blackwell |
 | llama.cpp bindings | `llama-cpp-2 = "0.1"` for GGUF inference (only used by causal/graph LLM agents; not required by 5090jepa) |
 | Working tree | `/home/cabdru/contextgraph` |
 | Branch | `main` |
 
 Build/runtime environment requirements you must enforce explicitly (see `01_environment_and_hardware.md`):
 
-- `CUDA_COMPUTE_CAP=120` exported at build time so candle compiles cubin for sm_120 and avoids a JIT path. (PTX‑only fallback works but is slower on first kernel launch.)
+- `CUDA_COMPUTE_CAP=120` exported at build time so candle compiles for sm_120. Context Graph's custom CUDA kernels compile native `sm_120a` cubin and do not use a PTX fallback path.
 - `LD_LIBRARY_PATH` includes the WSL CUDA 13.2 lib path.
 - `nvidia-smi --query-gpu=compute_cap --format=csv,noheader` returns `12.0`. If it returns anything else, abort with a structured error.
 

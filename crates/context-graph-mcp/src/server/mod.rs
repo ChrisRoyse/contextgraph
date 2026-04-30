@@ -399,7 +399,7 @@ impl McpServer {
                 Err(e) => {
                     error!(
                         "FATAL: Global warm provider initialization failed: {}. \
-                         Ensure CUDA 13.1+ is installed, RTX 5090 is available, \
+                         Ensure CUDA 13.2+ is installed, RTX 5090 is available, \
                          and models are downloaded to {:?}",
                         e, models_dir
                     );

@@ -13,11 +13,11 @@ compile_error!(
 
     Target Hardware (Constitution v4.0.0):
     - GPU: RTX 5090 (Blackwell architecture)
-    - CUDA: 13.1+
+    - CUDA: 13.2+
     - VRAM: 32GB minimum
 
     Remediation:
-    1. Install CUDA 13.1+
+    1. Install CUDA 13.2+
     2. Ensure RTX 5090 or compatible GPU is available
     3. Build with default features (candle is enabled by default)
 

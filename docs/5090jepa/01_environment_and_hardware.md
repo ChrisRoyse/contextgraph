@@ -71,7 +71,7 @@ export RUST_LOG=info,context_graph_dynamicjepa=debug,context_graph_storage=info
 
 **Do not** export `CUDA_COMPUTE_CAP` to a value other than `120`. Building for a different cap and then running on Blackwell triggers JIT PTX compilation on first kernel launch, which is slow and masks runtime errors. Force AOT cubin for sm_120.
 
-If `CUDA_COMPUTE_CAP=120` causes a candle build error, capture the full error, do not paper over it, and fall back to `CUDA_COMPUTE_CAP=90;PTX_JIT=1` only after writing a structured note in `17_open_questions_and_recommendations.md` so the operator knows the demo is on the JIT path.
+If `CUDA_COMPUTE_CAP=120` causes a candle build error, capture the full error and stop. Do not switch to a lower compute cap or a PTX JIT path; fix the CUDA/Candle/toolchain mismatch directly.
 
 ## 4. Build Commands
 
@@ -117,7 +117,7 @@ These commands are safe — they only touch `/tmp/` paths the demo creates. They
 Document them here so the next fresh agent does not re‑debug:
 
 - **`Could not start backend: Runtime compute cap 120 is not compatible with compile time compute cap X`** — Means a built artifact targeted a different cap. Fix with `cargo clean -p candle-core -p candle-nn && CUDA_COMPUTE_CAP=120 cargo build --release`.
-- **`CUDA_ERROR_INVALID_PTX`** — JIT PTX compilation failed. Almost always: nvcc on PATH is older than the candle release expects. Confirm `nvcc --version` reports 13.x and `nvidia-smi` driver supports 13.x.
+- **`CUDA_ERROR_INVALID_IMAGE` / module load failure** — Native CUDA image load failed. Almost always: `nvcc` on PATH is not CUDA 13.2 or the cubin was built for the wrong architecture. Confirm `nvcc --version` reports 13.2 and `cuobjdump --dump-elf` reports `sm=120a`.
 - **`no kernel image is available for execution on the device`** — Build was cubin‑only for the wrong sm. Same fix as the first item.
 - **WSL2 driver mismatch** — If `nvidia-smi` works on Windows but not in WSL, the WSL CUDA passthrough is broken. Check `/usr/lib/wsl/lib/libcuda.so.1` symlink and `/etc/wsl.conf` GPU support.
 
@@ -136,7 +136,7 @@ The repo's `tmp/` directory exists per CLAUDE.md ("never save working files… t
 
 ## 8. What You Are Not Allowed To Change
 
-- The pinned candle versions (`0.9.2-alpha`). Bumping candle is out of scope.
+- The pinned candle versions (`0.10.2`). Bumping candle beyond this requires a fresh cudarc/CUDA 13.2 verification pass.
 - The Rust toolchain (`stable`, `1.75` MSRV in workspace). Demo runs on whatever stable is installed (currently 1.92.0); we do not pin a newer minimum here.
 - The existing 73 RocksDB column families. The DynamicJEPA CFs are *additive*.
 - The existing 110 MCP tools with `llm` enabled (106 without). DynamicJEPA tools are *additive*.

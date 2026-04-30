@@ -12,7 +12,7 @@
 //! # Constitution References
 //!
 //! - AP-007: "No Stub Data in Production"
-//! - stack.gpu: RTX 5090 (Blackwell, CC 12.0), CUDA 13.1, 32GB GDDR7
+//! - stack.gpu: RTX 5090 (Blackwell, CC 12.0), CUDA 13.2, 32GB GDDR7
 //! - security.checksums.algorithm: SHA256
 
 use crate::types::{InputType, ModelId};
@@ -173,8 +173,8 @@ pub enum EmbeddingError {
     // =========================================================================
     /// EMB-E001: CUDA is required but unavailable.
     ///
-    /// Constitution: stack.gpu.cuda = "13.1"
-    #[error("[EMB-E001] CUDA_UNAVAILABLE: {message}\n  Required: RTX 5090 (Blackwell, CC 12.0), CUDA 13.1+\n  Remediation: Install CUDA 13.1+ and verify GPU with nvidia-smi")]
+    /// Constitution: stack.gpu.cuda = "13.2"
+    #[error("[EMB-E001] CUDA_UNAVAILABLE: {message}\n  Required: RTX 5090 (Blackwell, CC 12.0), CUDA 13.2+\n  Remediation: Install CUDA 13.2+ and verify GPU with nvidia-smi")]
     CudaUnavailable {
         /// Detailed message about why CUDA is unavailable
         message: String,

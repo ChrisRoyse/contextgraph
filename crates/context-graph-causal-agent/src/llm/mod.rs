@@ -1336,10 +1336,7 @@ ws ::= [ \t\n\r]*"#
     }
 }
 
-fn decode_tokens(
-    model: &LlamaModel,
-    tokens: &[LlamaToken],
-) -> Result<String, TokenToStringError> {
+fn decode_tokens(model: &LlamaModel, tokens: &[LlamaToken]) -> Result<String, TokenToStringError> {
     let mut bytes = Vec::with_capacity(tokens.len() * 4);
 
     for token in tokens.iter().copied() {

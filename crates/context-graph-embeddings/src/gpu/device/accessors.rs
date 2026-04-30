@@ -31,7 +31,7 @@ use crate::gpu::GpuInfo;
 /// ```
 /// use context_graph_embeddings::gpu::{init_gpu, device};
 ///
-/// // GPU is available - RTX 5090 with CUDA 13.1
+/// // GPU is available - RTX 5090 with CUDA 13.2
 /// init_gpu().expect("GPU required");
 ///
 /// // Now device() is safe to call
@@ -123,7 +123,7 @@ pub fn get_gpu_info() -> GpuInfo {
 /// use context_graph_embeddings::error::EmbeddingError;
 ///
 /// fn run_embeddings() -> Result<(), EmbeddingError> {
-///     require_gpu()?;  // RTX 5090 with CUDA 13.1 is available
+///     require_gpu()?;  // RTX 5090 with CUDA 13.2 is available
 ///     Ok(())
 /// }
 /// # run_embeddings().unwrap();

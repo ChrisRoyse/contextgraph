@@ -1,6 +1,6 @@
 //! GPU configuration.
 //!
-//! Target hardware: RTX 5090 (32GB GDDR7, Compute 12.0, CUDA 13.1)
+//! Target hardware: RTX 5090 (32GB GDDR7, Compute 12.0, CUDA 13.2)
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,7 @@ fn default_mixed_precision() -> bool {
 
 /// Configuration for GPU usage.
 ///
-/// Target hardware: RTX 5090 (32GB GDDR7, Compute 12.0, CUDA 13.1)
+/// Target hardware: RTX 5090 (32GB GDDR7, Compute 12.0, CUDA 13.2)
 ///
 /// # Key Features
 /// - Green Contexts: Static SM partitioning for deterministic latency
@@ -75,9 +75,9 @@ pub struct GpuConfig {
     #[serde(default = "default_mixed_precision")]
     pub mixed_precision: bool,
 
-    /// Use CUDA 13.1 green contexts for power efficiency.
+    /// Use CUDA 13.2 green contexts for power efficiency.
     /// Provides static SM partitioning for deterministic latency.
-    /// Requires: CUDA 13.1+, Blackwell architecture (Compute 12.0)
+    /// Requires: CUDA 13.2+, Blackwell architecture (Compute 12.0)
     /// Default: false (requires explicit opt-in)
     #[serde(default)]
     pub green_contexts: bool,

@@ -41,7 +41,7 @@ pub struct GpuInfo {
     pub compute_capability: (u32, u32),
     /// Total VRAM in bytes.
     pub total_memory_bytes: usize,
-    /// CUDA driver version string (e.g., "13.1.0").
+    /// CUDA driver version string (e.g., "13.2.0").
     pub driver_version: String,
 }
 

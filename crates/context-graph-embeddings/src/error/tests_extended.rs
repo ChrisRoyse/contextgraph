@@ -236,8 +236,8 @@ fn test_cuda_unavailable_emb_e001() {
         "Missing RTX 5090 constitution reference"
     );
     assert!(
-        msg.contains("CUDA 13.1"),
-        "Missing CUDA 13.1 constitution reference"
+        msg.contains("CUDA 13.2"),
+        "Missing CUDA 13.2 constitution reference"
     );
     assert!(msg.contains("Remediation"), "Missing remediation guidance");
 

@@ -5,7 +5,7 @@
 //!
 //! # Why Driver API (not Runtime API)?
 //!
-//! CUDA 13.1 on WSL2 with RTX 5090 (Blackwell) has a bug where
+//! CUDA 13.2 on WSL2 with RTX 5090 (Blackwell) has a bug where
 //! cudaGetDeviceProperties (Runtime API) segfaults. The Driver API
 //! (cuDeviceGetAttribute) works correctly and is also faster.
 //!
@@ -165,7 +165,7 @@ extern "C" {
     /// Get the CUDA driver version.
     ///
     /// Version is encoded as (major * 1000 + minor * 10).
-    /// Example: CUDA 13.1 = 13010
+    /// Example: CUDA 13.2 = 13020
     ///
     /// # Arguments
     ///

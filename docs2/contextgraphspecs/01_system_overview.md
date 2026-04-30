@@ -28,7 +28,7 @@ Context Graph is a Rust workspace that stores memories as 14-embedder fingerprin
 | Rust | edition 2021, rust-version 1.75 | Cargo.toml |
 | Async/MCP | tokio 1.35 full, JSON-RPC 2.0 | Cargo.toml |
 | Storage | rocksdb 0.22, usearch 2 | Cargo.toml |
-| Embeddings | candle 0.9.2-alpha (CUDA 13/Blackwell), llama-cpp-2 (llm feature) | Cargo.toml |
+| Embeddings | candle 0.10.2 (CUDA 13.2/Blackwell), llama-cpp-2 (llm feature) | Cargo.toml |
 | Search | hnsw_rs 0.3, RRF k=60 | retrieval/aggregation.rs |
 | Parsing | tree-sitter 0.23, tree-sitter-rust 0.23 | Cargo.toml |
 | Serialization | serde, serde_json, bincode, toml | Cargo.toml |

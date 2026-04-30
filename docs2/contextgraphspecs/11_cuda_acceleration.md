@@ -5,7 +5,7 @@
 - `crates/*/Cargo.toml`
 
 ## 1. Scope
-`context-graph-cuda` exposes FFI bindings, device context handling, similarity kernels, HDBSCAN, allocation, memory pool, and test stubs. Targets RTX 5090 (Blackwell) via candle 0.9.2-alpha. Crates `mcp`, `cli`, `storage`, `embeddings` enable CUDA through default features (`cuda`).
+`context-graph-cuda` exposes FFI bindings, device context handling, similarity kernels, HDBSCAN, allocation, memory pool, and test stubs. Targets RTX 5090 (Blackwell) via candle 0.10.2 and native CUDA 13.2 `sm_120a` cubin kernels. Crates `mcp`, `cli`, `storage`, `embeddings` enable CUDA through default features (`cuda`).
 
 ## 2. Module Tree
 | Path | Purpose |

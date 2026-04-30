@@ -27,10 +27,8 @@ tracing = { workspace = true }
 # UUID for memory IDs
 uuid = { workspace = true }
 
-# GPU tensor operations for batched similarity (planned)
-# TODO: Re-enable when candle-core supports CUDA 13.1 / compute capability 12.0
-# candle-core = { version = "0.8", optional = true }
-# candle-nn = { version = "0.8", optional = true }
+# Workspace Candle CUDA support is provided by candle-core/candle-nn 0.10.2
+# at the workspace root. This crate owns the direct CUDA Driver API kernels.
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -39,8 +37,8 @@ context-graph-core = { path = "../context-graph-core", features = ["test-utils"]
 
 [features]
 default = ["cuda"]
-cuda = []  # REQUIRED: RTX 5090 Blackwell CUDA support (candle integration pending CUDA 13.1 support)
-# FAISS GPU support - requires FAISS rebuilt with CUDA 13.1+ and sm_120 support.
+cuda = []  # REQUIRED: RTX 5090 Blackwell CUDA 13.2 sm_120a support
+# FAISS GPU support - requires FAISS rebuilt with CUDA 13.2+ and sm_120 support.
 # Enable this ONLY after running: scripts/rebuild_faiss_gpu.sh
 # This feature links against libfaiss_c.so and enables GPU vector indexing.
 faiss-working = ["cuda"]

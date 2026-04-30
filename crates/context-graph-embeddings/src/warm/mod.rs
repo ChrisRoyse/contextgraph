@@ -18,7 +18,7 @@
 //!
 //! # Requirements
 //!
-//! - CUDA 13.1+
+//! - CUDA 13.2+
 //! - RTX 5090 or equivalent (32GB VRAM)
 //! - Compute capability 12.0+
 

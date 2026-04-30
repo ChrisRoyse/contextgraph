@@ -3,7 +3,7 @@
 //! # Architecture
 //!
 //! This module provides GPU-accelerated operations via Candle (HuggingFace).
-//! Target hardware: NVIDIA RTX 5090 32GB with CUDA 13.1
+//! Target hardware: NVIDIA RTX 5090 32GB with CUDA 13.2
 //!
 //! | Component | Description |
 //! |-----------|-------------|

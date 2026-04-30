@@ -8,7 +8,7 @@
 //! # Requirements
 //!
 //! - **Hardware**: NVIDIA CUDA-capable GPU (target: RTX 5090 / Blackwell GB202)
-//! - **Driver**: CUDA 13.1+ with compatible NVIDIA drivers
+//! - **Driver**: CUDA 13.2+ with compatible NVIDIA drivers
 //! - **Memory**: Minimum 16GB VRAM recommended (32GB for RTX 5090)
 //!
 //! # Singleton Pattern

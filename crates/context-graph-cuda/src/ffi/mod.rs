@@ -22,12 +22,12 @@
 //!
 //! ## Enabling FAISS GPU
 //!
-//! 1. Run `./scripts/rebuild_faiss_gpu.sh` to build FAISS with CUDA 13.1 support
+//! 1. Run `./scripts/rebuild_faiss_gpu.sh` to build FAISS with CUDA 13.2 support
 //! 2. Build with: `cargo build --features faiss-working`
 //!
 //! ## Why FAISS is Optional
 //!
-//! On WSL2 with CUDA 13.1, the standard FAISS build crashes during static
+//! On WSL2 with CUDA 13.2, the standard FAISS build crashes during static
 //! initialization due to cudart bugs. The custom k-NN in knn.rs uses the
 //! CUDA Driver API which works correctly. FAISS GPU requires a custom build
 //! with lazy CUDA initialization.
@@ -37,7 +37,7 @@ pub mod knn;
 
 // FAISS module - only compiled when faiss-working feature is explicitly enabled.
 // This feature requires FAISS to be rebuilt with:
-//   - CUDA 13.1+
+//   - CUDA 13.2+
 //   - sm_120 (RTX 5090) architecture support
 //   - C API enabled (FAISS_ENABLE_C_API=ON)
 //

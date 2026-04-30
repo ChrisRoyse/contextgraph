@@ -67,7 +67,7 @@ use context_graph_core::types::fingerprint::SemanticFingerprint;
 /// # GPU Requirements
 ///
 /// - NVIDIA CUDA GPU with sufficient VRAM for all 13 models
-/// - CUDA 13.1+ recommended
+/// - CUDA 13.2+ recommended
 pub struct E7CodeEmbeddingProvider {
     /// The underlying multi-array provider (all 13 embedders).
     provider: Arc<dyn MultiArrayEmbeddingProvider>,

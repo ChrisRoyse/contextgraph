@@ -9,7 +9,7 @@
 //! # Mandatory Feature: `candle`
 //!
 //! This crate requires the `candle` feature to be enabled. The crate is designed
-//! for GPU-first architecture targeting NVIDIA RTX 5090 with CUDA 13.1.
+//! for GPU-first architecture targeting NVIDIA RTX 5090 with CUDA 13.2.
 //! Building without the `candle` feature will result in a compile error.
 //!
 //! # Architecture
@@ -39,13 +39,13 @@
 // =============================================================================
 // The `candle` feature is REQUIRED for context-graph-embeddings.
 // This crate is designed for GPU-first architecture targeting NVIDIA RTX 5090
-// with CUDA 13.1. All embedding operations require Candle's GPU acceleration.
+// with CUDA 13.2. All embedding operations require Candle's GPU acceleration.
 // =============================================================================
 
 #[cfg(not(feature = "candle"))]
 compile_error!(
     "The `candle` feature is required for context-graph-embeddings. \
-     This crate is designed for GPU-first architecture targeting NVIDIA RTX 5090 with CUDA 13.1. \
+     This crate is designed for GPU-first architecture targeting NVIDIA RTX 5090 with CUDA 13.2. \
      Build with: cargo build --features candle \
      Or enable the default feature: cargo build (candle is now default)"
 );

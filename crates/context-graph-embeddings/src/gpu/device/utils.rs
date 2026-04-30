@@ -6,7 +6,7 @@
 //!
 //! This module uses the CUDA Driver API (NOT Runtime API) for device queries.
 //! This is required because the Runtime API (cudaGetDeviceProperties) segfaults
-//! in CUDA 13.1 on WSL2 with RTX 5090 (Blackwell) GPUs.
+//! in CUDA 13.2 on WSL2 with RTX 5090 (Blackwell) GPUs.
 //!
 //! # References
 //!
@@ -31,7 +31,7 @@ use context_graph_cuda::ffi::{
 ///
 /// # Implementation Notes
 ///
-/// Uses CUDA Driver API instead of Runtime API to avoid CUDA 13.1 WSL2 segfault bug.
+/// Uses CUDA Driver API instead of Runtime API to avoid CUDA 13.2 WSL2 segfault bug.
 /// Uses `cuDeviceGetAttribute` instead of `cudaGetDeviceProperties` for performance
 /// (nanoseconds vs milliseconds per NVIDIA recommendations).
 ///

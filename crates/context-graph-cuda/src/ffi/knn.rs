@@ -1,8 +1,8 @@
 //! FFI bindings for GPU k-NN kernel using CUDA Driver API.
 //!
 //! This provides a FAISS-free GPU k-NN implementation for HDBSCAN.
-//! Uses PTX loaded via Driver API to avoid cudart static initialization
-//! bugs on WSL2 with CUDA 13.1.
+//! Uses native sm_120a cubin loaded via Driver API to avoid cudart static
+//! initialization bugs on WSL2 with CUDA 13.x and to avoid PTX JIT startup cost.
 //!
 //! # Constitution Compliance
 //!
@@ -17,8 +17,8 @@ use std::sync::Once;
 use crate::error::{CudaError, CudaResult};
 use crate::ffi::cuda_driver::{cuInit, CUcontext, CUresult, CUDA_SUCCESS};
 
-// Include generated PTX
-include!(concat!(env!("OUT_DIR"), "/knn_ptx.rs"));
+// Include generated native cubin image.
+include!(concat!(env!("OUT_DIR"), "/knn_image.rs"));
 
 // =============================================================================
 // CUDA DRIVER API BINDINGS
@@ -272,14 +272,15 @@ struct CudaModule {
 }
 
 impl CudaModule {
-    fn load_ptx(ptx: &str) -> CudaResult<Self> {
-        let ptx_cstring = CString::new(ptx).map_err(|_| CudaError::InvalidArgument {
-            argument: "ptx".to_string(),
-            reason: "PTX contains null bytes".to_string(),
-        })?;
-
+    fn load_image(image: &[u8]) -> CudaResult<Self> {
+        if image.is_empty() {
+            return Err(CudaError::InvalidArgument {
+                argument: "image".to_string(),
+                reason: "CUDA cubin image is empty".to_string(),
+            });
+        }
         let mut module: CUmodule = std::ptr::null_mut();
-        let ret = unsafe { cuModuleLoadData(&mut module, ptx_cstring.as_ptr() as *const c_void) };
+        let ret = unsafe { cuModuleLoadData(&mut module, image.as_ptr() as *const c_void) };
 
         if ret == CUDA_SUCCESS && !module.is_null() {
             Ok(Self { module })
@@ -366,8 +367,8 @@ pub fn compute_core_distances_gpu(
     // Create context on device 0
     let _ctx = CudaContext::new(0)?;
 
-    // Load PTX module
-    let module = CudaModule::load_ptx(PTX)?;
+    // Load native cubin module
+    let module = CudaModule::load_image(IMAGE)?;
     let kernel = module.get_function("compute_core_distances_kernel")?;
 
     // Allocate GPU memory
@@ -522,8 +523,8 @@ pub fn compute_pairwise_distances_gpu(
     // Create context on device 0
     let _ctx = CudaContext::new(0)?;
 
-    // Load PTX module
-    let module = CudaModule::load_ptx(PTX)?;
+    // Load native cubin module
+    let module = CudaModule::load_image(IMAGE)?;
     let kernel = module.get_function("compute_pairwise_distances_kernel")?;
 
     // Allocate GPU memory

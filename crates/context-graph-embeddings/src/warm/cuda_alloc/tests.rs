@@ -13,14 +13,14 @@ fn test_gpu_info_construction() {
         "NVIDIA GeForce RTX 5090".to_string(),
         (12, 0),
         32 * GB,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     assert_eq!(info.device_id, 0);
     assert_eq!(info.name, "NVIDIA GeForce RTX 5090");
     assert_eq!(info.compute_capability, (12, 0));
     assert_eq!(info.total_memory_bytes, 32 * GB);
-    assert_eq!(info.driver_version, "13.1.0");
+    assert_eq!(info.driver_version, "13.2.0");
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn test_gpu_info_compute_capability_string() {
         "RTX 5090".to_string(),
         (12, 0),
         32 * GB,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     assert_eq!(info.compute_capability_string(), "12.0");
@@ -64,7 +64,7 @@ fn test_gpu_info_total_memory_gb() {
         "RTX 5090".to_string(),
         (12, 0),
         32 * GB,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     assert!((info.total_memory_gb() - 32.0).abs() < 0.01);
@@ -77,7 +77,7 @@ fn test_gpu_info_meets_compute_requirement() {
         "RTX 5090".to_string(),
         (12, 0),
         32 * GB,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     // Exact match
@@ -116,7 +116,7 @@ fn test_gpu_info_meets_rtx_5090_requirements() {
         "RTX 5090".to_string(),
         (12, 0),
         32 * GB,
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     assert!(rtx_5090.meets_rtx_5090_requirements());
@@ -127,7 +127,7 @@ fn test_gpu_info_meets_rtx_5090_requirements() {
         "RTX 5090".to_string(),
         (12, 0),
         24 * GB, // Only 24GB
-        "13.1.0".to_string(),
+        "13.2.0".to_string(),
     );
 
     assert!(!low_vram.meets_rtx_5090_requirements());

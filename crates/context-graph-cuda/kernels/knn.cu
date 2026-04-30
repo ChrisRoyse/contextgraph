@@ -10,7 +10,7 @@
 //!
 //! # Driver API
 //!
-//! This kernel is compiled to PTX and loaded via CUDA Driver API.
+//! This kernel is compiled to native sm_120a cubin and loaded via CUDA Driver API.
 //! No cudart dependency to avoid WSL2 static initialization bugs.
 
 #include <float.h>

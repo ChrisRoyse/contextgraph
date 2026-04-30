@@ -8,7 +8,7 @@
 //! # Requirements
 //!
 //! - **Hardware**: NVIDIA CUDA-capable GPU (target: RTX 5090 / Blackwell GB202)
-//! - **Driver**: CUDA 13.1+ with compatible NVIDIA drivers
+//! - **Driver**: CUDA 13.2+ with compatible NVIDIA drivers
 //! - **Memory**: Minimum 16GB VRAM recommended (32GB for RTX 5090)
 //!
 //! # Singleton Pattern
@@ -48,7 +48,7 @@ pub(crate) static INIT_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
 ///
 /// - Primary target: NVIDIA RTX 5090 (Blackwell GB202, 32GB VRAM)
 /// - Minimum requirement: Any CUDA-capable GPU with compute capability 6.0+
-/// - Required driver: CUDA 13.1+ recommended
+/// - Required driver: CUDA 13.2+ recommended
 ///
 /// # Returns
 ///
@@ -72,7 +72,7 @@ pub(crate) static INIT_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
 /// use context_graph_embeddings::gpu::init_gpu;
 ///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // GPU is available - RTX 5090 with CUDA 13.1
+///     // GPU is available - RTX 5090 with CUDA 13.2
 ///     let device = init_gpu()?;
 ///     println!("GPU initialized: {:?}", device);
 ///     Ok(())
@@ -94,7 +94,7 @@ pub fn init_gpu() -> Result<&'static Device, candle_core::Error> {
     // Log initialization attempt with full context
     tracing::info!("=== GPU Initialization Starting ===");
     tracing::info!("Target hardware: NVIDIA RTX 5090 / Blackwell GB202");
-    tracing::info!("Target CUDA version: 13.1+");
+    tracing::info!("Target CUDA version: 13.2+");
     tracing::info!("Attempting CUDA device 0 initialization...");
 
     match Device::new_cuda(0) {
@@ -142,7 +142,7 @@ fn init_failure(e: candle_core::Error) -> Result<&'static Device, candle_core::E
     tracing::error!("Troubleshooting steps:");
     tracing::error!("  1. Verify NVIDIA GPU is present: nvidia-smi");
     tracing::error!("  2. Check CUDA installation: nvcc --version");
-    tracing::error!("  3. Verify driver compatibility with CUDA 13.1+");
+    tracing::error!("  3. Verify driver compatibility with CUDA 13.2+");
     tracing::error!("  4. Ensure GPU is not in exclusive compute mode");
     tracing::error!(
         "  5. Check available GPU memory: nvidia-smi --query-gpu=memory.free --format=csv"

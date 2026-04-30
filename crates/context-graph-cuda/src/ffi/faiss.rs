@@ -331,7 +331,7 @@ fn check_gpu_via_subprocess() -> bool {
                                 tracing::error!(
                                     target: "context_graph::cuda",
                                     "FAISS GPU test failed on WSL2. This is likely due to CUDA version mismatch. \
-                                    FAISS must be rebuilt with CUDA 13.1+ for RTX 5090 compatibility. \
+                                    FAISS must be rebuilt with CUDA 13.2+ for RTX 5090 compatibility. \
                                     Run: cd /path/to/faiss && cmake -B build -DFAISS_ENABLE_GPU=ON \
                                     -DCMAKE_CUDA_ARCHITECTURES=120 && cmake --build build"
                                 );
