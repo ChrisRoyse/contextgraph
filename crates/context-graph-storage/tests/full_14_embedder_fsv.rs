@@ -59,7 +59,7 @@ fn slot_specs() -> Vec<SlotSpec> {
             let data_len = match method {
                 QuantizationMethod::PQ8 => 8,
                 QuantizationMethod::Float8E4M3 => storage_dim,
-                QuantizationMethod::Binary => (storage_dim + 7) / 8,
+                QuantizationMethod::Binary => storage_dim.div_ceil(8),
                 QuantizationMethod::SparseNative => 32,
                 QuantizationMethod::TokenPruning => 64,
             };

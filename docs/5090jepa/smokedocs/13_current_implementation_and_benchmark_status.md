@@ -200,34 +200,75 @@ Independent career DB readback:
 
 ## Paper-Small Multi-Seed Results
 
-Final explicit-seed bundles:
+Final explicit seed panel 42-46:
 
 | Run ID | Seed | Status |
 | --- | ---: | --- |
 | `20260430T_paper_small_1k_seed42_v2` | 42 | passed |
 | `20260430T_paper_small_1k_seed43_v2` | 43 | passed |
 | `20260430T_paper_small_1k_seed44_v1` | 44 | passed |
+| `20260430T_paper_small_1k_seed45_v2` | 45 | failed |
+| `20260430T_paper_small_1k_seed46_v1` | 46 | failed |
+
+Aggregate bundle source of truth:
+
+- bundle: `tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v2`;
+- manifest: `aggregate_manifest.json`;
+- FSV report: `aggregate_fsv_report.json`;
+- tables:
+  `paper_tables/table_prediction_metrics_multiseed.csv`,
+  `paper_tables/table_ablation_multiseed.csv`,
+  `paper_tables/table_paired_ablation_tests.csv`,
+  `paper_tables/table_seed_failures.csv`;
+- plots:
+  `plots/multiseed_val_mse_box.svg`,
+  `plots/multiseed_paired_delta_forest.svg`;
+- aggregate status: `passed`;
+- matched bundles: 5;
+- passed bundles: 3;
+- failed bundles: 2;
+- bootstrap: BCa mean, 10,000 iterations, seed `20260430`,
+  confidence `0.95`.
+
+Aggregate output hashes:
+
+| File | SHA-256 |
+| --- | --- |
+| `aggregate_manifest.json` | `b1a0fcf613ca640dd85f13941db745db0344321745b5fb6f1e74e4b545db4ebc` |
+| `aggregate_fsv_report.json` | `dbd39a70feae485a09bda16f093d8cf90d5aacaf3a6032a016bfa6eeacbce4dd` |
+| `table_prediction_metrics_multiseed.csv` | `bf6f55abd5c3f972cd8f68387347fe8af61efa8f266aa5a08eda8948e9737976` |
+| `table_ablation_multiseed.csv` | `2b5f71e0ff84c8b31bac4d8f3ae0f0f336f85e8a4c18689385a75b945e5d13d2` |
+| `table_paired_ablation_tests.csv` | `69a83ea56ba20804fbccd6f03d585783623e36cf24abcfce3a33b0ac0bdf8389` |
+| `table_seed_failures.csv` | `75ba77b40e6f9d020cb505e151969123df654b738033a686db57fc11373f08e3` |
+| `multiseed_val_mse_box.svg` | `8ab0878f30d22dcdedd8f8ab2538dd5fcd2d5b3a4e5e7f193ca13dc46a137d8b` |
+| `multiseed_paired_delta_forest.svg` | `d41d7079fd075372a0ef1dd6945c89f4b8e67205ff06690f5cf4f0026d04309f` |
 
 Career metric mean/stddev across the three passed explicit-seed bundles:
 
-| Metric | Mean | Stddev | N |
-| --- | ---: | ---: | ---: |
-| `val_latent_mse` | 0.155409786323 | 0.013130850075 | 3 |
-| `val_latent_cosine` | 0.917646185906 | 0.026095423035 | 3 |
-| `test_latent_mse` | 0.291214507891 | 0.091692459686 | 3 |
-| `test_latent_cosine` | 0.884851853288 | 0.053905889447 | 3 |
-| `val_action_contrast_acc` | 0.958333333333 | 0.072168783649 | 3 |
+| Metric | Mean | Stddev | BCa 95% low | BCa 95% high | N |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `val_latent_mse` | 0.155409786323 | 0.013130850075 | 0.140719470554 | 0.163838415514 | 3 |
+| `val_latent_cosine` | 0.917646185906 | 0.026095423035 | 0.900420899037 | 0.933395886177 | 3 |
+| `test_latent_mse` | 0.291214507891 | 0.091692459686 | 0.201729551323 | 0.352293173253 | 3 |
+| `test_latent_cosine` | 0.884851853288 | 0.053905889447 | 0.826874948745 | 0.920379536076 | 3 |
+| `val_action_contrast_acc` | 0.958333333333 | 0.072168783649 | 0.875000000000 | 1.000000000000 | 3 |
 
-Failed bundle kept for evidence:
+Failed bundles kept for evidence and listed in `table_seed_failures.csv`:
 
-- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed43_v1`;
-- failure: A0 taxonomy-only ablation did not converge with
-  `val_latent_mse=0.510142` against target `0.080000`;
-- root cause: the first seed-control implementation varied the ablation seed
-  together with the main career seed;
-- fix: `--career-training-seed` now varies main career training, while
-  ablations stay on the checked-in control seed unless
-  `--career-ablation-training-seed` is explicitly supplied.
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed45_v2`;
+  failure: A3 no-action ablation failed the metric gate with
+  `val_latent_mse=0.38418309787311644` and
+  `val_latent_cosine=0.6275242888485578`.
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed46_v1`;
+  failure: A3 no-action ablation failed the metric gate with
+  `val_latent_mse=0.3706402871571657` and
+  `val_latent_cosine=0.43491496685455616`.
+- Older failed bundle `20260430T_paper_small_1k_seed45_v1` is preserved but
+  excluded from the final aggregate after a manual parallel inspection exposed a
+  RocksDB MANIFEST/SST inconsistency caused by unsafe stale-lock removal logic.
+  The storage opener now never removes RocksDB `LOCK` files; a live-lock
+  regression test proves a second open fails closed and the DB reopens cleanly
+  after the first handle drops.
 
 ## Manual Edge FSV
 

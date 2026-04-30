@@ -167,7 +167,7 @@ async fn main() {
         };
 
         // Hub bias: memories 0,1,2 get extra incoming edges.
-        let hub_target = if idx % 4 == 0 && target_idx > 2 {
+        let hub_target = if idx.is_multiple_of(4) && target_idx > 2 {
             idx % 3
         } else {
             target_idx
@@ -406,13 +406,13 @@ async fn main() {
         .iter()
         .map(|(id, d)| (*id, d.iter().sum()))
         .collect();
-    by_incoming.sort_by(|a, b| b.1.cmp(&a.1));
+    by_incoming.sort_by_key(|row| std::cmp::Reverse(row.1));
     by_incoming.truncate(5);
 
     println!("  Top 5 hubs by incoming-edge count (hub detection):");
     println!(
-        "    {:<36} {}  {:<40}",
-        "memory_id", "incoming", "signature [SemS|CodR|EntS|CauC|GrC|PaA|KwO|MulA]"
+        "    {:<36} incoming  {:<40}",
+        "memory_id", "signature [SemS|CodR|EntS|CauC|GrC|PaA|KwO|MulA]"
     );
     for (id, total) in &by_incoming {
         let d = incoming_by_memory[id];

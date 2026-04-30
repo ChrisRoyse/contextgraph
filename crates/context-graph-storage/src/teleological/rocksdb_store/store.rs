@@ -6,7 +6,6 @@
 //! - `inverted_index.rs` - SPLADE inverted index operations
 
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -136,7 +135,8 @@ impl RocksDbTeleologicalStore {
     /// Open a teleological store at the specified path with default configuration.
     ///
     /// Creates the database and all 98 column families if they don't exist.
-    /// **Automatically detects and removes stale lock files.**
+    /// Existing RocksDB LOCK files are inspected for diagnostics only and are
+    /// never removed by the store opener.
     pub fn open<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<Self> {
         Self::open_with_config(path, TeleologicalStoreConfig::default())
     }
@@ -155,23 +155,10 @@ impl RocksDbTeleologicalStore {
             config.block_cache_size / (1024 * 1024)
         );
 
-        // STALE LOCK DETECTION: Check for and remove stale lock files before opening.
+        // LOCK DIAGNOSTICS: Never remove RocksDB LOCK files here. RocksDB owns
+        // its lock protocol and will fail the open if another process owns it.
         if path_buf.exists() {
-            match Self::detect_and_remove_stale_lock(&path_buf) {
-                Ok(true) => {
-                    info!("Removed stale lock at '{}', proceeding with open", path_str);
-                }
-                Ok(false) => {
-                    debug!("No stale lock detected at '{}'", path_str);
-                }
-                Err(e) => {
-                    error!(
-                        "FAIL FAST: Stale lock cleanup failed at '{}': {}",
-                        path_str, e
-                    );
-                    return Err(e);
-                }
-            }
+            Self::inspect_rocksdb_lock(&path_buf)?;
 
             // NOTE: We let RocksDB detect corruption during open rather than pre-checking.
             // RocksDB knows exactly which files it needs, avoiding false positives.
@@ -452,8 +439,8 @@ impl RocksDbTeleologicalStore {
         );
     }
 
-    /// Detect and remove stale RocksDB lock files.
-    fn detect_and_remove_stale_lock<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<bool> {
+    /// Inspect RocksDB lock files without removing them.
+    fn inspect_rocksdb_lock<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<()> {
         let lock_path = path.as_ref().join("LOCK");
         let lock_path_str = lock_path.to_string_lossy().to_string();
 
@@ -462,11 +449,11 @@ impl RocksDbTeleologicalStore {
                 "No LOCK file at '{}' - database not previously opened",
                 lock_path_str
             );
-            return Ok(false);
+            return Ok(());
         }
 
         info!(
-            "LOCK file exists at '{}' - checking if stale",
+            "LOCK file exists at '{}' - inspecting advisory lock state without removal",
             lock_path_str
         );
 
@@ -481,90 +468,68 @@ impl RocksDbTeleologicalStore {
             {
                 Ok(f) => f,
                 Err(e) => {
-                    warn!("Cannot open LOCK file for inspection: {}", e);
-                    return Self::try_remove_lock_file(&lock_path, &lock_path_str);
+                    warn!(
+                        "Cannot open LOCK file for inspection; leaving it in place: {}",
+                        e
+                    );
+                    return Ok(());
                 }
             };
 
             let fd = file.as_raw_fd();
-            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            let mut probe = libc::flock {
+                l_type: libc::F_WRLCK as libc::c_short,
+                l_whence: libc::SEEK_SET as libc::c_short,
+                l_start: 0,
+                l_len: 0,
+                l_pid: 0,
+            };
+            let result = unsafe { libc::fcntl(fd, libc::F_SETLK, &probe) };
 
             if result == 0 {
                 info!(
-                    "Acquired exclusive lock - LOCK file at '{}' is STALE",
+                    "LOCK file at '{}' is not currently held; leaving it in place for RocksDB",
                     lock_path_str
                 );
-                unsafe { libc::flock(fd, libc::LOCK_UN) };
-                drop(file);
-                Self::try_remove_lock_file(&lock_path, &lock_path_str)
+                probe.l_type = libc::F_UNLCK as libc::c_short;
+                let _ = unsafe { libc::fcntl(fd, libc::F_SETLK, &probe) };
+                Ok(())
             } else {
                 let errno = std::io::Error::last_os_error();
-                if errno.raw_os_error() == Some(libc::EWOULDBLOCK) {
+                if matches!(errno.raw_os_error(), Some(code) if code == libc::EACCES || code == libc::EAGAIN)
+                {
                     info!(
-                        "LOCK file at '{}' is held by another process - NOT stale",
+                        "LOCK file at '{}' is held by another process; RocksDB open will fail if the owner is still active",
                         lock_path_str
                     );
-                    Ok(false)
                 } else {
-                    warn!("flock() failed with unexpected error: {}", errno);
-                    Self::try_remove_lock_file(&lock_path, &lock_path_str)
+                    warn!(
+                        "fcntl lock probe for '{}' failed with unexpected error {}; leaving LOCK in place",
+                        lock_path_str, errno
+                    );
                 }
+                Ok(())
             }
         }
 
         #[cfg(windows)]
         {
-            // L11 FIX: On Windows, we cannot safely probe for live lock holders (no flock).
-            // Log a warning instead of blindly removing — could kill a live process's lock.
+            // On Windows, we cannot safely probe for live lock holders here.
+            // Leave the file in place and let RocksDB's own lock open path decide.
             warn!(
-                "LOCK file at '{}' found on Windows — cannot verify if held by live process. \
-                 Attempting removal (may fail if locked by another process).",
+                "LOCK file at '{}' found on Windows; leaving it in place for RocksDB",
                 lock_path_str
             );
-            Self::try_remove_lock_file(&lock_path, &lock_path_str)
+            Ok(())
         }
 
         #[cfg(not(any(unix, windows)))]
         {
             warn!(
-                "LOCK file at '{}' found on unknown OS — attempting removal",
+                "LOCK file at '{}' found on unknown OS; leaving it in place for RocksDB",
                 lock_path_str
             );
-            Self::try_remove_lock_file(&lock_path, &lock_path_str)
-        }
-    }
-
-    /// Attempt to remove a stale lock file.
-    fn try_remove_lock_file(
-        lock_path: &Path,
-        lock_path_str: &str,
-    ) -> TeleologicalStoreResult<bool> {
-        match fs::remove_file(lock_path) {
-            Ok(()) => {
-                info!(
-                    "Successfully removed stale LOCK file at '{}'",
-                    lock_path_str
-                );
-                Ok(true)
-            }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                debug!("LOCK file at '{}' was already removed", lock_path_str);
-                Ok(true)
-            }
-            Err(e) => {
-                error!(
-                    "FAIL FAST: Cannot remove stale LOCK file at '{}': {}",
-                    lock_path_str, e
-                );
-                Err(TeleologicalStoreError::StaleLockCleanupFailed {
-                    path: lock_path_str.to_string(),
-                    message: format!(
-                        "Lock file exists but cannot be removed: {}. \
-                        Manual intervention required: remove '{}'",
-                        e, lock_path_str
-                    ),
-                })
-            }
+            Ok(())
         }
     }
 

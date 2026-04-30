@@ -1732,11 +1732,13 @@ async fn test_multi_space_search_with_temporal_navigation_profile() {
     );
 
     // Search with temporal_navigation profile (E2=0.23, E3=0.23, E4=0.23)
-    let mut options = TeleologicalSearchOptions::default();
-    options.strategy = SearchStrategy::MultiSpace;
-    options.weight_profile = Some("temporal_navigation".to_string());
-    options.top_k = 10;
-    options.min_similarity = 0.0;
+    let options = TeleologicalSearchOptions {
+        strategy: SearchStrategy::MultiSpace,
+        weight_profile: Some("temporal_navigation".to_string()),
+        top_k: 10,
+        min_similarity: 0.0,
+        ..Default::default()
+    };
 
     let results = store.search_semantic(&fp1.semantic, options).await.unwrap();
     assert!(
@@ -1796,11 +1798,13 @@ async fn test_multi_space_search_semantic_profile_excludes_temporal() {
     store.store(fp.clone()).await.unwrap();
 
     // Search with semantic_search profile (E2=0.0, E3=0.0, E4=0.0)
-    let mut options = TeleologicalSearchOptions::default();
-    options.strategy = SearchStrategy::MultiSpace;
-    options.weight_profile = Some("semantic_search".to_string());
-    options.top_k = 10;
-    options.min_similarity = 0.0;
+    let options = TeleologicalSearchOptions {
+        strategy: SearchStrategy::MultiSpace,
+        weight_profile: Some("semantic_search".to_string()),
+        top_k: 10,
+        min_similarity: 0.0,
+        ..Default::default()
+    };
 
     let results = store.search_semantic(&fp.semantic, options).await.unwrap();
     assert!(
@@ -1850,10 +1854,12 @@ async fn test_e2_slot_uses_cosine_not_timestamp_decay() {
     store.store(fp.clone()).await.unwrap();
 
     // Use E1Only strategy to get raw embedder_scores without fusion
-    let mut options = TeleologicalSearchOptions::default();
-    options.strategy = SearchStrategy::E1Only;
-    options.top_k = 10;
-    options.min_similarity = 0.0;
+    let options = TeleologicalSearchOptions {
+        strategy: SearchStrategy::E1Only,
+        top_k: 10,
+        min_similarity: 0.0,
+        ..Default::default()
+    };
 
     let results = store.search_semantic(&fp.semantic, options).await.unwrap();
     assert!(!results.is_empty());
@@ -1920,11 +1926,13 @@ async fn test_degenerate_weight_suppression_for_identical_temporal() {
     query_fp.semantic.e3_temporal_periodic = shared_e3;
     query_fp.semantic.e4_temporal_positional = shared_e4;
 
-    let mut options = TeleologicalSearchOptions::default();
-    options.strategy = SearchStrategy::MultiSpace;
-    options.weight_profile = Some("temporal_navigation".to_string());
-    options.top_k = 10;
-    options.min_similarity = 0.0;
+    let options = TeleologicalSearchOptions {
+        strategy: SearchStrategy::MultiSpace,
+        weight_profile: Some("temporal_navigation".to_string()),
+        top_k: 10,
+        min_similarity: 0.0,
+        ..Default::default()
+    };
 
     let results = store
         .search_semantic(&query_fp.semantic, options)
@@ -2038,11 +2046,13 @@ async fn test_temporal_fusion_ranks_similar_temporal_vectors_higher() {
     store.store(dissimilar_temporal).await.unwrap();
 
     // Search with temporal_navigation (E2=0.23, E3=0.23, E4=0.23 = 69% temporal weight)
-    let mut options = TeleologicalSearchOptions::default();
-    options.strategy = SearchStrategy::MultiSpace;
-    options.weight_profile = Some("temporal_navigation".to_string());
-    options.top_k = 10;
-    options.min_similarity = 0.0;
+    let options = TeleologicalSearchOptions {
+        strategy: SearchStrategy::MultiSpace,
+        weight_profile: Some("temporal_navigation".to_string()),
+        top_k: 10,
+        min_similarity: 0.0,
+        ..Default::default()
+    };
 
     let results = store
         .search_semantic(&query_fp.semantic, options)

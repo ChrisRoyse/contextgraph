@@ -148,9 +148,7 @@ async fn main() {
     );
 
     let mut e5_scores = [0f32; 14];
-    for v in &mut e5_scores {
-        *v = 0.4;
-    }
+    e5_scores.fill(0.4);
     let e5 = synthetic_edge(
         sources[5],
         targets[5],
@@ -329,7 +327,7 @@ async fn main() {
         use context_graph_storage::teleological::column_families::CF_TYPED_EDGE_RECORDS;
         let db = store.db_arc();
         let cf = db.cf_handle(CF_TYPED_EDGE_RECORDS).expect("CF handle");
-        db.put_cf(&cf, &bad_key, &bad_payload).unwrap();
+        db.put_cf(&cf, bad_key, bad_payload).unwrap();
     }
     let err = store
         .get_typed_edge_record(key_src, key_tgt, 0)

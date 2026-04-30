@@ -136,6 +136,8 @@ pub enum DynamicJepaCommands {
     VerifyCareerTaxonomy(VerifyDomainArgs),
     /// Build one immutable 5090 ME-JEPA research-smoke bundle from real verifier runs.
     ResearchSmoke(ResearchSmokeArgs),
+    /// Aggregate immutable paper-small research-smoke bundles across real training seeds.
+    MultiseedAggregate(MultiseedAggregateArgs),
     /// Capture a checked-in CI reference from an existing research-smoke bundle.
     CaptureReference(CaptureReferenceArgs),
     /// Compare a research-smoke bundle against a checked-in CI reference.
@@ -176,6 +178,7 @@ impl DynamicJepaCommands {
             Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
             Self::VerifyCareerTaxonomy(_) => "dynamicjepa_verify_career_taxonomy",
             Self::ResearchSmoke(_) => "dynamicjepa_research_smoke",
+            Self::MultiseedAggregate(_) => "dynamicjepa_multiseed_aggregate",
             Self::CaptureReference(_) => "dynamicjepa_capture_reference",
             Self::CheckReference(_) => "dynamicjepa_check_reference",
         }
@@ -804,6 +807,61 @@ pub struct ResearchSmokeArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct MultiseedAggregateArgs {
+    /// Root containing immutable child research-smoke bundle directories.
+    #[arg(long = "bundle-root", default_value = "tmp/mejepa_research_runs")]
+    pub bundle_root: PathBuf,
+
+    /// Shell-style child bundle name pattern under --bundle-root. Supports '*' only.
+    #[arg(long = "bundle-glob")]
+    pub bundle_glob: Option<String>,
+
+    /// Explicit child bundle directory. May be repeated; relative paths resolve from cwd.
+    #[arg(long = "bundle")]
+    pub bundles: Vec<PathBuf>,
+
+    /// Fresh aggregate bundle directory to create. Existing paths are rejected.
+    #[arg(long = "output-root")]
+    pub output_root: PathBuf,
+
+    /// Required number of child bundles matched before aggregation.
+    #[arg(long = "expected-bundle-count")]
+    pub expected_bundle_count: Option<usize>,
+
+    /// Minimum number of passed child bundles required for aggregate statistics.
+    #[arg(long = "min-passed", default_value_t = 3)]
+    pub min_passed: usize,
+
+    /// Expected research-smoke purpose for every child bundle.
+    #[arg(long = "expected-purpose", default_value = "paper_small")]
+    pub expected_purpose: String,
+
+    /// Expected O*NET-derived career event count for every child bundle.
+    #[arg(long = "expected-career-event-count")]
+    pub expected_career_event_count: Option<u64>,
+
+    /// Required career training seed set, comma-delimited. Failed bundles count as attempted seeds.
+    #[arg(long = "required-career-training-seeds", value_delimiter = ',')]
+    pub required_career_training_seeds: Vec<u64>,
+
+    /// BCa bootstrap iteration count for confidence intervals.
+    #[arg(long = "bootstrap-iters", default_value_t = 10000)]
+    pub bootstrap_iters: u64,
+
+    /// Deterministic seed for aggregate resampling.
+    #[arg(long = "bootstrap-seed", default_value_t = 20260430)]
+    pub bootstrap_seed: u64,
+
+    /// Confidence level for aggregate intervals.
+    #[arg(long = "confidence", default_value_t = 0.95)]
+    pub confidence: f64,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct CaptureReferenceArgs {
     /// Existing research-smoke bundle directory to capture as a CI reference.
     #[arg(long = "bundle")]
@@ -942,6 +1000,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
         DynamicJepaCommands::VerifyCareerTaxonomy(args) => verify_career_taxonomy_command(args),
         DynamicJepaCommands::ResearchSmoke(args) => research_smoke_command(args),
+        DynamicJepaCommands::MultiseedAggregate(args) => multiseed_aggregate_command(args),
         DynamicJepaCommands::CaptureReference(args) => capture_reference_command(args),
         DynamicJepaCommands::CheckReference(args) => check_reference_command(args),
     }
@@ -3001,6 +3060,1667 @@ fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandO
     }
 }
 
+const MULTISEED_AGGREGATE_SCHEMA_VERSION: u64 = 1;
+const MULTISEED_CHILD_REQUIRED_FILES: &[&str] = &[
+    "run_manifest.json",
+    "fsv_report.json",
+    "data_manifest.json",
+    "artifact_hashes.json",
+    "paper_tables/table_prediction_metrics.csv",
+    "paper_tables/table_ablation.csv",
+    "plots/plot_manifest.json",
+    "plots/prediction_val_mse.svg",
+    "plots/career_ablation_val_mse.svg",
+];
+const MULTISEED_OUTPUT_REQUIRED_FILES: &[&str] = &[
+    "aggregate_manifest.json",
+    "paper_tables/table_prediction_metrics_multiseed.csv",
+    "paper_tables/table_ablation_multiseed.csv",
+    "paper_tables/table_paired_ablation_tests.csv",
+    "paper_tables/table_seed_failures.csv",
+    "plots/multiseed_val_mse_box.svg",
+    "plots/multiseed_paired_delta_forest.svg",
+    "plots/plot_manifest.json",
+];
+const MULTISEED_PREDICTION_METRICS: &[&str] = &[
+    "train_rows",
+    "val_rows",
+    "test_rows",
+    "parameter_count",
+    "val_latent_mse",
+    "val_latent_cosine",
+    "test_latent_mse",
+    "test_latent_cosine",
+    "val_action_contrast_acc",
+    "random_init_cosine",
+    "shuffled_target_cosine",
+];
+const MULTISEED_ABLATION_AGGREGATE_METRICS: &[&str] = &[
+    "panel_slots",
+    "input_dim",
+    "target_dim",
+    "latent_dim",
+    "action_dim",
+    "parameter_count",
+    "val_latent_mse",
+    "val_latent_cosine",
+    "test_latent_mse",
+    "test_latent_cosine",
+    "val_action_contrast_acc",
+    "random_init_cosine",
+    "shuffled_target_cosine",
+];
+const MULTISEED_PAIRED_METRICS: &[&str] = &[
+    "val_latent_mse",
+    "val_latent_cosine",
+    "test_latent_mse",
+    "test_latent_cosine",
+    "val_action_contrast_acc",
+    "random_init_cosine",
+    "shuffled_target_cosine",
+];
+const MULTISEED_BASELINE_ABLATION_ID: &str = "A0_taxonomy_only_action_vicreg";
+
+#[derive(Debug, Clone)]
+struct MultiseedBundle {
+    canonical_path: String,
+    run_id: String,
+    status: String,
+    fsv_status: String,
+    purpose: String,
+    career_event_count: Option<u64>,
+    career_training_seed: Option<u64>,
+    manifest_sha256: String,
+    fsv_sha256: String,
+    failure_code: Option<String>,
+    failure_message: Option<String>,
+    prediction_table: Option<CiCsvTable>,
+    ablation_table: Option<CiCsvTable>,
+}
+
+impl MultiseedBundle {
+    fn passed(&self) -> bool {
+        self.status == "passed" && self.fsv_status == "passed"
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MultiseedMetricSummary {
+    key: String,
+    metric: String,
+    n: usize,
+    mean: f64,
+    std: f64,
+    ci_lower: f64,
+    ci_upper: f64,
+    min: f64,
+    max: f64,
+    values: Vec<f64>,
+}
+
+#[derive(Debug, Clone)]
+struct MultiseedAggregateTable {
+    csv: String,
+    row_count: usize,
+    summaries: Vec<MultiseedMetricSummary>,
+    key_order: Vec<String>,
+    headers: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct MultiseedPairedRow {
+    metric: String,
+    comparison_ablation_id: String,
+    n: usize,
+    mean_delta: f64,
+    std_delta: f64,
+    ci_lower: f64,
+    ci_upper: f64,
+    min_delta: f64,
+    max_delta: f64,
+    sign_flip_p: f64,
+}
+
+fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    validate_multiseed_args(&args)?;
+
+    let operation = "dynamicjepa_multiseed_aggregate";
+    let before_state = json!({
+        "bundle_root": ci_path_state(&args.bundle_root)?,
+        "output_root": ci_path_state(&args.output_root)?,
+    });
+    if args.output_root.exists() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.output_root",
+            format!(
+                "output root already exists: {}",
+                args.output_root.display()
+            ),
+            "choose a fresh aggregate bundle path; multiseed aggregation never overwrites prior evidence",
+        ));
+    }
+
+    let bundle_paths = discover_multiseed_bundle_paths(&args)?;
+    if let Some(expected) = args.expected_bundle_count {
+        if bundle_paths.len() != expected {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.expected_bundle_count",
+                format!(
+                    "matched {} child bundles, expected {expected}",
+                    bundle_paths.len()
+                ),
+                "run the missing paper-small seeds or tighten --bundle/--bundle-glob to the intended immutable bundle set",
+            ));
+        }
+    }
+
+    let mut bundles = Vec::new();
+    for path in &bundle_paths {
+        bundles.push(read_multiseed_bundle(path, &args)?);
+    }
+    validate_multiseed_bundle_set(&bundles, &args)?;
+
+    let passed = bundles
+        .iter()
+        .filter(|bundle| bundle.passed())
+        .collect::<Vec<_>>();
+    if passed.len() < args.min_passed {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.min_passed",
+            format!(
+                "only {} child bundles passed, minimum required is {}",
+                passed.len(),
+                args.min_passed
+            ),
+            "preserve failed bundles, fix the root cause, and rerun enough seeds to meet the paper-quality aggregate threshold",
+        ));
+    }
+
+    let prediction = aggregate_multiseed_table(
+        "table_prediction_metrics",
+        "domain",
+        MULTISEED_PREDICTION_METRICS,
+        &passed,
+        args.bootstrap_iters,
+        args.bootstrap_seed,
+        args.confidence,
+    )?;
+    let ablation = aggregate_multiseed_table(
+        "table_ablation",
+        "ablation_id",
+        MULTISEED_ABLATION_AGGREGATE_METRICS,
+        &passed,
+        args.bootstrap_iters,
+        args.bootstrap_seed ^ 0xA61A_7100_0000_0001,
+        args.confidence,
+    )?;
+    let paired_tests = aggregate_multiseed_paired_tests(
+        &passed,
+        &ablation.key_order,
+        args.bootstrap_iters,
+        args.bootstrap_seed ^ 0x5EED_DA7A_0000_0002,
+        args.confidence,
+    )?;
+
+    fs::create_dir_all(args.output_root.join("paper_tables")).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: "multiseed_aggregate.create_paper_tables".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "failed to create {}: {err}",
+                args.output_root.join("paper_tables").display()
+            ),
+            remediation: "choose a writable fresh --output-root".to_string(),
+        }
+    })?;
+    fs::create_dir_all(args.output_root.join("plots")).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: "multiseed_aggregate.create_plots".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "failed to create {}: {err}",
+                args.output_root.join("plots").display()
+            ),
+            remediation: "choose a writable fresh --output-root".to_string(),
+        }
+    })?;
+
+    write_text_file(
+        &args
+            .output_root
+            .join("paper_tables/table_prediction_metrics_multiseed.csv"),
+        &prediction.csv,
+    )?;
+    write_text_file(
+        &args
+            .output_root
+            .join("paper_tables/table_ablation_multiseed.csv"),
+        &ablation.csv,
+    )?;
+    write_text_file(
+        &args
+            .output_root
+            .join("paper_tables/table_paired_ablation_tests.csv"),
+        &paired_tests_csv(&paired_tests, &passed),
+    )?;
+    write_text_file(
+        &args
+            .output_root
+            .join("paper_tables/table_seed_failures.csv"),
+        &seed_failures_csv(&bundles),
+    )?;
+    write_multiseed_val_mse_box_svg(
+        &args.output_root.join("plots/multiseed_val_mse_box.svg"),
+        &prediction.summaries,
+    )?;
+    write_multiseed_delta_forest_svg(
+        &args
+            .output_root
+            .join("plots/multiseed_paired_delta_forest.svg"),
+        &paired_tests,
+    )?;
+    write_multiseed_plot_manifest(&args.output_root)?;
+
+    let manifest = json!({
+        "schema_version": MULTISEED_AGGREGATE_SCHEMA_VERSION,
+        "status": "passed",
+        "created_at_unix_ms": now_unix_ms()?,
+        "operation": operation,
+        "selection": {
+            "bundle_root": args.bundle_root,
+            "bundle_glob": args.bundle_glob,
+            "explicit_bundles": args.bundles,
+            "expected_bundle_count": args.expected_bundle_count,
+            "min_passed": args.min_passed,
+            "expected_purpose": args.expected_purpose,
+            "expected_career_event_count": args.expected_career_event_count,
+            "required_career_training_seeds": args.required_career_training_seeds,
+        },
+        "bootstrap": {
+            "method": "BCa mean bootstrap",
+            "iterations": args.bootstrap_iters,
+            "seed": args.bootstrap_seed,
+            "confidence": args.confidence,
+        },
+        "source_bundles": multiseed_bundle_manifest_rows(&bundles),
+        "passed_count": passed.len(),
+        "failed_count": bundles.iter().filter(|bundle| !bundle.passed()).count(),
+        "passed_run_ids": passed.iter().map(|bundle| bundle.run_id.clone()).collect::<Vec<_>>(),
+        "aggregate_tables": {
+            "table_prediction_metrics_multiseed": {
+                "row_count": prediction.row_count,
+                "source_headers": prediction.headers,
+                "keys": prediction.key_order,
+            },
+            "table_ablation_multiseed": {
+                "row_count": ablation.row_count,
+                "source_headers": ablation.headers,
+                "keys": ablation.key_order,
+            },
+            "table_paired_ablation_tests": {
+                "row_count": paired_tests.len(),
+                "baseline_ablation_id": MULTISEED_BASELINE_ABLATION_ID,
+            },
+        },
+    });
+    write_json_file(&args.output_root.join("aggregate_manifest.json"), &manifest)?;
+
+    let required_file_states =
+        multiseed_relative_file_states(&args.output_root, MULTISEED_OUTPUT_REQUIRED_FILES)?;
+    let fsv_report = json!({
+        "schema_version": MULTISEED_AGGREGATE_SCHEMA_VERSION,
+        "status": "passed",
+        "source_of_truth": args.output_root,
+        "created_at_unix_ms": now_unix_ms()?,
+        "child_bundle_count": bundles.len(),
+        "passed_child_bundle_count": passed.len(),
+        "failed_child_bundle_count": bundles.iter().filter(|bundle| !bundle.passed()).count(),
+        "child_manifest_hashes": bundles.iter().map(|bundle| json!({
+            "run_id": bundle.run_id,
+            "career_training_seed": bundle.career_training_seed,
+            "status": bundle.status,
+            "fsv_status": bundle.fsv_status,
+            "run_manifest_sha256": bundle.manifest_sha256,
+            "fsv_report_sha256": bundle.fsv_sha256,
+            "path": bundle.canonical_path,
+        })).collect::<Vec<_>>(),
+        "required_file_states": required_file_states,
+        "readback_checks": {
+            "prediction_multiseed_rows": prediction.row_count,
+            "ablation_multiseed_rows": ablation.row_count,
+            "paired_ablation_test_rows": paired_tests.len(),
+            "seed_failure_rows": bundles.iter().filter(|bundle| !bundle.passed()).count(),
+        },
+    });
+    write_json_file(
+        &args.output_root.join("aggregate_fsv_report.json"),
+        &fsv_report,
+    )?;
+
+    let manifest_readback = read_json_file(&args.output_root.join("aggregate_manifest.json"))?;
+    let fsv_readback = read_json_file(&args.output_root.join("aggregate_fsv_report.json"))?;
+    let prediction_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_prediction_metrics_multiseed.csv"),
+        "table_prediction_metrics_multiseed",
+    )?;
+    let ablation_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_ablation_multiseed.csv"),
+        "table_ablation_multiseed",
+    )?;
+    let paired_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_paired_ablation_tests.csv"),
+        "table_paired_ablation_tests",
+    )?;
+    let seed_failures_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_seed_failures.csv"),
+        "table_seed_failures",
+    )?;
+    let after_state = json!({
+        "output_root": ci_path_state(&args.output_root)?,
+        "aggregate_manifest": ci_path_state(&args.output_root.join("aggregate_manifest.json"))?,
+        "aggregate_fsv_report": ci_path_state(&args.output_root.join("aggregate_fsv_report.json"))?,
+        "prediction_multiseed_table": ci_path_state(&args.output_root.join("paper_tables/table_prediction_metrics_multiseed.csv"))?,
+        "ablation_multiseed_table": ci_path_state(&args.output_root.join("paper_tables/table_ablation_multiseed.csv"))?,
+        "paired_ablation_tests_table": ci_path_state(&args.output_root.join("paper_tables/table_paired_ablation_tests.csv"))?,
+        "seed_failures_table": ci_path_state(&args.output_root.join("paper_tables/table_seed_failures.csv"))?,
+        "plots": [
+            ci_path_state(&args.output_root.join("plots/multiseed_val_mse_box.svg"))?,
+            ci_path_state(&args.output_root.join("plots/multiseed_paired_delta_forest.svg"))?,
+            ci_path_state(&args.output_root.join("plots/plot_manifest.json"))?,
+        ],
+    });
+
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": operation,
+            "status": "ok",
+            "source_of_truth": args.output_root,
+            "before_state": before_state,
+            "after_state": after_state,
+            "matched_bundle_count": bundles.len(),
+            "passed_bundle_count": passed.len(),
+            "failed_bundle_count": bundles.iter().filter(|bundle| !bundle.passed()).count(),
+            "aggregate_manifest": manifest_readback,
+            "aggregate_fsv_report": fsv_readback,
+            "readback_row_counts": {
+                "table_prediction_metrics_multiseed": prediction_readback.rows.len(),
+                "table_ablation_multiseed": ablation_readback.rows.len(),
+                "table_paired_ablation_tests": paired_readback.rows.len(),
+                "table_seed_failures": seed_failures_readback.rows.len(),
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
+fn validate_multiseed_args(args: &MultiseedAggregateArgs) -> DynamicJepaResult<()> {
+    validate_research_purpose(&args.expected_purpose)?;
+    if args.bundle_glob.is_some() != args.bundles.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.bundle_selection",
+            "provide exactly one of --bundle-glob or repeated --bundle",
+            "select one deterministic child bundle set for aggregate FSV",
+        ));
+    }
+    if args.min_passed == 0 {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.min_passed",
+            "--min-passed must be at least 1",
+            "use at least one passed child bundle, and at least three for paper-quality aggregation",
+        ));
+    }
+    if args.bootstrap_iters == 0 {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.bootstrap_iters",
+            "--bootstrap-iters must be greater than zero",
+            "use 10000 for paper tables unless debugging a local edge case",
+        ));
+    }
+    if !(0.0..1.0).contains(&args.confidence) {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.confidence",
+            format!("confidence must be in (0, 1), got {}", args.confidence),
+            "use a probability such as 0.95",
+        ));
+    }
+    let mut required = BTreeSet::new();
+    for seed in &args.required_career_training_seeds {
+        if !required.insert(*seed) {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.required_career_training_seeds",
+                format!("duplicate required career training seed {seed}"),
+                "list each required seed exactly once",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn discover_multiseed_bundle_paths(
+    args: &MultiseedAggregateArgs,
+) -> DynamicJepaResult<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    if !args.bundles.is_empty() {
+        for bundle in &args.bundles {
+            paths.push(canonicalize_multiseed_path(
+                bundle,
+                "multiseed_aggregate.bundle",
+            )?);
+        }
+    } else {
+        let root =
+            canonicalize_multiseed_path(&args.bundle_root, "multiseed_aggregate.bundle_root")?;
+        let pattern = args.bundle_glob.as_deref().ok_or_else(|| {
+            DynamicJepaError::validation(
+                "multiseed_aggregate.bundle_glob",
+                "missing --bundle-glob",
+                "provide a deterministic child bundle name pattern",
+            )
+        })?;
+        if pattern.contains('/') || pattern.contains('\\') {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.bundle_glob",
+                format!("bundle glob must match child directory names only, got {pattern:?}"),
+                "pass the parent directory via --bundle-root and keep --bundle-glob to a single path segment",
+            ));
+        }
+        if pattern.contains('?') || pattern.contains('[') || pattern.contains(']') {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.bundle_glob",
+                format!("unsupported glob syntax in {pattern:?}; only '*' is supported"),
+                "use repeated --bundle for complex explicit selections",
+            ));
+        }
+        for entry in fs::read_dir(&root).map_err(|err| DynamicJepaError::Storage {
+            operation: "multiseed_aggregate.read_bundle_root".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to read {}: {err}", root.display()),
+            remediation: "verify --bundle-root points at the research-smoke run root".to_string(),
+        })? {
+            let entry = entry.map_err(|err| DynamicJepaError::Storage {
+                operation: "multiseed_aggregate.read_bundle_entry".to_string(),
+                cf: "filesystem".to_string(),
+                message: format!("failed to read an entry under {}: {err}", root.display()),
+                remediation: "fix filesystem permissions under the research-smoke run root"
+                    .to_string(),
+            })?;
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            if wildcard_match_star_only(pattern, &name) {
+                let path = entry.path();
+                let metadata = fs::metadata(&path).map_err(|err| DynamicJepaError::Storage {
+                    operation: "multiseed_aggregate.bundle_metadata".to_string(),
+                    cf: "filesystem".to_string(),
+                    message: format!("failed to inspect {}: {err}", path.display()),
+                    remediation: "remove broken bundle directory entries before aggregation"
+                        .to_string(),
+                })?;
+                if !metadata.is_dir() {
+                    return Err(DynamicJepaError::validation(
+                        "multiseed_aggregate.bundle_entry",
+                        format!("matched bundle path is not a directory: {}", path.display()),
+                        "tighten --bundle-glob so it selects only research-smoke bundle directories",
+                    ));
+                }
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    if paths.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.bundle_selection",
+            "matched zero child bundles",
+            "run paper-small seed bundles first, then pass their directories through --bundle or --bundle-glob",
+        ));
+    }
+    Ok(paths)
+}
+
+fn canonicalize_multiseed_path(path: &Path, field: &str) -> DynamicJepaResult<PathBuf> {
+    fs::canonicalize(path).map_err(|err| {
+        DynamicJepaError::validation(
+            field,
+            format!("failed to canonicalize {}: {err}", path.display()),
+            "use an existing bundle path",
+        )
+    })
+}
+
+fn wildcard_match_star_only(pattern: &str, value: &str) -> bool {
+    if pattern == "*" {
+        return true;
+    }
+    let mut remaining = value;
+    let mut first = true;
+    for part in pattern.split('*') {
+        if part.is_empty() {
+            first = false;
+            continue;
+        }
+        if first && !pattern.starts_with('*') {
+            let Some(rest) = remaining.strip_prefix(part) else {
+                return false;
+            };
+            remaining = rest;
+        } else if let Some(idx) = remaining.find(part) {
+            remaining = &remaining[idx + part.len()..];
+        } else {
+            return false;
+        }
+        first = false;
+    }
+    pattern.ends_with('*') || remaining.is_empty()
+}
+
+fn read_multiseed_bundle(
+    path: &Path,
+    args: &MultiseedAggregateArgs,
+) -> DynamicJepaResult<MultiseedBundle> {
+    let canonical_path = canonicalize_multiseed_path(path, "multiseed_aggregate.bundle")?;
+    let run_manifest_path = canonical_path.join("run_manifest.json");
+    let fsv_report_path = canonical_path.join("fsv_report.json");
+    let run_manifest = read_json_file(&run_manifest_path)?;
+    let fsv_report = read_json_file(&fsv_report_path)?;
+    let run_id = required_json_string(&run_manifest, "run_id", "run_manifest.json")?;
+    let status = required_json_string(&run_manifest, "status", "run_manifest.json")?;
+    let fsv_status = required_json_string(&fsv_report, "status", "fsv_report.json")?;
+    let purpose = required_json_string(&run_manifest, "purpose", "run_manifest.json")?;
+    if purpose != args.expected_purpose {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.purpose",
+            format!(
+                "bundle {} purpose is {purpose:?}, expected {:?}",
+                canonical_path.display(),
+                args.expected_purpose
+            ),
+            "aggregate only one research-smoke purpose at a time",
+        ));
+    }
+    let career_event_count = run_manifest
+        .get("career_event_count")
+        .and_then(Value::as_u64);
+    if let Some(expected) = args.expected_career_event_count {
+        if career_event_count != Some(expected) {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.career_event_count",
+                format!(
+                    "bundle {} career_event_count is {:?}, expected {expected}",
+                    canonical_path.display(),
+                    career_event_count
+                ),
+                "aggregate only same-scale paper-small bundles",
+            ));
+        }
+    }
+    let career_training_seed = run_manifest
+        .get("career_training_seed")
+        .and_then(Value::as_u64);
+    if !args.required_career_training_seeds.is_empty() && career_training_seed.is_none() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.career_training_seed",
+            format!("bundle {} missing career_training_seed", canonical_path.display()),
+            "rerun paper-small with an explicit --career-training-seed so seed-level statistics are auditable",
+        ));
+    }
+
+    let (failure_code, failure_message) = multiseed_failure_details(&run_manifest, &fsv_report);
+    let passed = status == "passed" && fsv_status == "passed";
+    let failed = status == "failed" && fsv_status == "failed";
+    if !passed && !failed {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.bundle_status",
+            format!(
+                "bundle {} has partial status run_manifest={status:?} fsv_report={fsv_status:?}",
+                canonical_path.display()
+            ),
+            "preserve the partial bundle for debugging, then rerun the seed into a fresh bundle",
+        ));
+    }
+
+    let (prediction_table, ablation_table) = if passed {
+        validate_multiseed_child_required_files(&canonical_path)?;
+        (
+            Some(read_ci_csv_table(
+                &canonical_path.join("paper_tables/table_prediction_metrics.csv"),
+                "table_prediction_metrics",
+            )?),
+            Some(read_ci_csv_table(
+                &canonical_path.join("paper_tables/table_ablation.csv"),
+                "table_ablation",
+            )?),
+        )
+    } else {
+        (None, None)
+    };
+
+    Ok(MultiseedBundle {
+        canonical_path: canonical_path.display().to_string(),
+        run_id,
+        status,
+        fsv_status,
+        purpose,
+        career_event_count,
+        career_training_seed,
+        manifest_sha256: hex_bytes(&file_sha256(&run_manifest_path)?),
+        fsv_sha256: hex_bytes(&file_sha256(&fsv_report_path)?),
+        failure_code,
+        failure_message,
+        prediction_table,
+        ablation_table,
+    })
+}
+
+fn required_json_string(value: &Value, key: &str, label: &str) -> DynamicJepaResult<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "multiseed_aggregate.json_field",
+                format!("{label} missing non-empty string field {key}"),
+                "rerun research-smoke so required manifest fields are written",
+            )
+        })
+}
+
+fn multiseed_failure_details(
+    run_manifest: &Value,
+    fsv_report: &Value,
+) -> (Option<String>, Option<String>) {
+    for source in [run_manifest, fsv_report] {
+        if let Some(details) = source.get("failure_details").and_then(Value::as_object) {
+            let code = details
+                .get("error_code")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let message = details
+                .get("error_message")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            if code.is_some() || message.is_some() {
+                return (code, message);
+            }
+        }
+    }
+    (None, None)
+}
+
+fn validate_multiseed_child_required_files(bundle: &Path) -> DynamicJepaResult<()> {
+    for rel_path in MULTISEED_CHILD_REQUIRED_FILES {
+        let path = bundle.join(rel_path);
+        let metadata = fs::metadata(&path).map_err(|err| DynamicJepaError::Storage {
+            operation: "multiseed_aggregate.child_required_file".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!(
+                "missing required passed child file {}: {err}",
+                path.display()
+            ),
+            remediation:
+                "passed bundles must contain complete FSV files, tables, artifact hashes, and plots"
+                    .to_string(),
+        })?;
+        if !metadata.is_file() {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.child_required_file",
+                format!(
+                    "required child bundle path is not a file: {}",
+                    path.display()
+                ),
+                "rerun the child paper-small bundle into a fresh directory",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_multiseed_bundle_set(
+    bundles: &[MultiseedBundle],
+    args: &MultiseedAggregateArgs,
+) -> DynamicJepaResult<()> {
+    let mut run_ids = BTreeSet::new();
+    let mut attempted_seeds = BTreeSet::new();
+    let mut passed_seeds = BTreeSet::new();
+    for bundle in bundles {
+        if !run_ids.insert(bundle.run_id.clone()) {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.run_id",
+                format!("duplicate child run_id {}", bundle.run_id),
+                "aggregate immutable bundles with unique run_id values only",
+            ));
+        }
+        if let Some(seed) = bundle.career_training_seed {
+            attempted_seeds.insert(seed);
+            if bundle.passed() && !passed_seeds.insert(seed) {
+                return Err(DynamicJepaError::validation(
+                    "multiseed_aggregate.career_training_seed",
+                    format!("multiple passed bundles use career_training_seed {seed}"),
+                    "select exactly one passed bundle per training seed; failed retries may be retained in table_seed_failures.csv",
+                ));
+            }
+        }
+    }
+    if !args.required_career_training_seeds.is_empty() {
+        let missing = args
+            .required_career_training_seeds
+            .iter()
+            .copied()
+            .filter(|seed| !attempted_seeds.contains(seed))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.required_career_training_seeds",
+                format!("missing required career training seeds: {missing:?}"),
+                "run and preserve a paper-small bundle for every required seed before aggregation",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn aggregate_multiseed_table(
+    table_name: &str,
+    key_column: &str,
+    metric_columns: &[&str],
+    passed: &[&MultiseedBundle],
+    bootstrap_iters: u64,
+    bootstrap_seed: u64,
+    confidence: f64,
+) -> DynamicJepaResult<MultiseedAggregateTable> {
+    let first = passed.first().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "multiseed_aggregate.passed_bundles",
+            "no passed bundles available for table aggregation",
+            "rerun enough child bundles to satisfy --min-passed",
+        )
+    })?;
+    let first_table = multiseed_table_for_bundle(first, table_name)?;
+    let headers = first_table.headers.clone();
+    if !headers.iter().any(|header| header == key_column) {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.table_key",
+            format!("{table_name} missing key column {key_column}"),
+            "fix the child paper table writer before aggregation",
+        ));
+    }
+    for metric in metric_columns {
+        if !headers.iter().any(|header| header == metric) {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.table_metric",
+                format!("{table_name} missing numeric metric column {metric}"),
+                "fix the child paper table writer before aggregation",
+            ));
+        }
+    }
+
+    let first_rows = multiseed_rows_by_key(first_table, key_column, table_name)?;
+    let key_order = first_rows.keys().cloned().collect::<Vec<_>>();
+    for bundle in passed.iter().skip(1) {
+        let table = multiseed_table_for_bundle(bundle, table_name)?;
+        if table.headers != headers {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.table_schema",
+                format!(
+                    "{table_name} headers disagree for bundle {}: {:?} != {:?}",
+                    bundle.run_id, table.headers, headers
+                ),
+                "only aggregate child bundles produced by the same table schema",
+            ));
+        }
+        let rows = multiseed_rows_by_key(table, key_column, table_name)?;
+        let keys = rows.keys().cloned().collect::<Vec<_>>();
+        if keys != key_order {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.table_keys",
+                format!(
+                    "{table_name} key set/order disagrees for bundle {}: {:?} != {:?}",
+                    bundle.run_id, keys, key_order
+                ),
+                "investigate missing or extra table rows before computing multiseed means",
+            ));
+        }
+    }
+
+    let mut csv = format!(
+        "{key_column},metric,n,mean,std,bca_lower,bca_upper,min,max,source_run_ids,source_career_training_seeds\n"
+    );
+    let source_run_ids = passed
+        .iter()
+        .map(|bundle| bundle.run_id.as_str())
+        .collect::<Vec<_>>()
+        .join(";");
+    let source_seeds = passed
+        .iter()
+        .map(|bundle| {
+            bundle
+                .career_training_seed
+                .map(|seed| seed.to_string())
+                .unwrap_or_else(|| "NA".to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    let mut summaries = Vec::new();
+    for key in &key_order {
+        for metric in metric_columns {
+            let mut values = Vec::new();
+            for bundle in passed {
+                let table = multiseed_table_for_bundle(bundle, table_name)?;
+                let rows = multiseed_rows_by_key(table, key_column, table_name)?;
+                let row = rows.get(key).ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "multiseed_aggregate.table_key",
+                        format!("{table_name} missing key {key} in bundle {}", bundle.run_id),
+                        "child table keys must be identical across passed bundles",
+                    )
+                })?;
+                values.push(parse_multiseed_f64(
+                    row.get(*metric).map(String::as_str),
+                    table_name,
+                    key,
+                    metric,
+                    &bundle.run_id,
+                )?);
+            }
+            let summary = summarize_multiseed_metric(
+                key,
+                metric,
+                &values,
+                bootstrap_iters,
+                bootstrap_seed ^ stable_u64(&format!("{table_name}:{key}:{metric}")),
+                confidence,
+            )?;
+            csv.push_str(&format!(
+                "{},{},{},{:.12},{:.12},{:.12},{:.12},{:.12},{:.12},{},{}\n",
+                csv_escape(&summary.key),
+                csv_escape(&summary.metric),
+                summary.n,
+                summary.mean,
+                summary.std,
+                summary.ci_lower,
+                summary.ci_upper,
+                summary.min,
+                summary.max,
+                csv_escape(&source_run_ids),
+                csv_escape(&source_seeds),
+            ));
+            summaries.push(summary);
+        }
+    }
+    Ok(MultiseedAggregateTable {
+        row_count: summaries.len(),
+        csv,
+        summaries,
+        key_order,
+        headers,
+    })
+}
+
+fn multiseed_table_for_bundle<'a>(
+    bundle: &'a MultiseedBundle,
+    table_name: &str,
+) -> DynamicJepaResult<&'a CiCsvTable> {
+    match table_name {
+        "table_prediction_metrics" => bundle.prediction_table.as_ref(),
+        "table_ablation" => bundle.ablation_table.as_ref(),
+        _ => None,
+    }
+    .ok_or_else(|| {
+        DynamicJepaError::validation(
+            "multiseed_aggregate.table",
+            format!("bundle {} missing passed table {table_name}", bundle.run_id),
+            "only passed bundles with complete paper tables can be aggregated",
+        )
+    })
+}
+
+fn multiseed_rows_by_key(
+    table: &CiCsvTable,
+    key_column: &str,
+    table_name: &str,
+) -> DynamicJepaResult<BTreeMap<String, BTreeMap<String, String>>> {
+    let mut rows = BTreeMap::new();
+    for row in &table.rows {
+        let key = row
+            .get(key_column)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "multiseed_aggregate.table_key",
+                    format!("{table_name} row missing non-empty key column {key_column}"),
+                    "fix the child paper table writer before aggregation",
+                )
+            })?
+            .clone();
+        if rows.insert(key.clone(), row.clone()).is_some() {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.table_key",
+                format!("{table_name} contains duplicate key {key}"),
+                "paper tables must have one row per aggregate key",
+            ));
+        }
+    }
+    Ok(rows)
+}
+
+fn parse_multiseed_f64(
+    value: Option<&str>,
+    table_name: &str,
+    key: &str,
+    metric: &str,
+    run_id: &str,
+) -> DynamicJepaResult<f64> {
+    let raw = value.ok_or_else(|| {
+        DynamicJepaError::validation(
+            "multiseed_aggregate.numeric_metric",
+            format!("{table_name} {key}.{metric} missing in bundle {run_id}"),
+            "child paper tables must contain all numeric metrics",
+        )
+    })?;
+    let parsed = raw.parse::<f64>().map_err(|err| {
+        DynamicJepaError::validation(
+            "multiseed_aggregate.numeric_metric",
+            format!("{table_name} {key}.{metric}={raw:?} is not numeric in bundle {run_id}: {err}"),
+            "fix metric serialization before aggregation",
+        )
+    })?;
+    if !parsed.is_finite() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.numeric_metric",
+            format!("{table_name} {key}.{metric} is not finite in bundle {run_id}: {parsed}"),
+            "fix training or table generation so paper metrics are finite",
+        ));
+    }
+    Ok(parsed)
+}
+
+fn summarize_multiseed_metric(
+    key: &str,
+    metric: &str,
+    values: &[f64],
+    bootstrap_iters: u64,
+    bootstrap_seed: u64,
+    confidence: f64,
+) -> DynamicJepaResult<MultiseedMetricSummary> {
+    let (mean, std, min, max) = mean_std_min_max(values)?;
+    let (ci_lower, ci_upper) =
+        bca_bootstrap_mean_ci(values, bootstrap_iters, bootstrap_seed, confidence)?;
+    Ok(MultiseedMetricSummary {
+        key: key.to_string(),
+        metric: metric.to_string(),
+        n: values.len(),
+        mean,
+        std,
+        ci_lower,
+        ci_upper,
+        min,
+        max,
+        values: values.to_vec(),
+    })
+}
+
+fn aggregate_multiseed_paired_tests(
+    passed: &[&MultiseedBundle],
+    ablation_key_order: &[String],
+    bootstrap_iters: u64,
+    bootstrap_seed: u64,
+    confidence: f64,
+) -> DynamicJepaResult<Vec<MultiseedPairedRow>> {
+    if !ablation_key_order
+        .iter()
+        .any(|key| key == MULTISEED_BASELINE_ABLATION_ID)
+    {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.baseline_ablation",
+            format!(
+                "ablation table missing baseline {}",
+                MULTISEED_BASELINE_ABLATION_ID
+            ),
+            "restore the A0 baseline ablation before computing paired tests",
+        ));
+    }
+    let mut rows = Vec::new();
+    for comparison in ablation_key_order {
+        if comparison == MULTISEED_BASELINE_ABLATION_ID {
+            continue;
+        }
+        for metric in MULTISEED_PAIRED_METRICS {
+            let mut deltas = Vec::new();
+            for bundle in passed {
+                let table = multiseed_table_for_bundle(bundle, "table_ablation")?;
+                let rows_by_key = multiseed_rows_by_key(table, "ablation_id", "table_ablation")?;
+                let baseline_row =
+                    rows_by_key
+                        .get(MULTISEED_BASELINE_ABLATION_ID)
+                        .ok_or_else(|| {
+                            DynamicJepaError::validation(
+                                "multiseed_aggregate.baseline_ablation",
+                                format!(
+                                    "bundle {} missing baseline {}",
+                                    bundle.run_id, MULTISEED_BASELINE_ABLATION_ID
+                                ),
+                                "all passed child bundles must include the same ablation baseline",
+                            )
+                        })?;
+                let comparison_row = rows_by_key.get(comparison).ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "multiseed_aggregate.comparison_ablation",
+                        format!("bundle {} missing comparison {comparison}", bundle.run_id),
+                        "all passed child bundles must include the same ablation comparisons",
+                    )
+                })?;
+                let baseline = parse_multiseed_f64(
+                    baseline_row.get(*metric).map(String::as_str),
+                    "table_ablation",
+                    MULTISEED_BASELINE_ABLATION_ID,
+                    metric,
+                    &bundle.run_id,
+                )?;
+                let value = parse_multiseed_f64(
+                    comparison_row.get(*metric).map(String::as_str),
+                    "table_ablation",
+                    comparison,
+                    metric,
+                    &bundle.run_id,
+                )?;
+                deltas.push(value - baseline);
+            }
+            let (mean_delta, std_delta, min_delta, max_delta) = mean_std_min_max(&deltas)?;
+            let (ci_lower, ci_upper) = bca_bootstrap_mean_ci(
+                &deltas,
+                bootstrap_iters,
+                bootstrap_seed ^ stable_u64(&format!("{comparison}:{metric}:paired_delta")),
+                confidence,
+            )?;
+            let sign_flip_p = paired_sign_flip_p_value(&deltas)?;
+            rows.push(MultiseedPairedRow {
+                metric: (*metric).to_string(),
+                comparison_ablation_id: comparison.clone(),
+                n: deltas.len(),
+                mean_delta,
+                std_delta,
+                ci_lower,
+                ci_upper,
+                min_delta,
+                max_delta,
+                sign_flip_p,
+            });
+        }
+    }
+    Ok(rows)
+}
+
+fn paired_tests_csv(rows: &[MultiseedPairedRow], passed: &[&MultiseedBundle]) -> String {
+    let source_run_ids = passed
+        .iter()
+        .map(|bundle| bundle.run_id.as_str())
+        .collect::<Vec<_>>()
+        .join(";");
+    let source_seeds = passed
+        .iter()
+        .map(|bundle| {
+            bundle
+                .career_training_seed
+                .map(|seed| seed.to_string())
+                .unwrap_or_else(|| "NA".to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    let mut csv = "metric,baseline_ablation_id,comparison_ablation_id,n,mean_delta,std_delta,bca_lower,bca_upper,min_delta,max_delta,sign_flip_p,source_run_ids,source_career_training_seeds\n".to_string();
+    for row in rows {
+        csv.push_str(&format!(
+            "{},{},{},{},{:.12},{:.12},{:.12},{:.12},{:.12},{:.12},{:.12},{},{}\n",
+            csv_escape(&row.metric),
+            csv_escape(MULTISEED_BASELINE_ABLATION_ID),
+            csv_escape(&row.comparison_ablation_id),
+            row.n,
+            row.mean_delta,
+            row.std_delta,
+            row.ci_lower,
+            row.ci_upper,
+            row.min_delta,
+            row.max_delta,
+            row.sign_flip_p,
+            csv_escape(&source_run_ids),
+            csv_escape(&source_seeds),
+        ));
+    }
+    csv
+}
+
+fn seed_failures_csv(bundles: &[MultiseedBundle]) -> String {
+    let mut csv = "run_id,career_training_seed,status,fsv_status,error_code,error_message,run_manifest_sha256,fsv_report_sha256,bundle_path\n".to_string();
+    for bundle in bundles.iter().filter(|bundle| !bundle.passed()) {
+        csv.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(&bundle.run_id),
+            bundle
+                .career_training_seed
+                .map(|seed| seed.to_string())
+                .unwrap_or_else(|| "NA".to_string()),
+            csv_escape(&bundle.status),
+            csv_escape(&bundle.fsv_status),
+            csv_escape(bundle.failure_code.as_deref().unwrap_or("UNKNOWN_FAILURE")),
+            csv_escape(
+                bundle
+                    .failure_message
+                    .as_deref()
+                    .unwrap_or("missing failure_details")
+            ),
+            csv_escape(&bundle.manifest_sha256),
+            csv_escape(&bundle.fsv_sha256),
+            csv_escape(&bundle.canonical_path),
+        ));
+    }
+    csv
+}
+
+fn multiseed_bundle_manifest_rows(bundles: &[MultiseedBundle]) -> Vec<Value> {
+    bundles
+        .iter()
+        .map(|bundle| {
+            json!({
+                "run_id": bundle.run_id,
+                "status": bundle.status,
+                "fsv_status": bundle.fsv_status,
+                "purpose": bundle.purpose,
+                "career_event_count": bundle.career_event_count,
+                "career_training_seed": bundle.career_training_seed,
+                "run_manifest_sha256": bundle.manifest_sha256,
+                "fsv_report_sha256": bundle.fsv_sha256,
+                "failure_code": bundle.failure_code,
+                "failure_message": bundle.failure_message,
+                "path": bundle.canonical_path,
+            })
+        })
+        .collect()
+}
+
+fn multiseed_relative_file_states(
+    root: &Path,
+    rel_paths: &[&str],
+) -> DynamicJepaResult<Vec<Value>> {
+    let mut states = Vec::new();
+    for rel_path in rel_paths {
+        let path = root.join(rel_path);
+        let metadata = fs::metadata(&path).map_err(|err| DynamicJepaError::Storage {
+            operation: "multiseed_aggregate.output_required_file".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("missing aggregate output file {}: {err}", path.display()),
+            remediation:
+                "fix the aggregate writer; all declared output tables and plots must exist"
+                    .to_string(),
+        })?;
+        if !metadata.is_file() {
+            return Err(DynamicJepaError::validation(
+                "multiseed_aggregate.output_required_file",
+                format!("aggregate output path is not a file: {}", path.display()),
+                "fix the aggregate writer so required outputs are regular files",
+            ));
+        }
+        states.push(json!({
+            "path": rel_path,
+            "sha256": hex_bytes(&file_sha256(&path)?),
+            "size_bytes": metadata.len(),
+        }));
+    }
+    Ok(states)
+}
+
+fn mean_std_min_max(values: &[f64]) -> DynamicJepaResult<(f64, f64, f64, f64)> {
+    if values.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.values",
+            "cannot summarize an empty metric series",
+            "ensure at least one passed bundle contributes each metric",
+        ));
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let std = if values.len() > 1 {
+        let variance = values
+            .iter()
+            .map(|value| {
+                let delta = value - mean;
+                delta * delta
+            })
+            .sum::<f64>()
+            / (values.len() - 1) as f64;
+        variance.sqrt()
+    } else {
+        0.0
+    };
+    let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    Ok((mean, std, min, max))
+}
+
+fn bca_bootstrap_mean_ci(
+    values: &[f64],
+    iterations: u64,
+    seed: u64,
+    confidence: f64,
+) -> DynamicJepaResult<(f64, f64)> {
+    if values.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.bootstrap_values",
+            "cannot bootstrap empty values",
+            "ensure table aggregation receives passed child rows",
+        ));
+    }
+    if values.len() == 1 {
+        return Ok((values[0], values[0]));
+    }
+    let observed = values.iter().sum::<f64>() / values.len() as f64;
+    let mut rng = DeterministicRng::new(seed);
+    let mut boot = Vec::with_capacity(iterations as usize);
+    for _ in 0..iterations {
+        let mut sum = 0.0;
+        for _ in 0..values.len() {
+            sum += values[rng.next_usize(values.len())];
+        }
+        boot.push(sum / values.len() as f64);
+    }
+    boot.sort_by(|left, right| left.total_cmp(right));
+
+    let less = boot.iter().filter(|value| **value < observed).count() as f64;
+    let denominator = iterations as f64;
+    let proportion_less = (less / denominator).clamp(0.5 / denominator, 1.0 - 0.5 / denominator);
+    let z0 = inverse_standard_normal_cdf(proportion_less);
+
+    let mut jackknife = Vec::with_capacity(values.len());
+    for idx in 0..values.len() {
+        let mut sum = 0.0;
+        for (value_idx, value) in values.iter().enumerate() {
+            if value_idx != idx {
+                sum += value;
+            }
+        }
+        jackknife.push(sum / (values.len() - 1) as f64);
+    }
+    let jack_mean = jackknife.iter().sum::<f64>() / jackknife.len() as f64;
+    let numerator = jackknife
+        .iter()
+        .map(|value| {
+            let delta = jack_mean - value;
+            delta * delta * delta
+        })
+        .sum::<f64>();
+    let sum_squares = jackknife
+        .iter()
+        .map(|value| {
+            let delta = jack_mean - value;
+            delta * delta
+        })
+        .sum::<f64>();
+    let acceleration_denominator = 6.0 * sum_squares.powf(1.5);
+    let acceleration = if acceleration_denominator.abs() > f64::EPSILON {
+        numerator / acceleration_denominator
+    } else {
+        0.0
+    };
+    let alpha_low = (1.0 - confidence) / 2.0;
+    let alpha_high = 1.0 - alpha_low;
+    let adjusted_low = bca_adjusted_alpha(alpha_low, z0, acceleration);
+    let adjusted_high = bca_adjusted_alpha(alpha_high, z0, acceleration);
+    Ok((
+        percentile_sorted(&boot, adjusted_low),
+        percentile_sorted(&boot, adjusted_high),
+    ))
+}
+
+fn bca_adjusted_alpha(alpha: f64, z0: f64, acceleration: f64) -> f64 {
+    let z_alpha = inverse_standard_normal_cdf(alpha);
+    let numerator = z0 + z_alpha;
+    let denominator = 1.0 - acceleration * numerator;
+    standard_normal_cdf(z0 + numerator / denominator)
+}
+
+fn percentile_sorted(sorted: &[f64], probability: f64) -> f64 {
+    let probability = probability.clamp(0.0, 1.0);
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let position = probability * (sorted.len() - 1) as f64;
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let weight = position - lower as f64;
+        sorted[lower] * (1.0 - weight) + sorted[upper] * weight
+    }
+}
+
+fn paired_sign_flip_p_value(deltas: &[f64]) -> DynamicJepaResult<f64> {
+    if deltas.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.sign_flip",
+            "cannot compute paired sign-flip p-value for zero deltas",
+            "ensure at least one passed bundle contributes paired ablation rows",
+        ));
+    }
+    if deltas.len() > 20 {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.sign_flip",
+            format!("exact sign-flip test supports at most 20 pairs, got {}", deltas.len()),
+            "implement an explicitly reviewed Monte Carlo sign-flip method before using larger seed panels",
+        ));
+    }
+    let observed = (deltas.iter().sum::<f64>() / deltas.len() as f64).abs();
+    let total = 1_u64 << deltas.len();
+    let mut extreme = 0_u64;
+    for mask in 0..total {
+        let mut sum = 0.0;
+        for (idx, delta) in deltas.iter().enumerate() {
+            if (mask >> idx) & 1 == 1 {
+                sum += delta;
+            } else {
+                sum -= delta;
+            }
+        }
+        if (sum / deltas.len() as f64).abs() + 1e-15 >= observed {
+            extreme += 1;
+        }
+    }
+    Ok(extreme as f64 / total as f64)
+}
+
+struct DeterministicRng {
+    state: u64,
+}
+
+impl DeterministicRng {
+    fn new(seed: u64) -> Self {
+        Self { state: seed.max(1) }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+
+    fn next_usize(&mut self, upper: usize) -> usize {
+        (self.next_u64() % upper as u64) as usize
+    }
+}
+
+fn stable_u64(input: &str) -> u64 {
+    let hash = sha256(input.as_bytes());
+    let mut bytes = [0_u8; 8];
+    bytes.copy_from_slice(&hash[..8]);
+    u64::from_le_bytes(bytes)
+}
+
+fn inverse_standard_normal_cdf(p: f64) -> f64 {
+    let a = [
+        -3.969_683_028_665_376e1,
+        2.209_460_984_245_205e2,
+        -2.759_285_104_469_687e2,
+        1.383_577_518_672_69e2,
+        -3.066_479_806_614_716e1,
+        2.506_628_277_459_239,
+    ];
+    let b = [
+        -5.447_609_879_822_406e1,
+        1.615_858_368_580_409e2,
+        -1.556_989_798_598_866e2,
+        6.680_131_188_771_972e1,
+        -1.328_068_155_288_572e1,
+    ];
+    let c = [
+        -7.784_894_002_430_293e-3,
+        -3.223_964_580_411_365e-1,
+        -2.400_758_277_161_838,
+        -2.549_732_539_343_734,
+        4.374_664_141_464_968,
+        2.938_163_982_698_783,
+    ];
+    let d = [
+        7.784_695_709_041_462e-3,
+        3.224_671_290_700_398e-1,
+        2.445_134_137_142_996,
+        3.754_408_661_907_416,
+    ];
+    let plow = 0.02425;
+    let phigh = 1.0 - plow;
+    if p <= 0.0 {
+        return f64::NEG_INFINITY;
+    }
+    if p >= 1.0 {
+        return f64::INFINITY;
+    }
+    if p < plow {
+        let q = (-2.0 * p.ln()).sqrt();
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+            / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0);
+    }
+    if p > phigh {
+        let q = (-2.0 * (1.0 - p).ln()).sqrt();
+        return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
+            / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0);
+    }
+    let q = p - 0.5;
+    let r = q * q;
+    (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+        / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0)
+}
+
+fn standard_normal_cdf(x: f64) -> f64 {
+    0.5 * (1.0 + erf_approx(x / 2.0_f64.sqrt()))
+}
+
+fn erf_approx(x: f64) -> f64 {
+    let sign = if x < 0.0 { -1.0 } else { 1.0 };
+    let x = x.abs();
+    let t = 1.0 / (1.0 + 0.3275911 * x);
+    let y = 1.0
+        - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t
+            + 0.254829592)
+            * t
+            * (-x * x).exp();
+    sign * y
+}
+
+fn write_multiseed_val_mse_box_svg(
+    path: &Path,
+    summaries: &[MultiseedMetricSummary],
+) -> DynamicJepaResult<()> {
+    let rows = summaries
+        .iter()
+        .filter(|summary| summary.metric == "val_latent_mse")
+        .map(|summary| (summary.key.clone(), summary.values.clone()))
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.val_mse_plot",
+            "no val_latent_mse rows available for multiseed box plot",
+            "ensure prediction aggregate includes val_latent_mse",
+        ));
+    }
+    let width = (220.0 + rows.len() as f64 * 170.0).max(760.0);
+    let height = 430.0;
+    let left = 82.0;
+    let right = 36.0;
+    let top = 56.0;
+    let bottom = 112.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+    let max_value = rows
+        .iter()
+        .flat_map(|(_, values)| values.iter().copied())
+        .fold(0.0_f64, f64::max)
+        .max(1e-9);
+    let slot = plot_width / rows.len() as f64;
+    let mut marks = String::new();
+    for (idx, (label, values)) in rows.iter().enumerate() {
+        let mut sorted = values.clone();
+        sorted.sort_by(|left, right| left.total_cmp(right));
+        let min = percentile_sorted(&sorted, 0.0);
+        let q1 = percentile_sorted(&sorted, 0.25);
+        let median = percentile_sorted(&sorted, 0.5);
+        let q3 = percentile_sorted(&sorted, 0.75);
+        let max = percentile_sorted(&sorted, 1.0);
+        let x = left + slot * idx as f64 + slot / 2.0;
+        let y = |value: f64| top + plot_height - plot_height * (value / max_value);
+        let box_width = 58.0;
+        marks.push_str(&format!(
+            r##"<line x1="{x:.2}" y1="{:.2}" x2="{x:.2}" y2="{:.2}" stroke="#1f2937" stroke-width="1.5"/>
+<rect x="{:.2}" y="{:.2}" width="{box_width:.2}" height="{:.2}" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#1d4ed8" stroke-width="2"/>
+<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#1f2937" stroke-width="1.5"/>
+<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="#1f2937" stroke-width="1.5"/>
+<text x="{x:.2}" y="352" text-anchor="middle" font-size="12" fill="#111827" transform="rotate(-22 {x:.2} 352)">{}</text>
+"##,
+            y(min),
+            y(max),
+            x - box_width / 2.0,
+            y(q3),
+            (y(q1) - y(q3)).max(1.0),
+            x - box_width / 2.0,
+            y(median),
+            x + box_width / 2.0,
+            y(median),
+            x - 18.0,
+            y(min),
+            x + 18.0,
+            y(min),
+            x - 18.0,
+            y(max),
+            x + 18.0,
+            y(max),
+            xml_escape(label),
+        ));
+    }
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" role="img" aria-label="Multiseed validation MSE box plot">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="{left:.0}" y="30" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="#111827">Multiseed validation latent MSE</text>
+<line x1="{left:.0}" y1="{top:.0}" x2="{left:.0}" y2="{:.0}" stroke="#374151" stroke-width="1"/>
+<line x1="{left:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="#374151" stroke-width="1"/>
+<text x="18" y="{:.0}" font-size="12" font-family="Arial, sans-serif" fill="#111827" transform="rotate(-90 18 {:.0})">latent MSE</text>
+<text x="20" y="{top:.0}" font-size="11" font-family="Arial, sans-serif" fill="#374151">{max_value:.4}</text>
+{marks}</svg>
+"##,
+        top + plot_height,
+        top + plot_height,
+        width - right,
+        top + plot_height,
+        top + plot_height / 2.0,
+        top + plot_height / 2.0
+    );
+    write_text_file(path, &svg)
+}
+
+fn write_multiseed_delta_forest_svg(
+    path: &Path,
+    rows: &[MultiseedPairedRow],
+) -> DynamicJepaResult<()> {
+    let rows = rows
+        .iter()
+        .filter(|row| row.metric == "val_latent_mse")
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "multiseed_aggregate.delta_plot",
+            "no val_latent_mse paired deltas available for forest plot",
+            "ensure paired ablation tests include val_latent_mse",
+        ));
+    }
+    let width = 840.0;
+    let height = (150.0 + rows.len() as f64 * 48.0).max(420.0);
+    let left = 270.0;
+    let right = 54.0;
+    let top = 60.0;
+    let bottom = 60.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+    let min_x = rows
+        .iter()
+        .map(|row| row.ci_lower.min(row.mean_delta))
+        .fold(0.0_f64, f64::min);
+    let max_x = rows
+        .iter()
+        .map(|row| row.ci_upper.max(row.mean_delta))
+        .fold(0.0_f64, f64::max);
+    let span = (max_x - min_x).abs().max(1e-9);
+    let x_for = |value: f64| left + (value - min_x) / span * plot_width;
+    let zero_x = x_for(0.0);
+    let mut marks = String::new();
+    for (idx, row) in rows.iter().enumerate() {
+        let y = top + (idx as f64 + 0.5) * (plot_height / rows.len() as f64);
+        marks.push_str(&format!(
+            r##"<text x="20" y="{:.2}" font-size="12" font-family="Arial, sans-serif" fill="#111827">{}</text>
+<line x1="{:.2}" y1="{y:.2}" x2="{:.2}" y2="{y:.2}" stroke="#374151" stroke-width="1.5"/>
+<circle cx="{:.2}" cy="{y:.2}" r="4.5" fill="#dc2626"/>
+<text x="{:.2}" y="{:.2}" font-size="11" font-family="Arial, sans-serif" fill="#374151">{:.4}</text>
+"##,
+            y + 4.0,
+            xml_escape(&row.comparison_ablation_id),
+            x_for(row.ci_lower),
+            x_for(row.ci_upper),
+            x_for(row.mean_delta),
+            x_for(row.mean_delta) + 8.0,
+            y + 4.0,
+            row.mean_delta,
+        ));
+    }
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}" role="img" aria-label="Paired validation MSE delta forest plot">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="20" y="30" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="#111827">Paired val MSE delta vs A0 baseline</text>
+<line x1="{zero_x:.2}" y1="{top:.0}" x2="{zero_x:.2}" y2="{:.0}" stroke="#9ca3af" stroke-width="1" stroke-dasharray="4 4"/>
+<line x1="{left:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="#374151" stroke-width="1"/>
+<text x="{left:.0}" y="{:.0}" font-size="11" font-family="Arial, sans-serif" fill="#374151">{min_x:.4}</text>
+<text x="{:.0}" y="{:.0}" text-anchor="end" font-size="11" font-family="Arial, sans-serif" fill="#374151">{max_x:.4}</text>
+{marks}</svg>
+"##,
+        height - bottom,
+        height - bottom,
+        width - right,
+        height - bottom,
+        height - 24.0,
+        width - right,
+        height - 24.0
+    );
+    write_text_file(path, &svg)
+}
+
+fn write_multiseed_plot_manifest(output_root: &Path) -> DynamicJepaResult<()> {
+    write_json_file(
+        &output_root.join("plots/plot_manifest.json"),
+        &json!({
+            "status": "rendered",
+            "plots": [
+                {
+                    "id": "multiseed_val_mse_box",
+                    "source_table": output_root.join("paper_tables/table_prediction_metrics_multiseed.csv"),
+                    "output": output_root.join("plots/multiseed_val_mse_box.svg"),
+                },
+                {
+                    "id": "multiseed_paired_delta_forest",
+                    "source_table": output_root.join("paper_tables/table_paired_ablation_tests.csv"),
+                    "output": output_root.join("plots/multiseed_paired_delta_forest.svg"),
+                }
+            ]
+        }),
+    )
+}
+
 const CI_REFERENCE_SCHEMA_VERSION: u64 = 1;
 const CI_REFERENCE_REQUIRED_FILES: &[&str] = &[
     "run_manifest.json",
@@ -3218,7 +4938,7 @@ impl CiReferenceCheckFailure {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct CiCsvTable {
     headers: Vec<String>,
     rows: Vec<BTreeMap<String, String>>,

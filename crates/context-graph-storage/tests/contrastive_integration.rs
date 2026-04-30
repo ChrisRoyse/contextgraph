@@ -402,13 +402,15 @@ fn mine_pair_from_candidate_returns_none_below_min_disagreement() {
     let mut b = synthetic_fp(1);
     let dim5 = a.e5_causal_as_cause.len();
     b.e5_causal_as_cause = vec![0.0; dim5];
-    let mut strict = MiningConfig::default();
     // Upper bound of f32 similarity is 1.0; 1.5 is strictly unreachable.
     // MiningConfig::validate() rejects values > 1.0, so call the miner
     // directly without running validate() — the function itself must still
     // respect min_disagreement even when it's been set beyond the valid
     // range (defensive check against bad callers).
-    strict.min_disagreement = 1.5;
+    let strict = MiningConfig {
+        min_disagreement: 1.5,
+        ..Default::default()
+    };
     let got2 = mine_pair_from_candidate(id_a, "a", &a, id_b, "b", &b, &strict);
     assert!(got2.is_none(), "expected None when min_disagreement > 1.0");
 }

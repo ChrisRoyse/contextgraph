@@ -345,7 +345,7 @@ async fn compile_with_two_clusters_yields_mid_coherence() {
     // indicate a degenerate centroid bug).
     let e1_p50 = c.per_embedder[0].cosine_spread_p50;
     assert!(
-        e1_p50 >= 0.3 && e1_p50 <= 0.9999,
+        (0.3..=0.9999).contains(&e1_p50),
         "E1 p50 = {} outside expected [0.3, 0.9999] window",
         e1_p50
     );

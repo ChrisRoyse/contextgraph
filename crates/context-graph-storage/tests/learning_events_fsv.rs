@@ -15,33 +15,35 @@ fn approx_eq(actual: f32, expected: f32) {
     );
 }
 
-fn state(
+struct StateInput<'a> {
     profile_base: f32,
     rank: Option<u32>,
     contradiction: f32,
     integration: f32,
     recurrence: u32,
     stability: f32,
-    domain: &str,
+    domain: &'a str,
     transfer_count: u32,
-) -> LearningStateSnapshot {
+}
+
+fn state(input: StateInput<'_>) -> LearningStateSnapshot {
     let mut topic_profile = [0.0f32; NUM_EMBEDDERS];
     let mut embedder_scores = [0.0f32; NUM_EMBEDDERS];
     for idx in 0..NUM_EMBEDDERS {
-        topic_profile[idx] = profile_base;
+        topic_profile[idx] = input.profile_base;
         embedder_scores[idx] = 0.2 + (idx as f32 / (NUM_EMBEDDERS - 1) as f32) * 0.7;
     }
     LearningStateSnapshot {
         topic_profile,
         cross_correlations: vec![0.1; NUM_CROSS_CORRELATIONS],
-        retrieval_rank: rank,
+        retrieval_rank: input.rank,
         embedder_scores,
-        contradiction_pressure: contradiction,
-        integration_confidence: integration,
-        recurrence_count: recurrence,
-        stability_score: stability,
-        domain: Some(domain.into()),
-        successful_transfer_count: transfer_count,
+        contradiction_pressure: input.contradiction,
+        integration_confidence: input.integration,
+        recurrence_count: input.recurrence,
+        stability_score: input.stability,
+        domain: Some(input.domain.into()),
+        successful_transfer_count: input.transfer_count,
     }
 }
 
@@ -55,8 +57,26 @@ fn outcome(label: LearningOutcomeLabel, utility_delta: f32) -> LearningOutcome {
 }
 
 fn happy_event(event_id: Uuid) -> LearningEvent {
-    let before = state(0.2, Some(10), 0.2, 0.4, 1, 0.4, "docs", 0);
-    let after = state(0.3, Some(2), 0.1, 0.8, 8, 0.9, "code", 3);
+    let before = state(StateInput {
+        profile_base: 0.2,
+        rank: Some(10),
+        contradiction: 0.2,
+        integration: 0.4,
+        recurrence: 1,
+        stability: 0.4,
+        domain: "docs",
+        transfer_count: 0,
+    });
+    let after = state(StateInput {
+        profile_base: 0.3,
+        rank: Some(2),
+        contradiction: 0.1,
+        integration: 0.8,
+        recurrence: 8,
+        stability: 0.9,
+        domain: "code",
+        transfer_count: 3,
+    });
     LearningEvent::new(
         event_id,
         vec![Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap()],
@@ -163,7 +183,16 @@ async fn edge_empty_event_stream_and_no_state_change_stores_zero_delta() {
         RocksDbTeleologicalStore::open_with_config(tmp.path(), TeleologicalStoreConfig::default())
             .unwrap();
     let event_id = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
-    let before = state(0.2, None, 0.0, 0.0, 0, 0.0, "docs", 0);
+    let before = state(StateInput {
+        profile_base: 0.2,
+        rank: None,
+        contradiction: 0.0,
+        integration: 0.0,
+        recurrence: 0,
+        stability: 0.0,
+        domain: "docs",
+        transfer_count: 0,
+    });
     let after = before.clone();
 
     println!(
@@ -202,9 +231,27 @@ async fn edge_empty_event_stream_and_no_state_change_stores_zero_delta() {
 
 #[test]
 fn edge_invalid_cross_correlation_dimension_fails_before_storage() {
-    let mut before = state(0.2, Some(10), 0.0, 0.0, 0, 0.0, "docs", 0);
+    let mut before = state(StateInput {
+        profile_base: 0.2,
+        rank: Some(10),
+        contradiction: 0.0,
+        integration: 0.0,
+        recurrence: 0,
+        stability: 0.0,
+        domain: "docs",
+        transfer_count: 0,
+    });
     before.cross_correlations.pop();
-    let after = state(0.3, Some(2), 0.0, 0.0, 0, 0.0, "docs", 0);
+    let after = state(StateInput {
+        profile_base: 0.3,
+        rank: Some(2),
+        contradiction: 0.0,
+        integration: 0.0,
+        recurrence: 0,
+        stability: 0.0,
+        domain: "docs",
+        transfer_count: 0,
+    });
     println!(
         "EDGE invalid dimension BEFORE before_cross_len={}, expected={}",
         before.cross_correlations.len(),
@@ -256,8 +303,26 @@ async fn edge_maximum_memory_ids_and_label_lengths_persist() {
         "q".into(),
         String::new(),
         String::new(),
-        state(0.2, Some(5), 0.0, 0.5, 10, 1.0, "docs", 0),
-        state(0.3, Some(1), 0.0, 1.0, 10, 1.0, "docs", 0),
+        state(StateInput {
+            profile_base: 0.2,
+            rank: Some(5),
+            contradiction: 0.0,
+            integration: 0.5,
+            recurrence: 10,
+            stability: 1.0,
+            domain: "docs",
+            transfer_count: 0,
+        }),
+        state(StateInput {
+            profile_base: 0.3,
+            rank: Some(1),
+            contradiction: 0.0,
+            integration: 1.0,
+            recurrence: 10,
+            stability: 1.0,
+            domain: "docs",
+            transfer_count: 0,
+        }),
         outcome(LearningOutcomeLabel::Useful, 1.0),
     )
     .unwrap();

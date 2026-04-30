@@ -717,7 +717,7 @@ fn fsv_13_physical_rocksdb_persistence_e14() {
                 4 | 9 | 10 => (QuantizationMethod::PQ8, 768, vec![byte; 8]),
                 6 => (QuantizationMethod::PQ8, 1536, vec![byte; 8]),
                 13 => (QuantizationMethod::PQ8, 1024, e14_payload.clone()), // <-- E14 synthetic
-                1 | 2 | 3 => (QuantizationMethod::Float8E4M3, 512, vec![byte; 512]),
+                1..=3 => (QuantizationMethod::Float8E4M3, 512, vec![byte; 512]),
                 7 => (QuantizationMethod::Float8E4M3, 1024, vec![byte; 1024]),
                 8 => (QuantizationMethod::Binary, 10000, vec![byte; 1250]),
                 5 | 12 => (QuantizationMethod::SparseNative, 30522, vec![byte; 100]),

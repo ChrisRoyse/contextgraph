@@ -165,9 +165,7 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
     // Primary embedder will be bumped to 0.8 but E5 is also 0.4 (above the
     // `low_threshold=0.30` cutoff), so the pattern doesn't match.
     let mut e5_scores = [0f32; 14];
-    for v in &mut e5_scores {
-        *v = 0.4;
-    }
+    e5_scores.fill(0.4);
     e5_scores[4] = 0.4; // still above low_threshold → no match
     let e5 = synthetic_edge(
         sources[5],
