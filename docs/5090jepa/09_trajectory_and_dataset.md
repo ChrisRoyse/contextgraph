@@ -2,6 +2,8 @@
 
 After events become panels, trajectories order them and dataset shards turn pairs of panels into training rows. The demo uses a single segmentation policy and a single objective; everything is deterministic.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: the upstream source-of-truth records this phase consumes (`dj_transitions`, `dj_instrument_readings`, and `dj_latent_panels`) are now written and FSV-verified. The trajectory and dataset compiler commands in this file are the next Phase 5/6 work and are not operational yet.
+
 ## 1. Trajectory Compilation
 
 `compile_trajectories(domain_pack_id, segmentation_policy)`:

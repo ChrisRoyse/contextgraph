@@ -1,14 +1,14 @@
 # 02 — Repository State Inventory
 
-This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before Phase 0 and again before Phase 7. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 5. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
-## 1. Branch & Commit Snapshot (Phase 3 Live Audit: 2026-04-30)
+## 1. Branch & Commit Snapshot (Phase 4 Double-Check: 2026-04-30)
 
 | Property | Value |
 | --- | --- |
 | Branch | `main` |
-| Latest commits at audit start | `a43c962f docs(5090jepa): add master context guide and AI prompt library` → `bcf6a297 feat(dynamicjepa): add Phase 2 storage data plane (25 RocksDB CFs)` → `d47b0e92 docs(5090jepa): add game-theory analysis of commercial opportunity` |
-| Working tree at audit start | Clean before Phase 2 verification fixes; local changes now include stale CF/HNSW count fixes, Phase 3 CLI implementation/tests, stale CLI test fixes, and this status documentation |
+| Latest commits at audit start | `3f59d0f5 docs(5090jepa): refresh Phase 3 verification audit, runbook, and FSV scope` → `5c907530 feat(dynamicjepa): add Phase 4 adapter/panel materialization CLI` |
+| Working tree at audit start | Clean after the Phase 4 implementation commit; current local changes are documentation refreshes for the Phase 4 double-check |
 | `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
 
 ## 2. Workspace Layout (Verified)
@@ -65,6 +65,7 @@ test -d crates/context-graph-core/src/dynamicjepa
 test -d crates/context-graph-storage/src/dynamicjepa
 test ! -f crates/context-graph-mcp/src/tools/definitions/dynamicjepa.rs
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs
+test -f crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs
 test -f crates/context-graph-cli/src/bin/context-graph.rs
 
 # Configs root
@@ -74,9 +75,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2 And Phase 3 Verification Status (2026-04-30)
+## 4. Phase 2, Phase 3, And Phase 4 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4+ adapter/panel/MCP/model pipeline work is still not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5+ trajectory/dataset/model/MCP work is still not present.
 
 Source of truth verified:
 
@@ -123,7 +124,7 @@ Phase 3 re-audit results:
 - Registering both checked-in domain packs again produced the expected final source-of-truth counts: `dj_domain_packs=2`, `dj_domain_pack_by_nv=2`, `dj_instrument_registry=5`, `dj_adapter_registry=2`, `dj_audit_log=2`.
 - Independent `ldb dump --count_only` against the same DB confirmed those five counts exactly.
 - Duplicate-instrument registration failed with `VALIDATION` on `DomainPack.instrument_specs.instrument_id` and left all 25 DynamicJEPA CF counts unchanged.
-- No Phase 4+ CLI commands are present yet; the next implementation phase starts at `ingest-event`, adapter runs, normalized records, readings, and panels.
+- Phase 4 supersedes this stale re-audit finding: the `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings` commands are now implemented and verified.
 
 Root-cause fixes made during the Phase 3 audit:
 
@@ -132,6 +133,32 @@ Root-cause fixes made during the Phase 3 audit:
 - Phase 3 `count_delta` now treats missing or unexpected CF names in before/after snapshots as `StorageInvariantViolation` instead of substituting zero.
 - `crates/context-graph-cli/tests/export_training_integration.rs` now initializes the current `TrainingRecord::e14_bge_m3_dense` field.
 - `crates/context-graph-cli/tests/e14_phase_b_fsv.rs` now calls `EmbedderId::parse`, matching the live DTO API.
+
+Phase 4 source of truth verified:
+
+- Physical RocksDB DBs: `/tmp/5090jepa-phase4-manual-cw` and `/tmp/5090jepa-phase4-manual-gw`.
+- Manual decoded evidence: `tmp/5090jepa_evidence/phase4/manual_counter/` and `tmp/5090jepa_evidence/phase4/manual_gridworld/`.
+- Automated CLI FSV evidence: `tmp/5090jepa_evidence/phase4/cli_phase4_fsv.json`.
+- Independent physical count read: `ldb --db <phase4-db> --column_family=<cf> dump --count_only`.
+
+Phase 4 verification results:
+
+- `cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-core dynamicjepa --all-features`: 3 passed, 0 failed.
+- `cargo test -p context-graph-storage dynamicjepa --all-features`: 1 passed, 0 failed.
+- `cargo build -p context-graph-cli --release --all-features`: passed.
+- Manual counter_world happy path registered one pack, ingested three events, materialized three panels, and ended with `dj_domain_packs=1`, `dj_domain_pack_by_nv=1`, `dj_instrument_registry=2`, `dj_adapter_registry=1`, `dj_raw_events=3`, `dj_adapter_runs=3`, `dj_normalized_states=3`, `dj_actions=3`, `dj_outcomes=3`, `dj_transitions=3`, `dj_instrument_readings=6`, `dj_latent_panels=3`, `dj_audit_log=10`.
+- Manual counter_world after edge cases ended with `dj_raw_events=5`, `dj_adapter_runs=5`, `dj_normalized_states=3`, `dj_actions=3`, `dj_outcomes=3`, `dj_transitions=3`, `dj_instrument_readings=6`, `dj_latent_panels=3`, `dj_audit_log=15`.
+- Manual gridworld happy path registered one pack, ingested one eight-event trajectory, materialized eight panels, and ended with `dj_domain_packs=1`, `dj_domain_pack_by_nv=1`, `dj_instrument_registry=3`, `dj_adapter_registry=1`, `dj_raw_events=8`, `dj_adapter_runs=8`, `dj_normalized_states=8`, `dj_actions=8`, `dj_outcomes=8`, `dj_transitions=8`, `dj_instrument_readings=24`, `dj_latent_panels=8`, `dj_audit_log=25`.
+- Manual gridworld after edge cases ended with `dj_raw_events=10`, `dj_adapter_runs=10`, `dj_normalized_states=8`, `dj_actions=8`, `dj_outcomes=8`, `dj_transitions=8`, `dj_instrument_readings=24`, `dj_latent_panels=8`, `dj_audit_log=30`.
+- Edge cases verified with before/after snapshots: empty input writes only a failed audit row; invalid action writes one raw event, one failed adapter run, and no normalized rows; counter_world max outcome and gridworld out-of-bounds state write one raw event, one failed adapter run, and no normalized rows.
+
+Root-cause fixes made during the Phase 4 audit:
+
+- Adapter validation now uses schema field order before adapter mapping order, so gridworld out-of-bounds state fails at `state.x` before the outcome fields are considered.
+- Optional failed panel slots are valid only with `mask=false` and an empty vector; required slots still require a present vector of the declared dimension.
+- Event and panel storage paths gained atomic batch helpers for raw+started, adapter success/failure, and readings+panel writes.
 
 ## 5. Existing Surfaces You Will Reuse
 
@@ -193,7 +220,7 @@ Tool registry surface:
 
 Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
 
-Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 4+ CLI subcommands remain unimplemented.
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 5+ CLI subcommands remain unimplemented.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

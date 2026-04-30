@@ -2,6 +2,8 @@
 
 The 5090jepa demo is targeted at exactly one machine. Before any phase you must verify the environment matches. If anything diverges from the values below, halt and resolve before writing code. No "should work" assumptions.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: Phases 0-4 are implemented and FSV-verified. Phase 5 is next. The DynamicJEPA service crate and MCP tool surface remain future Phase 7/9 work.
+
 ## 1. Operator Hardware (Verified)
 
 | Item | Value | Source |
@@ -44,6 +46,8 @@ test ! -d crates/context-graph-dynamicjepa || (echo "ERROR: Phase 7 service crat
 test -d crates/context-graph-core/src/dynamicjepa || (echo "ERROR: Phase 1 core module missing" && exit 1)
 test -d crates/context-graph-storage/src/dynamicjepa || (echo "ERROR: Phase 2 storage module missing" && exit 1)
 test -f crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 3 CLI module missing" && exit 1)
+rg -q "IngestEvent" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 ingest CLI missing" && exit 1)
+rg -q "MaterializePanel" crates/context-graph-cli/src/commands/dynamicjepa.rs || (echo "ERROR: Phase 4 panel CLI missing" && exit 1)
 echo "ENV OK"
 ```
 
@@ -82,6 +86,7 @@ cargo build --workspace --release --all-features
 cargo test -p context-graph-core dynamicjepa --all-features
 cargo test -p context-graph-storage dynamicjepa --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features
 
 # future Phase 7 service crate, once it exists
 # cargo test -p context-graph-dynamicjepa --all-features
@@ -121,6 +126,8 @@ Document them here so the next fresh agent does not re‑debug:
 ```
 /tmp/5090jepa-cw-fsv/        # counter_world demo DB (wiped per run)
 /tmp/5090jepa-gw-fsv/        # gridworld demo DB (wiped per run)
+/tmp/5090jepa-phase4-manual-cw/ # Phase 4 manual counter_world source-of-truth DB
+/tmp/5090jepa-phase4-manual-gw/ # Phase 4 manual gridworld source-of-truth DB
 /tmp/5090jepa_artifacts/     # tiny model artifact files (wiped per run)
 tmp/5090jepa_evidence/       # JSON evidence logs committed to repo? NO — never commit /tmp; this is under repo `tmp/` so it persists across runs
 ```

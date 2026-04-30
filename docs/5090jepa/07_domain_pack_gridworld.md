@@ -2,6 +2,8 @@
 
 `gridworld_5x5` proves universality. The same pipeline that solves counter_world without code changes also handles a deterministic discrete-navigation domain whose state is a 2-D coordinate, action is one of five discrete moves, and outcome is the new coordinate after wall-clipping. A randomly initialized predictor cannot solve gridworld; a correctly trained tiny JEPA reaches ≥0.95 latent cosine on the held-out transitions.
 
+Current Phase 4 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, and materialize into eight panels through the real CLI and real RocksDB. Full 8000-event trajectory/dataset/model verification remains later phases.
+
 ## 1. World Definition
 
 - Grid: 5 × 5 cells, x ∈ {0..4}, y ∈ {0..4}.
@@ -248,9 +250,11 @@ Generator writes byte-identical output across machines because the seed is fixed
 
 ## 5. Edge-Case Fixtures
 
+Phase 4 FSV independently confirmed the one-trajectory happy path in `/tmp/5090jepa-phase4-manual-gw`: after registration, ingest, and panel materialization the source-of-truth counts are `dj_domain_packs=1`, `dj_domain_pack_by_nv=1`, `dj_instrument_registry=3`, `dj_adapter_registry=1`, `dj_raw_events=8`, `dj_adapter_runs=8`, `dj_normalized_states=8`, `dj_actions=8`, `dj_outcomes=8`, `dj_transitions=8`, `dj_instrument_readings=24`, `dj_latent_panels=8`, and `dj_audit_log=25`.
+
 ### 5.1 `gridworld_5x5_edge_empty.jsonl`
 
-Zero-byte file. Same expectation as counter_world: ingestion fails before any write, all CFs unchanged.
+Zero-byte file. Same expectation as counter_world: ingestion fails before raw/adapter/normalized writes, all data CFs stay unchanged, and `dj_audit_log` increases by exactly 1 with a failed ingest audit row.
 
 ### 5.2 `gridworld_5x5_edge_invalid_action.jsonl`
 
@@ -267,6 +271,8 @@ Expected: `dj_raw_events +1`, `dj_adapter_runs +1` with `status = Failed`, `fiel
 ```
 
 `state.x = 7` violates `max = 4`. Expected: same shape as 5.2 — raw event + failed adapter run; no normalized state.
+
+Phase 4 edge-case FSV confirmed the final source-of-truth counts after running all three edge cases on top of the one-trajectory happy path: `dj_raw_events=10`, `dj_adapter_runs=10`, `dj_normalized_states=8`, `dj_actions=8`, `dj_outcomes=8`, `dj_transitions=8`, `dj_instrument_readings=24`, `dj_latent_panels=8`, and `dj_audit_log=30`. Evidence lives under `tmp/5090jepa_evidence/phase4/manual_gridworld/`.
 
 ## 6. Train Config
 

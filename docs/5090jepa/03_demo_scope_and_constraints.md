@@ -2,9 +2,9 @@
 
 The full DynamicJEPA contract is large. The 5090jepa demo intentionally trims it to the smallest set of capabilities that *still proves the whole loop end‑to‑end on real hardware*. Every trim is justified.
 
-Current implementation state as of the Phase 3 re-audit on 2026-04-30:
-Phases 0-3 are implemented and verified. Phase 4 is next. The full in-scope
-list below is still the demo target, not a claim that Phase 4+ behavior exists
+Current implementation state as of the Phase 4 double-check on 2026-04-30:
+Phases 0-4 are implemented and verified. Phase 5 is next. The full in-scope
+list below is still the demo target, not a claim that Phase 5+ behavior exists
 today.
 
 ## 1. In Scope (You Build This)
@@ -73,6 +73,8 @@ If a randomly initialized predictor already meets the validation targets, you ha
 ## 5. Test Strategy (How These Targets Get Enforced)
 
 Current Phase 3 enforcement lives in `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs`: real CLI binary, real temp RocksDB, both checked-in domain TOMLs, decoded CF reads, and edge-case count invariants.
+
+Current Phase 4 enforcement lives in `crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs`: real CLI binary, real temp RocksDB, checked-in counter_world and gridworld fixtures, decoded CF reads for raw events / adapter runs / normalized records / readings / panels, and edge-case count invariants.
 
 Phase 7+ model metrics get Rust tests asserting the bounds. Those tests will live in `crates/context-graph-dynamicjepa/tests/` once the service crate exists:
 

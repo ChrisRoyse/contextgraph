@@ -2,6 +2,8 @@
 
 The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: the CLI implements Phases 3-4. DynamicJEPA MCP tools are still Phase 9 and are not present in `context-graph-mcp` yet.
+
 ## 1. Tool Name Constants
 
 Append to `crates/context-graph-mcp/src/tools/names.rs`:
@@ -130,10 +132,12 @@ crates/context-graph-cli/src/commands/dynamicjepa.rs
 
 Wire to `commands/mod.rs` and the top-level clap-derive enum in `main.rs`.
 
-Phase 3 status: the registry/inspection subset is implemented and verified:
+Phase 4 status: the registry/inspection subset is implemented and verified:
 `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and
-`inspect-cf`. Later subcommands below remain Phase 4+ work and should not be
-listed as operational until their source-of-truth FSV is complete.
+`inspect-cf`. The adapter/panel subset is also implemented and verified:
+`ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and
+`list-instrument-readings`. Later subcommands below remain Phase 5+ work and
+should not be listed as operational until their source-of-truth FSV is complete.
 
 Subcommands (all accept `--db PATH` and `--json`):
 
@@ -244,9 +248,10 @@ If the operator wants to call DynamicJEPA tools through the MCP server later, th
 
 ## 10. Test Surface
 
-Add:
+Add or keep current:
 
 - Current Phase 3: `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs` — real CLI binary, real temp RocksDB, both checked-in domain TOMLs, decoded CF inspection, and empty TOML / duplicate instrument / unknown TOML key / invalid CF edge cases.
+- Current Phase 4: `crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs` — real CLI binary, real temp RocksDB, checked-in domain packs and fixtures, decoded CF inspection for adapter/panel rows, and empty input / invalid action / max or out-of-bounds edge cases.
 - `crates/context-graph-mcp/tests/dynamicjepa_tools_dispatch_test.rs` — confirm every tool name maps to a handler.
 - `crates/context-graph-mcp/tests/dynamicjepa_capability_matrix_test.rs` — confirm the capability matrix includes DynamicJEPA fields after a `verify-counter-world` run.
 - `crates/context-graph-cli/tests/dynamicjepa_cli_smoke_test.rs` — CLI argument parsing, exit codes, JSON shape.

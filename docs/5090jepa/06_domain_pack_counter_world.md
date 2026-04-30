@@ -2,6 +2,8 @@
 
 `counter_world` is the Occam's‑razor proof that the entire DynamicJEPA pipeline plumbs end‑to‑end. Three integer transitions, one scalar instrument, deterministic arithmetic, ground truth always equal to `state + action`. A correctly trained tiny JEPA reaches >0.99 cosine on the held‑out transition; a randomly initialized one cannot.
 
+Current Phase 4 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, and materialize into three panels through the real CLI and real RocksDB. Trajectory, dataset, training, prediction, planning, and bundled `verify-counter-world` remain later phases.
+
 ## 1. File Locations
 
 ```
@@ -168,6 +170,8 @@ After `dynamicjepa materialize-panel --all-pending`:
 | `dj_latent_panels` | +3 |
 | `dj_audit_log` | +3 |
 
+Phase 4 FSV independently confirmed the happy path in `/tmp/5090jepa-phase4-manual-cw`: after registration, ingest, and panel materialization the source-of-truth counts are `dj_domain_packs=1`, `dj_domain_pack_by_nv=1`, `dj_instrument_registry=2`, `dj_adapter_registry=1`, `dj_raw_events=3`, `dj_adapter_runs=3`, `dj_normalized_states=3`, `dj_actions=3`, `dj_outcomes=3`, `dj_transitions=3`, `dj_instrument_readings=6`, `dj_latent_panels=3`, and `dj_audit_log=10`.
+
 After `dynamicjepa compile-trajectories --domain counter_world --policy by_domain_session`:
 
 | CF | Δrows |
@@ -216,7 +220,7 @@ After `dynamicjepa verify-counter-world` (the bundled FSV harness, runs everythi
 ```
 ```
 
-(Zero‑byte file.) Expected: `dynamicjepa ingest-event` fails before any RocksDB write with `DynamicJepaError::AdapterFailed { adapter_id: "json_event", message: "empty input file", ... }`. `dj_raw_events`, `dj_adapter_runs`, all normalized CFs unchanged.
+(Zero‑byte file.) Expected: `dynamicjepa ingest-event` fails with `DynamicJepaError::AdapterFailed { adapter_id: "json_event", message: "empty input file", ... }`. `dj_raw_events`, `dj_adapter_runs`, all normalized CFs, readings, and panels remain unchanged; `dj_audit_log` increases by exactly 1 with a failed ingest audit row.
 
 ### 4.2 `counter_world_edge_invalid_action.jsonl`
 
@@ -233,6 +237,8 @@ Expected: `dj_raw_events` +1 (payload captured first), `dj_adapter_runs` +1 with
 ```
 
 `outcome.next_counter = 1032` violates the declared `max = 1024`. Expected: `dj_raw_events` +1, `dj_adapter_runs` +1 with `status = Failed`, error includes `field_path = "outcome.next_counter"`, `value = 1032`, `max = 1024`. **No** `dj_normalized_outcomes` row, no `dj_transitions` row, no panel.
+
+Phase 4 edge-case FSV confirmed the final source-of-truth counts after running all three edge cases on top of the happy path: `dj_raw_events=5`, `dj_adapter_runs=5`, `dj_normalized_states=3`, `dj_actions=3`, `dj_outcomes=3`, `dj_transitions=3`, `dj_instrument_readings=6`, `dj_latent_panels=3`, and `dj_audit_log=15`. Evidence lives under `tmp/5090jepa_evidence/phase4/manual_counter/`.
 
 ## 5. Tiny Train Config
 

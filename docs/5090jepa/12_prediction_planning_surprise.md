@@ -2,6 +2,8 @@
 
 After a model is trained and an artifact is registered, the demo proves that predictions, plans, and surprise events all persist independently readable rows. Planning is a recorded process, not a function call.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: prediction, planning, guard, and surprise commands are not implemented yet. The storage CFs exist, but these rows stay at zero during Phase 4 FSV.
+
 ## 1. Prediction
 
 `predict(artifact_id, input_panel_id, candidate_action_id) -> PredictionId`:

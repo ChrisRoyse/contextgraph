@@ -46,13 +46,15 @@ sha256sum configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl
 
 Record the hash; the test suite asserts it. If the hash drifts, revert the generator change.
 
-## 4. Current Phase 3 Registry/Inspection Run
+## 4. Current Phase 4 Registry/Adapter/Panel Run
 
-This is the implemented runbook today. It proves the Phase 3 surface only:
-domain-pack registration, list/get, decoded CF inspection, strict validation,
-and physical RocksDB evidence. It intentionally does not call Phase 4+ commands.
+This is the implemented runbook today. It proves the Phase 3 and Phase 4
+surfaces: domain-pack registration, decoded CF inspection, strict validation,
+JSONL ingestion, adapter success/failure, instrument readings, latent panels,
+and physical RocksDB evidence. It intentionally does not call Phase 5+ commands.
 
 ```bash
+# Phase 3 registry regression run; Phase 4 depends on these rows.
 export DJ_DB=/tmp/5090jepa-phase3-fsv
 rm -rf "$DJ_DB"
 mkdir -p tmp/5090jepa_evidence/phase3/manual
@@ -106,6 +108,104 @@ The automated equivalent is:
 
 ```bash
 cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features -- --nocapture
+```
+
+Phase 4 counter_world run:
+
+```bash
+export DJ_DB=/tmp/5090jepa-phase4-manual-cw
+rm -rf "$DJ_DB"
+mkdir -p tmp/5090jepa_evidence/phase4/manual_counter
+
+./target/debug/context-graph dynamicjepa register-domain --db "$DJ_DB" \
+  --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json
+
+./target/debug/context-graph dynamicjepa ingest-event --db "$DJ_DB" \
+  --domain counter_world --adapter json_event \
+  --file configs/dynamicjepa/verification/counter_world_happy_path.jsonl --json
+
+./target/debug/context-graph dynamicjepa materialize-panel --db "$DJ_DB" \
+  --all-pending --domain counter_world --json
+
+./target/debug/context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
+```
+
+Expected Phase 4 counter_world happy-path counts:
+
+```text
+dj_domain_packs 1
+dj_domain_pack_by_nv 1
+dj_instrument_registry 2
+dj_adapter_registry 1
+dj_raw_events 3
+dj_adapter_runs 3
+dj_normalized_states 3
+dj_actions 3
+dj_outcomes 3
+dj_transitions 3
+dj_instrument_readings 6
+dj_latent_panels 3
+dj_audit_log 10
+```
+
+Phase 4 gridworld one-trajectory run:
+
+```bash
+export DJ_DB=/tmp/5090jepa-phase4-manual-gw
+rm -rf "$DJ_DB"
+mkdir -p tmp/5090jepa_evidence/phase4/manual_gridworld
+head -n 8 configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl \
+  > tmp/5090jepa_evidence/phase4/manual_gridworld/gridworld_first_trajectory.jsonl
+
+./target/debug/context-graph dynamicjepa register-domain --db "$DJ_DB" \
+  --file configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml --json
+
+./target/debug/context-graph dynamicjepa ingest-event --db "$DJ_DB" \
+  --domain gridworld_5x5 --adapter json_event \
+  --file tmp/5090jepa_evidence/phase4/manual_gridworld/gridworld_first_trajectory.jsonl --json
+
+./target/debug/context-graph dynamicjepa materialize-panel --db "$DJ_DB" \
+  --all-pending --domain gridworld_5x5 --json
+
+./target/debug/context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
+```
+
+Expected Phase 4 gridworld happy-path counts:
+
+```text
+dj_domain_packs 1
+dj_domain_pack_by_nv 1
+dj_instrument_registry 3
+dj_adapter_registry 1
+dj_raw_events 8
+dj_adapter_runs 8
+dj_normalized_states 8
+dj_actions 8
+dj_outcomes 8
+dj_transitions 8
+dj_instrument_readings 24
+dj_latent_panels 8
+dj_audit_log 25
+```
+
+Independent physical check for either Phase 4 DB:
+
+```bash
+for cf in dj_raw_events dj_adapter_runs dj_normalized_states dj_actions dj_outcomes dj_transitions dj_instrument_readings dj_latent_panels dj_audit_log; do
+  /usr/bin/ldb --db="$DJ_DB" --column_family="$cf" dump --count_only | awk -v cf="$cf" '/Keys in range:/ {print cf, $4}'
+done
+```
+
+Phase 4 edge cases to run before claiming the phase still works:
+
+- Empty JSONL input fails with `ADAPTER_FAILED`, leaves raw/adapter/normalized/readings/panels unchanged, and adds one failed audit row.
+- Invalid action writes one raw event and one failed adapter run, writes no normalized/readings/panels, and adds two audit rows.
+- Counter_world max outcome and gridworld out-of-bounds state write one raw event and one failed adapter run, write no normalized/readings/panels, and add two audit rows.
+
+The automated equivalent is:
+
+```bash
+cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features -- --nocapture
 ```
 
 ## 5. Future Phase 10 Counter_world Run
@@ -203,6 +303,7 @@ Expected: `tools/list` length = 136 (110 base + 26 dynamicjepa) with `llm` featu
 cargo test -p context-graph-core dynamicjepa --release --all-features
 cargo test -p context-graph-storage dynamicjepa --release --all-features
 cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --release --all-features
+cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --release --all-features
 
 # Future phases, once the service crate and MCP DynamicJEPA surface exist:
 # cargo test -p context-graph-dynamicjepa --release --all-features

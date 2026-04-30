@@ -4,6 +4,8 @@ The 5090 demo persists everything to the existing physical RocksDB database open
 
 This file specifies CFs, key formats, batch boundaries, and the inspection API. Implementation lives under `crates/context-graph-storage/src/dynamicjepa/`.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: all 25 CFs and the inspection API are implemented; Phase 4 atomic helpers are implemented for raw event + started adapter run, adapter success/failure terminalization, and panel + readings writes. Binding, trajectory, dataset, artifact, prediction, planning, surprise, and verification-run write paths remain Phase 5+ work.
+
 ## 1. Module Layout
 
 ```
@@ -145,10 +147,10 @@ CF descriptors are produced by a single helper `dj_cf_descriptors(cache: &Cache)
 Required batch boundaries (every operation listed below must be one `WriteBatch`):
 
 1. **Register domain pack**: primary `dj_domain_packs` row + `dj_domain_pack_by_nv` row + N `dj_instrument_registry` rows + M `dj_adapter_registry` rows + 1 `dj_audit_log` row.
-2. **Ingest raw event**: 1 `dj_raw_events` row + 1 `dj_adapter_runs` row with status=`started`.
-3. **Successful adapter output**: update `dj_adapter_runs` row to `completed` + 1 each of `dj_normalized_states`, `dj_actions`, `dj_outcomes`, `dj_transitions` + 1 audit row.
-4. **Failed adapter output (raw event already persisted)**: update `dj_adapter_runs` to `failed` + 1 audit row. **No** normalized rows.
-5. **Materialize panel**: K `dj_instrument_readings` rows + 1 `dj_latent_panels` row + 1 audit row.
+2. **Ingest raw event**: 1 `dj_raw_events` row + 1 `dj_adapter_runs` row with status=`started` + 1 audit row. Implemented by `put_raw_event_and_adapter_run_started`.
+3. **Successful adapter output**: update `dj_adapter_runs` row to `completed` + 1 each of `dj_normalized_states`, `dj_actions`, `dj_outcomes`, `dj_transitions` + 1 audit row. Implemented by `put_adapter_run_success_batch`.
+4. **Failed adapter output (raw event already persisted)**: update `dj_adapter_runs` to `failed` + 1 audit row. **No** normalized rows. Implemented by `put_adapter_run_failure_batch`.
+5. **Materialize panel**: K `dj_instrument_readings` rows + 1 `dj_latent_panels` row + 1 audit row. Implemented by `put_panel_with_readings_batch`.
 6. **Write binding**: 1 `dj_bindings` row + 1 `dj_bindings_by_entity` row + 1 audit row.
 7. **Compile trajectory**: 1 `dj_trajectories` row + 1 audit row.
 8. **Compile dataset shard**: 1 `dj_dataset_shards` row + 1 audit row. (Shard references panel ids; panels themselves are unchanged.)
@@ -159,7 +161,7 @@ Required batch boundaries (every operation listed below must be one `WriteBatch`
 13. **Surprise event**: 1 `dj_surprise_events` row + 1 audit row.
 14. **Verification run**: 1 `dj_verification_runs` row + 1 audit row.
 
-Pre‑persistence validation failure (validation error before any RocksDB write) writes **no** rows — neither to data CFs nor to audit. The error is the operator‑visible signal.
+Pre‑persistence schema validation failure (for example a malformed domain TOML before any operation starts) writes **no** rows — neither to data CFs nor to audit. Once a CLI operation starts and can name a source-of-truth operation, failures are audit-visible: Phase 4 empty JSONL input writes one failed `dj_audit_log` row and no raw/adapter/normalized rows.
 
 ## 7. Inspection API (`inspection.rs`)
 
@@ -177,7 +179,7 @@ Plus a generic:
 pub fn inspect_cf(db: &Database, cf_name: &str, limit: usize) -> StorageResult<Vec<(Vec<u8>, serde_json::Value)>>;
 ```
 
-`inspect_cf` returns the first `limit` (key, decoded JSON) pairs. CLI commands `dynamicjepa inspect-cf` and `dynamicjepa inspect-counts` (Phase 3) call these directly.
+`inspect_cf` returns the first `limit` (key, decoded JSON) pairs. CLI commands `dynamicjepa inspect-cf` and `dynamicjepa inspect-counts` (Phase 3 and Phase 4 FSV) call these directly.
 
 ## 8. Database Open Path
 

@@ -2,6 +2,8 @@
 
 The model file on disk is *not* proof that a training run succeeded. The proof is the `dj_training_runs` row plus the `dj_model_artifacts` row plus a recomputed file hash that matches the registry value. This file specifies the lifecycle and the FSV requirements.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: training and artifact commands are not implemented yet. The storage CFs exist, but `dj_training_runs` and `dj_model_artifacts` stay at zero during Phase 4 FSV.
+
 ## 1. Lifecycle Steps
 
 ```

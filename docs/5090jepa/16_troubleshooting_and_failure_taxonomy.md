@@ -2,6 +2,8 @@
 
 This file is a debugging reference. The first job when something fails is to identify the *category* of failure — that determines which evidence to gather and which fix to apply.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings` are operational and covered by FSV. Later model/planning failures are specified here for future phases.
+
 ## 1. Categories
 
 | Code | Cause | Where it surfaces | Where to look |
@@ -52,11 +54,23 @@ Cause: a JSONL line has the wrong type for a declared field. This is the **expec
 
 Fix: Validate the fixture file with `jq -c .` to see if any line has type drift. Re-generate from the spec.
 
+### 2.4a `ingest-event` — empty input writes one failed audit row
+
+Cause: the JSONL file is zero bytes. Phase 4 treats this as an operation-level adapter failure, not a pre-operation schema validation failure.
+
+Fix: If this was not an edge-case test, point the command at a non-empty fixture. The expected source-of-truth delta is `dj_audit_log +1` and no change to `dj_raw_events`, `dj_adapter_runs`, normalized CFs, readings, or panels.
+
+### 2.4b `ingest-event` — gridworld OOB reports `state.x`
+
+Cause: the adapter validates fields in registered schema order, not arbitrary TOML mapping-table order. For `gridworld_5x5_edge_oob_state.jsonl`, `state.x=7` must be reported before the invalid mirrored `outcome.next_x=7`.
+
+Fix: If a future refactor reports `outcome.next_x` first for this fixture, restore schema-order validation. The FSV test intentionally checks `state.x` to prevent masking the root cause.
+
 ### 2.5 `materialize-panel` — `RequiredInstrumentMissing`
 
 Cause: a required instrument's input field is missing from the normalized state/action/outcome rows.
 
-Fix: Re-read `08_adapter_and_panel_pipeline.md` Section 4. The most likely cause is an adapter mapping that points to a JSON path that does not exist in the fixture. Confirm by `dynamicjepa get-state --id <state_id>` and inspect the field map.
+Fix: Re-read `08_adapter_and_panel_pipeline.md` Section 4. The most likely cause is an adapter mapping that points to a JSON path that does not exist in the fixture. In Phase 4, confirm by `dynamicjepa inspect-cf --cf dj_normalized_states` / `dj_actions` / `dj_outcomes` and inspect the field maps; dedicated `get-state` style commands are later-phase read conveniences.
 
 ### 2.6 `compile-dataset` — `DatasetLeakageDetected: insufficient negatives`
 

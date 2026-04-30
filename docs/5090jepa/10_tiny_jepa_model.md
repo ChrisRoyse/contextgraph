@@ -4,6 +4,8 @@ The demo's predictor is intentionally small. The point is to prove the *contract
 
 The full plan's open questions doc (`docs/dynamicjepa/implementationplan/15_open_questions_decisions.md`) recommends "tiny deterministic architecture first for FSV." This file makes that concrete.
 
+Current implementation status as of the Phase 4 double-check on 2026-04-30: model code is not implemented yet. Phase 4 now supplies the verified panel source-of-truth records that Phase 7 training will consume after Phase 5 trajectories and Phase 6 datasets exist.
+
 ## 1. Architecture (Single File of Truth)
 
 Both encoder and predictor are MLPs implemented in candle. Implementation lives in `crates/context-graph-dynamicjepa/src/model/`.

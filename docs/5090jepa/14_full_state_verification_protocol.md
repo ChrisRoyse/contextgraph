@@ -17,47 +17,84 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 3)
+## 2. Current Implemented FSV Scope (Phase 4)
 
-Phase 3 verifies only domain-pack registration and physical inspection. The full
-adapter/model/harness protocol below remains binding for later phases, but the
-current completed source-of-truth surface is:
+Phase 4 verifies domain-pack registration, JSONL event ingestion, adapter runs,
+normalized state/action/outcome/transition rows, instrument readings, latent
+panels, and physical inspection. The full trajectory/model/harness protocol
+below remains binding for later phases, but the current completed
+source-of-truth surface is:
 
 ```bash
-export DJ_DB=/tmp/5090jepa-phase3-fsv
+export DJ_DB=/tmp/5090jepa-phase4-fsv
 rm -rf "$DJ_DB"
 context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
 context-graph dynamicjepa register-domain --db "$DJ_DB" --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json
-context-graph dynamicjepa register-domain --db "$DJ_DB" --file configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml --json
-context-graph dynamicjepa inspect-counts --db "$DJ_DB" --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_domain_packs --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_domain_pack_by_nv --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_instrument_registry --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_registry --limit 10 --json
-context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_audit_log --limit 10 --json
+context-graph dynamicjepa ingest-event --db "$DJ_DB" --domain counter_world --adapter json_event --file configs/dynamicjepa/verification/counter_world_happy_path.jsonl --json
+context-graph dynamicjepa materialize-panel --db "$DJ_DB" --all-pending --domain counter_world --json
+context-graph dynamicjepa get-panel --db "$DJ_DB" --panel-id <panel-id> --include-readings --json
+context-graph dynamicjepa list-instrument-readings --db "$DJ_DB" --event-id <event-id> --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_raw_events --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_runs --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_latent_panels --limit 10 --json
 ```
 
-Expected Phase 3 final counts after both packs are registered:
+Expected Phase 4 counter_world happy-path counts after registration, ingest, and
+panel materialization:
 
 | CF | Final count |
 | --- | --- |
-| `dj_domain_packs` | 2 |
-| `dj_domain_pack_by_nv` | 2 |
-| `dj_instrument_registry` | 5 |
-| `dj_adapter_registry` | 2 |
-| `dj_audit_log` | 2 |
-| every Phase 4+ data CF (`dj_raw_events`, `dj_adapter_runs`, panels, datasets, artifacts, predictions, etc.) | 0 |
+| `dj_domain_packs` | 1 |
+| `dj_domain_pack_by_nv` | 1 |
+| `dj_instrument_registry` | 2 |
+| `dj_adapter_registry` | 1 |
+| `dj_raw_events` | 3 |
+| `dj_adapter_runs` | 3 (`Completed`) |
+| `dj_normalized_states` | 3 |
+| `dj_actions` | 3 |
+| `dj_outcomes` | 3 |
+| `dj_transitions` | 3 |
+| `dj_instrument_readings` | 6 |
+| `dj_latent_panels` | 3 |
+| `dj_audit_log` | 10 |
+| every Phase 5+ data CF (`dj_trajectories`, datasets, artifacts, predictions, etc.) | 0 |
 
-Required Phase 3 edge cases:
+Expected Phase 4 gridworld one-trajectory happy-path counts after registration,
+ingest of the first eight corpus rows, and panel materialization:
 
-- Empty TOML: fails with `VALIDATION`; all counts unchanged.
-- Duplicate instrument id: fails with `VALIDATION`; all counts unchanged.
-- Unknown TOML key: fails strict TOML parsing with `VALIDATION`; all counts unchanged.
-- Invalid `inspect-cf --cf`: fails with `VALIDATION`; all counts unchanged.
+| CF | Final count |
+| --- | --- |
+| `dj_domain_packs` | 1 |
+| `dj_domain_pack_by_nv` | 1 |
+| `dj_instrument_registry` | 3 |
+| `dj_adapter_registry` | 1 |
+| `dj_raw_events` | 8 |
+| `dj_adapter_runs` | 8 (`Completed`) |
+| `dj_normalized_states` | 8 |
+| `dj_actions` | 8 |
+| `dj_outcomes` | 8 |
+| `dj_transitions` | 8 |
+| `dj_instrument_readings` | 24 |
+| `dj_latent_panels` | 8 |
+| `dj_audit_log` | 25 |
+| every Phase 5+ data CF (`dj_trajectories`, datasets, artifacts, predictions, etc.) | 0 |
 
-The re-audit evidence for this phase lives at
-`tmp/5090jepa_evidence/phase3/doublecheck/` and includes CLI decoded reads plus
-independent `ldb dump --count_only` counts.
+Required Phase 4 edge cases for each domain:
+
+- Empty JSONL input: fails with `ADAPTER_FAILED`; no raw, adapter, normalized, reading, or panel rows; `dj_audit_log` +1.
+- Invalid action format: writes one raw event and one failed adapter run, writes no normalized rows, readings, or panels, and `dj_audit_log` +2.
+- Declared maximum violation: counter_world `outcome.next_counter=1032` fails at `outcome.next_counter`; gridworld `state.x=7` fails at `state.x`. Both write one raw event, one failed adapter run, no normalized rows, and `dj_audit_log` +2.
+
+Current evidence:
+
+- Manual counter_world evidence: `tmp/5090jepa_evidence/phase4/manual_counter/`, DB `/tmp/5090jepa-phase4-manual-cw`.
+- Manual gridworld evidence: `tmp/5090jepa_evidence/phase4/manual_gridworld/`, DB `/tmp/5090jepa-phase4-manual-gw`.
+- Automated CLI evidence: `tmp/5090jepa_evidence/phase4/cli_phase4_fsv.json`.
+- Independent physical proof: `ldb dump --count_only` was run against each touched CF and matched the decoded CLI evidence.
+
+Phase 3 remains verified by `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs`
+and `tmp/5090jepa_evidence/phase3/doublecheck/`; it is now a prerequisite for
+the Phase 4 FSV rather than the current endpoint.
 
 ## 3. Required Fixtures
 

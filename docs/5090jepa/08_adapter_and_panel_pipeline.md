@@ -2,6 +2,8 @@
 
 This file specifies how raw JSONL fixture lines become normalized state/action/outcome/transition records, then instrument readings, then a latent panel — for the v1 demo. The pipeline is identical for both domain packs; the only difference is which TOML is registered.
 
+Current Phase 4 status as of 2026-04-30: the adapter, instrument execution, and panel materialization path is implemented in `crates/context-graph-cli/src/commands/dynamicjepa.rs`, backed by atomic storage helpers in `crates/context-graph-storage/src/dynamicjepa/{event_store.rs,panel_store.rs}`. The future service-crate implementation remains Phase 7.
+
 ## 1. Pipeline Stages
 
 ```
@@ -17,19 +19,20 @@ JSONL fixture line
   ─▶ LatentPanel                 [CF_DJ_LATENT_PANELS]
 ```
 
-Every stage persists to its CF before the next stage begins. Failure at any stage halts the operation; partial state is not allowed.
+Every stage persists to its CF before the next stage begins. Failure at any stage halts the operation. The only allowed partially observed adapter state is the audited raw-event + failed-adapter-run pair documented for malformed JSONL rows; normalized rows and panels are never written on adapter failure.
 
 ## 2. Adapter: `json_event`
 
-Input: a JSONL file path. Output: per-line `RawDomainEvent` + `AdapterRunRecord`. Implementation in `crates/context-graph-dynamicjepa/src/adapters/json_event.rs`.
+Input: a JSONL file path. Output: per-line `RawDomainEvent` + `AdapterRunRecord`. The Phase 4 implementation lives in `crates/context-graph-cli/src/commands/dynamicjepa.rs`; the future reusable service implementation belongs in `crates/context-graph-dynamicjepa/src/adapters/json_event.rs` when Phase 7 adds that crate.
 
 Algorithm:
 
-1. Open the file. If the file is empty (zero bytes), return `DynamicJepaError::AdapterFailed { adapter_id: "json_event", message: "empty input file", field_path: "" }`. **No** RocksDB writes.
+1. Open the file. If the file is empty (zero bytes), return `DynamicJepaError::AdapterFailed { adapter_id: "json_event", message: "empty input file", field_path: "" }`. Write exactly one failed `dj_audit_log` row and no raw, adapter, normalized, reading, or panel rows.
 2. Iterate lines with their byte offsets. For each line:
    1. Compute `payload_hash = sha256(line_bytes)`.
    2. Parse JSON. If parse fails → write the raw event row, then write an `AdapterRunRecord { status: Failed, error_message: "json parse failed: ...", field_path: ... }`. Move to next line.
    3. Apply the declared mapping: every `field_path` in `adapters[json_event].mapping` resolves a JSONPath-like expression. Demo uses `$.a.b.c` only — no filters, no wildcards.
+   3a. Reject any extra JSON object key that is not consumed by the registered domain schema/mapping. Unknown fixture fields are adapter failures, not ignored metadata.
    4. Coerce each resolved value to the declared `FieldKind`. Strict: `i64` accepts JSON numbers without fractional part only; `f64` accepts numbers; `categorical` accepts strings present in `variants`; `bool` only accepts `true`/`false`; `string` only accepts strings; `unix_ms` accepts `i64` integers.
    5. Validate `min`/`max` if declared.
    6. If any of (3)–(5) fails → write the raw event row, write `AdapterRunRecord { status: Failed, field_path, expected, actual }`. **No** normalized rows.
@@ -40,7 +43,8 @@ The line offset is captured in `RawDomainEvent.source_offset` so an operator ins
 JSON path resolution (demo subset):
 
 ```rust
-// crates/context-graph-dynamicjepa/src/adapters/jsonpath.rs
+// Phase 4: crates/context-graph-cli/src/commands/dynamicjepa.rs
+// Phase 7 target: crates/context-graph-dynamicjepa/src/adapters/jsonpath.rs
 pub fn resolve(root: &serde_json::Value, path: &str) -> Result<serde_json::Value, DynamicJepaError>;
 ```
 
@@ -76,7 +80,7 @@ Audit invariant: every `event_id` in `dj_raw_events` has exactly one `dj_adapter
 
 ## 4. Instrument Execution
 
-Implementation in `crates/context-graph-dynamicjepa/src/instruments/`.
+Phase 4 implementation is in `crates/context-graph-cli/src/commands/dynamicjepa.rs`. Phase 7 should move this into `crates/context-graph-dynamicjepa/src/instruments/` without changing the verified behavior.
 
 Per `InstrumentSpec`, for an event with normalized records:
 
@@ -148,7 +152,7 @@ pub fn list_instrument_readings_for_event(db: &Database, id: EventId) -> Result<
 pub fn get_latent_panel(db: &Database, id: PanelId) -> Result<Option<LatentPanel>>;
 ```
 
-CLI subcommands wrap each. JSON output is the canonical machine-readable form for evidence logs.
+Phase 4 CLI subcommands wrap `get_latent_panel` (`get-panel`) and `list_instrument_readings_for_event` (`list-instrument-readings`); other readbacks are currently available through `inspect-cf` and become dedicated `get-*` commands in later phases. JSON output is the canonical machine-readable form for evidence logs.
 
 ## 8. Failure Examples (Expected Outputs)
 
