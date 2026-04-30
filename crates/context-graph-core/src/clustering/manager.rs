@@ -927,7 +927,7 @@ impl MultiSpaceClusterManager {
                 .iter()
                 .map(|&e| (e, *space_cluster_counts.get(&e).unwrap_or(&0)))
                 .collect();
-            spaces.sort_by(|a, b| b.1.cmp(&a.1)); // most clusters first
+            spaces.sort_by_key(|(_, count)| std::cmp::Reverse(*count)); // most clusters first
             spaces.into_iter().map(|(e, _)| e).collect()
         };
 

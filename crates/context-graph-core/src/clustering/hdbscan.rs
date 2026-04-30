@@ -633,7 +633,7 @@ impl HDBSCANClusterer {
         // When n is even and n>1, we average the two middle elements. The n==0
         // case is already handled by the early return above. For n==1, the median
         // is simply the single element — no averaging needed, no edge case.
-        let median = if n % 2 == 0 && n > 1 {
+        let median = if n.is_multiple_of(2) && n > 1 {
             (weights[mid - 1] + weights[mid]) / 2.0
         } else {
             weights[mid]
