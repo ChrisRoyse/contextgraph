@@ -12,6 +12,10 @@ keywords = ["cli", "coherence", "topic", "context-graph"]
 name = "context-graph-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "context-graph"
+path = "src/bin/context-graph.rs"
+
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
 context-graph-mcp = { path = "../context-graph-mcp" }
@@ -28,6 +32,7 @@ tokio = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = "1.0"
+toml = { workspace = true }
 chrono = { workspace = true }
 
 # Error handling
@@ -36,6 +41,7 @@ anyhow = "1.0"
 
 # UUIDs for node ID parsing (TASK-HOOKS-011)
 uuid = "1.0"
+sha2 = "0.10"
 
 # Logging
 tracing = { workspace = true }

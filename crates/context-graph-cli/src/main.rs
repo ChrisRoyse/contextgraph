@@ -72,6 +72,12 @@ enum Commands {
         #[command(subcommand)]
         action: commands::divergence::DivergenceCommands,
     },
+    /// DynamicJEPA domain registry and source-of-truth inspection commands
+    #[command(name = "dynamicjepa")]
+    DynamicJepa {
+        #[command(subcommand)]
+        action: commands::dynamicjepa::DynamicJepaCommands,
+    },
     /// Learning-as-UTL event commands
     Learning {
         #[command(subcommand)]
@@ -147,7 +153,7 @@ enum ExportSubcommand {
 }
 
 #[tokio::main]
-async fn main() {
+pub async fn main() {
     let cli = Cli::parse();
 
     // Setup logging based on verbosity
@@ -173,6 +179,9 @@ async fn main() {
         Commands::Topic { action } => commands::topic::handle_topic_command(action).await,
         Commands::Divergence { action } => {
             commands::divergence::handle_divergence_command(action).await
+        }
+        Commands::DynamicJepa { action } => {
+            commands::dynamicjepa::handle_dynamicjepa_command(action).await
         }
         Commands::Learning { action } => commands::learning::handle_learning_command(action).await,
         Commands::Utl { action } => commands::utl::handle_utl_command(action).await,
