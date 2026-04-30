@@ -418,7 +418,7 @@ impl Handlers {
                 .values()
                 .filter(|c| c.member_count as usize >= request.min_cluster_size)
                 .collect();
-            cluster_vec.sort_by(|a, b| b.member_count.cmp(&a.member_count));
+            cluster_vec.sort_by_key(|cluster| std::cmp::Reverse(cluster.member_count));
             cluster_vec.truncate(request.top_clusters);
 
             let total_clusters = clusters.len();
@@ -641,7 +641,7 @@ impl Handlers {
                 match self.teleological_store.get_content_batch(&memory_ids).await {
                     Ok(contents) => memory_ids
                         .iter()
-                        .zip(contents.into_iter())
+                        .zip(contents)
                         .filter_map(|(id, content)| content.map(|c| (*id, c)))
                         .collect(),
                     Err(e) => {

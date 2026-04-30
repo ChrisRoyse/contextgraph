@@ -1063,9 +1063,7 @@ ws ::= [ \t\n\r]*"#
 
         // Generate tokens
         let mut generated_tokens: Vec<LlamaToken> = Vec::new();
-        let mut current_pos = prompt_len;
-
-        for _ in 0..self.config.max_tokens {
+        for (current_pos, _) in (prompt_len..).zip(0..self.config.max_tokens) {
             // Sample next token with grammar constraint
             // -1 means use last logits from batch
             let token = sampler.sample(&ctx, -1);
@@ -1090,8 +1088,6 @@ ws ::= [ \t\n\r]*"#
                 .map_err(|e| CausalAgentError::LlmInferenceError {
                     message: format!("Decode failed: {}", e),
                 })?;
-
-            current_pos += 1;
         }
 
         // Decode generated tokens to string.

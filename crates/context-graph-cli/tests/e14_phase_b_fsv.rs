@@ -257,9 +257,7 @@ fn fsv_b6_migration_cli_argument_contract() {
     ])
     .expect("happy path must parse");
 
-    let args = match cli.sub {
-        Sub::BackfillE14(a) => a,
-    };
+    let Sub::BackfillE14(args) = cli.sub;
 
     println!(
         "AFTER:  storage={:?}, models_dir={:?}, dry_run={}, limit={:?}, scan_batch={}, log_every={}",

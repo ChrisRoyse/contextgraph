@@ -1253,7 +1253,8 @@ impl Handlers {
             .filter(|c| c.contribution_count > 0)
             .collect();
 
-        top_contributing_embedders.sort_by(|a, b| b.contribution_count.cmp(&a.contribution_count));
+        top_contributing_embedders
+            .sort_by_key(|embedder| std::cmp::Reverse(embedder.contribution_count));
         top_contributing_embedders.truncate(5); // Top 5 contributing embedders
 
         // Step 7: Optionally hydrate content

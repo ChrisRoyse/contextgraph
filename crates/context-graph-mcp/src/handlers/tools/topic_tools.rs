@@ -756,7 +756,7 @@ impl Handlers {
         }
 
         // Step 3: Sort by created_at descending (most recent first)
-        recent.sort_by(|a, b| b.fingerprint.created_at.cmp(&a.fingerprint.created_at));
+        recent.sort_by_key(|item| std::cmp::Reverse(item.fingerprint.created_at));
 
         // Step 4: Use the most recent memory as the "current" query
         let current = recent.remove(0);

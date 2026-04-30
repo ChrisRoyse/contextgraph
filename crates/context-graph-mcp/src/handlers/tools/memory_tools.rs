@@ -698,8 +698,8 @@ impl Handlers {
         let mut records = Vec::with_capacity(items.len());
         for (index, ((item, hint), embedding_output)) in items
             .into_iter()
-            .zip(causal_hints.into_iter())
-            .zip(embedding_outputs.into_iter())
+            .zip(causal_hints)
+            .zip(embedding_outputs)
             .enumerate()
         {
             let mut hasher = Sha256::new();

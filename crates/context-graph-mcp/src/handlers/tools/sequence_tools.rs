@@ -254,7 +254,7 @@ impl Handlers {
 
                 results
                     .into_iter()
-                    .zip(metadata_batch.into_iter())
+                    .zip(metadata_batch)
                     .filter(|(_r, meta)| {
                         meta.as_ref()
                             .and_then(|m| m.session_id.as_ref())
@@ -478,7 +478,7 @@ impl Handlers {
         let session_items: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> =
             all_fingerprints
                 .into_iter()
-                .zip(all_metadata.into_iter())
+                .zip(all_metadata)
                 .filter(
                     |(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
                         meta.as_ref()
@@ -929,7 +929,7 @@ impl Handlers {
         let session_entries: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> =
             all_fingerprints
                 .into_iter()
-                .zip(scan_metadata.into_iter())
+                .zip(scan_metadata)
                 .filter(
                     |(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
                         meta.as_ref()

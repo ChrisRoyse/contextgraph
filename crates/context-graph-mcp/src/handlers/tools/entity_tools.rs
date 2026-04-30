@@ -2031,7 +2031,7 @@ impl Handlers {
 
         // Sort entities by mention count (descending)
         let mut entity_list: Vec<_> = entity_map.into_iter().collect();
-        entity_list.sort_by(|a, b| b.1 .1.len().cmp(&a.1 .1.len()));
+        entity_list.sort_by_key(|(_, (_, entries))| std::cmp::Reverse(entries.len()));
         entity_list.truncate(max_nodes);
 
         // Track which entities we include
