@@ -5,10 +5,13 @@
 //! persisted bundle and DB source-of-truth state.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -55,6 +58,19 @@ fn count(value: &Value, cf: &str) -> u64 {
     value["counts"][cf]
         .as_u64()
         .unwrap_or_else(|| panic!("missing count for {cf}: {value:#}"))
+}
+
+fn write_incomplete_onet_zip(path: &Path) {
+    let file = fs::File::create(path).expect("create incomplete O*NET ZIP");
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default();
+    zip.start_file("db_30_2_text/Read Me.txt", options)
+        .expect("start readme member");
+    zip.write_all(
+        b"O*NET 30.2 Database\nThe content of the O*NET 30.2 Database is licensed under a Creative Commons Attribution 4.0 International License.\n",
+    )
+    .expect("write readme member");
+    zip.finish().expect("finish incomplete O*NET ZIP");
 }
 
 #[test]
@@ -211,6 +227,85 @@ fn research_smoke_fails_closed_for_ablation_seed_without_onet_source() {
 }
 
 #[test]
+fn research_smoke_fails_closed_for_incomplete_onet_zip_preflight() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!("test_research_smoke_bad_onet_zip_{}", std::process::id());
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+    let tmp = tempfile::tempdir().expect("create temp dir for bad O*NET ZIP");
+    let bad_zip = tmp.path().join("db_30_2_text_incomplete.zip");
+    write_incomplete_onet_zip(&bad_zip);
+
+    let (stdout, _stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--onet-text-zip",
+        bad_zip.to_str().expect("bad O*NET ZIP path utf8"),
+        "--career-event-count",
+        "120",
+        "--json",
+    ]);
+    let result: Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("stdout must be one JSON object: {err}\nstdout={stdout}"));
+    assert_eq!(result["status"], "error");
+    assert_eq!(result["error_code"], "VALIDATION");
+    assert!(
+        result["error_message"]
+            .as_str()
+            .expect("error_message is string")
+            .contains("O*NET 30.2 text ZIP has 1 files, expected 41"),
+        "missing O*NET preflight detail in stdout: {stdout}"
+    );
+    assert!(
+        run_dir.exists(),
+        "bad O*NET path must leave failed bundle evidence"
+    );
+
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(run_dir.join("run_manifest.json")).expect("read failed run manifest"),
+    )
+    .expect("parse failed run manifest");
+    assert_eq!(manifest["status"], "failed");
+
+    let fsv: Value = serde_json::from_slice(
+        &fs::read(run_dir.join("fsv_report.json")).expect("read failed fsv"),
+    )
+    .expect("parse failed fsv");
+    assert_eq!(fsv["status"], "failed");
+
+    let preflight_path = run_dir.join("onet_source_preflight.json");
+    let preflight: Value =
+        serde_json::from_slice(&fs::read(&preflight_path).expect("read failed O*NET preflight"))
+            .expect("parse failed O*NET preflight");
+    assert_eq!(preflight["status"], "failed");
+    assert_eq!(preflight["error_code"], "VALIDATION");
+    assert_eq!(
+        preflight["source_of_truth"]["expected_root"],
+        "db_30_2_text/"
+    );
+
+    let db_entry_count = fs::read_dir(run_dir.join("dbs"))
+        .expect("read failed bundle DB root")
+        .count();
+    assert_eq!(
+        db_entry_count, 0,
+        "O*NET preflight failure must happen before any RocksDB source-of-truth path is created"
+    );
+}
+
+#[test]
 fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     let root = repo_root();
     let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
@@ -281,6 +376,31 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         )
         .expect("parse generated A0 train config");
     assert_eq!(generated_a0_train_config["seed"], 42);
+
+    let data_manifest: Value = serde_json::from_slice(
+        &fs::read(run_dir.join("data_manifest.json")).expect("read data manifest"),
+    )
+    .expect("parse data manifest");
+    let preflight = &data_manifest["onet_source_preflight"];
+    assert_eq!(preflight["status"], "passed");
+    assert_eq!(preflight["archive_file_count"], 41);
+    assert_eq!(
+        preflight["source_zip_sha256"],
+        "b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741"
+    );
+    let member_rows = preflight["required_members"]
+        .as_array()
+        .expect("preflight required_members is array")
+        .iter()
+        .filter_map(|member| Some((member["path"].as_str()?, member["row_count"].as_u64())))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(member_rows["db_30_2_text/Occupation Data.txt"], Some(1016));
+    assert_eq!(member_rows["db_30_2_text/Job Zones.txt"], Some(923));
+    assert_eq!(member_rows["db_30_2_text/Skills.txt"], Some(62580));
+    assert_eq!(
+        member_rows["db_30_2_text/Related Occupations.txt"],
+        Some(18460)
+    );
 
     let fsv: Value = serde_json::from_slice(
         &fs::read(run_dir.join("fsv_report.json")).expect("read fsv report"),

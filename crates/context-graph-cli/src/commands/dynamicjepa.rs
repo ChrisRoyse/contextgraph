@@ -6525,8 +6525,7 @@ struct OnetZipMemberRead {
 
 const ONET_TEXT_ZIP_ROOT: &str = "db_30_2_text/";
 const ONET_REQUIRED_RELEASE_MARKER: &str = "O*NET 30.2 Database";
-const ONET_REQUIRED_LICENSE_MARKER: &str =
-    "Creative Commons Attribution 4.0 International License";
+const ONET_REQUIRED_LICENSE_MARKER: &str = "Creative Commons Attribution 4.0 International License";
 const ONET_README_MEMBER: &str = "db_30_2_text/Read Me.txt";
 const ONET_REQUIRED_FILE_COUNT: usize = 41;
 const ONET_REQUIRED_TSV_MEMBERS: &[OnetRequiredTsvMember] = &[
@@ -6781,7 +6780,8 @@ fn validate_onet_text_zip(
         ));
     }
 
-    let readme = read_onet_zip_member_text_from_archive(&mut archive, zip_path, ONET_README_MEMBER)?;
+    let readme =
+        read_onet_zip_member_text_from_archive(&mut archive, zip_path, ONET_README_MEMBER)?;
     if !readme.text.contains(ONET_REQUIRED_RELEASE_MARKER) {
         return Err(DynamicJepaError::validation(
             "research_smoke.onet.readme_release",
