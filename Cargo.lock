@@ -813,6 +813,7 @@ dependencies = [
  "context-graph-core",
  "context-graph-dynamicjepa",
  "context-graph-embeddings",
+ "context-graph-mcp",
  "context-graph-storage",
  "context-graph-test-utils",
  "criterion",
