@@ -1,0 +1,76 @@
+# 2026-04-30 Career Seed-Control Patch Report
+
+## Problem
+
+The smoke docs required at least three paper-small runs for paper-quality
+multi-seed evidence. The existing `research-smoke` CLI generated strict career
+training configs, and those configs already had a `seed` field, but the CLI did
+not expose a seed override.
+
+Running multiple "seed" bundles without an actual seed parameter would have
+been misleading. It would compare repeated runs with the same training seed
+instead of true seed variation.
+
+## Root Cause
+
+- `TrainConfig` has a strict `seed: u64` field.
+- `research-smoke` generated O*NET career configs through
+  `write_onet_career_train_config`.
+- No CLI option passed a seed into that generated config.
+- Ablations reused the same generated career config, so varying the main career
+  seed also varied every ablation unless separated.
+
+## Changes
+
+Files changed:
+
+- `crates/context-graph-cli/src/commands/dynamicjepa.rs`
+- `crates/context-graph-cli/tests/dynamicjepa_research_smoke_fsv.rs`
+
+Implemented:
+
+- Added `--career-training-seed`.
+- Added `--career-ablation-training-seed`.
+- Both seed overrides fail closed unless `--onet-text-zip` is supplied.
+- `run_manifest.json` records both seed fields.
+- Generated O*NET career train config records `--career-training-seed`.
+- Ablation train configs default to the checked-in career config seed when
+  `--career-training-seed` is supplied and `--career-ablation-training-seed` is
+  omitted.
+- Ablations can still be explicitly varied with
+  `--career-ablation-training-seed`.
+
+## Validation
+
+Build checks:
+
+```bash
+cargo fmt
+cargo check -p context-graph-cli --all-features
+cargo build -p context-graph-cli --bin context-graph --all-features
+```
+
+All completed successfully.
+
+Manual fail-closed seed check:
+
+```bash
+target/debug/context-graph dynamicjepa research-smoke \
+  --run-id 20260430T_seed_without_onet_manual \
+  --run-root tmp/mejepa_research_runs \
+  --fixtures-root configs/dynamicjepa \
+  --career-training-seed 43 \
+  --json
+```
+
+Observed:
+
+- Error code: `VALIDATION`
+- Field: `research_smoke.career_training_seed`
+- No bundle directory was created.
+
+## Learning
+
+Multi-seed evidence needs a real source-of-truth seed field in the generated
+train config and run manifest. A command-line label alone is not evidence.
+

@@ -779,6 +779,15 @@ pub struct ResearchSmokeArgs {
     #[arg(long = "career-event-count")]
     pub career_event_count: Option<u64>,
 
+    /// Training seed to write into generated O*NET career train configs.
+    #[arg(long = "career-training-seed")]
+    pub career_training_seed: Option<u64>,
+
+    /// Training seed to write into generated career ablation train configs.
+    /// When omitted, ablations use the checked-in career train-config seed as a fixed control.
+    #[arg(long = "career-ablation-training-seed")]
+    pub career_ablation_training_seed: Option<u64>,
+
     /// Local system specification document to hash into the research bundle.
     #[arg(long = "system-specs", default_value = "docs2/systemspecs.md")]
     pub system_specs: PathBuf,
@@ -2925,6 +2934,11 @@ fn research_smoke_command(args: ResearchSmokeArgs) -> DynamicJepaResult<CommandO
         args.career_event_count,
         args.onet_text_zip.is_some(),
     )?;
+    validate_research_career_training_seed(
+        args.career_training_seed,
+        args.career_ablation_training_seed,
+        args.onet_text_zip.is_some(),
+    )?;
     let run_id = args
         .run_id
         .clone()
@@ -2948,6 +2962,8 @@ struct ResearchSmokeContext {
     artifact_root: PathBuf,
     onet_text_zip: Option<PathBuf>,
     career_event_count: u64,
+    career_training_seed: Option<u64>,
+    career_ablation_training_seed: Option<u64>,
     system_specs: PathBuf,
     command_log_path: PathBuf,
     command_output_dir: PathBuf,
@@ -3054,6 +3070,8 @@ impl ResearchSmokeContext {
             artifact_root,
             onet_text_zip: args.onet_text_zip,
             career_event_count,
+            career_training_seed: args.career_training_seed,
+            career_ablation_training_seed: args.career_ablation_training_seed,
             system_specs: args.system_specs,
             command_log_path: PathBuf::new(),
             command_output_dir,
@@ -3121,6 +3139,8 @@ impl ResearchSmokeContext {
                 "career_fixtures_root": self.career_fixtures_root,
                 "onet_text_zip": self.onet_text_zip,
                 "career_event_count": self.career_event_count,
+                "career_training_seed": self.career_training_seed,
+                "career_ablation_training_seed": self.career_ablation_training_seed,
                 "system_specs": self.system_specs,
                 "status": status,
                 "failure_details": failure_details,
@@ -3514,6 +3534,28 @@ fn research_career_event_count(
     Ok(count)
 }
 
+fn validate_research_career_training_seed(
+    career_seed: Option<u64>,
+    ablation_seed: Option<u64>,
+    uses_onet: bool,
+) -> DynamicJepaResult<()> {
+    if career_seed.is_some() && !uses_onet {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.career_training_seed",
+            "--career-training-seed was supplied without --onet-text-zip",
+            "supply --onet-text-zip so research-smoke can materialize an O*NET career train config with the requested seed",
+        ));
+    }
+    if ablation_seed.is_some() && !uses_onet {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.career_ablation_training_seed",
+            "--career-ablation-training-seed was supplied without --onet-text-zip",
+            "supply --onet-text-zip so research-smoke can materialize career ablation train configs with the requested seed",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_research_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     if !ctx.fixtures_root.exists() {
         return Err(DynamicJepaError::validation(
@@ -3641,6 +3683,7 @@ fn materialize_onet_career_demo_fixtures(ctx: &ResearchSmokeContext) -> DynamicJ
             .join("verification/career_taxonomy_train_config.json"),
         &fixtures.join("verification/career_taxonomy_train_config.json"),
         &ctx.purpose,
+        ctx.career_training_seed,
     )?;
 
     let corpus_path = fixtures.join("verification/career_taxonomy_smoke.jsonl");
@@ -4347,7 +4390,12 @@ fn set_toml_integer(table: &mut toml::map::Map<String, toml::Value>, key: &str, 
     table.insert(key.to_string(), toml::Value::Integer(value as i64));
 }
 
-fn write_onet_career_train_config(src: &Path, dst: &Path, purpose: &str) -> DynamicJepaResult<()> {
+fn write_onet_career_train_config(
+    src: &Path,
+    dst: &Path,
+    purpose: &str,
+    career_training_seed: Option<u64>,
+) -> DynamicJepaResult<()> {
     let mut config = read_json_file(src)?;
     let max_seconds = match purpose {
         "smoke" => 180,
@@ -4359,6 +4407,9 @@ fn write_onet_career_train_config(src: &Path, dst: &Path, purpose: &str) -> Dyna
     config["stopping"]["target"] = json!(0.20);
     if matches!(purpose, "paper_small" | "paper_full") {
         config["schedule"]["batch_size"] = json!(64);
+    }
+    if let Some(seed) = career_training_seed {
+        config["seed"] = json!(seed);
     }
     let parsed: TrainConfig = serde_json::from_value(config.clone()).map_err(|err| {
         DynamicJepaError::validation(
@@ -4900,6 +4951,7 @@ struct CareerAblationSpec {
 }
 
 fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let ablation_training_seed = career_ablation_training_seed(ctx)?;
     let base_spec = CareerAblationSpec {
         ablation_id: "A1_taxonomy_skill_action_vicreg",
         domain_label: "career_taxonomy",
@@ -4990,7 +5042,7 @@ fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
     ];
 
     for spec in specs {
-        let fixtures = materialize_career_ablation_fixtures(ctx, spec)?;
+        let fixtures = materialize_career_ablation_fixtures(ctx, spec, ablation_training_seed)?;
         let db = ctx.db_path(spec.domain_label)?;
         let artifact_root = ctx.artifact_root.join("ablations").join(spec.ablation_id);
         fs::create_dir_all(&artifact_root).map_err(|err| DynamicJepaError::Storage {
@@ -5034,9 +5086,34 @@ fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
     Ok(())
 }
 
+fn career_ablation_training_seed(ctx: &ResearchSmokeContext) -> DynamicJepaResult<Option<u64>> {
+    if let Some(seed) = ctx.career_ablation_training_seed {
+        return Ok(Some(seed));
+    }
+    if ctx.career_training_seed.is_none() {
+        return Ok(None);
+    }
+    let checked_in_config = ctx
+        .fixtures_root
+        .join("verification/career_taxonomy_train_config.json");
+    let config = read_json_file(&checked_in_config)?;
+    let seed = config["seed"].as_u64().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.career_ablation_training_seed",
+            format!(
+                "checked-in career train config {} is missing numeric seed",
+                checked_in_config.display()
+            ),
+            "restore verification/career_taxonomy_train_config.json with an explicit seed or pass --career-ablation-training-seed",
+        )
+    })?;
+    Ok(Some(seed))
+}
+
 fn materialize_career_ablation_fixtures(
     ctx: &ResearchSmokeContext,
     spec: CareerAblationSpec,
+    ablation_training_seed: Option<u64>,
 ) -> DynamicJepaResult<PathBuf> {
     let fixtures = ctx.run_dir.join("ablations").join(spec.ablation_id);
     fs::create_dir_all(fixtures.join("domain_packs")).map_err(|err| DynamicJepaError::Storage {
@@ -5062,6 +5139,7 @@ fn materialize_career_ablation_fixtures(
         &source_fixtures_root.join("verification/career_taxonomy_train_config.json"),
         &fixtures.join("verification/career_taxonomy_train_config.json"),
         spec,
+        ablation_training_seed,
     )?;
     copy_fixture_file(
         &source_fixtures_root.join("verification/career_taxonomy_data_manifest.json"),
@@ -5167,6 +5245,7 @@ fn write_career_ablation_train_config(
     src: &Path,
     dst: &Path,
     spec: CareerAblationSpec,
+    ablation_training_seed: Option<u64>,
 ) -> DynamicJepaResult<()> {
     let mut config = read_json_file(src)?;
     if config.get("loss").and_then(Value::as_object).is_none() {
@@ -5194,6 +5273,9 @@ fn write_career_ablation_train_config(
     config["model"]["predictor"]["ignore_action"] = json!(!spec.action_conditioning);
     config["stopping"]["target"] = json!(spec.stopping_target);
     config["stopping"]["max_seconds"] = json!(spec.max_seconds);
+    if let Some(seed) = ablation_training_seed {
+        config["seed"] = json!(seed);
+    }
     if !spec.vicreg {
         config["loss"]["vicreg_variance_weight"] = json!(0.0);
         config["loss"]["vicreg_covariance_weight"] = json!(0.0);

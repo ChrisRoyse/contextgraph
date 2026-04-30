@@ -133,6 +133,84 @@ fn research_smoke_fails_closed_for_custom_event_count_without_onet_source() {
 }
 
 #[test]
+fn research_smoke_fails_closed_for_career_seed_without_onet_source() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!(
+        "test_research_smoke_seed_without_onet_{}",
+        std::process::id()
+    );
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+
+    let (_stdout, stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--career-training-seed",
+        "777",
+        "--json",
+    ]);
+    assert!(
+        stderr.contains("--career-training-seed was supplied without --onet-text-zip"),
+        "missing career seed remediation in stderr: {stderr}"
+    );
+    assert!(
+        !run_dir.exists(),
+        "career seed without O*NET source must fail before creating bundle source of truth"
+    );
+}
+
+#[test]
+fn research_smoke_fails_closed_for_ablation_seed_without_onet_source() {
+    let root = repo_root();
+    let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
+    fs::create_dir_all(&run_root).expect("create research smoke test runtime root");
+    let run_id = format!(
+        "test_research_smoke_ablation_seed_without_onet_{}",
+        std::process::id()
+    );
+    let run_dir = run_root.join(&run_id);
+    if run_dir.exists() {
+        fs::remove_dir_all(&run_dir).expect("remove previous research smoke test run");
+    }
+
+    let (_stdout, stderr) = run_err(&[
+        "dynamicjepa",
+        "research-smoke",
+        "--run-id",
+        &run_id,
+        "--run-root",
+        run_root.to_str().expect("run root utf8"),
+        "--fixtures-root",
+        root.join("configs/dynamicjepa")
+            .to_str()
+            .expect("fixtures path utf8"),
+        "--career-ablation-training-seed",
+        "777",
+        "--json",
+    ]);
+    assert!(
+        stderr.contains("--career-ablation-training-seed was supplied without --onet-text-zip"),
+        "missing ablation seed remediation in stderr: {stderr}"
+    );
+    assert!(
+        !run_dir.exists(),
+        "ablation seed without O*NET source must fail before creating bundle source of truth"
+    );
+}
+
+#[test]
 fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     let root = repo_root();
     let run_root = root.join("tmp/5090jepa_evidence/research_smoke/test_runtime");
@@ -166,6 +244,8 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
         root.join("docs2/systemspecs.md")
             .to_str()
             .expect("system specs path utf8"),
+        "--career-training-seed",
+        "42",
         "--json",
     ]);
     assert_eq!(result["status"], "ok");
@@ -179,6 +259,28 @@ fn research_smoke_persists_paper_bundle_and_db_readbacks() {
     )
     .expect("parse run manifest");
     assert_eq!(manifest["status"], "passed");
+    assert_eq!(manifest["career_training_seed"], 42);
+    assert!(manifest["career_ablation_training_seed"].is_null());
+
+    let generated_train_config: Value =
+        serde_json::from_slice(
+            &fs::read(run_dir.join(
+                "generated_fixtures/onet_30_2/verification/career_taxonomy_train_config.json",
+            ))
+            .expect("read generated train config"),
+        )
+        .expect("parse generated train config");
+    assert_eq!(generated_train_config["seed"], 42);
+
+    let generated_a0_train_config: Value =
+        serde_json::from_slice(
+            &fs::read(run_dir.join(
+                "ablations/A0_taxonomy_only_action_vicreg/verification/career_taxonomy_train_config.json",
+            ))
+            .expect("read generated A0 train config"),
+        )
+        .expect("parse generated A0 train config");
+    assert_eq!(generated_a0_train_config["seed"], 42);
 
     let fsv: Value = serde_json::from_slice(
         &fs::read(run_dir.join("fsv_report.json")).expect("read fsv report"),
