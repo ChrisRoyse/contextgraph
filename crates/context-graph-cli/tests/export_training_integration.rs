@@ -5,8 +5,8 @@
 //!
 //! Coverage:
 //! - `roundtrip_training_corpus_parquet` — write N synthetic records, export,
-//!    read back through the `parquet` crate, assert every field survives the
-//!    bincode roundtrip.
+//!   read back through the `parquet` crate, assert every field survives the
+//!   bincode roundtrip.
 //! - `empty_cf_produces_empty_parquet_file` — empty input yields a valid
 //!   Parquet file with 0 rows.
 //! - `batch_size_respected` — row-group count == ceil(total / batch_size).
