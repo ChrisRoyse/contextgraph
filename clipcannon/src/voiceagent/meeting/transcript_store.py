@@ -16,6 +16,7 @@ from __future__ import annotations
 import gc
 import logging
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -171,9 +172,12 @@ class MeetingTranscriptStore:
         doc = self._get_meeting(meeting_id)
         doc.segments.append(segment)
         self._segment_counts[meeting_id] = self._segment_counts.get(meeting_id, 0) + 1
-        if segment.speaker_name and not segment.is_clone:
-            if segment.speaker_name not in doc.participant_names:
-                doc.participant_names.append(segment.speaker_name)
+        if (
+            segment.speaker_name
+            and not segment.is_clone
+            and segment.speaker_name not in doc.participant_names
+        ):
+            doc.participant_names.append(segment.speaker_name)
 
         # Cap in-memory segments to prevent memory bloat in long meetings
         if len(doc.segments) > _MAX_IN_MEMORY_SEGMENTS:
@@ -325,10 +329,8 @@ class MeetingTranscriptStore:
             tags: List of tag names to apply.
         """
         for tag in tags:
-            try:
+            with suppress(MeetingTranscriptStoreError):
                 await self._client.call_tool("ocr_tag_create", {"name": tag})
-            except MeetingTranscriptStoreError:
-                pass  # Tag may already exist
             await self._client.call_tool(
                 "ocr_tag_apply",
                 {

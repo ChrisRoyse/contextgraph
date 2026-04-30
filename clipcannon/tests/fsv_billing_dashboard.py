@@ -331,9 +331,8 @@ def test_license_server() -> None:
 
     # 3.2 Create temp SQLite license database with the schema
     print("\n  --- Temp DB Operations ---")
-    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-    tmp.close()
-    db_path = tmp.name
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = tmp.name
     print(f"  Temp DB: {db_path}")
 
     try:

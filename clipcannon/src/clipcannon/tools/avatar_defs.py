@@ -55,7 +55,9 @@ AVATAR_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "seed": {
                     "type": "integer",
-                    "description": "Random seed for reproducibility (ignored when n_candidates > 1)",
+                    "description": (
+                        "Random seed for reproducibility (ignored when n_candidates > 1)"
+                    ),
                 },
                 "n_candidates": {
                     "type": "integer",

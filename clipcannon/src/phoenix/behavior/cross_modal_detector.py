@@ -122,15 +122,16 @@ class CrossModalDetector:
             BehaviorError: If semantic_embedding is provided but is not
                 a non-empty 1-D array.
         """
-        if semantic_embedding is not None:
-            if semantic_embedding.ndim != 1 or semantic_embedding.size == 0:
-                raise BehaviorError(
-                    "semantic_embedding must be a non-empty 1-D array",
-                    {
-                        "ndim": semantic_embedding.ndim,
-                        "size": semantic_embedding.size,
-                    },
-                )
+        if semantic_embedding is not None and (
+            semantic_embedding.ndim != 1 or semantic_embedding.size == 0
+        ):
+            raise BehaviorError(
+                "semantic_embedding must be a non-empty 1-D array",
+                {
+                    "ndim": semantic_embedding.ndim,
+                    "size": semantic_embedding.size,
+                },
+            )
 
         # Sensitivity adjusts thresholds: higher sensitivity = lower bar.
         # A sensitivity of 0.7 means thresholds are scaled by 0.3 of their

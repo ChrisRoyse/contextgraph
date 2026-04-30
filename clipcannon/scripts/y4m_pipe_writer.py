@@ -95,70 +95,69 @@ def main() -> None:
     print("Waiting for reader (Chromium)...")
 
     # Open pipe for writing (blocks until a reader connects)
-    pipe = open(PIPE_PATH, "wb")
-    print("Reader connected!")
+    with open(PIPE_PATH, "wb") as pipe:
+        print("Reader connected!")
 
-    # Write Y4M header
-    header = f"YUV4MPEG2 W{WIDTH} H{HEIGHT} F{FPS}:1 Ip A1:1 C420\n".encode()
-    pipe.write(header)
-    pipe.flush()
+        # Write Y4M header
+        header = f"YUV4MPEG2 W{WIDTH} H{HEIGHT} F{FPS}:1 Ip A1:1 C420\n".encode()
+        pipe.write(header)
+        pipe.flush()
 
-    frame_interval = 1.0 / FPS
-    idx = 0
-    current_state = "idle"
-    speaking_frames = []
-    speaking_idx = 0
+        frame_interval = 1.0 / FPS
+        idx = 0
+        current_state = "idle"
+        speaking_frames = []
+        speaking_idx = 0
 
-    while True:
-        t0 = time.monotonic()
+        while True:
+            t0 = time.monotonic()
 
-        # Check state
-        state = read_state()
-        new_state = state.get("state", "idle")
+            # Check state
+            state = read_state()
+            new_state = state.get("state", "idle")
 
-        if new_state == "stop":
-            break
+            if new_state == "stop":
+                break
 
-        if new_state != current_state:
-            if new_state == "speaking":
-                video_file = state.get("video", "")
-                speaking_frames = load_speaking_frames(video_file)
-                speaking_idx = 0
-                print(f"Switching to SPEAKING ({len(speaking_frames)} frames)")
-            elif new_state == "idle":
-                print("Switching to IDLE")
-            current_state = new_state
+            if new_state != current_state:
+                if new_state == "speaking":
+                    video_file = state.get("video", "")
+                    speaking_frames = load_speaking_frames(video_file)
+                    speaking_idx = 0
+                    print(f"Switching to SPEAKING ({len(speaking_frames)} frames)")
+                elif new_state == "idle":
+                    print("Switching to IDLE")
+                current_state = new_state
 
-        # Get frame data
-        if current_state == "speaking" and speaking_frames:
-            if speaking_idx < len(speaking_frames):
-                frame_data = speaking_frames[speaking_idx]
-                speaking_idx += 1
+            # Get frame data
+            if current_state == "speaking" and speaking_frames:
+                if speaking_idx < len(speaking_frames):
+                    frame_data = speaking_frames[speaking_idx]
+                    speaking_idx += 1
+                else:
+                    # Speaking video ended → back to idle
+                    current_state = "idle"
+                    frame_data = idle_frames[idx % len(idle_frames)]
+                    idx += 1
             else:
-                # Speaking video ended → back to idle
-                current_state = "idle"
                 frame_data = idle_frames[idx % len(idle_frames)]
                 idx += 1
-        else:
-            frame_data = idle_frames[idx % len(idle_frames)]
-            idx += 1
 
-        # Write frame
-        try:
-            pipe.write(b"FRAME\n")
-            pipe.write(frame_data)
-            pipe.flush()
-        except BrokenPipeError:
-            print("Pipe broken (reader disconnected)")
-            break
+            # Write frame
+            try:
+                pipe.write(b"FRAME\n")
+                pipe.write(frame_data)
+                pipe.flush()
+            except BrokenPipeError:
+                print("Pipe broken (reader disconnected)")
+                break
 
-        # Maintain FPS
-        elapsed = time.monotonic() - t0
-        sleep = max(0, frame_interval - elapsed)
-        if sleep > 0:
-            time.sleep(sleep)
+            # Maintain FPS
+            elapsed = time.monotonic() - t0
+            sleep = max(0, frame_interval - elapsed)
+            if sleep > 0:
+                time.sleep(sleep)
 
-    pipe.close()
     os.unlink(PIPE_PATH)
     print("Done.")
 

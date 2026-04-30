@@ -35,10 +35,8 @@ pytestmark = pytest.mark.skipif(not HAS_CUDA, reason="CuPy/CUDA not available")
 
 if HAS_CUDA:
     from phoenix.render._gpu_kernels import (
-        ALPHA_BLEND_KERNEL as alpha_blend_kernel,
-    )
-    from phoenix.render._gpu_kernels import (
-        BILINEAR_RESIZE_KERNEL as bilinear_resize_kernel,
+        ALPHA_BLEND_KERNEL,
+        BILINEAR_RESIZE_KERNEL,
     )
     from phoenix.render.compositor_bridge import (
         gpu_alpha_blend,
@@ -582,13 +580,13 @@ class TestRawKernels:
 
     def test_bilinear_resize_kernel_is_callable(self) -> None:
         """bilinear_resize_kernel should be a compiled CuPy RawKernel."""
-        assert callable(bilinear_resize_kernel)
-        assert hasattr(bilinear_resize_kernel, "kernel")
+        assert callable(BILINEAR_RESIZE_KERNEL)
+        assert hasattr(BILINEAR_RESIZE_KERNEL, "kernel")
 
     def test_alpha_blend_kernel_is_callable(self) -> None:
         """alpha_blend_kernel should be a compiled CuPy RawKernel."""
-        assert callable(alpha_blend_kernel)
-        assert hasattr(alpha_blend_kernel, "kernel")
+        assert callable(ALPHA_BLEND_KERNEL)
+        assert hasattr(ALPHA_BLEND_KERNEL, "kernel")
 
     def test_raw_resize_kernel_direct_call(self) -> None:
         """Invoke bilinear_resize_kernel directly and verify output shape."""
@@ -598,7 +596,7 @@ class TestRawKernels:
         block = 256
         grid = (total + block - 1) // block
 
-        bilinear_resize_kernel(
+        BILINEAR_RESIZE_KERNEL(
             (grid,),
             (block,),
             (src.ravel(), dst.ravel(), 100, 200, 50, 100, 3),
@@ -624,7 +622,7 @@ class TestRawKernels:
         block = 256
         grid = (total + block - 1) // block
 
-        alpha_blend_kernel(
+        ALPHA_BLEND_KERNEL(
             (grid,),
             (block,),
             (fg.ravel(), bg.ravel(), alpha.ravel(), out.ravel(), h, w, c, 1),

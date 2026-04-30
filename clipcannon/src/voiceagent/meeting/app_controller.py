@@ -133,8 +133,8 @@ class MeetingAppController:
                 timeout=5,
             )
             logger.debug("Sent shortcut '%s' to window %s", shortcut, window_id)
-        except FileNotFoundError:
-            raise MeetingBehaviorError("xdotool not found. Install: apt install xdotool")
+        except FileNotFoundError as exc:
+            raise MeetingBehaviorError("xdotool not found. Install: apt install xdotool") from exc
         except subprocess.TimeoutExpired:
             logger.warning("xdotool timed out sending '%s'", shortcut)
 

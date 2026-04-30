@@ -30,6 +30,10 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -138,9 +142,9 @@ class ReasoningController:
     def __init__(
         self,
         character_name: str = "Santa",
-        respond_callback=None,
-        expression_callback=None,
-        avatar_callback=None,
+        respond_callback: Callable[[str], Awaitable[str | None]] | None = None,
+        expression_callback: Callable[[ActionIntent, SituationalAwareness], None] | None = None,
+        avatar_callback: Callable[[AvatarCommand], None] | None = None,
     ) -> None:
         self._name = character_name.lower()
         self._respond = respond_callback

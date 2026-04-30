@@ -640,42 +640,42 @@ class TestExpressionPackageExports:
 
     def test_emotion_fusion_importable(self) -> None:
         """EmotionFusion is importable from phoenix.expression."""
-        from phoenix.expression import EmotionFusion as EF
+        import phoenix.expression as expression
 
-        assert EF is EmotionFusion
+        assert expression.EmotionFusion is EmotionFusion
 
     def test_emotion_state_importable(self) -> None:
         """EmotionState is importable from phoenix.expression."""
-        from phoenix.expression import EmotionState as ES
+        import phoenix.expression as expression
 
-        assert ES is EmotionState
+        assert expression.EmotionState is EmotionState
 
     def test_prosody_features_importable(self) -> None:
         """ProsodyFeatures is importable from phoenix.expression."""
-        from phoenix.expression import ProsodyFeatures as PF
+        import phoenix.expression as expression
 
-        assert PF is ProsodyFeatures
+        assert expression.ProsodyFeatures is ProsodyFeatures
 
     def test_speaker_tracker_importable(self) -> None:
         """SpeakerTracker is importable from phoenix.expression."""
-        from phoenix.expression import SpeakerTracker as ST
+        import phoenix.expression as expression
 
-        assert ST is SpeakerTracker
+        assert expression.SpeakerTracker is SpeakerTracker
 
     def test_speaker_info_importable(self) -> None:
         """SpeakerInfo is importable from phoenix.expression."""
-        from phoenix.expression import SpeakerInfo as SI
+        import phoenix.expression as expression
 
-        assert SI is SpeakerInfo
+        assert expression.SpeakerInfo is SpeakerInfo
 
     def test_gesture_library_importable(self) -> None:
         """GestureLibrary is importable from phoenix.expression."""
-        from phoenix.expression import GestureLibrary as GL
+        import phoenix.expression as expression
 
-        assert GL is GestureLibrary
+        assert expression.GestureLibrary is GestureLibrary
 
     def test_gesture_clip_importable(self) -> None:
         """GestureClip is importable from phoenix.expression."""
-        from phoenix.expression import GestureClip as GC
+        import phoenix.expression as expression
 
-        assert GC is GestureClip
+        assert expression.GestureClip is GestureClip

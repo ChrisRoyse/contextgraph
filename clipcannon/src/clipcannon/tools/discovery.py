@@ -330,12 +330,15 @@ async def clipcannon_find_best_moments(
 
             elif purpose == "tutorial_step":
                 # Prefer highlights near text_change_events
-                if text_change_timestamps:
-                    min_dist = min(abs(h_mid - tce) for tce in text_change_timestamps)
-                    if min_dist <= 10_000:
-                        adjusted_score *= 1.3
-                    elif min_dist > 30_000:
-                        adjusted_score *= 0.7
+                min_dist = (
+                    min(abs(h_mid - tce) for tce in text_change_timestamps)
+                    if text_change_timestamps
+                    else None
+                )
+                if min_dist is not None and min_dist <= 10_000:
+                    adjusted_score *= 1.3
+                elif min_dist is not None and min_dist > 30_000:
+                    adjusted_score *= 0.7
 
             # purpose == "highlight" uses raw scores (no adjustment)
 
@@ -765,7 +768,7 @@ async def clipcannon_find_cut_points(
         conn.close()
 
     # --- Cross-stream convergence scoring ---
-    CONVERGENCE_WINDOW_MS = 500
+    convergence_window_ms = 500
 
     # Group cut points into clusters by proximity
     cut_points.sort(key=lambda cp: cp["ms"])
@@ -775,7 +778,7 @@ async def clipcannon_find_cut_points(
     for cp in cut_points:
         if not current_cluster:
             current_cluster = [cp]
-        elif int(cp["ms"]) - int(current_cluster[0]["ms"]) <= CONVERGENCE_WINDOW_MS:
+        elif int(cp["ms"]) - int(current_cluster[0]["ms"]) <= convergence_window_ms:
             current_cluster.append(cp)
         else:
             clusters.append(current_cluster)

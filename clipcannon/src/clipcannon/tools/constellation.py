@@ -29,7 +29,7 @@ def _error(code: str, message: str, details: dict | None = None) -> dict:
     return {"error": {"code": code, "message": message, "details": details or {}}}
 
 
-def _get_skill_library(person: str):
+def _get_skill_library(person: str) -> object:
     """Load or return cached SkillLibrary for a person."""
     if person in _skill_library_cache:
         return _skill_library_cache[person]

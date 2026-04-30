@@ -63,7 +63,9 @@ CONSTELLATION_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "audio_path": {
                     "type": "string",
-                    "description": "Path to audio file (WAV, 16kHz). The clone will speak this audio.",
+                    "description": (
+                        "Path to audio file (WAV, 16kHz). The clone will speak this audio."
+                    ),
                 },
                 "constellation": {
                     "type": "string",

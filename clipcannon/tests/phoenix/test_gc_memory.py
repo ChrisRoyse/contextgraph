@@ -292,7 +292,7 @@ class TestTranscriptMemory:
         force_gc()
         rss_start = get_rss_mb()
 
-        MAX_SEGMENTS = 200
+        max_segments = 200
         segments: list[dict] = []
 
         for i in range(1000):
@@ -305,10 +305,10 @@ class TestTranscriptMemory:
             segments.append(seg)
 
             # Trim (matches santa_meet_bot.py pattern)
-            if len(segments) > MAX_SEGMENTS:
-                del segments[: len(segments) - MAX_SEGMENTS]
+            if len(segments) > max_segments:
+                del segments[: len(segments) - max_segments]
 
-        assert len(segments) == MAX_SEGMENTS
+        assert len(segments) == max_segments
         assert segments[0]["text"].startswith("This is test segment number 800")
 
         force_gc()
@@ -333,7 +333,7 @@ class TestGPUMemoryLeak:
         try:
             import cupy as cp
 
-            cp.cuda.Device(0).compute_capability
+            _compute_capability = cp.cuda.Device(0).compute_capability
         except Exception:
             pytest.skip("CuPy/CUDA not available")
 

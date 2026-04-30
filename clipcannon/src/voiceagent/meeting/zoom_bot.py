@@ -266,12 +266,12 @@ class ZoomBotJoin:
                 stderr=subprocess.PIPE,
                 text=False,
             )
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise MeetingDeviceError(
                 f"Zoom Meeting SDK binary not found: {sdk_path}. "
                 f"Install the Zoom Meeting SDK for Linux: "
                 f"https://github.com/zoom/meetingsdk-headless-linux-sample"
-            )
+            ) from exc
 
         # Wait for the "joined" signal from the SDK process
         loop = asyncio.get_event_loop()
@@ -286,12 +286,12 @@ class ZoomBotJoin:
                 raise MeetingDeviceError(
                     f"Zoom SDK failed to join meeting: {msg}. stderr: {stderr[:500]}"
                 )
-        except TimeoutError:
+        except TimeoutError as exc:
             process.kill()
             raise MeetingDeviceError(
                 f"Zoom SDK timed out joining meeting {meeting_id} (30s). "
                 f"Check credentials and meeting URL."
-            )
+            ) from exc
         except (json.JSONDecodeError, ValueError) as e:
             process.kill()
             raise MeetingDeviceError(f"Zoom SDK returned invalid response: {e}") from e

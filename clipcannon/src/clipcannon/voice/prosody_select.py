@@ -180,7 +180,10 @@ def _search_prosody_db(
         order = str(preset.get("order", "prosody_score DESC"))
         where = " AND ".join(conditions)
 
-        query = f"SELECT clip_path, prosody_score FROM prosody_segments WHERE {where} ORDER BY {order} LIMIT 5"  # noqa: S608
+        query = (
+            "SELECT clip_path, prosody_score FROM prosody_segments "
+            f"WHERE {where} ORDER BY {order} LIMIT 5"
+        )  # noqa: S608
         rows = conn.execute(query, params).fetchall()
 
         best_clip: Path | None = None

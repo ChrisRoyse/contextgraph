@@ -293,6 +293,7 @@ __all__ = [
     "UNDERSTANDING_TOOL_DEFINITIONS",
     "VOICE_TOOL_DEFINITIONS",
     "CONSTELLATION_TOOL_DEFINITIONS",
+    "clipcannon_generate_video",
     "dispatch_constellation_tool",
     "dispatch_audio_tool",
     "dispatch_avatar_tool",

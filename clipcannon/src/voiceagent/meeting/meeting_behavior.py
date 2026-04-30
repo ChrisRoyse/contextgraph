@@ -19,6 +19,8 @@ from voiceagent.meeting.app_controller import MeetingAppController
 from voiceagent.meeting.errors import MeetingBehaviorError
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from voiceagent.meeting.config import BehaviorConfig
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,7 @@ class MeetingBehavior:
     async def unmute_and_speak(
         self,
         audio: np.ndarray,
-        play_fn,
+        play_fn: Callable[[np.ndarray], Awaitable[None]],
     ) -> None:
         """Full speaking sequence: unmute -> pause -> play -> pause -> mute.
 

@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import struct
 import time
 from collections import Counter
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -279,18 +281,19 @@ emb_array = (emb_array / norms).tolist()
 json.dump(emb_array, sys.stdout)
 """
 
-    tmp_texts = tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".json",
-        prefix="nomic_texts_",
-        delete=False,
-    )
+    tmp_texts_path = ""
     try:
-        json.dump(texts, tmp_texts)
-        tmp_texts.close()
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".json",
+            prefix="nomic_texts_",
+            delete=False,
+        ) as tmp_texts:
+            tmp_texts_path = tmp_texts.name
+            json.dump(texts, tmp_texts)
 
         proc = subprocess.run(
-            ["python3", "-c", worker_script, tmp_texts.name, MODEL_ID],
+            ["python3", "-c", worker_script, tmp_texts_path, MODEL_ID],
             capture_output=True,
             text=True,
             timeout=300,
@@ -307,9 +310,8 @@ json.dump(emb_array, sys.stdout)
         logger.info("Computed %d semantic embeddings via subprocess", len(emb_array))
 
     finally:
-        import os
-
-        os.unlink(tmp_texts.name)
+        if tmp_texts_path:
+            os.unlink(tmp_texts_path)
 
     return emb_array
 
@@ -590,18 +592,14 @@ async def run_semantic_embed(
         conn2 = get_connection(db_path, enable_vec=False, dict_rows=True)
         try:
             # Ensure sentiment columns exist (for pre-existing DBs)
-            try:
+            with suppress(Exception):
                 conn2.execute(
                     "ALTER TABLE transcript_segments ADD COLUMN sentiment TEXT",
                 )
-            except Exception:
-                pass  # Column already exists
-            try:
+            with suppress(Exception):
                 conn2.execute(
                     "ALTER TABLE transcript_segments ADD COLUMN sentiment_score REAL",
                 )
-            except Exception:
-                pass  # Column already exists
 
             for seg, sent in zip(segments, sentiments, strict=False):
                 execute(

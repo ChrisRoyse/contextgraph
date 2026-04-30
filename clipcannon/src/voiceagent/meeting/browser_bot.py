@@ -263,10 +263,8 @@ async def setup_google_account() -> None:
     print("When done, close the browser window.")
 
     # Wait for the browser to be closed by the user
-    try:
+    with contextlib.suppress(Exception):
         await context.pages[0].wait_for_event("close", timeout=300000)  # 5 min
-    except Exception:
-        pass
 
     with contextlib.suppress(Exception):
         await context.close()

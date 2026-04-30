@@ -227,12 +227,12 @@ async def run_fsv(tmp_dir: Path) -> None:
     print("=" * 55)
 
     # CHECK 1: Create an edit
-    ORIG_NAME = "Highlight Reel V1"
+    orig_name = "Highlight Reel V1"
     create_result = await dispatch_editing_tool(
         "clipcannon_create_edit",
         {
             "project_id": project_id,
-            "name": ORIG_NAME,
+            "name": orig_name,
             "target_platform": "tiktok",
             "segments": [
                 {"source_start_ms": 0, "source_end_ms": 15000},
@@ -247,7 +247,7 @@ async def run_fsv(tmp_dir: Path) -> None:
     check(
         1,
         "Create edit succeeds",
-        f"create_edit(name={ORIG_NAME!r}, platform=tiktok, 3 segments)",
+        f"create_edit(name={orig_name!r}, platform=tiktok, 3 segments)",
         "edit_id returned, no error",
         f"edit_id={edit_id}, error={has_error}",
         f"create_result keys: {list(create_result.keys())}",
@@ -314,10 +314,10 @@ async def run_fsv(tmp_dir: Path) -> None:
         5,
         "Version 1 edl_json has ORIGINAL name (snapshot before modify)",
         "edit_versions row version_number=1, edl_json->name",
-        f"name={ORIG_NAME!r}",
+        f"name={orig_name!r}",
         f"name={ver1_name!r}",
         f"version_id={ver1_row['version_id'] if ver1_row else 'N/A'}",
-        ver1_name == ORIG_NAME,
+        ver1_name == orig_name,
     )
 
     # CHECK 6: Modify again -- change segments (2 segments instead of 3)
@@ -446,10 +446,10 @@ async def run_fsv(tmp_dir: Path) -> None:
         12,
         "After revert, edit name is back to original",
         "edits.name after revert to v1",
-        f"name={ORIG_NAME!r}",
+        f"name={orig_name!r}",
         f"name={reverted_name!r}",
         f"edits row: name={reverted_name!r}",
-        reverted_name == ORIG_NAME,
+        reverted_name == orig_name,
     )
 
     # CHECK 13: edit_versions now has 3 rows

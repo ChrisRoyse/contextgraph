@@ -282,7 +282,7 @@ class TestOrchestratorRegistration:
 
     def test_duplicate_registration_raises(self, clipcannon_config):
         """Duplicate stage name should raise PipelineError."""
-        from clipcannon.exceptions import PipelineError as PE
+        from clipcannon.exceptions import PipelineError
 
         orch = PipelineOrchestrator(clipcannon_config)
 
@@ -293,7 +293,7 @@ class TestOrchestratorRegistration:
                 required=True,
             )
         )
-        with pytest.raises(PE, match="already registered"):
+        with pytest.raises(PipelineError, match="already registered"):
             orch.register_stage(
                 PipelineStage(
                     name="stage_a",

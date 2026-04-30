@@ -94,7 +94,9 @@ class BehavioralConstellation:
 # ---------------------------------------------------------------------------
 
 SKILL_PROMPTS: dict[str, str] = {
-    "genuine_laugh": "laughing genuinely with eyes crinkled, mouth wide open, head tilting back slightly",
+    "genuine_laugh": (
+        "laughing genuinely with eyes crinkled, mouth wide open, head tilting back slightly"
+    ),
     "warm_smile": "warm gentle smile with eyes soft, slight head tilt, relaxed expression",
     "gentle_nod": "nodding gently with soft approving expression",
     "eye_contact": "direct warm eye contact with relaxed brow",

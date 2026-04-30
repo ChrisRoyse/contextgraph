@@ -308,7 +308,7 @@ class CloneMeetingManager:
             )
 
             # Unmute, play audio, re-mute
-            async def play_audio(a) -> None:
+            async def play_audio(a: object) -> None:
                 # Routes to PulseAudio sink in production
                 logger.info(
                     "Playing %d samples of clone audio",
@@ -380,7 +380,7 @@ class CloneMeetingManager:
     # ------------------------------------------------------------------
 
     async def stop_clone(self, clone_name: str) -> str | None:
-        """Stop a clone: capture -> flush -> summary -> ingest -> GPU release -> devices -> MCP close."""
+        """Stop a clone and release capture, summary, devices, MCP, and GPU resources."""
         instance = self._clones.pop(clone_name, None)
         if instance is None:
             logger.warning("Clone '%s' is not running", clone_name)

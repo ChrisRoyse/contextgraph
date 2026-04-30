@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from contextlib import suppress
 from typing import Any
 
 import httpx
@@ -169,14 +170,12 @@ class OcrProvenanceClient:
             "method": "notifications/initialized",
             "params": {},
         }
-        try:
+        with suppress(httpx.HTTPError):
             await client.post(
                 self._base_url,
                 json=notif_payload,
                 headers=self._headers(),
             )
-        except httpx.HTTPError:
-            pass  # Notification responses are optional per MCP spec
 
         self._initialized = True
         self._request_id = 1

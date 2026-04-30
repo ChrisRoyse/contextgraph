@@ -452,11 +452,11 @@ async def test_mcp_tools():
         clipcannon_project_open,
     )
 
-    VIDEO_PATH = "/home/cabdru/clipcannon/testdata/2026-03-20 14-43-20.mp4"
+    video_path = "/home/cabdru/clipcannon/testdata/2026-03-20 14-43-20.mp4"
 
     # 1. Create project with real video
     print("\n--- Create project with real video ---")
-    result = await clipcannon_project_create("FSV MCP Test", VIDEO_PATH)
+    result = await clipcannon_project_create("FSV MCP Test", video_path)
     has_project_id = "project_id" in result and "error" not in result
     verdict(
         "Project created successfully",
@@ -666,7 +666,10 @@ async def test_schema():
         # If not, it's expected to be empty
         print(f"\nVirtual tables: {vtables}")
         try:
-            import sqlite_vec
+            from importlib.util import find_spec
+
+            if find_spec("sqlite_vec") is None:
+                raise ImportError
 
             vec_expected = ["vec_frames", "vec_semantic", "vec_emotion", "vec_speakers"]
             for vt in vec_expected:

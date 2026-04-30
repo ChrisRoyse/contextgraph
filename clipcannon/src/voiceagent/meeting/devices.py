@@ -94,12 +94,12 @@ class CloneDeviceManager:
                     f"Failed to create PulseAudio sink '{sink_name}': {result.stderr}"
                 )
             sink_module = int(result.stdout.strip()) if result.stdout.strip().isdigit() else None
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise MeetingDeviceError(
                 "pactl not found. Install PulseAudio: apt install pulseaudio-utils"
-            )
-        except subprocess.TimeoutExpired:
-            raise MeetingDeviceError("pactl timed out creating null sink")
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise MeetingDeviceError("pactl timed out creating null sink") from exc
 
         # Create remap source (makes monitor appear as a real mic)
         try:
@@ -121,8 +121,8 @@ class CloneDeviceManager:
                     f"Failed to create remap source '{source_name}': {result.stderr}"
                 )
             source_module = int(result.stdout.strip()) if result.stdout.strip().isdigit() else None
-        except subprocess.TimeoutExpired:
-            raise MeetingDeviceError("pactl timed out creating remap source")
+        except subprocess.TimeoutExpired as exc:
+            raise MeetingDeviceError("pactl timed out creating remap source") from exc
 
         # Assign v4l2loopback device number based on active device count
         video_nr = 20 + len(self._devices)

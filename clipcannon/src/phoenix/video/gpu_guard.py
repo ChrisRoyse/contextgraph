@@ -21,6 +21,10 @@ import logging
 import os
 import threading
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +135,7 @@ def _gpu_temperature() -> int:
 
 
 @contextmanager
-def gpu_operation(name: str, estimated_vram_mb: int = 0):
+def gpu_operation(name: str, estimated_vram_mb: int = 0) -> Generator[None, None, None]:
     """Context manager for GPU operations with serialization and cleanup.
 
     Usage:
@@ -173,7 +177,7 @@ def gpu_operation(name: str, estimated_vram_mb: int = 0):
             )
 
 
-def safe_del(*tensors_or_models) -> None:
+def safe_del(*tensors_or_models: object) -> None:
     """Safely delete tensors/models and free their VRAM immediately."""
     for obj in tensors_or_models:
         if obj is not None:

@@ -175,10 +175,10 @@ class Y4MWriter:
             return self._ref_bgr
 
         # Apply tiny vertical translation
-        M = np.float32([[1, 0, 0], [0, 1, breath_shift]])
+        matrix = np.float32([[1, 0, 0], [0, 1, breath_shift]])
         return cv2.warpAffine(
             self._ref_bgr,
-            M,
+            matrix,
             (self._w, self._h),
             borderMode=cv2.BORDER_REPLICATE,
         )

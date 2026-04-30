@@ -673,42 +673,42 @@ class TestBehaviorPackageExports:
 
     def test_gesture_selector_importable(self) -> None:
         """GestureSelector is importable from phoenix.behavior."""
-        from phoenix.behavior import GestureSelector as GS
+        import phoenix.behavior as behavior
 
-        assert GS is GestureSelector
+        assert behavior.GestureSelector is GestureSelector
 
     def test_prosody_matcher_importable(self) -> None:
         """ProsodyMatcher is importable from phoenix.behavior."""
-        from phoenix.behavior import ProsodyMatcher as PM
+        import phoenix.behavior as behavior
 
-        assert PM is ProsodyMatcher
+        assert behavior.ProsodyMatcher is ProsodyMatcher
 
     def test_prosody_match_importable(self) -> None:
         """ProsodyMatch is importable from phoenix.behavior."""
-        from phoenix.behavior import ProsodyMatch as PMR
+        import phoenix.behavior as behavior
 
-        assert PMR is ProsodyMatch
+        assert behavior.ProsodyMatch is ProsodyMatch
 
     def test_emotion_mirror_importable(self) -> None:
         """EmotionMirror is importable from phoenix.behavior."""
-        from phoenix.behavior import EmotionMirror as EM
+        import phoenix.behavior as behavior
 
-        assert EM is EmotionMirror
+        assert behavior.EmotionMirror is EmotionMirror
 
     def test_avatar_expression_importable(self) -> None:
         """AvatarExpression is importable from phoenix.behavior."""
-        from phoenix.behavior import AvatarExpression as AE
+        import phoenix.behavior as behavior
 
-        assert AE is AvatarExpression
+        assert behavior.AvatarExpression is AvatarExpression
 
     def test_cross_modal_detector_importable(self) -> None:
         """CrossModalDetector is importable from phoenix.behavior."""
-        from phoenix.behavior import CrossModalDetector as CMD
+        import phoenix.behavior as behavior
 
-        assert CMD is CrossModalDetector
+        assert behavior.CrossModalDetector is CrossModalDetector
 
     def test_social_signal_importable(self) -> None:
         """SocialSignal is importable from phoenix.behavior."""
-        from phoenix.behavior import SocialSignal as SS
+        import phoenix.behavior as behavior
 
-        assert SS is SocialSignal
+        assert behavior.SocialSignal is SocialSignal

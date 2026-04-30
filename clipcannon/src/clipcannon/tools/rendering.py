@@ -1529,9 +1529,13 @@ async def clipcannon_get_editing_context(
         "narrative": narrative_data,
         "transcript_preview": transcript_preview,
         "query_tools": {
-            "find_best_moments": "Find scored clip candidates for hook/highlight/cta/tutorial_step",
+            "find_best_moments": (
+                "Find scored clip candidates for hook/highlight/cta/tutorial_step"
+            ),
             "get_scene_map": "Browse scenes in paginated time windows (summary or full detail)",
-            "find_cut_points": "Find natural edit boundaries (silence gaps, scene breaks, sentences)",
+            "find_cut_points": (
+                "Find natural edit boundaries (silence gaps, scene breaks, sentences)"
+            ),
             "get_transcript": "Get word-level transcript for any time range",
             "search_content": "Search transcript by keywords",
             "analyze_frame": "Detect content regions and webcam in any frame",
