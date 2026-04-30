@@ -34,6 +34,11 @@ data and controlled career-transition events.
 
 ## Document Map
 
+Docs `00-13` are the original plan and current-state record. Docs `14-25`
+specify the work remaining between current state (smokedoc 13, 2026-04-30) and
+a paper-submittable + artifact-badged release. Start at `14` for the gap
+matrix, dependency graph, and recommended execution order.
+
 | File | Purpose |
 | --- | --- |
 | `00_master_index.md` | Scope, target claim, document map |
@@ -50,6 +55,18 @@ data and controlled career-transition events.
 | `11_risks_open_questions_and_decisions.md` | Risks, unresolved items, locked choices |
 | `12_references.md` | Local and external references |
 | `13_current_implementation_and_benchmark_status.md` | Implemented smoke surface and latest FSV benchmark evidence |
+| `14_remaining_work_master_plan.md` | Gap matrix, dependency graph, recommended order, completion criteria |
+| `15_multiseed_completion_and_statistical_reporting.md` | Finish >=3 paper-small seeds, BCa bootstrap CI, paired sign-flip permutation tests |
+| `16_decoder_head_and_topk_metrics.md` | Decoder head + top-k occupation + skill-vector reconstruction |
+| `17_paper_scaling_and_full_run.md` | 1K -> 10K -> 50K-250K scaling ladder, VRAM/runtime budget |
+| `18_esco_crosswalk_and_replication_study.md` | ESCO replication + O*NET <-> ISCO crosswalk decoder |
+| `19_paper_drafting_figures_and_supplementary.md` | Section-by-section drafting plan, figure pipeline, supplementary materials |
+| `20_reproducibility_artifact_and_release.md` | Apptainer + Docker, Zenodo DOI, ACM artifact-badging packet |
+| `21_compliance_ethics_broader_impact.md` | NIST AI RMF mapping, O*NET attribution, dual-use disclosure |
+| `22_hyperparameters_and_collapse_diagnostics.md` | LR/latent-dim/batch sweeps + rank/alignment/uniformity/SIGReg-residual |
+| `23_ci_smoke_regression_and_drift_detection.md` | Per-PR / nightly / release CI tiers + reference-hash drift gating |
+| `24_multistep_rollout_and_planning_horizon.md` | H>1 rollouts (direct vs autoregressive), error compounding analysis |
+| `25_privacy_gate_real_data_phase12.md` | Future Phase 12 licensed-data path, consent / pseudonymization / DP / deletion gates |
 | `reports/` | Dated operator reports for paper-small runs, failures, fixes, and multi-seed results |
 
 ## Source Of Truth For The Smoke Program

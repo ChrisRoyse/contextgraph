@@ -70,3 +70,14 @@ Expected and observed per career DB:
 These results support an auditable O*NET public-taxonomy ME-JEPA demo on one RTX
 5090-class machine. They do not support a real recruiting prediction claim.
 
+## Verification Commands
+
+Completed successfully after the seed-control patch:
+
+```bash
+cargo check -p context-graph-cli --all-features
+cargo build -p context-graph-cli --bin context-graph --all-features
+cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
+```
+
+The integration test result was 5 passed, 0 failed, finished in 302.98 seconds.

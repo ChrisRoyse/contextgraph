@@ -280,9 +280,10 @@ create a bundle source of truth.
 
 Latest result:
 
-- `cargo check -p context-graph-cli --all-features`: passed;
+- `cargo check -p context-graph-cli --all-features`: passed after
+  seed-control patch;
 - `cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv
-  --all-features -- --nocapture`: 3 passed, 0 failed, 177.74 seconds.
+  --all-features -- --nocapture`: 5 passed, 0 failed, 302.98 seconds.
 
 ## Remaining Work Before Full Demo Run
 

@@ -48,9 +48,11 @@ Build checks:
 cargo fmt
 cargo check -p context-graph-cli --all-features
 cargo build -p context-graph-cli --bin context-graph --all-features
+cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
 ```
 
-All completed successfully.
+All completed successfully. The integration test result was 5 passed, 0 failed,
+finished in 302.98 seconds.
 
 Manual fail-closed seed check:
 
