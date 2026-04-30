@@ -29,6 +29,7 @@
 
 pub mod code;
 pub mod column_families;
+pub mod dynamicjepa;
 pub mod error;
 pub mod graph_edges;
 pub mod indexes;
@@ -167,6 +168,9 @@ pub use teleological::{
 
 // Re-export code storage types (CODE-001)
 pub use code::{CodeStorageError, CodeStorageResult, CodeStore, E7_CODE_DIM};
+
+// Re-export DynamicJEPA storage data plane (5090jepa Phase 2)
+pub use dynamicjepa::*;
 
 // Re-export code column family constants
 pub use teleological::column_families::{

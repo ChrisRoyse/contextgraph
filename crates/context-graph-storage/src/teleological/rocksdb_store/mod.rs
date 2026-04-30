@@ -1,7 +1,8 @@
 //! RocksDB-backed TeleologicalMemoryStore implementation.
 //!
 //! This module provides a persistent storage implementation for TeleologicalFingerprints
-//! using RocksDB with 51 column families (11 base + 20 teleological + 13 quantized + 5 code + 2 causal).
+//! using RocksDB with 98 column families (11 base + 41 teleological + 14 quantized
+//! + 5 code + 2 causal + 25 DynamicJEPA).
 //!
 //! # Column Families Used
 //!
@@ -10,7 +11,7 @@
 //! - `e13_splade_inverted`: Inverted index for Stage 1 (Recall) sparse search
 //! - `e1_matryoshka_128`: E1 truncated 128D vectors for Stage 2 (Semantic ANN)
 //! - `e12_late_interaction`: ColBERT token embeddings for Stage 5 (MaxSim rerank)
-//! - `emb_0` through `emb_12`: Per-embedder quantized storage
+//! - `emb_0` through `emb_13`: Per-embedder quantized storage
 //!
 //! # FAIL FAST Policy
 //!

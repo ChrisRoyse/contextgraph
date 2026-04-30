@@ -1,5 +1,6 @@
 use super::*;
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -67,10 +68,14 @@ fn domain_id() -> DomainPackId {
 }
 
 fn header(record_id: Uuid, version: u8) -> DjRecordHeader {
+    header_for_domain(record_id, version, domain_id())
+}
+
+fn header_for_domain(record_id: Uuid, version: u8, domain_pack_id: DomainPackId) -> DjRecordHeader {
     DjRecordHeader::new(
         record_id,
         version,
-        domain_id(),
+        domain_pack_id,
         "1.0.0",
         TS0,
         Some(uuid(900)),
@@ -114,157 +119,464 @@ where
     decoded
 }
 
-fn sample_domain_pack() -> DomainPack {
-    let counter_scalar = InstrumentSpec {
-        instrument_id: InstrumentId::new("counter_scalar").unwrap(),
-        kind: InstrumentKind::Scalar,
-        input_fields: vec!["state.counter".to_string()],
-        output_shape: vec![1],
-        normalization: Normalization::StandardScore {
-            mean: 0.0,
-            std: 16.0,
-        },
-        required: true,
-        model_ref: None,
-        version: 1,
-        validation: InstrumentValidation {
-            require_finite: true,
-            min: Some(-64.0),
-            max: Some(64.0),
-            reject_nan: true,
-            reject_inf: true,
-        },
-    };
-    let delta_scalar = InstrumentSpec {
-        instrument_id: InstrumentId::new("delta_scalar").unwrap(),
-        kind: InstrumentKind::Scalar,
-        input_fields: vec!["action.delta".to_string()],
-        output_shape: vec![1],
-        normalization: Normalization::StandardScore {
-            mean: 0.0,
-            std: 4.0,
-        },
-        required: true,
-        model_ref: None,
-        version: 1,
-        validation: InstrumentValidation {
-            require_finite: true,
-            min: Some(-16.0),
-            max: Some(16.0),
-            reject_nan: true,
-            reject_inf: true,
-        },
-    };
-    let mut mapping = BTreeMap::new();
-    mapping.insert("state.counter".to_string(), "$.state.counter".to_string());
-    mapping.insert("action.delta".to_string(), "$.action.delta".to_string());
-    mapping.insert(
-        "outcome.next_counter".to_string(),
-        "$.outcome.next_counter".to_string(),
-    );
-    mapping.insert("time.ts_ms".to_string(), "$.ts".to_string());
+#[derive(Debug, Deserialize)]
+struct DomainPackToml {
+    domain: DomainToml,
+    time: TimeToml,
+    state: SchemaToml,
+    action: SchemaToml,
+    outcome: SchemaToml,
+    entity: SchemaToml,
+    instruments: Vec<InstrumentToml>,
+    adapters: Vec<AdapterToml>,
+    objectives: Vec<ObjectiveToml>,
+    invariants: Vec<InvariantToml>,
+    dataset_policy: DatasetPolicyToml,
+    planner_policy: PlannerPolicyToml,
+    verification_policy: VerificationPolicyToml,
+}
 
-    seal(DomainPack {
-        header: header(uuid(1), DOMAIN_PACK_RECORD_VERSION),
-        id: domain_id(),
-        version: "1.0.0".to_string(),
-        title: "Counter World - Deterministic Arithmetic Verification Domain".to_string(),
-        schema_version: 1,
+#[derive(Debug, Deserialize)]
+struct DomainToml {
+    id: String,
+    version: String,
+    title: String,
+    schema_version: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct TimeToml {
+    field: FieldToml,
+}
+
+#[derive(Debug, Deserialize)]
+struct SchemaToml {
+    fields: Vec<FieldToml>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FieldToml {
+    name: String,
+    kind: TomlKind,
+    required: bool,
+    min: Option<f64>,
+    max: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum TomlKind {
+    Name(String),
+    Table {
+        #[serde(rename = "type")]
+        kind_type: String,
+        variants: Option<Vec<String>>,
+        dim: Option<usize>,
+        encoding: Option<String>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+struct InstrumentToml {
+    id: String,
+    kind: TomlKind,
+    input_fields: Vec<String>,
+    output_shape: Vec<usize>,
+    normalization: NormalizationToml,
+    required: bool,
+    model_ref: Option<String>,
+    version: u8,
+    validation: InstrumentValidationToml,
+}
+
+#[derive(Debug, Deserialize)]
+struct NormalizationToml {
+    #[serde(rename = "type")]
+    norm_type: String,
+    mean: Option<f64>,
+    std: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstrumentValidationToml {
+    require_finite: bool,
+    min: Option<f64>,
+    max: Option<f64>,
+    reject_nan: bool,
+    reject_inf: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdapterToml {
+    id: String,
+    kind: String,
+    version: u8,
+    mapping: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ObjectiveToml {
+    id: String,
+    kind: String,
+    input_panel: String,
+    target: String,
+    loss_weight: f64,
+    required_dataset_fields: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InvariantToml {
+    id: String,
+    expression: String,
+    severity: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatasetPolicyToml {
+    default_split: String,
+    split_key: Option<String>,
+    split_buckets: Option<BTreeMap<String, f64>>,
+    default_objective: String,
+    negative_sampling: String,
+    min_negatives_per_row: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlannerPolicyToml {
+    candidate_actions: CandidateActionsToml,
+    guards: Vec<String>,
+    surprise_threshold: f32,
+}
+
+#[derive(Debug, Deserialize)]
+struct CandidateActionsToml {
+    kind: String,
+    deltas: Option<Vec<i64>>,
+    moves: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VerificationPolicyToml {
+    required_cfs: Vec<String>,
+    expected_event_count: Option<u64>,
+    expected_panel_count: Option<u64>,
+    expected_dataset_row_count: Option<u64>,
+    expected_trajectory_count: Option<u64>,
+    expected_train_rows_min: Option<u64>,
+    expected_train_rows_max: Option<u64>,
+    expected_val_rows_min: Option<u64>,
+    expected_val_rows_max: Option<u64>,
+    expected_test_rows_min: Option<u64>,
+    expected_test_rows_max: Option<u64>,
+}
+
+fn validation_error(field: impl Into<String>, message: impl Into<String>) -> DynamicJepaError {
+    DynamicJepaError::validation(
+        field,
+        message,
+        "fix the Phase 0 TOML source of truth; Phase 1 does not substitute defaults",
+    )
+}
+
+fn field_kind_from_toml(kind: TomlKind, field: &str) -> DynamicJepaResult<FieldKind> {
+    match kind {
+        TomlKind::Name(name) => match name.as_str() {
+            "i64" => Ok(FieldKind::I64),
+            "f64" => Ok(FieldKind::F64),
+            "bool" => Ok(FieldKind::Bool),
+            "string" => Ok(FieldKind::String),
+            "unix_ms" => Ok(FieldKind::UnixMs),
+            _ => Err(validation_error(
+                field,
+                format!("unsupported field kind name {name:?}"),
+            )),
+        },
+        TomlKind::Table {
+            kind_type,
+            variants,
+            dim,
+            encoding: _,
+        } => match kind_type.as_str() {
+            "i64" => Ok(FieldKind::I64),
+            "f64" => Ok(FieldKind::F64),
+            "bool" => Ok(FieldKind::Bool),
+            "string" => Ok(FieldKind::String),
+            "unix_ms" => Ok(FieldKind::UnixMs),
+            "categorical" => Ok(FieldKind::Categorical {
+                variants: variants.ok_or_else(|| {
+                    validation_error(field, "categorical field kind missing variants")
+                })?,
+            }),
+            "vector" => Ok(FieldKind::Vector {
+                dim: dim.ok_or_else(|| validation_error(field, "vector field kind missing dim"))?,
+            }),
+            _ => Err(validation_error(
+                field,
+                format!("unsupported field kind table type {kind_type:?}"),
+            )),
+        },
+    }
+}
+
+fn instrument_kind_from_toml(kind: TomlKind, field: &str) -> DynamicJepaResult<InstrumentKind> {
+    match kind {
+        TomlKind::Name(name) => match name.as_str() {
+            "scalar" => Ok(InstrumentKind::Scalar),
+            _ => Err(validation_error(
+                field,
+                format!("unsupported instrument kind name {name:?}"),
+            )),
+        },
+        TomlKind::Table {
+            kind_type,
+            variants,
+            dim,
+            encoding,
+        } => match kind_type.as_str() {
+            "scalar" => Ok(InstrumentKind::Scalar),
+            "categorical" => Ok(InstrumentKind::Categorical {
+                variants: variants.ok_or_else(|| {
+                    validation_error(field, "categorical instrument kind missing variants")
+                })?,
+            }),
+            "onehot" => Ok(InstrumentKind::Onehot {
+                dim: dim
+                    .ok_or_else(|| validation_error(field, "onehot instrument kind missing dim"))?,
+            }),
+            "time" => {
+                let encoding = match encoding.as_deref() {
+                    Some("fractional_day_of_week") => TimeEncoding::FractionalDayOfWeek,
+                    Some("unix_seconds") => TimeEncoding::UnixSeconds,
+                    other => {
+                        return Err(validation_error(
+                            field,
+                            format!("unsupported time encoding {other:?}"),
+                        ))
+                    }
+                };
+                Ok(InstrumentKind::Time { encoding })
+            }
+            _ => Err(validation_error(
+                field,
+                format!("unsupported instrument kind table type {kind_type:?}"),
+            )),
+        },
+    }
+}
+
+fn field_spec_from_toml(field: FieldToml, path: &str) -> DynamicJepaResult<FieldSpec> {
+    Ok(FieldSpec {
+        name: field.name,
+        kind: field_kind_from_toml(field.kind, path)?,
+        required: field.required,
+        min: field.min,
+        max: field.max,
+    })
+}
+
+fn fields_from_toml(fields: Vec<FieldToml>, path: &str) -> DynamicJepaResult<Vec<FieldSpec>> {
+    fields
+        .into_iter()
+        .enumerate()
+        .map(|(idx, field)| field_spec_from_toml(field, &format!("{path}.fields[{idx}]")))
+        .collect()
+}
+
+fn normalization_from_toml(
+    value: NormalizationToml,
+    field: &str,
+) -> DynamicJepaResult<Normalization> {
+    match value.norm_type.as_str() {
+        "none" => Ok(Normalization::None),
+        "standard_score" => Ok(Normalization::StandardScore {
+            mean: value
+                .mean
+                .ok_or_else(|| validation_error(field, "standard_score missing mean"))?,
+            std: value
+                .std
+                .ok_or_else(|| validation_error(field, "standard_score missing std"))?,
+        }),
+        other => Err(validation_error(
+            field,
+            format!("unsupported normalization type {other:?}"),
+        )),
+    }
+}
+
+fn domain_pack_from_phase0_toml(path: &Path, record_id: Uuid) -> DynamicJepaResult<DomainPack> {
+    let bytes = fs::read(path).map_err(|err| {
+        validation_error(
+            path.display().to_string(),
+            format!("failed to read Phase 0 TOML source of truth: {err}"),
+        )
+    })?;
+    let source_hash = sha256(&bytes);
+    let source_text = std::str::from_utf8(&bytes).map_err(|err| {
+        validation_error(
+            path.display().to_string(),
+            format!("Phase 0 TOML source of truth is not UTF-8: {err}"),
+        )
+    })?;
+    let parsed: DomainPackToml = toml::from_str(source_text).map_err(|err| {
+        validation_error(
+            path.display().to_string(),
+            format!("failed to parse Phase 0 TOML source of truth: {err}"),
+        )
+    })?;
+    let domain_id = DomainPackId::new(parsed.domain.id)?;
+    let candidate_actions = match parsed.planner_policy.candidate_actions.kind.as_str() {
+        "enumerated" => {
+            if let Some(deltas) = parsed.planner_policy.candidate_actions.deltas {
+                CandidateActionConfig::EnumeratedDeltas { deltas }
+            } else if let Some(moves) = parsed.planner_policy.candidate_actions.moves {
+                CandidateActionConfig::EnumeratedMoves { moves }
+            } else {
+                return Err(validation_error(
+                    "planner_policy.candidate_actions",
+                    "enumerated candidate actions require deltas or moves",
+                ));
+            }
+        }
+        other => {
+            return Err(validation_error(
+                "planner_policy.candidate_actions.kind",
+                format!("unsupported candidate action kind {other:?}"),
+            ))
+        }
+    };
+
+    Ok(seal(DomainPack {
+        header: header_for_domain(record_id, DOMAIN_PACK_RECORD_VERSION, domain_id.clone()),
+        id: domain_id,
+        version: parsed.domain.version,
+        title: parsed.domain.title,
+        schema_version: parsed.domain.schema_version,
         state_schema: StateSchema {
-            fields: vec![FieldSpec {
-                name: "counter".to_string(),
-                kind: FieldKind::I64,
-                required: true,
-                min: Some(-1024.0),
-                max: Some(1024.0),
-            }],
+            fields: fields_from_toml(parsed.state.fields, "state")?,
         },
         action_schema: ActionSchema {
-            fields: vec![FieldSpec {
-                name: "delta".to_string(),
-                kind: FieldKind::I64,
-                required: true,
-                min: Some(-8.0),
-                max: Some(8.0),
-            }],
+            fields: fields_from_toml(parsed.action.fields, "action")?,
         },
         outcome_schema: OutcomeSchema {
-            fields: vec![FieldSpec {
-                name: "next_counter".to_string(),
-                kind: FieldKind::I64,
-                required: true,
-                min: Some(-1024.0),
-                max: Some(1024.0),
-            }],
+            fields: fields_from_toml(parsed.outcome.fields, "outcome")?,
         },
-        entity_schema: EntitySchema { fields: vec![] },
+        entity_schema: EntitySchema {
+            fields: fields_from_toml(parsed.entity.fields, "entity")?,
+        },
         time_schema: TimeSchema {
-            field: FieldSpec {
-                name: "ts_ms".to_string(),
-                kind: FieldKind::UnixMs,
-                required: true,
-                min: None,
-                max: None,
-            },
+            field: field_spec_from_toml(parsed.time.field, "time.field")?,
         },
-        instrument_specs: vec![counter_scalar, delta_scalar],
-        adapter_specs: vec![AdapterSpec {
-            adapter_id: AdapterId::new("json_event").unwrap(),
-            kind: "json_event".to_string(),
-            version: 1,
-            mapping,
-        }],
-        objective_specs: vec![ObjectiveSpec {
-            id: "predict_next_counter".to_string(),
-            kind: "latent_delta".to_string(),
-            input_panel: "state_action".to_string(),
-            target: "outcome.next_counter".to_string(),
-            loss_weight: 1.0,
-            required_dataset_fields: vec![
-                "target_panel_id".to_string(),
-                "input_panel_id".to_string(),
-                "action_id".to_string(),
-            ],
-        }],
-        invariants: vec![InvariantSpec {
-            id: "arithmetic_consistency".to_string(),
-            expression: "outcome.next_counter == state.counter + action.delta".to_string(),
-            severity: "fatal".to_string(),
-        }],
+        instrument_specs: parsed
+            .instruments
+            .into_iter()
+            .enumerate()
+            .map(|(idx, spec)| {
+                Ok(InstrumentSpec {
+                    instrument_id: InstrumentId::new(spec.id)?,
+                    kind: instrument_kind_from_toml(
+                        spec.kind,
+                        &format!("instruments[{idx}].kind"),
+                    )?,
+                    input_fields: spec.input_fields,
+                    output_shape: spec.output_shape,
+                    normalization: normalization_from_toml(
+                        spec.normalization,
+                        &format!("instruments[{idx}].normalization"),
+                    )?,
+                    required: spec.required,
+                    model_ref: spec.model_ref,
+                    version: spec.version,
+                    validation: InstrumentValidation {
+                        require_finite: spec.validation.require_finite,
+                        min: spec.validation.min,
+                        max: spec.validation.max,
+                        reject_nan: spec.validation.reject_nan,
+                        reject_inf: spec.validation.reject_inf,
+                    },
+                })
+            })
+            .collect::<DynamicJepaResult<Vec<_>>>()?,
+        adapter_specs: parsed
+            .adapters
+            .into_iter()
+            .map(|adapter| {
+                Ok(AdapterSpec {
+                    adapter_id: AdapterId::new(adapter.id)?,
+                    kind: adapter.kind,
+                    version: adapter.version,
+                    mapping: adapter.mapping,
+                })
+            })
+            .collect::<DynamicJepaResult<Vec<_>>>()?,
+        objective_specs: parsed
+            .objectives
+            .into_iter()
+            .map(|objective| ObjectiveSpec {
+                id: objective.id,
+                kind: objective.kind,
+                input_panel: objective.input_panel,
+                target: objective.target,
+                loss_weight: objective.loss_weight,
+                required_dataset_fields: objective.required_dataset_fields,
+            })
+            .collect(),
+        invariants: parsed
+            .invariants
+            .into_iter()
+            .map(|invariant| InvariantSpec {
+                id: invariant.id,
+                expression: invariant.expression,
+                severity: invariant.severity,
+            })
+            .collect(),
         dataset_policy: DatasetPolicy {
-            default_split: "by_time".to_string(),
-            split_key: None,
-            split_buckets: None,
-            default_objective: "predict_next_counter".to_string(),
-            negative_sampling: "same_domain_different_outcome".to_string(),
-            min_negatives_per_row: 1,
+            default_split: parsed.dataset_policy.default_split,
+            split_key: parsed.dataset_policy.split_key,
+            split_buckets: parsed.dataset_policy.split_buckets,
+            default_objective: parsed.dataset_policy.default_objective,
+            negative_sampling: parsed.dataset_policy.negative_sampling,
+            min_negatives_per_row: parsed.dataset_policy.min_negatives_per_row,
         },
         planner_policy: PlannerPolicy {
-            candidate_actions: CandidateActionConfig::EnumeratedDeltas {
-                deltas: vec![-2, -1, 0, 1, 2],
-            },
-            guards: vec!["bounds_check".to_string()],
-            surprise_threshold: 0.85,
+            candidate_actions,
+            guards: parsed.planner_policy.guards,
+            surprise_threshold: parsed.planner_policy.surprise_threshold,
         },
         verification_policy: VerificationPolicy {
-            required_cfs: vec![
-                "dj_domain_packs".to_string(),
-                "dj_raw_events".to_string(),
-                "dj_adapter_runs".to_string(),
-            ],
-            expected_event_count: Some(3),
-            expected_panel_count: Some(3),
-            expected_dataset_row_count: Some(2),
-            expected_trajectory_count: None,
-            expected_train_rows_min: None,
-            expected_train_rows_max: None,
-            expected_val_rows_min: None,
-            expected_val_rows_max: None,
-            expected_test_rows_min: None,
-            expected_test_rows_max: None,
+            required_cfs: parsed.verification_policy.required_cfs,
+            expected_event_count: parsed.verification_policy.expected_event_count,
+            expected_panel_count: parsed.verification_policy.expected_panel_count,
+            expected_dataset_row_count: parsed.verification_policy.expected_dataset_row_count,
+            expected_trajectory_count: parsed.verification_policy.expected_trajectory_count,
+            expected_train_rows_min: parsed.verification_policy.expected_train_rows_min,
+            expected_train_rows_max: parsed.verification_policy.expected_train_rows_max,
+            expected_val_rows_min: parsed.verification_policy.expected_val_rows_min,
+            expected_val_rows_max: parsed.verification_policy.expected_val_rows_max,
+            expected_test_rows_min: parsed.verification_policy.expected_test_rows_min,
+            expected_test_rows_max: parsed.verification_policy.expected_test_rows_max,
         },
-        source_hash: hash32(1),
-    })
+        source_hash,
+    }))
+}
+
+fn phase0_counter_domain_pack() -> DomainPack {
+    domain_pack_from_phase0_toml(
+        &root_dir().join("configs/dynamicjepa/domain_packs/counter_world.v1.toml"),
+        uuid(1),
+    )
+    .expect("counter_world Phase 0 TOML must parse into a valid Phase 1 DomainPack")
+}
+
+fn phase0_gridworld_domain_pack() -> DomainPack {
+    domain_pack_from_phase0_toml(
+        &root_dir().join("configs/dynamicjepa/domain_packs/gridworld_5x5.v1.toml"),
+        uuid(2),
+    )
+    .expect("gridworld_5x5 Phase 0 TOML must parse into a valid Phase 1 DomainPack")
+}
+
+fn sample_domain_pack() -> DomainPack {
+    phase0_counter_domain_pack()
 }
 
 #[derive(Clone)]
@@ -668,8 +980,11 @@ fn dynamicjepa_phase1_all_records_roundtrip_from_file_source_of_truth() {
     let temp = TempDir::new().expect("temp source-of-truth dir");
     let before_count = fs::read_dir(temp.path()).expect("read temp dir").count();
     let (domain, samples) = sample_records();
+    let grid_domain = phase0_gridworld_domain_pack();
 
     let domain_back: DomainPack = roundtrip_from_file(temp.path(), "domain_pack", &domain);
+    let grid_domain_back: DomainPack =
+        roundtrip_from_file(temp.path(), "gridworld_domain_pack", &grid_domain);
     roundtrip_from_file::<RawDomainEvent>(temp.path(), "raw_event", &samples.raw_event);
     roundtrip_from_file::<AdapterRunRecord>(temp.path(), "adapter_run", &samples.adapter_run);
     roundtrip_from_file::<NormalizedState>(temp.path(), "state", &samples.state);
@@ -701,9 +1016,11 @@ fn dynamicjepa_phase1_all_records_roundtrip_from_file_source_of_truth() {
 
     let after_count = fs::read_dir(temp.path()).expect("read temp dir").count();
     assert_eq!(before_count, 0);
-    assert_eq!(after_count, 21);
+    assert_eq!(after_count, 22);
     assert_eq!(domain_back.id.as_str(), "counter_world");
     assert_eq!(domain_back.instrument_specs.len(), 2);
+    assert_eq!(grid_domain_back.id.as_str(), "gridworld_5x5");
+    assert_eq!(grid_domain_back.instrument_specs.len(), 3);
 }
 
 #[test]
@@ -775,7 +1092,9 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
     let before_files = count_files_recursive(&evidence_root);
 
     let (domain, samples) = sample_records();
+    let grid_domain = phase0_gridworld_domain_pack();
     roundtrip_from_file::<DomainPack>(&evidence_root, "domain_pack", &domain);
+    roundtrip_from_file::<DomainPack>(&evidence_root, "gridworld_domain_pack", &grid_domain);
     roundtrip_from_file::<RawDomainEvent>(&evidence_root, "raw_event", &samples.raw_event);
     roundtrip_from_file::<LatentPanel>(&evidence_root, "latent_panel", &samples.panel);
     roundtrip_from_file::<VerificationRunRecord>(
@@ -848,6 +1167,7 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
             "path": evidence_root,
             "records": [
                 "domain_pack.bin",
+                "gridworld_domain_pack.bin",
                 "raw_event.bin",
                 "latent_panel.bin",
                 "verification_run.bin",
@@ -865,6 +1185,13 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
                 "version": domain.version,
                 "instrument_count": domain.instrument_specs.len(),
                 "adapter_count": domain.adapter_specs.len()
+            },
+            "gridworld_domain_pack": {
+                "id": grid_domain.id.as_str(),
+                "version": grid_domain.version,
+                "instrument_count": grid_domain.instrument_specs.len(),
+                "adapter_count": grid_domain.adapter_specs.len(),
+                "expected_event_count": grid_domain.verification_policy.expected_event_count
             },
             "raw_event": {
                 "event_id": samples.raw_event.event_id.to_string(),
@@ -917,5 +1244,5 @@ fn dynamicjepa_phase1_full_state_verification_evidence_log() {
     println!("{}", serde_json::to_string_pretty(&evidence).unwrap());
 
     assert_eq!(before_files, 0);
-    assert_eq!(after_files, 8);
+    assert_eq!(after_files, 9);
 }

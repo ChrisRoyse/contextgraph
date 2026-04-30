@@ -47,7 +47,7 @@ fn test_summary_real_data_tests() {
     println!("  1. RocksDB + Store roundtrip with 100 REAL fingerprints");
     println!("  2. Full pipeline: store, search, delete");
     println!("  3. Physical persistence across database restart");
-    println!("  4. All 51 column families populated correctly");
+    println!("  4. All storage column families populated correctly");
     println!("  5. Batch operations performance (1000 fingerprints)");
     println!("  6. Search accuracy with known vectors");
     println!("  7. Update and delete operations");

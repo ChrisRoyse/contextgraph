@@ -20,6 +20,7 @@ use context_graph_core::traits::TeleologicalStorageBackend;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use crate::column_families::cf_names;
+use crate::dynamicjepa::column_families::DJ_CF_NAMES;
 use crate::teleological::column_families::{
     CAUSAL_CFS, CF_FINGERPRINTS, CF_TOPIC_PORTFOLIO, CODE_CFS, QUANTIZED_EMBEDDER_CFS,
     TELEOLOGICAL_CFS,
@@ -269,17 +270,17 @@ impl RocksDbTeleologicalStore {
         Ok(count)
     }
 
-    /// Get storage size in bytes across ALL 51 column families.
+    /// Get storage size in bytes across all column families.
     pub(crate) fn storage_size_bytes_internal(&self) -> usize {
         let mut total = 0usize;
 
-        // Iterate ALL CF groups: base(11) + teleological(20) + quantized(13) + code(5) + causal(2) = 51
         let all_cf_arrays: &[&[&str]] = &[
             cf_names::ALL,
             TELEOLOGICAL_CFS,
             QUANTIZED_EMBEDDER_CFS,
             CODE_CFS,
             CAUSAL_CFS,
+            DJ_CF_NAMES,
         ];
 
         for cf_names_arr in all_cf_arrays {
@@ -309,12 +310,11 @@ impl RocksDbTeleologicalStore {
 // ============================================================================
 
 impl RocksDbTeleologicalStore {
-    /// Flush ALL 51 column families (internal async wrapper).
+    /// Flush all column families (internal async wrapper).
     ///
     /// Uses `spawn_blocking` to move flush I/O to Tokio's blocking thread pool.
-    /// Covers base(11) + teleological(20) + quantized(13) + code(5) + causal(2) = 51 CFs.
     pub(crate) async fn flush_async(&self) -> CoreResult<()> {
-        debug!("Flushing all 51 column families");
+        debug!("Flushing all column families");
 
         let db = Arc::clone(&self.db);
 
@@ -325,6 +325,7 @@ impl RocksDbTeleologicalStore {
                 QUANTIZED_EMBEDDER_CFS,
                 CODE_CFS,
                 CAUSAL_CFS,
+                DJ_CF_NAMES,
             ];
 
             for cf_names_arr in all_cf_arrays {
@@ -349,7 +350,7 @@ impl RocksDbTeleologicalStore {
         .await
         .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))??;
 
-        info!("Flushed all 51 column families");
+        info!("Flushed all column families");
         Ok(())
     }
 
@@ -527,13 +528,13 @@ impl RocksDbTeleologicalStore {
             }
         }
 
-        // Now compact ALL 51 RocksDB column families
         let all_cf_arrays: &[&[&str]] = &[
             cf_names::ALL,
             TELEOLOGICAL_CFS,
             QUANTIZED_EMBEDDER_CFS,
             CODE_CFS,
             CAUSAL_CFS,
+            DJ_CF_NAMES,
         ];
 
         for cf_names_arr in all_cf_arrays {

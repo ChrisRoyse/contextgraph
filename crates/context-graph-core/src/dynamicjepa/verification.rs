@@ -97,9 +97,10 @@ impl DjJsonValue {
             Self::Null => serde_json::Value::Null,
             Self::Bool(value) => serde_json::Value::Bool(*value),
             Self::I64(value) => serde_json::Value::Number((*value).into()),
-            Self::F64(value) => serde_json::Number::from_f64(*value)
-                .map(serde_json::Value::Number)
-                .unwrap_or(serde_json::Value::Null),
+            Self::F64(value) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*value)
+                    .expect("DjJsonValue::F64 must be finite before JSON conversion"),
+            ),
             Self::String(value) => serde_json::Value::String(value.clone()),
             Self::Array(values) => {
                 serde_json::Value::Array(values.iter().map(Self::to_json).collect())

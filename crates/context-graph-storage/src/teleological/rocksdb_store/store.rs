@@ -29,6 +29,7 @@ use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_core::weights::E11_ENTITY_ENABLED;
 
 use crate::column_families::{cf_names, get_all_column_family_descriptors};
+use crate::dynamicjepa::column_families::DJ_CF_NAMES;
 use crate::teleological::column_families::{
     CAUSAL_CFS, CF_CONTENT, CF_E12_LATE_INTERACTION, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS,
     CF_SOURCE_METADATA, CODE_CFS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
@@ -52,7 +53,8 @@ use super::types::{TeleologicalStoreConfig, TeleologicalStoreError, Teleological
 /// RocksDB-backed storage for TeleologicalFingerprints.
 ///
 /// Implements the `TeleologicalMemoryStore` trait with persistent storage
-/// across 51 column families (11 base + 20 teleological + 13 quantized + 5 code + 2 causal).
+/// across 98 column families (11 base + 41 teleological + 14 quantized
+/// + 5 code + 2 causal + 25 DynamicJEPA).
 ///
 /// # Thread Safety
 ///
@@ -133,7 +135,7 @@ pub struct RocksDbTeleologicalStore {
 impl RocksDbTeleologicalStore {
     /// Open a teleological store at the specified path with default configuration.
     ///
-    /// Creates the database and all 51 column families if they don't exist.
+    /// Creates the database and all 98 column families if they don't exist.
     /// **Automatically detects and removes stale lock files.**
     pub fn open<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<Self> {
         Self::open_with_config(path, TeleologicalStoreConfig::default())
@@ -193,9 +195,7 @@ impl RocksDbTeleologicalStore {
             db_opts.set_manual_wal_flush(true);
         }
 
-        // Get ALL column families (51 total: 11 base + 20 teleological + 13 quantized + 5 code + 2 causal)
-        // This includes the graph edge CFs (embedder_edges, typed_edges, typed_edges_by_type)
-        // required for K-NN graph-based retrieval. NO FALLBACKS - database must have all CFs.
+        // Get ALL column families, including DynamicJEPA. NO FALLBACKS - database must have all CFs.
         let cf_descriptors = get_all_column_family_descriptors(&cache);
 
         debug!(
@@ -209,6 +209,18 @@ impl RocksDbTeleologicalStore {
             Self::transform_corruption_error(&path_str, e)
         })?;
 
+        for cf_name in DJ_CF_NAMES {
+            if db.cf_handle(cf_name).is_none() {
+                error!(
+                    cf = *cf_name,
+                    "FAIL FAST: DynamicJEPA column family missing after RocksDB open"
+                );
+                return Err(TeleologicalStoreError::ColumnFamilyNotFound {
+                    name: (*cf_name).to_string(),
+                });
+            }
+        }
+
         // Create per-embedder index registry (15 HNSW indexes)
         let index_registry = Arc::new(EmbedderIndexRegistry::new());
 
@@ -216,8 +228,8 @@ impl RocksDbTeleologicalStore {
         let causal_e11_index = Arc::new(CausalE11Index::new());
 
         info!(
-            "Successfully opened RocksDbTeleologicalStore with {} column families and {} per-embedder indexes",
-            TELEOLOGICAL_CFS.len() + QUANTIZED_EMBEDDER_CFS.len(),
+            "Successfully opened RocksDbTeleologicalStore with {} DynamicJEPA CFs and {} per-embedder indexes",
+            DJ_CF_NAMES.len(),
             index_registry.len()
         );
 
@@ -1296,7 +1308,7 @@ impl RocksDbTeleologicalStore {
         *self.fingerprint_count.write() = None;
     }
 
-    /// Health check: verify ALL 51 column families are accessible.
+    /// Health check: verify ALL column families are accessible.
     pub fn health_check(&self) -> TeleologicalStoreResult<()> {
         let all_cf_arrays: &[&[&str]] = &[
             cf_names::ALL,
@@ -1304,6 +1316,7 @@ impl RocksDbTeleologicalStore {
             QUANTIZED_EMBEDDER_CFS,
             CODE_CFS,
             CAUSAL_CFS,
+            DJ_CF_NAMES,
         ];
 
         for cf_names_arr in all_cf_arrays {
