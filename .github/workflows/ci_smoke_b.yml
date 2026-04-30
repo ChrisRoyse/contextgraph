@@ -1,0 +1,158 @@
+name: DynamicJEPA CI Smoke B
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: dynamicjepa-smoke-b-nightly
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CUDA_COMPUTE_CAP: "120"
+  CUDA_HOME: /usr/local/cuda-13.2
+  ONET_TEXT_ZIP: tmp/onet_probe/db_30_2_text.zip
+  RUN_ROOT: tmp/mejepa_ci_runs
+
+jobs:
+  smoke-b:
+    name: Tier B Nightly Paper Small
+    runs-on: [self-hosted, linux, x64, dynamicjepa-ci]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: clippy
+
+      - name: Preflight real data and references
+        run: |
+          set -euo pipefail
+          command -v jq
+          test -f "$ONET_TEXT_ZIP" || {
+            echo "::error::O*NET text ZIP missing at $ONET_TEXT_ZIP; nightly CI does not use mock data"
+            exit 1
+          }
+          test -f reference/reference_smoke_hashes.json
+          test -f reference/reference_paper_small_v1.json
+          test -f reference/tolerances.json
+
+      - name: Build and static gates
+        run: |
+          set -euo pipefail
+          cargo check -p context-graph-cli --all-features
+          cargo clippy -p context-graph-cli --all-targets --all-features -- -D warnings
+          cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
+          cargo build -p context-graph-cli --bin context-graph --all-features
+
+      - name: Run Tier A smoke inside nightly
+        run: |
+          set -euo pipefail
+          SMOKE_RUN_ID="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_smoke_b_tier_a"
+          echo "SMOKE_RUN_ID=$SMOKE_RUN_ID" >> "$GITHUB_ENV"
+          rm -rf "$RUN_ROOT/$SMOKE_RUN_ID"
+          ./target/debug/context-graph dynamicjepa research-smoke \
+            --run-id "$SMOKE_RUN_ID" \
+            --run-root "$RUN_ROOT" \
+            --fixtures-root configs/dynamicjepa \
+            --purpose smoke \
+            --career-event-count 120 \
+            --career-training-seed 42 \
+            --career-ablation-training-seed 42 \
+            --onet-text-zip "$ONET_TEXT_ZIP" \
+            --system-specs docs2/systemspecs.md \
+            --json | tee "$RUN_ROOT/${SMOKE_RUN_ID}_research_smoke.json"
+          ./target/debug/context-graph dynamicjepa check-reference \
+            --bundle "$RUN_ROOT/$SMOKE_RUN_ID" \
+            --reference reference/reference_smoke_hashes.json \
+            --tolerances reference/tolerances.json \
+            --json | tee "$RUN_ROOT/${SMOKE_RUN_ID}_reference_check.json"
+
+      - name: Run paper-small seed 42 twice
+        run: |
+          set -euo pipefail
+          PAPER_RUN_ID_A="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_seed42_a"
+          PAPER_RUN_ID_B="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_seed42_b"
+          echo "PAPER_RUN_ID_A=$PAPER_RUN_ID_A" >> "$GITHUB_ENV"
+          echo "PAPER_RUN_ID_B=$PAPER_RUN_ID_B" >> "$GITHUB_ENV"
+          rm -rf "$RUN_ROOT/$PAPER_RUN_ID_A" "$RUN_ROOT/$PAPER_RUN_ID_B"
+          for run_id in "$PAPER_RUN_ID_A" "$PAPER_RUN_ID_B"; do
+            ./target/debug/context-graph dynamicjepa research-smoke \
+              --run-id "$run_id" \
+              --run-root "$RUN_ROOT" \
+              --fixtures-root configs/dynamicjepa \
+              --purpose paper_small \
+              --career-event-count 1000 \
+              --career-training-seed 42 \
+              --onet-text-zip "$ONET_TEXT_ZIP" \
+              --system-specs docs2/systemspecs.md \
+              --json | tee "$RUN_ROOT/${run_id}_research_smoke.json"
+            jq -e '.status == "passed"' "$RUN_ROOT/$run_id/run_manifest.json"
+            jq -e '.status == "passed"' "$RUN_ROOT/$run_id/fsv_report.json"
+            ./target/debug/context-graph dynamicjepa inspect-counts \
+              --db "$RUN_ROOT/$run_id/dbs/${run_id}_career_taxonomy_rocksdb" \
+              --json | tee "$RUN_ROOT/$run_id/ci_inspect_counts_career_taxonomy.json"
+            ./target/debug/context-graph dynamicjepa check-reference \
+              --bundle "$RUN_ROOT/$run_id" \
+              --reference reference/reference_paper_small_v1.json \
+              --tolerances reference/tolerances.json \
+              --require-artifact-hash-match \
+              --json | tee "$RUN_ROOT/${run_id}_reference_check.json"
+          done
+
+      - name: Same-seed normalized bundle equality
+        run: |
+          set -euo pipefail
+          ./target/debug/context-graph dynamicjepa capture-reference \
+            --bundle "$RUN_ROOT/$PAPER_RUN_ID_A" \
+            --output "$RUN_ROOT/${PAPER_RUN_ID_A}_normalized_reference.json" \
+            --reference-id nightly_seed42_a \
+            --json
+          ./target/debug/context-graph dynamicjepa capture-reference \
+            --bundle "$RUN_ROOT/$PAPER_RUN_ID_B" \
+            --output "$RUN_ROOT/${PAPER_RUN_ID_B}_normalized_reference.json" \
+            --reference-id nightly_seed42_b \
+            --json
+          jq -S '{artifact_hashes, tables}' "$RUN_ROOT/${PAPER_RUN_ID_A}_normalized_reference.json" > "$RUN_ROOT/seed42_a.normalized.json"
+          jq -S '{artifact_hashes, tables}' "$RUN_ROOT/${PAPER_RUN_ID_B}_normalized_reference.json" > "$RUN_ROOT/seed42_b.normalized.json"
+          diff -u "$RUN_ROOT/seed42_a.normalized.json" "$RUN_ROOT/seed42_b.normalized.json"
+
+      - name: Doc 22 HP sweep gate
+        run: |
+          set -euo pipefail
+          if ! ./target/debug/context-graph dynamicjepa --help | grep -q 'hp-sweep'; then
+            echo "::error::DOC23_HP_SWEEP_NOT_IMPLEMENTED: dynamicjepa hp-sweep from smokedoc 22 is required before Tier B can pass"
+            exit 1
+          fi
+
+      - name: Upload nightly evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamicjepa-smoke-b-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/mejepa_ci_runs/
+          retention-days: 30
+
+      - name: Open drift issue on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `DynamicJEPA Tier B drift/failure ${context.runId}`,
+              body: `Tier B failed for run ${context.runId}.${context.runAttempt}. Inspect the uploaded dynamicjepa-smoke-b artifact for the structured drift report and source-of-truth reads.`,
+              labels: ['dynamicjepa-ci', 'drift']
+            })

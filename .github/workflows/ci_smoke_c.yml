@@ -1,0 +1,126 @@
+name: DynamicJEPA CI Smoke C
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dynamicjepa-smoke-c-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CUDA_COMPUTE_CAP: "120"
+  CUDA_HOME: /usr/local/cuda-13.2
+  ONET_TEXT_ZIP: tmp/onet_probe/db_30_2_text.zip
+  RUN_ROOT: tmp/mejepa_ci_runs
+
+jobs:
+  smoke-c:
+    name: Tier C Release Gate
+    runs-on: [self-hosted, linux, x64, dynamicjepa-ci]
+    timeout-minutes: 360
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          components: clippy
+
+      - name: Preflight release inputs
+        run: |
+          set -euo pipefail
+          command -v jq
+          command -v docker
+          test -f "$ONET_TEXT_ZIP" || {
+            echo "::error::O*NET text ZIP missing at $ONET_TEXT_ZIP; release CI does not use mock data"
+            exit 1
+          }
+          test -f reference/reference_release_v1.0.0.json
+          test -f reference/tolerances.json
+          test -f Dockerfile
+
+      - name: Build and static gates
+        run: |
+          set -euo pipefail
+          cargo check -p context-graph-cli --all-features
+          cargo clippy -p context-graph-cli --all-targets --all-features -- -D warnings
+          cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
+          cargo build -p context-graph-cli --bin context-graph --all-features
+
+      - name: Multi-seed paper-small release matrix
+        run: |
+          set -euo pipefail
+          for seed in 42 43 44 45 46; do
+            RUN_ID="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_seed${seed}"
+            rm -rf "$RUN_ROOT/$RUN_ID"
+            ./target/debug/context-graph dynamicjepa research-smoke \
+              --run-id "$RUN_ID" \
+              --run-root "$RUN_ROOT" \
+              --fixtures-root configs/dynamicjepa \
+              --purpose paper_small \
+              --career-event-count 1000 \
+              --career-training-seed "$seed" \
+              --onet-text-zip "$ONET_TEXT_ZIP" \
+              --system-specs docs2/systemspecs.md \
+              --json | tee "$RUN_ROOT/${RUN_ID}_research_smoke.json"
+            jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/run_manifest.json"
+            jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/fsv_report.json"
+            ./target/debug/context-graph dynamicjepa inspect-counts \
+              --db "$RUN_ROOT/$RUN_ID/dbs/${RUN_ID}_career_taxonomy_rocksdb" \
+              --json | tee "$RUN_ROOT/$RUN_ID/ci_inspect_counts_career_taxonomy.json"
+            ./target/debug/context-graph dynamicjepa check-reference \
+              --bundle "$RUN_ROOT/$RUN_ID" \
+              --reference reference/reference_release_v1.0.0.json \
+              --tolerances reference/tolerances.json \
+              --json | tee "$RUN_ROOT/${RUN_ID}_release_reference_check.json"
+          done
+
+      - name: Multi-seed aggregate gate
+        run: |
+          set -euo pipefail
+          if ! ./target/debug/context-graph dynamicjepa --help | grep -q 'multiseed-aggregate'; then
+            echo "::error::DOC15_MULTISEED_AGGREGATE_NOT_IMPLEMENTED: release Tier C requires dynamicjepa multiseed-aggregate"
+            exit 1
+          fi
+
+      - name: Container reproducibility check
+        run: |
+          set -euo pipefail
+          docker build --iidfile "$RUN_ROOT/docker_iid_1.txt" .
+          docker build --no-cache --iidfile "$RUN_ROOT/docker_iid_2.txt" .
+          diff -u "$RUN_ROOT/docker_iid_1.txt" "$RUN_ROOT/docker_iid_2.txt"
+
+      - name: Reproduce script release gate
+        run: |
+          set -euo pipefail
+          test -x ./reproduce.sh || {
+            echo "::error::REPRODUCE_SCRIPT_MISSING: Tier C requires executable reproduce.sh"
+            exit 1
+          }
+          ./reproduce.sh --reference reference/reference_release_v1.0.0.json
+
+      - name: Artifact evaluation dry-run gate
+        run: |
+          set -euo pipefail
+          if ! find . -maxdepth 3 -type f -name '*artifact*evaluation*' | grep -q .; then
+            echo "::error::ARTIFACT_EVALUATION_DRY_RUN_MISSING: Tier C requires an artifact-evaluation dry-run entry point"
+            exit 1
+          fi
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dynamicjepa-smoke-c-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/mejepa_ci_runs/
+          retention-days: 90

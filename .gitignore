@@ -1,7 +1,10 @@
 # Directories excluded from repo (kept locally)
 benchmarks/
 benchmark_results/
-.github/
+.github/*
+!.github/workflows/
+.github/workflows/*
+!.github/workflows/ci_smoke_*.yml
 
 # Rust build artifacts
 target/
