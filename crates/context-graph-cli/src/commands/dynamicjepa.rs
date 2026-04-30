@@ -128,6 +128,8 @@ pub enum DynamicJepaCommands {
     VerifyCounterWorld(VerifyDomainArgs),
     /// Run bundled gridworld_5x5 end-to-end full-state verification.
     VerifyGridworld(VerifyDomainArgs),
+    /// Run bundled career_taxonomy end-to-end research-smoke full-state verification.
+    VerifyCareerTaxonomy(VerifyDomainArgs),
 }
 
 impl DynamicJepaCommands {
@@ -162,6 +164,7 @@ impl DynamicJepaCommands {
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
             Self::VerifyCounterWorld(_) => "dynamicjepa_verify_counter_world",
             Self::VerifyGridworld(_) => "dynamicjepa_verify_gridworld",
+            Self::VerifyCareerTaxonomy(_) => "dynamicjepa_verify_career_taxonomy",
         }
     }
 }
@@ -829,6 +832,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
         DynamicJepaCommands::VerifyCounterWorld(args) => verify_counter_world_command(args),
         DynamicJepaCommands::VerifyGridworld(args) => verify_gridworld_command(args),
+        DynamicJepaCommands::VerifyCareerTaxonomy(args) => verify_career_taxonomy_command(args),
     }
 }
 
@@ -2846,10 +2850,15 @@ fn verify_gridworld_command(args: VerifyDomainArgs) -> DynamicJepaResult<Command
     verify_domain_command(VerificationDomain::Gridworld, args)
 }
 
+fn verify_career_taxonomy_command(args: VerifyDomainArgs) -> DynamicJepaResult<CommandOutcome> {
+    verify_domain_command(VerificationDomain::CareerTaxonomy, args)
+}
+
 #[derive(Debug, Clone, Copy)]
 enum VerificationDomain {
     CounterWorld,
     Gridworld,
+    CareerTaxonomy,
 }
 
 impl VerificationDomain {
@@ -2857,6 +2866,7 @@ impl VerificationDomain {
         match self {
             Self::CounterWorld => "counter_world",
             Self::Gridworld => "gridworld_5x5",
+            Self::CareerTaxonomy => "career_taxonomy",
         }
     }
 
@@ -2864,6 +2874,7 @@ impl VerificationDomain {
         match self {
             Self::CounterWorld => "dynamicjepa_verify_counter_world",
             Self::Gridworld => "dynamicjepa_verify_gridworld",
+            Self::CareerTaxonomy => "dynamicjepa_verify_career_taxonomy",
         }
     }
 
@@ -2871,6 +2882,7 @@ impl VerificationDomain {
         match self {
             Self::CounterWorld => "phase10_verify_counter_world",
             Self::Gridworld => "phase10_verify_gridworld",
+            Self::CareerTaxonomy => "mejepa_research_smoke_career_taxonomy",
         }
     }
 
@@ -2888,6 +2900,9 @@ impl VerificationDomain {
         match self {
             Self::CounterWorld => fixtures_root.join("verification/tiny_train_config.json"),
             Self::Gridworld => fixtures_root.join("verification/gridworld_5x5_train_config.json"),
+            Self::CareerTaxonomy => {
+                fixtures_root.join("verification/career_taxonomy_train_config.json")
+            }
         }
     }
 
@@ -2895,12 +2910,24 @@ impl VerificationDomain {
         match self {
             Self::CounterWorld => write_generated_counter_verification_fixture(evidence_dir),
             Self::Gridworld => Ok(fixtures_root.join("verification/gridworld_5x5_corpus.jsonl")),
+            Self::CareerTaxonomy => {
+                Ok(fixtures_root.join("verification/career_taxonomy_smoke.jsonl"))
+            }
         }
     }
 
-    fn edge_fixtures(self, fixtures_root: &Path) -> [(&'static str, PathBuf, EdgeExpectation); 3] {
+    fn data_manifest_path(self, fixtures_root: &Path) -> Option<PathBuf> {
         match self {
-            Self::CounterWorld => [
+            Self::CareerTaxonomy => {
+                Some(fixtures_root.join("verification/career_taxonomy_data_manifest.json"))
+            }
+            _ => None,
+        }
+    }
+
+    fn edge_fixtures(self, fixtures_root: &Path) -> Vec<(&'static str, PathBuf, EdgeExpectation)> {
+        match self {
+            Self::CounterWorld => vec![
                 (
                     "empty_input",
                     fixtures_root.join("verification/counter_world_edge_empty_input.jsonl"),
@@ -2917,7 +2944,7 @@ impl VerificationDomain {
                     EdgeExpectation::failed_adapter(),
                 ),
             ],
-            Self::Gridworld => [
+            Self::Gridworld => vec![
                 (
                     "empty_input",
                     fixtures_root.join("verification/gridworld_5x5_edge_empty.jsonl"),
@@ -2931,6 +2958,33 @@ impl VerificationDomain {
                 (
                     "oob_state",
                     fixtures_root.join("verification/gridworld_5x5_edge_oob_state.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+            ],
+            Self::CareerTaxonomy => vec![
+                (
+                    "empty_input",
+                    fixtures_root.join("verification/career_taxonomy_edge_empty.jsonl"),
+                    EdgeExpectation::empty_input(),
+                ),
+                (
+                    "missing_source_license",
+                    fixtures_root.join("verification/career_taxonomy_edge_missing_license.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+                (
+                    "invalid_action",
+                    fixtures_root.join("verification/career_taxonomy_edge_invalid_action.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+                (
+                    "wrong_skill_vector_dim",
+                    fixtures_root.join("verification/career_taxonomy_edge_wrong_vector_dim.jsonl"),
+                    EdgeExpectation::failed_adapter(),
+                ),
+                (
+                    "oob_job_zone",
+                    fixtures_root.join("verification/career_taxonomy_edge_oob_job_zone.jsonl"),
                     EdgeExpectation::failed_adapter(),
                 ),
             ],
@@ -2976,6 +3030,18 @@ impl VerificationDomain {
                 counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 24000);
                 counts.insert(CF_DJ_LATENT_PANELS.to_string(), 8000);
                 counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1000);
+            }
+            Self::CareerTaxonomy => {
+                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 10);
+                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 19);
+                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 19);
+                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 15);
+                counts.insert(CF_DJ_ACTIONS.to_string(), 20);
+                counts.insert(CF_DJ_OUTCOMES.to_string(), 15);
+                counts.insert(CF_DJ_TRANSITIONS.to_string(), 15);
+                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 150);
+                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 15);
+                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1);
             }
         }
         counts
@@ -3291,6 +3357,46 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     ctx.add_fixture_hash(&domain_path)?;
     ctx.add_fixture_hash(&corpus_path)?;
     ctx.add_fixture_hash(&train_config)?;
+    if let Some(manifest_path) = ctx.domain.data_manifest_path(&ctx.fixtures_root) {
+        ctx.add_fixture_hash(&manifest_path)?;
+        let manifest_json: Value =
+            serde_json::from_slice(&fs::read(&manifest_path).map_err(|err| {
+                DynamicJepaError::validation(
+                    "verify.data_manifest",
+                    format!(
+                        "failed to read data manifest {}: {err}",
+                        manifest_path.display()
+                    ),
+                    "provide a checked-in data manifest with source URL and license fields",
+                )
+            })?)
+            .map_err(|err| {
+                DynamicJepaError::validation(
+                    "verify.data_manifest",
+                    format!(
+                        "failed to parse data manifest {}: {err}",
+                        manifest_path.display()
+                    ),
+                    "fix the data manifest JSON before running research smoke",
+                )
+            })?;
+        for field in [
+            "name",
+            "source_urls",
+            "license",
+            "local_fixture",
+            "allowed_use",
+        ] {
+            if manifest_json.get(field).is_none() {
+                return Err(ctx.fail(format!(
+                    "data manifest {} is missing required field {field}",
+                    manifest_path.display()
+                )));
+            }
+        }
+        ctx.decoded
+            .insert("data_manifest".to_string(), manifest_json);
+    }
     for (_, path, _) in ctx.domain.edge_fixtures(&ctx.fixtures_root) {
         ctx.add_fixture_hash(&path)?;
     }
@@ -3372,6 +3478,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     let expected_panel_count = match ctx.domain {
         VerificationDomain::CounterWorld => 60,
         VerificationDomain::Gridworld => 8000,
+        VerificationDomain::CareerTaxonomy => 15,
     };
     assert_json_u64(
         ctx,
@@ -3398,6 +3505,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     let expected_trajectory_count = match ctx.domain {
         VerificationDomain::CounterWorld => 1,
         VerificationDomain::Gridworld => 1000,
+        VerificationDomain::CareerTaxonomy => 1,
     };
     assert_json_u64(
         ctx,
@@ -3944,6 +4052,11 @@ fn expected_split_counts(domain: VerificationDomain) -> BTreeMap<String, u64> {
             ("val".to_string(), 1330),
             ("test".to_string(), 693),
         ]),
+        VerificationDomain::CareerTaxonomy => BTreeMap::from([
+            ("train".to_string(), 9),
+            ("val".to_string(), 3),
+            ("test".to_string(), 2),
+        ]),
     }
 }
 
@@ -3968,6 +4081,13 @@ fn assert_training_metrics(ctx: &VerificationContext, train: &Value) -> DynamicJ
             if val_mse > 0.04 || val_cosine < 0.95 || action_contrast < 0.95 {
                 return Err(ctx.fail(format!(
                     "gridworld metrics outside gate: val_latent_mse={val_mse} val_latent_cosine={val_cosine} val_action_contrast_acc={action_contrast}"
+                )));
+            }
+        }
+        VerificationDomain::CareerTaxonomy => {
+            if val_mse > 0.25 || val_cosine < 0.70 {
+                return Err(ctx.fail(format!(
+                    "career_taxonomy metrics outside smoke gate: val_latent_mse={val_mse} val_latent_cosine={val_cosine}"
                 )));
             }
         }
@@ -6149,6 +6269,7 @@ fn coerce_json_value(
                     expected_kind: "f64".to_string(),
                     actual_kind: actual_json_kind(item),
                 })?;
+                validate_numeric_bounds(value, field, &format!("{field_path}[{idx}]"))?;
                 out.push(value as f32);
             }
             FieldValue::Vector(out)
@@ -6651,6 +6772,54 @@ fn execute_instrument(
         InstrumentKind::Onehot { dim } => {
             let idx = compound_onehot_index(*dim, &inputs, spec, state.source_event_id)?;
             onehot(*dim, idx)?
+        }
+        InstrumentKind::Vector { dim } => {
+            if inputs.len() != 1 {
+                return Err(instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    "vector instrument requires exactly one input field",
+                    spec.input_fields.join(","),
+                ));
+            }
+            let vector = match &inputs[0].1 {
+                FieldValue::Vector(values) => values,
+                other => {
+                    return Err(instrument_failed(
+                        spec,
+                        state.source_event_id,
+                        format!(
+                            "vector input {} is {} not vector",
+                            inputs[0].0,
+                            field_value_kind(other)
+                        ),
+                        inputs[0].0.clone(),
+                    ));
+                }
+            };
+            if vector.len() != *dim {
+                return Err(instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    format!(
+                        "vector input {} expected dim {dim}, got {}",
+                        inputs[0].0,
+                        vector.len()
+                    ),
+                    inputs[0].0.clone(),
+                ));
+            }
+            let mut out = Vec::with_capacity(*dim);
+            for (idx, value) in vector.iter().enumerate() {
+                validate_instrument_numeric(
+                    spec,
+                    *value as f64,
+                    &format!("{}[{idx}]", inputs[0].0),
+                    state.source_event_id,
+                )?;
+                out.push(normalize_value(*value as f64, &spec.normalization)? as f32);
+            }
+            out
         }
         InstrumentKind::Time { encoding } => {
             if inputs.len() != 1 {
@@ -7389,6 +7558,10 @@ fn instrument_kind_from_toml(kind: TomlKind, field: &str) -> DynamicJepaResult<I
     match kind {
         TomlKind::Name(name) => match name.as_str() {
             "scalar" => Ok(InstrumentKind::Scalar),
+            "vector" => Err(toml_validation_error(
+                field,
+                "vector instrument kind must declare dim: kind = { type = \"vector\", dim = N }",
+            )),
             other => Err(toml_validation_error(
                 field,
                 format!("unsupported instrument kind name {other:?}"),
@@ -7404,6 +7577,11 @@ fn instrument_kind_from_toml(kind: TomlKind, field: &str) -> DynamicJepaResult<I
             "onehot" => Ok(InstrumentKind::Onehot {
                 dim: table.dim.ok_or_else(|| {
                     toml_validation_error(field, "onehot instrument kind missing dim")
+                })?,
+            }),
+            "vector" => Ok(InstrumentKind::Vector {
+                dim: table.dim.ok_or_else(|| {
+                    toml_validation_error(field, "vector instrument kind missing dim")
                 })?,
             }),
             "time" => {

@@ -1,0 +1,11 @@
+{
+  "name": "career_taxonomy_smoke_v1",
+  "source_urls": [
+    "https://www.onetcenter.org/database.html",
+    "https://esco.ec.europa.eu/en/use-esco/download"
+  ],
+  "license": "Public O*NET/ESCO taxonomy-source references are recorded for the smoke benchmark. This fixture is a controlled career-taxonomy path, not a private recruiting dataset.",
+  "local_fixture": "configs/dynamicjepa/verification/career_taxonomy_smoke.jsonl",
+  "allowed_use": "research-demo",
+  "provenance_notes": "Controlled public-taxonomy transition fixture for Dynamic/ME-JEPA smoke verification. Do not describe this as licensed real recruiting history."
+}

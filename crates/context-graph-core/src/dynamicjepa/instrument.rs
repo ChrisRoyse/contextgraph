@@ -25,6 +25,7 @@ pub enum InstrumentKind {
     Scalar,
     Categorical { variants: Vec<String> },
     Onehot { dim: usize },
+    Vector { dim: usize },
     Time { encoding: TimeEncoding },
 }
 
@@ -109,6 +110,15 @@ impl Validate for InstrumentSpec {
                 }
             }
             InstrumentKind::Onehot { dim } => {
+                if *dim == 0 || self.output_shape != [*dim] {
+                    return Err(DynamicJepaError::PanelShapeMismatch {
+                        domain_pack_id: "instrument_spec".to_string(),
+                        expected: vec![*dim],
+                        actual: self.output_shape.clone(),
+                    });
+                }
+            }
+            InstrumentKind::Vector { dim } => {
                 if *dim == 0 || self.output_shape != [*dim] {
                     return Err(DynamicJepaError::PanelShapeMismatch {
                         domain_pack_id: "instrument_spec".to_string(),
