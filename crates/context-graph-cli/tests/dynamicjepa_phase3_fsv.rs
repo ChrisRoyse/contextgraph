@@ -104,7 +104,10 @@ fn dynamicjepa_phase3_cli_fsv_real_rocksdb() {
         &counter,
         "--json",
     ]);
-    assert_eq!(counter_registration["created_ids"]["domain_pack_id"], "counter_world");
+    assert_eq!(
+        counter_registration["created_ids"]["domain_pack_id"],
+        "counter_world"
+    );
     assert_eq!(
         counter_registration["decoded_records"]["domain_pack"]["instrument_specs"]
             .as_array()
@@ -114,8 +117,7 @@ fn dynamicjepa_phase3_cli_fsv_real_rocksdb() {
     );
     evidence.push(json!({"step": "register_counter_world", "output": counter_registration}));
 
-    let counts_after_counter =
-        run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    let counts_after_counter = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
     assert_eq!(count(&counts_after_counter, "dj_domain_packs"), 1);
     assert_eq!(count(&counts_after_counter, "dj_domain_pack_by_nv"), 1);
     assert_eq!(count(&counts_after_counter, "dj_instrument_registry"), 2);
@@ -130,7 +132,7 @@ fn dynamicjepa_phase3_cli_fsv_real_rocksdb() {
         &db,
         "--id",
         "counter_world",
-        "--version",
+        "--domain-version",
         "1.0.0",
         "--json",
     ]);
@@ -274,7 +276,11 @@ fn dynamicjepa_phase3_cli_fsv_real_rocksdb() {
     let before_unknown = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
     let unknown_text = fs::read_to_string(&counter)
         .expect("read counter TOML")
-        .replacen("id = \"counter_world\"", "id = \"counter_world_unknown\"", 1)
+        .replacen(
+            "id = \"counter_world\"",
+            "id = \"counter_world_unknown\"",
+            1,
+        )
         .replacen(
             "schema_version = 1",
             "schema_version = 1\nunknown_phase3_key = true",

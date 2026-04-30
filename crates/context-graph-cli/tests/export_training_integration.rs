@@ -26,6 +26,7 @@ use context_graph_core::training::{
     compute_cross_correlations, compute_group_alignments, CausalLabel, TrainingEdge,
     TrainingRecord, NUM_CROSS_CORRELATIONS,
 };
+use context_graph_core::types::fingerprint::E14_DIM;
 use context_graph_storage::teleological::{
     decode_training_record, RocksDbTeleologicalStore, TeleologicalStoreConfig,
 };
@@ -71,6 +72,7 @@ fn synthetic_record(content: &str, topic_peaks: &[(usize, f32)]) -> TrainingReco
         e10_paraphrase: Vec::new(),
         e10_context: Vec::new(),
         e11_entity: Vec::new(),
+        e14_bge_m3_dense: vec![0.14; E14_DIM],
         e6_sparse_indices: vec![7, 42, 100],
         e6_sparse_values: vec![0.9, 0.5, 0.1],
         e13_splade_indices: Vec::new(),

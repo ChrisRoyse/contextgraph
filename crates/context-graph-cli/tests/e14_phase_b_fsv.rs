@@ -198,7 +198,7 @@ fn fsv_b5_mcp_embedder_id_recognises_e14() {
     ];
 
     for (input, expected) in cases {
-        let got = EmbedderId::from_str(input);
+        let got = EmbedderId::parse(input);
         println!(
             "  from_str({:?}) -> {:?} (expected {:?})",
             input, got, expected

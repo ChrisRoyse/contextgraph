@@ -18,8 +18,8 @@ use context_graph_core::dynamicjepa::{
     TimeEncoding, TimeSchema, VerificationPolicy, DOMAIN_PACK_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
-    CF_DJ_ADAPTER_REGISTRY, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS,
-    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_REGISTRY, DJ_CF_NAMES,
+    CF_DJ_ADAPTER_REGISTRY, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
+    CF_DJ_INSTRUMENT_REGISTRY, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
@@ -106,8 +106,8 @@ pub struct GetDomainArgs {
     pub id: String,
 
     /// Domain pack version. Phase 0 fixtures use 1.0.0.
-    #[arg(long, default_value = "1.0.0")]
-    pub version: String,
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
 
     /// Emit one machine-readable JSON object.
     #[arg(long)]
@@ -164,7 +164,11 @@ pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
                 return 1;
             }
             if outcome.exit_code == 0 {
-                info!(operation, status = "ok", "DynamicJEPA CLI command completed");
+                info!(
+                    operation,
+                    status = "ok",
+                    "DynamicJEPA CLI command completed"
+                );
             } else {
                 error!(
                     operation,
@@ -238,12 +242,10 @@ fn register_domain(args: RegisterDomainArgs) -> DynamicJepaResult<CommandOutcome
                 key: uuid_key(domain_pack_uuid).to_vec(),
             }
         })?;
-        let by_name_version =
-            get_domain_pack(db, &domain_pack.id, &domain_pack.version)?.ok_or_else(|| {
-                DynamicJepaError::SourceOfTruthMissing {
-                    cf: CF_DJ_DOMAIN_PACK_BY_NAME_VERSION.to_string(),
-                    key: name_version_key(&domain_pack.id, &domain_pack.version).to_vec(),
-                }
+        let by_name_version = get_domain_pack(db, &domain_pack.id, &domain_pack.version)?
+            .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_DOMAIN_PACK_BY_NAME_VERSION.to_string(),
+                key: name_version_key(&domain_pack.id, &domain_pack.version).to_vec(),
             })?;
 
         if primary != domain_pack || by_name_version != domain_pack {
@@ -281,12 +283,13 @@ fn register_domain(args: RegisterDomainArgs) -> DynamicJepaResult<CommandOutcome
 
         let mut adapter_records = Vec::with_capacity(domain_pack.adapter_specs.len());
         for spec in &domain_pack.adapter_specs {
-            let stored = get_adapter_spec(db, domain_pack_uuid, &spec.adapter_id)?.ok_or_else(
-                || DynamicJepaError::SourceOfTruthMissing {
-                    cf: CF_DJ_ADAPTER_REGISTRY.to_string(),
-                    key: adapter_registry_key(domain_pack_uuid, &spec.adapter_id).to_vec(),
-                },
-            )?;
+            let stored =
+                get_adapter_spec(db, domain_pack_uuid, &spec.adapter_id)?.ok_or_else(|| {
+                    DynamicJepaError::SourceOfTruthMissing {
+                        cf: CF_DJ_ADAPTER_REGISTRY.to_string(),
+                        key: adapter_registry_key(domain_pack_uuid, &spec.adapter_id).to_vec(),
+                    }
+                })?;
             if stored != *spec {
                 return Err(DynamicJepaError::StorageInvariantViolation {
                     message: format!(
@@ -364,7 +367,7 @@ fn register_domain(args: RegisterDomainArgs) -> DynamicJepaResult<CommandOutcome
                 "source_of_truth": source_cfs,
                 "before_counts": before_counts,
                 "after_counts": after_counts,
-                "count_delta": count_delta(&before_counts, &after_counts),
+                "count_delta": count_delta(&before_counts, &after_counts)?,
                 "created_ids": decoded_records["created_ids"].clone(),
                 "decoded_records": decoded_records["decoded_records"].clone(),
             }),
@@ -422,7 +425,7 @@ fn get_domain(args: GetDomainArgs) -> DynamicJepaResult<CommandOutcome> {
     let db_path = canonical_existing_path(&args.db, "get-domain.db")?;
     let counts = snapshot_dj_counts(db)?;
     let id = DomainPackId::new(args.id.clone())?;
-    let record = get_domain_pack(db, &id, &args.version)?;
+    let record = get_domain_pack(db, &id, &args.domain_version)?;
     match record {
         Some(record) => Ok(CommandOutcome {
             value: json!({
@@ -446,7 +449,7 @@ fn get_domain(args: GetDomainArgs) -> DynamicJepaResult<CommandOutcome> {
                 "counts": counts,
                 "queried": {
                     "id": args.id,
-                    "version": args.version,
+                    "version": args.domain_version,
                 },
                 "remediation": "register the domain pack with dynamicjepa register-domain before reading it",
             }),
@@ -786,7 +789,9 @@ fn normalization_from_toml(
     }
 }
 
-fn candidate_actions_from_toml(value: CandidateActionsToml) -> DynamicJepaResult<CandidateActionConfig> {
+fn candidate_actions_from_toml(
+    value: CandidateActionsToml,
+) -> DynamicJepaResult<CandidateActionConfig> {
     if value.kind != "enumerated" {
         return Err(toml_validation_error(
             "planner_policy.candidate_actions.kind",
@@ -870,18 +875,28 @@ fn resolve_dynamic_cf_name(name: &str) -> DynamicJepaResult<&'static str> {
 fn count_delta(
     before: &BTreeMap<String, u64>,
     after: &BTreeMap<String, u64>,
-) -> BTreeMap<String, i64> {
+) -> DynamicJepaResult<BTreeMap<String, i64>> {
     let mut delta = BTreeMap::new();
     for (cf, before_count) in before {
-        let after_count = after.get(cf).copied().unwrap_or(0);
+        let after_count =
+            after
+                .get(cf)
+                .copied()
+                .ok_or_else(|| DynamicJepaError::StorageInvariantViolation {
+                    message: format!("after-count snapshot missing DynamicJEPA column family {cf}"),
+                })?;
         delta.insert(cf.clone(), after_count as i64 - *before_count as i64);
     }
-    for (cf, after_count) in after {
+    for cf in after.keys() {
         if !before.contains_key(cf) {
-            delta.insert(cf.clone(), *after_count as i64);
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!(
+                    "after-count snapshot contained unexpected DynamicJEPA column family {cf}"
+                ),
+            });
         }
     }
-    delta
+    Ok(delta)
 }
 
 fn error_value(
@@ -978,13 +993,15 @@ fn print_json(value: &Value) -> Result<(), serde_json::Error> {
 }
 
 fn now_unix_ms() -> DynamicJepaResult<i64> {
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|err| {
-        DynamicJepaError::validation(
-            "system_clock",
-            format!("system clock is before Unix epoch: {err}"),
-            "fix host clock before writing timestamped DynamicJEPA records",
-        )
-    })?;
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| {
+            DynamicJepaError::validation(
+                "system_clock",
+                format!("system clock is before Unix epoch: {err}"),
+                "fix host clock before writing timestamped DynamicJEPA records",
+            )
+        })?;
     Ok(duration.as_millis() as i64)
 }
 
@@ -998,10 +1015,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn toml_validation_error(
-    field: impl Into<String>,
-    message: impl Into<String>,
-) -> DynamicJepaError {
+fn toml_validation_error(field: impl Into<String>, message: impl Into<String>) -> DynamicJepaError {
     DynamicJepaError::validation(
         field,
         message,
