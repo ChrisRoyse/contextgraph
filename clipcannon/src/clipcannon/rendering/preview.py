@@ -4,6 +4,7 @@ Renders a short (2-5 second) preview of an edit at low quality
 for rapid validation before committing to a full render.
 No credits charged for previews.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +30,7 @@ PREVIEW_PRESET = "ultrafast"
 @dataclass
 class PreviewResult:
     """Result of a preview render."""
+
     preview_path: Path
     duration_ms: int
     file_size_bytes: int
@@ -79,28 +81,34 @@ async def render_preview(
     filters: list[str] = []
     if crop_filter:
         filters.append(crop_filter)
-    filters.append(
-        f"scale={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}"
-        f":force_original_aspect_ratio=decrease"
-    )
-    filters.append(
-        f"pad={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black"
-    )
+    filters.append(f"scale={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}:force_original_aspect_ratio=decrease")
+    filters.append(f"pad={PREVIEW_WIDTH}:{PREVIEW_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black")
     filter_str = ",".join(filters)
 
     # Render preview
     cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{start_s:.3f}",
-        "-i", str(source_path),
-        "-t", f"{dur_s:.3f}",
-        "-vf", filter_str,
-        "-c:v", "libx264",
-        "-preset", PREVIEW_PRESET,
-        "-b:v", PREVIEW_BITRATE,
-        "-c:a", "aac",
-        "-b:a", "64k",
-        "-movflags", "+faststart",
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-i",
+        str(source_path),
+        "-t",
+        f"{dur_s:.3f}",
+        "-vf",
+        filter_str,
+        "-c:v",
+        "libx264",
+        "-preset",
+        PREVIEW_PRESET,
+        "-b:v",
+        PREVIEW_BITRATE,
+        "-c:a",
+        "aac",
+        "-b:a",
+        "64k",
+        "-movflags",
+        "+faststart",
         str(preview_path),
     ]
 
@@ -115,19 +123,21 @@ async def render_preview(
 
     if proc.returncode != 0:
         err = stderr.decode(errors="replace")[-500:]
-        raise RuntimeError(
-            f"Preview render failed (exit {proc.returncode}): {err}"
-        )
+        raise RuntimeError(f"Preview render failed (exit {proc.returncode}): {err}")
 
     if not preview_path.exists():
         raise RuntimeError("Preview render completed but output file missing")
 
     # Generate thumbnail (first frame)
     thumb_cmd = [
-        "ffmpeg", "-y",
-        "-i", str(preview_path),
-        "-frames:v", "1",
-        "-q:v", "5",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(preview_path),
+        "-frames:v",
+        "1",
+        "-q:v",
+        "5",
         str(thumb_path),
     ]
     proc = await asyncio.create_subprocess_exec(
@@ -139,9 +149,7 @@ async def render_preview(
 
     thumb_b64 = ""
     if thumb_path.exists():
-        thumb_b64 = base64.b64encode(
-            thumb_path.read_bytes()
-        ).decode("ascii")
+        thumb_b64 = base64.b64encode(thumb_path.read_bytes()).decode("ascii")
 
     return PreviewResult(
         preview_path=preview_path,

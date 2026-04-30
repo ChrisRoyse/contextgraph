@@ -117,6 +117,23 @@ __pycache__/
 *.pyd
 .Python
 *.so
+clipcannon/.venv/
+clipcannon/.pytest_cache/
+clipcannon/.ruff_cache/
+clipcannon/tmp/
+clipcannon/models/*
+!clipcannon/models/README.md
+!clipcannon/models/models_config.toml
+clipcannon/models/**/*.safetensors
+clipcannon/models/**/*.bin
+clipcannon/models/**/*.pt
+clipcannon/models/**/*.onnx
+clipcannon/models/**/*.h5
+clipcannon/models/**/*.pb
+clipcannon/models/**/*.tflite
+clipcannon/models/**/*.pth
+clipcannon/models/**/*.ckpt
+clipcannon/models/**/*.msgpack
 
 # HuggingFace cache and ML training artifacts
 .cache/

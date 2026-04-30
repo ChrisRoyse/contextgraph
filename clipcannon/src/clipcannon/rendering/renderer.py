@@ -76,8 +76,11 @@ def _probe_duration_ms(video_path: Path) -> int:
 
     result = subprocess.run(
         [
-            "ffprobe", "-v", "quiet",
-            "-print_format", "json",
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
             "-show_format",
             str(video_path),
         ],
@@ -161,7 +164,9 @@ def _scale_ass_file(
     output_path.write_text("\n".join(scaled_lines) + "\n")
     logger.info(
         "Scaled ASS timestamps by %.5f: %s -> %s",
-        scale, ass_path.name, output_path.name,
+        scale,
+        ass_path.name,
+        output_path.name,
     )
     return output_path
 
@@ -187,9 +192,7 @@ def _parse_sfx_offset_ms(raw_params: object) -> int:
     import json
 
     try:
-        parsed = json.loads(raw_params) if isinstance(
-            raw_params, str
-        ) else raw_params
+        parsed = json.loads(raw_params) if isinstance(raw_params, str) else raw_params
         return int(parsed.get("params", {}).get("start_ms", 0))
     except (ValueError, TypeError, AttributeError):
         return 0
@@ -353,19 +356,28 @@ class RenderEngine:
             file_size = output_path.stat().st_size
             output_hash = sha256_file(output_path)
             total_duration = compute_total_duration(edl.segments)
-            render_duration_ms = int(
-                (time.monotonic() - start_time) * 1000
-            )
+            render_duration_ms = int((time.monotonic() - start_time) * 1000)
 
             thumb_path = await self._generate_thumb(
-                source_path, edl, profile, crop_region,
-                total_duration, render_dir, render_id,
+                source_path,
+                edl,
+                profile,
+                crop_region,
+                total_duration,
+                render_dir,
+                render_id,
             )
 
             prov_id = self._record_provenance(
-                db_path, edl, source_path, output_path,
-                output_hash, file_size, render_duration_ms,
-                render_id, profile,
+                db_path,
+                edl,
+                source_path,
+                output_path,
+                output_hash,
+                file_size,
+                render_duration_ms,
+                render_id,
+                profile,
             )
 
             self._update_db(
@@ -384,7 +396,9 @@ class RenderEngine:
 
             logger.info(
                 "Render %s completed in %dms (%d bytes)",
-                render_id, render_duration_ms, file_size,
+                render_id,
+                render_duration_ms,
+                file_size,
             )
 
             return RenderResult(
@@ -406,7 +420,9 @@ class RenderEngine:
             error_msg = str(exc)
             logger.exception(
                 "Render %s failed after %dms: %s",
-                render_id, elapsed, error_msg,
+                render_id,
+                elapsed,
+                error_msg,
                 extra=log_ctx,
             )
             return RenderResult(
@@ -462,8 +478,7 @@ class RenderEngine:
         db_sha256 = str(row["source_sha256"])
         if edl.source_sha256 and edl.source_sha256 != db_sha256:
             raise PipelineError(
-                f"Source SHA-256 mismatch: EDL={edl.source_sha256!r}, "
-                f"DB={db_sha256!r}",
+                f"Source SHA-256 mismatch: EDL={edl.source_sha256!r}, DB={db_sha256!r}",
                 stage_name="rendering",
                 operation="source_validation",
             )
@@ -553,7 +568,8 @@ class RenderEngine:
         ass_path.write_text(ass_content, encoding="utf-8")
         logger.info(
             "Render %s: wrote captions ASS (%d chunks)",
-            render_id, len(edl.captions.chunks),
+            render_id,
+            len(edl.captions.chunks),
         )
         return ass_path
 
@@ -636,9 +652,7 @@ class RenderEngine:
                 import shutil
                 import tempfile
 
-                with tempfile.TemporaryDirectory(
-                    prefix="cc_single_"
-                ) as tmpdir:
+                with tempfile.TemporaryDirectory(prefix="cc_single_") as tmpdir:
                     single_temp = Path(tmpdir)
                     raw_output = single_temp / "raw.mp4"
 
@@ -658,22 +672,33 @@ class RenderEngine:
                     await self._execute_ffmpeg(cmd, render_id)
 
                     mixed = await self._prepare_mixed_audio(
-                        edl, db_path, raw_output, single_temp,
+                        edl,
+                        db_path,
+                        raw_output,
+                        single_temp,
                         render_id,
                     )
                     if mixed is not None:
                         audio_cmd: list[str] = [
-                            "ffmpeg", "-y",
-                            "-i", str(raw_output),
-                            "-i", str(mixed),
-                            "-map", "0:v", "-map", "1:a",
-                            "-c:v", "copy",
-                            "-c:a", "aac", "-b:a", "192k",
+                            "ffmpeg",
+                            "-y",
+                            "-i",
+                            str(raw_output),
+                            "-i",
+                            str(mixed),
+                            "-map",
+                            "0:v",
+                            "-map",
+                            "1:a",
+                            "-c:v",
+                            "copy",
+                            "-c:a",
+                            "aac",
+                            "-b:a",
+                            "192k",
                             str(output_path),
                         ]
-                        await self._execute_ffmpeg(
-                            audio_cmd, f"{render_id}_audio_mix"
-                        )
+                        await self._execute_ffmpeg(audio_cmd, f"{render_id}_audio_mix")
                     else:
                         shutil.move(str(raw_output), str(output_path))
             else:
@@ -709,6 +734,7 @@ class RenderEngine:
         cache_conn = None
         if db_path is not None:
             import sqlite3
+
             cache_conn = sqlite3.connect(str(db_path))
             ensure_segment_cache_table(cache_conn)
 
@@ -720,27 +746,20 @@ class RenderEngine:
 
                 # Overlays: only include overlays that fall within this
                 # segment's output time range, remapped to local times
-                seg_start_output_ms = sum(
-                    s.output_duration_ms for s in segments[:i]
-                )
-                seg_end_output_ms = (
-                    seg_start_output_ms + seg.output_duration_ms
-                )
+                seg_start_output_ms = sum(s.output_duration_ms for s in segments[:i])
+                seg_end_output_ms = seg_start_output_ms + seg.output_duration_ms
                 seg_overlays = None
                 if edl.overlays:
                     matching = [
                         ov
                         for ov in edl.overlays
-                        if ov.start_ms < seg_end_output_ms
-                        and ov.end_ms > seg_start_output_ms
+                        if ov.start_ms < seg_end_output_ms and ov.end_ms > seg_start_output_ms
                     ]
                     if matching:
                         remapped = []
                         for ov in matching:
                             ov_copy = deepcopy(ov)
-                            ov_copy.start_ms = max(
-                                0, ov.start_ms - seg_start_output_ms
-                            )
+                            ov_copy.start_ms = max(0, ov.start_ms - seg_start_output_ms)
                             ov_copy.end_ms = min(
                                 seg_end_output_ms - seg_start_output_ms,
                                 ov.end_ms - seg_start_output_ms,
@@ -772,8 +791,7 @@ class RenderEngine:
 
                 if not cache_hit:
                     logger.info(
-                        "Render %s: segment %d/%d CACHE MISS, "
-                        "rendering (%d-%dms)",
+                        "Render %s: segment %d/%d CACHE MISS, rendering (%d-%dms)",
                         render_id,
                         i + 1,
                         len(segments),
@@ -798,14 +816,9 @@ class RenderEngine:
                         overlays=seg_overlays,
                         removals=edl.removals or None,
                     )
-                    await self._execute_ffmpeg(
-                        cmd, f"{render_id}_seg{i}"
-                    )
+                    await self._execute_ffmpeg(cmd, f"{render_id}_seg{i}")
 
-                    if (
-                        not seg_output.exists()
-                        or seg_output.stat().st_size == 0
-                    ):
+                    if not seg_output.exists() or seg_output.stat().st_size == 0:
                         raise PipelineError(
                             f"Segment {i} render produced no output",
                             stage_name="rendering",
@@ -856,19 +869,27 @@ class RenderEngine:
             # and audio-mixing paths need the intermediate output.
             concat_raw = temp_dir / "concat_raw.mp4"
             concat_cmd: list[str] = [
-                "ffmpeg", "-y",
-                "-f", "concat", "-safe", "0",
-                "-i", str(concat_list),
-                "-c", "copy",
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_list),
+                "-c",
+                "copy",
                 str(concat_raw),
             ]
-            await self._execute_ffmpeg(
-                concat_cmd, f"{render_id}_concat"
-            )
+            await self._execute_ffmpeg(concat_cmd, f"{render_id}_concat")
 
             # Mix audio assets (music, SFX) into the output if any
             mixed_audio = await self._prepare_mixed_audio(
-                edl, db_path, concat_raw, temp_dir, render_id,
+                edl,
+                db_path,
+                concat_raw,
+                temp_dir,
+                render_id,
             )
 
             if ass_path is not None:
@@ -885,9 +906,10 @@ class RenderEngine:
                 if abs(drift_ms) > 50:
                     scale = actual_ms / expected_ms
                     logger.info(
-                        "Render %s: caption drift %+dms detected, "
-                        "scaling ASS by %.5f",
-                        render_id, drift_ms, scale,
+                        "Render %s: caption drift %+dms detected, scaling ASS by %.5f",
+                        render_id,
+                        drift_ms,
+                        scale,
                     )
                     caption_ass = _scale_ass_file(
                         ass_path,
@@ -900,45 +922,69 @@ class RenderEngine:
                 if mixed_audio is not None:
                     # Burn captions + replace audio with mix
                     caption_cmd: list[str] = [
-                        "ffmpeg", "-y",
-                        "-i", str(concat_raw),
-                        "-i", str(mixed_audio),
-                        "-vf", f"subtitles='{escaped_ass}'",
-                        "-map", "0:v", "-map", "1:a",
-                        "-c:v", profile.video_codec,
-                        "-b:v", str(profile.video_bitrate),
-                        "-c:a", "aac", "-b:a", "192k",
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(concat_raw),
+                        "-i",
+                        str(mixed_audio),
+                        "-vf",
+                        f"subtitles='{escaped_ass}'",
+                        "-map",
+                        "0:v",
+                        "-map",
+                        "1:a",
+                        "-c:v",
+                        profile.video_codec,
+                        "-b:v",
+                        str(profile.video_bitrate),
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
                         str(output_path),
                     ]
                 else:
                     # Burn captions, copy audio as-is
                     caption_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", str(concat_raw),
-                        "-vf", f"subtitles='{escaped_ass}'",
-                        "-c:v", profile.video_codec,
-                        "-b:v", str(profile.video_bitrate),
-                        "-c:a", "copy",
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(concat_raw),
+                        "-vf",
+                        f"subtitles='{escaped_ass}'",
+                        "-c:v",
+                        profile.video_codec,
+                        "-b:v",
+                        str(profile.video_bitrate),
+                        "-c:a",
+                        "copy",
                         str(output_path),
                     ]
-                await self._execute_ffmpeg(
-                    caption_cmd, f"{render_id}_captions"
-                )
+                await self._execute_ffmpeg(caption_cmd, f"{render_id}_captions")
             else:
                 if mixed_audio is not None:
                     # No captions but mix audio in (copy video stream)
                     audio_cmd: list[str] = [
-                        "ffmpeg", "-y",
-                        "-i", str(concat_raw),
-                        "-i", str(mixed_audio),
-                        "-map", "0:v", "-map", "1:a",
-                        "-c:v", "copy",
-                        "-c:a", "aac", "-b:a", "192k",
+                        "ffmpeg",
+                        "-y",
+                        "-i",
+                        str(concat_raw),
+                        "-i",
+                        str(mixed_audio),
+                        "-map",
+                        "0:v",
+                        "-map",
+                        "1:a",
+                        "-c:v",
+                        "copy",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "192k",
                         str(output_path),
                     ]
-                    await self._execute_ffmpeg(
-                        audio_cmd, f"{render_id}_audio_mix"
-                    )
+                    await self._execute_ffmpeg(audio_cmd, f"{render_id}_audio_mix")
                 else:
                     # No captions, no audio mix: move concat to output
                     shutil.move(str(concat_raw), str(output_path))
@@ -952,9 +998,7 @@ class RenderEngine:
             # Clean up temp segment files
             if temp_dir.exists():
                 shutil.rmtree(temp_dir, ignore_errors=True)
-                logger.debug(
-                    "Cleaned up temp segments: %s", temp_dir
-                )
+                logger.debug("Cleaned up temp segments: %s", temp_dir)
 
     # ----------------------------------------------------------------
     # Segment cache methods
@@ -1004,9 +1048,10 @@ class RenderEngine:
             )
             conn.commit()
             logger.info(
-                "Render %s: segment %d/%d cache file missing, "
-                "removed stale entry (hash=%s...)",
-                render_id, seg_index + 1, seg_count,
+                "Render %s: segment %d/%d cache file missing, removed stale entry (hash=%s...)",
+                render_id,
+                seg_index + 1,
+                seg_count,
                 cache_hash[:12],
             )
             return False
@@ -1014,18 +1059,19 @@ class RenderEngine:
         # Copy cached file to segment output
         shutil.copy2(str(cached_path), str(seg_output))
         conn.execute(
-            "UPDATE segment_cache SET last_used_at = datetime('now') "
-            "WHERE cache_hash = ?",
+            "UPDATE segment_cache SET last_used_at = datetime('now') WHERE cache_hash = ?",
             (cache_hash,),
         )
         conn.commit()
 
         file_mb = cached_path.stat().st_size / 1024 / 1024
         logger.info(
-            "Render %s: segment %d/%d CACHE HIT "
-            "(hash=%s..., %.1f MB)",
-            render_id, seg_index + 1, seg_count,
-            cache_hash[:12], file_mb,
+            "Render %s: segment %d/%d CACHE HIT (hash=%s..., %.1f MB)",
+            render_id,
+            seg_index + 1,
+            seg_count,
+            cache_hash[:12],
+            file_mb,
         )
         return True
 
@@ -1085,10 +1131,12 @@ class RenderEngine:
 
         file_mb = file_size / 1024 / 1024
         logger.info(
-            "Render %s: segment %d/%d cached "
-            "(hash=%s..., %.1f MB)",
-            render_id, seg_index + 1, seg_count,
-            cache_hash[:12], file_mb,
+            "Render %s: segment %d/%d cached (hash=%s..., %.1f MB)",
+            render_id,
+            seg_index + 1,
+            seg_count,
+            cache_hash[:12],
+            file_mb,
         )
 
     # ----------------------------------------------------------------
@@ -1147,7 +1195,8 @@ class RenderEngine:
             if not file_path.exists():
                 logger.warning(
                     "Render %s: audio asset missing: %s",
-                    render_id, file_path,
+                    render_id,
+                    file_path,
                 )
                 continue
 
@@ -1156,31 +1205,33 @@ class RenderEngine:
                 if file_path.suffix.lower() in (".mid", ".midi"):
                     try:
                         from clipcannon.audio.midi_render import render_midi_to_wav
+
                         wav_path = temp_dir / f"{file_path.stem}_rendered.wav"
                         await render_midi_to_wav(file_path, wav_path)
                         if wav_path.exists():
                             file_path = wav_path
                             logger.info(
                                 "Render %s: MIDI rendered to WAV: %s",
-                                render_id, wav_path,
+                                render_id,
+                                wav_path,
                             )
                     except Exception as exc:
                         logger.warning(
-                            "Render %s: MIDI render failed (%s), "
-                            "continuing without music",
-                            render_id, exc,
+                            "Render %s: MIDI render failed (%s), continuing without music",
+                            render_id,
+                            exc,
                         )
                 music_path = file_path
                 music_volume_db = volume_db
             elif asset_type == "sfx":
-                offset_ms = _parse_sfx_offset_ms(
-                    row["generation_params"]
+                offset_ms = _parse_sfx_offset_ms(row["generation_params"])
+                sfx_entries.append(
+                    {
+                        "path": str(file_path),
+                        "offset_ms": offset_ms,
+                        "volume_db": volume_db,
+                    }
                 )
-                sfx_entries.append({
-                    "path": str(file_path),
-                    "offset_ms": offset_ms,
-                    "volume_db": volume_db,
-                })
             elif asset_type == "cleaned":
                 cleanup_path = file_path
 
@@ -1194,19 +1245,23 @@ class RenderEngine:
         # Extract audio from concatenated video
         source_audio = temp_dir / "source_audio.wav"
         extract_cmd: list[str] = [
-            "ffmpeg", "-y",
-            "-i", str(concat_path),
-            "-vn", "-acodec", "pcm_s16le",
-            "-ar", "44100",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(concat_path),
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "44100",
             str(source_audio),
         ]
-        await self._execute_ffmpeg(
-            extract_cmd, f"{render_id}_extract_audio"
-        )
+        await self._execute_ffmpeg(extract_cmd, f"{render_id}_extract_audio")
 
         if not source_audio.exists():
             logger.warning(
-                "Render %s: audio extraction failed", render_id,
+                "Render %s: audio extraction failed",
+                render_id,
             )
             return None
 
@@ -1215,7 +1270,8 @@ class RenderEngine:
         if cleanup_path is not None and cleanup_path.exists():
             logger.info(
                 "Render %s: using cleaned audio as source: %s",
-                render_id, cleanup_path,
+                render_id,
+                cleanup_path,
             )
             mix_source = cleanup_path
 
@@ -1232,7 +1288,9 @@ class RenderEngine:
             )
             logger.info(
                 "Render %s: audio mixed (%d layers, %dms)",
-                render_id, result.layers_mixed, result.duration_ms,
+                render_id,
+                result.layers_mixed,
+                result.duration_ms,
             )
         except Exception:
             logger.exception(
@@ -1264,7 +1322,8 @@ class RenderEngine:
         """
         logger.info(
             "Render %s: executing FFmpeg (%d args)",
-            render_id, len(cmd),
+            render_id,
+            len(cmd),
         )
         logger.debug("FFmpeg command: %s", " ".join(cmd))
 
@@ -1279,7 +1338,9 @@ class RenderEngine:
             stderr_text = stderr.decode("utf-8", errors="replace")
             logger.error(
                 "Render %s: FFmpeg failed (exit %d): %s",
-                render_id, proc.returncode, stderr_text[-500:],
+                render_id,
+                proc.returncode,
+                stderr_text[-500:],
             )
             raise PipelineError(
                 f"FFmpeg render failed (exit {proc.returncode})",
@@ -1395,10 +1456,7 @@ class RenderEngine:
                     duration_ms=render_duration_ms,
                 ),
                 parent_record_id=None,
-                description=(
-                    f"Rendered edit {edl.edit_id} with profile "
-                    f"{profile.name}"
-                ),
+                description=(f"Rendered edit {edl.edit_id} with profile {profile.name}"),
             )
         except Exception:
             logger.warning(
@@ -1486,7 +1544,8 @@ class RenderEngine:
         except Exception as exc:
             logger.error(
                 "Failed to update DB for render %s: %s",
-                render_id, exc,
+                render_id,
+                exc,
             )
             raise
         finally:

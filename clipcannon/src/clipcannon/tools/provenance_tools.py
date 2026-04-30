@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-
-from mcp.types import Tool
+from typing import TYPE_CHECKING
 
 from clipcannon.config import ClipCannonConfig
 from clipcannon.exceptions import ClipCannonError
@@ -19,6 +18,9 @@ from clipcannon.provenance import (
     get_provenance_timeline,
     verify_chain,
 )
+
+if TYPE_CHECKING:
+    from mcp.types import Tool
 
 logger = logging.getLogger(__name__)
 

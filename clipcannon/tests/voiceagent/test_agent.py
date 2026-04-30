@@ -1,6 +1,5 @@
 """Tests for VoiceAgent orchestrator -- config/DB only, no GPU loading."""
 
-
 from voiceagent.agent import AgentLifecycle, VoiceAgent
 from voiceagent.config import VoiceAgentConfig
 
@@ -30,6 +29,7 @@ def test_agent_not_initialized_on_create():
 def test_start_conversation_creates_db_record(tmp_path):
     from voiceagent.db.connection import get_connection
     from voiceagent.db.schema import init_db
+
     db_path = tmp_path / "test.db"
     init_db(db_path)
     agent = VoiceAgent()
@@ -39,9 +39,7 @@ def test_start_conversation_creates_db_record(tmp_path):
     assert conv_id is not None
     assert len(conv_id) == 36  # UUID format
 
-    row = agent._db_conn.execute(
-        "SELECT * FROM conversations WHERE id = ?", (conv_id,)
-    ).fetchone()
+    row = agent._db_conn.execute("SELECT * FROM conversations WHERE id = ?", (conv_id,)).fetchone()
     assert row is not None
     assert row["id"] == conv_id
     assert row["voice_profile"] == "boris"
@@ -52,6 +50,7 @@ def test_start_conversation_creates_db_record(tmp_path):
 def test_log_turn_creates_db_record(tmp_path):
     from voiceagent.db.connection import get_connection
     from voiceagent.db.schema import init_db
+
     db_path = tmp_path / "test.db"
     init_db(db_path)
     agent = VoiceAgent()
@@ -60,9 +59,7 @@ def test_log_turn_creates_db_record(tmp_path):
     conv_id = agent.start_conversation()
     turn_id = agent.log_turn(conv_id, "user", "Hello agent", asr_ms=120.5, total_ms=250.0)
 
-    turn_row = agent._db_conn.execute(
-        "SELECT * FROM turns WHERE id = ?", (turn_id,)
-    ).fetchone()
+    turn_row = agent._db_conn.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
     assert turn_row is not None
     assert turn_row["conversation_id"] == conv_id
     assert turn_row["role"] == "user"
@@ -80,6 +77,7 @@ def test_log_turn_creates_db_record(tmp_path):
 def test_log_multiple_turns_increments_count(tmp_path):
     from voiceagent.db.connection import get_connection
     from voiceagent.db.schema import init_db
+
     db_path = tmp_path / "test.db"
     init_db(db_path)
     agent = VoiceAgent()
@@ -121,7 +119,10 @@ def test_agent_starts_dormant():
 def test_lifecycle_enum_values():
     assert len(AgentLifecycle) == 4
     assert set(s.value for s in AgentLifecycle) == {
-        "dormant", "loading", "active", "unloading",
+        "dormant",
+        "loading",
+        "active",
+        "unloading",
     }
 
 

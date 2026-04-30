@@ -4,9 +4,11 @@ Sits in the pipeline after TTS, intercepts audio frames going to the
 speaker, and feeds them to the AEC filter as the echo reference signal.
 Also tracks bot speaking state for mic gating.
 """
+
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
@@ -16,7 +18,8 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
-from voiceagent.audio.aec_filter import AECFilter
+if TYPE_CHECKING:
+    from voiceagent.audio.aec_filter import AECFilter
 
 logger = logging.getLogger(__name__)
 

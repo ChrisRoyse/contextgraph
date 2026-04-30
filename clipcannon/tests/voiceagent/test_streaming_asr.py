@@ -1,4 +1,5 @@
 """Tests for EndpointDetector and StreamingASR."""
+
 import numpy as np
 import pytest
 
@@ -24,9 +25,9 @@ def test_endpoint_speech_resets_silence():
 def test_endpoint_speech_then_silence_triggers():
     ep = EndpointDetector(silence_ms=600, chunk_ms=200)
     ep.update(is_speech=True)
-    assert ep.update(is_speech=False) is False   # 200ms
-    assert ep.update(is_speech=False) is False   # 400ms
-    assert ep.update(is_speech=False) is True    # 600ms
+    assert ep.update(is_speech=False) is False  # 200ms
+    assert ep.update(is_speech=False) is False  # 400ms
+    assert ep.update(is_speech=False) is True  # 600ms
 
 
 def test_endpoint_exact_threshold():
@@ -47,6 +48,7 @@ def test_endpoint_reset():
 
 # GPU-dependent StreamingASR tests (use session fixture from conftest)
 
+
 @pytest.mark.asyncio
 async def test_silence_returns_none(session_asr):
     result = await session_asr.process_chunk(np.zeros(3200, dtype=np.float32))
@@ -56,6 +58,7 @@ async def test_silence_returns_none(session_asr):
 @pytest.mark.asyncio
 async def test_wrong_chunk_size_raises(session_asr):
     from voiceagent.errors import ASRError
+
     with pytest.raises(ASRError, match="Expected 3200"):
         await session_asr.process_chunk(np.zeros(1600, dtype=np.float32))
 

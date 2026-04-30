@@ -1,4 +1,5 @@
 """Conversation state machine and manager."""
+
 from __future__ import annotations
 
 import logging
@@ -136,17 +137,17 @@ class ConversationManager:
 
         if self._state == ConversationState.LISTENING:
             event = await self._asr.process_chunk(audio)
-            if event is not None and hasattr(event, 'final') and event.final:
+            if event is not None and hasattr(event, "final") and event.final:
                 await self._set_state(ConversationState.THINKING)
                 await self._generate_response(event.text)
 
     def _detect_speech(self, audio: np.ndarray) -> bool:
         """Check if any 512-sample sub-chunk contains speech via VAD."""
         chunk_size = 512
-        if not (hasattr(self._asr, 'vad') and hasattr(self._asr.vad, 'is_speech')):
+        if not (hasattr(self._asr, "vad") and hasattr(self._asr.vad, "is_speech")):
             return False
         for i in range(0, len(audio) - chunk_size + 1, chunk_size):
-            if self._asr.vad.is_speech(audio[i:i + chunk_size]):
+            if self._asr.vad.is_speech(audio[i : i + chunk_size]):
                 return True
         return False
 
@@ -168,10 +169,7 @@ class ConversationManager:
         available = self._voice_switcher.available_voices
         if voice_name not in available:
             voices = ", ".join(available)
-            response = (
-                f"I don't have a voice called {voice_name}. "
-                f"Available voices: {voices}."
-            )
+            response = f"I don't have a voice called {voice_name}. Available voices: {voices}."
         else:
             self._voice_switcher.switch_voice(voice_name)
             response = f"Switched to {voice_name} voice."
@@ -192,9 +190,7 @@ class ConversationManager:
                 return
 
         self._history.append({"role": "user", "content": user_text})
-        messages = self._context.build_messages(
-            self._system_prompt, self._history, user_text
-        )
+        messages = self._context.build_messages(self._system_prompt, self._history, user_text)
 
         # Collect LLM tokens while streaming them to TTS.
         # With enable_thinking=False the model produces no <think> blocks,
@@ -213,11 +209,11 @@ class ConversationManager:
 
         # Signal transport that TTS playback is done.
         # Mic stays muted for POST_SPEECH_GUARD_S to prevent echo.
-        if hasattr(self._transport, 'stop_speaking'):
+        if hasattr(self._transport, "stop_speaking"):
             self._transport.stop_speaking()
 
         # Reset ASR to flush any buffered echo audio
-        if hasattr(self._asr, 'reset'):
+        if hasattr(self._asr, "reset"):
             self._asr.reset()
 
         full_response = "".join(collected_tokens).strip()

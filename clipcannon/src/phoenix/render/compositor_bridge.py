@@ -8,6 +8,7 @@ during Phase 0-1 when frames still originate from cv2.VideoCapture
 In Phase 3 (Gaussian renderer), frames originate on GPU and this
 bridge is no longer needed — operations use CuPy directly.
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,6 @@ import numpy as np
 from phoenix.errors import CompositorError
 from phoenix.render.cupy_compositor import (
     alpha_blend_gpu,
-    brightness_jitter_gpu,
     film_grain_gpu,
     paste_face_region_gpu,
     resize_gpu,
@@ -81,7 +81,13 @@ def gpu_composite_face(
 
     # Paste onto base frame
     result_gpu = paste_face_region_gpu(
-        base_gpu, face_resized, x, y, w, h, alpha=blend_alpha,
+        base_gpu,
+        face_resized,
+        x,
+        y,
+        w,
+        h,
+        alpha=blend_alpha,
     )
 
     result = _to_cpu(result_gpu)

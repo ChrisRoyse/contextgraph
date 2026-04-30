@@ -6,19 +6,24 @@ to a callback. Maintains a rolling audio buffer for continuous recognition.
 Uses the same model as the voice agent (large-v3-turbo) but in batch mode
 rather than Pipecat's streaming mode.
 """
+
 from __future__ import annotations
 
 import gc
 import logging
 import threading
 import time
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voiceagent.meeting.config import TranscriptionConfig
 from voiceagent.meeting.errors import MeetingTranscriptionError
 from voiceagent.meeting.transcript_format import MeetingSegment
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from voiceagent.meeting.config import TranscriptionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +111,9 @@ class MeetingTranscriber:
                 raise MeetingTranscriptionError(
                     "scipy required for resampling. Install: pip install scipy"
                 ) from exc
-            audio = scipy.signal.resample(
-                audio, int(len(audio) * 16000 / sample_rate)
-            ).astype(np.float32)
+            audio = scipy.signal.resample(audio, int(len(audio) * 16000 / sample_rate)).astype(
+                np.float32
+            )
 
         with self._buffer_lock:
             self._buffer.append(audio)
@@ -125,13 +130,11 @@ class MeetingTranscriber:
                     self._buffer_duration_s -= dropped_s
                     overflow -= dropped_s
                 logger.warning(
-                    "Audio buffer overflow — dropped oldest chunks "
-                    "(buffer capped at %.1fs)", max_duration,
+                    "Audio buffer overflow — dropped oldest chunks (buffer capped at %.1fs)",
+                    max_duration,
                 )
 
-            should_process = (
-                self._buffer_duration_s >= self._config.window_seconds
-            )
+            should_process = self._buffer_duration_s >= self._config.window_seconds
 
         if should_process:
             self._process_buffer()
@@ -198,9 +201,7 @@ class MeetingTranscriber:
             raise
         except Exception as exc:
             logger.error("Transcription error: %s", exc, exc_info=True)
-            raise MeetingTranscriptionError(
-                f"Transcription failed: {exc}"
-            ) from exc
+            raise MeetingTranscriptionError(f"Transcription failed: {exc}") from exc
         finally:
             self._transcribe_lock.release()
 
@@ -226,6 +227,7 @@ class MeetingTranscriber:
             gc.collect()
             try:
                 import torch
+
                 torch.cuda.empty_cache()
             except ImportError:
                 pass

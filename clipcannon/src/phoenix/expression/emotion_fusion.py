@@ -16,9 +16,7 @@ import numpy as np
 
 from phoenix.errors import ExpressionError
 
-ProsodyStyle = Literal[
-    "energetic", "calm", "emphatic", "varied", "question"
-]
+ProsodyStyle = Literal["energetic", "calm", "emphatic", "varied", "question"]
 
 
 @dataclass(frozen=True)
@@ -135,10 +133,7 @@ def _detect_sarcasm(
     semantic_mean = float(np.mean(semantic_embedding))
     semantic_positive = semantic_mean > 0.0
 
-    vocal_negative = (
-        arousal < (1.0 - sensitivity)
-        and prosody.pitch_contour_type == "falling"
-    )
+    vocal_negative = arousal < (1.0 - sensitivity) and prosody.pitch_contour_type == "falling"
 
     return semantic_positive and vocal_negative
 
@@ -218,9 +213,8 @@ class EmotionFusion:
                     "got": emotion_embedding.shape[0],
                 },
             )
-        if (
-            semantic_embedding is not None
-            and (semantic_embedding.ndim != 1 or semantic_embedding.size == 0)
+        if semantic_embedding is not None and (
+            semantic_embedding.ndim != 1 or semantic_embedding.size == 0
         ):
             raise ExpressionError(
                 "semantic_embedding must be a non-empty 1-D array",
@@ -229,10 +223,7 @@ class EmotionFusion:
                     "size": semantic_embedding.size,
                 },
             )
-        if (
-            semantic_embedding is not None
-            and semantic_embedding.shape[0] != 768
-        ):
+        if semantic_embedding is not None and semantic_embedding.shape[0] != 768:
             raise ExpressionError(
                 f"semantic_embedding must be 768-dim, got {semantic_embedding.shape[0]}",
                 {
@@ -263,7 +254,10 @@ class EmotionFusion:
 
         # Sarcasm detection.
         is_sarcastic = _detect_sarcasm(
-            semantic_embedding, arousal, prosody, self._sarcasm_sensitivity,
+            semantic_embedding,
+            arousal,
+            prosody,
+            self._sarcasm_sensitivity,
         )
 
         # Confidence: based on embedding magnitude and prosody consistency.
@@ -306,14 +300,10 @@ class EmotionFusion:
             arousal=_clamp(a * new_state.arousal + (1 - a) * prev.arousal),
             valence=_clamp(a * new_state.valence + (1 - a) * prev.valence),
             energy=_clamp(a * new_state.energy + (1 - a) * prev.energy),
-            dominance=_clamp(
-                a * new_state.dominance + (1 - a) * prev.dominance
-            ),
+            dominance=_clamp(a * new_state.dominance + (1 - a) * prev.dominance),
             prosody_style=new_state.prosody_style,
             is_sarcastic=new_state.is_sarcastic,
-            confidence=_clamp(
-                a * new_state.confidence + (1 - a) * prev.confidence
-            ),
+            confidence=_clamp(a * new_state.confidence + (1 - a) * prev.confidence),
         )
 
         self._state = smoothed

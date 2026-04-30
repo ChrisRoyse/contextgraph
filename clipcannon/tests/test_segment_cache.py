@@ -472,9 +472,7 @@ class TestCacheTableCreation:
             ("h1", "proj_test", "/tmp/test.mp4", "sha_test", "{}"),
         )
         conn.commit()
-        row = conn.execute(
-            "SELECT cache_hash FROM segment_cache"
-        ).fetchone()
+        row = conn.execute("SELECT cache_hash FROM segment_cache").fetchone()
         assert row[0] == "h1"
 
     def test_table_has_correct_columns(self) -> None:
@@ -499,7 +497,8 @@ class TestCacheTableCreation:
         assert expected == columns
 
     def test_schema_v2_includes_segment_cache(
-        self, tmp_path: pytest.TempPathFactory,
+        self,
+        tmp_path: pytest.TempPathFactory,
     ) -> None:
         """migrate_to_v2 includes segment_cache table."""
         from clipcannon.db.schema import (
@@ -514,8 +513,7 @@ class TestCacheTableCreation:
 
         # segment_cache should exist
         row = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='segment_cache'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='segment_cache'"
         ).fetchone()
         assert row is not None
         assert row[0] == "segment_cache"

@@ -24,11 +24,11 @@ EYE_LINE_IN_FACE = 0.38
 
 # Layout definitions: (speaker_height, screen_height)
 LAYOUT_HEIGHTS: dict[str, tuple[int, int]] = {
-    "A": (576, 1344),   # 30/70 split
-    "B": (768, 1152),   # 40/60 split
-    "C_circle": (240, 1920),   # PIP circle
-    "C_rect": (350, 1920),     # PIP rectangle
-    "D": (1920, 0),     # Full-screen face
+    "A": (576, 1344),  # 30/70 split
+    "B": (768, 1152),  # 40/60 split
+    "C_circle": (240, 1920),  # PIP circle
+    "C_rect": (350, 1920),  # PIP rectangle
+    "D": (1920, 0),  # Full-screen face
 }
 
 # PIP positions: (x, y) for top-left corner of PIP window
@@ -231,9 +231,7 @@ def measure_layout(
         ValueError: If layout type is not recognized.
     """
     if layout not in ("A", "B", "C", "D"):
-        raise ValueError(
-            f"Unknown layout: {layout!r}. Valid: A, B, C, D"
-        )
+        raise ValueError(f"Unknown layout: {layout!r}. Valid: A, B, C, D")
 
     path = Path(frame_path)
     faces = detect_faces(path) if path.exists() else []
@@ -254,7 +252,11 @@ def measure_layout(
         # Full-screen face
         speaker_h = CANVAS_H
         speaker_crop = _compute_speaker_crop(
-            face, frame_w, frame_h, CANVAS_W, speaker_h,
+            face,
+            frame_w,
+            frame_h,
+            CANVAS_W,
+            speaker_h,
         )
 
         # Calculate where the eye line will land in output
@@ -265,8 +267,10 @@ def measure_layout(
             layout="D",
             face_detected=True,
             face_bbox={
-                "x": face.x, "y": face.y,
-                "width": face.width, "height": face.height,
+                "x": face.x,
+                "y": face.y,
+                "width": face.width,
+                "height": face.height,
                 "confidence": round(face.confidence, 3),
             },
             speaker_region=speaker_crop,
@@ -294,10 +298,18 @@ def measure_layout(
     if layout in ("A", "B"):
         speaker_h, screen_h = LAYOUT_HEIGHTS[layout]
         speaker_crop = _compute_speaker_crop(
-            face, frame_w, frame_h, CANVAS_W, speaker_h,
+            face,
+            frame_w,
+            frame_h,
+            CANVAS_W,
+            speaker_h,
         )
         screen_crop = _compute_screen_crop(
-            frame_w, frame_h, face, CANVAS_W, screen_h,
+            frame_w,
+            frame_h,
+            face,
+            CANVAS_W,
+            screen_h,
         )
 
         scale = speaker_h / speaker_crop["source_h"]
@@ -307,8 +319,10 @@ def measure_layout(
             layout=layout,
             face_detected=True,
             face_bbox={
-                "x": face.x, "y": face.y,
-                "width": face.width, "height": face.height,
+                "x": face.x,
+                "y": face.y,
+                "width": face.width,
+                "height": face.height,
                 "confidence": round(face.confidence, 3),
             },
             speaker_region=speaker_crop,
@@ -349,18 +363,28 @@ def measure_layout(
     # Layout C: PIP
     pip_size = 240
     screen_crop = _compute_screen_crop(
-        frame_w, frame_h, face, CANVAS_W, CANVAS_H,
+        frame_w,
+        frame_h,
+        face,
+        CANVAS_W,
+        CANVAS_H,
     )
     speaker_crop = _compute_speaker_crop(
-        face, frame_w, frame_h, pip_size, pip_size,
+        face,
+        frame_w,
+        frame_h,
+        pip_size,
+        pip_size,
     )
 
     return LayoutMeasurement(
         layout="C",
         face_detected=True,
         face_bbox={
-            "x": face.x, "y": face.y,
-            "width": face.width, "height": face.height,
+            "x": face.x,
+            "y": face.y,
+            "width": face.width,
+            "height": face.height,
             "confidence": round(face.confidence, 3),
         },
         speaker_region=speaker_crop,

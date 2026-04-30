@@ -112,9 +112,7 @@ def _apply_ducking(
     try:
         import pydub  # type: ignore[import-untyped]  # noqa: F401
     except ImportError as exc:
-        raise ImportError(
-            "pydub not installed. Install with: pip install pydub"
-        ) from exc
+        raise ImportError("pydub not installed. Install with: pip install pydub") from exc
 
     music_duration = len(music_segment)  # type: ignore[arg-type]
     result = music_segment  # type: ignore[assignment]
@@ -184,14 +182,10 @@ async def mix_audio(
     try:
         from pydub import AudioSegment  # type: ignore[import-untyped]
     except ImportError as exc:
-        raise ImportError(
-            "pydub not installed. Install with: pip install pydub"
-        ) from exc
+        raise ImportError("pydub not installed. Install with: pip install pydub") from exc
 
     if not source_audio_path.exists():
-        raise FileNotFoundError(
-            f"Source audio file not found: {source_audio_path}"
-        )
+        raise FileNotFoundError(f"Source audio file not found: {source_audio_path}")
 
     logger.info(
         "Mixing audio: source=%s, music=%s, sfx_count=%d",
@@ -275,7 +269,9 @@ async def mix_audio(
 
     logger.info(
         "Audio mixed: %d layers, duration=%dms, path=%s",
-        layers_mixed, duration_ms, output_path,
+        layers_mixed,
+        duration_ms,
+        output_path,
     )
 
     return MixResult(

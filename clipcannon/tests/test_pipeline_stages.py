@@ -261,12 +261,20 @@ class TestOrchestratorRegistration:
         """Should register stages and maintain order."""
         orch = PipelineOrchestrator(clipcannon_config)
 
-        orch.register_stage(PipelineStage(
-            name="stage_a", operation="op_a", required=True,
-        ))
-        orch.register_stage(PipelineStage(
-            name="stage_b", operation="op_b", required=False,
-        ))
+        orch.register_stage(
+            PipelineStage(
+                name="stage_a",
+                operation="op_a",
+                required=True,
+            )
+        )
+        orch.register_stage(
+            PipelineStage(
+                name="stage_b",
+                operation="op_b",
+                required=False,
+            )
+        )
 
         assert len(orch.stages) == 2
         assert orch.stages[0].name == "stage_a"
@@ -278,10 +286,18 @@ class TestOrchestratorRegistration:
 
         orch = PipelineOrchestrator(clipcannon_config)
 
-        orch.register_stage(PipelineStage(
-            name="stage_a", operation="op_a", required=True,
-        ))
+        orch.register_stage(
+            PipelineStage(
+                name="stage_a",
+                operation="op_a",
+                required=True,
+            )
+        )
         with pytest.raises(PE, match="already registered"):
-            orch.register_stage(PipelineStage(
-                name="stage_a", operation="op_a2", required=True,
-            ))
+            orch.register_stage(
+                PipelineStage(
+                    name="stage_a",
+                    operation="op_a2",
+                    required=True,
+                )
+            )

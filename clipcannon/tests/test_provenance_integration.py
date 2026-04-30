@@ -6,16 +6,13 @@ detecting tampering, file hashing, and table content hashing.
 
 from __future__ import annotations
 
-import sqlite3
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from clipcannon.db.schema import create_project_db
 from clipcannon.provenance.chain import (
     GENESIS_HASH,
-    ChainVerificationResult,
     compute_chain_hash,
     get_chain_from_genesis,
     verify_chain,
@@ -39,6 +36,9 @@ from clipcannon.provenance.recorder import (
     record_provenance,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 @pytest.fixture()
 def project_db(tmp_path: Path) -> Path:
@@ -53,8 +53,16 @@ def project_db(tmp_path: Path) -> Path:
             project_id, name, source_path, source_sha256,
             duration_ms, resolution, fps, codec
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("test_project", "Test Project", "/tmp/test.mp4", "abc123def456",
-         60000, "1920x1080", 30.0, "h264"),
+        (
+            "test_project",
+            "Test Project",
+            "/tmp/test.mp4",
+            "abc123def456",
+            60000,
+            "1920x1080",
+            30.0,
+            "h264",
+        ),
     )
     conn.commit()
     conn.close()
@@ -136,24 +144,44 @@ class TestChain:
     def test_compute_chain_hash_deterministic(self) -> None:
         """Test that chain hash computation is deterministic."""
         h1 = compute_chain_hash(
-            GENESIS_HASH, "input1", "output1", "transcribe",
-            "whisperx", "3.1", {"beam_size": 5},
+            GENESIS_HASH,
+            "input1",
+            "output1",
+            "transcribe",
+            "whisperx",
+            "3.1",
+            {"beam_size": 5},
         )
         h2 = compute_chain_hash(
-            GENESIS_HASH, "input1", "output1", "transcribe",
-            "whisperx", "3.1", {"beam_size": 5},
+            GENESIS_HASH,
+            "input1",
+            "output1",
+            "transcribe",
+            "whisperx",
+            "3.1",
+            {"beam_size": 5},
         )
         assert h1 == h2
 
     def test_compute_chain_hash_different_parent(self) -> None:
         """Test that different parent hashes produce different chain hashes."""
         h1 = compute_chain_hash(
-            GENESIS_HASH, "input1", "output1", "transcribe",
-            "whisperx", "3.1", {},
+            GENESIS_HASH,
+            "input1",
+            "output1",
+            "transcribe",
+            "whisperx",
+            "3.1",
+            {},
         )
         h2 = compute_chain_hash(
-            "different_parent", "input1", "output1", "transcribe",
-            "whisperx", "3.1", {},
+            "different_parent",
+            "input1",
+            "output1",
+            "transcribe",
+            "whisperx",
+            "3.1",
+            {},
         )
         assert h1 != h2
 
@@ -279,7 +307,7 @@ class TestChain:
             execution_info=ExecutionInfo(duration_ms=200),
             parent_record_id=r1,
         )
-        r3 = record_provenance(
+        record_provenance(
             db_path=project_db,
             project_id=project_id,
             operation="emotion",
@@ -427,7 +455,9 @@ class TestRecorder:
 
         # Filter by operation
         records = get_provenance_records(
-            project_db, "test_project", operation="transcription",
+            project_db,
+            "test_project",
+            operation="transcription",
         )
         assert len(records) == 1
         assert records[0].record_id == r2

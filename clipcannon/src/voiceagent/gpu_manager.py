@@ -7,6 +7,7 @@ reranker). When deactivated, it sends SIGCONT to resume them.
 This prevents VRAM contention on the RTX 5090 (32GB) between the voice
 agent (~22GB) and background workers (~13GB).
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ def _find_gpu_worker_pids() -> list[int]:
     try:
         result = subprocess.run(
             ["ps", "aux"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         for line in result.stdout.splitlines():
             if any(pat in line for pat in GPU_WORKER_PATTERNS):
@@ -98,6 +101,7 @@ def force_free_gpu_memory() -> None:
         import gc
 
         import torch
+
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.ipc_collect()

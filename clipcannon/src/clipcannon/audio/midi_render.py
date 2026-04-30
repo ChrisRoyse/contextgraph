@@ -73,8 +73,7 @@ async def render_midi_to_wav(
         import fluidsynth  # type: ignore[import-untyped]
     except ImportError as exc:
         raise ImportError(
-            "FluidSynth Python bindings not installed. "
-            "Install with: pip install pyfluidsynth"
+            "FluidSynth Python bindings not installed. Install with: pip install pyfluidsynth"
         ) from exc
 
     # Validate MIDI file exists
@@ -88,15 +87,16 @@ async def render_midi_to_wav(
     if sf_path is None:
         raise FileNotFoundError(
             "No SoundFont file found. Provide soundfont_path or install a "
-            "SoundFont to one of: "
-            + ", ".join(_SOUNDFONT_SEARCH_PATHS)
+            "SoundFont to one of: " + ", ".join(_SOUNDFONT_SEARCH_PATHS)
         )
     if not sf_path.exists():
         raise FileNotFoundError(f"SoundFont file not found: {sf_path}")
 
     logger.info(
         "Rendering MIDI to WAV: midi=%s, sf=%s, rate=%d",
-        midi_path, sf_path, sample_rate,
+        midi_path,
+        sf_path,
+        sample_rate,
     )
 
     # Ensure output directory exists
@@ -107,9 +107,7 @@ async def render_midi_to_wav(
     try:
         sfid = fs.sfload(str(sf_path))
         if sfid < 0:
-            raise RuntimeError(
-                f"Failed to load SoundFont: {sf_path}"
-            )
+            raise RuntimeError(f"Failed to load SoundFont: {sf_path}")
 
         # Use FluidSynth's MIDI file player
         fs.midi_to_audio(str(midi_path), str(output_path))
@@ -118,13 +116,9 @@ async def render_midi_to_wav(
 
     # Validate output
     if not output_path.exists():
-        raise RuntimeError(
-            f"FluidSynth rendering failed: output not created at {output_path}"
-        )
+        raise RuntimeError(f"FluidSynth rendering failed: output not created at {output_path}")
     if output_path.stat().st_size == 0:
-        raise RuntimeError(
-            f"FluidSynth rendering produced empty file at {output_path}"
-        )
+        raise RuntimeError(f"FluidSynth rendering produced empty file at {output_path}")
 
     logger.info("MIDI rendered to WAV: %s", output_path)
 

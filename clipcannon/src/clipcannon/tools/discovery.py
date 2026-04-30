@@ -8,6 +8,7 @@ charge credits.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from pathlib import Path
@@ -29,9 +30,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # HELPERS
 # ============================================================
-def _error(
-    code: str, message: str, details: dict[str, object] | None = None
-) -> dict[str, object]:
+def _error(code: str, message: str, details: dict[str, object] | None = None) -> dict[str, object]:
     """Build standardized error response dict.
 
     Args:
@@ -172,8 +171,7 @@ def _score_cut_point(
     try:
         sg = fetch_one(
             conn,
-            "SELECT start_ms FROM silence_gaps "
-            "WHERE project_id = ? AND ABS(start_ms - ?) <= ?",
+            "SELECT start_ms FROM silence_gaps WHERE project_id = ? AND ABS(start_ms - ?) <= ?",
             (project_id, ms, search_range),
         )
         if sg:
@@ -185,8 +183,7 @@ def _score_cut_point(
     try:
         se = fetch_one(
             conn,
-            "SELECT end_ms FROM transcript_segments "
-            "WHERE project_id = ? AND ABS(end_ms - ?) <= ?",
+            "SELECT end_ms FROM transcript_segments WHERE project_id = ? AND ABS(end_ms - ?) <= ?",
             (project_id, ms, search_range),
         )
         if se:
@@ -198,8 +195,7 @@ def _score_cut_point(
     try:
         sb = fetch_one(
             conn,
-            "SELECT start_ms FROM scene_map "
-            "WHERE project_id = ? AND ABS(start_ms - ?) <= ?",
+            "SELECT start_ms FROM scene_map WHERE project_id = ? AND ABS(start_ms - ?) <= ?",
             (project_id, ms, search_range),
         )
         if sb:
@@ -280,8 +276,7 @@ async def clipcannon_find_best_moments(
         fetch_limit = count * 3
         highlights = fetch_all(
             conn,
-            "SELECT * FROM highlights WHERE project_id = ? "
-            "ORDER BY score DESC LIMIT ?",
+            "SELECT * FROM highlights WHERE project_id = ? ORDER BY score DESC LIMIT ?",
             (project_id, fetch_limit),
         )
 
@@ -303,9 +298,7 @@ async def clipcannon_find_best_moments(
                     "WHERE project_id = ? ORDER BY timestamp_ms",
                     (project_id,),
                 )
-                text_change_timestamps = [
-                    int(r["timestamp_ms"]) for r in tce_rows
-                ]
+                text_change_timestamps = [int(r["timestamp_ms"]) for r in tce_rows]
             except Exception:
                 # Table may not exist; proceed without
                 pass
@@ -338,9 +331,7 @@ async def clipcannon_find_best_moments(
             elif purpose == "tutorial_step":
                 # Prefer highlights near text_change_events
                 if text_change_timestamps:
-                    min_dist = min(
-                        abs(h_mid - tce) for tce in text_change_timestamps
-                    )
+                    min_dist = min(abs(h_mid - tce) for tce in text_change_timestamps)
                     if min_dist <= 10_000:
                         adjusted_score *= 1.3
                     elif min_dist > 30_000:
@@ -363,9 +354,7 @@ async def clipcannon_find_best_moments(
                 )
                 if emotion_row and emotion_row.get("peak_energy"):
                     _emotion_peak_energy = float(emotion_row["peak_energy"])
-                    _emotion_peak_arousal = float(
-                        emotion_row.get("peak_arousal") or 0.0
-                    )
+                    _emotion_peak_arousal = float(emotion_row.get("peak_arousal") or 0.0)
                     # Boost score by peak emotion (energy 0-1, add up to 0.5)
                     emotion_boost = _emotion_peak_energy * 0.5
                     adjusted_score += emotion_boost
@@ -376,9 +365,17 @@ async def clipcannon_find_best_moments(
             _has_visual_reference = False
             try:
                 visual_keywords = [
-                    "look at", "you can see", "right here", "this is",
-                    "let me show", "check this", "dashboard", "screen",
-                    "code", "file", "click",
+                    "look at",
+                    "you can see",
+                    "right here",
+                    "this is",
+                    "let me show",
+                    "check this",
+                    "dashboard",
+                    "screen",
+                    "code",
+                    "file",
+                    "click",
                 ]
                 trans_rows = fetch_all(
                     conn,
@@ -387,12 +384,8 @@ async def clipcannon_find_best_moments(
                     "AND start_ms < ? AND end_ms > ?",
                     (project_id, int(h["end_ms"]), int(h["start_ms"])),
                 )
-                full_text = " ".join(
-                    str(r["text"]).lower() for r in trans_rows
-                )
-                _has_visual_reference = any(
-                    kw in full_text for kw in visual_keywords
-                )
+                full_text = " ".join(str(r["text"]).lower() for r in trans_rows)
+                _has_visual_reference = any(kw in full_text for kw in visual_keywords)
                 if _has_visual_reference:
                     adjusted_score += 0.3  # speech-content alignment boost
             except Exception:
@@ -423,14 +416,16 @@ async def clipcannon_find_best_moments(
             except Exception:
                 pass  # transcript_words may not be joinable
 
-            scored_highlights.append({
-                **dict(h),
-                "_adjusted_score": adjusted_score,
-                "_emotion_peak_energy": _emotion_peak_energy,
-                "_emotion_peak_arousal": _emotion_peak_arousal,
-                "_has_visual_reference": _has_visual_reference,
-                "_emphasis_pauses": _emphasis_pauses,
-            })
+            scored_highlights.append(
+                {
+                    **dict(h),
+                    "_adjusted_score": adjusted_score,
+                    "_emotion_peak_energy": _emotion_peak_energy,
+                    "_emotion_peak_arousal": _emotion_peak_arousal,
+                    "_has_visual_reference": _has_visual_reference,
+                    "_emphasis_pauses": _emphasis_pauses,
+                }
+            )
 
         # Sort by adjusted score descending
         scored_highlights.sort(
@@ -444,12 +439,12 @@ async def clipcannon_find_best_moments(
         try:
             na_row = fetch_one(
                 conn,
-                "SELECT analysis_json FROM narrative_analysis "
-                "WHERE project_id = ? LIMIT 1",
+                "SELECT analysis_json FROM narrative_analysis WHERE project_id = ? LIMIT 1",
                 (project_id,),
             )
             if na_row:
                 import json as json_mod
+
                 na = json_mod.loads(str(na_row["analysis_json"]))
                 story_beats = na.get("story_beats", [])
                 chapter_boundaries = na.get("chapters", [])
@@ -470,9 +465,7 @@ async def clipcannon_find_best_moments(
                 "ORDER BY start_ms DESC LIMIT 1",
                 (project_id, h_start),
             )
-            clean_start_ms = (
-                int(gap_before["start_ms"]) if gap_before else h_start
-            )
+            clean_start_ms = int(gap_before["start_ms"]) if gap_before else h_start
 
             # Find nearest silence gap after the highlight end
             gap_after = fetch_one(
@@ -482,9 +475,7 @@ async def clipcannon_find_best_moments(
                 "ORDER BY end_ms ASC LIMIT 1",
                 (project_id, h_end),
             )
-            clean_end_ms = (
-                int(gap_after["end_ms"]) if gap_after else h_end
-            )
+            clean_end_ms = int(gap_after["end_ms"]) if gap_after else h_end
 
             # Get transcript text for the time range
             transcript_rows = fetch_all(
@@ -494,9 +485,7 @@ async def clipcannon_find_best_moments(
                 "ORDER BY start_ms",
                 (project_id, h_end, h_start),
             )
-            transcript_text = " ".join(
-                str(r["text"]) for r in transcript_rows
-            )
+            transcript_text = " ".join(str(r["text"]) for r in transcript_rows)
 
             # Get scene_map data for canvas regions
             scene_row = fetch_one(
@@ -511,15 +500,9 @@ async def clipcannon_find_best_moments(
             canvas_regions: list[dict[str, object]] = []
             has_face = False
             if scene_row is not None:
-                rec_layout = str(
-                    scene_row.get("layout_recommendation", "A")
-                )
-                canvas_json = str(
-                    scene_row.get("canvas_regions_json", "{}")
-                )
-                layout_name, canvas_regions = _parse_canvas_regions(
-                    canvas_json, None, rec_layout
-                )
+                rec_layout = str(scene_row.get("layout_recommendation", "A"))
+                canvas_json = str(scene_row.get("canvas_regions_json", "{}"))
+                layout_name, canvas_regions = _parse_canvas_regions(canvas_json, None, rec_layout)
                 has_face = scene_row.get("face_x") is not None
 
             # For hook purpose: extra boost if face detected
@@ -533,10 +516,14 @@ async def clipcannon_find_best_moments(
 
             # --- Enhancement 1: Convergence scoring on cut points ---
             start_quality, start_signals = _score_cut_point(
-                conn, project_id, clean_start_ms,
+                conn,
+                project_id,
+                clean_start_ms,
             )
             end_quality, end_signals = _score_cut_point(
-                conn, project_id, clean_end_ms,
+                conn,
+                project_id,
+                clean_end_ms,
             )
 
             # --- Enhancement 2: Story beat context ---
@@ -600,14 +587,8 @@ async def clipcannon_find_best_moments(
                 "canvas_regions": canvas_regions,
                 "transcript": transcript_text,
                 "emotion_peak": {
-                    "energy": (
-                        float(_ep_energy) if _ep_energy is not None
-                        else None
-                    ),
-                    "arousal": (
-                        float(_ep_arousal) if _ep_arousal is not None
-                        else None
-                    ),
+                    "energy": (float(_ep_energy) if _ep_energy is not None else None),
+                    "arousal": (float(_ep_arousal) if _ep_arousal is not None else None),
                 },
                 "has_visual_reference": _vis_ref,
                 "emphasis_pauses": _emph,
@@ -690,12 +671,14 @@ async def clipcannon_find_cut_points(
             # Midpoint of silence gap is the best cut point
             cut_ms = (int(sg["start_ms"]) + int(sg["end_ms"])) // 2
             quality = "excellent" if gap_duration >= 500 else "good"
-            cut_points.append({
-                "ms": cut_ms,
-                "type": "silence_gap",
-                "gap_duration_ms": gap_duration,
-                "quality": quality,
-            })
+            cut_points.append(
+                {
+                    "ms": cut_ms,
+                    "type": "silence_gap",
+                    "gap_duration_ms": gap_duration,
+                    "quality": quality,
+                }
+            )
 
         # 2. Scene boundaries in range
         scene_rows = fetch_all(
@@ -718,11 +701,13 @@ async def clipcannon_find_cut_points(
                 boundary_set.add(s_end)
 
         for boundary_ms in sorted(boundary_set):
-            cut_points.append({
-                "ms": boundary_ms,
-                "type": "scene_boundary",
-                "quality": "good",
-            })
+            cut_points.append(
+                {
+                    "ms": boundary_ms,
+                    "type": "scene_boundary",
+                    "quality": "good",
+                }
+            )
 
         # 3. Sentence endings in range
         sentence_rows = fetch_all(
@@ -736,12 +721,14 @@ async def clipcannon_find_cut_points(
             text = str(tr["text"]).strip()
             # Show last 60 chars as context
             text_before = text[-60:] if len(text) > 60 else text
-            cut_points.append({
-                "ms": int(tr["end_ms"]),
-                "type": "sentence_end",
-                "text_before": text_before,
-                "quality": "good",
-            })
+            cut_points.append(
+                {
+                    "ms": int(tr["end_ms"]),
+                    "type": "sentence_end",
+                    "text_before": text_before,
+                    "quality": "good",
+                }
+            )
 
         # 4. Beat positions (from beats table — stored as JSON array in beat_positions_ms)
         try:
@@ -752,15 +739,18 @@ async def clipcannon_find_cut_points(
             )
             if beats_row and beats_row.get("beat_positions_ms"):
                 import json as json_mod
+
                 beat_positions = json_mod.loads(str(beats_row["beat_positions_ms"]))
                 for bp_ms in beat_positions:
                     bp_ms = int(bp_ms)
                     if range_start <= bp_ms <= range_end:
-                        cut_points.append({
-                            "ms": bp_ms,
-                            "type": "beat_hit",
-                            "quality": "good",
-                        })
+                        cut_points.append(
+                            {
+                                "ms": bp_ms,
+                                "type": "beat_hit",
+                                "quality": "good",
+                            }
+                        )
         except Exception as exc:
             logger.debug("Beat position lookup skipped: %s", exc)
 
@@ -1043,16 +1033,16 @@ async def clipcannon_get_narrative_flow(
             first_sentence = sentences[0] if sentences else ""
             last_sentence = sentences[-1] if sentences else ""
 
-            flow.append({
-                "segment": seg_index,
-                "source_range": f"{seg_start}-{seg_end}ms",
-                "duration_ms": seg_duration,
-                "first_sentence": first_sentence,
-                "last_sentence": last_sentence,
-                "thought_complete": _thought_complete(last_sentence)
-                if last_sentence
-                else True,
-            })
+            flow.append(
+                {
+                    "segment": seg_index,
+                    "source_range": f"{seg_start}-{seg_end}ms",
+                    "duration_ms": seg_duration,
+                    "first_sentence": first_sentence,
+                    "last_sentence": last_sentence,
+                    "thought_complete": _thought_complete(last_sentence) if last_sentence else True,
+                }
+            )
 
             # Check for a gap to the NEXT segment
             if idx < len(parsed_segments) - 1:
@@ -1108,15 +1098,11 @@ async def clipcannon_get_narrative_flow(
                     for gs in gap_sentences:
                         lower = gs.lower()
                         has_num = bool(_re.search(r"\d+", gs))
-                        has_marker = any(
-                            m in lower for m in _KEY_PHRASE_MARKERS
-                        )
+                        has_marker = any(m in lower for m in _KEY_PHRASE_MARKERS)
                         if has_num or has_marker:
                             key_bits.append(gs)
                     key_str = (
-                        ". Key phrases: " + ", ".join(
-                            repr(k[:60]) for k in key_bits[:5]
-                        )
+                        ". Key phrases: " + ", ".join(repr(k[:60]) for k in key_bits[:5])
                         if key_bits
                         else ""
                     )
@@ -1137,19 +1123,19 @@ async def clipcannon_get_narrative_flow(
                 else:
                     skipped_text = gap_text
 
-                flow.append({
-                    "gap": gap_index,
-                    "source_range": f"{gap_start}-{gap_end}ms",
-                    "duration_ms": gap_duration,
-                    "skipped_text": skipped_text,
-                    "word_count": word_count,
-                    "warning": warning,
-                })
+                flow.append(
+                    {
+                        "gap": gap_index,
+                        "source_range": f"{gap_start}-{gap_end}ms",
+                        "duration_ms": gap_duration,
+                        "skipped_text": skipped_text,
+                        "word_count": word_count,
+                        "warning": warning,
+                    }
+                )
 
     except Exception as exc:
-        logger.exception(
-            "get_narrative_flow failed for %s", project_id
-        )
+        logger.exception("get_narrative_flow failed for %s", project_id)
         return _error(
             "DISCOVERY_ERROR",
             f"Failed to analyze narrative flow: {exc}",
@@ -1165,8 +1151,7 @@ async def clipcannon_get_narrative_flow(
         try:
             row = fetch_one(
                 conn2,
-                "SELECT analysis_json FROM narrative_analysis "
-                "WHERE project_id = ? LIMIT 1",
+                "SELECT analysis_json FROM narrative_analysis WHERE project_id = ? LIMIT 1",
                 (project_id,),
             )
             if row and row.get("analysis_json"):
@@ -1256,16 +1241,11 @@ async def clipcannon_find_safe_cuts(
         try:
             beats_row = fetch_one(
                 conn,
-                "SELECT beat_positions_ms FROM beats "
-                "WHERE project_id = ? LIMIT 1",
+                "SELECT beat_positions_ms FROM beats WHERE project_id = ? LIMIT 1",
                 (project_id,),
             )
             if beats_row and beats_row.get("beat_positions_ms"):
-                beat_positions = [
-                    int(b) for b in json.loads(
-                        str(beats_row["beat_positions_ms"])
-                    )
-                ]
+                beat_positions = [int(b) for b in json.loads(str(beats_row["beat_positions_ms"]))]
         except Exception:
             pass
 
@@ -1274,8 +1254,7 @@ async def clipcannon_find_safe_cuts(
         try:
             scene_rows = fetch_all(
                 conn,
-                "SELECT start_ms, end_ms FROM scene_map "
-                "WHERE project_id = ?",
+                "SELECT start_ms, end_ms FROM scene_map WHERE project_id = ?",
                 (project_id,),
             )
             sb_set: set[int] = set()
@@ -1291,8 +1270,7 @@ async def clipcannon_find_safe_cuts(
         try:
             tce_rows = fetch_all(
                 conn,
-                "SELECT timestamp_ms FROM text_change_events "
-                "ORDER BY timestamp_ms",
+                "SELECT timestamp_ms FROM text_change_events ORDER BY timestamp_ms",
                 (),
             )
             text_change_timestamps = [int(r["timestamp_ms"]) for r in tce_rows]
@@ -1310,34 +1288,26 @@ async def clipcannon_find_safe_cuts(
 
             # --- Words before the gap ---
             words_before_rows: list[dict[str, object]] = []
-            try:
+            with contextlib.suppress(Exception):
                 words_before_rows = fetch_all(
                     conn,
                     "SELECT word, end_ms, confidence FROM transcript_words "
                     "WHERE end_ms <= ? ORDER BY end_ms DESC LIMIT 3",
                     (gap_start + 100,),
                 )
-            except Exception:
-                pass
 
             # --- Words after the gap ---
             words_after_rows: list[dict[str, object]] = []
-            try:
+            with contextlib.suppress(Exception):
                 words_after_rows = fetch_all(
                     conn,
                     "SELECT word, start_ms, confidence FROM transcript_words "
                     "WHERE start_ms >= ? ORDER BY start_ms ASC LIMIT 3",
                     (gap_end - 100,),
                 )
-            except Exception:
-                pass
 
-            words_before_text = " ".join(
-                str(w["word"]) for w in reversed(words_before_rows)
-            )
-            words_after_text = " ".join(
-                str(w["word"]) for w in words_after_rows
-            )
+            words_before_text = " ".join(str(w["word"]) for w in reversed(words_before_rows))
+            words_after_text = " ".join(str(w["word"]) for w in words_after_rows)
 
             # --- Sentence ending check ---
             thought_complete = False
@@ -1372,18 +1342,14 @@ async def clipcannon_find_safe_cuts(
             # --- Scene boundary ---
             scene_boundary = False
             if scene_boundaries:
-                closest_sb = min(
-                    scene_boundaries, key=lambda s: abs(s - gap_mid)
-                )
+                closest_sb = min(scene_boundaries, key=lambda s: abs(s - gap_mid))
                 if abs(closest_sb - gap_mid) <= 500:
                     scene_boundary = True
 
             # --- Text change event ---
             text_change = False
             if text_change_timestamps:
-                closest_tc = min(
-                    text_change_timestamps, key=lambda t: abs(t - gap_mid)
-                )
+                closest_tc = min(text_change_timestamps, key=lambda t: abs(t - gap_mid))
                 if abs(closest_tc - gap_mid) <= 1000:
                     text_change = True
 
@@ -1425,8 +1391,7 @@ async def clipcannon_find_safe_cuts(
             warning: str | None = None
             if words_before_rows:
                 last_2_words = " ".join(
-                    str(w["word"]).lower()
-                    for w in reversed(words_before_rows[:2])
+                    str(w["word"]).lower() for w in reversed(words_before_rows[:2])
                 )
                 for kw in PROMISE_KEYWORDS:
                     if kw in last_2_words:
@@ -1441,9 +1406,8 @@ async def clipcannon_find_safe_cuts(
             cut_after_ms = gap_end + 50
 
             # Snap cut_before to nearest beat if aligned
-            if beat_aligned and nearest_beat is not None:
-                if nearest_beat <= gap_start:
-                    cut_before_ms = nearest_beat
+            if beat_aligned and nearest_beat is not None and nearest_beat <= gap_start:
+                cut_before_ms = nearest_beat
 
             # --- Build signals list ---
             signals: list[str] = ["silence_gap"]
@@ -1458,23 +1422,25 @@ async def clipcannon_find_safe_cuts(
             if text_change:
                 signals.append("text_change")
 
-            cuts.append({
-                "cut_ms": gap_mid,
-                "cut_before_ms": max(0, cut_before_ms),
-                "cut_after_ms": min(video_duration, cut_after_ms),
-                "safety_score": score,
-                "silence_gap_ms": gap_duration,
-                "words_before": words_before_text,
-                "words_after": words_after_text,
-                "thought_complete": thought_complete,
-                "sentence_end": sentence_end,
-                "beat_aligned": beat_aligned,
-                "scene_boundary": scene_boundary,
-                "text_change": text_change,
-                "energy": energy,
-                "signals": signals,
-                "warning": warning,
-            })
+            cuts.append(
+                {
+                    "cut_ms": gap_mid,
+                    "cut_before_ms": max(0, cut_before_ms),
+                    "cut_after_ms": min(video_duration, cut_after_ms),
+                    "safety_score": score,
+                    "silence_gap_ms": gap_duration,
+                    "words_before": words_before_text,
+                    "words_after": words_after_text,
+                    "thought_complete": thought_complete,
+                    "sentence_end": sentence_end,
+                    "beat_aligned": beat_aligned,
+                    "scene_boundary": scene_boundary,
+                    "text_change": text_change,
+                    "energy": energy,
+                    "signals": signals,
+                    "warning": warning,
+                }
+            )
 
         # Sort by safety_score DESC, then timestamp ASC
         cuts.sort(key=lambda c: (-c["safety_score"], c["cut_ms"]))

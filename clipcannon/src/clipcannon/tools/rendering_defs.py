@@ -79,15 +79,11 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "timestamp_ms": {
                     "type": "integer",
-                    "description": (
-                        "Source video timestamp to analyze (ms)"
-                    ),
+                    "description": ("Source video timestamp to analyze (ms)"),
                 },
                 "render_id": {
                     "type": "string",
-                    "description": (
-                        "Render ID to analyze (omit to use source video)"
-                    ),
+                    "description": ("Render ID to analyze (omit to use source video)"),
                 },
             },
             "required": ["project_id", "timestamp_ms"],
@@ -132,9 +128,7 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 "render_id": {"type": "string", "description": "Render identifier to inspect"},
                 "timestamp_ms": {
                     "type": "integer",
-                    "description": (
-                        "Specific timestamp to inspect (omit for 5 default positions)"
-                    ),
+                    "description": ("Specific timestamp to inspect (omit for 5 default positions)"),
                 },
             },
             "required": ["project_id", "render_id"],
@@ -158,9 +152,7 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "timestamp_ms": {
                     "type": "integer",
-                    "description": (
-                        "Source video timestamp to preview (ms)"
-                    ),
+                    "description": ("Source video timestamp to preview (ms)"),
                 },
                 "canvas_width": {
                     "type": "integer",
@@ -191,7 +183,9 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 },
             },
             "required": [
-                "project_id", "timestamp_ms", "regions",
+                "project_id",
+                "timestamp_ms",
+                "regions",
             ],
         },
     ),
@@ -215,16 +209,13 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "start_ms": {
                     "type": "integer",
-                    "description": (
-                        "Window start in milliseconds (default 0)"
-                    ),
+                    "description": ("Window start in milliseconds (default 0)"),
                     "default": 0,
                 },
                 "end_ms": {
                     "type": "integer",
                     "description": (
-                        "Window end in milliseconds. "
-                        "Default: start_ms + 300000 (5 minutes)"
+                        "Window end in milliseconds. Default: start_ms + 300000 (5 minutes)"
                     ),
                 },
                 "detail": {
@@ -271,9 +262,7 @@ RENDERING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "segment_index": {
                     "type": "integer",
-                    "description": (
-                        "1-based segment index to preview"
-                    ),
+                    "description": ("1-based segment index to preview"),
                 },
             },
             "required": ["project_id", "edit_id", "segment_index"],

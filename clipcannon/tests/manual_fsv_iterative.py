@@ -13,7 +13,6 @@ import json
 import sqlite3
 import sys
 import tempfile
-import textwrap
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -60,11 +59,7 @@ def check(
 
 def summary() -> None:
     """Print final summary."""
-    print(
-        f"\n{'=' * 55}\n"
-        f"FSV SUMMARY: {_PASS}/{_TOTAL} checks passed"
-        f"\n{'=' * 55}"
-    )
+    print(f"\n{'=' * 55}\nFSV SUMMARY: {_PASS}/{_TOTAL} checks passed\n{'=' * 55}")
     if _FAIL:
         print(f"  ** {_FAIL} FAILURES **")
 
@@ -199,10 +194,10 @@ def patch_paths(tmp_dir: Path) -> None:
 # MAIN FSV ASYNC TEST SEQUENCE
 # ===================================================================
 async def run_fsv(tmp_dir: Path) -> None:
+    from clipcannon.editing.edl import SegmentSpec
+    from clipcannon.rendering.segment_hash import compute_segment_hash
     from clipcannon.tools.editing import dispatch_editing_tool
     from clipcannon.tools.rendering import dispatch_rendering_tool
-    from clipcannon.rendering.segment_hash import compute_segment_hash
-    from clipcannon.editing.edl import SegmentSpec
 
     project_id, db_path = setup_test_project(tmp_dir)
 
@@ -215,7 +210,8 @@ async def run_fsv(tmp_dir: Path) -> None:
 
     row = raw_fetch_one(db_path, "SELECT * FROM project WHERE project_id = ?", (project_id,))
     check(
-        0, "Project exists in DB",
+        0,
+        "Project exists in DB",
         f"project_id={project_id}",
         "project row with status=ready",
         f"status={row['status']}" if row else "None",
@@ -232,21 +228,25 @@ async def run_fsv(tmp_dir: Path) -> None:
 
     # CHECK 1: Create an edit
     ORIG_NAME = "Highlight Reel V1"
-    create_result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": ORIG_NAME,
-        "target_platform": "tiktok",
-        "segments": [
-            {"source_start_ms": 0, "source_end_ms": 15000},
-            {"source_start_ms": 25000, "source_end_ms": 45000},
-            {"source_start_ms": 70000, "source_end_ms": 90000},
-        ],
-    })
+    create_result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": ORIG_NAME,
+            "target_platform": "tiktok",
+            "segments": [
+                {"source_start_ms": 0, "source_end_ms": 15000},
+                {"source_start_ms": 25000, "source_end_ms": 45000},
+                {"source_start_ms": 70000, "source_end_ms": 90000},
+            ],
+        },
+    )
     edit_id = str(create_result.get("edit_id", ""))
     has_error = "error" in create_result
 
     check(
-        1, "Create edit succeeds",
+        1,
+        "Create edit succeeds",
         f"create_edit(name={ORIG_NAME!r}, platform=tiktok, 3 segments)",
         "edit_id returned, no error",
         f"edit_id={edit_id}, error={has_error}",
@@ -257,7 +257,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     # CHECK 2: Verify edits table
     edit_row = raw_fetch_one(db_path, "SELECT * FROM edits WHERE edit_id = ?", (edit_id,))
     check(
-        2, "Edit row in DB with status=draft",
+        2,
+        "Edit row in DB with status=draft",
         f"SELECT from edits WHERE edit_id={edit_id}",
         "1 row, status=draft",
         f"row exists={edit_row is not None}, status={edit_row['status'] if edit_row else 'N/A'}",
@@ -266,15 +267,19 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 3: Modify edit -- change name to "Modified V1"
-    mod1_result = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {"name": "Modified V1"},
-    })
+    mod1_result = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {"name": "Modified V1"},
+        },
+    )
     mod1_error = "error" in mod1_result
     check(
-        3, "Modify edit (name change) succeeds",
-        f"modify_edit(changes={{name: 'Modified V1'}})",
+        3,
+        "Modify edit (name change) succeeds",
+        "modify_edit(changes={name: 'Modified V1'})",
         "no error, updated_fields includes 'name'",
         f"error={mod1_error}, updated={mod1_result.get('updated_fields', [])}",
         f"modify result keys: {list(mod1_result.keys())}",
@@ -288,7 +293,8 @@ async def run_fsv(tmp_dir: Path) -> None:
         (edit_id,),
     )
     check(
-        4, "edit_versions has 1 row after first modify",
+        4,
+        "edit_versions has 1 row after first modify",
         f"COUNT from edit_versions WHERE edit_id={edit_id}",
         "1",
         str(ver_count),
@@ -305,8 +311,9 @@ async def run_fsv(tmp_dir: Path) -> None:
     ver1_edl = json.loads(ver1_row["edl_json"]) if ver1_row else {}
     ver1_name = ver1_edl.get("name", "")
     check(
-        5, "Version 1 edl_json has ORIGINAL name (snapshot before modify)",
-        f"edit_versions row version_number=1, edl_json->name",
+        5,
+        "Version 1 edl_json has ORIGINAL name (snapshot before modify)",
+        "edit_versions row version_number=1, edl_json->name",
         f"name={ORIG_NAME!r}",
         f"name={ver1_name!r}",
         f"version_id={ver1_row['version_id'] if ver1_row else 'N/A'}",
@@ -314,20 +321,24 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 6: Modify again -- change segments (2 segments instead of 3)
-    mod2_result = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {
-            "segments": [
-                {"source_start_ms": 0, "source_end_ms": 20000},
-                {"source_start_ms": 55000, "source_end_ms": 80000},
-            ],
+    mod2_result = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {
+                "segments": [
+                    {"source_start_ms": 0, "source_end_ms": 20000},
+                    {"source_start_ms": 55000, "source_end_ms": 80000},
+                ],
+            },
         },
-    })
+    )
     mod2_error = "error" in mod2_result
     check(
-        6, "Modify edit (segment change) succeeds",
-        f"modify_edit(changes={{segments: [2 segments]}})",
+        6,
+        "Modify edit (segment change) succeeds",
+        "modify_edit(changes={segments: [2 segments]})",
         "no error, updated_fields includes 'segments'",
         f"error={mod2_error}, updated={mod2_result.get('updated_fields', [])}",
         f"segment_count={mod2_result.get('segment_count', '?')}",
@@ -347,7 +358,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     ver_nums = [r["version_number"] for r in ver_rows]
     check(
-        7, "edit_versions has 2 rows after second modify",
+        7,
+        "edit_versions has 2 rows after second modify",
         f"COUNT + version_numbers from edit_versions WHERE edit_id={edit_id}",
         "count=2, version_numbers=[1, 2]",
         f"count={ver_count2}, version_numbers={ver_nums}",
@@ -363,7 +375,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     ver2_desc = str(ver2_row["change_description"]).lower() if ver2_row else ""
     check(
-        8, "Version 2 change_description mentions segment",
+        8,
+        "Version 2 change_description mentions segment",
         "edit_versions version_number=2 change_description",
         "contains 'segment'",
         f"description={ver2_row['change_description'] if ver2_row else 'N/A'}",
@@ -372,13 +385,17 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 9: Call edit_history tool
-    history_result = await dispatch_editing_tool("clipcannon_edit_history", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-    })
+    history_result = await dispatch_editing_tool(
+        "clipcannon_edit_history",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+        },
+    )
     hist_error = "error" in history_result
     check(
-        9, "edit_history tool returns data",
+        9,
+        "edit_history tool returns data",
         f"edit_history(project_id={project_id}, edit_id={edit_id})",
         "no error, version_count=2",
         f"error={hist_error}, version_count={history_result.get('version_count', '?')}",
@@ -389,7 +406,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     # CHECK 10: versions array has 3 entries (current + 2 versions)
     versions_arr = history_result.get("versions", [])
     check(
-        10, "edit_history versions array has 3 entries",
+        10,
+        "edit_history versions array has 3 entries",
         "history_result['versions'] length",
         "3 (current + v1 + v2)",
         f"{len(versions_arr)}",
@@ -398,15 +416,19 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 11: Revert to version 1
-    revert_result = await dispatch_editing_tool("clipcannon_revert_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "version_number": 1,
-    })
+    revert_result = await dispatch_editing_tool(
+        "clipcannon_revert_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "version_number": 1,
+        },
+    )
     revert_error = "error" in revert_result
     check(
-        11, "Revert to version 1 succeeds",
-        f"revert_edit(version_number=1)",
+        11,
+        "Revert to version 1 succeeds",
+        "revert_edit(version_number=1)",
         "no error, reverted_to_version=1",
         f"error={revert_error}, reverted_to={revert_result.get('reverted_to_version', '?')}",
         f"revert result keys: {list(revert_result.keys())}",
@@ -415,12 +437,15 @@ async def run_fsv(tmp_dir: Path) -> None:
 
     # CHECK 12: DB name is back to original
     edit_after_revert = raw_fetch_one(
-        db_path, "SELECT name FROM edits WHERE edit_id = ?", (edit_id,),
+        db_path,
+        "SELECT name FROM edits WHERE edit_id = ?",
+        (edit_id,),
     )
     reverted_name = edit_after_revert["name"] if edit_after_revert else ""
     check(
-        12, "After revert, edit name is back to original",
-        f"edits.name after revert to v1",
+        12,
+        "After revert, edit name is back to original",
+        "edits.name after revert to v1",
         f"name={ORIG_NAME!r}",
         f"name={reverted_name!r}",
         f"edits row: name={reverted_name!r}",
@@ -434,7 +459,8 @@ async def run_fsv(tmp_dir: Path) -> None:
         (edit_id,),
     )
     check(
-        13, "edit_versions has 3 rows after revert (revert created version 3)",
+        13,
+        "edit_versions has 3 rows after revert (revert created version 3)",
         f"COUNT from edit_versions WHERE edit_id={edit_id}",
         "3",
         str(ver_count3),
@@ -450,7 +476,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     ver3_desc = str(ver3_row["change_description"]).lower() if ver3_row else ""
     check(
-        14, "Version 3 change_description contains 'revert'",
+        14,
+        "Version 3 change_description contains 'revert'",
         "edit_versions version_number=3 change_description",
         "contains 'revert'",
         f"description={ver3_row['change_description'] if ver3_row else 'N/A'}",
@@ -466,14 +493,18 @@ async def run_fsv(tmp_dir: Path) -> None:
     print("=" * 55)
 
     # CHECK 15: Modify name only -- nothing should be invalidated
-    mod_name = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {"name": "Renamed Edit"},
-    })
+    mod_name = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {"name": "Renamed Edit"},
+        },
+    )
     hint15 = mod_name.get("render_hint", {})
     check(
-        15, "Name-only change: no invalidation",
+        15,
+        "Name-only change: no invalidation",
         "modify_edit(changes={name: 'Renamed Edit'})",
         "segments_invalidated=[], captions=false, audio=false",
         (
@@ -491,14 +522,18 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 16: Modify caption style -- only captions_invalidated
-    mod_cap = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {"captions": {"font_size": 72, "style": "subtitle_bar"}},
-    })
+    mod_cap = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {"captions": {"font_size": 72, "style": "subtitle_bar"}},
+        },
+    )
     hint16 = mod_cap.get("render_hint", {})
     check(
-        16, "Caption style change: captions_invalidated only",
+        16,
+        "Caption style change: captions_invalidated only",
         "modify_edit(changes={captions: {font_size: 72, style: subtitle_bar}})",
         "captions_invalidated=true, segments_invalidated=[], audio=false",
         (
@@ -507,10 +542,7 @@ async def run_fsv(tmp_dir: Path) -> None:
             f"audio={hint16.get('audio_invalidated', '?')}"
         ),
         f"render_hint: {hint16}",
-        (
-            hint16.get("captions_invalidated") is True
-            and hint16.get("audio_invalidated") is False
-        ),
+        (hint16.get("captions_invalidated") is True and hint16.get("audio_invalidated") is False),
     )
 
     # CHECK 17: Modify segments -- captions + audio invalidated, segments tracked
@@ -520,24 +552,28 @@ async def run_fsv(tmp_dir: Path) -> None:
     # count differs, all_segments_invalidated is set. We test BOTH cases.
     #
     # Case A: same count, different timings -> per-segment invalidation
-    mod_seg = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {
-            "segments": [
-                {"source_start_ms": 5000, "source_end_ms": 25000},
-                {"source_start_ms": 40000, "source_end_ms": 60000},
-                {"source_start_ms": 80000, "source_end_ms": 100000},
-            ],
+    mod_seg = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {
+                "segments": [
+                    {"source_start_ms": 5000, "source_end_ms": 25000},
+                    {"source_start_ms": 40000, "source_end_ms": 60000},
+                    {"source_start_ms": 80000, "source_end_ms": 100000},
+                ],
+            },
         },
-    })
+    )
     hint17 = mod_seg.get("render_hint", {})
     segs_inv = hint17.get("segments_invalidated", [])
     all_inv = hint17.get("all_segments_invalidated", False)
     # Either all_segments_invalidated OR all segment IDs in segments_invalidated
     all_affected = all_inv or (set(segs_inv) == {1, 2, 3})
     check(
-        17, "Segment timing change: all segments + captions + audio invalidated",
+        17,
+        "Segment timing change: all segments + captions + audio invalidated",
         "modify_edit(changes={segments: [3 new segments, same count]})",
         "all segments affected (via all_segments or per-id), captions=true, audio=true",
         (
@@ -554,19 +590,23 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # Case B: different segment count -> all_segments_invalidated
-    mod_seg_b = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {
-            "segments": [
-                {"source_start_ms": 5000, "source_end_ms": 25000},
-                {"source_start_ms": 40000, "source_end_ms": 60000},
-            ],
+    mod_seg_b = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {
+                "segments": [
+                    {"source_start_ms": 5000, "source_end_ms": 25000},
+                    {"source_start_ms": 40000, "source_end_ms": 60000},
+                ],
+            },
         },
-    })
+    )
     hint17b = mod_seg_b.get("render_hint", {})
     check(
-        37, "Segment count change: all_segments_invalidated=true",
+        37,
+        "Segment count change: all_segments_invalidated=true",
         "modify_edit(changes={segments: [2 segments from 3]})",
         "all_segments_invalidated=true, captions=true, audio=true",
         (
@@ -590,28 +630,35 @@ async def run_fsv(tmp_dir: Path) -> None:
     print("=" * 55)
 
     # Create a fresh edit for feedback testing
-    fb_edit = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Feedback Test Edit",
-        "target_platform": "tiktok",
-        "segments": [
-            {"source_start_ms": 0, "source_end_ms": 20000},
-            {"source_start_ms": 30000, "source_end_ms": 50000},
-            {"source_start_ms": 60000, "source_end_ms": 80000},
-        ],
-    })
+    fb_edit = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Feedback Test Edit",
+            "target_platform": "tiktok",
+            "segments": [
+                {"source_start_ms": 0, "source_end_ms": 20000},
+                {"source_start_ms": 30000, "source_end_ms": 50000},
+                {"source_start_ms": 60000, "source_end_ms": 80000},
+            ],
+        },
+    )
     fb_edit_id = str(fb_edit.get("edit_id", ""))
 
     # CHECK 18: "the music is too loud" -> audio_adjust
-    fb1 = await dispatch_editing_tool("clipcannon_apply_feedback", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "feedback": "the music is too loud",
-    })
+    fb1 = await dispatch_editing_tool(
+        "clipcannon_apply_feedback",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "feedback": "the music is too loud",
+        },
+    )
     fb1_intent = fb1.get("parsed_intent", {})
     fb1_error = "error" in fb1
     check(
-        18, "Feedback 'music is too loud' -> audio_adjust",
+        18,
+        "Feedback 'music is too loud' -> audio_adjust",
         "apply_feedback('the music is too loud')",
         "intent_type=audio_adjust",
         f"intent_type={fb1_intent.get('intent_type', 'N/A')}, error={fb1_error}",
@@ -620,15 +667,19 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 19: "make the text bigger" -> caption_resize
-    fb2 = await dispatch_editing_tool("clipcannon_apply_feedback", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "feedback": "make the text bigger",
-    })
+    fb2 = await dispatch_editing_tool(
+        "clipcannon_apply_feedback",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "feedback": "make the text bigger",
+        },
+    )
     fb2_intent = fb2.get("parsed_intent", {})
     fb2_error = "error" in fb2
     check(
-        19, "Feedback 'make the text bigger' -> caption_resize",
+        19,
+        "Feedback 'make the text bigger' -> caption_resize",
         "apply_feedback('make the text bigger')",
         "intent_type=caption_resize",
         f"intent_type={fb2_intent.get('intent_type', 'N/A')}, error={fb2_error}",
@@ -637,15 +688,19 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 20: gibberish "asdfghjkl" -> error (low confidence)
-    fb3 = await dispatch_editing_tool("clipcannon_apply_feedback", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "feedback": "asdfghjkl",
-    })
+    fb3 = await dispatch_editing_tool(
+        "clipcannon_apply_feedback",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "feedback": "asdfghjkl",
+        },
+    )
     fb3_error = "error" in fb3
     fb3_code = fb3.get("error", {}).get("code", "") if fb3_error else ""
     check(
-        20, "Feedback gibberish 'asdfghjkl' -> error or low confidence",
+        20,
+        "Feedback gibberish 'asdfghjkl' -> error or low confidence",
         "apply_feedback('asdfghjkl')",
         "error with LOW_CONFIDENCE code",
         f"error={fb3_error}, code={fb3_code}",
@@ -661,34 +716,43 @@ async def run_fsv(tmp_dir: Path) -> None:
     print("=" * 55)
 
     # Create a new edit for branching
-    branch_src = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Branch Source",
-        "target_platform": "tiktok",
-        "segments": [
-            {"source_start_ms": 0, "source_end_ms": 30000},
-            {"source_start_ms": 40000, "source_end_ms": 70000},
-        ],
-    })
+    branch_src = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Branch Source",
+            "target_platform": "tiktok",
+            "segments": [
+                {"source_start_ms": 0, "source_end_ms": 30000},
+                {"source_start_ms": 40000, "source_end_ms": 70000},
+            ],
+        },
+    )
     branch_src_id = str(branch_src.get("edit_id", ""))
     branch_src_seg_count = branch_src.get("segment_count", 0)
 
     # CHECK 21: Branch to "instagram"
-    branch_result = await dispatch_editing_tool("clipcannon_branch_edit", {
-        "project_id": project_id,
-        "edit_id": branch_src_id,
-        "branch_name": "instagram",
-        "target_platform": "instagram_reels",
-    })
+    branch_result = await dispatch_editing_tool(
+        "clipcannon_branch_edit",
+        {
+            "project_id": project_id,
+            "edit_id": branch_src_id,
+            "branch_name": "instagram",
+            "target_platform": "instagram_reels",
+        },
+    )
     branch_error = "error" in branch_result
     new_branch_id = str(branch_result.get("edit_id", ""))
     check(
-        21, "Branch edit to instagram succeeds",
+        21,
+        "Branch edit to instagram succeeds",
         f"branch_edit(edit_id={branch_src_id}, branch=instagram, platform=instagram_reels)",
         "new edit_id, no error, branch_name=instagram",
         f"error={branch_error}, new_id={new_branch_id}, branch={branch_result.get('branch_name', '?')}",
         f"branch result keys: {list(branch_result.keys())}",
-        not branch_error and bool(new_branch_id) and branch_result.get("branch_name") == "instagram",
+        not branch_error
+        and bool(new_branch_id)
+        and branch_result.get("branch_name") == "instagram",
     )
 
     # CHECK 22: DB has new edit with parent_edit_id set
@@ -698,7 +762,8 @@ async def run_fsv(tmp_dir: Path) -> None:
         (new_branch_id,),
     )
     check(
-        22, "Branched edit in DB has parent_edit_id and branch_name",
+        22,
+        "Branched edit in DB has parent_edit_id and branch_name",
         f"SELECT from edits WHERE edit_id={new_branch_id}",
         f"parent_edit_id={branch_src_id}, branch_name=instagram",
         (
@@ -716,7 +781,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     # CHECK 23: Segment count matches
     branch_seg_count = int(branch_db_row["segment_count"]) if branch_db_row else 0
     check(
-        23, "Branched edit segment count matches source",
+        23,
+        "Branched edit segment count matches source",
         f"branched edit segment_count vs source ({branch_src_seg_count})",
         f"segment_count={branch_src_seg_count}",
         f"segment_count={branch_seg_count}",
@@ -725,15 +791,19 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 24: list_branches returns both root and instagram
-    branches_result = await dispatch_editing_tool("clipcannon_list_branches", {
-        "project_id": project_id,
-        "edit_id": branch_src_id,
-    })
+    branches_result = await dispatch_editing_tool(
+        "clipcannon_list_branches",
+        {
+            "project_id": project_id,
+            "edit_id": branch_src_id,
+        },
+    )
     br_error = "error" in branches_result
     branch_list = branches_result.get("branches", [])
     branch_names = [b.get("branch_name") for b in branch_list]
     check(
-        24, "list_branches returns root (main) and branch (instagram)",
+        24,
+        "list_branches returns root (main) and branch (instagram)",
         f"list_branches(edit_id={branch_src_id})",
         "branches include 'main' and 'instagram'",
         f"error={br_error}, branch_names={branch_names}",
@@ -759,8 +829,9 @@ async def run_fsv(tmp_dir: Path) -> None:
     hash1 = compute_segment_hash("abc123", seg_a, "tiktok_vertical")
     hash2 = compute_segment_hash("abc123", seg_a, "tiktok_vertical")
     check(
-        25, "Identical SegmentSpec produces identical hash",
-        f"compute_segment_hash(same inputs) x2",
+        25,
+        "Identical SegmentSpec produces identical hash",
+        "compute_segment_hash(same inputs) x2",
         "hashes match",
         f"h1={hash1[:16]}..., h2={hash2[:16]}...",
         f"hash1==hash2: {hash1 == hash2}",
@@ -777,8 +848,9 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     hash3 = compute_segment_hash("abc123", seg_b, "tiktok_vertical")
     check(
-        26, "Different speed produces different hash",
-        f"compute_segment_hash(speed=1.0) vs compute_segment_hash(speed=1.5)",
+        26,
+        "Different speed produces different hash",
+        "compute_segment_hash(speed=1.0) vs compute_segment_hash(speed=1.5)",
         "hashes differ",
         f"h1={hash1[:16]}..., h3={hash3[:16]}...",
         f"hash1!=hash3: {hash1 != hash3}",
@@ -793,12 +865,16 @@ async def run_fsv(tmp_dir: Path) -> None:
     print("=" * 55)
 
     # CHECK 27: edit_history with non-existent edit_id
-    hist_bad = await dispatch_editing_tool("clipcannon_edit_history", {
-        "project_id": project_id,
-        "edit_id": "nonexistent_edit_999",
-    })
+    hist_bad = await dispatch_editing_tool(
+        "clipcannon_edit_history",
+        {
+            "project_id": project_id,
+            "edit_id": "nonexistent_edit_999",
+        },
+    )
     check(
-        27, "edit_history with non-existent edit_id returns error",
+        27,
+        "edit_history with non-existent edit_id returns error",
         "edit_history(edit_id='nonexistent_edit_999')",
         "error response",
         f"has_error={'error' in hist_bad}, code={hist_bad.get('error', {}).get('code', '')}",
@@ -807,13 +883,17 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 28: revert_edit with non-existent version_number
-    revert_bad = await dispatch_editing_tool("clipcannon_revert_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "version_number": 999,
-    })
+    revert_bad = await dispatch_editing_tool(
+        "clipcannon_revert_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "version_number": 999,
+        },
+    )
     check(
-        28, "revert_edit with non-existent version_number returns error",
+        28,
+        "revert_edit with non-existent version_number returns error",
         "revert_edit(version_number=999)",
         "error response with VERSION_NOT_FOUND",
         f"has_error={'error' in revert_bad}, code={revert_bad.get('error', {}).get('code', '')}",
@@ -822,14 +902,18 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 29: branch_edit with non-existent edit_id
-    branch_bad = await dispatch_editing_tool("clipcannon_branch_edit", {
-        "project_id": project_id,
-        "edit_id": "nonexistent_edit_999",
-        "branch_name": "bad_branch",
-        "target_platform": "tiktok",
-    })
+    branch_bad = await dispatch_editing_tool(
+        "clipcannon_branch_edit",
+        {
+            "project_id": project_id,
+            "edit_id": "nonexistent_edit_999",
+            "branch_name": "bad_branch",
+            "target_platform": "tiktok",
+        },
+    )
     check(
-        29, "branch_edit with non-existent edit_id returns error",
+        29,
+        "branch_edit with non-existent edit_id returns error",
         "branch_edit(edit_id='nonexistent_edit_999')",
         "error response",
         f"has_error={'error' in branch_bad}, code={branch_bad.get('error', {}).get('code', '')}",
@@ -838,14 +922,18 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 30: apply_feedback with empty feedback string
-    fb_empty = await dispatch_editing_tool("clipcannon_apply_feedback", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "feedback": "",
-    })
+    fb_empty = await dispatch_editing_tool(
+        "clipcannon_apply_feedback",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "feedback": "",
+        },
+    )
     fb_empty_error = "error" in fb_empty
     check(
-        30, "apply_feedback with empty string returns error or low confidence",
+        30,
+        "apply_feedback with empty string returns error or low confidence",
         "apply_feedback(feedback='')",
         "error response (low confidence)",
         f"has_error={fb_empty_error}, code={fb_empty.get('error', {}).get('code', '')}",
@@ -854,13 +942,17 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 31: preview_segment with segment_index=0 (out of range)
-    preview_0 = await dispatch_rendering_tool("clipcannon_preview_segment", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "segment_index": 0,
-    })
+    preview_0 = await dispatch_rendering_tool(
+        "clipcannon_preview_segment",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "segment_index": 0,
+        },
+    )
     check(
-        31, "preview_segment with index 0 returns error",
+        31,
+        "preview_segment with index 0 returns error",
         "preview_segment(segment_index=0)",
         "error response (INVALID_PARAMETER)",
         f"has_error={'error' in preview_0}, code={preview_0.get('error', {}).get('code', '')}",
@@ -869,18 +961,23 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
 
     # CHECK 32: preview_segment with index > segment_count
-    preview_high = await dispatch_rendering_tool("clipcannon_preview_segment", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "segment_index": 999,
-    })
+    preview_high = await dispatch_rendering_tool(
+        "clipcannon_preview_segment",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "segment_index": 999,
+        },
+    )
     check(
-        32, "preview_segment with index > segment_count returns error",
+        32,
+        "preview_segment with index > segment_count returns error",
         "preview_segment(segment_index=999)",
         "error response (INVALID_PARAMETER)",
         f"has_error={'error' in preview_high}, code={preview_high.get('error', {}).get('code', '')}",
         f"response: {list(preview_high.keys())}",
-        "error" in preview_high and preview_high.get("error", {}).get("code") == "INVALID_PARAMETER",
+        "error" in preview_high
+        and preview_high.get("error", {}).get("code") == "INVALID_PARAMETER",
     )
 
     # ==========================================================
@@ -905,7 +1002,8 @@ async def run_fsv(tmp_dir: Path) -> None:
         except Exception:
             pass
     check(
-        33, "render_hint_json stored in edits table is valid JSON",
+        33,
+        "render_hint_json stored in edits table is valid JSON",
         f"edits.render_hint_json for edit_id={edit_id}",
         "valid JSON with segments_invalidated or all_segments_invalidated",
         f"has_json={hint_json is not None}, valid={hint_valid}",
@@ -926,7 +1024,8 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     expected_count = int(current_edit_row["segment_count"]) if current_edit_row else 0
     check(
-        34, "edit_segments table matches current segment_count",
+        34,
+        "edit_segments table matches current segment_count",
         f"edit_segments rows for edit_id={edit_id}",
         f"count={expected_count}",
         f"count={len(edit_segs)}",
@@ -942,11 +1041,14 @@ async def run_fsv(tmp_dir: Path) -> None:
     )
     pre_audio = json.loads(pre_fb_row["edl_json"])["audio"] if pre_fb_row else {}
     pre_vol = pre_audio.get("source_volume_db", 0.0)
-    fb_audio = await dispatch_editing_tool("clipcannon_apply_feedback", {
-        "project_id": project_id,
-        "edit_id": fb_edit_id,
-        "feedback": "the background music is too loud, turn it down",
-    })
+    await dispatch_editing_tool(
+        "clipcannon_apply_feedback",
+        {
+            "project_id": project_id,
+            "edit_id": fb_edit_id,
+            "feedback": "the background music is too loud, turn it down",
+        },
+    )
     post_fb_row = raw_fetch_one(
         db_path,
         "SELECT edl_json FROM edits WHERE edit_id = ?",
@@ -957,11 +1059,12 @@ async def run_fsv(tmp_dir: Path) -> None:
     # Feedback should lower volume (negative delta)
     vol_changed = post_vol != pre_vol
     check(
-        35, "Feedback 'music too loud' actually changes audio volume in DB",
-        f"apply_feedback then check edits.edl_json->audio->source_volume_db",
+        35,
+        "Feedback 'music too loud' actually changes audio volume in DB",
+        "apply_feedback then check edits.edl_json->audio->source_volume_db",
         f"volume changed from {pre_vol}",
         f"pre={pre_vol}, post={post_vol}, changed={vol_changed}",
-        f"DB: edl_json->audio->source_volume_db",
+        "DB: edl_json->audio->source_volume_db",
         vol_changed,
     )
 
@@ -980,8 +1083,9 @@ async def run_fsv(tmp_dir: Path) -> None:
     br_edl = json.loads(branch_edl_row["edl_json"]) if branch_edl_row else {}
     # They should have different edit_ids but same segments
     check(
-        36, "Branched edit has independent EDL (different edit_id, same segments)",
-        f"Compare edl_json between source and branch",
+        36,
+        "Branched edit has independent EDL (different edit_id, same segments)",
+        "Compare edl_json between source and branch",
         "different edit_id, same segment count",
         (
             f"src_edit_id={src_edl.get('edit_id', '?')}, "
@@ -989,7 +1093,7 @@ async def run_fsv(tmp_dir: Path) -> None:
             f"src_segs={len(src_edl.get('segments', []))}, "
             f"br_segs={len(br_edl.get('segments', []))}"
         ),
-        f"DB: two separate edl_json blobs",
+        "DB: two separate edl_json blobs",
         (
             src_edl.get("edit_id") != br_edl.get("edit_id")
             and len(src_edl.get("segments", [])) == len(br_edl.get("segments", []))

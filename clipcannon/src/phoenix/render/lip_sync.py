@@ -16,6 +16,7 @@ Usage:
     params = sync.from_audio(audio_float32)  # -> list of LipFrame
     # Each LipFrame has: mouth_open (0-1), energy, frame_idx
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -26,10 +27,11 @@ import numpy as np
 @dataclasses.dataclass(frozen=True)
 class LipFrame:
     """Lip parameters for a single video frame."""
+
     frame_idx: int
-    mouth_open: float     # 0.0 = closed, 1.0 = wide open
-    energy: float         # Raw RMS energy for this frame window
-    is_silence: bool      # True if energy below silence threshold
+    mouth_open: float  # 0.0 = closed, 1.0 = wide open
+    energy: float  # Raw RMS energy for this frame window
+    is_silence: bool  # True if energy below silence threshold
 
 
 class LipSync:
@@ -79,17 +81,13 @@ class LipSync:
         spf = self._samples_per_frame
 
         # Compute RMS energy per frame window
-        energies = np.array([
-            float(np.sqrt(np.mean(audio[i * spf:(i + 1) * spf] ** 2)))
-            for i in range(n_frames)
-        ])
+        energies = np.array(
+            [float(np.sqrt(np.mean(audio[i * spf : (i + 1) * spf] ** 2))) for i in range(n_frames)]
+        )
 
         # Normalize energies to 0-1 range based on clip's dynamic range
         peak = np.max(energies)
-        if peak > 0:
-            norm = energies / peak
-        else:
-            norm = energies
+        norm = energies / peak if peak > 0 else energies
 
         # Apply non-linear mapping: sqrt gives more movement at lower volumes
         # (speech is mostly mid-energy, not extreme peaks)
@@ -102,21 +100,20 @@ class LipSync:
             raw_open = float(mapped[i])
             is_silent = energies[i] < self._silence
 
-            if is_silent:
-                target = 0.0
-            else:
-                target = raw_open
+            target = 0.0 if is_silent else raw_open
 
             # EMA: blend toward target
             smoothed = self._smoothing * target + (1 - self._smoothing) * self._prev_open
             self._prev_open = smoothed
 
-            frames.append(LipFrame(
-                frame_idx=i,
-                mouth_open=smoothed,
-                energy=float(energies[i]),
-                is_silence=is_silent,
-            ))
+            frames.append(
+                LipFrame(
+                    frame_idx=i,
+                    mouth_open=smoothed,
+                    energy=float(energies[i]),
+                    is_silence=is_silent,
+                )
+            )
 
         return frames
 
@@ -132,7 +129,7 @@ class LipSync:
         Returns:
             Single LipFrame for this instant.
         """
-        energy = float(np.sqrt(np.mean(chunk ** 2))) if len(chunk) > 0 else 0.0
+        energy = float(np.sqrt(np.mean(chunk**2))) if len(chunk) > 0 else 0.0
         is_silent = energy < self._silence
 
         if is_silent:

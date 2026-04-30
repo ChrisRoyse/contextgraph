@@ -9,6 +9,7 @@ Features extracted:
   - Zero-crossing rate (ZCR) for fricative detection
   - RMS energy
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -20,7 +21,9 @@ def clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def extract_formants_lpc(
-    audio: np.ndarray, sample_rate: int, order: int = 12,
+    audio: np.ndarray,
+    sample_rate: int,
+    order: int = 12,
 ) -> tuple[float, float, float]:
     """Extract F1, F2, F3 from audio using LPC polynomial root-finding.
 
@@ -46,9 +49,10 @@ def extract_formants_lpc(
     # LPC via autocorrelation method (Levinson-Durbin)
     try:
         from scipy.linalg import solve_toeplitz
+
         corr = np.correlate(windowed, windowed, mode="full")
-        corr = corr[len(corr) // 2:]
-        lpc_coeffs = solve_toeplitz(corr[:order], corr[1:order + 1])
+        corr = corr[len(corr) // 2 :]
+        lpc_coeffs = solve_toeplitz(corr[:order], corr[1 : order + 1])
     except (np.linalg.LinAlgError, ValueError):
         return (0.0, 0.0, 0.0)
 
@@ -74,8 +78,10 @@ def extract_formants_lpc(
 
 
 def extract_f0_yin(
-    audio: np.ndarray, sample_rate: int,
-    f_min: float = 60.0, f_max: float = 500.0,
+    audio: np.ndarray,
+    sample_rate: int,
+    f_min: float = 60.0,
+    f_max: float = 500.0,
     threshold: float = 0.15,
 ) -> float:
     """Extract fundamental frequency using the YIN algorithm.
@@ -106,7 +112,7 @@ def extract_f0_yin(
     # Difference function d(tau)
     diffs = np.zeros(tau_max)
     for tau in range(1, tau_max):
-        diff = audio[:n] - audio[tau:tau + n]
+        diff = audio[:n] - audio[tau : tau + n]
         diffs[tau] = np.sum(diff * diff)
 
     # Cumulative mean normalized difference (CMNDF)

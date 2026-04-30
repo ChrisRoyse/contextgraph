@@ -6,6 +6,7 @@ mask video that FFmpeg can use for alpha compositing.
 
 All processing is LOCAL - no data leaves the machine.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -191,35 +192,22 @@ def build_background_replace_filters(
         filters.append(f"[bg_src]gblur=sigma={sigma}[blurred_bg]")
         # Scale mask to match source
         filters.append(
-            f"[{mask_video_input_idx}:v]"
-            f"scale={output_w}:{output_h},"
-            f"format=gray[mask_scaled]"
+            f"[{mask_video_input_idx}:v]scale={output_w}:{output_h},format=gray[mask_scaled]"
         )
         # Use mask to composite subject over blurred bg
-        filters.append(
-            "[subject_src][mask_scaled]alphamerge[subject_alpha]"
-        )
-        filters.append(
-            "[blurred_bg][subject_alpha]overlay=0:0[composed]"
-        )
+        filters.append("[subject_src][mask_scaled]alphamerge[subject_alpha]")
+        filters.append("[blurred_bg][subject_alpha]overlay=0:0[composed]")
 
     elif background_type == "color":
         color_hex = background_value.lstrip("#")
         # Create solid color background
-        filters.append(
-            f"color=c=0x{color_hex}:s={output_w}x{output_h}"
-            f":d=999:r=30[color_bg]"
-        )
+        filters.append(f"color=c=0x{color_hex}:s={output_w}x{output_h}:d=999:r=30[color_bg]")
         # Scale mask
         filters.append(
-            f"[{mask_video_input_idx}:v]"
-            f"scale={output_w}:{output_h},"
-            f"format=gray[mask_scaled]"
+            f"[{mask_video_input_idx}:v]scale={output_w}:{output_h},format=gray[mask_scaled]"
         )
         # Composite
         filters.append("[0:v][mask_scaled]alphamerge[subject_alpha]")
-        filters.append(
-            "[color_bg][subject_alpha]overlay=0:0:shortest=1[composed]"
-        )
+        filters.append("[color_bg][subject_alpha]overlay=0:0:shortest=1[composed]")
 
     return filters

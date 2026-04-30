@@ -1,4 +1,5 @@
 """WebSocket transport for bidirectional audio and control messages."""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,10 +36,12 @@ class WebSocketTransport:
         on_control: Callable[[dict], Awaitable[None]],
     ) -> None:
         import websockets
+
         try:
             self._server = await websockets.serve(
                 lambda ws: self._handle(ws, on_audio, on_control),
-                self.host, self.port,
+                self.host,
+                self.port,
             )
             logger.info("WebSocket server listening on ws://%s:%d", self.host, self.port)
             await asyncio.Future()

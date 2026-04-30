@@ -1,4 +1,5 @@
 """Tests for voiceagent.meeting.address_detector -- real objects, no mocks."""
+
 from __future__ import annotations
 
 from voiceagent.meeting.address_detector import AddressDetector, AddressResult
@@ -30,7 +31,6 @@ def _make_segment(text: str, speaker: str = "Sarah", is_clone: bool = False) -> 
 
 
 class TestAddressDetection:
-
     def test_name_plus_question_mark(self) -> None:
         det = _make_detector()
         result = det.check_segment(_make_segment("Nate, what's the status?"))
@@ -53,11 +53,11 @@ class TestAddressDetection:
 
     def test_clone_self_speech(self) -> None:
         det = _make_detector()
-        result = det.check_segment(
-            _make_segment("Nate, what do you think?", is_clone=True)
-        )
+        result = det.check_segment(_make_segment("Nate, what do you think?", is_clone=True))
         assert result.is_addressed is False
-        print(f"Clone self-speech: is_addressed={result.is_addressed}, confidence={result.confidence}")
+        print(
+            f"Clone self-speech: is_addressed={result.is_addressed}, confidence={result.confidence}"
+        )
 
     def test_name_only_below_threshold(self) -> None:
         det = _make_detector()

@@ -3,6 +3,7 @@
 Tests transcript retrieval, segment detail, search, and error
 handling with synthetic data in a temp database.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,14 +52,22 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 duration_ms, resolution, fps, codec, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                project_id, "Test Video", "/tmp/test.mp4",
-                "abc123", 120000, "1920x1080", 30.0, "h264", "ready",
+                project_id,
+                "Test Video",
+                "/tmp/test.mp4",
+                "abc123",
+                120000,
+                "1920x1080",
+                30.0,
+                "h264",
+                "ready",
             ),
         )
 
         # Speakers
         batch_insert(
-            conn, "speakers",
+            conn,
+            "speakers",
             ["project_id", "label", "total_speaking_ms", "speaking_pct"],
             [
                 (project_id, "Speaker 1", 80000, 66.7),
@@ -68,7 +77,8 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Transcript segments
         batch_insert(
-            conn, "transcript_segments",
+            conn,
+            "transcript_segments",
             ["project_id", "start_ms", "end_ms", "text", "speaker_id", "word_count"],
             [
                 (project_id, 0, 5000, "Hello and welcome to the show.", 1, 7),
@@ -81,7 +91,8 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Transcript words for first segment
         batch_insert(
-            conn, "transcript_words",
+            conn,
+            "transcript_words",
             ["segment_id", "word", "start_ms", "end_ms", "confidence"],
             [
                 (1, "Hello", 0, 500, 0.99),
@@ -95,45 +106,114 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Topics
         batch_insert(
-            conn, "topics",
-            ["project_id", "start_ms", "end_ms", "label", "keywords",
-             "coherence_score", "semantic_density"],
+            conn,
+            "topics",
             [
-                (project_id, 0, 15000, "introduction", '["hello","welcome","show"]',
-                 0.85, 0.72),
-                (project_id, 60000, 70000, "deep learning", '["learning","deep","neural"]',
-                 0.90, 0.80),
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "label",
+                "keywords",
+                "coherence_score",
+                "semantic_density",
+            ],
+            [
+                (project_id, 0, 15000, "introduction", '["hello","welcome","show"]', 0.85, 0.72),
+                (
+                    project_id,
+                    60000,
+                    70000,
+                    "deep learning",
+                    '["learning","deep","neural"]',
+                    0.90,
+                    0.80,
+                ),
             ],
         )
 
         # Highlights
         batch_insert(
-            conn, "highlights",
-            ["project_id", "start_ms", "end_ms", "type", "score", "reason",
-             "emotion_score", "reaction_score", "semantic_score",
-             "narrative_score", "visual_score", "quality_score", "speaker_score"],
+            conn,
+            "highlights",
             [
-                (project_id, 0, 30000, "key_topic", 0.85,
-                 "High semantic density", 0.7, 0.5, 0.9, 0.8, 0.6, 0.7, 0.9),
-                (project_id, 60000, 90000, "emotional_peak", 0.72,
-                 "High energy", 0.9, 0.3, 0.6, 0.7, 0.5, 0.6, 0.8),
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "type",
+                "score",
+                "reason",
+                "emotion_score",
+                "reaction_score",
+                "semantic_score",
+                "narrative_score",
+                "visual_score",
+                "quality_score",
+                "speaker_score",
+            ],
+            [
+                (
+                    project_id,
+                    0,
+                    30000,
+                    "key_topic",
+                    0.85,
+                    "High semantic density",
+                    0.7,
+                    0.5,
+                    0.9,
+                    0.8,
+                    0.6,
+                    0.7,
+                    0.9,
+                ),
+                (
+                    project_id,
+                    60000,
+                    90000,
+                    "emotional_peak",
+                    0.72,
+                    "High energy",
+                    0.9,
+                    0.3,
+                    0.6,
+                    0.7,
+                    0.5,
+                    0.6,
+                    0.8,
+                ),
             ],
         )
 
         # Reactions
         batch_insert(
-            conn, "reactions",
-            ["project_id", "start_ms", "end_ms", "type", "confidence",
-             "intensity", "context_transcript"],
+            conn,
+            "reactions",
             [
-                (project_id, 5000, 6000, "laughter", 0.85, "medium",
-                 "Today we discuss machine learning."),
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "type",
+                "confidence",
+                "intensity",
+                "context_transcript",
+            ],
+            [
+                (
+                    project_id,
+                    5000,
+                    6000,
+                    "laughter",
+                    0.85,
+                    "medium",
+                    "Today we discuss machine learning.",
+                ),
             ],
         )
 
         # Emotion curve
         batch_insert(
-            conn, "emotion_curve",
+            conn,
+            "emotion_curve",
             ["project_id", "start_ms", "end_ms", "arousal", "valence", "energy"],
             [
                 (project_id, 0, 5000, 0.4, 0.6, 0.5),
@@ -160,9 +240,21 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Stream status
         streams = [
-            "source_separation", "visual", "ocr", "quality", "shot_type",
-            "transcription", "semantic", "emotion", "speaker", "reactions",
-            "acoustic", "beats", "chronemic", "storyboards", "profanity",
+            "source_separation",
+            "visual",
+            "ocr",
+            "quality",
+            "shot_type",
+            "transcription",
+            "semantic",
+            "emotion",
+            "speaker",
+            "reactions",
+            "acoustic",
+            "beats",
+            "chronemic",
+            "storyboards",
+            "profanity",
             "highlights",
         ]
         for stream in streams:
@@ -175,9 +267,17 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Pacing
         batch_insert(
-            conn, "pacing",
-            ["project_id", "start_ms", "end_ms", "words_per_minute",
-             "pause_ratio", "speaker_changes", "label"],
+            conn,
+            "pacing",
+            [
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "words_per_minute",
+                "pause_ratio",
+                "speaker_changes",
+                "label",
+            ],
             [
                 (project_id, 0, 60000, 120.0, 0.15, 2, "moderate"),
             ],
@@ -185,7 +285,8 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Silence gaps
         batch_insert(
-            conn, "silence_gaps",
+            conn,
+            "silence_gaps",
             ["project_id", "start_ms", "end_ms", "duration_ms", "type"],
             [
                 (project_id, 15000, 60000, 45000, "extended_pause"),
@@ -194,15 +295,22 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Scenes
         batch_insert(
-            conn, "scenes",
-            ["project_id", "start_ms", "end_ms", "key_frame_path",
-             "key_frame_timestamp_ms", "shot_type", "quality_avg",
-             "quality_min", "quality_classification"],
+            conn,
+            "scenes",
             [
-                (project_id, 0, 60000, str(frame_path), 0,
-                 "medium_shot", 0.75, 0.60, "good"),
-                (project_id, 60000, 120000, str(frame_path), 60000,
-                 "close_up", 0.80, 0.65, "good"),
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "key_frame_path",
+                "key_frame_timestamp_ms",
+                "shot_type",
+                "quality_avg",
+                "quality_min",
+                "quality_classification",
+            ],
+            [
+                (project_id, 0, 60000, str(frame_path), 0, "medium_shot", 0.75, 0.60, "good"),
+                (project_id, 60000, 120000, str(frame_path), 60000, "close_up", 0.80, 0.65, "good"),
             ],
         )
 
@@ -210,13 +318,17 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         grid_path = project_dir / "storyboards" / "grid_001.jpg"
         grid_path.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 50)
         batch_insert(
-            conn, "storyboard_grids",
-            ["project_id", "grid_number", "grid_path",
-             "cell_timestamps_ms", "cell_metadata"],
+            conn,
+            "storyboard_grids",
+            ["project_id", "grid_number", "grid_path", "cell_timestamps_ms", "cell_metadata"],
             [
-                (project_id, 1, str(grid_path),
-                 json.dumps([0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000]),
-                 json.dumps({"cells": [{"ts": i * 500} for i in range(9)]})),
+                (
+                    project_id,
+                    1,
+                    str(grid_path),
+                    json.dumps([0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000]),
+                    json.dumps({"cells": [{"ts": i * 500} for i in range(9)]}),
+                ),
             ],
         )
 
@@ -236,6 +348,7 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     # Monkeypatch _projects_dir to use tmp_path
     import clipcannon.tools.understanding as und_mod
+
     monkeypatch.setattr(und_mod, "_projects_dir", lambda: tmp_path)
 
     return {
@@ -330,7 +443,9 @@ class TestSearchContent:
         """Text search finds matching transcript segments."""
         pid = str(ready_project["project_id"])
         result = await clipcannon_search_content(
-            pid, query="machine learning", search_type="text",
+            pid,
+            query="machine learning",
+            search_type="text",
         )
 
         assert "error" not in result
@@ -342,7 +457,9 @@ class TestSearchContent:
         """Text search returns empty results for non-matching query."""
         pid = str(ready_project["project_id"])
         result = await clipcannon_search_content(
-            pid, query="xyzzy_nonexistent_term", search_type="text",
+            pid,
+            query="xyzzy_nonexistent_term",
+            search_type="text",
         )
         assert result["result_count"] == 0
 
@@ -351,7 +468,9 @@ class TestSearchContent:
         """Returns error for invalid search type."""
         pid = str(ready_project["project_id"])
         result = await clipcannon_search_content(
-            pid, query="test", search_type="invalid",
+            pid,
+            query="test",
+            search_type="invalid",
         )
         assert "error" in result
 
@@ -367,7 +486,8 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_wrong_status(
-        self, ready_project: dict[str, object],
+        self,
+        ready_project: dict[str, object],
     ) -> None:
         """Returns INVALID_STATE when project is not ready."""
         pid = str(ready_project["project_id"])

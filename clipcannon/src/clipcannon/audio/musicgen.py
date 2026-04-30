@@ -18,7 +18,10 @@ from __future__ import annotations
 import logging
 import random
 import wave
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +42,11 @@ def _validate_inputs(prompt: str, duration_s: float, model_size: str) -> None:
         raise ValueError(f"duration_s must be <= 120, got {duration_s}")
     if model_size not in _VALID_SIZES:
         raise ValueError(
-            f"Unknown model_size: {model_size!r}. "
-            f"Valid: {', '.join(sorted(_VALID_SIZES))}"
+            f"Unknown model_size: {model_size!r}. Valid: {', '.join(sorted(_VALID_SIZES))}"
         )
 
 
-def _crossfade_chunks(chunks: list, overlap_samples: int) -> "np.ndarray":  # noqa: F821
+def _crossfade_chunks(chunks: list, overlap_samples: int) -> np.ndarray:  # noqa: F821
     """Crossfade adjacent audio chunks with linear ramp at seams."""
     import numpy as np
 
@@ -59,14 +61,18 @@ def _crossfade_chunks(chunks: list, overlap_samples: int) -> "np.ndarray":  # no
         result[-overlap_samples:] *= fade_out
         chunk[:overlap_samples] *= fade_in
         overlap_mix = result[-overlap_samples:] + chunk[:overlap_samples]
-        result = np.concatenate([
-            result[:-overlap_samples], overlap_mix, chunk[overlap_samples:],
-        ])
+        result = np.concatenate(
+            [
+                result[:-overlap_samples],
+                overlap_mix,
+                chunk[overlap_samples:],
+            ]
+        )
 
     return result
 
 
-def _resample_to_44100(audio: "np.ndarray", src_sr: int) -> "np.ndarray":  # noqa: F821
+def _resample_to_44100(audio: np.ndarray, src_sr: int) -> np.ndarray:  # noqa: F821
     """Resample audio from src_sr to 44100Hz via linear interpolation."""
     import numpy as np
 
@@ -81,7 +87,7 @@ def _resample_to_44100(audio: "np.ndarray", src_sr: int) -> "np.ndarray":  # noq
     return audio[idx_floor] * (1.0 - frac) + audio[idx_ceil] * frac
 
 
-def _save_wav_mono(audio: "np.ndarray", path: Path, sample_rate: int) -> None:  # noqa: F821
+def _save_wav_mono(audio: np.ndarray, path: Path, sample_rate: int) -> None:  # noqa: F821
     """Save mono float32 audio as 16-bit WAV."""
     import numpy as np
 
@@ -112,7 +118,9 @@ def _validate_output(output_path: Path, requested_s: float) -> int:
     if abs(actual_s - requested_s) > max(tolerance, 2.0):
         logger.warning(
             "Duration %.1fs differs from requested %.1fs. File: %s",
-            actual_s, requested_s, output_path,
+            actual_s,
+            requested_s,
+            output_path,
         )
     return actual_ms
 
@@ -138,7 +146,8 @@ def _compute_chunk_durations(duration_s: float) -> list[float]:
 
     logger.info(
         "Windowed generation: %d chunks, durations=%s",
-        len(durations), [f"{d:.1f}s" for d in durations],
+        len(durations),
+        [f"{d:.1f}s" for d in durations],
     )
     return durations
 
@@ -150,7 +159,7 @@ async def generate_music_musicgen(
     model_size: str = "medium",
     seed: int | None = None,
     gpu_device: str = "cuda:0",
-) -> "MusicResult":
+) -> MusicResult:
     """Generate music using Meta's MusicGen model.
 
     Loads MusicGen (auto-downloads weights on first use via HuggingFace),
@@ -183,12 +192,8 @@ async def generate_music_musicgen(
     try:
         from audiocraft.models import MusicGen  # type: ignore[import-untyped]
     except ImportError:
-        logger.error(
-            "audiocraft not installed. Install with: pip install audiocraft"
-        )
-        raise ImportError(
-            "audiocraft not installed. Install with: pip install audiocraft"
-        )
+        logger.error("audiocraft not installed. Install with: pip install audiocraft")
+        raise ImportError("audiocraft not installed. Install with: pip install audiocraft")
 
     try:
         import torch  # type: ignore[import-untyped]
@@ -204,7 +209,11 @@ async def generate_music_musicgen(
     model_name = f"facebook/musicgen-{model_size}"
     logger.info(
         "MusicGen: prompt=%r, duration=%.1fs, model=%s, seed=%d, device=%s",
-        prompt[:80], duration_s, model_name, seed, gpu_device,
+        prompt[:80],
+        duration_s,
+        model_name,
+        seed,
+        gpu_device,
     )
 
     chunk_durations = _compute_chunk_durations(duration_s)
@@ -235,7 +244,10 @@ async def generate_music_musicgen(
             raw_chunks.append(chunk_audio)
             logger.info(
                 "Chunk %d: %d samples (%.1fs at %dHz)",
-                i + 1, len(chunk_audio), len(chunk_audio) / _MUSICGEN_SR, _MUSICGEN_SR,
+                i + 1,
+                len(chunk_audio),
+                len(chunk_audio) / _MUSICGEN_SR,
+                _MUSICGEN_SR,
             )
 
         # Crossfade if windowed
@@ -248,8 +260,13 @@ async def generate_music_musicgen(
 
         # Resample 32kHz -> 44100Hz and save
         resampled = _resample_to_44100(merged, _MUSICGEN_SR)
-        logger.info("Resampled %d -> %d samples (%dHz -> %dHz)",
-                     len(merged), len(resampled), _MUSICGEN_SR, _OUTPUT_SR)
+        logger.info(
+            "Resampled %d -> %d samples (%dHz -> %dHz)",
+            len(merged),
+            len(resampled),
+            _MUSICGEN_SR,
+            _OUTPUT_SR,
+        )
         _save_wav_mono(resampled, output_path, _OUTPUT_SR)
         logger.info("MusicGen output saved: %s", output_path)
 
@@ -258,7 +275,11 @@ async def generate_music_musicgen(
     except Exception as exc:
         logger.error(
             "MusicGen failed: %s. prompt=%r, duration=%.1fs, model=%s, seed=%d",
-            exc, prompt[:80], duration_s, model_name, seed,
+            exc,
+            prompt[:80],
+            duration_s,
+            model_name,
+            seed,
         )
         raise RuntimeError(
             f"MusicGen generation failed: {exc}. "

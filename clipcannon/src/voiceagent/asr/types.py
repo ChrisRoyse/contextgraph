@@ -5,6 +5,7 @@ AudioBuffer: Accumulates PCM audio chunks for batch processing.
 
 Audio format: 16kHz mono float32 PCM.
 """
+
 import time
 from dataclasses import dataclass, field
 
@@ -14,6 +15,7 @@ import numpy as np
 @dataclass
 class ASREvent:
     """A single transcription event from the ASR engine."""
+
     text: str
     final: bool
     timestamp: float = field(default_factory=time.time)
@@ -24,6 +26,7 @@ class AudioBuffer:
 
     Audio format: 16kHz mono float32 numpy arrays.
     """
+
     SAMPLE_RATE: int = 16000
 
     def __init__(self) -> None:

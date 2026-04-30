@@ -12,45 +12,47 @@ from dataclasses import dataclass, field
 import numpy as np
 from sklearn.cluster import KMeans
 
-
 # ---------------------------------------------------------------------------
 # FLAME coefficient -> FACS Action Unit mapping
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class ActionUnit:
     """A single FACS Action Unit derived from FLAME coefficients."""
+
     name: str
-    au_id: str           # e.g. "AU26"
-    region: str          # brow / eye / mouth / jaw / nose / cheek
+    au_id: str  # e.g. "AU26"
+    region: str  # brow / eye / mouth / jaw / nose / cheek
     intensity_range: tuple[float, float] = (0.0, 1.0)
 
 
 # Map FLAME expression indices to FACS AUs.
 FLAME_TO_AU: dict[int, ActionUnit] = {
-    0:  ActionUnit("jaw_open",        "AU26", "jaw"),
-    1:  ActionUnit("lip_spread",      "AU12", "mouth"),
-    2:  ActionUnit("lip_funneler",    "AU22", "mouth"),
-    3:  ActionUnit("lip_pucker",      "AU18", "mouth"),
-    4:  ActionUnit("lip_tightener",   "AU23", "mouth"),
-    5:  ActionUnit("brow_raise",      "AU1+2", "brow"),
-    6:  ActionUnit("eye_squint",      "AU6+7", "eye"),
-    7:  ActionUnit("mouth_stretch",   "AU27", "mouth"),
-    8:  ActionUnit("lip_press",       "AU24", "mouth"),
-    9:  ActionUnit("lip_corner_pull", "AU12b", "mouth"),
-    10: ActionUnit("cheek_raise",     "AU6",  "cheek"),
-    15: ActionUnit("dimpler",         "AU14", "cheek"),
-    22: ActionUnit("lip_suck",        "AU28", "mouth"),
-    24: ActionUnit("nose_wrinkle",    "AU9",  "nose"),
-    31: ActionUnit("chin_raise",      "AU17", "jaw"),
-    37: ActionUnit("brow_lower",      "AU4",  "brow"),
-    42: ActionUnit("eye_widen",       "AU5",  "eye"),
+    0: ActionUnit("jaw_open", "AU26", "jaw"),
+    1: ActionUnit("lip_spread", "AU12", "mouth"),
+    2: ActionUnit("lip_funneler", "AU22", "mouth"),
+    3: ActionUnit("lip_pucker", "AU18", "mouth"),
+    4: ActionUnit("lip_tightener", "AU23", "mouth"),
+    5: ActionUnit("brow_raise", "AU1+2", "brow"),
+    6: ActionUnit("eye_squint", "AU6+7", "eye"),
+    7: ActionUnit("mouth_stretch", "AU27", "mouth"),
+    8: ActionUnit("lip_press", "AU24", "mouth"),
+    9: ActionUnit("lip_corner_pull", "AU12b", "mouth"),
+    10: ActionUnit("cheek_raise", "AU6", "cheek"),
+    15: ActionUnit("dimpler", "AU14", "cheek"),
+    22: ActionUnit("lip_suck", "AU28", "mouth"),
+    24: ActionUnit("nose_wrinkle", "AU9", "nose"),
+    31: ActionUnit("chin_raise", "AU17", "jaw"),
+    37: ActionUnit("brow_lower", "AU4", "brow"),
+    42: ActionUnit("eye_widen", "AU5", "eye"),
 }
 
 
 @dataclass
 class MicroExpressionGroup:
     """Level 1: Atomic micro-expression group (a few AUs firing together)."""
+
     name: str
     action_units: list[ActionUnit]
     description: str
@@ -60,22 +62,25 @@ class MicroExpressionGroup:
 @dataclass
 class ExpressionPhase:
     """One phase of a skill (onset / peak / offset)."""
-    groups: list[str]       # group names active in this phase
-    duration_s: float       # seconds
+
+    groups: list[str]  # group names active in this phase
+    duration_s: float  # seconds
     intensity: float = 1.0  # 0-1 multiplier
 
 
 @dataclass
 class ExpressionSkill:
     """Level 2: A named behavioral expression with temporal phases."""
+
     name: str
-    phases: dict[str, ExpressionPhase]   # onset / peak / offset
-    prompt: str                           # natural language prompt
+    phases: dict[str, ExpressionPhase]  # onset / peak / offset
+    prompt: str  # natural language prompt
 
 
 @dataclass
 class BehavioralConstellation:
     """Level 3: An emotional state expressed as a cycling skill sequence."""
+
     name: str
     skill_sequence: list[str]
     cycle: bool
@@ -89,40 +94,40 @@ class BehavioralConstellation:
 # ---------------------------------------------------------------------------
 
 SKILL_PROMPTS: dict[str, str] = {
-    "genuine_laugh":     "laughing genuinely with eyes crinkled, mouth wide open, head tilting back slightly",
-    "warm_smile":        "warm gentle smile with eyes soft, slight head tilt, relaxed expression",
-    "gentle_nod":        "nodding gently with soft approving expression",
-    "eye_contact":       "direct warm eye contact with relaxed brow",
-    "slight_gesture":    "subtle hand gesture while speaking naturally",
-    "thoughtful_pause":  "looking down thoughtfully, slight frown, lips pressed together",
-    "gaze_down":         "gaze directed downward, introspective expression",
-    "voice_waver":       "expression showing emotional strain, lips slightly trembling",
-    "brave_smile":       "smiling through emotion, eyes slightly wet, chin raised",
-    "deep_breath":       "taking a deep breath, chest rising, composing expression",
-    "eyes_wide":         "eyes widened with excitement or surprise, brows raised",
-    "animated_gesture":  "animated expressive gesture with enthusiastic face",
-    "emphatic_nod":      "emphatic confident nod with conviction in eyes",
-    "brow_furrow":       "brow furrowed with concern, eyes soft and empathetic",
-    "soft_eyes":         "eyes soft and gentle, showing deep empathy",
-    "slow_nod":          "slow deliberate nod showing understanding",
-    "lip_press":         "lips pressed together with restrained emotion",
-    "head_tilt":         "head tilted slightly to one side, attentive expression",
-    "gaze_up":           "gaze directed upward, searching for thought or memory",
-    "slight_frown":      "slight frown of concentration, not displeasure",
-    "pause":             "momentary stillness, face neutral and contemplative",
-    "slow_blink":        "slow deliberate blink, calm and reflective",
-    "chin_rest":         "chin resting on hand, deep in thought",
-    "rapid_speech":      "animated expression with rapid engaged speaking",
-    "lean_forward":      "leaning forward with engaged eager expression",
-    "hand_gesture":      "expressive hand gesture emphasising a point",
-    "steady_gaze":       "steady unwavering gaze, serious and present",
-    "slow_speech":       "measured expression, speaking slowly and deliberately",
-    "minimal_movement":  "very still, calm, serious facial expression",
-    "slight_nod":        "barely perceptible nod, quiet affirmation",
-    "eye_twinkle":       "eyes bright with subdued amusement, slight crinkle",
-    "half_smile":        "asymmetric half smile, knowing and warm",
-    "slight_pause":      "brief pause, hint of amusement in expression",
-    "warm_chuckle":      "soft chuckle with gentle smile, eyes bright",
+    "genuine_laugh": "laughing genuinely with eyes crinkled, mouth wide open, head tilting back slightly",
+    "warm_smile": "warm gentle smile with eyes soft, slight head tilt, relaxed expression",
+    "gentle_nod": "nodding gently with soft approving expression",
+    "eye_contact": "direct warm eye contact with relaxed brow",
+    "slight_gesture": "subtle hand gesture while speaking naturally",
+    "thoughtful_pause": "looking down thoughtfully, slight frown, lips pressed together",
+    "gaze_down": "gaze directed downward, introspective expression",
+    "voice_waver": "expression showing emotional strain, lips slightly trembling",
+    "brave_smile": "smiling through emotion, eyes slightly wet, chin raised",
+    "deep_breath": "taking a deep breath, chest rising, composing expression",
+    "eyes_wide": "eyes widened with excitement or surprise, brows raised",
+    "animated_gesture": "animated expressive gesture with enthusiastic face",
+    "emphatic_nod": "emphatic confident nod with conviction in eyes",
+    "brow_furrow": "brow furrowed with concern, eyes soft and empathetic",
+    "soft_eyes": "eyes soft and gentle, showing deep empathy",
+    "slow_nod": "slow deliberate nod showing understanding",
+    "lip_press": "lips pressed together with restrained emotion",
+    "head_tilt": "head tilted slightly to one side, attentive expression",
+    "gaze_up": "gaze directed upward, searching for thought or memory",
+    "slight_frown": "slight frown of concentration, not displeasure",
+    "pause": "momentary stillness, face neutral and contemplative",
+    "slow_blink": "slow deliberate blink, calm and reflective",
+    "chin_rest": "chin resting on hand, deep in thought",
+    "rapid_speech": "animated expression with rapid engaged speaking",
+    "lean_forward": "leaning forward with engaged eager expression",
+    "hand_gesture": "expressive hand gesture emphasising a point",
+    "steady_gaze": "steady unwavering gaze, serious and present",
+    "slow_speech": "measured expression, speaking slowly and deliberately",
+    "minimal_movement": "very still, calm, serious facial expression",
+    "slight_nod": "barely perceptible nod, quiet affirmation",
+    "eye_twinkle": "eyes bright with subdued amusement, slight crinkle",
+    "half_smile": "asymmetric half smile, knowing and warm",
+    "slight_pause": "brief pause, hint of amusement in expression",
+    "warm_chuckle": "soft chuckle with gentle smile, eyes bright",
 }
 
 
@@ -186,6 +191,7 @@ CONSTELLATIONS: dict[str, dict] = {
 # Skill Library
 # ---------------------------------------------------------------------------
 
+
 class SkillLibrary:
     """Extracts and manages the micro-expression skill vocabulary."""
 
@@ -223,7 +229,7 @@ class SkillLibrary:
             raise FileNotFoundError(f"FLAME params not found: {fp_path}")
 
         flame = np.load(str(fp_path))
-        expression = flame["expression"]   # (N, 100)
+        expression = flame["expression"]  # (N, 100)
 
         # --- Level 1: cluster into micro-expression groups ---
         km_groups = KMeans(n_clusters=n_groups, random_state=42, n_init=10)
@@ -277,8 +283,7 @@ class SkillLibrary:
     def get_constellation(self, name: str) -> BehavioralConstellation:
         if name not in self._constellations:
             raise KeyError(
-                f"Unknown constellation: {name!r}. "
-                f"Available: {self.list_constellations()}"
+                f"Unknown constellation: {name!r}. Available: {self.list_constellations()}"
             )
         return self._constellations[name]
 
@@ -421,8 +426,8 @@ class SkillLibrary:
             self._skills[sname] = ExpressionSkill(
                 name=sname,
                 phases={
-                    "onset":  ExpressionPhase(groups=onset_g, duration_s=0.2),
-                    "peak":   ExpressionPhase(groups=peak_g, duration_s=0.5, intensity=1.0),
+                    "onset": ExpressionPhase(groups=onset_g, duration_s=0.2),
+                    "peak": ExpressionPhase(groups=peak_g, duration_s=0.5, intensity=1.0),
                     "offset": ExpressionPhase(groups=offset_g, duration_s=0.3, intensity=0.3),
                 },
                 prompt=prompt_text,

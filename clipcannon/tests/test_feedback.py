@@ -21,10 +21,7 @@ from clipcannon.editing.edl import (
     AudioSpec,
     CaptionSpec,
     ColorSpec,
-    CropSpec,
     EditDecisionList,
-    MetadataSpec,
-    RenderSettingsSpec,
     SegmentSpec,
 )
 from clipcannon.tools.feedback import (
@@ -578,7 +575,9 @@ class TestApplyFeedbackIntegration:
 
     @pytest.mark.asyncio()
     async def test_apply_feedback_too_fast(
-        self, project_setup: str, tmp_path: Path,
+        self,
+        project_setup: str,
+        tmp_path: Path,
     ) -> None:
         """Create edit, apply 'too fast' feedback, verify speed changed."""
         from clipcannon.tools.editing import dispatch_editing_tool
@@ -625,11 +624,13 @@ class TestApplyFeedbackIntegration:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT edl_json FROM edits WHERE edit_id = ?", (edit_id,),
+            "SELECT edl_json FROM edits WHERE edit_id = ?",
+            (edit_id,),
         ).fetchone()
         conn.close()
 
         import json
+
         edl_data = json.loads(row["edl_json"])
         for seg in edl_data["segments"]:
             # Speed should have decreased from 1.0
@@ -637,7 +638,8 @@ class TestApplyFeedbackIntegration:
 
     @pytest.mark.asyncio()
     async def test_apply_feedback_low_confidence(
-        self, project_setup: str,
+        self,
+        project_setup: str,
     ) -> None:
         """Unparseable feedback returns LOW_CONFIDENCE error."""
         from clipcannon.tools.editing import dispatch_editing_tool
@@ -671,7 +673,9 @@ class TestApplyFeedbackIntegration:
 
     @pytest.mark.asyncio()
     async def test_apply_feedback_caption_resize(
-        self, project_setup: str, tmp_path: Path,
+        self,
+        project_setup: str,
+        tmp_path: Path,
     ) -> None:
         """Apply 'make text bigger' feedback, verify font_size changed."""
         from clipcannon.tools.editing import dispatch_editing_tool
@@ -710,10 +714,12 @@ class TestApplyFeedbackIntegration:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         row = conn.execute(
-            "SELECT edl_json FROM edits WHERE edit_id = ?", (edit_id,),
+            "SELECT edl_json FROM edits WHERE edit_id = ?",
+            (edit_id,),
         ).fetchone()
         conn.close()
 
         import json
+
         edl_data = json.loads(row["edl_json"])
         assert edl_data["captions"]["font_size"] == 56  # 48 + 8

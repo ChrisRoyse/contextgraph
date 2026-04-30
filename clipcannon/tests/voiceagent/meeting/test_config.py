@@ -1,4 +1,5 @@
 """Tests for voiceagent.meeting.config -- real objects, no mocks."""
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,6 @@ from voiceagent.meeting.config import (
     BehaviorConfig,
     BotJoinConfig,
     BrowserBotConfig,
-    CloneConfig,
     DiarizationConfig,
     LipSyncConfig,
     MeetingConfig,
@@ -86,7 +86,9 @@ class TestLoadFromFile:
             },
         }
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False,
+            mode="w",
+            suffix=".json",
+            delete=False,
         ) as f:
             json.dump(data, f)
             f.flush()
@@ -117,7 +119,9 @@ class TestLoadFromFile:
             }
         }
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False,
+            mode="w",
+            suffix=".json",
+            delete=False,
         ) as f:
             json.dump(data, f)
             f.flush()
@@ -133,7 +137,9 @@ class TestLoadFromFile:
 
     def test_invalid_json(self) -> None:
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False,
+            mode="w",
+            suffix=".json",
+            delete=False,
         ) as f:
             f.write("{broken json!!!")
             f.flush()
@@ -144,7 +150,9 @@ class TestLoadFromFile:
     def test_range_validation(self) -> None:
         data = {"voice": {"secs_threshold": 1.5}}
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False,
+            mode="w",
+            suffix=".json",
+            delete=False,
         ) as f:
             json.dump(data, f)
             f.flush()

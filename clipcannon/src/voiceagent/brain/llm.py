@@ -10,6 +10,7 @@ Purpose-built inference engine with:
 This is NOT a generic wrapper. Every decision is optimized for the voice agent
 use case: low-latency first-token, streaming output, single-user local inference.
 """
+
 from __future__ import annotations
 
 import gc
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class GenerationMetrics:
     """Metrics from a single generation call."""
+
     prompt_tokens: int
     generated_tokens: int
     time_to_first_token_ms: float
@@ -119,7 +121,7 @@ class LLMBrain:
 
         vram_after = torch.cuda.memory_allocated(self._device)
         self._load_time_ms = (time.perf_counter() - t0) * 1000
-        vram_used_gb = (vram_after - vram_before) / (1024 ** 3)
+        vram_used_gb = (vram_after - vram_before) / (1024**3)
 
         logger.info(
             "Model loaded: path=%s, dtype=%s, vram=%.2fGB, time=%.0fms, "
@@ -136,7 +138,7 @@ class LLMBrain:
     def _resolve_dtype(quantization: str) -> torch.dtype:
         """Map quantization string to torch dtype."""
         mapping = {
-            "fp8": torch.float16,     # FP8 models load as FP16 via transformers
+            "fp8": torch.float16,  # FP8 models load as FP16 via transformers
             "fp16": torch.float16,
             "bf16": torch.bfloat16,
             "fp32": torch.float32,
@@ -144,8 +146,7 @@ class LLMBrain:
         dtype = mapping.get(quantization)
         if dtype is None:
             raise LLMError(
-                f"Unsupported quantization '{quantization}'. "
-                f"Supported: {list(mapping.keys())}."
+                f"Unsupported quantization '{quantization}'. Supported: {list(mapping.keys())}."
             )
         return dtype
 
@@ -163,8 +164,7 @@ class LLMBrain:
         """
         if not messages:
             raise LLMError(
-                "Empty messages list. Provide at least one message "
-                "with 'role' and 'content' keys."
+                "Empty messages list. Provide at least one message with 'role' and 'content' keys."
             )
         return self._tokenizer.apply_chat_template(
             messages,
@@ -220,9 +220,7 @@ class LLMBrain:
             LLMError: If messages empty, model not loaded, or generation fails.
         """
         if self._model is None:
-            raise LLMError(
-                "Model not loaded. Call __init__ first or model was released."
-            )
+            raise LLMError("Model not loaded. Call __init__ first or model was released.")
 
         prompt = self._build_chat_prompt(messages)
         inputs = self._tokenize(prompt)
@@ -280,8 +278,7 @@ class LLMBrain:
 
         if gen_error is not None:
             raise LLMError(
-                f"Generation failed: {gen_error}. "
-                f"Prompt length: {prompt_len} tokens."
+                f"Generation failed: {gen_error}. Prompt length: {prompt_len} tokens."
             ) from gen_error
 
         # Record metrics
@@ -301,7 +298,11 @@ class LLMBrain:
         logger.info(
             "Generation complete: prompt=%d tokens, generated=%d tokens, "
             "ttft=%.0fms, total=%.0fms, speed=%.1f tok/s",
-            prompt_len, generated_count, ttft_ms, total_ms, tps,
+            prompt_len,
+            generated_count,
+            ttft_ms,
+            total_ms,
+            tps,
         )
 
     @property
@@ -338,9 +339,10 @@ class LLMBrain:
         torch.cuda.empty_cache()
 
         vram_after = torch.cuda.memory_allocated(torch.device("cuda:0"))
-        freed_gb = (vram_before - vram_after) / (1024 ** 3)
+        freed_gb = (vram_before - vram_after) / (1024**3)
 
         logger.info(
             "LLMBrain released: freed=%.2fGB, remaining=%.2fGB",
-            freed_gb, vram_after / (1024 ** 3),
+            freed_gb,
+            vram_after / (1024**3),
         )

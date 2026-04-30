@@ -12,6 +12,7 @@ This adapter is SEPARATE from ClipCannonAdapter which uses the full
 1.7B model for high-quality video generation. The voice agent uses
 this fast adapter; ClipCannon tools are unaffected.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -80,7 +81,8 @@ class FastTTSAdapter:
 
         # Find reference audio
         self._ref_audio, self._ref_text = self._find_reference_with_text(
-            voice_name, db_path,
+            voice_name,
+            db_path,
         )
         if self._ref_audio:
             logger.info("FastTTS ref: %s", Path(self._ref_audio).name)
@@ -103,6 +105,7 @@ class FastTTSAdapter:
                 If None, transcribes automatically.
         """
         from pathlib import Path
+
         path = Path(ref_audio_path).expanduser()
         if not path.exists():
             logger.warning("Ref audio not found: %s", ref_audio_path)
@@ -203,6 +206,7 @@ class FastTTSAdapter:
         db = str(Path(db_path or self.DEFAULT_DB).expanduser())
         try:
             from clipcannon.voice.profiles import get_voice_profile
+
             profile = get_voice_profile(db, voice_name)
         except (ImportError, OSError, KeyError) as e:
             logger.debug("Voice profile lookup failed for %s: %s", voice_name, e)
@@ -228,10 +232,7 @@ class FastTTSAdapter:
                     return str(vocals), ref_text
 
         # 3. Fallback: first clip from voice_data
-        wavs_dir = (
-            Path(self.VOICE_DATA_DIR).expanduser()
-            / voice_name / "wavs"
-        )
+        wavs_dir = Path(self.VOICE_DATA_DIR).expanduser() / voice_name / "wavs"
         if wavs_dir.is_dir():
             clips = sorted(wavs_dir.glob("*.wav"))
             if clips:
@@ -245,6 +246,7 @@ class FastTTSAdapter:
         """Transcribe reference audio for Full ICL ref_text."""
         try:
             from faster_whisper import WhisperModel
+
             whisper = WhisperModel("base", device="cpu", compute_type="int8")
             segs, _ = whisper.transcribe(audio_path, language="en")
             text = " ".join(s.text.strip() for s in segs)
@@ -263,8 +265,7 @@ class FastTTSAdapter:
             from faster_qwen3_tts import FasterQwen3TTS
         except ImportError as e:
             raise TTSError(
-                "faster-qwen3-tts required. "
-                "Install: pip install faster-qwen3-tts"
+                "faster-qwen3-tts required. Install: pip install faster-qwen3-tts"
             ) from e
 
         logger.info("Loading faster-qwen3-tts (%s)...", self._model_id)
@@ -291,7 +292,9 @@ class FastTTSAdapter:
         return max(12, min(tokens, 360))
 
     def _clone_kwargs(
-        self, text: str, max_new_tokens: int | None = None,
+        self,
+        text: str,
+        max_new_tokens: int | None = None,
     ) -> dict:
         """Build kwargs for generate_voice_clone.
 
@@ -378,7 +381,7 @@ class FastTTSAdapter:
         energies = []
         for i in range(0, len(audio) - window, window):
             chunk = audio[i : i + window]
-            rms = float(np.sqrt(np.mean(chunk ** 2)))
+            rms = float(np.sqrt(np.mean(chunk**2)))
             energies.append(rms)
 
         if not energies:
@@ -501,6 +504,7 @@ class FastTTSAdapter:
             self._engine = None
             self._warmed_up = False
             import gc
+
             gc.collect()
             torch.cuda.empty_cache()
             logger.info("FastTTS released")

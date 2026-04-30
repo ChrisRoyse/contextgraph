@@ -1,4 +1,5 @@
 """Tests for voiceagent.db module."""
+
 import sqlite3
 import uuid
 

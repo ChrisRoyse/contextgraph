@@ -163,18 +163,8 @@ def rgb_to_yuv420(image: cp.ndarray) -> cp.ndarray:
     v_full = 0.615 * r - 0.51499 * g - 0.10001 * b + 0.5
 
     # Subsample U and V by 2x2 averaging
-    u = (
-        u_full[0::2, 0::2]
-        + u_full[0::2, 1::2]
-        + u_full[1::2, 0::2]
-        + u_full[1::2, 1::2]
-    ) * 0.25
-    v = (
-        v_full[0::2, 0::2]
-        + v_full[0::2, 1::2]
-        + v_full[1::2, 0::2]
-        + v_full[1::2, 1::2]
-    ) * 0.25
+    u = (u_full[0::2, 0::2] + u_full[0::2, 1::2] + u_full[1::2, 0::2] + u_full[1::2, 1::2]) * 0.25
+    v = (v_full[0::2, 0::2] + v_full[0::2, 1::2] + v_full[1::2, 0::2] + v_full[1::2, 1::2]) * 0.25
 
     # Pack into planar layout: Y then interleaved UV (NV12-like)
     out = cp.empty((h * 3 // 2, w), dtype=cp.float32)

@@ -7,8 +7,10 @@ Creates and manages:
 Each clone gets its own video device + audio sink/source pair.
 Devices are created on start and destroyed on stop.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
 import subprocess
 from dataclasses import dataclass
@@ -89,23 +91,15 @@ class CloneDeviceManager:
             )
             if result.returncode != 0:
                 raise MeetingDeviceError(
-                    f"Failed to create PulseAudio sink '{sink_name}': "
-                    f"{result.stderr}"
+                    f"Failed to create PulseAudio sink '{sink_name}': {result.stderr}"
                 )
-            sink_module = (
-                int(result.stdout.strip())
-                if result.stdout.strip().isdigit()
-                else None
-            )
+            sink_module = int(result.stdout.strip()) if result.stdout.strip().isdigit() else None
         except FileNotFoundError:
             raise MeetingDeviceError(
-                "pactl not found. Install PulseAudio: "
-                "apt install pulseaudio-utils"
+                "pactl not found. Install PulseAudio: apt install pulseaudio-utils"
             )
         except subprocess.TimeoutExpired:
-            raise MeetingDeviceError(
-                "pactl timed out creating null sink"
-            )
+            raise MeetingDeviceError("pactl timed out creating null sink")
 
         # Create remap source (makes monitor appear as a real mic)
         try:
@@ -124,18 +118,11 @@ class CloneDeviceManager:
             )
             if result.returncode != 0:
                 raise MeetingDeviceError(
-                    f"Failed to create remap source '{source_name}': "
-                    f"{result.stderr}"
+                    f"Failed to create remap source '{source_name}': {result.stderr}"
                 )
-            source_module = (
-                int(result.stdout.strip())
-                if result.stdout.strip().isdigit()
-                else None
-            )
+            source_module = int(result.stdout.strip()) if result.stdout.strip().isdigit() else None
         except subprocess.TimeoutExpired:
-            raise MeetingDeviceError(
-                "pactl timed out creating remap source"
-            )
+            raise MeetingDeviceError("pactl timed out creating remap source")
 
         # Assign v4l2loopback device number based on active device count
         video_nr = 20 + len(self._devices)
@@ -172,14 +159,12 @@ class CloneDeviceManager:
         # Unload modules in reverse order (source first, then sink)
         for module_id in [pair.pulse_source_module, pair.pulse_sink_module]:
             if module_id is not None:
-                try:
+                with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError):
                     subprocess.run(
                         ["pactl", "unload-module", str(module_id)],
                         capture_output=True,
                         timeout=10,
                     )
-                except (subprocess.TimeoutExpired, FileNotFoundError):
-                    pass
         logger.info("Destroyed audio devices for %s", clone_name)
 
     def destroy_all(self) -> None:

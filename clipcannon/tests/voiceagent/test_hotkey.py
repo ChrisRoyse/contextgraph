@@ -1,4 +1,5 @@
 """Tests for hotkey activator."""
+
 import logging
 import os
 
@@ -58,6 +59,7 @@ def test_on_activate_with_none_callback(caplog):
 def test_on_activate_callback_exception_handled(caplog):
     def bad_callback():
         raise RuntimeError("boom")
+
     activator = HotkeyActivator(callback=bad_callback)
     with caplog.at_level(logging.ERROR):
         activator._on_activate()
@@ -77,6 +79,7 @@ def test_start_does_not_block():
 @pytest.mark.skipif(HAS_DISPLAY, reason="Test only in headless")
 def test_start_headless_raises():
     from voiceagent.errors import ActivationError
+
     activator = HotkeyActivator()
     with pytest.raises(ActivationError):
         activator.start()

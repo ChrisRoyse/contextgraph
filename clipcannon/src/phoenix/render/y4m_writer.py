@@ -7,8 +7,10 @@ The Y4M FIFO pipe approach is no longer used in production.
 
 Retained for reference and potential v4l2loopback usage.
 """
+
 from __future__ import annotations
 
+import contextlib
 import enum
 import logging
 import os
@@ -85,6 +87,7 @@ class Y4MWriter:
         """Lazy-init the face warper."""
         if self._warper is None:
             from phoenix.render.face_warper import FaceWarper
+
             self._warper = FaceWarper(self._ref_bgr, max_pixel_shift=20)
             if self._warper.ready:
                 logger.info("Face warper initialized")
@@ -116,12 +119,11 @@ class Y4MWriter:
         if self._thread:
             self._thread.join(timeout=3)
         # Clean up FIFO
-        try:
+        with contextlib.suppress(OSError):
             os.remove(self._pipe_path)
-        except OSError:
-            pass
-        logger.info("Y4M writer stopped. Frames: %d, Errors: %d",
-                     self._frames_written, self._write_errors)
+        logger.info(
+            "Y4M writer stopped. Frames: %d, Errors: %d", self._frames_written, self._write_errors
+        )
 
     def set_state(self, state: AvatarState) -> None:
         """Transition to a new avatar state."""
@@ -175,7 +177,9 @@ class Y4MWriter:
         # Apply tiny vertical translation
         M = np.float32([[1, 0, 0], [0, 1, breath_shift]])
         return cv2.warpAffine(
-            self._ref_bgr, M, (self._w, self._h),
+            self._ref_bgr,
+            M,
+            (self._w, self._h),
             borderMode=cv2.BORDER_REPLICATE,
         )
 
@@ -263,8 +267,6 @@ class Y4MWriter:
         except Exception as e:
             logger.error("Y4M writer error: %s", e)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(pipe_fd)
-            except OSError:
-                pass
             logger.info("Y4M writer loop exited")

@@ -1,4 +1,5 @@
 """Tests for CLI entry point."""
+
 from click.testing import CliRunner
 
 from voiceagent.cli import cli

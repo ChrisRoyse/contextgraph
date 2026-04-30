@@ -3,9 +3,9 @@
 Tests the core fitting logic with synthetic data (no video dependency).
 Verifies landmark mapping, projection, and optimization convergence.
 """
+
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
@@ -15,16 +15,19 @@ class TestInsight106To68Mapping:
 
     def test_mapping_has_68_entries(self):
         from phoenix.render.flame_fitter import INSIGHT106_TO_68
+
         assert len(INSIGHT106_TO_68) == 68
 
     def test_mapping_indices_in_range(self):
         from phoenix.render.flame_fitter import INSIGHT106_TO_68
+
         for idx in INSIGHT106_TO_68:
             assert 0 <= idx < 106, f"Index {idx} out of range [0, 106)"
 
     def test_mapping_covers_all_regions(self):
         """Verify jaw, brow, nose, eye, lip regions are all present."""
         from phoenix.render.flame_fitter import INSIGHT106_TO_68
+
         indices = INSIGHT106_TO_68
         # Jaw contour (0-16): should map to contour range 0-32
         for i in range(17):
@@ -42,11 +45,13 @@ class TestFlameLmk68:
 
     def test_has_68_indices(self):
         from phoenix.render.flame_fitter import FLAME_LMK_68
+
         assert len(FLAME_LMK_68) == 68
 
     def test_indices_in_flame_range(self):
         """FLAME has 5023 vertices."""
         from phoenix.render.flame_fitter import FLAME_LMK_68
+
         for idx in FLAME_LMK_68:
             assert 0 <= idx < 5023, f"Vertex index {idx} out of FLAME range"
 
@@ -54,6 +59,7 @@ class TestFlameLmk68:
 class TestWeakPerspectiveProjection:
     def test_identity_projection(self):
         from phoenix.render.flame_fitter import _project_weak_perspective
+
         pts = torch.tensor([[[1.0, 2.0, 3.0]]])  # (1, 1, 3)
         scale = torch.tensor([[1.0]])
         tx = torch.tensor([[0.0]])
@@ -65,6 +71,7 @@ class TestWeakPerspectiveProjection:
 
     def test_scale_multiplies(self):
         from phoenix.render.flame_fitter import _project_weak_perspective
+
         pts = torch.tensor([[[1.0, 2.0, 0.0]]])
         scale = torch.tensor([[5.0]])
         tx = torch.tensor([[0.0]])
@@ -75,6 +82,7 @@ class TestWeakPerspectiveProjection:
 
     def test_translation_offsets(self):
         from phoenix.render.flame_fitter import _project_weak_perspective
+
         pts = torch.tensor([[[0.0, 0.0, 0.0]]])
         scale = torch.tensor([[1.0]])
         tx = torch.tensor([[3.0]])
@@ -85,6 +93,7 @@ class TestWeakPerspectiveProjection:
 
     def test_batch_dimension(self):
         from phoenix.render.flame_fitter import _project_weak_perspective
+
         pts = torch.randn(4, 10, 3)
         scale = torch.ones(4, 1) * 5.0
         tx = torch.zeros(4, 1)

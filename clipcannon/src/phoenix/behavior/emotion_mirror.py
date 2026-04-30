@@ -14,10 +14,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from phoenix.errors import BehaviorError
-from phoenix.expression.emotion_fusion import ProsodyFeatures
 
 if TYPE_CHECKING:
-    from phoenix.expression.emotion_fusion import EmotionState
+    from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
 
 
 @dataclass(frozen=True)
@@ -170,9 +169,7 @@ class EmotionMirror:
             jaw_open *= 0.2  # Brief close on breath.
 
         # Brow raise: F0 peaks above mean indicate emphasis/surprise.
-        f0_peak_ratio = (
-            (prosody.f0_max - prosody.f0_mean) / max(prosody.f0_mean, 1.0)
-        )
+        f0_peak_ratio = (prosody.f0_max - prosody.f0_mean) / max(prosody.f0_mean, 1.0)
         brow_raise = _clamp01(f0_peak_ratio * 0.6)
 
         # Brow furrow: emphasis pulses.

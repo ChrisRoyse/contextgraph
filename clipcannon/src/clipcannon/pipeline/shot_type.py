@@ -89,7 +89,9 @@ def _classify_shot_types(
             del model
             torch.cuda.empty_cache()
             model = AutoModel.from_pretrained(
-                SIGLIP_MODEL_ID, torch_dtype=torch.float16, device_map={"": device},
+                SIGLIP_MODEL_ID,
+                torch_dtype=torch.float16,
+                device_map={"": device},
             )
     else:
         device = "cpu"

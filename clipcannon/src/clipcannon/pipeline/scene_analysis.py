@@ -12,6 +12,7 @@ Performance optimizations:
 
 Runs during ingest after frame_extract.
 """
+
 from __future__ import annotations
 
 import json
@@ -110,8 +111,7 @@ def _create_face_detector() -> object:
     model_path = Path.home() / ".clipcannon" / "models" / "blaze_face_short_range.tflite"
     if not model_path.exists():
         raise FileNotFoundError(
-            f"BlazeFace model not found at {model_path}. "
-            "Download it to enable face detection."
+            f"BlazeFace model not found at {model_path}. Download it to enable face detection."
         )
 
     options = FaceDetectorOptions(
@@ -194,7 +194,9 @@ def _compute_ssim(frame_a: np.ndarray, frame_b: np.ndarray) -> float:
 
 
 def _detect_webcam_region(
-    face: dict[str, object], frame_w: int, frame_h: int,
+    face: dict[str, object],
+    frame_w: int,
+    frame_h: int,
 ) -> dict[str, int]:
     """Expand face bbox to webcam overlay region."""
     fx, fy = int(face["x"]), int(face["y"])
@@ -208,8 +210,11 @@ def _detect_webcam_region(
 
 
 def _detect_content_region(
-    frame_curr: np.ndarray, frame_prev: np.ndarray | None,
-    webcam: dict[str, int] | None, frame_w: int, frame_h: int,
+    frame_curr: np.ndarray,
+    frame_prev: np.ndarray | None,
+    webcam: dict[str, int] | None,
+    frame_w: int,
+    frame_h: int,
 ) -> dict[str, int]:
     """Detect content region using frame differencing on downsampled frames."""
     cx, cy = 0, CHROME_TOP
@@ -244,7 +249,7 @@ def _detect_content_region(
             wy2 = max(0, int(webcam["y"] / sy) - margin)
             ww2 = min(thresh.shape[1] - wx2, int(webcam["w"] / sx) + margin * 2)
             wh2 = min(thresh.shape[0] - wy2, int(webcam["h"] / sy) + margin * 2)
-            thresh[wy2:wy2 + wh2, wx2:wx2 + ww2] = 0
+            thresh[wy2 : wy2 + wh2, wx2 : wx2 + ww2] = 0
         chrome_top_ds = int(CHROME_TOP / sy)
         chrome_bot_ds = int(CHROME_BOTTOM / sy)
         thresh[:chrome_top_ds, :] = 0
@@ -277,23 +282,35 @@ def _detect_content_region(
                 cw = max(100, cw - (min_left - cx))
                 cx = min_left
 
-    return {"x": max(0, cx), "y": max(0, cy),
-            "w": max(100, cw), "h": max(100, ch)}
+    return {"x": max(0, cx), "y": max(0, cy), "w": max(100, cw), "h": max(100, ch)}
 
 
 def _region(
-    rid: str, sx: int, sy: int, sw: int, sh: int,
-    ox: int, oy: int, ow: int, oh: int, z: int,
+    rid: str,
+    sx: int,
+    sy: int,
+    sw: int,
+    sh: int,
+    ox: int,
+    oy: int,
+    ow: int,
+    oh: int,
+    z: int,
     fit: str = "cover",
 ) -> dict[str, object]:
     """Build a canvas region dict."""
     return {
         "region_id": rid,
-        "source_x": sx, "source_y": sy,
-        "source_width": sw, "source_height": sh,
-        "output_x": ox, "output_y": oy,
-        "output_width": ow, "output_height": oh,
-        "z_index": z, "fit_mode": fit,
+        "source_x": sx,
+        "source_y": sy,
+        "source_width": sw,
+        "source_height": sh,
+        "output_x": ox,
+        "output_y": oy,
+        "output_width": ow,
+        "output_height": oh,
+        "z_index": z,
+        "fit_mode": fit,
     }
 
 
@@ -305,8 +322,11 @@ def _pick_screen_fit_mode(cw: int, ch: int, ow: int, oh: int) -> str:
 
 
 def _compute_speaker_crop(
-    face: dict[str, object], out_w: int, out_h: int,
-    frame_w: int, frame_h: int,
+    face: dict[str, object],
+    out_w: int,
+    out_h: int,
+    frame_w: int,
+    frame_h: int,
 ) -> dict[str, int]:
     """Compute source crop for speaker region centered on face."""
     fx, fy = int(face["x"]), int(face["y"])
@@ -324,13 +344,15 @@ def _compute_speaker_crop(
     crop_x = int(face_cx - crop_w / 2)
     crop_x = max(0, min(crop_x, frame_w - crop_w))
     crop_y = max(0, min(crop_y, frame_h - crop_h))
-    return {"x": crop_x, "y": crop_y,
-            "w": min(crop_w, frame_w), "h": min(crop_h, frame_h)}
+    return {"x": crop_x, "y": crop_y, "w": min(crop_w, frame_w), "h": min(crop_h, frame_h)}
 
 
 def _build_canvas_regions(
-    face: dict[str, object] | None, webcam: dict[str, int] | None,
-    content: dict[str, int], frame_w: int, frame_h: int,
+    face: dict[str, object] | None,
+    webcam: dict[str, int] | None,
+    content: dict[str, int],
+    frame_w: int,
+    frame_h: int,
 ) -> dict[str, list[dict[str, object]]]:
     """Pre-compute canvas regions for all layout types."""
     result: dict[str, list[dict[str, object]]] = {}
@@ -338,8 +360,7 @@ def _build_canvas_regions(
 
     if face is None:
         fm = _pick_screen_fit_mode(cw, ch, CANVAS_W, CANVAS_H)
-        scr = _region("screen", cx, cy, cw, ch,
-                       0, 0, CANVAS_W, CANVAS_H, 1, fm)
+        scr = _region("screen", cx, cy, cw, ch, 0, 0, CANVAS_W, CANVAS_H, 1, fm)
         for layout in ("A", "B", "C", "D"):
             result[layout] = [scr]
         return result
@@ -354,24 +375,30 @@ def _build_canvas_regions(
     for name, (spk_h, scr_h) in LAYOUT_HEIGHTS.items():
         fm = _pick_screen_fit_mode(cw, ch, CANVAS_W, scr_h)
         result[name] = [
-            _region("speaker", wx, wy, ww, wh,
-                    0, 0, CANVAS_W, spk_h, 2, "contain"),
-            _region("screen", cx, cy, cw, ch,
-                    0, spk_h, CANVAS_W, scr_h, 1, fm),
+            _region("speaker", wx, wy, ww, wh, 0, 0, CANVAS_W, spk_h, 2, "contain"),
+            _region("screen", cx, cy, cw, ch, 0, spk_h, CANVAS_W, scr_h, 1, fm),
         ]
 
     pc = _compute_speaker_crop(face, PIP_SIZE, PIP_SIZE, frame_w, frame_h)
     fm = _pick_screen_fit_mode(cw, ch, CANVAS_W, CANVAS_H)
     result["C"] = [
-        _region("screen", cx, cy, cw, ch,
-                0, 0, CANVAS_W, CANVAS_H, 1, fm),
-        _region("pip_speaker", pc["x"], pc["y"], pc["w"], pc["h"],
-                PIP_POS[0], PIP_POS[1], PIP_SIZE, PIP_SIZE, 2),
+        _region("screen", cx, cy, cw, ch, 0, 0, CANVAS_W, CANVAS_H, 1, fm),
+        _region(
+            "pip_speaker",
+            pc["x"],
+            pc["y"],
+            pc["w"],
+            pc["h"],
+            PIP_POS[0],
+            PIP_POS[1],
+            PIP_SIZE,
+            PIP_SIZE,
+            2,
+        ),
     ]
 
     result["D"] = [
-        _region("speaker_full", wx, wy, ww, wh,
-                0, 0, CANVAS_W, CANVAS_H, 1, "contain"),
+        _region("speaker_full", wx, wy, ww, wh, 0, 0, CANVAS_W, CANVAS_H, 1, "contain"),
     ]
     return result
 
@@ -427,13 +454,11 @@ def _ensure_scene_map_table(db_path: Path) -> None:
     try:
         conn.execute(_CREATE_TABLE_SQL)
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_scene_map_project "
-            "ON scene_map(project_id, start_ms)")
+            "CREATE INDEX IF NOT EXISTS idx_scene_map_project ON scene_map(project_id, start_ms)"
+        )
         # Migrate: add face_size_pct column if missing on existing tables
         try:
-            conn.execute(
-                "ALTER TABLE scene_map ADD COLUMN face_size_pct REAL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE scene_map ADD COLUMN face_size_pct REAL DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # Column already exists
         conn.commit()
@@ -456,9 +481,9 @@ def _get_transcript_segments(db_path: Path, project_id: str) -> list[dict[str, o
             (project_id,),
         ).fetchall()
         for r in rows:
-            segments.append({"start_ms": int(r["start_ms"]),
-                             "end_ms": int(r["end_ms"]),
-                             "text": str(r["text"])})
+            segments.append(
+                {"start_ms": int(r["start_ms"]), "end_ms": int(r["end_ms"]), "text": str(r["text"])}
+            )
     except sqlite3.OperationalError:
         pass
     finally:
@@ -467,7 +492,8 @@ def _get_transcript_segments(db_path: Path, project_id: str) -> list[dict[str, o
 
 
 def _fetch_silence_gaps(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> list[dict[str, int]]:
     """Fetch silence gaps from the acoustic analysis."""
     gaps: list[dict[str, int]] = []
@@ -480,11 +506,13 @@ def _fetch_silence_gaps(
             (project_id,),
         ).fetchall()
         for r in rows:
-            gaps.append({
-                "start_ms": int(r["start_ms"]),
-                "end_ms": int(r["end_ms"]),
-                "mid_ms": (int(r["start_ms"]) + int(r["end_ms"])) // 2,
-            })
+            gaps.append(
+                {
+                    "start_ms": int(r["start_ms"]),
+                    "end_ms": int(r["end_ms"]),
+                    "mid_ms": (int(r["start_ms"]) + int(r["end_ms"])) // 2,
+                }
+            )
     except sqlite3.OperationalError:
         pass
     finally:
@@ -493,7 +521,8 @@ def _fetch_silence_gaps(
 
 
 def _fetch_word_boundaries(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> list[int]:
     """Fetch word end timestamps as potential safe snap points."""
     boundaries: list[int] = []
@@ -501,8 +530,7 @@ def _fetch_word_boundaries(
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT end_ms FROM transcript_words "
-            "WHERE project_id = ? ORDER BY end_ms",
+            "SELECT end_ms FROM transcript_words WHERE project_id = ? ORDER BY end_ms",
             (project_id,),
         ).fetchall()
         boundaries = [int(r["end_ms"]) for r in rows]
@@ -538,6 +566,7 @@ def _snap_boundary_to_audio(
     # Only use if no silence gap was found within radius
     if best_dist > radius_ms:
         import bisect
+
         idx = bisect.bisect_left(word_boundaries, visual_ms)
         for candidate_idx in (idx - 1, idx):
             if 0 <= candidate_idx < len(word_boundaries):
@@ -593,12 +622,15 @@ def _detect_scene_boundaries(
                     word_boundaries or [],
                 )
 
-            scenes.append({
-                "start_frame": scene_start, "end_frame": i - 1,
-                "start_ms": int((fn - 1) / fps * 1000),
-                "end_ms": raw_end_ms,
-                "mid_frame_idx": (scene_start + i - 1) // 2,
-            })
+            scenes.append(
+                {
+                    "start_frame": scene_start,
+                    "end_frame": i - 1,
+                    "start_ms": int((fn - 1) / fps * 1000),
+                    "end_ms": raw_end_ms,
+                    "mid_frame_idx": (scene_start + i - 1) // 2,
+                }
+            )
             scene_start = i
 
         prev_data = small  # Store downsampled for next comparison
@@ -607,12 +639,15 @@ def _detect_scene_boundaries(
     if scene_start < total:
         fn = _parse_frame_number(frame_files[scene_start])
         efn = _parse_frame_number(frame_files[-1])
-        scenes.append({
-            "start_frame": scene_start, "end_frame": total - 1,
-            "start_ms": int((fn - 1) / fps * 1000),
-            "end_ms": int((efn - 1) / fps * 1000),
-            "mid_frame_idx": (scene_start + total - 1) // 2,
-        })
+        scenes.append(
+            {
+                "start_frame": scene_start,
+                "end_frame": total - 1,
+                "start_ms": int((fn - 1) / fps * 1000),
+                "end_ms": int((efn - 1) / fps * 1000),
+                "mid_frame_idx": (scene_start + total - 1) // 2,
+            }
+        )
     return scenes
 
 
@@ -621,18 +656,33 @@ def _store_scene_records(db_path: Path, records: list[dict[str, object]]) -> Non
     try:
         for rec in records:
             face, webcam, content = rec["face"], rec["webcam"], rec["content"]
-            conn.execute(_INSERT_SQL, (
-                rec["project_id"], rec["start_ms"], rec["end_ms"],
-                face["x"] if face else None, face["y"] if face else None,
-                face["w"] if face else None, face["h"] if face else None,
-                face["confidence"] if face else None,
-                rec.get("face_size_pct", 0.0),
-                webcam["x"] if webcam else None, webcam["y"] if webcam else None,
-                webcam["w"] if webcam else None, webcam["h"] if webcam else None,
-                content["x"], content["y"], content["w"], content["h"],
-                rec.get("content_type", "unknown"), "[]",
-                rec["layout"], json.dumps(rec["canvas"]), rec["transcript"],
-            ))
+            conn.execute(
+                _INSERT_SQL,
+                (
+                    rec["project_id"],
+                    rec["start_ms"],
+                    rec["end_ms"],
+                    face["x"] if face else None,
+                    face["y"] if face else None,
+                    face["w"] if face else None,
+                    face["h"] if face else None,
+                    face["confidence"] if face else None,
+                    rec.get("face_size_pct", 0.0),
+                    webcam["x"] if webcam else None,
+                    webcam["y"] if webcam else None,
+                    webcam["w"] if webcam else None,
+                    webcam["h"] if webcam else None,
+                    content["x"],
+                    content["y"],
+                    content["w"],
+                    content["h"],
+                    rec.get("content_type", "unknown"),
+                    "[]",
+                    rec["layout"],
+                    json.dumps(rec["canvas"]),
+                    rec["transcript"],
+                ),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -692,7 +742,11 @@ async def run_scene_analysis(
 
         logger.info(
             "Scene analysis: %d frames, %dx%d source, downsampling to %dx%d",
-            len(frame_files), frame_w, frame_h, ANALYSIS_W, ANALYSIS_H,
+            len(frame_files),
+            frame_w,
+            frame_h,
+            ANALYSIS_W,
+            ANALYSIS_H,
         )
 
         _ensure_scene_map_table(db_path)
@@ -712,12 +766,14 @@ async def run_scene_analysis(
         word_boundaries = _fetch_word_boundaries(db_path, project_id)
         logger.info(
             "Scene analysis: loaded %d silence gaps, %d word boundaries for audio snapping",
-            len(silence_gaps), len(word_boundaries),
+            len(silence_gaps),
+            len(word_boundaries),
         )
 
         # Phase 1: Scene boundary detection (SSIM + audio-aware snapping)
         scenes = _detect_scene_boundaries(
-            frame_files, fps,
+            frame_files,
+            fps,
             silence_gaps=silence_gaps,
             word_boundaries=word_boundaries,
         )
@@ -741,7 +797,10 @@ async def run_scene_analysis(
             if detector is not None:
                 try:
                     face = _detect_face_with_detector(
-                        detector, mid_path, frame_w, frame_h,
+                        detector,
+                        mid_path,
+                        frame_w,
+                        frame_h,
                     )
                 except Exception as exc:
                     logger.debug("Face detection failed for scene: %s", exc)
@@ -754,6 +813,7 @@ async def run_scene_analysis(
         # Close detector
         if detector is not None:
             import contextlib
+
             with contextlib.suppress(Exception):
                 detector.close()
 
@@ -778,17 +838,29 @@ async def run_scene_analysis(
             start_frame = cv2.imread(str(frame_files[start_idx]))
 
             content = _detect_content_region(
-                mid_frame, start_frame, stable_webcam, frame_w, frame_h,
+                mid_frame,
+                start_frame,
+                stable_webcam,
+                frame_w,
+                frame_h,
             )
 
             face = scene.get("face")
             canvas = _build_canvas_regions(
-                face, stable_webcam, content, frame_w, frame_h,
+                face,
+                stable_webcam,
+                content,
+                frame_w,
+                frame_h,
             )
 
             # Classify content type from detected regions
             content_type = _classify_content_type(
-                face, stable_webcam, content, frame_w, frame_h,
+                face,
+                stable_webcam,
+                content,
+                frame_w,
+                frame_h,
             )
 
             # Compute face size as percentage of frame
@@ -806,22 +878,27 @@ async def run_scene_analysis(
             # Transcript alignment
             scene_text_parts: list[str] = []
             for seg in transcript_segments:
-                if int(seg["end_ms"]) > scene["start_ms"] and int(seg["start_ms"]) < scene["end_ms"]:
+                if (
+                    int(seg["end_ms"]) > scene["start_ms"]
+                    and int(seg["start_ms"]) < scene["end_ms"]
+                ):
                     scene_text_parts.append(str(seg["text"]))
 
-            scene_records.append({
-                "project_id": project_id,
-                "start_ms": scene["start_ms"],
-                "end_ms": scene["end_ms"],
-                "face": face,
-                "webcam": stable_webcam,
-                "content": content,
-                "content_type": content_type,
-                "face_size_pct": face_size_pct,
-                "layout": layout,
-                "canvas": canvas,
-                "transcript": " ".join(scene_text_parts),
-            })
+            scene_records.append(
+                {
+                    "project_id": project_id,
+                    "start_ms": scene["start_ms"],
+                    "end_ms": scene["end_ms"],
+                    "face": face,
+                    "webcam": stable_webcam,
+                    "content": content,
+                    "content_type": content_type,
+                    "face_size_pct": face_size_pct,
+                    "layout": layout,
+                    "canvas": canvas,
+                    "transcript": " ".join(scene_text_parts),
+                }
+            )
 
         _store_scene_records(db_path, scene_records)
 

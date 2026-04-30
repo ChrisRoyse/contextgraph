@@ -1,4 +1,5 @@
 """Tests for ContextManager."""
+
 from voiceagent.brain.context import ContextManager
 
 
@@ -29,8 +30,7 @@ def test_truncates_oldest():
     cm = ContextManager()
     long_turn = "A" * 600
     history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": long_turn}
-        for i in range(210)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": long_turn} for i in range(210)
     ]
     msgs = cm.build_messages("test", history, "Hi")
     assert len(msgs) < 212
@@ -42,8 +42,7 @@ def test_truncates_oldest():
 def test_50_turns_fit():
     cm = ContextManager()
     history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": "Hello"}
-        for i in range(50)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "Hello"} for i in range(50)
     ]
     msgs = cm.build_messages("You are a helpful voice assistant.", history, "Hi")
     assert len(msgs) == 52

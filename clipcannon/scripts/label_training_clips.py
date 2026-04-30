@@ -21,12 +21,9 @@ Usage:
 
 import json
 import logging
-import os
 import sqlite3
-import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -38,7 +35,9 @@ log = logging.getLogger("label")
 
 PROJECT_ID = "proj_2ea7221d"
 DB_PATH = Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "analysis.db"
-SOURCE_VIDEO = Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "source" / "2026-04-03 04-23-11.mp4"
+SOURCE_VIDEO = (
+    Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "source" / "2026-04-03 04-23-11.mp4"
+)
 VOCALS_WAV = Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "stems" / "vocals.wav"
 LANDMARKS_FILE = Path.home() / ".clipcannon" / "models" / "santa" / "face_landmarks_25fps.npz"
 OUTPUT_DIR = Path.home() / "echomimic_v3" / "datasets" / "santa_teleological"
@@ -56,6 +55,7 @@ SRC_HEIGHT = 1440
 @dataclass
 class TeleologicalLabel:
     """Complete teleological label for a training clip."""
+
     clip_id: str
     # Temporal anchor
     start_ms: int
@@ -70,12 +70,12 @@ class TeleologicalLabel:
     viseme_sequence: list = field(default_factory=list)  # per-frame viseme (49 entries)
 
     # Face geometry per frame (from precomputed landmarks)
-    face_bbox_per_frame: list = field(default_factory=list)   # [x1,y1,x2,y2] per frame
+    face_bbox_per_frame: list = field(default_factory=list)  # [x1,y1,x2,y2] per frame
     mouth_bbox_per_frame: list = field(default_factory=list)  # [x1,y1,x2,y2] per frame
     mouth_center_per_frame: list = field(default_factory=list)  # [x,y] per frame
 
     # Detection quality (flags for filtering bad clips)
-    frames_detected: int = 0       # How many of 49 frames had real detection
+    frames_detected: int = 0  # How many of 49 frames had real detection
     mean_face_score: float = 0.0
 
     # Prosody
@@ -101,44 +101,127 @@ class TeleologicalLabel:
 
 # Viseme mapping based on CMU ARPAbet phonemes
 PHONEME_TO_VISEME = {
-    "SIL": "SIL", "": "SIL",
+    "SIL": "SIL",
+    "": "SIL",
     # Bilabials (lip closure)
-    "P": "P", "B": "P", "M": "P",
+    "P": "P",
+    "B": "P",
+    "M": "P",
     # Labiodentals
-    "F": "F", "V": "F",
+    "F": "F",
+    "V": "F",
     # Dentals
-    "TH": "TH", "DH": "TH",
+    "TH": "TH",
+    "DH": "TH",
     # Alveolars
-    "T": "T", "D": "T", "N": "T", "L": "T", "S": "T", "Z": "T",
+    "T": "T",
+    "D": "T",
+    "N": "T",
+    "L": "T",
+    "S": "T",
+    "Z": "T",
     # Post-alveolars
-    "SH": "SH", "ZH": "SH", "CH": "SH", "JH": "SH",
+    "SH": "SH",
+    "ZH": "SH",
+    "CH": "SH",
+    "JH": "SH",
     # Velars
-    "K": "K", "G": "K", "NG": "K",
+    "K": "K",
+    "G": "K",
+    "NG": "K",
     "HH": "SIL",
     # Approximants
-    "R": "R", "W": "W", "Y": "Y",
+    "R": "R",
+    "W": "W",
+    "Y": "Y",
     # Front vowels
-    "IY": "IY", "IY0": "IY", "IY1": "IY", "IY2": "IY",
-    "IH": "IH", "IH0": "IH", "IH1": "IH", "IH2": "IH",
-    "EH": "EH", "EH0": "EH", "EH1": "EH", "EH2": "EH",
-    "AE": "AH", "AE0": "AH", "AE1": "AH", "AE2": "AH",
-    "AH": "AH", "AH0": "AH", "AH1": "AH", "AH2": "AH",
-    "ER": "ER", "ER0": "ER", "ER1": "ER", "ER2": "ER",
-    "AA": "AA", "AA0": "AA", "AA1": "AA", "AA2": "AA",
-    "AO": "AO", "AO0": "AO", "AO1": "AO", "AO2": "AO",
-    "UH": "UH", "UH0": "UH", "UH1": "UH", "UH2": "UH",
-    "UW": "UW", "UW0": "UW", "UW1": "UW", "UW2": "UW",
-    "EY": "EY", "EY0": "EY", "EY1": "EY", "EY2": "EY",
-    "AY": "AY", "AY0": "AY", "AY1": "AY", "AY2": "AY",
-    "OY": "OY", "OY0": "OY", "OY1": "OY", "OY2": "OY",
-    "AW": "AW", "AW0": "AW", "AW1": "AW", "AW2": "AW",
-    "OW": "OW", "OW0": "OW", "OW1": "OW", "OW2": "OW",
+    "IY": "IY",
+    "IY0": "IY",
+    "IY1": "IY",
+    "IY2": "IY",
+    "IH": "IH",
+    "IH0": "IH",
+    "IH1": "IH",
+    "IH2": "IH",
+    "EH": "EH",
+    "EH0": "EH",
+    "EH1": "EH",
+    "EH2": "EH",
+    "AE": "AH",
+    "AE0": "AH",
+    "AE1": "AH",
+    "AE2": "AH",
+    "AH": "AH",
+    "AH0": "AH",
+    "AH1": "AH",
+    "AH2": "AH",
+    "ER": "ER",
+    "ER0": "ER",
+    "ER1": "ER",
+    "ER2": "ER",
+    "AA": "AA",
+    "AA0": "AA",
+    "AA1": "AA",
+    "AA2": "AA",
+    "AO": "AO",
+    "AO0": "AO",
+    "AO1": "AO",
+    "AO2": "AO",
+    "UH": "UH",
+    "UH0": "UH",
+    "UH1": "UH",
+    "UH2": "UH",
+    "UW": "UW",
+    "UW0": "UW",
+    "UW1": "UW",
+    "UW2": "UW",
+    "EY": "EY",
+    "EY0": "EY",
+    "EY1": "EY",
+    "EY2": "EY",
+    "AY": "AY",
+    "AY0": "AY",
+    "AY1": "AY",
+    "AY2": "AY",
+    "OY": "OY",
+    "OY0": "OY",
+    "OY1": "OY",
+    "OY2": "OY",
+    "AW": "AW",
+    "AW0": "AW",
+    "AW1": "AW",
+    "AW2": "AW",
+    "OW": "OW",
+    "OW0": "OW",
+    "OW1": "OW",
+    "OW2": "OW",
 }
 
 ALL_VISEMES = [
-    "SIL", "P", "F", "TH", "T", "SH", "K", "R", "W", "Y",
-    "IY", "IH", "EH", "AH", "ER", "AA", "AO", "UH", "UW",
-    "EY", "AY", "OY", "AW", "OW",
+    "SIL",
+    "P",
+    "F",
+    "TH",
+    "T",
+    "SH",
+    "K",
+    "R",
+    "W",
+    "Y",
+    "IY",
+    "IH",
+    "EH",
+    "AH",
+    "ER",
+    "AA",
+    "AO",
+    "UH",
+    "UW",
+    "EY",
+    "AY",
+    "OY",
+    "AW",
+    "OW",
 ]
 
 
@@ -146,6 +229,7 @@ def load_cmu_dict():
     """Load CMU pronunciation dictionary."""
     import nltk
     from nltk.corpus import cmudict
+
     try:
         return cmudict.dict()
     except LookupError:
@@ -200,11 +284,13 @@ def load_precomputed_landmarks():
             f"Run: python scripts/precompute_face_landmarks.py"
         )
     data = np.load(LANDMARKS_FILE)
-    log.info("Loaded landmarks: %d frames at %dfps",
-             len(data["frame_idx"]), int(data["fps"]))
-    log.info("Detection rate: %d/%d (%.1f%%)",
-             int(data["detected"].sum()), len(data["detected"]),
-             data["detected"].mean() * 100)
+    log.info("Loaded landmarks: %d frames at %dfps", len(data["frame_idx"]), int(data["fps"]))
+    log.info(
+        "Detection rate: %d/%d (%.1f%%)",
+        int(data["detected"].sum()),
+        len(data["detected"]),
+        data["detected"].mean() * 100,
+    )
     return {
         "timestamp_ms": data["timestamp_ms"],
         "detected": data["detected"],
@@ -298,7 +384,7 @@ def load_analysis_data(db_path: Path, project_id: str) -> dict:
     return data
 
 
-def get_prosody_for_range(start_ms: int, end_ms: int, prosody: list) -> Optional[dict]:
+def get_prosody_for_range(start_ms: int, end_ms: int, prosody: list) -> dict | None:
     """Find the prosody segment that most overlaps this range."""
     best = None
     best_overlap = 0
@@ -323,9 +409,7 @@ def get_emotion_for_range(start_ms: int, end_ms: int, emotion: list) -> tuple:
             energy_vals.append(e.get("energy", 0))
     if not arousal_vals:
         return 0.19, 0.51, 0.0
-    return (float(np.mean(arousal_vals)),
-            float(np.mean(valence_vals)),
-            float(np.mean(energy_vals)))
+    return (float(np.mean(arousal_vals)), float(np.mean(valence_vals)), float(np.mean(energy_vals)))
 
 
 def is_in_long_silence(center_ms: int, silence_gaps: list) -> bool:
@@ -434,8 +518,7 @@ def build_labels():
         words_in_clip = [
             (w["word"], w["start_ms"], w["end_ms"])
             for w in words
-            if clip_start <= w["start_ms"] < clip_end
-            or clip_start < w["end_ms"] <= clip_end
+            if clip_start <= w["start_ms"] < clip_end or clip_start < w["end_ms"] <= clip_end
         ]
 
         # Collect visemes in clip
@@ -513,13 +596,20 @@ def build_labels():
 
     # Viseme diversity
     diversity = [len(set(l.viseme_sequence)) for l in labels]
-    log.info("Viseme diversity per clip: mean=%.1f max=%d",
-             float(np.mean(diversity)), int(np.max(diversity)))
+    log.info(
+        "Viseme diversity per clip: mean=%.1f max=%d",
+        float(np.mean(diversity)),
+        int(np.max(diversity)),
+    )
 
     # Quality stats
     scores = [l.mean_face_score for l in labels]
-    log.info("Mean face score across clips: %.2f-%.2f (avg %.2f)",
-             float(np.min(scores)), float(np.max(scores)), float(np.mean(scores)))
+    log.info(
+        "Mean face score across clips: %.2f-%.2f (avg %.2f)",
+        float(np.min(scores)),
+        float(np.max(scores)),
+        float(np.mean(scores)),
+    )
 
     # Save to JSON
     labels_dict = {
@@ -533,8 +623,7 @@ def build_labels():
     }
 
     OUTPUT_LABELS.write_text(json.dumps(labels_dict, indent=2), encoding="utf-8")
-    log.info("Saved labels: %s (%.1f MB)",
-             OUTPUT_LABELS, OUTPUT_LABELS.stat().st_size / 1e6)
+    log.info("Saved labels: %s (%.1f MB)", OUTPUT_LABELS, OUTPUT_LABELS.stat().st_size / 1e6)
 
     return labels_dict
 

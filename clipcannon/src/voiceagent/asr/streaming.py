@@ -1,4 +1,5 @@
 """Streaming ASR with VAD-gated Whisper transcription."""
+
 from __future__ import annotations
 
 import logging
@@ -21,6 +22,7 @@ class StreamingASR:
     def __init__(self, config: object, vad: SileroVAD | None = None) -> None:
         try:
             import faster_whisper
+
             self.model = faster_whisper.WhisperModel(
                 config.model_name,
                 device="cuda",
@@ -44,16 +46,14 @@ class StreamingASR:
         """Rechunk into 512-sample sub-chunks for SileroVAD. True if ANY has speech."""
         num = len(audio) // self.VAD_CHUNK_SIZE
         for i in range(num):
-            sub = audio[i * self.VAD_CHUNK_SIZE:(i + 1) * self.VAD_CHUNK_SIZE]
+            sub = audio[i * self.VAD_CHUNK_SIZE : (i + 1) * self.VAD_CHUNK_SIZE]
             if self.vad.is_speech(sub):
                 return True
         return False
 
     async def process_chunk(self, audio: np.ndarray) -> ASREvent | None:
         if audio.shape[0] != self.SAMPLES_PER_CHUNK:
-            raise ASRError(
-                f"Expected {self.SAMPLES_PER_CHUNK} samples, got {audio.shape[0]}."
-            )
+            raise ASRError(f"Expected {self.SAMPLES_PER_CHUNK} samples, got {audio.shape[0]}.")
         # Convert int16 to float32 for VAD
         if audio.dtype == np.int16:
             audio_f32 = audio.astype(np.float32) / 32768.0

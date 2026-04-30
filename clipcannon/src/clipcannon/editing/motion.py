@@ -3,6 +3,7 @@
 Generates FFmpeg filter expressions for zoom, pan, and Ken Burns
 effects applied per-segment during video rendering.
 """
+
 from __future__ import annotations
 
 import logging

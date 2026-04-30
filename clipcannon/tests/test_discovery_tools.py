@@ -3,10 +3,11 @@
 Tests narrative flow analysis, promise-payoff detection, gap
 analysis, and error handling with synthetic data in a temp database.
 """
+
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -14,7 +15,6 @@ from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import batch_insert, execute
 from clipcannon.db.schema import create_project_db
 from clipcannon.tools.discovery import (
-    PROMISE_KEYWORDS,
     _extract_key_phrases,
     _extract_sentences,
     _has_promise,
@@ -22,6 +22,9 @@ from clipcannon.tools.discovery import (
     clipcannon_get_narrative_flow,
     dispatch_discovery_tool,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -46,14 +49,22 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 duration_ms, resolution, fps, codec, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                project_id, "Test Video", "/tmp/test.mp4",
-                "abc123", 120000, "1920x1080", 30.0, "h264", "ready",
+                project_id,
+                "Test Video",
+                "/tmp/test.mp4",
+                "abc123",
+                120000,
+                "1920x1080",
+                30.0,
+                "h264",
+                "ready",
             ),
         )
 
         # Speakers (required FK for transcript_segments)
         batch_insert(
-            conn, "speakers",
+            conn,
+            "speakers",
             ["project_id", "label", "total_speaking_ms", "speaking_pct"],
             [
                 (project_id, "Speaker 1", 120000, 100.0),
@@ -62,7 +73,8 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
         # Transcript segments covering 0-120s
         batch_insert(
-            conn, "transcript_segments",
+            conn,
+            "transcript_segments",
             ["project_id", "start_ms", "end_ms", "text", "speaker_id", "word_count"],
             [
                 (project_id, 0, 5000, "Hi, I spent the last day building this.", 1, 9),
@@ -96,6 +108,7 @@ def ready_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 # ------------------------------------------------------------------
 # Helper function unit tests
 # ------------------------------------------------------------------
+
 
 class TestExtractSentences:
     def test_simple_split(self):
@@ -160,8 +173,7 @@ class TestExtractKeyPhrases:
 
     def test_key_phrases_prioritized(self):
         text = (
-            "Normal sentence. There are 12 embedders. "
-            "Another filler. The first step is important."
+            "Normal sentence. There are 12 embedders. Another filler. The first step is important."
         )
         result = _extract_key_phrases(text, 200)
         # Key sentences (with numbers and "first") come first
@@ -171,6 +183,7 @@ class TestExtractKeyPhrases:
 # ------------------------------------------------------------------
 # Narrative flow tool tests
 # ------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_narrative_flow_basic(ready_project):
@@ -333,6 +346,7 @@ async def test_narrative_flow_sorts_segments(ready_project):
 # Validation / error tests
 # ------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_narrative_flow_invalid_project(ready_project):
     """Non-existent project returns error."""
@@ -376,6 +390,7 @@ async def test_narrative_flow_invalid_segment(ready_project):
 # ------------------------------------------------------------------
 # Dispatch test
 # ------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_dispatch_narrative_flow(ready_project):

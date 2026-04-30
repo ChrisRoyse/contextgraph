@@ -1,5 +1,4 @@
 """Tests for voiceagent.filler_audio module."""
-import pytest
 
 from voiceagent.filler_audio import (
     ALL_PHRASES,

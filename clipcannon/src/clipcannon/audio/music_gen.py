@@ -29,9 +29,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Persistent local cache -- model weights never re-downloaded
-_CHECKPOINT_DIR = os.path.join(
-    os.path.expanduser("~"), ".cache", "ace-step", "checkpoints"
-)
+_CHECKPOINT_DIR = os.path.join(os.path.expanduser("~"), ".cache", "ace-step", "checkpoints")
 
 
 @dataclass
@@ -91,7 +89,8 @@ def _validate_output(output_path: Path, requested_duration_s: float) -> int:
     except Exception as exc:
         logger.warning(
             "Cannot read WAV header from %s: %s. Estimating from file size.",
-            output_path, exc,
+            output_path,
+            exc,
         )
         # ACE-Step v1.5 outputs 16-bit stereo 48kHz: 4 bytes per sample
         estimated_samples = (file_size - 44) // 4  # 44-byte WAV header
@@ -103,7 +102,10 @@ def _validate_output(output_path: Path, requested_duration_s: float) -> int:
         logger.warning(
             "Generated audio duration %.1fs differs from requested %.1fs "
             "(tolerance: %.1fs). File: %s",
-            actual_duration_s, requested_duration_s, tolerance, output_path,
+            actual_duration_s,
+            requested_duration_s,
+            tolerance,
+            output_path,
         )
 
     return actual_duration_ms
@@ -164,9 +166,7 @@ async def generate_music(
         import torch  # type: ignore[import-untyped]
     except ImportError:
         logger.error("PyTorch not installed. Required for ACE-Step music generation.")
-        raise ImportError(
-            "PyTorch not installed. Install with: pip install torch"
-        )
+        raise ImportError("PyTorch not installed. Install with: pip install torch")
 
     if seed is None:
         seed = random.randint(0, 2**31 - 1)
@@ -177,9 +177,13 @@ async def generate_music(
         raise ValueError(f"duration_s must be <= 600, got {duration_s}")
 
     logger.info(
-        "Generating music: prompt=%r, duration=%.1fs, seed=%d, "
-        "guidance=%.1f, steps=%d, tags=%r",
-        prompt[:80], duration_s, seed, guidance_scale, infer_steps, tags[:50],
+        "Generating music: prompt=%r, duration=%.1fs, seed=%d, guidance=%.1f, steps=%d, tags=%r",
+        prompt[:80],
+        duration_s,
+        seed,
+        guidance_scale,
+        infer_steps,
+        tags[:50],
     )
 
     # Determine VRAM availability for cpu_offload decision
@@ -194,7 +198,9 @@ async def generate_music(
             cpu_offload = total_gb < 4.0
             logger.info(
                 "GPU %d: %.1f GB VRAM, cpu_offload=%s",
-                device_idx, total_gb, cpu_offload,
+                device_idx,
+                total_gb,
+                cpu_offload,
             )
         except Exception as exc:
             logger.warning("GPU detection failed, using cpu_offload: %s", exc)
@@ -215,7 +221,7 @@ async def generate_music(
             cpu_offload=cpu_offload,
         )
 
-        result = pipeline(
+        pipeline(
             prompt=prompt,
             lyrics=lyrics,
             audio_duration=duration_s,
@@ -232,7 +238,10 @@ async def generate_music(
     except Exception as exc:
         logger.error(
             "ACE-Step generation failed: %s. prompt=%r, duration=%.1fs, seed=%d",
-            exc, prompt[:80], duration_s, seed,
+            exc,
+            prompt[:80],
+            duration_s,
+            seed,
         )
         raise RuntimeError(
             f"ACE-Step music generation failed: {exc}. "

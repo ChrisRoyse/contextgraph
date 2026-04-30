@@ -6,13 +6,17 @@ or delivers frames to the Zoom SDK raw video interface (Mode 2).
 Runs at a continuous 25 FPS -- feeds idle frames when not speaking,
 lip-synced frames when speaking.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from voiceagent.meeting.errors import MeetingDeviceError
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +32,12 @@ class WebcamWriter:
     """
 
     def __init__(
-        self, device: str, width: int = 1280, height: int = 720, fps: int = 25,
-    ):
+        self,
+        device: str,
+        width: int = 1280,
+        height: int = 720,
+        fps: int = 25,
+    ) -> None:
         self._device = device
         self._width = width
         self._height = height
@@ -83,9 +91,7 @@ class WebcamWriter:
             MeetingDeviceError: If not started or frame dimensions mismatch.
         """
         if self._cam is None:
-            raise MeetingDeviceError(
-                "WebcamWriter not started. Call start() first."
-            )
+            raise MeetingDeviceError("WebcamWriter not started. Call start() first.")
         if frame.shape != (self._height, self._width, 3):
             raise MeetingDeviceError(
                 f"Frame shape mismatch: expected "
@@ -96,10 +102,8 @@ class WebcamWriter:
     def stop(self) -> None:
         """Close the virtual webcam device."""
         if self._cam is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._cam.close()
-            except Exception:
-                pass
             self._cam = None
             logger.info("Webcam writer stopped: %s", self._device)
 

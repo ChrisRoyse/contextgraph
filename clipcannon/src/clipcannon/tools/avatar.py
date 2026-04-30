@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 def _error(
-    code: str, message: str, details: dict[str, object] | None = None,
+    code: str,
+    message: str,
+    details: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build standardized error response dict."""
     return {"error": {"code": code, "message": message, "details": details or {}}}
@@ -120,7 +122,8 @@ async def _handle_lip_sync(arguments: dict[str, object]) -> dict[str, object]:
 
 
 def _get_webcam_region(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> dict[str, int] | None:
     """Get the stable webcam region from scene_map data.
 
@@ -183,7 +186,8 @@ def _get_webcam_region(
 
 
 def _get_source_info(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> dict[str, object] | None:
     """Get source video path and resolution from project DB."""
     conn = sqlite3.connect(str(db_path))
@@ -247,7 +251,7 @@ async def _handle_extract_webcam(
 
     src_w = int(source_info["width"])
     src_h = int(source_info["height"])
-    duration_ms = int(source_info["duration_ms"])
+    int(source_info["duration_ms"])
 
     # Get webcam/face region from scene_map
     region = _get_webcam_region(db_path, project_id)
@@ -298,15 +302,27 @@ async def _handle_extract_webcam(
     # FFmpeg crop + force 25fps (LatentSync is hardcoded to 25fps;
     # feeding 60fps causes audio-visual sync drift)
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-nostdin",
         *ss_arg,
-        "-i", str(source_path),
+        "-i",
+        str(source_path),
         *to_arg,
-        "-vf", f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}",
-        "-r", "25",
-        "-c:v", "libx264", "-crf", "18",
-        "-c:a", "aac",
-        "-movflags", "+faststart",
+        "-vf",
+        f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}",
+        "-r",
+        "25",
+        "-c:v",
+        "libx264",
+        "-crf",
+        "18",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
         str(output_path),
     ]
 
@@ -325,9 +341,9 @@ async def _handle_extract_webcam(
 
     # Probe output
     probe = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json",
-         "-show_streams", str(output_path)],
-        capture_output=True, text=True,
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(output_path)],
+        capture_output=True,
+        text=True,
     )
     out_duration_ms = 0
     out_resolution = f"{crop_w}x{crop_h}"
@@ -341,8 +357,13 @@ async def _handle_extract_webcam(
 
     logger.info(
         "Webcam extracted: %s, %dx%d at (%d,%d), %dms, took %dms",
-        output_path.name, crop_w, crop_h, crop_x, crop_y,
-        out_duration_ms, elapsed_ms,
+        output_path.name,
+        crop_w,
+        crop_h,
+        crop_x,
+        crop_y,
+        out_duration_ms,
+        elapsed_ms,
     )
 
     return {
@@ -351,8 +372,10 @@ async def _handle_extract_webcam(
         "duration_ms": out_duration_ms,
         "resolution": out_resolution,
         "crop_region": {
-            "x": crop_x, "y": crop_y,
-            "width": crop_w, "height": crop_h,
+            "x": crop_x,
+            "y": crop_y,
+            "width": crop_w,
+            "height": crop_h,
         },
         "source_resolution": f"{src_w}x{src_h}",
         "elapsed_ms": elapsed_ms,

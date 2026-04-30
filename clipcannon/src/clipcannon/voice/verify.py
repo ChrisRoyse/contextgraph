@@ -10,11 +10,14 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 import torchaudio
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 _ENCODER_MODEL_ID = "marksverdhei/Qwen3-Voice-Embedding-12Hz-1.7B"
@@ -44,6 +47,7 @@ class VerificationResult:
 
 # -- WER (no jiwer) ----------------------------------------------------------
 
+
 def _levenshtein_distance(a: list[str], b: list[str]) -> int:
     """Levenshtein edit distance between two word lists."""
     m, n = len(a), len(b)
@@ -64,6 +68,7 @@ def _levenshtein_distance(a: list[str], b: list[str]) -> int:
 def _normalize_words(text: str) -> list[str]:
     """Lowercase, strip punctuation from each word, drop empty tokens."""
     import re
+
     return [w for w in (re.sub(r"[^\w']", "", t) for t in text.lower().split()) if w]
 
 
@@ -81,6 +86,7 @@ def compute_wer(reference: str, hypothesis: str) -> float:
 
 
 # -- Audio helpers ------------------------------------------------------------
+
 
 def _load_mono_16k(audio_path: Path) -> tuple[torch.Tensor, int]:
     """Load audio as mono 16 kHz waveform [1, samples]."""
@@ -154,6 +160,7 @@ def _transcribe_audio(audio_path: Path) -> str:
 
 # -- Speaker encoder (Qwen3-TTS ECAPA-TDNN 2048-dim) -------------------------
 
+
 def _get_speaker_encoder() -> tuple[object, object]:
     """Lazy-load the Qwen3-TTS ECAPA-TDNN speaker encoder (2048-dim).
 
@@ -170,10 +177,12 @@ def _get_speaker_encoder() -> tuple[object, object]:
     start = __import__("time").monotonic()
 
     processor = AutoProcessor.from_pretrained(
-        _ENCODER_MODEL_ID, trust_remote_code=True,
+        _ENCODER_MODEL_ID,
+        trust_remote_code=True,
     )
     model = AutoModel.from_pretrained(
-        _ENCODER_MODEL_ID, trust_remote_code=True,
+        _ENCODER_MODEL_ID,
+        trust_remote_code=True,
     )
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device).eval()
@@ -216,19 +225,20 @@ def _extract_embedding(audio_path: Path) -> np.ndarray:
 
     if emb.shape[0] != _ENCODER_DIM:
         raise RuntimeError(
-            f"Speaker encoder returned {emb.shape[0]}-dim embedding, "
-            f"expected {_ENCODER_DIM}"
+            f"Speaker encoder returned {emb.shape[0]}-dim embedding, expected {_ENCODER_DIM}"
         )
     return emb
 
 
 # -- VoiceVerifier ------------------------------------------------------------
 
+
 class VoiceVerifier:
     """Stateful verifier using Qwen3-TTS ECAPA-TDNN speaker encoder (2048-dim)."""
 
     def __init__(
-        self, reference_embedding: np.ndarray,
+        self,
+        reference_embedding: np.ndarray,
         threshold: float = 0.80,
     ) -> None:
         """Store reference embedding and ensure speaker encoder is loaded.
@@ -250,13 +260,16 @@ class VoiceVerifier:
         self._threshold = threshold
         _get_speaker_encoder()  # warm up
         logger.info(
-            "VoiceVerifier ready (threshold=%.2f, dim=%d)", threshold, _ENCODER_DIM,
+            "VoiceVerifier ready (threshold=%.2f, dim=%d)",
+            threshold,
+            _ENCODER_DIM,
         )
 
     def release(self) -> None:
         """Release GPU/CPU memory held by the speaker encoder model."""
         global _speaker_encoder
         import gc
+
         if _speaker_encoder is not None:
             del _speaker_encoder
             _speaker_encoder = None
@@ -275,7 +288,9 @@ class VoiceVerifier:
         return 0.0 if norm < 1e-12 else float(np.dot(self._ref_emb, emb) / norm)
 
     def gate_sanity(
-        self, audio_path: Path, expected_text: str,
+        self,
+        audio_path: Path,
+        expected_text: str,
     ) -> tuple[bool, dict[str, object]]:
         """Gate 1: Duration ratio, clipping, SNR, silence checks."""
         wav, sr = _load_mono_16k(audio_path)
@@ -289,9 +304,12 @@ class VoiceVerifier:
         silence = _max_silence_gap_ms(wav, sr)
 
         info: dict[str, object] = {
-            "duration_s": round(dur, 3), "expected_duration_s": round(exp_dur, 3),
-            "duration_ratio": round(ratio, 3), "has_clipping": clipping,
-            "snr_db": round(snr, 1), "max_silence_ms": round(silence, 1),
+            "duration_s": round(dur, 3),
+            "expected_duration_s": round(exp_dur, 3),
+            "duration_ratio": round(ratio, 3),
+            "has_clipping": clipping,
+            "snr_db": round(snr, 1),
+            "max_silence_ms": round(silence, 1),
         }
         reason = None
         if not (0.2 <= ratio <= 5.0):
@@ -308,7 +326,10 @@ class VoiceVerifier:
         return reason is None, info
 
     def gate_intelligibility(
-        self, audio_path: Path, expected_text: str, wer_threshold: float = 0.80,
+        self,
+        audio_path: Path,
+        expected_text: str,
+        wer_threshold: float = 0.80,
     ) -> tuple[bool, dict[str, object]]:
         """Gate 2: WER via Whisper transcription."""
         transcript = _transcribe_audio(audio_path)
@@ -316,8 +337,10 @@ class VoiceVerifier:
             return True, {"skipped": True, "reason": "transcriber unavailable"}
         wer = compute_wer(expected_text, transcript)
         info: dict[str, object] = {
-            "expected_text": expected_text, "transcript": transcript,
-            "wer": round(wer, 4), "wer_threshold": wer_threshold,
+            "expected_text": expected_text,
+            "transcript": transcript,
+            "wer": round(wer, 4),
+            "wer_threshold": wer_threshold,
         }
         if wer > wer_threshold:
             info["fail_reason"] = f"WER={wer:.2%} > {wer_threshold:.0%}"
@@ -334,23 +357,33 @@ class VoiceVerifier:
         return secs >= self._threshold, info
 
     def verify(
-        self, audio_path: Path, expected_text: str,
-        attempt: int = 1, max_attempts: int = 3,
+        self,
+        audio_path: Path,
+        expected_text: str,
+        attempt: int = 1,
+        max_attempts: int = 3,
     ) -> VerificationResult:
         """Run all gates in order. Stops at first failure."""
         gd: dict[str, dict[str, object]] = {}
 
         def _result(passed: bool, gate: str | None, **kw: object) -> VerificationResult:
             return VerificationResult(
-                passed=passed, attempt=attempt, max_attempts=max_attempts,
-                gate_failed=gate, gate_details=gd, **kw,  # type: ignore[arg-type]
+                passed=passed,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                gate_failed=gate,
+                gate_details=gd,
+                **kw,  # type: ignore[arg-type]
             )
 
         g1_ok, g1 = self.gate_sanity(audio_path, expected_text)
         gd["sanity"] = g1
         if not g1_ok:
             return _result(
-                False, "sanity", secs_score=0.0, wer=1.0,
+                False,
+                "sanity",
+                secs_score=0.0,
+                wer=1.0,
                 duration_ratio=float(g1.get("duration_ratio", 0)),
                 has_clipping=bool(g1.get("has_clipping", False)),
                 snr_db=float(g1.get("snr_db", 0)),
@@ -366,8 +399,7 @@ class VoiceVerifier:
         dr = float(g1.get("duration_ratio", 0))
         clip = bool(g1.get("has_clipping", False))
         snr = float(g1.get("snr_db", 0))
-        common = dict(secs_score=secs, wer=wer, duration_ratio=dr,
-                      has_clipping=clip, snr_db=snr)
+        common = dict(secs_score=secs, wer=wer, duration_ratio=dr, has_clipping=clip, snr_db=snr)
 
         if not g2_ok:
             return _result(False, "intelligibility", **common)
@@ -378,6 +410,7 @@ class VoiceVerifier:
 
 
 # -- Reference embedding builder ----------------------------------------------
+
 
 def build_reference_embedding(
     audio_paths: list[Path],
@@ -410,6 +443,8 @@ def build_reference_embedding(
     if norm > 1e-12:
         avg = avg / norm
     logger.info(
-        "Built %d-dim reference embedding from %d clips", _ENCODER_DIM, len(embs),
+        "Built %d-dim reference embedding from %d clips",
+        _ENCODER_DIM,
+        len(embs),
     )
     return avg

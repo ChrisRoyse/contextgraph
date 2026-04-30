@@ -17,6 +17,7 @@ class StubASREvent:
 class StubVAD:
     def __init__(self, speech: bool = False):
         self._speech = speech
+
     def is_speech(self, audio: np.ndarray) -> bool:
         return self._speech
 
@@ -26,9 +27,11 @@ class StubASR:
         self._vad = vad
         self._events = events or []
         self._idx = 0
+
     @property
     def vad(self) -> StubVAD:
         return self._vad
+
     async def process_chunk(self, audio: np.ndarray) -> object | None:
         if self._idx < len(self._events):
             evt = self._events[self._idx]
@@ -40,6 +43,7 @@ class StubASR:
 class StubBrain:
     def __init__(self, response: str = "Hello"):
         self._response = response
+
     async def generate_stream(self, messages: list[dict[str, str]]):
         for word in self._response.split():
             yield word + " "
@@ -57,14 +61,18 @@ class StubTransport:
     def __init__(self):
         self.events: list[dict] = []
         self.audio_chunks: list[np.ndarray] = []
+
     async def send_event(self, event: dict) -> None:
         self.events.append(event)
+
     async def send_audio(self, audio: np.ndarray) -> None:
         self.audio_chunks.append(audio)
 
 
 class StubContext:
-    def build_messages(self, system_prompt: str, history: list[dict[str, str]], user_input: str) -> list[dict[str, str]]:
+    def build_messages(
+        self, system_prompt: str, history: list[dict[str, str]], user_input: str
+    ) -> list[dict[str, str]]:
         return [{"role": "system", "content": system_prompt}] + history
 
 
@@ -72,7 +80,9 @@ def _make_mgr(speech=False, events=None, response="Hello"):
     vad = StubVAD(speech=speech)
     asr = StubASR(vad, events=events)
     transport = StubTransport()
-    return ConversationManager(asr, StubBrain(response), StubTTS(), transport, StubContext(), "sys"), transport
+    return ConversationManager(
+        asr, StubBrain(response), StubTTS(), transport, StubContext(), "sys"
+    ), transport
 
 
 def test_initial_state_is_idle():
@@ -135,7 +145,11 @@ async def test_invalid_transition_raises():
 @pytest.mark.asyncio
 async def test_dismiss_from_any_state():
     mgr, transport = _make_mgr()
-    for state in [ConversationState.LISTENING, ConversationState.THINKING, ConversationState.SPEAKING]:
+    for state in [
+        ConversationState.LISTENING,
+        ConversationState.THINKING,
+        ConversationState.SPEAKING,
+    ]:
         mgr._state = state
         await mgr.dismiss()
         assert mgr.state == ConversationState.IDLE

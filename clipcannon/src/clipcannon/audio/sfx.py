@@ -29,11 +29,23 @@ logger = logging.getLogger(__name__)
 SAMPLE_RATE = 44100
 
 # Supported SFX types
-SUPPORTED_SFX_TYPES = frozenset({
-    "whoosh", "riser", "downer", "impact", "chime",
-    "tick", "bass_drop", "shimmer", "stinger",
-    "ambient_drone", "ambient_texture", "pad_swell", "nature_bed",
-})
+SUPPORTED_SFX_TYPES = frozenset(
+    {
+        "whoosh",
+        "riser",
+        "downer",
+        "impact",
+        "chime",
+        "tick",
+        "bass_drop",
+        "shimmer",
+        "stinger",
+        "ambient_drone",
+        "ambient_texture",
+        "pad_swell",
+        "nature_bed",
+    }
+)
 
 
 @dataclass
@@ -268,9 +280,11 @@ def _gen_ambient_drone(duration_ms: int, _params: dict[str, object]) -> np.ndarr
     """Layered sine waves (110/165/220 Hz) with 0.1 Hz LFO and decay."""
     t = _time_array(duration_ms)
     duration_s = duration_ms / 1000.0
-    signal = (np.sin(2 * np.pi * 110.0 * t)
-              + 0.7 * np.sin(2 * np.pi * 165.0 * t)
-              + 0.5 * np.sin(2 * np.pi * 220.0 * t))
+    signal = (
+        np.sin(2 * np.pi * 110.0 * t)
+        + 0.7 * np.sin(2 * np.pi * 165.0 * t)
+        + 0.5 * np.sin(2 * np.pi * 220.0 * t)
+    )
     lfo = 0.75 + 0.25 * np.sin(2 * np.pi * 0.1 * t)
     envelope = np.exp(-1.0 * t / max(duration_s, 0.001))
     return signal * lfo * envelope
@@ -309,11 +323,13 @@ def _gen_pad_swell(duration_ms: int, _params: dict[str, object]) -> np.ndarray:
     a = max(int(n * 0.3), 1)
     s = max(int(n * 0.4), 1)
     r = max(n - a - s, 1)
-    env = np.concatenate([
-        np.linspace(0.0, 1.0, a),
-        np.full(s, 0.8),
-        np.linspace(0.8, 0.0, r),
-    ])
+    env = np.concatenate(
+        [
+            np.linspace(0.0, 1.0, a),
+            np.full(s, 0.8),
+            np.linspace(0.8, 0.0, r),
+        ]
+    )
     env = env[:n] if len(env) > n else np.pad(env, (0, n - len(env)))
     return signal * env
 
@@ -328,17 +344,14 @@ def _gen_nature_bed(duration_ms: int, _params: dict[str, object]) -> np.ndarray:
     # Pink noise via weighted octave bands
     pink = np.zeros(n)
     for i in range(8):
-        step = 2 ** i
-        band = rng.standard_normal((n + step - 1) // step) / np.sqrt(2.0 ** i)
+        step = 2**i
+        band = rng.standard_normal((n + step - 1) // step) / np.sqrt(2.0**i)
         pink += np.repeat(band, step)[:n]
     # Bandpass-filtered white noise layer
     nyq = SAMPLE_RATE / 2.0
     lo, hi = 200.0 / nyq, min(2000.0 / nyq, 0.99)
     white = rng.standard_normal(n)
-    if lo < hi:
-        filtered = sosfilt(butter(4, [lo, hi], btype="band", output="sos"), white)
-    else:
-        filtered = white
+    filtered = sosfilt(butter(4, [lo, hi], btype="band", output="sos"), white) if lo < hi else white
     signal = pink + 0.3 * filtered
     # Gentle 10% fade in/out
     fl = max(int(n * 0.1), 1)
@@ -396,15 +409,15 @@ def generate_sfx(
     """
     if sfx_type not in _GENERATORS:
         valid = ", ".join(sorted(SUPPORTED_SFX_TYPES))
-        raise ValueError(
-            f"Unknown sfx_type: {sfx_type}. Supported types: {valid}"
-        )
+        raise ValueError(f"Unknown sfx_type: {sfx_type}. Supported types: {valid}")
 
     effective_params = params or {}
 
     logger.info(
         "Generating SFX: type=%s, duration=%dms, path=%s",
-        sfx_type, duration_ms, output_path,
+        sfx_type,
+        duration_ms,
+        output_path,
     )
 
     # Generate the raw signal
@@ -422,9 +435,7 @@ def generate_sfx(
 
     # Validate output
     if not output_path.exists() or output_path.stat().st_size == 0:
-        raise RuntimeError(
-            f"Failed to generate SFX at {output_path}"
-        )
+        raise RuntimeError(f"Failed to generate SFX at {output_path}")
 
     actual_duration_ms = int(len(signal) / SAMPLE_RATE * 1000)
 

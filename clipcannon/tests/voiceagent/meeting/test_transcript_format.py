@@ -1,4 +1,5 @@
 """Tests for voiceagent.meeting.transcript_format -- real objects, no mocks."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -39,7 +40,6 @@ class TestMsToTimestamp:
 
 
 class TestMeetingDocument:
-
     def test_meeting_document_defaults(self) -> None:
         doc = MeetingDocument(
             meeting_id="mtg_test01",
@@ -57,7 +57,6 @@ class TestMeetingDocument:
 
 
 class TestBuildMarkdown:
-
     @pytest.fixture()
     def sample_doc(self) -> MeetingDocument:
         doc = MeetingDocument(

@@ -74,7 +74,10 @@ def _load_audio(audio_path: Path) -> tuple[np.ndarray, int]:
 
 
 def _extract_prosody(
-    audio: np.ndarray, sr: int, word_count: int, duration_s: float,
+    audio: np.ndarray,
+    sr: int,
+    word_count: int,
+    duration_s: float,
 ) -> dict[str, object]:
     """Extract prosodic features from an audio clip."""
     import pyworld as pw
@@ -84,10 +87,19 @@ def _extract_prosody(
 
     if len(voiced) < 5:
         return {
-            "f0_mean": 0, "f0_std": 0, "f0_min": 0, "f0_max": 0, "f0_range": 0,
-            "energy_mean": 0, "energy_peak": 0, "energy_std": 0,
-            "speaking_rate_wpm": 0, "pitch_contour_type": "flat",
-            "energy_level": "low", "has_emphasis": False, "has_breath": False,
+            "f0_mean": 0,
+            "f0_std": 0,
+            "f0_min": 0,
+            "f0_max": 0,
+            "f0_range": 0,
+            "energy_mean": 0,
+            "energy_peak": 0,
+            "energy_std": 0,
+            "speaking_rate_wpm": 0,
+            "pitch_contour_type": "flat",
+            "energy_level": "low",
+            "has_emphasis": False,
+            "has_breath": False,
             "prosody_score": 0,
         }
 
@@ -100,10 +112,7 @@ def _extract_prosody(
     # Energy (RMS in 50ms windows)
     hop = int(sr * 0.05)
     n_frames = max(1, len(audio) // hop)
-    rms = np.array([
-        np.sqrt(np.mean(audio[i * hop:(i + 1) * hop] ** 2))
-        for i in range(n_frames)
-    ])
+    rms = np.array([np.sqrt(np.mean(audio[i * hop : (i + 1) * hop] ** 2)) for i in range(n_frames)])
     energy_mean = float(np.mean(rms))
     energy_peak = float(np.max(rms))
     energy_std = float(np.std(rms))
@@ -112,8 +121,8 @@ def _extract_prosody(
 
     # Pitch contour classification
     if len(voiced) >= 10:
-        first_quarter = np.mean(voiced[:len(voiced) // 4])
-        last_quarter = np.mean(voiced[-len(voiced) // 4:])
+        first_quarter = np.mean(voiced[: len(voiced) // 4])
+        last_quarter = np.mean(voiced[-len(voiced) // 4 :])
 
         if last_quarter > first_quarter * 1.1:
             pitch_contour_type = "rising"
@@ -238,10 +247,7 @@ async def backfill_voice_prosody(
         return {"error": f"No voice data found at {wavs_dir}"}
 
     # Collect all WAV clips (exclude _trimmed variants)
-    all_wavs = sorted([
-        w for w in wavs_dir.glob("*.wav")
-        if "_trimmed" not in w.name
-    ])
+    all_wavs = sorted([w for w in wavs_dir.glob("*.wav") if "_trimmed" not in w.name])
     if not all_wavs:
         return {"error": "No WAV clips found"}
 
@@ -293,24 +299,38 @@ async def backfill_voice_prosody(
             start_ms = 0
             end_ms = int(duration_s * 1000)
 
-            records.append((
-                voice_name, start_ms, end_ms,
-                str(wav_path),
-                text, word_count,
-                features["f0_mean"], features["f0_std"],
-                features["f0_min"], features["f0_max"], features["f0_range"],
-                features["energy_mean"], features["energy_peak"], features["energy_std"],
-                features["speaking_rate_wpm"], features["pitch_contour_type"],
-                features["energy_level"],
-                1 if features["has_emphasis"] else 0,
-                1 if features["has_breath"] else 0,
-                features["prosody_score"], "neutral",
-                json.dumps({
-                    "duration_s": round(duration_s, 2),
-                    "clip_index": i,
-                    "source": "backfill",
-                }),
-            ))
+            records.append(
+                (
+                    voice_name,
+                    start_ms,
+                    end_ms,
+                    str(wav_path),
+                    text,
+                    word_count,
+                    features["f0_mean"],
+                    features["f0_std"],
+                    features["f0_min"],
+                    features["f0_max"],
+                    features["f0_range"],
+                    features["energy_mean"],
+                    features["energy_peak"],
+                    features["energy_std"],
+                    features["speaking_rate_wpm"],
+                    features["pitch_contour_type"],
+                    features["energy_level"],
+                    1 if features["has_emphasis"] else 0,
+                    1 if features["has_breath"] else 0,
+                    features["prosody_score"],
+                    "neutral",
+                    json.dumps(
+                        {
+                            "duration_s": round(duration_s, 2),
+                            "clip_index": i,
+                            "source": "backfill",
+                        }
+                    ),
+                )
+            )
 
             if (i + 1) % 50 == 0:
                 logger.info("Prosody backfill: %d/%d clips processed", i + 1, len(all_wavs))
@@ -343,7 +363,9 @@ async def backfill_voice_prosody(
 
     logger.info(
         "Prosody backfill complete: %d segments, %d errors, %.1fs",
-        len(records), errors, elapsed_s,
+        len(records),
+        errors,
+        elapsed_s,
     )
 
     return {

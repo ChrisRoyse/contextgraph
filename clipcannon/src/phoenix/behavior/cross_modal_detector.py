@@ -10,16 +10,26 @@ No CPU fallbacks. Errors raise BehaviorError with full context.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from phoenix.errors import BehaviorError
-from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
+
+if TYPE_CHECKING:
+    from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
 
 # Valid social signal types.
-SIGNAL_TYPES = frozenset({
-    "sarcasm", "humor", "tension", "enthusiasm", "boredom", "neutral",
-})
+SIGNAL_TYPES = frozenset(
+    {
+        "sarcasm",
+        "humor",
+        "tension",
+        "enthusiasm",
+        "boredom",
+        "neutral",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -137,35 +147,46 @@ class CrossModalDetector:
 
         # Sarcasm: positive semantic + low arousal + falling F0.
         sarcasm_conf, sarcasm_src = self._check_sarcasm(
-            emotion, prosody, semantic_embedding, threshold_scale,
+            emotion,
+            prosody,
+            semantic_embedding,
+            threshold_scale,
         )
         if sarcasm_conf >= min_score:
             candidates.append(("sarcasm", sarcasm_conf, sarcasm_src))
 
         # Enthusiasm: high arousal + high valence + high energy + rising.
         enthusiasm_conf, enthusiasm_src = self._check_enthusiasm(
-            emotion, prosody, threshold_scale,
+            emotion,
+            prosody,
+            threshold_scale,
         )
         if enthusiasm_conf >= min_score:
             candidates.append(("enthusiasm", enthusiasm_conf, enthusiasm_src))
 
         # Humor: high arousal + high valence + varied F0 + fast.
         humor_conf, humor_src = self._check_humor(
-            emotion, prosody, threshold_scale,
+            emotion,
+            prosody,
+            threshold_scale,
         )
         if humor_conf >= min_score:
             candidates.append(("humor", humor_conf, humor_src))
 
         # Tension: high arousal + low valence + high energy.
         tension_conf, tension_src = self._check_tension(
-            emotion, prosody, threshold_scale,
+            emotion,
+            prosody,
+            threshold_scale,
         )
         if tension_conf >= min_score:
             candidates.append(("tension", tension_conf, tension_src))
 
         # Boredom: low arousal + low energy + flat F0 + slow rate.
         boredom_conf, boredom_src = self._check_boredom(
-            emotion, prosody, threshold_scale,
+            emotion,
+            prosody,
+            threshold_scale,
         )
         if boredom_conf >= min_score:
             candidates.append(("boredom", boredom_conf, boredom_src))

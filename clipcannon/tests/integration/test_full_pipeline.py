@@ -134,7 +134,9 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            grids = fetch_all(conn, "SELECT * FROM storyboard_grids WHERE project_id = ?", (p["project_id"],))
+            grids = fetch_all(
+                conn, "SELECT * FROM storyboard_grids WHERE project_id = ?", (p["project_id"],)
+            )
         finally:
             conn.close()
 
@@ -150,7 +152,9 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            rows = fetch_all(conn, "SELECT * FROM acoustic WHERE project_id = ?", (p["project_id"],))
+            rows = fetch_all(
+                conn, "SELECT * FROM acoustic WHERE project_id = ?", (p["project_id"],)
+            )
         finally:
             conn.close()
         assert len(rows) > 0
@@ -181,7 +185,9 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            rows = fetch_all(conn, "SELECT * FROM content_safety WHERE project_id = ?", (p["project_id"],))
+            rows = fetch_all(
+                conn, "SELECT * FROM content_safety WHERE project_id = ?", (p["project_id"],)
+            )
         finally:
             conn.close()
         assert len(rows) > 0
@@ -191,7 +197,11 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            rows = fetch_all(conn, "SELECT * FROM highlights WHERE project_id = ? ORDER BY score DESC", (p["project_id"],))
+            rows = fetch_all(
+                conn,
+                "SELECT * FROM highlights WHERE project_id = ? ORDER BY score DESC",
+                (p["project_id"],),
+            )
         finally:
             conn.close()
         assert len(rows) > 0
@@ -203,7 +213,9 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            rows = fetch_all(conn, "SELECT * FROM stream_status WHERE project_id = ?", (p["project_id"],))
+            rows = fetch_all(
+                conn, "SELECT * FROM stream_status WHERE project_id = ?", (p["project_id"],)
+            )
         finally:
             conn.close()
         stream_map = {str(s["stream_name"]): str(s["status"]) for s in rows}
@@ -214,7 +226,9 @@ class TestFullPipeline:
         p = pipeline_project
         conn = get_connection(p["db_path"], enable_vec=False, dict_rows=True)
         try:
-            rows = fetch_all(conn, "SELECT * FROM provenance WHERE project_id = ?", (p["project_id"],))
+            rows = fetch_all(
+                conn, "SELECT * FROM provenance WHERE project_id = ?", (p["project_id"],)
+            )
         finally:
             conn.close()
         assert len(rows) > 0
@@ -276,8 +290,16 @@ class TestEdgeCases:
                     project_id, name, source_path, source_sha256,
                     duration_ms, resolution, fps, codec, status
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created')""",
-                (project_id, "Tamper Test", str(source_video), "pending",
-                 0, "unknown", 0, "unknown"),
+                (
+                    project_id,
+                    "Tamper Test",
+                    str(source_video),
+                    "pending",
+                    0,
+                    "unknown",
+                    0,
+                    "unknown",
+                ),
             )
             for stream_name in PIPELINE_STREAMS:
                 conn.execute(
@@ -298,8 +320,7 @@ class TestEdgeCases:
         conn = get_connection(db_path, enable_vec=False, dict_rows=True)
         try:
             row = conn.execute(
-                "SELECT record_id FROM provenance WHERE project_id = ? "
-                "ORDER BY timestamp_utc ASC",
+                "SELECT record_id FROM provenance WHERE project_id = ? ORDER BY timestamp_utc ASC",
                 (project_id,),
             ).fetchone()
             record_id = row["record_id"] if isinstance(row, dict) else row[0]

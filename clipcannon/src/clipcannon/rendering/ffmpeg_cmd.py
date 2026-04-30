@@ -67,8 +67,7 @@ def _build_delogo_chain(removals: list | None) -> str:
     if not removals:
         return ""
     return "".join(
-        f",delogo=x={rem.x}:y={rem.y}:w={rem.width}:h={rem.height}:band=10"
-        for rem in removals
+        f",delogo=x={rem.x}:y={rem.y}:w={rem.width}:h={rem.height}:band=10" for rem in removals
     )
 
 
@@ -160,8 +159,13 @@ def build_ffmpeg_cmd(
         or global_color is not None
     ):
         return _build_per_segment_canvas_cmd(
-            source_path, output_path, segments,
-            profile, canvas, ass_path, encoding_args,
+            source_path,
+            output_path,
+            segments,
+            profile,
+            canvas,
+            ass_path,
+            encoding_args,
             global_color=global_color,
             overlays=overlays,
             removals=removals,
@@ -170,27 +174,47 @@ def build_ffmpeg_cmd(
     # Split-screen layout
     if split_layout is not None:
         return _build_split_screen_cmd(
-            source_path, output_path, segments,
-            profile, split_layout, ass_path, encoding_args,
+            source_path,
+            output_path,
+            segments,
+            profile,
+            split_layout,
+            ass_path,
+            encoding_args,
         )
 
     # PIP layout
     if pip_layout is not None:
         return _build_pip_cmd(
-            source_path, output_path, segments,
-            profile, pip_layout, ass_path, encoding_args,
+            source_path,
+            output_path,
+            segments,
+            profile,
+            pip_layout,
+            ass_path,
+            encoding_args,
         )
 
     # Standard crop layout (no overlays, no color grading)
     if len(segments) == 1:
         return _build_single_segment_cmd(
-            source_path, output_path, segments[0],
-            profile, crop_region, ass_path, encoding_args,
+            source_path,
+            output_path,
+            segments[0],
+            profile,
+            crop_region,
+            ass_path,
+            encoding_args,
             removals=removals,
         )
     return _build_multi_segment_cmd(
-        source_path, output_path, segments,
-        profile, crop_region, ass_path, encoding_args,
+        source_path,
+        output_path,
+        segments,
+        profile,
+        crop_region,
+        ass_path,
+        encoding_args,
         removals=removals,
     )
 
@@ -229,14 +253,11 @@ def _build_single_segment_cmd(
     # Apply delogo removals before crop/scale
     if removals:
         for rem in removals:
-            vfilters.append(
-                f"delogo=x={rem.x}:y={rem.y}:w={rem.width}:h={rem.height}:band=10"
-            )
+            vfilters.append(f"delogo=x={rem.x}:y={rem.y}:w={rem.width}:h={rem.height}:band=10")
 
     if crop_region is not None:
         vfilters.append(
-            f"crop={crop_region.width}:{crop_region.height}"
-            f":{crop_region.x}:{crop_region.y}"
+            f"crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
         )
 
     vfilters.append(f"scale={profile.width}:{profile.height}")
@@ -258,11 +279,16 @@ def _build_single_segment_cmd(
         afilters.append(f"atempo={segment.speed}")
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-ss", f"{start_s:.3f}",
-        "-to", f"{end_s:.3f}",
-        "-i", str(source_path),
-        "-vf", vfilter_str,
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-to",
+        f"{end_s:.3f}",
+        "-i",
+        str(source_path),
+        "-vf",
+        vfilter_str,
     ]
 
     if afilters:
@@ -315,20 +341,13 @@ def _build_multi_segment_cmd(
         # Video chain for this segment
         # Combine PTS reset + speed into one expression to avoid
         # an intermediate PTS rounding step.
-        if seg.speed != 1.0:
-            pts_expr = f"(PTS-STARTPTS)/{seg.speed}"
-        else:
-            pts_expr = "PTS-STARTPTS"
+        pts_expr = f"(PTS-STARTPTS)/{seg.speed}" if seg.speed != 1.0 else "PTS-STARTPTS"
 
-        vchain = (
-            f"[0:v]trim=start={start_s:.3f}:end={end_s:.3f},"
-            f"setpts={pts_expr}{delogo_chain}"
-        )
+        vchain = f"[0:v]trim=start={start_s:.3f}:end={end_s:.3f},setpts={pts_expr}{delogo_chain}"
 
         if crop_region is not None:
             vchain += (
-                f",crop={crop_region.width}:{crop_region.height}"
-                f":{crop_region.x}:{crop_region.y}"
+                f",crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
             )
 
         vchain += f",scale={profile.width}:{profile.height}"
@@ -339,10 +358,7 @@ def _build_multi_segment_cmd(
         video_labels.append(vlabel)
 
         # Audio chain for this segment
-        achain = (
-            f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},"
-            f"asetpts=PTS-STARTPTS"
-        )
+        achain = f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},asetpts=PTS-STARTPTS"
 
         if seg.speed != 1.0:
             achain += f",atempo={seg.speed}"
@@ -355,12 +371,17 @@ def _build_multi_segment_cmd(
     # Apply xfade transitions between video and audio segments
     if len(video_labels) > 1:
         video_labels, audio_labels = _apply_xfade_transitions(
-            filter_parts, video_labels, audio_labels, segments,
+            filter_parts,
+            video_labels,
+            audio_labels,
+            segments,
         )
 
     # Concatenate remaining segments
     final_video, final_audio = _build_concat_filters(
-        filter_parts, video_labels, audio_labels,
+        filter_parts,
+        video_labels,
+        audio_labels,
     )
 
     # Audio sync correction: force audio to resync with video PTS.
@@ -368,29 +389,30 @@ def _build_multi_segment_cmd(
     # segment) causes progressive audio drift.  aresample=async=1
     # inserts/removes samples to re-align audio to the video timeline.
     if len(segments) > 1:
-        sync_filter = (
-            f"[{final_audio}]aresample=async=1:first_pts=0[async_a]"
-        )
+        sync_filter = f"[{final_audio}]aresample=async=1:first_pts=0[async_a]"
         filter_parts.append(sync_filter)
         final_audio = "async_a"
 
     # Apply subtitles to final video
     if ass_path is not None:
         escaped = _escape_subtitle_path(ass_path)
-        sub_filter = (
-            f"[{final_video}]subtitles='{escaped}'[subbed]"
-        )
+        sub_filter = f"[{final_video}]subtitles='{escaped}'[subbed]"
         filter_parts.append(sub_filter)
         final_video = "subbed"
 
     filter_complex = ";".join(filter_parts)
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", f"[{final_video}]",
-        "-map", f"[{final_audio}]",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{final_video}]",
+        "-map",
+        f"[{final_audio}]",
     ]
 
     cmd.extend(encoding_args)
@@ -416,13 +438,10 @@ def _build_concat_filters(
     """
     if len(video_labels) > 1:
         concat_inputs = "".join(
-            f"[{v}][{a}]"
-            for v, a in zip(video_labels, audio_labels, strict=True)
+            f"[{v}][{a}]" for v, a in zip(video_labels, audio_labels, strict=True)
         )
         n = len(video_labels)
-        concat_filter = (
-            f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa]"
-        )
+        concat_filter = f"{concat_inputs}concat=n={n}:v=1:a=1[outv][outa]"
         filter_parts.append(concat_filter)
         return "outv", "outa"
 
@@ -430,9 +449,7 @@ def _build_concat_filters(
     # Also concat audio if we had xfade on video
     if len(audio_labels) > 1:
         aconcat = "".join(f"[{a}]" for a in audio_labels)
-        aconcat += (
-            f"concat=n={len(audio_labels)}:v=0:a=1[outa]"
-        )
+        aconcat += f"concat=n={len(audio_labels)}:v=0:a=1[outa]"
         filter_parts.append(aconcat)
         return final_video, "outa"
 
@@ -500,9 +517,7 @@ def _apply_xfade_transitions(
         # Audio acrossfade
         a_out = f"xfa{xf_counter}"
         acrossfade_filter = (
-            f"[{a_labels[i]}][{a_labels[i + 1]}]"
-            f"acrossfade=d={duration_s:.3f}"
-            f"[{a_out}]"
+            f"[{a_labels[i]}][{a_labels[i + 1]}]acrossfade=d={duration_s:.3f}[{a_out}]"
         )
         filter_parts.append(acrossfade_filter)
 
@@ -532,15 +547,24 @@ def build_encoding_args(
         List of FFmpeg encoding arguments.
     """
     args: list[str] = [
-        "-c:v", profile.video_codec,
-        "-b:v", profile.video_bitrate,
-        "-maxrate", profile.max_bitrate,
-        "-bufsize", profile.bufsize,
-        "-r", str(profile.fps),
-        "-c:a", profile.audio_codec,
-        "-b:a", profile.audio_bitrate,
-        "-ar", str(profile.audio_sample_rate),
-        "-movflags", profile.movflags,
+        "-c:v",
+        profile.video_codec,
+        "-b:v",
+        profile.video_bitrate,
+        "-maxrate",
+        profile.max_bitrate,
+        "-bufsize",
+        profile.bufsize,
+        "-r",
+        str(profile.fps),
+        "-c:a",
+        profile.audio_codec,
+        "-b:a",
+        profile.audio_bitrate,
+        "-ar",
+        str(profile.audio_sample_rate),
+        "-movflags",
+        profile.movflags,
     ]
 
     if "nvenc" in profile.video_codec and nvenc_preset:
@@ -581,23 +605,17 @@ def _build_vstack_filters(
         )
         if layout.speaker_position == "top":
             filter_parts.append(
-                f"[{speaker_label}][{bar_label}][{screen_label}]"
-                f"vstack=inputs=3[{out_label}]"
+                f"[{speaker_label}][{bar_label}][{screen_label}]vstack=inputs=3[{out_label}]"
             )
         else:
             filter_parts.append(
-                f"[{screen_label}][{bar_label}][{speaker_label}]"
-                f"vstack=inputs=3[{out_label}]"
+                f"[{screen_label}][{bar_label}][{speaker_label}]vstack=inputs=3[{out_label}]"
             )
     else:
         if layout.speaker_position == "top":
-            filter_parts.append(
-                f"[{speaker_label}][{screen_label}]vstack=inputs=2[{out_label}]"
-            )
+            filter_parts.append(f"[{speaker_label}][{screen_label}]vstack=inputs=2[{out_label}]")
         else:
-            filter_parts.append(
-                f"[{screen_label}][{speaker_label}]vstack=inputs=2[{out_label}]"
-            )
+            filter_parts.append(f"[{screen_label}][{speaker_label}]vstack=inputs=2[{out_label}]")
 
 
 def _build_split_screen_cmd(
@@ -632,8 +650,13 @@ def _build_split_screen_cmd(
     # For multi-segment, we trim first, then apply the split layout
     if len(segments) > 1:
         return _build_split_screen_multi_segment(
-            source_path, output_path, segments,
-            profile, layout, ass_path, encoding_args,
+            source_path,
+            output_path,
+            segments,
+            profile,
+            layout,
+            ass_path,
+            encoding_args,
         )
 
     seg = segments[0]
@@ -678,17 +701,13 @@ def _build_split_screen_cmd(
     # Apply speed adjustment if needed
     final_v = "stacked"
     if seg.speed != 1.0:
-        filters.append(
-            f"[stacked]setpts={1.0 / seg.speed}*PTS[speeded]"
-        )
+        filters.append(f"[stacked]setpts={1.0 / seg.speed}*PTS[speeded]")
         final_v = "speeded"
 
     # Apply subtitles if present
     if ass_path is not None:
         escaped = _escape_subtitle_path(ass_path)
-        filters.append(
-            f"[{final_v}]subtitles='{escaped}'[subbed]"
-        )
+        filters.append(f"[{final_v}]subtitles='{escaped}'[subbed]")
         final_v = "subbed"
 
     # Audio filters
@@ -699,13 +718,20 @@ def _build_split_screen_cmd(
     filter_complex = ";".join(filters)
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-ss", f"{start_s:.3f}",
-        "-to", f"{end_s:.3f}",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", f"[{final_v}]",
-        "-map", "0:a",
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-to",
+        f"{end_s:.3f}",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{final_v}]",
+        "-map",
+        "0:a",
     ]
 
     if afilters:
@@ -790,10 +816,7 @@ def _build_split_screen_multi_segment(
         video_labels.append(f"v{i}")
 
         # Audio trim
-        achain = (
-            f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},"
-            f"asetpts=PTS-STARTPTS"
-        )
+        achain = f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},asetpts=PTS-STARTPTS"
         if seg.speed != 1.0:
             achain += f",atempo={seg.speed}"
         alabel = f"a{i}"
@@ -803,25 +826,30 @@ def _build_split_screen_multi_segment(
 
     # Concatenate all segments
     final_video, final_audio = _build_concat_filters(
-        filter_parts, video_labels, audio_labels,
+        filter_parts,
+        video_labels,
+        audio_labels,
     )
 
     # Apply subtitles
     if ass_path is not None:
         escaped = _escape_subtitle_path(ass_path)
-        filter_parts.append(
-            f"[{final_video}]subtitles='{escaped}'[subbed]"
-        )
+        filter_parts.append(f"[{final_video}]subtitles='{escaped}'[subbed]")
         final_video = "subbed"
 
     filter_complex = ";".join(filter_parts)
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", f"[{final_video}]",
-        "-map", f"[{final_audio}]",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{final_video}]",
+        "-map",
+        f"[{final_audio}]",
     ]
     cmd.extend(encoding_args)
     cmd.append(str(output_path))
@@ -870,9 +898,7 @@ def _build_pip_cmd(
     filters.append("[0:v]split=2[forbg][forpip]")
 
     # Background: scale full source to fill output
-    filters.append(
-        f"[forbg]scale={ow}:{oh},setsar=1[bg]"
-    )
+    filters.append(f"[forbg]scale={ow}:{oh},setsar=1[bg]")
 
     # PIP: crop speaker region and scale to PIP size
     filters.append(
@@ -882,25 +908,19 @@ def _build_pip_cmd(
     )
 
     # Overlay PIP on background
-    filters.append(
-        f"[bg][pip]overlay=x={layout.pip_x}:y={layout.pip_y}[composed]"
-    )
+    filters.append(f"[bg][pip]overlay=x={layout.pip_x}:y={layout.pip_y}[composed]")
 
     final_v = "composed"
 
     # Speed
     if seg.speed != 1.0:
-        filters.append(
-            f"[composed]setpts={1.0 / seg.speed}*PTS[speeded]"
-        )
+        filters.append(f"[composed]setpts={1.0 / seg.speed}*PTS[speeded]")
         final_v = "speeded"
 
     # Subtitles
     if ass_path is not None:
         escaped = _escape_subtitle_path(ass_path)
-        filters.append(
-            f"[{final_v}]subtitles='{escaped}'[subbed]"
-        )
+        filters.append(f"[{final_v}]subtitles='{escaped}'[subbed]")
         final_v = "subbed"
 
     filter_complex = ";".join(filters)
@@ -910,13 +930,20 @@ def _build_pip_cmd(
         afilters.append(f"atempo={seg.speed}")
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-ss", f"{start_s:.3f}",
-        "-to", f"{end_s:.3f}",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", f"[{final_v}]",
-        "-map", "0:a",
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{start_s:.3f}",
+        "-to",
+        f"{end_s:.3f}",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{final_v}]",
+        "-map",
+        "0:a",
     ]
 
     if afilters:
@@ -926,7 +953,6 @@ def _build_pip_cmd(
     cmd.append(str(output_path))
 
     return cmd
-
 
 
 # ============================================================
@@ -985,31 +1011,47 @@ def _build_per_segment_canvas_cmd(
         # Build video chain for this segment based on its layout
         if seg.canvas is not None and seg.canvas.zoom is not None:
             _build_segment_zoom_chain(
-                filter_parts, seg, i, profile, cw, ch,
+                filter_parts,
+                seg,
+                i,
+                profile,
+                cw,
+                ch,
                 removals=removals,
             )
         elif seg.canvas is not None and seg.canvas.regions:
             _build_segment_canvas_chain(
-                filter_parts, seg, i, profile, cw, ch, seg.canvas,
+                filter_parts,
+                seg,
+                i,
+                profile,
+                cw,
+                ch,
+                seg.canvas,
                 removals=removals,
             )
-        elif (
-            top_level_canvas is not None
-            and top_level_canvas.enabled
-            and top_level_canvas.regions
-        ):
+        elif top_level_canvas is not None and top_level_canvas.enabled and top_level_canvas.regions:
             # Convert top-level CanvasSpec to SegmentCanvasSpec for reuse
             seg_canvas = SegmentCanvasSpec(
                 regions=list(top_level_canvas.regions),
                 background_color=top_level_canvas.background_color,
             )
             _build_segment_canvas_chain(
-                filter_parts, seg, i, profile, cw, ch, seg_canvas,
+                filter_parts,
+                seg,
+                i,
+                profile,
+                cw,
+                ch,
+                seg_canvas,
                 removals=removals,
             )
         else:
             _build_segment_plain_chain(
-                filter_parts, seg, i, profile,
+                filter_parts,
+                seg,
+                i,
+                profile,
                 removals=removals,
             )
 
@@ -1018,10 +1060,7 @@ def _build_per_segment_canvas_cmd(
         # Audio chain for this segment
         start_s = seg.source_start_ms / 1000.0
         end_s = seg.source_end_ms / 1000.0
-        achain = (
-            f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},"
-            f"asetpts=PTS-STARTPTS"
-        )
+        achain = f"[0:a]atrim=start={start_s:.3f}:end={end_s:.3f},asetpts=PTS-STARTPTS"
         if seg.speed != 1.0:
             achain += f",atempo={seg.speed}"
         alabel = f"a{i}"
@@ -1032,18 +1071,26 @@ def _build_per_segment_canvas_cmd(
     # Apply xfade transitions between segments (if specified)
     if len(video_labels) > 1:
         video_labels, audio_labels = _apply_xfade_transitions(
-            filter_parts, video_labels, audio_labels, segments,
+            filter_parts,
+            video_labels,
+            audio_labels,
+            segments,
         )
 
     # Concatenate remaining segments
     final_video, final_audio = _build_concat_filters(
-        filter_parts, video_labels, audio_labels,
+        filter_parts,
+        video_labels,
+        audio_labels,
     )
 
     # Apply global color grading (after concat, before subtitles)
     if global_color is not None:
         final_video = _apply_color_grading(
-            filter_parts, final_video, "color_graded", global_color,
+            filter_parts,
+            final_video,
+            "color_graded",
+            global_color,
         )
 
     # Apply overlay drawtext/drawbox filters
@@ -1069,28 +1116,29 @@ def _build_per_segment_canvas_cmd(
             )
             for filt in ov_filters:
                 out_label = f"ov{overlay_idx}"
-                filter_parts.append(
-                    f"[{final_video}]{filt}[{out_label}]"
-                )
+                filter_parts.append(f"[{final_video}]{filt}[{out_label}]")
                 final_video = out_label
                 overlay_idx += 1
 
     # Apply subtitles to final composited video
     if ass_path is not None:
         escaped = _escape_subtitle_path(ass_path)
-        filter_parts.append(
-            f"[{final_video}]subtitles='{escaped}'[subbed]"
-        )
+        filter_parts.append(f"[{final_video}]subtitles='{escaped}'[subbed]")
         final_video = "subbed"
 
     filter_complex = ";".join(filter_parts)
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", f"[{final_video}]",
-        "-map", f"[{final_audio}]",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        f"[{final_video}]",
+        "-map",
+        f"[{final_audio}]",
     ]
     cmd.extend(encoding_args)
     cmd.append(str(output_path))
@@ -1128,10 +1176,7 @@ def _build_region_scale(region: CanvasRegion) -> str:
 
     # cover (default): Scale to fill output, preserving aspect ratio.
     # Then center-crop to exact output size.
-    return (
-        f"scale={ow}:{oh}:force_original_aspect_ratio=increase,"
-        f"crop={ow}:{oh},setsar=1"
-    )
+    return f"scale={ow}:{oh}:force_original_aspect_ratio=increase,crop={ow}:{oh},setsar=1"
 
 
 def _build_segment_canvas_chain(
@@ -1181,13 +1226,8 @@ def _build_segment_canvas_chain(
     if use_blur_bg:
         # Split into N+1 copies: one for blur bg, N for regions
         total_copies = n_regions + 1
-        split_out = (
-            f"[seg{idx}_bgcopy]"
-            + "".join(f"[seg{idx}_r{j}]" for j in range(n_regions))
-        )
-        filters.append(
-            f"[seg{idx}_src]split={total_copies}{split_out}"
-        )
+        split_out = f"[seg{idx}_bgcopy]" + "".join(f"[seg{idx}_r{j}]" for j in range(n_regions))
+        filters.append(f"[seg{idx}_src]split={total_copies}{split_out}")
         # Blur background: scale to fill canvas, apply heavy blur
         filters.append(
             f"[seg{idx}_bgcopy]"
@@ -1205,12 +1245,8 @@ def _build_segment_canvas_chain(
         if n_regions == 1:
             filters.append(f"[seg{idx}_src]null[seg{idx}_r0]")
         else:
-            split_out = "".join(
-                f"[seg{idx}_r{j}]" for j in range(n_regions)
-            )
-            filters.append(
-                f"[seg{idx}_src]split={n_regions}{split_out}"
-            )
+            split_out = "".join(f"[seg{idx}_r{j}]" for j in range(n_regions))
+            filters.append(f"[seg{idx}_src]split={n_regions}{split_out}")
 
     # 4. Crop and scale each region (respecting fit_mode)
     for j, region in enumerate(regions):
@@ -1238,7 +1274,10 @@ def _build_segment_canvas_chain(
     color_in = f"seg{idx}_composed"
     if seg.color is not None:
         color_in = _apply_color_grading(
-            filters, color_in, f"seg{idx}_colored", seg.color,
+            filters,
+            color_in,
+            f"seg{idx}_colored",
+            seg.color,
         )
 
     # Final label for this segment
@@ -1309,17 +1348,17 @@ def _build_segment_zoom_chain(
 
     # Apply zoom crop and scale
     crop_scale = (
-        f"crop=w='{crop_w}':h='{crop_h}':x='{crop_x}':y='{crop_y}',"
-        f"scale={cw}:{ch},setsar=1"
+        f"crop=w='{crop_w}':h='{crop_h}':x='{crop_x}':y='{crop_y}',scale={cw}:{ch},setsar=1"
     )
 
     if seg.color is not None:
         zoom_out_label = f"seg{idx}_zoomed"
-        filters.append(
-            f"[seg{idx}_src]{crop_scale}[{zoom_out_label}]"
-        )
+        filters.append(f"[seg{idx}_src]{crop_scale}[{zoom_out_label}]")
         final = _apply_color_grading(
-            filters, zoom_out_label, f"v{idx}", seg.color,
+            filters,
+            zoom_out_label,
+            f"v{idx}",
+            seg.color,
         )
         if final != f"v{idx}":
             filters.append(f"[{final}]null[v{idx}]")
@@ -1356,7 +1395,10 @@ def _build_segment_plain_chain(
     if seg.color is not None:
         filters.append(f"{trim_scale}[seg{idx}_scaled]")
         final = _apply_color_grading(
-            filters, f"seg{idx}_scaled", f"v{idx}", seg.color,
+            filters,
+            f"seg{idx}_scaled",
+            f"v{idx}",
+            seg.color,
         )
         if final != f"v{idx}":
             filters.append(f"[{final}]null[v{idx}]")
@@ -1429,8 +1471,7 @@ def build_preview_cmd(
         # Solid color background
         bg_hex = background_color.lstrip("#")
         filters.append(
-            f"color=c=0x{bg_hex}:s={canvas_width}x{canvas_height}"
-            f":d=0.1:r={fps},setsar=1[bg]"
+            f"color=c=0x{bg_hex}:s={canvas_width}x{canvas_height}:d=0.1:r={fps},setsar=1[bg]"
         )
         # Split source into N copies
         if n_regions == 1:
@@ -1455,23 +1496,29 @@ def build_preview_cmd(
     for j, region in enumerate(sorted_regions):
         out = f"ov{j}" if j < n_regions - 1 else "out"
         filters.append(
-            f"[{current}][cr{j}]"
-            f"overlay=x={region.output_x}:y={region.output_y}"
-            f":shortest=1[{out}]"
+            f"[{current}][cr{j}]overlay=x={region.output_x}:y={region.output_y}:shortest=1[{out}]"
         )
         current = out
 
     filter_complex = ";".join(filters)
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-ss", f"{seek_s:.3f}",
-        "-i", str(source_path),
-        "-filter_complex", filter_complex,
-        "-map", "[out]",
-        "-frames:v", "1",
-        "-update", "1",
-        "-q:v", "2",
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{seek_s:.3f}",
+        "-i",
+        str(source_path),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[out]",
+        "-frames:v",
+        "1",
+        "-update",
+        "1",
+        "-q:v",
+        "2",
         str(output_path),
     ]
 
@@ -1511,15 +1558,20 @@ def build_zoom_preview_cmd(
     seek_s = timestamp_ms / 1000.0
 
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-ss", f"{seek_s:.3f}",
-        "-i", str(source_path),
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{seek_s:.3f}",
+        "-i",
+        str(source_path),
         "-vf",
-        f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
-        f"scale={canvas_width}:{canvas_height},setsar=1",
-        "-frames:v", "1",
-        "-update", "1",
-        "-q:v", "2",
+        f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale={canvas_width}:{canvas_height},setsar=1",
+        "-frames:v",
+        "1",
+        "-update",
+        "1",
+        "-q:v",
+        "2",
         str(output_path),
     ]
 

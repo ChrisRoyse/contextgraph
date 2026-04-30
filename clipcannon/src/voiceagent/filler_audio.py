@@ -10,6 +10,7 @@ Filler selection is context-aware:
   - After a command:  "Sure." or "On it."
   - Generic:          "Okay." or "Mm-hmm."
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +18,6 @@ import logging
 import random
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 
@@ -31,9 +31,7 @@ FILLER_PHRASES: dict[str, list[str]] = {
 }
 
 # All phrases flattened for pre-generation
-ALL_PHRASES: list[str] = [
-    phrase for phrases in FILLER_PHRASES.values() for phrase in phrases
-]
+ALL_PHRASES: list[str] = [phrase for phrases in FILLER_PHRASES.values() for phrase in phrases]
 
 
 @dataclass
@@ -105,12 +103,14 @@ class FillerAudioCache:
 
                         audio_int16 = (wav * 32767).astype(np.int16)
                         duration_ms = int(len(audio_int16) / sr * 1000)
-                        clips[category].append(FillerClip(
-                            phrase=phrase,
-                            audio_int16=audio_int16.tobytes(),
-                            duration_ms=duration_ms,
-                            category=category,
-                        ))
+                        clips[category].append(
+                            FillerClip(
+                                phrase=phrase,
+                                audio_int16=audio_int16.tobytes(),
+                                duration_ms=duration_ms,
+                                category=category,
+                            )
+                        )
                         logger.debug("Filler '%s': %dms", phrase, duration_ms)
                     except Exception as exc:
                         logger.warning("Filler generation failed for '%s': %s", phrase, exc)
@@ -124,7 +124,9 @@ class FillerAudioCache:
         total = sum(len(v) for v in self._clips.values())
         elapsed = time.monotonic() - t0
         logger.info(
-            "Filler audio ready: %d clips in %.1fs", total, elapsed,
+            "Filler audio ready: %d clips in %.1fs",
+            total,
+            elapsed,
         )
 
     def get_filler(self, category: str = "generic") -> FillerClip | None:
@@ -155,19 +157,48 @@ class FillerAudioCache:
         text = last_user_text.lower().strip()
         # Question detection: ends with ? or starts with question words
         if text.endswith("?") or any(
-            text.startswith(w) for w in (
-                "what", "how", "why", "when", "where", "who",
-                "which", "can", "could", "would", "should", "is",
-                "are", "do", "does", "did", "will",
+            text.startswith(w)
+            for w in (
+                "what",
+                "how",
+                "why",
+                "when",
+                "where",
+                "who",
+                "which",
+                "can",
+                "could",
+                "would",
+                "should",
+                "is",
+                "are",
+                "do",
+                "does",
+                "did",
+                "will",
             )
         ):
             return "question"
         # Command detection: imperative verbs
         if any(
-            text.startswith(w) for w in (
-                "tell", "show", "find", "get", "make", "set",
-                "open", "close", "play", "stop", "search",
-                "create", "delete", "update", "run", "do",
+            text.startswith(w)
+            for w in (
+                "tell",
+                "show",
+                "find",
+                "get",
+                "make",
+                "set",
+                "open",
+                "close",
+                "play",
+                "stop",
+                "search",
+                "create",
+                "delete",
+                "update",
+                "run",
+                "do",
             )
         ):
             return "command"

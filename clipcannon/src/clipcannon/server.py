@@ -174,7 +174,7 @@ async def run_stdio() -> None:
         await server.run(read_stream, write_stream, init_options)
 
 
-def _start_wake_listener() -> "subprocess.Popen[bytes] | None":
+def _start_wake_listener() -> subprocess.Popen[bytes] | None:
     """Spawn the voice agent wake listener as a background process.
 
     Runs ``python -m voiceagent listen`` in the background so the user
@@ -199,7 +199,8 @@ def _start_wake_listener() -> "subprocess.Popen[bytes] | None":
         )
         logger.info(
             "Wake listener started (PID %d, log=%s) -- say 'Hey Jarvis' to activate",
-            proc.pid, log_file,
+            proc.pid,
+            log_file,
         )
         return proc
     except (OSError, FileNotFoundError) as exc:

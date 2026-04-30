@@ -10,17 +10,20 @@ Usage:
 
 Chromium uses: --use-file-for-fake-video-capture=/path/to/pipe.y4m
 """
+
 import os
-import struct
 import sys
 import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 PIPE_PATH = sys.argv[1] if len(sys.argv) > 1 else "/tmp/santa_video.y4m"
-IDLE_VIDEO = sys.argv[2] if len(sys.argv) > 2 else str(Path("~/.voiceagent/drivers/santa_idle_web.mp4").expanduser())
+IDLE_VIDEO = (
+    sys.argv[2]
+    if len(sys.argv) > 2
+    else str(Path("~/.voiceagent/drivers/santa_idle_web.mp4").expanduser())
+)
 CONTROL_FILE = "/tmp/santa_video_state.json"
 FPS = 15
 WIDTH = 640
@@ -68,6 +71,7 @@ def load_speaking_frames(video_path: str) -> list[bytes]:
 def read_state() -> dict:
     """Read control state from file."""
     import json
+
     try:
         with open(CONTROL_FILE) as f:
             return json.load(f)
@@ -75,7 +79,7 @@ def read_state() -> dict:
         return {"state": "idle"}
 
 
-def main():
+def main() -> None:
     print(f"Loading idle frames from {IDLE_VIDEO}...")
     idle_frames = load_idle_frames(IDLE_VIDEO)
     if not idle_frames:
@@ -88,7 +92,7 @@ def main():
         os.unlink(PIPE_PATH)
     os.mkfifo(PIPE_PATH)
     print(f"Created FIFO: {PIPE_PATH}")
-    print(f"Waiting for reader (Chromium)...")
+    print("Waiting for reader (Chromium)...")
 
     # Open pipe for writing (blocks until a reader connects)
     pipe = open(PIPE_PATH, "wb")

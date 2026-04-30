@@ -5,6 +5,7 @@ Requires: RTX 5090, Qwen3-14B-FP8, ClipCannon boris voice, Whisper.
 
 Run: cd /home/cabdru/clipcannon && PYTHONPATH=src python -m pytest tests/voiceagent/test_integration.py -v --timeout=300
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,6 +28,7 @@ from voiceagent.tts.chunker import SentenceChunker
 
 # --- Fixtures ---
 
+
 @pytest.fixture(scope="module")
 def tmp_db(tmp_path_factory):
     db_path = tmp_path_factory.mktemp("integration") / "agent.db"
@@ -46,14 +48,17 @@ def agent_config(tmp_db):
 
 # --- Test 1: All imports work ---
 
+
 def test_01_all_imports():
     """Verify every Phase 1 module is importable."""
     from voiceagent import __version__
+
     assert __version__ == "0.1.0"
     print("All 20+ modules imported successfully")
 
 
 # --- Test 2: Database operations ---
+
 
 def test_02_database_crud(tmp_db):
     """Verify conversations, turns, metrics tables work end-to-end."""
@@ -62,14 +67,18 @@ def test_02_database_crud(tmp_db):
     turn_id = str(uuid.uuid4())
     metric_id = str(uuid.uuid4())
 
-    conn.execute("INSERT INTO conversations (id, started_at) VALUES (?, ?)",
-                 (conv_id, "2026-03-28T10:00:00Z"))
+    conn.execute(
+        "INSERT INTO conversations (id, started_at) VALUES (?, ?)",
+        (conv_id, "2026-03-28T10:00:00Z"),
+    )
     conn.execute(
         "INSERT INTO turns (id, conversation_id, role, text, started_at, asr_ms, total_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (turn_id, conv_id, "user", "Hello", "2026-03-28T10:00:01Z", 100.0, 250.0))
+        (turn_id, conv_id, "user", "Hello", "2026-03-28T10:00:01Z", 100.0, 250.0),
+    )
     conn.execute(
         "INSERT INTO metrics (id, timestamp, metric_name, value) VALUES (?, ?, ?, ?)",
-        (metric_id, "2026-03-28T10:00:01Z", "e2e_latency_ms", 250.0))
+        (metric_id, "2026-03-28T10:00:01Z", "e2e_latency_ms", 250.0),
+    )
     conn.commit()
 
     conv = conn.execute("SELECT * FROM conversations WHERE id=?", (conv_id,)).fetchone()
@@ -85,19 +94,24 @@ def test_02_database_crud(tmp_db):
 
     # FK constraint
     with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO turns (id, conversation_id, role, text, started_at) VALUES (?, ?, ?, ?, ?)",
-                     (str(uuid.uuid4()), "nonexistent", "user", "test", "2026-03-28T10:00:00Z"))
+        conn.execute(
+            "INSERT INTO turns (id, conversation_id, role, text, started_at) VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), "nonexistent", "user", "test", "2026-03-28T10:00:00Z"),
+        )
 
     # CHECK constraint
     with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO turns (id, conversation_id, role, text, started_at) VALUES (?, ?, ?, ?, ?)",
-                     (str(uuid.uuid4()), conv_id, "system", "test", "2026-03-28T10:00:00Z"))
+        conn.execute(
+            "INSERT INTO turns (id, conversation_id, role, text, started_at) VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), conv_id, "system", "test", "2026-03-28T10:00:00Z"),
+        )
 
     conn.close()
     print(f"DB CRUD verified: conv={conv_id}, turn={turn_id}, metric={metric_id}")
 
 
 # --- Test 3: VoiceAgent config + DB wiring ---
+
 
 def test_03_agent_db_wiring(tmp_db):
     """VoiceAgent creates conversations and logs turns to DB."""
@@ -106,9 +120,13 @@ def test_03_agent_db_wiring(tmp_db):
 
     conv_id = agent.start_conversation()
     agent.log_turn(conv_id, "user", "What is 2+2?", asr_ms=90.0, total_ms=200.0)
-    agent.log_turn(conv_id, "assistant", "Four.", llm_ttft_ms=80.0, tts_ttfb_ms=50.0, total_ms=300.0)
+    agent.log_turn(
+        conv_id, "assistant", "Four.", llm_ttft_ms=80.0, tts_ttfb_ms=50.0, total_ms=300.0
+    )
 
-    row = agent._db_conn.execute("SELECT turn_count FROM conversations WHERE id=?", (conv_id,)).fetchone()
+    row = agent._db_conn.execute(
+        "SELECT turn_count FROM conversations WHERE id=?", (conv_id,)
+    ).fetchone()
     assert row["turn_count"] == 2
 
     turns = agent._db_conn.execute(
@@ -123,6 +141,7 @@ def test_03_agent_db_wiring(tmp_db):
 
 # --- Test 4: VAD detects speech (uses session fixture) ---
 
+
 def test_04_vad_detects_speech(session_vad):
     """SileroVAD correctly classifies silence vs speech-like audio."""
     assert session_vad.is_speech(np.zeros(512, dtype=np.float32)) is False
@@ -132,19 +151,21 @@ def test_04_vad_detects_speech(session_vad):
 
 # --- Test 5: Endpoint detection ---
 
+
 def test_05_endpoint_detection():
     """EndpointDetector triggers after 600ms silence following speech."""
     ep = EndpointDetector(silence_ms=600, chunk_ms=200)
-    assert ep.update(True) is False    # speech
-    assert ep.update(False) is False   # 200ms
-    assert ep.update(False) is False   # 400ms
-    assert ep.update(False) is True    # 600ms -> endpoint!
+    assert ep.update(True) is False  # speech
+    assert ep.update(False) is False  # 200ms
+    assert ep.update(False) is False  # 400ms
+    assert ep.update(False) is True  # 600ms -> endpoint!
     ep.reset()
     assert ep.has_speech is False
     print("Endpoint detection: PASS")
 
 
 # --- Test 6: System prompt builder ---
+
 
 def test_06_system_prompt():
     """System prompt contains all required elements."""
@@ -161,16 +182,20 @@ def test_06_system_prompt():
 
 # --- Test 7: Context window manager ---
 
+
 def test_07_context_window():
     """50 turns fit without truncation (verification #10)."""
     cm = ContextManager()
-    history = [{"role": "user" if i % 2 == 0 else "assistant", "content": "Hello"} for i in range(50)]
+    history = [
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "Hello"} for i in range(50)
+    ]
     msgs = cm.build_messages("You are a helpful assistant.", history, "Hi")
     assert len(msgs) == 52  # system + 50 history + user
     print(f"Context window: 50 turns -> {len(msgs)} messages (PASS)")
 
 
 # --- Test 8: Sentence chunker (verification #9) ---
+
 
 def test_08_sentence_chunker():
     """SentenceChunker splits correctly."""
@@ -184,17 +209,22 @@ def test_08_sentence_chunker():
 
 # --- Test 9: LLM generates text (uses session fixture) ---
 
+
 def test_09_llm_generates_text(session_llm_brain, check_gpu):
     """Qwen3-14B loads and generates coherent text."""
-    vram_gb = torch.cuda.memory_allocated() / (1024 ** 3)
+    vram_gb = torch.cuda.memory_allocated() / (1024**3)
     assert vram_gb > 1.0, f"Expected >1GB VRAM, got {vram_gb:.2f}GB"
     print(f"LLM VRAM: {vram_gb:.2f} GB")
 
     tokens = []
     loop = asyncio.new_event_loop()
+
     async def gen():
-        async for t in session_llm_brain.generate_stream([{"role": "user", "content": "Say hello in one word."}]):
+        async for t in session_llm_brain.generate_stream(
+            [{"role": "user", "content": "Say hello in one word."}]
+        ):
             tokens.append(t)
+
     loop.run_until_complete(gen())
     loop.close()
 
@@ -205,6 +235,7 @@ def test_09_llm_generates_text(session_llm_brain, check_gpu):
 
 
 # --- Test 10: TTS produces audio (uses session fixture) ---
+
 
 def test_10_tts_produces_audio(session_tts_adapter, check_gpu):
     """ClipCannon TTS synthesizes audio in boris voice."""
@@ -222,11 +253,13 @@ def test_10_tts_produces_audio(session_tts_adapter, check_gpu):
 
 # --- Test 11: FastAPI health endpoint ---
 
+
 def test_11_fastapi_health():
     """GET /health returns correct response."""
     from fastapi.testclient import TestClient
 
     from voiceagent.server import create_app
+
     app = create_app()
     client = TestClient(app)
     resp = client.get("/health")
@@ -240,11 +273,13 @@ def test_11_fastapi_health():
 
 # --- Test 12: WebSocket transport ---
 
+
 def test_12_websocket_transport():
     """WebSocket accepts connection and exchanges messages."""
     from fastapi.testclient import TestClient
 
     from voiceagent.server import create_app
+
     app = create_app()
     received = []
 
@@ -270,6 +305,7 @@ def test_12_websocket_transport():
 
 # --- Test 13: Conversation state machine ---
 
+
 def test_13_conversation_state_machine():
     """State transitions follow IDLE->LISTENING->THINKING->SPEAKING->LISTENING."""
     assert len(ConversationState) == 4
@@ -279,11 +315,13 @@ def test_13_conversation_state_machine():
 
 # --- Test 14: CLI help ---
 
+
 def test_14_cli_help():
     """CLI shows help text with serve and talk commands."""
     from click.testing import CliRunner
 
     from voiceagent.cli import cli
+
     runner = CliRunner()
     result = runner.invoke(cli, ["--help"])
     assert result.exit_code == 0

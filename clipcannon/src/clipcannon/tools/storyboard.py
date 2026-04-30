@@ -74,10 +74,7 @@ def build_contact_sheet(
     if start_frame is not None or end_frame is not None:
         sf = start_frame or 1
         ef = end_frame or 999999
-        frame_files = [
-            f for f in frame_files
-            if sf <= int(f.stem.split("_")[1]) <= ef
-        ]
+        frame_files = [f for f in frame_files if sf <= int(f.stem.split("_")[1]) <= ef]
         if not frame_files:
             raise ValueError(f"No frames in range {sf}-{ef}")
 
@@ -89,7 +86,11 @@ def build_contact_sheet(
 
     logger.info(
         "Building contact sheet: %d frames, %dx%d grid, %dx%d px",
-        total_frames, cols, rows, sheet_w, sheet_h,
+        total_frames,
+        cols,
+        rows,
+        sheet_w,
+        sheet_h,
     )
 
     sheet = Image.new("RGB", (sheet_w, sheet_h), (13, 13, 13))
@@ -97,7 +98,8 @@ def build_contact_sheet(
 
     try:
         font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 9,
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            9,
         )
     except OSError:
         font = ImageFont.load_default()
@@ -133,13 +135,15 @@ def build_contact_sheet(
             font=font,
         )
 
-        frame_index.append({
-            "frame": frame_num,
-            "ms": timestamp_ms,
-            "ts": _format_ts(timestamp_ms),
-            "col": col,
-            "row": row,
-        })
+        frame_index.append(
+            {
+                "frame": frame_num,
+                "ms": timestamp_ms,
+                "ts": _format_ts(timestamp_ms),
+                "col": col,
+                "row": row,
+            }
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(str(output_path), "JPEG", quality=80)

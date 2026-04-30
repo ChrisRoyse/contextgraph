@@ -9,13 +9,15 @@ Requires: CuPy with CUDA. Tests skip gracefully if unavailable.
 from __future__ import annotations
 
 import statistics
-import sys
 import threading
 import time
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # Skip entire module if CuPy / CUDA is unavailable
@@ -23,6 +25,7 @@ import pytest
 
 try:
     import cupy as cp
+
     cp.cuda.runtime.getDeviceCount()
     HAS_CUDA = True
 except Exception:
@@ -31,13 +34,11 @@ except Exception:
 pytestmark = pytest.mark.skipif(not HAS_CUDA, reason="CuPy/CUDA not available")
 
 if HAS_CUDA:
-    from phoenix.render.cupy_compositor import (
-        alpha_blend_gpu,
-        brightness_jitter_gpu,
-        color_convert_gpu,
-        film_grain_gpu,
-        paste_face_region_gpu,
-        resize_gpu,
+    from phoenix.render._gpu_kernels import (
+        ALPHA_BLEND_KERNEL as alpha_blend_kernel,
+    )
+    from phoenix.render._gpu_kernels import (
+        BILINEAR_RESIZE_KERNEL as bilinear_resize_kernel,
     )
     from phoenix.render.compositor_bridge import (
         gpu_alpha_blend,
@@ -45,9 +46,12 @@ if HAS_CUDA:
         gpu_composite_face,
         gpu_film_grain,
     )
-    from phoenix.render._gpu_kernels import (
-        ALPHA_BLEND_KERNEL as alpha_blend_kernel,
-        BILINEAR_RESIZE_KERNEL as bilinear_resize_kernel,
+    from phoenix.render.cupy_compositor import (
+        alpha_blend_gpu,
+        brightness_jitter_gpu,
+        film_grain_gpu,
+        paste_face_region_gpu,
+        resize_gpu,
     )
 
 
@@ -187,9 +191,7 @@ class TestAlphaBlendStress:
         p50 = statistics.median(latencies)
         assert p50 < 50.0, f"alpha_blend p50={p50:.3f}ms too slow"
 
-    def test_alpha_blend_vram_stable(
-        self, frame_720p: cp.ndarray, alpha_720p: cp.ndarray
-    ) -> None:
+    def test_alpha_blend_vram_stable(self, frame_720p: cp.ndarray, alpha_720p: cp.ndarray) -> None:
         """VRAM should not grow after 1000 alpha blends."""
         fg = frame_720p.copy()
         bg = frame_720p.copy()
@@ -263,22 +265,16 @@ class TestPasteFaceStress:
         p50 = statistics.median(latencies)
         assert p50 < 50.0, f"paste_face p50={p50:.3f}ms too slow"
 
-    def test_paste_face_vram_stable(
-        self, frame_720p: cp.ndarray, face_256: cp.ndarray
-    ) -> None:
+    def test_paste_face_vram_stable(self, frame_720p: cp.ndarray, face_256: cp.ndarray) -> None:
         """VRAM should not grow after 1000 face pastes."""
         # Warmup to stabilize pool
-        result = paste_face_region_gpu(
-            frame_720p, face_256, x=400, y=200, w=256, h=256
-        )
+        result = paste_face_region_gpu(frame_720p, face_256, x=400, y=200, w=256, h=256)
         del result
         _flush_gpu_memory()
         vram_before = _get_vram_free()
 
         for _ in range(self.ITERATIONS):
-            result = paste_face_region_gpu(
-                frame_720p, face_256, x=400, y=200, w=256, h=256
-            )
+            result = paste_face_region_gpu(frame_720p, face_256, x=400, y=200, w=256, h=256)
         del result
         _assert_vram_stable("paste_face x1000", vram_before)
 
@@ -327,23 +323,17 @@ class TestBrightnessJitterStress:
 
     ITERATIONS = 500
 
-    def test_brightness_jitter_500_ops_latency(
-        self, frame_720p: cp.ndarray
-    ) -> None:
+    def test_brightness_jitter_500_ops_latency(self, frame_720p: cp.ndarray) -> None:
         """Measure per-op latency over 500 brightness jitter applications."""
 
         def op():
             brightness_jitter_gpu(frame_720p, amount=0.01)
 
-        latencies = _measure_latencies(
-            op, self.ITERATIONS, "brightness_jitter_gpu 720p"
-        )
+        latencies = _measure_latencies(op, self.ITERATIONS, "brightness_jitter_gpu 720p")
         p50 = statistics.median(latencies)
         assert p50 < 50.0, f"brightness_jitter p50={p50:.3f}ms too slow"
 
-    def test_brightness_jitter_vram_stable(
-        self, frame_720p: cp.ndarray
-    ) -> None:
+    def test_brightness_jitter_vram_stable(self, frame_720p: cp.ndarray) -> None:
         """VRAM should not grow after 500 brightness jitter ops."""
         # Warmup to stabilize pool
         result = brightness_jitter_gpu(frame_720p, amount=0.01)
@@ -383,9 +373,7 @@ class TestMixedPipelineStress:
             # 1. Resize face to 128x128
             face_resized = resize_gpu(face_256, 128, 128)
             # 2. Paste face onto frame
-            composited = paste_face_region_gpu(
-                bg, face_resized, x=500, y=250, w=128, h=128
-            )
+            composited = paste_face_region_gpu(bg, face_resized, x=500, y=250, w=128, h=128)
             # 3. Alpha blend with a second frame
             blended = alpha_blend_gpu(composited, bg, alpha_720p)
             # 4. Film grain
@@ -400,10 +388,7 @@ class TestMixedPipelineStress:
         p95 = sorted(latencies)[int(len(latencies) * 0.95)]
         p99 = sorted(latencies)[int(len(latencies) * 0.99)]
 
-        print(
-            f"\n  [pipeline summary] p50={p50:.3f}ms  "
-            f"p95={p95:.3f}ms  p99={p99:.3f}ms"
-        )
+        print(f"\n  [pipeline summary] p50={p50:.3f}ms  p95={p95:.3f}ms  p99={p99:.3f}ms")
         # Full pipeline should complete under 100ms on RTX 5090
         assert p50 < 100.0, f"pipeline p50={p50:.3f}ms too slow"
 
@@ -418,9 +403,7 @@ class TestMixedPipelineStress:
 
         # Warmup to stabilize pool allocations
         face_resized = resize_gpu(face_256, 128, 128)
-        composited = paste_face_region_gpu(
-            bg, face_resized, x=500, y=250, w=128, h=128
-        )
+        composited = paste_face_region_gpu(bg, face_resized, x=500, y=250, w=128, h=128)
         blended = alpha_blend_gpu(composited, bg, alpha_720p)
         grained = film_grain_gpu(blended, intensity=0.015)
         final = brightness_jitter_gpu(grained, amount=0.005)
@@ -430,9 +413,7 @@ class TestMixedPipelineStress:
 
         for _ in range(self.ITERATIONS):
             face_resized = resize_gpu(face_256, 128, 128)
-            composited = paste_face_region_gpu(
-                bg, face_resized, x=500, y=250, w=128, h=128
-            )
+            composited = paste_face_region_gpu(bg, face_resized, x=500, y=250, w=128, h=128)
             blended = alpha_blend_gpu(composited, bg, alpha_720p)
             grained = film_grain_gpu(blended, intensity=0.015)
             final = brightness_jitter_gpu(grained, amount=0.005)
@@ -545,17 +526,20 @@ class TestBridgeStress:
 
         def op():
             gpu_composite_face(
-                frame_720p_uint8, face_256_uint8,
-                x=400, y=200, w=256, h=256, blend_alpha=0.9,
+                frame_720p_uint8,
+                face_256_uint8,
+                x=400,
+                y=200,
+                w=256,
+                h=256,
+                blend_alpha=0.9,
             )
 
         latencies = _measure_latencies(op, self.ITERATIONS, "gpu_composite_face bridge")
         p50 = statistics.median(latencies)
         assert p50 < 100.0, f"bridge composite p50={p50:.3f}ms too slow"
 
-    def test_gpu_alpha_blend_stress(
-        self, frame_720p_uint8: np.ndarray
-    ) -> None:
+    def test_gpu_alpha_blend_stress(self, frame_720p_uint8: np.ndarray) -> None:
         """200 consecutive gpu_alpha_blend round-trips."""
         fg = frame_720p_uint8
         bg = np.random.randint(0, 256, (720, 1280, 3), dtype=np.uint8)
@@ -567,9 +551,7 @@ class TestBridgeStress:
         p50 = statistics.median(latencies)
         assert p50 < 100.0, f"bridge alpha_blend p50={p50:.3f}ms too slow"
 
-    def test_gpu_film_grain_stress(
-        self, frame_720p_uint8: np.ndarray
-    ) -> None:
+    def test_gpu_film_grain_stress(self, frame_720p_uint8: np.ndarray) -> None:
         """200 consecutive gpu_film_grain round-trips."""
 
         def op():
@@ -579,17 +561,13 @@ class TestBridgeStress:
         p50 = statistics.median(latencies)
         assert p50 < 100.0, f"bridge film_grain p50={p50:.3f}ms too slow"
 
-    def test_gpu_brightness_jitter_stress(
-        self, frame_720p_uint8: np.ndarray
-    ) -> None:
+    def test_gpu_brightness_jitter_stress(self, frame_720p_uint8: np.ndarray) -> None:
         """200 consecutive gpu_brightness_jitter round-trips."""
 
         def op():
             gpu_brightness_jitter(frame_720p_uint8, amount=0.01)
 
-        latencies = _measure_latencies(
-            op, self.ITERATIONS, "gpu_brightness_jitter bridge"
-        )
+        latencies = _measure_latencies(op, self.ITERATIONS, "gpu_brightness_jitter bridge")
         p50 = statistics.median(latencies)
         assert p50 < 100.0, f"bridge brightness_jitter p50={p50:.3f}ms too slow"
 
@@ -621,7 +599,8 @@ class TestRawKernels:
         grid = (total + block - 1) // block
 
         bilinear_resize_kernel(
-            (grid,), (block,),
+            (grid,),
+            (block,),
             (src.ravel(), dst.ravel(), 100, 200, 50, 100, 3),
         )
         cp.cuda.Device().synchronize()
@@ -646,7 +625,8 @@ class TestRawKernels:
         grid = (total + block - 1) // block
 
         alpha_blend_kernel(
-            (grid,), (block,),
+            (grid,),
+            (block,),
             (fg.ravel(), bg.ravel(), alpha.ravel(), out.ravel(), h, w, c, 1),
         )
         cp.cuda.Device().synchronize()

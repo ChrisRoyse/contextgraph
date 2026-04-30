@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 def _error(
-    code: str, message: str, details: dict[str, object] | None = None,
+    code: str,
+    message: str,
+    details: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build standardized error response dict."""
     return {"error": {"code": code, "message": message, "details": details or {}}}
@@ -98,10 +100,12 @@ async def clipcannon_generate_video(
         logger.info("Generate %s: No driver video -- extracting webcam from project", gen_id)
         from clipcannon.tools.avatar import _handle_extract_webcam
 
-        extract_result = await _handle_extract_webcam({
-            "project_id": project_id,
-            "padding_pct": 0.15,
-        })
+        extract_result = await _handle_extract_webcam(
+            {
+                "project_id": project_id,
+                "padding_pct": 0.15,
+            }
+        )
         if "error" in extract_result:
             return _error(
                 "WEBCAM_EXTRACTION_FAILED",
@@ -115,7 +119,9 @@ async def clipcannon_generate_video(
         steps_completed.append("webcam_extract")
         logger.info(
             "Generate %s: Webcam extracted — %s (%s)",
-            gen_id, extract_result["resolution"], extract_result["video_path"],
+            gen_id,
+            extract_result["resolution"],
+            extract_result["video_path"],
         )
 
     # ============================================================
@@ -171,7 +177,9 @@ async def clipcannon_generate_video(
     steps_completed.append("voice")
     logger.info(
         "Generate %s: Voice done — %dms, %d attempts",
-        gen_id, voice_result.duration_ms, voice_result.attempts,
+        gen_id,
+        voice_result.duration_ms,
+        voice_result.attempts,
     )
 
     # ============================================================
@@ -196,18 +204,21 @@ async def clipcannon_generate_video(
     except RuntimeError as exc:
         if "Face not detected" in str(exc):
             return _error(
-                "FACE_NOT_DETECTED", str(exc),
+                "FACE_NOT_DETECTED",
+                str(exc),
                 {"step": "lip_sync", "gen_id": gen_id, "voice": voice_info},
             )
         logger.exception("Generate %s: Lip sync failed", gen_id)
         return _error(
-            "LIP_SYNC_FAILED", str(exc),
+            "LIP_SYNC_FAILED",
+            str(exc),
             {"step": "lip_sync", "gen_id": gen_id, "voice": voice_info},
         )
     except Exception as exc:
         logger.exception("Generate %s: Lip sync failed", gen_id)
         return _error(
-            "LIP_SYNC_FAILED", str(exc),
+            "LIP_SYNC_FAILED",
+            str(exc),
             {"step": "lip_sync", "gen_id": gen_id, "voice": voice_info},
         )
 
@@ -221,7 +232,9 @@ async def clipcannon_generate_video(
     steps_completed.append("lip_sync")
     logger.info(
         "Generate %s: Lip sync done — %dms, %s",
-        gen_id, lipsync_result.duration_ms, lipsync_result.resolution,
+        gen_id,
+        lipsync_result.duration_ms,
+        lipsync_result.resolution,
     )
 
     # ============================================================

@@ -9,10 +9,13 @@ from __future__ import annotations
 import logging
 import secrets
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import execute, fetch_all, fetch_one
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +37,12 @@ CREATE INDEX IF NOT EXISTS idx_voice_profiles_name ON voice_profiles(name);
 """
 
 _ALLOWED_UPDATE_FIELDS = {
-    "model_path", "training_hours", "training_projects",
-    "sample_rate", "reference_embedding", "verification_threshold",
+    "model_path",
+    "training_hours",
+    "training_projects",
+    "sample_rate",
+    "reference_embedding",
+    "verification_threshold",
     "training_status",
 }
 
@@ -50,7 +57,10 @@ def ensure_voice_profiles_table(conn: sqlite3.Connection) -> None:
 
 
 def create_voice_profile(
-    db_path: str | Path, name: str, model_path: str, sample_rate: int = 24000,
+    db_path: str | Path,
+    name: str,
+    model_path: str,
+    sample_rate: int = 24000,
 ) -> str:
     """Create a new voice profile. Returns the generated profile_id."""
     profile_id = f"vp_{secrets.token_hex(6)}"
@@ -125,7 +135,9 @@ def delete_voice_profile(db_path: str | Path, name: str) -> None:
     try:
         ensure_voice_profiles_table(conn)
         affected = execute(
-            conn, "DELETE FROM voice_profiles WHERE name = ?", (name,),
+            conn,
+            "DELETE FROM voice_profiles WHERE name = ?",
+            (name,),
         )
         if affected == 0:
             raise ValueError(f"Voice profile not found: {name}")

@@ -1,4 +1,5 @@
 """Streaming TTS -- sentence-chunked text-to-speech pipeline."""
+
 from __future__ import annotations
 
 import logging
@@ -36,13 +37,15 @@ class StreamingTTS:
                 sentence = self.chunker.extract_sentence(buffer)
                 if sentence is None:
                     break
-                buffer = buffer[len(sentence):].lstrip()
+                buffer = buffer[len(sentence) :].lstrip()
                 logger.info("Extracted sentence (%d chars): '%s'", len(sentence), sentence[:80])
                 audio = await self.adapter.synthesize(sentence)
                 chunks_yielded += 1
                 logger.info(
                     "Audio chunk #%d: %d samples (%.2fs)",
-                    chunks_yielded, len(audio), len(audio) / 24000,
+                    chunks_yielded,
+                    len(audio),
+                    len(audio) / 24000,
                 )
                 yield audio
 

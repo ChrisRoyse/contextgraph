@@ -8,11 +8,12 @@ for deterministic, fast parsing -- no LLM calls.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
-from clipcannon.editing.edl import EditDecisionList, SegmentSpec
+if TYPE_CHECKING:
+    from clipcannon.editing.edl import EditDecisionList, SegmentSpec
 
 
 class FeedbackIntent(BaseModel):
@@ -57,7 +58,8 @@ def parse_timestamp_ms(text: str) -> int | None:
 
 
 def find_segment_at_timestamp(
-    edl: EditDecisionList, timestamp_ms: int,
+    edl: EditDecisionList,
+    timestamp_ms: int,
 ) -> SegmentSpec | None:
     """Find the output segment containing the given timestamp."""
     for seg in edl.segments:
@@ -84,7 +86,11 @@ def _seg_to_raw(seg: SegmentSpec) -> dict[str, Any]:
 
 
 def _ext_transition_fix(_m: re.Match[str], text: str) -> dict[str, Any]:
-    return {"timestamp_ms": parse_timestamp_ms(text), "transition_type": "crossfade", "duration_ms": 300}
+    return {
+        "timestamp_ms": parse_timestamp_ms(text),
+        "transition_type": "crossfade",
+        "duration_ms": 300,
+    }
 
 
 def _ext_speed(m: re.Match[str], text: str) -> dict[str, Any]:
@@ -152,27 +158,114 @@ def _ext_overlay(_m: re.Match[str], text: str) -> dict[str, Any]:
 
 def _ext_transition_add(_m: re.Match[str], text: str) -> dict[str, Any]:
     lo = text.lower()
-    for kw, tt in [("crossfade", "crossfade"), ("fade", "fade"), ("wipe", "wipe_left"), ("dissolve", "dissolve")]:
+    for kw, tt in [
+        ("crossfade", "crossfade"),
+        ("fade", "fade"),
+        ("wipe", "wipe_left"),
+        ("dissolve", "dissolve"),
+    ]:
         if kw in lo:
-            return {"timestamp_ms": parse_timestamp_ms(text), "transition_type": tt, "duration_ms": 500}
-    return {"timestamp_ms": parse_timestamp_ms(text), "transition_type": "crossfade", "duration_ms": 500}
+            return {
+                "timestamp_ms": parse_timestamp_ms(text),
+                "transition_type": tt,
+                "duration_ms": 500,
+            }
+    return {
+        "timestamp_ms": parse_timestamp_ms(text),
+        "transition_type": "crossfade",
+        "duration_ms": 500,
+    }
 
 
 # ============================================================
 # PATTERN RULES: (regex, intent_type, base_confidence, extractor)
 # ============================================================
 _RULES: list[tuple[re.Pattern[str], str, float, Any]] = [
-    (re.compile(r"(?:cut|transition|edit)\s+(?:at\s+)?\S*\s*(?:is\s+)?(?:too\s+)?(?:abrupt|harsh|jarring|rough|sudden)", re.I), "transition_fix", 0.85, _ext_transition_fix),
-    (re.compile(r"(?:too\s+fast|too\s+slow|speed\s+up|slow\s*down|faster|slower)", re.I), "speed_adjust", 0.80, _ext_speed),
-    (re.compile(r"(?:text|caption|subtitle|font)\s+(?:\S+\s+)*(?:bigger|smaller|larger|tiny|huge|increase|decrease)", re.I), "caption_resize", 0.85, _ext_caption),
-    (re.compile(r"(?:make\s+(?:the\s+)?(?:text|caption|subtitle|font)\s+(?:bigger|smaller|larger))", re.I), "caption_resize", 0.90, _ext_caption),
-    (re.compile(r"(?:speaker|webcam|face|person)\s+(?:\S+\s+)*(?:too\s+)?(?:small|big|tiny|huge|larger|smaller)", re.I), "canvas_resize", 0.75, _ext_canvas),
-    (re.compile(r"(?:remove|cut\s+out|delete|drop)\s+(?:the\s+)?(?:part|section|bit)\s+(?:where|about|when)", re.I), "segment_remove", 0.80, _ext_remove),
-    (re.compile(r"(?:music|background\s*(?:music|audio|track))\s+(?:\S+\s+)*(?:too\s+)?(?:loud|quiet|soft|low|high)", re.I), "audio_adjust", 0.85, _ext_audio),
+    (
+        re.compile(
+            r"(?:cut|transition|edit)\s+(?:at\s+)?\S*\s*(?:is\s+)?(?:too\s+)?(?:abrupt|harsh|jarring|rough|sudden)",
+            re.I,
+        ),
+        "transition_fix",
+        0.85,
+        _ext_transition_fix,
+    ),
+    (
+        re.compile(r"(?:too\s+fast|too\s+slow|speed\s+up|slow\s*down|faster|slower)", re.I),
+        "speed_adjust",
+        0.80,
+        _ext_speed,
+    ),
+    (
+        re.compile(
+            r"(?:text|caption|subtitle|font)\s+(?:\S+\s+)*(?:bigger|smaller|larger|tiny|huge|increase|decrease)",
+            re.I,
+        ),
+        "caption_resize",
+        0.85,
+        _ext_caption,
+    ),
+    (
+        re.compile(
+            r"(?:make\s+(?:the\s+)?(?:text|caption|subtitle|font)\s+(?:bigger|smaller|larger))",
+            re.I,
+        ),
+        "caption_resize",
+        0.90,
+        _ext_caption,
+    ),
+    (
+        re.compile(
+            r"(?:speaker|webcam|face|person)\s+(?:\S+\s+)*(?:too\s+)?(?:small|big|tiny|huge|larger|smaller)",
+            re.I,
+        ),
+        "canvas_resize",
+        0.75,
+        _ext_canvas,
+    ),
+    (
+        re.compile(
+            r"(?:remove|cut\s+out|delete|drop)\s+(?:the\s+)?(?:part|section|bit)\s+(?:where|about|when)",
+            re.I,
+        ),
+        "segment_remove",
+        0.80,
+        _ext_remove,
+    ),
+    (
+        re.compile(
+            r"(?:music|background\s*(?:music|audio|track))\s+(?:\S+\s+)*(?:too\s+)?(?:loud|quiet|soft|low|high)",
+            re.I,
+        ),
+        "audio_adjust",
+        0.85,
+        _ext_audio,
+    ),
     (re.compile(r"zoom\s+in\s+(?:on|when|at)", re.I), "motion_add", 0.80, _ext_motion),
-    (re.compile(r"(?:make\s+it|make\s+(?:the\s+)?(?:video|clip))?\s*(?:warmer|cooler|brighter|darker)", re.I), "color_adjust", 0.80, _ext_color),
-    (re.compile(r"(?:add\s+(?:a\s+)?(?:title|lower\s*third|text\s+overlay))", re.I), "overlay_add", 0.75, _ext_overlay),
-    (re.compile(r"(?:(?:add\s+(?:a\s+)?)?(?:transition|crossfade|fade|wipe|dissolve)\s+(?:at|between))", re.I), "transition_add", 0.80, _ext_transition_add),
+    (
+        re.compile(
+            r"(?:make\s+it|make\s+(?:the\s+)?(?:video|clip))?\s*(?:warmer|cooler|brighter|darker)",
+            re.I,
+        ),
+        "color_adjust",
+        0.80,
+        _ext_color,
+    ),
+    (
+        re.compile(r"(?:add\s+(?:a\s+)?(?:title|lower\s*third|text\s+overlay))", re.I),
+        "overlay_add",
+        0.75,
+        _ext_overlay,
+    ),
+    (
+        re.compile(
+            r"(?:(?:add\s+(?:a\s+)?)?(?:transition|crossfade|fade|wipe|dissolve)\s+(?:at|between))",
+            re.I,
+        ),
+        "transition_add",
+        0.80,
+        _ext_transition_add,
+    ),
 ]
 
 
@@ -208,9 +301,12 @@ def parse_feedback(feedback_text: str, edl: EditDecisionList) -> FeedbackIntent:
         if conf > best_conf:
             best_conf = conf
             best = FeedbackIntent(
-                intent_type=itype, target_segment_ids=target_ids,
-                target_timestamp_ms=ts_ms, parameters=params,
-                confidence=conf, raw_feedback=feedback_text,
+                intent_type=itype,
+                target_segment_ids=target_ids,
+                target_timestamp_ms=ts_ms,
+                parameters=params,
+                confidence=conf,
+                raw_feedback=feedback_text,
             )
 
     return best or FeedbackIntent(intent_type="unknown", confidence=0.0, raw_feedback=feedback_text)
@@ -245,7 +341,9 @@ def _h_speed(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
     for seg in edl.segments:
         d = _seg_to_raw(seg)
         if not tids or seg.segment_id in tids:
-            d["speed"] = max(0.25, seg.speed - mag) if direction == "slower" else min(4.0, seg.speed + mag)
+            d["speed"] = (
+                max(0.25, seg.speed - mag) if direction == "slower" else min(4.0, seg.speed + mag)
+            )
         segs.append(d)
     return {"segments": segs}
 
@@ -263,7 +361,9 @@ def _h_canvas(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
 def _h_remove(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
     if not intent.target_segment_ids:
         return {}
-    remaining = [_seg_to_raw(s) for s in edl.segments if s.segment_id not in intent.target_segment_ids]
+    remaining = [
+        _seg_to_raw(s) for s in edl.segments if s.segment_id not in intent.target_segment_ids
+    ]
     return {"segments": remaining} if remaining else {}
 
 
@@ -278,15 +378,26 @@ def _h_motion(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
         return {}
     return {
         "segments": [_seg_to_raw(s) for s in edl.segments],
-        "_motion_targets": {"segment_ids": tids, "effect": intent.parameters.get("effect", "zoom_in")},
+        "_motion_targets": {
+            "segment_ids": tids,
+            "effect": intent.parameters.get("effect", "zoom_in"),
+        },
     }
 
 
 def _h_color(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
     p = intent.parameters
-    param, direction, mag = p.get("parameter", "saturation"), p.get("direction", "increase"), p.get("magnitude", 0.2)
+    param, direction, mag = (
+        p.get("parameter", "saturation"),
+        p.get("direction", "increase"),
+        p.get("magnitude", 0.2),
+    )
     c = edl.color
-    b, co, s, g, h = (c.brightness, c.contrast, c.saturation, c.gamma, c.hue_shift) if c else (0.0, 1.0, 1.0, 1.0, 0.0)
+    b, co, s, g, h = (
+        (c.brightness, c.contrast, c.saturation, c.gamma, c.hue_shift)
+        if c
+        else (0.0, 1.0, 1.0, 1.0, 0.0)
+    )
     sign = 1.0 if direction == "increase" else -1.0
     if param == "saturation":
         s = max(0.0, min(3.0, s + sign * mag))
@@ -294,11 +405,18 @@ def _h_color(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
         b = max(-1.0, min(1.0, b + sign * mag))
     elif param == "contrast":
         co = max(0.0, min(3.0, co + sign * mag))
-    return {"_color": {"brightness": b, "contrast": co, "saturation": s, "gamma": g, "hue_shift": h}}
+    return {
+        "_color": {"brightness": b, "contrast": co, "saturation": s, "gamma": g, "hue_shift": h}
+    }
 
 
 def _h_overlay(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:
-    return {"_overlay": {"overlay_type": intent.parameters.get("overlay_type", "title_card"), "text": intent.parameters.get("text", "")}}
+    return {
+        "_overlay": {
+            "overlay_type": intent.parameters.get("overlay_type", "title_card"),
+            "text": intent.parameters.get("text", ""),
+        }
+    }
 
 
 def _h_transition_add(intent: FeedbackIntent, edl: EditDecisionList) -> dict[str, Any]:

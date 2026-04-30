@@ -93,9 +93,7 @@ class ConstellationGuard:
                         Default: visual=0.7, emotion=0.6, speaker=0.8, voice=0.85
         """
         if not os.path.isfile(constellation_path):
-            raise FileNotFoundError(
-                f"Constellation file not found: {constellation_path}"
-            )
+            raise FileNotFoundError(f"Constellation file not found: {constellation_path}")
 
         self._constellation_path = constellation_path
         self._thresholds = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
@@ -187,10 +185,10 @@ class ConstellationGuard:
             logger.debug("SigLIP already loaded, skipping")
             return
 
-        from phoenix.video.gpu_guard import check_vram, gpu_cleanup, log_vram
-
         import torch
         from transformers import AutoModel, AutoProcessor
+
+        from phoenix.video.gpu_guard import check_vram, gpu_cleanup, log_vram
 
         check_vram(SIGLIP_VRAM_MB, "ConstellationGuard.load_visual_encoder")
         log_vram("before_siglip_load")
@@ -240,9 +238,7 @@ class ConstellationGuard:
             L2-normalized 1152-d embedding as float32 numpy array.
         """
         if self._model is None or self._processor is None:
-            raise RuntimeError(
-                "Visual encoder not loaded. Call load_visual_encoder() first."
-            )
+            raise RuntimeError("Visual encoder not loaded. Call load_visual_encoder() first.")
 
         import torch
         from PIL import Image
@@ -256,9 +252,7 @@ class ConstellationGuard:
         inputs = self._processor(images=[pil_img], return_tensors="pt", padding=True)
         device = self._device or "cpu"
         inputs = {
-            k: v.to(device, dtype=torch.float16)
-            if v.is_floating_point()
-            else v.to(device)
+            k: v.to(device, dtype=torch.float16) if v.is_floating_point() else v.to(device)
             for k, v in inputs.items()
         }
 
@@ -281,9 +275,7 @@ class ConstellationGuard:
             List of L2-normalized 1152-d embeddings.
         """
         if self._model is None or self._processor is None:
-            raise RuntimeError(
-                "Visual encoder not loaded. Call load_visual_encoder() first."
-            )
+            raise RuntimeError("Visual encoder not loaded. Call load_visual_encoder() first.")
 
         import torch
         from PIL import Image
@@ -294,14 +286,10 @@ class ConstellationGuard:
                 frame = np.clip(frame, 0, 255).astype(np.uint8)
             pil_images.append(Image.fromarray(frame))
 
-        inputs = self._processor(
-            images=pil_images, return_tensors="pt", padding=True
-        )
+        inputs = self._processor(images=pil_images, return_tensors="pt", padding=True)
         device = self._device or "cpu"
         inputs = {
-            k: v.to(device, dtype=torch.float16)
-            if v.is_floating_point()
-            else v.to(device)
+            k: v.to(device, dtype=torch.float16) if v.is_floating_point() else v.to(device)
             for k, v in inputs.items()
         }
 
@@ -356,9 +344,7 @@ class ConstellationGuard:
         rejection_reason: str | None = None
 
         if not valid:
-            rejection_reason = (
-                f"Visual similarity {vis_sim:.4f} below threshold {threshold:.4f}"
-            )
+            rejection_reason = f"Visual similarity {vis_sim:.4f} below threshold {threshold:.4f}"
             logger.warning(
                 "REJECTED frame: %s (visual_sim=%.4f, threshold=%.4f)",
                 rejection_reason,
@@ -367,20 +353,15 @@ class ConstellationGuard:
             )
         elif vis_sim < VISUAL_WARN:
             logger.info(
-                "Frame ACCEPTED (borderline): visual_sim=%.4f "
-                "(threshold=%.4f, warn=%.4f)",
+                "Frame ACCEPTED (borderline): visual_sim=%.4f (threshold=%.4f, warn=%.4f)",
                 vis_sim,
                 threshold,
                 VISUAL_WARN,
             )
         elif vis_sim < VISUAL_STRONG:
-            logger.info(
-                "Frame ACCEPTED (good): visual_sim=%.4f", vis_sim
-            )
+            logger.info("Frame ACCEPTED (good): visual_sim=%.4f", vis_sim)
         else:
-            logger.info(
-                "Frame ACCEPTED (strong): visual_sim=%.4f", vis_sim
-            )
+            logger.info("Frame ACCEPTED (strong): visual_sim=%.4f", vis_sim)
 
         return ValidationResult(
             valid=valid,
@@ -443,8 +424,7 @@ class ConstellationGuard:
             )
 
         logger.info(
-            "Batch validation: %d/%d accepted, %d/%d rejected "
-            "(threshold=%.4f)",
+            "Batch validation: %d/%d accepted, %d/%d rejected (threshold=%.4f)",
             accepted,
             len(frames),
             rejected,
@@ -499,9 +479,7 @@ class ConstellationGuard:
         rejection_reason: str | None = None
 
         if not valid:
-            rejection_reason = (
-                f"{modality} similarity {sim:.4f} below threshold {threshold:.4f}"
-            )
+            rejection_reason = f"{modality} similarity {sim:.4f} below threshold {threshold:.4f}"
             logger.warning("REJECTED audio: %s", rejection_reason)
         else:
             logger.info(

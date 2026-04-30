@@ -71,9 +71,9 @@ CropMode = Literal["auto", "manual", "none"]
 
 # Layout mode literals for vertical video
 LayoutMode = Literal[
-    "crop",           # Single face-centered crop (default, existing behavior)
-    "split_screen",   # Speaker top + screen content bottom (or configurable)
-    "pip",            # Picture-in-picture: small speaker over full screen
+    "crop",  # Single face-centered crop (default, existing behavior)
+    "split_screen",  # Speaker top + screen content bottom (or configurable)
+    "pip",  # Picture-in-picture: small speaker over full screen
 ]
 
 # Render quality literals
@@ -134,8 +134,7 @@ class SegmentCanvasSpec(BaseModel):
     )
     zoom: ZoomSpec | None = Field(
         default=None,
-        description="Animated zoom for this segment. "
-        "Mutually exclusive with regions[].",
+        description="Animated zoom for this segment. Mutually exclusive with regions[].",
     )
 
 
@@ -268,9 +267,7 @@ class PipSpec(BaseModel):
         le=0.5,
         description="PIP window as fraction of output width.",
     )
-    pip_position: Literal[
-        "top_left", "top_right", "bottom_left", "bottom_right"
-    ] = "bottom_right"
+    pip_position: Literal["top_left", "top_right", "bottom_left", "bottom_right"] = "bottom_right"
     pip_margin_px: int = Field(default=20, ge=0, le=100)
     pip_border_px: int = Field(default=3, ge=0, le=10)
     pip_border_color: str = "#FFFFFF"
@@ -398,8 +395,7 @@ class CanvasRegion(BaseModel):
     # ANIMATION: optional keyframes for position/size over time
     keyframes: list[RegionKeyframe] = Field(
         default_factory=list,
-        description="If provided, the region animates between keyframes. "
-        "Empty = static position.",
+        description="If provided, the region animates between keyframes. Empty = static position.",
     )
 
 
@@ -424,8 +420,7 @@ class CanvasSpec(BaseModel):
 
     enabled: bool = Field(
         default=False,
-        description="When True, regions[] defines the layout. "
-        "CropSpec is ignored.",
+        description="When True, regions[] defines the layout. CropSpec is ignored.",
     )
     canvas_width: int = Field(default=1080, ge=1)
     canvas_height: int = Field(default=1920, ge=1)
@@ -672,17 +667,14 @@ def validate_edl(
         conn.row_factory = sqlite3.Row
         try:
             row = conn.execute(
-                "SELECT source_sha256, duration_ms FROM project "
-                "WHERE project_id = ?",
+                "SELECT source_sha256, duration_ms FROM project WHERE project_id = ?",
                 (edl.project_id,),
             ).fetchone()
         finally:
             conn.close()
 
         if row is None:
-            errors.append(
-                f"Project {edl.project_id!r} not found in database"
-            )
+            errors.append(f"Project {edl.project_id!r} not found in database")
             return errors
 
         db_sha256 = str(row["source_sha256"])
@@ -690,8 +682,7 @@ def validate_edl(
 
         if edl.source_sha256 and edl.source_sha256 != db_sha256:
             errors.append(
-                f"source_sha256 mismatch: EDL has {edl.source_sha256!r}, "
-                f"DB has {db_sha256!r}"
+                f"source_sha256 mismatch: EDL has {edl.source_sha256!r}, DB has {db_sha256!r}"
             )
     except sqlite3.Error as exc:
         errors.append(f"Database error during validation: {exc}")
@@ -706,9 +697,7 @@ def validate_edl(
     for seg in segments:
         # Time range within source bounds
         if seg.source_start_ms < 0:
-            errors.append(
-                f"Segment {seg.segment_id}: source_start_ms < 0"
-            )
+            errors.append(f"Segment {seg.segment_id}: source_start_ms < 0")
         if seg.source_end_ms > source_duration_ms:
             errors.append(
                 f"Segment {seg.segment_id}: source_end_ms "
@@ -716,10 +705,7 @@ def validate_edl(
                 f"({source_duration_ms})"
             )
         if seg.source_end_ms <= seg.source_start_ms:
-            errors.append(
-                f"Segment {seg.segment_id}: source_end_ms must be > "
-                f"source_start_ms"
-            )
+            errors.append(f"Segment {seg.segment_id}: source_end_ms must be > source_start_ms")
 
         # Minimum segment duration (500ms before speed)
         if seg.source_duration_ms < 500:
@@ -730,10 +716,7 @@ def validate_edl(
 
         # Speed range
         if not (0.25 <= seg.speed <= 4.0):
-            errors.append(
-                f"Segment {seg.segment_id}: speed {seg.speed} "
-                f"outside [0.25, 4.0]"
-            )
+            errors.append(f"Segment {seg.segment_id}: speed {seg.speed} outside [0.25, 4.0]")
 
     # --- Segment ordering ---
     for i in range(1, len(segments)):
@@ -769,11 +752,7 @@ def validate_edl(
     for i, seg in enumerate(segments):
         seg_dur = seg.output_duration_ms
 
-        if (
-            seg.transition_in
-            and seg.transition_in.type != "cut"
-            and i > 0
-        ):
+        if seg.transition_in and seg.transition_in.type != "cut" and i > 0:
             prev_dur = segments[i - 1].output_duration_ms
             shorter = min(seg_dur, prev_dur)
             if seg.transition_in.duration_ms > shorter * 0.5:
@@ -784,11 +763,7 @@ def validate_edl(
                     f"({shorter}ms)"
                 )
 
-        if (
-            seg.transition_out
-            and seg.transition_out.type != "cut"
-            and i < len(segments) - 1
-        ):
+        if seg.transition_out and seg.transition_out.type != "cut" and i < len(segments) - 1:
             next_dur = segments[i + 1].output_duration_ms
             shorter = min(seg_dur, next_dur)
             if seg.transition_out.duration_ms > shorter * 0.5:

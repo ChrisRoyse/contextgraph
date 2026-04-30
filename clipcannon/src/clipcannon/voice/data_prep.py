@@ -11,10 +11,13 @@ import logging
 import random
 import secrets
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import fetch_all
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +45,8 @@ class _ClipInfo:
 
 
 def _load_silence_gaps_and_words(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Load silence gaps and transcript words in a single connection.
 
@@ -84,8 +88,11 @@ def _compute_speech_segments(
         boundaries.append((int(gap["start_ms"]) + int(gap["end_ms"])) // 2)
     boundaries.append(audio_duration_ms)
 
-    raw = [(boundaries[i], boundaries[i + 1]) for i in range(len(boundaries) - 1)
-           if boundaries[i + 1] - boundaries[i] > 0]
+    raw = [
+        (boundaries[i], boundaries[i + 1])
+        for i in range(len(boundaries) - 1)
+        if boundaries[i + 1] - boundaries[i] > 0
+    ]
 
     merged: list[tuple[int, int]] = []
     a_start: int | None = None
@@ -110,7 +117,9 @@ def _compute_speech_segments(
 
 
 def _match_words_to_segment(
-    words: list[dict[str, object]], seg_start_ms: int, seg_end_ms: int,
+    words: list[dict[str, object]],
+    seg_start_ms: int,
+    seg_end_ms: int,
 ) -> str:
     """Extract transcript text for words overlapping a time range."""
     matched = []
@@ -126,6 +135,7 @@ def _match_words_to_segment(
 def _normalize_audio_segment(audio_seg: object) -> object:
     """Normalize AudioSegment to -20 dBFS target loudness."""
     from pydub import AudioSegment
+
     seg = audio_seg
     assert isinstance(seg, AudioSegment)
     return seg.apply_gain(-20.0 - seg.dBFS)
@@ -134,10 +144,16 @@ def _normalize_audio_segment(audio_seg: object) -> object:
 def _phonemize_text(text: str) -> str:
     """Phonemize English text using espeak-ng backend."""
     from phonemizer import phonemize  # type: ignore[import-untyped]
-    return str(phonemize(
-        text, language="en-us", backend="espeak",
-        strip=True, preserve_punctuation=True,
-    )).strip()
+
+    return str(
+        phonemize(
+            text,
+            language="en-us",
+            backend="espeak",
+            strip=True,
+            preserve_punctuation=True,
+        )
+    ).strip()
 
 
 async def prepare_voice_training_data(
@@ -180,23 +196,23 @@ async def prepare_voice_training_data(
             )
         db_path = proj_dir / "analysis.db"
         if not db_path.exists():
-            raise FileNotFoundError(
-                f"analysis.db not found for project {project_id} at {db_path}"
-            )
+            raise FileNotFoundError(f"analysis.db not found for project {project_id} at {db_path}")
 
         clips = await asyncio.to_thread(
             _process_single_project,
-            project_id=project_id, vocals_path=vocals_path, db_path=db_path,
-            wavs_dir=wavs_dir, speaker_label=speaker_label,
-            min_clip_ms=min_clip_duration_ms, max_clip_ms=max_clip_duration_ms,
+            project_id=project_id,
+            vocals_path=vocals_path,
+            db_path=db_path,
+            wavs_dir=wavs_dir,
+            speaker_label=speaker_label,
+            min_clip_ms=min_clip_duration_ms,
+            max_clip_ms=max_clip_duration_ms,
         )
         all_clips.extend(clips)
         logger.info("Project %s: produced %d clips", project_id, len(clips))
 
     if not all_clips:
-        raise RuntimeError(
-            "No valid clips produced. Check vocals.wav content and silence_gaps."
-        )
+        raise RuntimeError("No valid clips produced. Check vocals.wav content and silence_gaps.")
 
     random.shuffle(all_clips)
     val_count = max(1, int(len(all_clips) * val_split))
@@ -208,7 +224,10 @@ async def prepare_voice_training_data(
 
     logger.info(
         "Voice data prepared: %d clips (%.1fs), %d train, %d val",
-        len(all_clips), total_duration, len(train_clips), len(val_clips),
+        len(all_clips),
+        total_duration,
+        len(train_clips),
+        len(val_clips),
     )
     return VoiceDataResult(
         total_clips=len(all_clips),
@@ -220,8 +239,13 @@ async def prepare_voice_training_data(
 
 
 def _process_single_project(
-    project_id: str, vocals_path: Path, db_path: Path,
-    wavs_dir: Path, speaker_label: str, min_clip_ms: int, max_clip_ms: int,
+    project_id: str,
+    vocals_path: Path,
+    db_path: Path,
+    wavs_dir: Path,
+    speaker_label: str,
+    min_clip_ms: int,
+    max_clip_ms: int,
 ) -> list[_ClipInfo]:
     """Process a single project's vocals into training clips."""
     from pydub import AudioSegment
@@ -240,12 +264,15 @@ def _process_single_project(
         clip_path = wavs_dir / f"clip_{secrets.token_hex(4)}.wav"
         clip_audio.export(str(clip_path), format="wav")  # type: ignore[union-attr]
 
-        clips.append(_ClipInfo(
-            wav_path=clip_path, text=text,
-            phonemes=_phonemize_text(text),
-            duration_s=(seg_end - seg_start) / 1000.0,
-            speaker_label=speaker_label,
-        ))
+        clips.append(
+            _ClipInfo(
+                wav_path=clip_path,
+                text=text,
+                phonemes=_phonemize_text(text),
+                duration_s=(seg_end - seg_start) / 1000.0,
+                speaker_label=speaker_label,
+            )
+        )
     return clips
 
 
@@ -293,21 +320,23 @@ def export_prosody_manifest(
                 (pid,),
             ).fetchall()
             for r in rows:
-                entries.append({
-                    "clip_path": str(r["clip_path"]),
-                    "project_id": pid,
-                    "start_ms": int(r["start_ms"]),
-                    "end_ms": int(r["end_ms"]),
-                    "transcript": str(r["transcript_text"]),
-                    "f0_mean": float(r["f0_mean"]),
-                    "f0_range": float(r["f0_range"]),
-                    "energy_level": str(r["energy_level"]),
-                    "pitch_contour": str(r["pitch_contour_type"]),
-                    "speaking_rate_wpm": float(r["speaking_rate_wpm"]),
-                    "prosody_score": float(r["prosody_score"]),
-                    "emotion": str(r["emotion_label"]),
-                    "has_emphasis": bool(r["has_emphasis"]),
-                })
+                entries.append(
+                    {
+                        "clip_path": str(r["clip_path"]),
+                        "project_id": pid,
+                        "start_ms": int(r["start_ms"]),
+                        "end_ms": int(r["end_ms"]),
+                        "transcript": str(r["transcript_text"]),
+                        "f0_mean": float(r["f0_mean"]),
+                        "f0_range": float(r["f0_range"]),
+                        "energy_level": str(r["energy_level"]),
+                        "pitch_contour": str(r["pitch_contour_type"]),
+                        "speaking_rate_wpm": float(r["speaking_rate_wpm"]),
+                        "prosody_score": float(r["prosody_score"]),
+                        "emotion": str(r["emotion_label"]),
+                        "has_emphasis": bool(r["has_emphasis"]),
+                    }
+                )
         except sqlite3.OperationalError:
             continue
         finally:

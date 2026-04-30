@@ -3,6 +3,7 @@
 Note: PulseAudio (pactl) and v4l2loopback may not be available
 on WSL2 or CI. Tests verify code paths that don't need running services.
 """
+
 from __future__ import annotations
 
 from voiceagent.meeting.app_controller import (
@@ -13,7 +14,6 @@ from voiceagent.meeting.devices import CloneDeviceManager, CloneDevicePair
 
 
 class TestCloneDeviceManager:
-
     def test_device_manager_empty(self) -> None:
         dm = CloneDeviceManager()
         assert dm.list_active() == []
@@ -27,7 +27,6 @@ class TestCloneDeviceManager:
 
 
 class TestCloneDevicePair:
-
     def test_clone_device_pair_fields(self) -> None:
         pair = CloneDevicePair(
             clone_name="nate",
@@ -46,7 +45,6 @@ class TestCloneDevicePair:
 
 
 class TestPlatformShortcuts:
-
     def test_platform_shortcuts(self) -> None:
         """All 3 major platforms have shortcuts defined."""
         for platform in ("zoom", "google_meet", "teams"):

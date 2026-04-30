@@ -4,12 +4,12 @@ External services (PulseAudio, Ollama, OCR Provenance) are not running
 during tests. Tests verify construction, field presence, and sync-only
 operations.
 """
+
 from __future__ import annotations
 
 import dataclasses
 
 from voiceagent.meeting.config import (
-    CloneConfig,
     MeetingConfig,
     VoiceConfig,
 )
@@ -17,7 +17,6 @@ from voiceagent.meeting.manager import CloneInstance, CloneMeetingManager
 
 
 class TestCloneMeetingManager:
-
     def test_manager_creation(self) -> None:
         cfg = MeetingConfig()
         mgr = CloneMeetingManager(config=cfg)
@@ -45,7 +44,6 @@ class TestCloneMeetingManager:
 
 
 class TestCloneInstance:
-
     def test_clone_instance_fields(self) -> None:
         """All required fields are present in CloneInstance dataclass."""
         fields = {f.name for f in dataclasses.fields(CloneInstance)}

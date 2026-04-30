@@ -31,6 +31,7 @@ Echo cancellation:
   - Layer 3: Energy gate for residual echo suppression
   - EchoReferenceProcessor feeds speaker output to AEC
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,13 +74,16 @@ def _ensure_pulse_server() -> None:
             try:
                 result = subprocess.run(
                     ["ip", "route", "show", "default"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 parts = result.stdout.strip().split()
                 if len(parts) >= 3:
                     os.environ["PULSE_SERVER"] = f"tcp:{parts[2]}"
                     logger.info(
-                        "WSL2 PULSE_SERVER set to tcp:%s", parts[2],
+                        "WSL2 PULSE_SERVER set to tcp:%s",
+                        parts[2],
                     )
             except (OSError, subprocess.TimeoutExpired) as e:
                 logger.debug("WSL2 PulseAudio detection failed: %s", e)
@@ -94,7 +98,9 @@ def _ensure_mic_volume() -> None:
     try:
         result = subprocess.run(
             ["pactl", "get-source-volume", "@DEFAULT_SOURCE@"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if "%" in result.stdout:
             pct_str = result.stdout.split("%")[0].rsplit("/", 1)[-1].strip()
@@ -127,8 +133,7 @@ def _ensure_ollama_running() -> None:
             logger.info("Ollama OK: %s", models)
     except (urllib.error.URLError, OSError, ValueError) as e:
         logger.error(
-            "Ollama not running at localhost:11434: %s. "
-            "Start it with: ollama serve",
+            "Ollama not running at localhost:11434: %s. Start it with: ollama serve",
             e,
         )
         sys.exit(1)
@@ -179,9 +184,9 @@ async def run_agent(voice_name: str = "boris") -> None:
 
         smart_turn = LocalSmartTurnAnalyzerV3(
             params=SmartTurnParams(
-                stop_secs=2.0,         # Fallback: force end after 2s silence
-                pre_speech_ms=300,     # Buffer 300ms before speech for context
-                max_duration_secs=8,   # Max 8s per utterance for ML analysis
+                stop_secs=2.0,  # Fallback: force end after 2s silence
+                pre_speech_ms=300,  # Buffer 300ms before speech for context
+                max_duration_secs=8,  # Max 8s per utterance for ML analysis
             ),
         )
         smart_turn_available = True
@@ -192,8 +197,8 @@ async def run_agent(voice_name: str = "boris") -> None:
 
     # --- AEC: Echo cancellation filter ---
     aec_filter = AECFilter(
-        echo_tail_ms=400,   # Silence mic for 400ms after bot stops
-        fade_in_ms=100,     # Quick fade-in after echo tail
+        echo_tail_ms=400,  # Silence mic for 400ms after bot stops
+        fade_in_ms=100,  # Quick fade-in after echo tail
     )
 
     # --- Transport: local mic + speaker with AEC ---
@@ -322,7 +327,7 @@ async def run_agent(voice_name: str = "boris") -> None:
     if smart_turn_available:
         try:
             vad = transport._params.vad_analyzer
-            if hasattr(vad, 'set_turn_analyzer'):
+            if hasattr(vad, "set_turn_analyzer"):
                 vad.set_turn_analyzer(smart_turn)
                 logger.info("Smart Turn V3 registered with VAD analyzer")
             else:
@@ -370,7 +375,9 @@ def main() -> None:
 
     @click.command()
     @click.option(
-        "--voice", default="boris", show_default=True,
+        "--voice",
+        default="boris",
+        show_default=True,
         help="Voice profile name",
     )
     def cli(voice: str) -> None:

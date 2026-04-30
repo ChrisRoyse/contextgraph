@@ -352,9 +352,7 @@ def film_grain_gpu(
     t0 = time.perf_counter()
     try:
         validate_gpu_array(frame, "frame")
-        noise = cp.random.normal(
-            loc=0.0, scale=intensity, size=frame.shape, dtype=cp.float32
-        )
+        noise = cp.random.normal(loc=0.0, scale=intensity, size=frame.shape, dtype=cp.float32)
         result = cp.clip(frame + noise, 0.0, 1.0)
     except CompositorError:
         raise

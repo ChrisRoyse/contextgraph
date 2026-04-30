@@ -70,6 +70,7 @@ class MultiVoiceSynth:
             return self._engine
 
         from clipcannon.voice.inference import VoiceSynthesizer
+
         synth = VoiceSynthesizer()
         self._engine = synth._ensure_engine()
         return self._engine
@@ -107,7 +108,9 @@ class MultiVoiceSynth:
         logger.info("Loaded voice: %s (ref: %s)", name, ref_audio.name)
 
     def load_voice_from_profile(
-        self, profile_name: str, ref_audio_override: Path | None = None,
+        self,
+        profile_name: str,
+        ref_audio_override: Path | None = None,
     ) -> None:
         """Load a voice from the ClipCannon voice profiles database.
 
@@ -135,7 +138,8 @@ class MultiVoiceSynth:
             from clipcannon.voice.verify import VoiceVerifier
 
             ref_emb = np.frombuffer(
-                profile["reference_embedding"], dtype=np.float32,
+                profile["reference_embedding"],
+                dtype=np.float32,
             ).copy()
 
             # Find best reference clip from training data
@@ -150,6 +154,7 @@ class MultiVoiceSynth:
 
         # Transcribe the reference for Full ICL
         from faster_whisper import WhisperModel
+
         whisper = WhisperModel("base", device="cpu", compute_type="int8")
         segs, _ = whisper.transcribe(str(best_ref), language="en")
         ref_text = " ".join(s.text.strip() for s in segs)
@@ -178,8 +183,7 @@ class MultiVoiceSynth:
         """
         if voice_name not in self._voices:
             raise ValueError(
-                f"Voice '{voice_name}' not loaded. "
-                f"Available: {list(self._voices.keys())}"
+                f"Voice '{voice_name}' not loaded. Available: {list(self._voices.keys())}"
             )
 
         engine = self._ensure_engine()
@@ -235,12 +239,18 @@ class MultiVoiceSynth:
         for i, (voice_name, text) in enumerate(script):
             logger.info(
                 "[%d/%d] %s: %s",
-                i + 1, len(script), voice_name, text[:50],
+                i + 1,
+                len(script),
+                voice_name,
+                text[:50],
             )
 
             tmp_path = output_path.parent / f"_conv_line_{i}.wav"
             wav_np, line_sr = self.speak(
-                voice_name, text, tmp_path, temperature=temperature,
+                voice_name,
+                text,
+                tmp_path,
+                temperature=temperature,
             )
 
             # Resample if needed (shouldn't happen, but safety)
@@ -265,7 +275,10 @@ class MultiVoiceSynth:
 
         logger.info(
             "Conversation generated: %d lines, %d voices, %.1fs audio, %.1fs elapsed",
-            len(script), len(voices_used), duration_ms / 1000, elapsed,
+            len(script),
+            len(voices_used),
+            duration_ms / 1000,
+            elapsed,
         )
 
         return ConversationResult(
@@ -280,6 +293,7 @@ class MultiVoiceSynth:
     def release(self) -> None:
         """Release GPU memory."""
         import gc
+
         self._voices.clear()
         if self._engine is not None:
             del self._engine

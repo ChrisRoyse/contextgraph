@@ -3,15 +3,18 @@
 Uses the Ollama HTTP API (/api/generate) to produce concise meeting
 summaries, auto-titles, and topic tags from transcript segments.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import httpx
 
 from voiceagent.meeting.errors import MeetingResponseError
-from voiceagent.meeting.transcript_format import MeetingSegment
+
+if TYPE_CHECKING:
+    from voiceagent.meeting.transcript_format import MeetingSegment
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +132,7 @@ class MeetingSummaryGenerator:
                 f"Detail: {exc}"
             ) from exc
         except httpx.HTTPError as exc:
-            raise MeetingResponseError(
-                f"HTTP error calling Ollama at {url}: {exc}"
-            ) from exc
+            raise MeetingResponseError(f"HTTP error calling Ollama at {url}: {exc}") from exc
 
         if resp.status_code != 200:
             raise MeetingResponseError(
@@ -141,15 +142,12 @@ class MeetingSummaryGenerator:
         try:
             data = resp.json()
         except ValueError as exc:
-            raise MeetingResponseError(
-                f"Ollama returned invalid JSON: {resp.text[:500]}"
-            ) from exc
+            raise MeetingResponseError(f"Ollama returned invalid JSON: {resp.text[:500]}") from exc
 
         text = data.get("response", "").strip()
         if not text:
             raise MeetingResponseError(
-                f"Ollama returned empty response for model '{self._model}'. "
-                f"Full payload: {data}"
+                f"Ollama returned empty response for model '{self._model}'. Full payload: {data}"
             )
 
         return text
@@ -167,9 +165,7 @@ class MeetingSummaryGenerator:
             MeetingResponseError: If the LLM call fails or returns empty.
         """
         if not segments:
-            raise MeetingResponseError(
-                "Cannot generate summary: no transcript segments provided."
-            )
+            raise MeetingResponseError("Cannot generate summary: no transcript segments provided.")
 
         transcript = self._build_transcript_text(segments)
         prompt = _SUMMARY_PROMPT.format(transcript=transcript)
@@ -194,9 +190,7 @@ class MeetingSummaryGenerator:
             MeetingResponseError: If the LLM call fails or returns empty.
         """
         if not segments:
-            raise MeetingResponseError(
-                "Cannot generate title: no transcript segments provided."
-            )
+            raise MeetingResponseError("Cannot generate title: no transcript segments provided.")
 
         transcript = self._build_transcript_text(segments)
         prompt = _TITLE_PROMPT.format(summary=summary, transcript=transcript)
@@ -220,9 +214,7 @@ class MeetingSummaryGenerator:
             MeetingResponseError: If the LLM call fails or returns empty.
         """
         if not summary:
-            raise MeetingResponseError(
-                "Cannot extract topics: empty summary provided."
-            )
+            raise MeetingResponseError("Cannot extract topics: empty summary provided.")
 
         prompt = _TOPICS_PROMPT.format(summary=summary)
         logger.debug("Extracting meeting topics")

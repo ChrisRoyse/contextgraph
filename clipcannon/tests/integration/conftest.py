@@ -61,8 +61,16 @@ def pipeline_project(tmp_path_factory: pytest.TempPathFactory) -> dict:
                 project_id, name, source_path, source_sha256,
                 duration_ms, resolution, fps, codec, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created')""",
-            (project_id, "Integration Test", str(source_video),
-             "pending", 0, "unknown", 0, "unknown"),
+            (
+                project_id,
+                "Integration Test",
+                str(source_video),
+                "pending",
+                0,
+                "unknown",
+                0,
+                "unknown",
+            ),
         )
         for stream_name in PIPELINE_STREAMS:
             conn.execute(
@@ -86,9 +94,14 @@ def pipeline_project(tmp_path_factory: pytest.TempPathFactory) -> dict:
 def probe_result(pipeline_project: dict) -> object:
     """Run probe once."""
     p = pipeline_project
-    return asyncio.run(run_probe(
-        p["project_id"], p["db_path"], p["project_dir"], p["config"],
-    ))
+    return asyncio.run(
+        run_probe(
+            p["project_id"],
+            p["db_path"],
+            p["project_dir"],
+            p["config"],
+        )
+    )
 
 
 @pytest.fixture(scope="module")
@@ -96,9 +109,14 @@ def audio_result(pipeline_project: dict, probe_result: object) -> object:
     """Run audio extract once (depends on probe)."""
     assert probe_result.success
     p = pipeline_project
-    return asyncio.run(run_audio_extract(
-        p["project_id"], p["db_path"], p["project_dir"], p["config"],
-    ))
+    return asyncio.run(
+        run_audio_extract(
+            p["project_id"],
+            p["db_path"],
+            p["project_dir"],
+            p["config"],
+        )
+    )
 
 
 @pytest.fixture(scope="module")
@@ -106,9 +124,14 @@ def frame_result(pipeline_project: dict, probe_result: object) -> object:
     """Run frame extract once (depends on probe)."""
     assert probe_result.success
     p = pipeline_project
-    return asyncio.run(run_frame_extract(
-        p["project_id"], p["db_path"], p["project_dir"], p["config"],
-    ))
+    return asyncio.run(
+        run_frame_extract(
+            p["project_id"],
+            p["db_path"],
+            p["project_dir"],
+            p["config"],
+        )
+    )
 
 
 @pytest.fixture(scope="module")

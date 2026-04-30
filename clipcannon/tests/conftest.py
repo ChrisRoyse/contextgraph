@@ -81,9 +81,7 @@ def session_probed_project(
     finally:
         conn.close()
 
-    result = asyncio.run(
-        run_probe(project_id, db_path, project_dir, clipcannon_config)
-    )
+    result = asyncio.run(run_probe(project_id, db_path, project_dir, clipcannon_config))
     return project_id, db_path, project_dir, clipcannon_config, result
 
 
@@ -105,9 +103,7 @@ def session_audio_extracted(
     if not probe_result.success:
         return None
 
-    result = asyncio.run(
-        run_audio_extract(project_id, db_path, project_dir, config)
-    )
+    result = asyncio.run(run_audio_extract(project_id, db_path, project_dir, config))
     return project_id, db_path, project_dir, config, result
 
 
@@ -129,7 +125,5 @@ def session_frames_extracted(
     if not probe_result.success:
         return None
 
-    result = asyncio.run(
-        run_frame_extract(project_id, db_path, project_dir, config)
-    )
+    result = asyncio.run(run_frame_extract(project_id, db_path, project_dir, config))
     return project_id, db_path, project_dir, config, result

@@ -14,23 +14,41 @@
 #   make disk-check     Report disk usage and cleanable space
 #   make trim           Trim stale deps only (no build)
 
-.PHONY: build test test-e2e check clean clean-all disk-check trim clippy
+.PHONY: build build-rust build-python test test-rust test-python-smoke test-python test-e2e test-mcp check check-rust check-python lint lint-rust lint-python clean clean-all disk-check trim clippy
 
 # --- Build ---
 
-build:
-	cargo build --release
+UV ?= uv
+CLIPCANNON_DIR ?= clipcannon
+PYTHON_DEV_EXTRA ?= --extra dev
+PYTHON_SMOKE_TESTS ?= tests/test_music_planner.py tests/test_audio_generation.py tests/test_change_classifier.py
+
+build: build-rust build-python
+
+build-rust:
+	cargo build --release --workspace
 	@./scripts/trim-stale-deps.sh release
 
+build-python:
+	cd $(CLIPCANNON_DIR) && $(UV) sync --locked $(PYTHON_DEV_EXTRA)
+
 build-debug:
-	cargo build
+	cargo build --workspace
 	@./scripts/trim-stale-deps.sh debug
 
 # --- Test ---
 
-test:
+test: test-rust test-python-smoke
+
+test-rust:
 	cargo test --workspace
 	@./scripts/trim-stale-deps.sh debug
+
+test-python-smoke:
+	cd $(CLIPCANNON_DIR) && $(UV) run --locked $(PYTHON_DEV_EXTRA) pytest $(PYTHON_SMOKE_TESTS)
+
+test-python:
+	cd $(CLIPCANNON_DIR) && $(UV) run --locked $(PYTHON_DEV_EXTRA) pytest tests/
 
 test-e2e:
 	cargo test -p context-graph-cli --test e2e
@@ -43,10 +61,23 @@ test-mcp:
 # --- Check & Lint ---
 
 check:
+	$(MAKE) check-rust
+	$(MAKE) check-python
+
+check-rust:
 	cargo check --workspace --all-targets
 
-clippy:
+check-python:
+	cd $(CLIPCANNON_DIR) && $(UV) lock --check
+	cd $(CLIPCANNON_DIR) && $(UV) run --locked $(PYTHON_DEV_EXTRA) python -c "import clipcannon, phoenix, voiceagent"
+
+lint: lint-rust lint-python
+
+lint-rust clippy:
 	cargo clippy --workspace --all-targets -- -D warnings
+
+lint-python:
+	cd $(CLIPCANNON_DIR) && $(UV) run --locked $(PYTHON_DEV_EXTRA) ruff check src/ tests/
 
 # --- Cleanup ---
 

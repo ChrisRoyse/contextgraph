@@ -23,9 +23,7 @@ Usage:
     python scripts/precompute_face_landmarks.py
 """
 
-import gc
 import logging
-import os
 import subprocess
 import sys
 import tempfile
@@ -41,7 +39,9 @@ log = logging.getLogger("precompute")
 
 # Paths
 PROJECT_ID = "proj_2ea7221d"
-SOURCE_VIDEO = Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "source" / "2026-04-03 04-23-11.mp4"
+SOURCE_VIDEO = (
+    Path.home() / ".clipcannon" / "projects" / PROJECT_ID / "source" / "2026-04-03 04-23-11.mp4"
+)
 OUTPUT_FILE = Path.home() / ".clipcannon" / "models" / "santa" / "face_landmarks_25fps.npz"
 HUNYUAN_PATH = Path("/home/cabdru/HunyuanVideo-Avatar")
 YOLO_FACE_WEIGHTS = HUNYUAN_PATH / "weights" / "ckpts" / "det_align" / "detface.pt"
@@ -53,15 +53,24 @@ TARGET_FPS = 25
 def get_video_duration_s(video_path: Path) -> float:
     """Get video duration using ffprobe."""
     result = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
-        capture_output=True, text=True, check=True,
+        [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return float(result.stdout.strip())
 
 
-def compute_mouth_bbox(mouth_left: np.ndarray, mouth_right: np.ndarray,
-                      nose: np.ndarray) -> tuple:
+def compute_mouth_bbox(mouth_left: np.ndarray, mouth_right: np.ndarray, nose: np.ndarray) -> tuple:
     """Compute a mouth bbox from the two mouth corners.
 
     The mouth corners mark the horizontal extent. We use the distance from
@@ -83,7 +92,7 @@ def compute_mouth_bbox(mouth_left: np.ndarray, mouth_right: np.ndarray,
     return (x1, y1, x2, y2)
 
 
-def main():
+def main() -> None:
     if not SOURCE_VIDEO.exists():
         log.error("Source video not found: %s", SOURCE_VIDEO)
         sys.exit(1)
@@ -109,10 +118,16 @@ def main():
         frame_pattern = tmp_path / "frame_%06d.jpg"
 
         ffmpeg_cmd = [
-            "ffmpeg", "-y", "-loglevel", "warning",
-            "-i", str(SOURCE_VIDEO),
-            "-r", str(TARGET_FPS),  # force 25fps output
-            "-q:v", "3",  # high quality JPEG
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "warning",
+            "-i",
+            str(SOURCE_VIDEO),
+            "-r",
+            str(TARGET_FPS),  # force 25fps output
+            "-q:v",
+            "3",  # high quality JPEG
             str(frame_pattern),
         ]
         result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
@@ -124,16 +139,18 @@ def main():
         log.info("Extracted %d frames to %s", len(frame_files), tmp_path)
 
         if len(frame_files) < total_frames * 0.95:
-            log.error("Expected ~%d frames but got %d — extraction failure",
-                      total_frames, len(frame_files))
+            log.error(
+                "Expected ~%d frames but got %d — extraction failure",
+                total_frames,
+                len(frame_files),
+            )
             sys.exit(1)
 
         # Load YOLOv5-Face detector
         log.info("Loading YOLOv5-Face detector...")
         sys.path.insert(0, str(HUNYUAN_PATH))
-        import torch
-        from hymm_sp.data_kits.face_align import AlignImage
         import cv2
+        from hymm_sp.data_kits.face_align import AlignImage
 
         align = AlignImage(device="cuda", det_path=str(YOLO_FACE_WEIGHTS))
         log.info("Detector loaded")
@@ -209,8 +226,11 @@ def main():
             log.error("NO FACE DETECTED IN ANY FRAME - cannot proceed")
             sys.exit(1)
         if first_valid_i > 0:
-            log.info("Backfilling %d initial frames with first valid detection (frame %d)",
-                     first_valid_i, first_valid_i)
+            log.info(
+                "Backfilling %d initial frames with first valid detection (frame %d)",
+                first_valid_i,
+                first_valid_i,
+            )
             bboxes[:first_valid_i] = bboxes[first_valid_i]
             keypoints[:first_valid_i] = keypoints[first_valid_i]
             mouth_bboxes[:first_valid_i] = mouth_bboxes[first_valid_i]
@@ -232,8 +252,7 @@ def main():
             fps=TARGET_FPS,
             source_video=str(SOURCE_VIDEO),
         )
-        log.info("Saved landmarks: %s (%.1f KB)",
-                 OUTPUT_FILE, OUTPUT_FILE.stat().st_size / 1024)
+        log.info("Saved landmarks: %s (%.1f KB)", OUTPUT_FILE, OUTPUT_FILE.stat().st_size / 1024)
 
         # Summary stats
         log.info("")

@@ -19,10 +19,10 @@ from phoenix.adapters.audio2face_adapter import (
 )
 from phoenix.errors import ExpressionError
 
-
 # ---------------------------------------------------------------------------
 # Fixtures: synthetic audio generators
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def sine_wave() -> np.ndarray:
@@ -61,11 +61,7 @@ def speech_like() -> np.ndarray:
     t = np.linspace(0, 0.5, n_samples, endpoint=False, dtype=np.float32)
     f0 = 120 + 80 * t / 0.5
     phase = 2 * np.pi * np.cumsum(f0) / sr
-    signal = (
-        0.3 * np.sin(phase)
-        + 0.15 * np.sin(2 * phase)
-        + 0.08 * np.sin(3 * phase)
-    )
+    signal = 0.3 * np.sin(phase) + 0.15 * np.sin(2 * phase) + 0.08 * np.sin(3 * phase)
     return signal.astype(np.float32)
 
 
@@ -78,6 +74,7 @@ def adapter() -> Audio2FaceLocal:
 # ---------------------------------------------------------------------------
 # BlendshapeFrame tests
 # ---------------------------------------------------------------------------
+
 
 class TestBlendshapeFrame:
     """Tests for BlendshapeFrame creation and validation."""
@@ -92,7 +89,9 @@ class TestBlendshapeFrame:
     def test_create_frame_with_metadata(self) -> None:
         coeffs = np.ones(NUM_ARKIT_BLENDSHAPES, dtype=np.float32) * 0.5
         frame = BlendshapeFrame(
-            coefficients=coeffs, timestamp=1.5, duration_ms=3.2,
+            coefficients=coeffs,
+            timestamp=1.5,
+            duration_ms=3.2,
         )
         assert frame.timestamp == 1.5
         assert frame.duration_ms == 3.2
@@ -128,9 +127,16 @@ class TestBlendshapeFrame:
     def test_all_52_names_exist(self) -> None:
         assert len(ARKIT_BLENDSHAPE_NAMES) == 52
         for name in [
-            "jawOpen", "mouthClose", "mouthSmileLeft", "mouthSmileRight",
-            "browDownLeft", "browDownRight", "eyeBlinkLeft",
-            "eyeBlinkRight", "browInnerUp", "tongueOut",
+            "jawOpen",
+            "mouthClose",
+            "mouthSmileLeft",
+            "mouthSmileRight",
+            "browDownLeft",
+            "browDownRight",
+            "eyeBlinkLeft",
+            "eyeBlinkRight",
+            "browInnerUp",
+            "tongueOut",
         ]:
             assert name in ARKIT_BLENDSHAPE_NAMES
 
@@ -139,17 +145,22 @@ class TestBlendshapeFrame:
 # Audio2FaceLocal tests
 # ---------------------------------------------------------------------------
 
+
 class TestAudio2FaceLocal:
     """Tests for local signal-processing adapter."""
 
     def test_sine_wave_produces_jaw_open(
-        self, adapter: Audio2FaceLocal, sine_wave: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        sine_wave: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(sine_wave, 16000)
         assert frame.get("jawOpen") > 0.1
 
     def test_louder_audio_more_jaw_open(
-        self, sine_wave: np.ndarray, loud_sine: np.ndarray,
+        self,
+        sine_wave: np.ndarray,
+        loud_sine: np.ndarray,
     ) -> None:
         a = Audio2FaceLocal(ema_alpha=1.0)
         b = Audio2FaceLocal(ema_alpha=1.0)
@@ -158,13 +169,17 @@ class TestAudio2FaceLocal:
         assert f_loud.get("jawOpen") > f_quiet.get("jawOpen")
 
     def test_silence_returns_neutral(
-        self, adapter: Audio2FaceLocal, silence: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        silence: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(silence, 16000)
         assert np.all(frame.coefficients < 0.01)
 
     def test_silence_after_speech_returns_to_neutral(
-        self, sine_wave: np.ndarray, silence: np.ndarray,
+        self,
+        sine_wave: np.ndarray,
+        silence: np.ndarray,
     ) -> None:
         adapter = Audio2FaceLocal(ema_alpha=0.6)
         frame_speech = adapter.process_audio_chunk(sine_wave, 16000)
@@ -174,31 +189,36 @@ class TestAudio2FaceLocal:
         assert frame_silent.get("jawOpen") < 0.01
 
     def test_white_noise_high_zcr(
-        self, adapter: Audio2FaceLocal, white_noise: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        white_noise: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(white_noise, 16000)
         assert frame.get("jawOpen") > 0.0
-        stretch = (
-            frame.get("mouthStretchLeft") + frame.get("mouthStretchRight")
-        )
+        stretch = frame.get("mouthStretchLeft") + frame.get("mouthStretchRight")
         assert stretch > 0.0
 
     def test_speech_like_activates_jaw(
-        self, speech_like: np.ndarray,
+        self,
+        speech_like: np.ndarray,
     ) -> None:
         adapter = Audio2FaceLocal(ema_alpha=1.0)
         frame = adapter.process_audio_chunk(speech_like, 16000)
         assert frame.get("jawOpen") > 0.0
 
     def test_coefficients_in_valid_range(
-        self, adapter: Audio2FaceLocal, sine_wave: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        sine_wave: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(sine_wave, 16000)
         assert np.all(frame.coefficients >= 0.0)
         assert np.all(frame.coefficients <= 1.0)
 
     def test_ema_smoothing_gradual_transition(
-        self, silence: np.ndarray, loud_sine: np.ndarray,
+        self,
+        silence: np.ndarray,
+        loud_sine: np.ndarray,
     ) -> None:
         adapter = Audio2FaceLocal(ema_alpha=0.3)
         adapter.process_audio_chunk(silence, 16000)
@@ -207,7 +227,9 @@ class TestAudio2FaceLocal:
         assert frame1.get("jawOpen") <= frame2.get("jawOpen") + 0.01
 
     def test_reset_clears_state(
-        self, adapter: Audio2FaceLocal, sine_wave: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        sine_wave: np.ndarray,
         silence: np.ndarray,
     ) -> None:
         adapter.process_audio_chunk(sine_wave, 16000)
@@ -222,13 +244,17 @@ class TestAudio2FaceLocal:
             Audio2FaceLocal(ema_alpha=1.5)
 
     def test_frame_has_duration_ms(
-        self, adapter: Audio2FaceLocal, sine_wave: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        sine_wave: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(sine_wave, 16000)
         assert frame.duration_ms >= 0.0
 
     def test_frame_has_timestamp(
-        self, adapter: Audio2FaceLocal, sine_wave: np.ndarray,
+        self,
+        adapter: Audio2FaceLocal,
+        sine_wave: np.ndarray,
     ) -> None:
         frame = adapter.process_audio_chunk(sine_wave, 16000)
         assert frame.timestamp > 0.0
@@ -238,6 +264,7 @@ class TestAudio2FaceLocal:
 # Edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
 
@@ -245,7 +272,8 @@ class TestEdgeCases:
         adapter = Audio2FaceLocal()
         with pytest.raises(ExpressionError, match="empty"):
             adapter.process_audio_chunk(
-                np.array([], dtype=np.float32), 16000,
+                np.array([], dtype=np.float32),
+                16000,
             )
 
     def test_nan_audio_raises(self) -> None:
@@ -283,9 +311,7 @@ class TestEdgeCases:
         adapter = Audio2FaceLocal(ema_alpha=1.0)
         for sr in [8000, 16000, 22050, 24000, 44100, 48000]:
             n = sr // 2
-            audio = (
-                0.3 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.5, n))
-            ).astype(np.float32)
+            audio = (0.3 * np.sin(2 * np.pi * 440 * np.linspace(0, 0.5, n))).astype(np.float32)
             frame = adapter.process_audio_chunk(audio, sr)
             assert frame.coefficients.shape == (52,)
             assert np.all(frame.coefficients >= 0.0)
@@ -296,19 +322,22 @@ class TestEdgeCases:
 # Audio2FaceNIM tests (without actual NIM container)
 # ---------------------------------------------------------------------------
 
+
 class TestAudio2FaceNIM:
     """Tests for NIM adapter fallback behavior."""
 
     def test_nim_falls_back_when_no_container(self) -> None:
         fallback = Audio2FaceLocal(ema_alpha=1.0)
         nim = Audio2FaceNIM(
-            host="localhost", port=99999, fallback=fallback,
+            host="localhost",
+            port=99999,
+            fallback=fallback,
         )
         sr = 16000
         audio = (
-            0.3 * np.sin(
-                2 * np.pi * 440
-                * np.linspace(0, 0.5, sr // 2, dtype=np.float32),
+            0.3
+            * np.sin(
+                2 * np.pi * 440 * np.linspace(0, 0.5, sr // 2, dtype=np.float32),
             )
         ).astype(np.float32)
         frame = nim.process_audio_chunk(audio, sr)
@@ -329,6 +358,7 @@ class TestAudio2FaceNIM:
 # ---------------------------------------------------------------------------
 # Utility tests
 # ---------------------------------------------------------------------------
+
 
 class TestUtility:
     """Tests for utility functions."""

@@ -3,6 +3,7 @@
 All config classes are frozen dataclasses (immutable after creation).
 load_config() reads from ~/.voiceagent/config.json with sensible defaults.
 """
+
 from __future__ import annotations
 
 import dataclasses

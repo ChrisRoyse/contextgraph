@@ -1,4 +1,5 @@
 """Tests for SileroVAD -- uses REAL model, NO MOCKS."""
+
 import numpy as np
 import pytest
 

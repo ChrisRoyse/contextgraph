@@ -80,9 +80,7 @@ def compute_segment_hash(
 
     # Overlays within this segment's time range
     if overlays:
-        hash_input["overlays"] = [
-            ov.model_dump() for ov in overlays
-        ]
+        hash_input["overlays"] = [ov.model_dump() for ov in overlays]
 
     canonical = json.dumps(hash_input, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -174,8 +174,7 @@ def get_profile(name: str) -> EncodingProfile:
     profile = _PROFILES.get(name)
     if profile is None:
         raise PipelineError(
-            f"Unknown encoding profile: {name!r}. "
-            f"Valid profiles: {', '.join(sorted(_PROFILES))}",
+            f"Unknown encoding profile: {name!r}. Valid profiles: {', '.join(sorted(_PROFILES))}",
             stage_name="rendering",
             operation="profile_lookup",
         )

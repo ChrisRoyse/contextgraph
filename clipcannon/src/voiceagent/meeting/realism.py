@@ -6,6 +6,7 @@ humans have involuntary micro-movements.
 
 All functions operate on uint8 RGB numpy arrays [H, W, 3].
 """
+
 from __future__ import annotations
 
 import logging
@@ -30,7 +31,9 @@ def add_film_grain(frame: np.ndarray, intensity: float = 0.015) -> np.ndarray:
 
 
 def apply_brightness_jitter(
-    frame: np.ndarray, phase: float, amplitude: float = 0.01,
+    frame: np.ndarray,
+    phase: float,
+    amplitude: float = 0.01,
 ) -> np.ndarray:
     """Apply slow sinusoidal brightness variation simulating auto-exposure.
 
@@ -47,7 +50,8 @@ def apply_brightness_jitter(
 
 
 def generate_micro_saccade(
-    frame_index: int, frequency_hz: float = 2.5,
+    frame_index: int,
+    frequency_hz: float = 2.5,
 ) -> tuple[int, int]:
     """Generate micro-saccade eye jitter offset.
 
@@ -68,7 +72,7 @@ class BlinkGenerator:
     around mean_interval_s. Each blink lasts ~150ms (5 frames at 30fps).
     """
 
-    def __init__(self, mean_interval_s: float = 4.5, std_s: float = 1.0):
+    def __init__(self, mean_interval_s: float = 4.5, std_s: float = 1.0) -> None:
         self._mean = mean_interval_s
         self._std = std_s
         self._next_blink_frame: int = self._sample_next()

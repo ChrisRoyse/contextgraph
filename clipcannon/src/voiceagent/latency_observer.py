@@ -10,6 +10,7 @@ Enterprise targets:
   - TTS TTFB P95 < 300ms
   - ASR latency P95 < 500ms
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,7 +19,6 @@ from dataclasses import dataclass, field
 
 from pipecat.frames.frames import (
     Frame,
-    LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
@@ -162,14 +162,19 @@ class LatencyObserver(BaseObserver):
         logger.info(
             "LATENCY turn #%d: e2e=%.0fms | speech=%.0fms "
             "asr=%.0fms llm_ttft=%.0fms tts_ttfb=%.0fms",
-            self.stats.turn_count, total_e2e, speech_dur,
-            asr_lat, llm_ttft, tts_ttfb,
+            self.stats.turn_count,
+            total_e2e,
+            speech_dur,
+            asr_lat,
+            llm_ttft,
+            tts_ttfb,
         )
 
         # Enterprise quality gate: warn if E2E exceeds 800ms
         if total_e2e > 800:
             logger.warning(
-                "E2E latency %.0fms exceeds 800ms enterprise target", total_e2e,
+                "E2E latency %.0fms exceeds 800ms enterprise target",
+                total_e2e,
             )
 
         # Session report every N turns
@@ -184,6 +189,9 @@ class LatencyObserver(BaseObserver):
             "e2e P50=%.0fms P95=%.0fms | "
             "asr P95=%.0fms | llm_ttft P95=%.0fms | tts_ttfb P95=%.0fms",
             s.turn_count,
-            s.e2e_p50, s.e2e_p95,
-            s.asr_p95, s.llm_ttft_p95, s.tts_ttfb_p95,
+            s.e2e_p50,
+            s.e2e_p95,
+            s.asr_p95,
+            s.llm_ttft_p95,
+            s.tts_ttfb_p95,
         )

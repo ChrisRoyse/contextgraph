@@ -2,6 +2,7 @@
 
 Silero VAD v5 accepts ONLY 512 sample chunks at 16kHz (or 256 at 8kHz).
 """
+
 import logging
 
 import numpy as np

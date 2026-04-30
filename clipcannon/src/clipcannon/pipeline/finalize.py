@@ -136,8 +136,7 @@ def _determine_stream_statuses(
         # Check evidence tables
         evidence_tables = _STREAM_EVIDENCE.get(stream_name, [])
         has_data = any(
-            _check_table_has_data(db_path, project_id, table)
-            for table in evidence_tables
+            _check_table_has_data(db_path, project_id, table) for table in evidence_tables
         )
         results[stream_name] = "completed" if has_data else "skipped"
 

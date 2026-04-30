@@ -59,9 +59,7 @@ GENERATE_TOOL_DEFINITIONS: list[Tool] = [
                 "guidance_scale": {
                     "type": "number",
                     "default": 1.5,
-                    "description": (
-                        "Lip-sync guidance: 1.5 = balanced, 2.0 = stronger sync"
-                    ),
+                    "description": ("Lip-sync guidance: 1.5 = balanced, 2.0 = stronger sync"),
                 },
                 "seed": {
                     "type": "integer",

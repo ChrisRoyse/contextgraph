@@ -16,7 +16,7 @@ Tests cover:
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -27,10 +27,14 @@ from clipcannon.audio.music_planner import (
     _map_mood_to_music,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 # ============================================================
 # FIXTURES
 # ============================================================
+
 
 @pytest.fixture()
 def analysis_db(tmp_path: Path) -> Path:
@@ -113,6 +117,7 @@ def planner() -> MusicPlanner:
 # MusicBrief TESTS
 # ============================================================
 
+
 class TestMusicBrief:
     """Test MusicBrief dataclass."""
 
@@ -151,11 +156,14 @@ class TestMusicBrief:
 # MusicPlanner TESTS
 # ============================================================
 
+
 class TestMusicPlanner:
     """Test MusicPlanner.plan_for_edit."""
 
     def test_plan_with_empty_analysis(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan returns sensible defaults when analysis tables are empty."""
         brief = planner.plan_for_edit(analysis_db, "proj_001", "edit_001")
@@ -167,7 +175,9 @@ class TestMusicPlanner:
         assert 50 <= brief.suggested_tempo_bpm <= 180
 
     def test_plan_with_joy_emotion(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan detects joy mood from emotion curve."""
         conn = sqlite3.connect(str(analysis_db))
@@ -185,7 +195,9 @@ class TestMusicPlanner:
         assert brief.suggested_key == "C"
 
     def test_plan_with_sadness_emotion(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan detects sadness mood from emotion curve."""
         conn = sqlite3.connect(str(analysis_db))
@@ -203,7 +215,9 @@ class TestMusicPlanner:
         assert brief.suggested_key == "Am"
 
     def test_plan_with_fast_pacing(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan detects high energy from fast pacing data."""
         conn = sqlite3.connect(str(analysis_db))
@@ -219,7 +233,9 @@ class TestMusicPlanner:
         assert brief.energy_level == "high"
 
     def test_plan_with_slow_pacing(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan detects low energy from slow pacing data."""
         conn = sqlite3.connect(str(analysis_db))
@@ -235,7 +251,9 @@ class TestMusicPlanner:
         assert brief.energy_level == "low"
 
     def test_plan_with_beat_sections(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan uses beat_sections for tempo suggestion."""
         conn = sqlite3.connect(str(analysis_db))
@@ -255,7 +273,9 @@ class TestMusicPlanner:
         assert brief.suggested_tempo_bpm == 125
 
     def test_plan_with_speech_regions(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan extracts speech regions for ducking info."""
         conn = sqlite3.connect(str(analysis_db))
@@ -275,7 +295,9 @@ class TestMusicPlanner:
         assert brief.speech_regions[0] == (5000, 10000)
 
     def test_plan_missing_db(
-        self, tmp_path: Path, planner: MusicPlanner,
+        self,
+        tmp_path: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan returns defaults when database file does not exist."""
         fake_db = tmp_path / "nonexistent" / "analysis.db"
@@ -284,14 +306,18 @@ class TestMusicPlanner:
         assert brief.overall_mood == "professional"
 
     def test_plan_missing_edit_raises(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan raises ValueError for nonexistent edit."""
         with pytest.raises(ValueError, match="Edit not found"):
             planner.plan_for_edit(analysis_db, "proj_001", "nonexistent_edit")
 
     def test_ace_step_prompt_generated(
-        self, analysis_db: Path, planner: MusicPlanner,
+        self,
+        analysis_db: Path,
+        planner: MusicPlanner,
     ) -> None:
         """Plan generates a non-empty ACE-Step prompt."""
         brief = planner.plan_for_edit(analysis_db, "proj_001", "edit_001")
@@ -303,6 +329,7 @@ class TestMusicPlanner:
 # ============================================================
 # HELPER FUNCTION TESTS
 # ============================================================
+
 
 class TestMoodMapping:
     """Test mood-to-music mapping helpers."""
@@ -368,45 +395,42 @@ class TestPromptGeneration:
 # TOOL DEFINITION TESTS
 # ============================================================
 
+
 class TestToolDefinitions:
     """Test that new tool definitions are registered correctly."""
 
     def test_auto_music_tool_exists(self) -> None:
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
+
         names = [t.name for t in AUDIO_TOOL_DEFINITIONS]
         assert "clipcannon_auto_music" in names
 
     def test_compose_music_tool_exists(self) -> None:
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
+
         names = [t.name for t in AUDIO_TOOL_DEFINITIONS]
         assert "clipcannon_compose_music" in names
 
     def test_generate_music_has_model_param(self) -> None:
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
-        gen_tool = next(
-            t for t in AUDIO_TOOL_DEFINITIONS
-            if t.name == "clipcannon_generate_music"
-        )
+
+        gen_tool = next(t for t in AUDIO_TOOL_DEFINITIONS if t.name == "clipcannon_generate_music")
         props = gen_tool.inputSchema["properties"]
         assert "model" in props
-        assert props["model"]["enum"] == ["ace-step", "musicgen"]
+        assert props["model"]["enum"] == ["ace-step"]
 
     def test_auto_music_has_tier_param(self) -> None:
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
-        tool = next(
-            t for t in AUDIO_TOOL_DEFINITIONS
-            if t.name == "clipcannon_auto_music"
-        )
+
+        tool = next(t for t in AUDIO_TOOL_DEFINITIONS if t.name == "clipcannon_auto_music")
         props = tool.inputSchema["properties"]
         assert "tier" in props
         assert set(props["tier"]["enum"]) == {"ai", "midi", "auto"}
 
     def test_compose_music_required_params(self) -> None:
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
-        tool = next(
-            t for t in AUDIO_TOOL_DEFINITIONS
-            if t.name == "clipcannon_compose_music"
-        )
+
+        tool = next(t for t in AUDIO_TOOL_DEFINITIONS if t.name == "clipcannon_compose_music")
         required = tool.inputSchema["required"]
         assert "description" in required
         assert "duration_s" in required
@@ -414,12 +438,14 @@ class TestToolDefinitions:
     def test_total_tool_count(self) -> None:
         """Should now have 6 audio tools total."""
         from clipcannon.tools.audio_defs import AUDIO_TOOL_DEFINITIONS
+
         assert len(AUDIO_TOOL_DEFINITIONS) == 6
 
 
 # ============================================================
 # MOOD CLASSIFICATION TESTS
 # ============================================================
+
 
 class TestMoodClassification:
     """Test MusicPlanner._classify_mood static method."""

@@ -1,4 +1,5 @@
 """Clone Meeting Agent -- AI voice/video clones for video conferencing."""
+
 from voiceagent.meeting.config import MeetingConfig
 from voiceagent.meeting.errors import (
     MeetingAddressError,
@@ -8,8 +9,8 @@ from voiceagent.meeting.errors import (
     MeetingError,
     MeetingLipSyncError,
     MeetingResponseError,
-    MeetingTranscriptStoreError,
     MeetingTranscriptionError,
+    MeetingTranscriptStoreError,
     MeetingVoiceError,
 )
 from voiceagent.meeting.transcript_format import (

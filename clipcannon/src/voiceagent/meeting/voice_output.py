@@ -10,6 +10,7 @@ Pipeline for every response:
 If ALL N candidates fail SECS, raises MeetingVoiceError.
 No fallback. No degraded output. Silence is better than wrong voice.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,12 +22,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voiceagent.meeting.config import VoiceConfig
 from voiceagent.meeting.errors import MeetingVoiceError
 
 if TYPE_CHECKING:
     from clipcannon.voice.verify import VoiceVerifier
     from voiceagent.adapters.fast_tts import FastTTSAdapter
+    from voiceagent.meeting.config import VoiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,6 @@ def _wav_to_audio(path: Path) -> np.ndarray:
     Returns:
         Float32 numpy array of audio samples.
     """
-    import torch
     import torchaudio
 
     wav, _sr = torchaudio.load(str(path))
@@ -245,7 +245,10 @@ class MeetingVoiceOutput:
 
             logger.info(
                 "TTS attempt %d/%d: SECS=%.3f (threshold=%.2f)",
-                attempt + 1, max_candidates, secs_score, threshold,
+                attempt + 1,
+                max_candidates,
+                secs_score,
+                threshold,
             )
 
             if secs_score >= threshold:
@@ -287,7 +290,8 @@ class MeetingVoiceOutput:
             if prosody_ref is not None:
                 logger.info(
                     "Prosody reference selected: style=%s, clip=%s",
-                    style, prosody_ref.name,
+                    style,
+                    prosody_ref.name,
                 )
         except Exception as exc:
             logger.debug("Prosody reference selection unavailable: %s", exc)
@@ -309,7 +313,8 @@ class MeetingVoiceOutput:
             tmp_path = Path(tmp.name)
             await asyncio.to_thread(_audio_to_wav, audio, tmp_path, 24000)
             score = await asyncio.to_thread(
-                self._verifier.compute_secs, tmp_path,
+                self._verifier.compute_secs,
+                tmp_path,
             )
         return score
 
@@ -345,15 +350,15 @@ class MeetingVoiceOutput:
                 )
 
                 enhanced_audio = await asyncio.to_thread(
-                    _wav_to_audio, enhanced_path,
+                    _wav_to_audio,
+                    enhanced_path,
                 )
 
             return enhanced_audio
 
         except Exception as e:
             raise MeetingVoiceError(
-                f"Resemble Enhance failed: {e}. "
-                f"Audio will not be output without enhancement."
+                f"Resemble Enhance failed: {e}. Audio will not be output without enhancement."
             ) from e
 
     def release(self) -> None:

@@ -4,6 +4,7 @@ Loads expensive GPU models (LLM, TTS, ASR, VAD, wake word) exactly ONCE
 for the entire test session, eliminating redundant model loads across
 test files.
 """
+
 import pytest
 import torch
 
@@ -25,6 +26,7 @@ def check_gpu():
 def session_vad(check_gpu):
     """SileroVAD loaded once for the entire session."""
     from voiceagent.asr.vad import SileroVAD
+
     return SileroVAD(threshold=0.5)
 
 
@@ -63,6 +65,7 @@ def session_llm_brain(check_gpu):
 def session_tts_adapter(check_gpu):
     """ClipCannonAdapter loaded once, released at session end."""
     from voiceagent.adapters.clipcannon import ClipCannonAdapter
+
     adapter = ClipCannonAdapter(voice_name="boris")
     yield adapter
     adapter.release()
@@ -71,8 +74,7 @@ def session_tts_adapter(check_gpu):
 @pytest.fixture(scope="session")
 def session_wake_word(check_gpu):
     """WakeWordDetector loaded once for the entire session."""
-    pytest.importorskip(
-        "openwakeword", reason="openwakeword not installed"
-    )
+    pytest.importorskip("openwakeword", reason="openwakeword not installed")
     from voiceagent.activation.wake_word import WakeWordDetector
+
     return WakeWordDetector()

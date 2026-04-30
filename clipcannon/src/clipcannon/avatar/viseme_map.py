@@ -22,44 +22,103 @@ PHONEME_TO_VISEME: dict[str, str] = {
     # Silence / neutral
     "SIL": "SIL",
     # Bilabial: lips pressed together (P, B, M)
-    "P": "PP", "B": "PP", "M": "PP",
+    "P": "PP",
+    "B": "PP",
+    "M": "PP",
     # Labiodental: lower lip under upper teeth (F, V)
-    "F": "FF", "V": "FF",
+    "F": "FF",
+    "V": "FF",
     # Dental: tongue between teeth (TH, DH)
-    "TH": "TH", "DH": "TH",
+    "TH": "TH",
+    "DH": "TH",
     # Alveolar: tongue on upper ridge (T, D, N, L)
-    "T": "DD", "D": "DD", "N": "DD", "L": "DD",
+    "T": "DD",
+    "D": "DD",
+    "N": "DD",
+    "L": "DD",
     # Velar: back tongue raised (K, G, NG)
-    "K": "KK", "G": "KK", "NG": "KK",
+    "K": "KK",
+    "G": "KK",
+    "NG": "KK",
     # Postalveolar: lips rounded, teeth close (CH, JH, SH, ZH)
-    "CH": "CH", "JH": "CH", "SH": "CH", "ZH": "CH",
+    "CH": "CH",
+    "JH": "CH",
+    "SH": "CH",
+    "ZH": "CH",
     # Sibilant: teeth close, lips slightly open (S, Z)
-    "S": "SS", "Z": "SS",
+    "S": "SS",
+    "Z": "SS",
     # Rhotic: lips slightly rounded (R, ER)
-    "R": "RR", "ER": "RR", "ER0": "RR", "ER1": "RR", "ER2": "RR",
+    "R": "RR",
+    "ER": "RR",
+    "ER0": "RR",
+    "ER1": "RR",
+    "ER2": "RR",
     # Open vowels: wide open (AA, AE, AH)
-    "AA": "AA", "AA0": "AA", "AA1": "AA", "AA2": "AA",
-    "AE": "AA", "AE0": "AA", "AE1": "AA", "AE2": "AA",
-    "AH": "AA", "AH0": "AA", "AH1": "AA", "AH2": "AA",
+    "AA": "AA",
+    "AA0": "AA",
+    "AA1": "AA",
+    "AA2": "AA",
+    "AE": "AA",
+    "AE0": "AA",
+    "AE1": "AA",
+    "AE2": "AA",
+    "AH": "AA",
+    "AH0": "AA",
+    "AH1": "AA",
+    "AH2": "AA",
     # Mid vowels: mid-open, spread (EH, EY)
-    "EH": "EH", "EH0": "EH", "EH1": "EH", "EH2": "EH",
-    "EY": "EH", "EY0": "EH", "EY1": "EH", "EY2": "EH",
+    "EH": "EH",
+    "EH0": "EH",
+    "EH1": "EH",
+    "EH2": "EH",
+    "EY": "EH",
+    "EY0": "EH",
+    "EY1": "EH",
+    "EY2": "EH",
     # Front close vowels: narrow, spread (IH, IY)
-    "IH": "IH", "IH0": "IH", "IH1": "IH", "IH2": "IH",
-    "IY": "IH", "IY0": "IH", "IY1": "IH", "IY2": "IH",
+    "IH": "IH",
+    "IH0": "IH",
+    "IH1": "IH",
+    "IH2": "IH",
+    "IY": "IH",
+    "IY0": "IH",
+    "IY1": "IH",
+    "IY2": "IH",
     # Back mid vowels: rounded, mid-open (AO, OW)
-    "AO": "OH", "AO0": "OH", "AO1": "OH", "AO2": "OH",
-    "OW": "OH", "OW0": "OH", "OW1": "OH", "OW2": "OH",
+    "AO": "OH",
+    "AO0": "OH",
+    "AO1": "OH",
+    "AO2": "OH",
+    "OW": "OH",
+    "OW0": "OH",
+    "OW1": "OH",
+    "OW2": "OH",
     # Back close vowels: tight round (UW, UH, W)
-    "UW": "OO", "UW0": "OO", "UW1": "OO", "UW2": "OO",
-    "UH": "OO", "UH0": "OO", "UH1": "OO", "UH2": "OO",
+    "UW": "OO",
+    "UW0": "OO",
+    "UW1": "OO",
+    "UW2": "OO",
+    "UH": "OO",
+    "UH0": "OO",
+    "UH1": "OO",
+    "UH2": "OO",
     "W": "OO",
     # Glottal / approximants (mapped to nearest visual equivalent)
     "HH": "AA",  # glottal fricative → open mouth
-    "Y": "IH",   # palatal approximant → spread lips
-    "AW": "OH", "AW0": "OH", "AW1": "OH", "AW2": "OH",
-    "AY": "AA", "AY0": "AA", "AY1": "AA", "AY2": "AA",
-    "OY": "OH", "OY0": "OH", "OY1": "OH", "OY2": "OH",
+    "Y": "IH",  # palatal approximant → spread lips
+    "AW": "OH",
+    "AW0": "OH",
+    "AW1": "OH",
+    "AW2": "OH",
+    "AY": "AA",
+    "AY0": "AA",
+    "AY1": "AA",
+    "AY2": "AA",
+    "OY": "OH",
+    "OY0": "OH",
+    "OY1": "OH",
+    "OY2": "OH",
 }
 
 # All viseme categories
@@ -67,20 +126,20 @@ ALL_VISEMES = sorted(set(PHONEME_TO_VISEME.values()))
 
 # Viseme → typical mouth openness (0-1) and width (0-1)
 VISEME_GEOMETRY: dict[str, tuple[float, float]] = {
-    "SIL": (0.0, 0.5),   # closed, neutral width
-    "PP":  (0.0, 0.4),   # closed, compressed
-    "FF":  (0.15, 0.5),  # slightly open, neutral
-    "TH":  (0.2, 0.5),   # slightly open
-    "DD":  (0.2, 0.5),   # slightly open
-    "KK":  (0.25, 0.5),  # slightly open
-    "CH":  (0.2, 0.4),   # slightly open, rounded
-    "SS":  (0.1, 0.5),   # barely open
-    "RR":  (0.2, 0.4),   # slightly open, rounded
-    "AA":  (0.9, 0.7),   # wide open
-    "EH":  (0.5, 0.6),   # mid open, spread
-    "IH":  (0.3, 0.7),   # narrow, spread
-    "OH":  (0.6, 0.4),   # open, rounded
-    "OO":  (0.3, 0.3),   # tight round
+    "SIL": (0.0, 0.5),  # closed, neutral width
+    "PP": (0.0, 0.4),  # closed, compressed
+    "FF": (0.15, 0.5),  # slightly open, neutral
+    "TH": (0.2, 0.5),  # slightly open
+    "DD": (0.2, 0.5),  # slightly open
+    "KK": (0.25, 0.5),  # slightly open
+    "CH": (0.2, 0.4),  # slightly open, rounded
+    "SS": (0.1, 0.5),  # barely open
+    "RR": (0.2, 0.4),  # slightly open, rounded
+    "AA": (0.9, 0.7),  # wide open
+    "EH": (0.5, 0.6),  # mid open, spread
+    "IH": (0.3, 0.7),  # narrow, spread
+    "OH": (0.6, 0.4),  # open, rounded
+    "OO": (0.3, 0.3),  # tight round
 }
 
 
@@ -93,12 +152,15 @@ def _load_cmu_dict() -> dict[str, list[list[str]]]:
     """
     try:
         from nltk.corpus import cmudict
+
         return cmudict.dict()
     except LookupError:
         logger.info("Downloading CMU Pronouncing Dictionary...")
         import nltk
+
         nltk.download("cmudict", quiet=True)
         from nltk.corpus import cmudict
+
         return cmudict.dict()
     except ImportError:
         logger.warning("NLTK not installed, phoneme lookup unavailable")
@@ -112,12 +174,13 @@ def _g2p_fallback(word: str) -> list[str]:
     """
     try:
         from g2p_en import G2p
+
         g2p = G2p()
         phonemes = g2p(word)
         return [p for p in phonemes if p.strip()]
     except ImportError:
         # Very basic fallback: one phoneme per vowel cluster
-        vowels = re.findall(r'[aeiouy]+', word.lower())
+        vowels = re.findall(r"[aeiouy]+", word.lower())
         return ["AH1"] * max(1, len(vowels))
 
 
@@ -223,14 +286,16 @@ def build_viseme_timeline(
             else:
                 pos = "middle"
 
-            phoneme_events.append({
-                "start_ms": ph_start,
-                "end_ms": ph_end,
-                "phoneme": ph,
-                "viseme": vis,
-                "word": word_text,
-                "word_position": pos,
-            })
+            phoneme_events.append(
+                {
+                    "start_ms": ph_start,
+                    "end_ms": ph_end,
+                    "phoneme": ph,
+                    "viseme": vis,
+                    "word": word_text,
+                    "word_position": pos,
+                }
+            )
 
     if not phoneme_events:
         return []
@@ -268,15 +333,17 @@ def build_viseme_timeline(
                 next_vis = str(nev["viseme"])
                 break
 
-        frames.append({
-            "frame_idx": f,
-            "timestamp_ms": t_ms,
-            "viseme": viseme,
-            "phoneme": phoneme,
-            "word": word,
-            "word_position": word_pos,
-            "prev_viseme": str(prev_vis),
-            "next_viseme": next_vis,
-        })
+        frames.append(
+            {
+                "frame_idx": f,
+                "timestamp_ms": t_ms,
+                "viseme": viseme,
+                "phoneme": phoneme,
+                "word": word,
+                "word_position": word_pos,
+                "prev_viseme": str(prev_vis),
+                "next_viseme": next_vis,
+            }
+        )
 
     return frames

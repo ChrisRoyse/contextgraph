@@ -8,13 +8,17 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 async def _extract_audio_from_source(
-    proj_dir: Path, project_id: str,
+    proj_dir: Path,
+    project_id: str,
 ) -> Path | None:
     """Extract audio from source video when stems are missing."""
     import asyncio
@@ -31,8 +35,14 @@ async def _extract_audio_from_source(
     output = stems_dir / "audio_original.wav"
 
     cmd = [
-        "ffmpeg", "-y", "-i", str(videos[0]),
-        "-vn", "-acodec", "pcm_s16le", str(output),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(videos[0]),
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        str(output),
     ]
     logger.info("Stems missing for %s -- extracting audio from source", project_id)
     try:
@@ -89,11 +99,7 @@ async def run_audio_cleanup(
     if not source_audio.exists():
         source_audio = proj_dir / "stems" / "audio_16k.wav"
     if not source_audio.exists():
-        wavs = (
-            list((proj_dir / "stems").glob("*.wav"))
-            if (proj_dir / "stems").exists()
-            else []
-        )
+        wavs = list((proj_dir / "stems").glob("*.wav")) if (proj_dir / "stems").exists() else []
         if not wavs:
             wavs = list(proj_dir.glob("*.wav"))
         if wavs:
@@ -123,12 +129,17 @@ async def run_audio_cleanup(
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     store_asset_fn(  # type: ignore[operator]
-        project_id=project_id, edit_id=edit_id,
-        asset_id=result.asset_id, asset_type="cleaned",
-        file_path=str(result.file_path), duration_ms=result.duration_ms,
-        sample_rate=result.sample_rate, model_used="ffmpeg",
+        project_id=project_id,
+        edit_id=edit_id,
+        asset_id=result.asset_id,
+        asset_type="cleaned",
+        file_path=str(result.file_path),
+        duration_ms=result.duration_ms,
+        sample_rate=result.sample_rate,
+        model_used="ffmpeg",
         generation_params={"operations": operations, "hum_frequency": hum_frequency},
-        seed=None, volume_db=0.0,
+        seed=None,
+        volume_db=0.0,
     )
 
     return {

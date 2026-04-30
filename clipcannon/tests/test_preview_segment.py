@@ -187,9 +187,16 @@ def preview_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
         "target_profile, edl_json, source_sha256, total_duration_ms, segment_count) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            "edit_preview_001", project_id, "Preview Test Edit",
-            "draft", "tiktok", "tiktok_vertical",
-            edl_json, "sha256_preview_hash", 26667, 3,
+            "edit_preview_001",
+            project_id,
+            "Preview Test Edit",
+            "draft",
+            "tiktok",
+            "tiktok_vertical",
+            edl_json,
+            "sha256_preview_hash",
+            26667,
+            3,
         ),
     )
 
@@ -212,9 +219,7 @@ class TestPreviewSegment:
     """Test clipcannon_preview_segment tool."""
 
     @pytest.mark.asyncio()
-    async def test_preview_segment_requires_valid_index_zero(
-        self, preview_project: str
-    ) -> None:
+    async def test_preview_segment_requires_valid_index_zero(self, preview_project: str) -> None:
         """segment_index 0 returns an error (1-based indexing)."""
         result = await dispatch_rendering_tool(
             "clipcannon_preview_segment",
@@ -244,9 +249,7 @@ class TestPreviewSegment:
         assert "out of range" in result["error"]["message"].lower()
 
     @pytest.mark.asyncio()
-    async def test_preview_returns_segment_info(
-        self, preview_project: str
-    ) -> None:
+    async def test_preview_returns_segment_info(self, preview_project: str) -> None:
         """Valid preview call returns segment source range info.
 
         Note: Actual FFmpeg rendering may fail in test environment
@@ -270,7 +273,8 @@ class TestPreviewSegment:
         if "error" in result:
             # Render failed is acceptable -- validation passed
             assert result["error"]["code"] in (
-                "RENDER_FAILED", "SOURCE_NOT_FOUND",
+                "RENDER_FAILED",
+                "SOURCE_NOT_FOUND",
             )
         else:
             # If render succeeded, verify segment_info

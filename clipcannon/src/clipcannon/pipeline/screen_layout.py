@@ -64,7 +64,12 @@ def detect_content_regions(
 
     content_mask = density_grid > 0.05
     return _extract_regions(
-        content_mask, grid_size, w, h, min_region_area, density_grid,
+        content_mask,
+        grid_size,
+        w,
+        h,
+        min_region_area,
+        density_grid,
     )
 
 
@@ -93,8 +98,10 @@ def _extract_regions(
             while stack:
                 cr, cc = stack.pop()
                 if (
-                    cr < 0 or cr >= rows
-                    or cc < 0 or cc >= cols
+                    cr < 0
+                    or cr >= rows
+                    or cc < 0
+                    or cc >= cols
                     or visited[cr, cc]
                     or not mask[cr, cc]
                 ):
@@ -105,10 +112,14 @@ def _extract_regions(
                 max_r = max(max_r, cr)
                 min_c = min(min_c, cc)
                 max_c = max(max_c, cc)
-                stack.extend([
-                    (cr - 1, cc), (cr + 1, cc),
-                    (cr, cc - 1), (cr, cc + 1),
-                ])
+                stack.extend(
+                    [
+                        (cr - 1, cc),
+                        (cr + 1, cc),
+                        (cr, cc - 1),
+                        (cr, cc + 1),
+                    ]
+                )
 
             x = min_c * grid_size
             y = min_r * grid_size
@@ -129,11 +140,16 @@ def _extract_regions(
             else:
                 rtype = "empty"
 
-            regions.append({
-                "x": x, "y": y, "width": width, "height": height,
-                "region_type": rtype,
-                "edge_density": round(avg_density, 4),
-            })
+            regions.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "region_type": rtype,
+                    "edge_density": round(avg_density, 4),
+                }
+            )
 
     return regions
 
@@ -190,8 +206,10 @@ def detect_pip_overlay(
             if min_pip_fraction <= pip_frac <= max_pip_fraction:
                 best_score = ratio
                 best = {
-                    "x": x0, "y": y0,
-                    "width": pip_w, "height": pip_h,
+                    "x": x0,
+                    "y": y0,
+                    "width": pip_w,
+                    "height": pip_h,
                     "corner": corner_name,
                     "confidence": round(min(ratio / 3.0, 1.0), 3),
                 }
@@ -208,7 +226,7 @@ def _edge_variance(region: np.ndarray, block: int = 16) -> float:
     variances = []
     for by in range(0, h - block, block):
         for bx in range(0, w - 1 - block, block):
-            variances.append(float(np.var(dx[by:by+block, bx:bx+block])))
+            variances.append(float(np.var(dx[by : by + block, bx : bx + block])))
     return float(np.mean(variances)) if variances else 0.0
 
 

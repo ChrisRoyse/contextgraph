@@ -1,4 +1,5 @@
 """Tests for voiceagent.meeting.realism -- real numpy ops, no mocks."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -18,7 +19,6 @@ def _make_frame(val: int = 128, h: int = 720, w: int = 1280) -> np.ndarray:
 
 
 class TestFilmGrain:
-
     def test_film_grain_output_type(self) -> None:
         frame = _make_frame()
         result = add_film_grain(frame)
@@ -43,7 +43,6 @@ class TestFilmGrain:
 
 
 class TestBrightnessJitter:
-
     def test_brightness_jitter_output_type(self) -> None:
         frame = _make_frame()
         result = apply_brightness_jitter(frame, phase=0.5)
@@ -58,7 +57,6 @@ class TestBrightnessJitter:
 
 
 class TestMicroSaccade:
-
     def test_micro_saccade_range(self) -> None:
         for i in range(100):
             dx, dy = generate_micro_saccade(i)
@@ -72,7 +70,6 @@ class TestMicroSaccade:
 
 
 class TestBlinkGenerator:
-
     def test_blink_generator_produces_blinks(self) -> None:
         blink = BlinkGenerator(mean_interval_s=1.0, std_s=0.3)
         alphas = [blink.get_blink_alpha(i) for i in range(200)]
@@ -99,10 +96,11 @@ class TestBlinkGenerator:
 
 
 class TestComfortNoise:
-
     def test_comfort_noise_amplitude(self) -> None:
         noise = MeetingBehavior.generate_comfort_noise(
-            duration_ms=100, sample_rate=44100, dbfs=-60,
+            duration_ms=100,
+            sample_rate=44100,
+            dbfs=-60,
         )
         # -60 dBFS = amplitude of 0.001
         assert noise.dtype == np.float32
@@ -112,7 +110,9 @@ class TestComfortNoise:
 
     def test_comfort_noise_duration(self) -> None:
         noise = MeetingBehavior.generate_comfort_noise(
-            duration_ms=200, sample_rate=44100, dbfs=-60,
+            duration_ms=200,
+            sample_rate=44100,
+            dbfs=-60,
         )
         expected_samples = int(44100 * 200 / 1000)
         assert len(noise) == expected_samples

@@ -89,52 +89,112 @@ class PresetConfig:
 # ============================================================
 PRESETS: dict[str, PresetConfig] = {
     "ambient_pad": PresetConfig(
-        70, "C", _PROGRESSIONS["c_maj7_cycle"], [_PROG_PAD, _PROG_STRINGS],
-        False, (40, 70), _MELODY_PATTERNS["ambient_pad"],
+        70,
+        "C",
+        _PROGRESSIONS["c_maj7_cycle"],
+        [_PROG_PAD, _PROG_STRINGS],
+        False,
+        (40, 70),
+        _MELODY_PATTERNS["ambient_pad"],
     ),
     "upbeat_pop": PresetConfig(
-        128, "C", _PROGRESSIONS["pop_canon"], [_PROG_PIANO, _PROG_BASS],
-        True, (70, 100), _MELODY_PATTERNS["upbeat_pop"],
+        128,
+        "C",
+        _PROGRESSIONS["pop_canon"],
+        [_PROG_PIANO, _PROG_BASS],
+        True,
+        (70, 100),
+        _MELODY_PATTERNS["upbeat_pop"],
     ),
     "corporate": PresetConfig(
-        100, "C", _PROGRESSIONS["corporate"], [_PROG_PIANO, _PROG_STRINGS],
-        False, (55, 80), _MELODY_PATTERNS["corporate"],
+        100,
+        "C",
+        _PROGRESSIONS["corporate"],
+        [_PROG_PIANO, _PROG_STRINGS],
+        False,
+        (55, 80),
+        _MELODY_PATTERNS["corporate"],
     ),
     "dramatic": PresetConfig(
-        90, "C", _PROGRESSIONS["dramatic"], [_PROG_STRINGS, _PROG_BRASS],
-        True, (60, 110), _MELODY_PATTERNS["dramatic"],
+        90,
+        "C",
+        _PROGRESSIONS["dramatic"],
+        [_PROG_STRINGS, _PROG_BRASS],
+        True,
+        (60, 110),
+        _MELODY_PATTERNS["dramatic"],
     ),
     "minimal_piano": PresetConfig(
-        80, "C", _PROGRESSIONS["minimal"], [_PROG_PIANO],
-        False, (45, 75), _MELODY_PATTERNS["minimal_piano"],
+        80,
+        "C",
+        _PROGRESSIONS["minimal"],
+        [_PROG_PIANO],
+        False,
+        (45, 75),
+        _MELODY_PATTERNS["minimal_piano"],
     ),
     "intro_jingle": PresetConfig(
-        120, "C", _PROGRESSIONS["jingle"], [_PROG_PIANO, _PROG_STRINGS, _PROG_BASS],
-        True, (70, 100), _MELODY_PATTERNS["intro_jingle"],
+        120,
+        "C",
+        _PROGRESSIONS["jingle"],
+        [_PROG_PIANO, _PROG_STRINGS, _PROG_BASS],
+        True,
+        (70, 100),
+        _MELODY_PATTERNS["intro_jingle"],
     ),
     "lofi_chill": PresetConfig(
-        75, "C", _PROGRESSIONS["lofi_chill"], [_PROG_PIANO, _PROG_PAD],
-        False, (35, 60), _MELODY_PATTERNS["lofi_chill"],
+        75,
+        "C",
+        _PROGRESSIONS["lofi_chill"],
+        [_PROG_PIANO, _PROG_PAD],
+        False,
+        (35, 60),
+        _MELODY_PATTERNS["lofi_chill"],
     ),
     "cinematic_epic": PresetConfig(
-        95, "A", _PROGRESSIONS["cinematic_epic"], [_PROG_STRINGS, _PROG_BRASS],
-        True, (50, 120), _MELODY_PATTERNS["cinematic_epic"],
+        95,
+        "A",
+        _PROGRESSIONS["cinematic_epic"],
+        [_PROG_STRINGS, _PROG_BRASS],
+        True,
+        (50, 120),
+        _MELODY_PATTERNS["cinematic_epic"],
     ),
     "tech_corporate": PresetConfig(
-        110, "C", _PROGRESSIONS["tech_corporate"], [_PROG_PIANO, _PROG_STRINGS],
-        False, (60, 85), _MELODY_PATTERNS["tech_corporate"],
+        110,
+        "C",
+        _PROGRESSIONS["tech_corporate"],
+        [_PROG_PIANO, _PROG_STRINGS],
+        False,
+        (60, 85),
+        _MELODY_PATTERNS["tech_corporate"],
     ),
     "acoustic_folk": PresetConfig(
-        105, "G", _PROGRESSIONS["acoustic_folk"], [_PROG_PIANO],
-        False, (50, 80), _MELODY_PATTERNS["acoustic_folk"],
+        105,
+        "G",
+        _PROGRESSIONS["acoustic_folk"],
+        [_PROG_PIANO],
+        False,
+        (50, 80),
+        _MELODY_PATTERNS["acoustic_folk"],
     ),
     "synth_wave": PresetConfig(
-        118, "F", _PROGRESSIONS["synth_wave"], [_PROG_PAD, _PROG_BASS],
-        True, (65, 95), _MELODY_PATTERNS["synth_wave"],
+        118,
+        "F",
+        _PROGRESSIONS["synth_wave"],
+        [_PROG_PAD, _PROG_BASS],
+        True,
+        (65, 95),
+        _MELODY_PATTERNS["synth_wave"],
     ),
     "jazz_smooth": PresetConfig(
-        112, "C", _PROGRESSIONS["jazz_smooth"], [_PROG_PIANO],
-        False, (55, 85), _MELODY_PATTERNS["jazz_smooth"],
+        112,
+        "C",
+        _PROGRESSIONS["jazz_smooth"],
+        [_PROG_PIANO],
+        False,
+        (55, 85),
+        _MELODY_PATTERNS["jazz_smooth"],
     ),
 }
 
@@ -156,9 +216,15 @@ class MidiResult:
 
 
 def _add_chord_track(
-    midi: object, track: int, channel: int, program: int,
-    progression: list[list[int]], beats_per_chord: float,
-    total_beats: float, velocity_min: int, velocity_max: int,
+    midi: object,
+    track: int,
+    channel: int,
+    program: int,
+    progression: list[list[int]],
+    beats_per_chord: float,
+    total_beats: float,
+    velocity_min: int,
+    velocity_max: int,
 ) -> None:
     """Add a chord track to the MIDI file."""
     midi.addProgramChange(track, channel, 0, program)  # type: ignore[attr-defined]
@@ -174,10 +240,16 @@ def _add_chord_track(
 
 
 def _add_melody_track(
-    midi: object, track: int, channel: int, program: int,
-    progression: list[list[int]], melody_pattern: list[int],
-    beats_per_chord: float, total_beats: float,
-    velocity_min: int, velocity_max: int,
+    midi: object,
+    track: int,
+    channel: int,
+    program: int,
+    progression: list[list[int]],
+    melody_pattern: list[int],
+    beats_per_chord: float,
+    total_beats: float,
+    velocity_min: int,
+    velocity_max: int,
 ) -> None:
     """Add a melody track derived from chord roots and scale degree offsets."""
     midi.addProgramChange(track, channel, 0, program)  # type: ignore[attr-defined]
@@ -197,9 +269,13 @@ def _add_melody_track(
 
 
 def _add_bass_track(
-    midi: object, track: int, channel: int,
-    progression: list[list[int]], beats_per_chord: float,
-    total_beats: float, velocity: int,
+    midi: object,
+    track: int,
+    channel: int,
+    progression: list[list[int]],
+    beats_per_chord: float,
+    total_beats: float,
+    velocity: int,
 ) -> None:
     """Add a bass track following chord roots one octave below."""
     midi.addProgramChange(track, channel, 0, _PROG_BASS)  # type: ignore[attr-defined]
@@ -213,7 +289,10 @@ def _add_bass_track(
 
 
 def _add_drum_track(
-    midi: object, track: int, total_beats: float, velocity: int,
+    midi: object,
+    track: int,
+    total_beats: float,
+    velocity: int,
 ) -> None:
     """Add drum pattern: kick on 1/3, snare on 2/4, hihat on eighths."""
     channel = 9
@@ -242,9 +321,7 @@ def _setup_midi(config: PresetConfig, tempo: int) -> tuple[object, int]:
     try:
         from midiutil import MIDIFile  # type: ignore[import-untyped]
     except ImportError as exc:
-        raise ImportError(
-            "MIDIUtil not installed. Install with: pip install MIDIUtil"
-        ) from exc
+        raise ImportError("MIDIUtil not installed. Install with: pip install MIDIUtil") from exc
 
     num_tracks = 2
     if config.has_drums:
@@ -257,24 +334,47 @@ def _setup_midi(config: PresetConfig, tempo: int) -> tuple[object, int]:
 
 
 def _write_tracks(
-    midi: object, config: PresetConfig,
-    beats_per_chord: float, total_beats: float,
-    vel_min: int, vel_max: int,
+    midi: object,
+    config: PresetConfig,
+    beats_per_chord: float,
+    total_beats: float,
+    vel_min: int,
+    vel_max: int,
 ) -> None:
     """Write chord, melody, bass, and drum tracks to the MIDI file."""
     _add_chord_track(
-        midi, 0, 0, config.instruments[0], config.progression,
-        beats_per_chord, total_beats, vel_min, vel_max,
+        midi,
+        0,
+        0,
+        config.instruments[0],
+        config.progression,
+        beats_per_chord,
+        total_beats,
+        vel_min,
+        vel_max,
     )
     _add_melody_track(
-        midi, 1, 1, config.instruments[0], config.progression,
-        config.melody_pattern, beats_per_chord, total_beats, vel_min, vel_max,
+        midi,
+        1,
+        1,
+        config.instruments[0],
+        config.progression,
+        config.melody_pattern,
+        beats_per_chord,
+        total_beats,
+        vel_min,
+        vel_max,
     )
     current_track = 2
     if len(config.instruments) > 1:
         _add_bass_track(
-            midi, current_track, 2, config.progression,
-            beats_per_chord, total_beats, (vel_min + vel_max) // 2,
+            midi,
+            current_track,
+            2,
+            config.progression,
+            beats_per_chord,
+            total_beats,
+            (vel_min + vel_max) // 2,
         )
         current_track += 1
     if config.has_drums:
@@ -317,9 +417,7 @@ def compose_midi(
         ValueError: If preset name is unknown.
     """
     if preset not in PRESETS:
-        raise ValueError(
-            f"Unknown preset: {preset}. Valid: {', '.join(sorted(PRESETS))}"
-        )
+        raise ValueError(f"Unknown preset: {preset}. Valid: {', '.join(sorted(PRESETS))}")
 
     config = PRESETS[preset]
     tempo = tempo_bpm if tempo_bpm is not None else config.tempo_bpm
@@ -333,11 +431,18 @@ def compose_midi(
     duration_ms = int(duration_s * 1000)
     logger.info(
         "MIDI composed: preset=%s, tempo=%d BPM, key=%s, duration=%.1fs, path=%s",
-        preset, tempo, used_key, duration_s, output_path,
+        preset,
+        tempo,
+        used_key,
+        duration_s,
+        output_path,
     )
     return MidiResult(
-        midi_path=output_path, duration_ms=duration_ms,
-        tempo_bpm=tempo, key=used_key, preset=preset,
+        midi_path=output_path,
+        duration_ms=duration_ms,
+        tempo_bpm=tempo,
+        key=used_key,
+        preset=preset,
     )
 
 
@@ -363,9 +468,7 @@ def compose_midi_sectioned(
         ValueError: If preset is unknown or plan has no sections.
     """
     if plan.preset not in PRESETS:
-        raise ValueError(
-            f"Unknown preset: {plan.preset}. Valid: {', '.join(sorted(PRESETS))}"
-        )
+        raise ValueError(f"Unknown preset: {plan.preset}. Valid: {', '.join(sorted(PRESETS))}")
     if not plan.sections:
         raise ValueError("MidiPlan must have at least one section")
 
@@ -384,7 +487,10 @@ def compose_midi_sectioned(
         _write_tracks(midi, config, beats_per_bar, section_beats, vel_min, vel_max)
         logger.debug(
             "Section '%s': %d bars, dynamics=(%d,%d)",
-            section.name, section.bars, vel_min, vel_max,
+            section.name,
+            section.bars,
+            vel_min,
+            vel_max,
         )
 
     _save_midi(midi, output_path)
@@ -394,9 +500,17 @@ def compose_midi_sectioned(
     logger.info(
         "Sectioned MIDI composed: preset=%s, tempo=%d BPM, key=%s, "
         "sections=%d, duration=%.1fs, path=%s",
-        plan.preset, tempo, plan.key, len(plan.sections), duration_s, output_path,
+        plan.preset,
+        tempo,
+        plan.key,
+        len(plan.sections),
+        duration_s,
+        output_path,
     )
     return MidiResult(
-        midi_path=output_path, duration_ms=duration_ms,
-        tempo_bpm=tempo, key=plan.key, preset=plan.preset,
+        midi_path=output_path,
+        duration_ms=duration_ms,
+        tempo_bpm=tempo,
+        key=plan.key,
+        preset=plan.preset,
     )

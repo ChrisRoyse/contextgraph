@@ -33,25 +33,82 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------- #
 FLAME_LMK_68 = [
     # Jaw contour (0-16)
-    3572, 2643, 2585, 2546, 2510, 3636, 3503, 3410, 3336,
-    3270, 3206, 3144, 3075, 2989, 2905, 2832, 2774,
+    3572,
+    2643,
+    2585,
+    2546,
+    2510,
+    3636,
+    3503,
+    3410,
+    3336,
+    3270,
+    3206,
+    3144,
+    3075,
+    2989,
+    2905,
+    2832,
+    2774,
     # Right eyebrow (17-21)
-    3862, 3854, 3848, 3839, 3820,
+    3862,
+    3854,
+    3848,
+    3839,
+    3820,
     # Left eyebrow (22-26)
-    2437, 2383, 2345, 2315, 2286,
+    2437,
+    2383,
+    2345,
+    2315,
+    2286,
     # Nose bridge (27-30)
-    1610, 1647, 1691, 1731,
+    1610,
+    1647,
+    1691,
+    1731,
     # Nose bottom (31-35)
-    2162, 2173, 2188, 1830, 1803,
+    2162,
+    2173,
+    2188,
+    1830,
+    1803,
     # Right eye (36-41)
-    3712, 3716, 3721, 3726, 3727, 3718,
+    3712,
+    3716,
+    3721,
+    3726,
+    3727,
+    3718,
     # Left eye (42-47)
-    2210, 2214, 2219, 2224, 2225, 2216,
+    2210,
+    2214,
+    2219,
+    2224,
+    2225,
+    2216,
     # Outer lip (48-59)
-    3543, 3509, 3466, 3423, 3390, 3380, 3354, 3362,
-    3378, 3395, 3437, 3490,
+    3543,
+    3509,
+    3466,
+    3423,
+    3390,
+    3380,
+    3354,
+    3362,
+    3378,
+    3395,
+    3437,
+    3490,
     # Inner lip (60-67)
-    3502, 3456, 3410, 3372, 3361, 3373, 3411, 3457,
+    3502,
+    3456,
+    3410,
+    3372,
+    3361,
+    3373,
+    3411,
+    3457,
 ]
 
 # --------------------------------------------------------------------------- #
@@ -79,28 +136,87 @@ FLAME_LMK_68 = [
 INSIGHT106_TO_68 = [
     # Jaw contour (0-16): 106-format uses 0-32 for contour (33 pts)
     # We pick every 2nd point from the 33-pt contour
-    0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32,
+    0,
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18,
+    20,
+    22,
+    24,
+    26,
+    28,
+    30,
+    32,
     # Right eyebrow (17-21): indices 33-37
-    33, 34, 35, 36, 37,
+    33,
+    34,
+    35,
+    36,
+    37,
     # Left eyebrow (22-26): indices 38-42
-    42, 41, 40, 39, 38,
+    42,
+    41,
+    40,
+    39,
+    38,
     # Nose bridge (27-30): indices 43-46
-    43, 44, 45, 46,
+    43,
+    44,
+    45,
+    46,
     # Nose bottom (31-35): indices 47-51
-    47, 48, 49, 50, 51,
+    47,
+    48,
+    49,
+    50,
+    51,
     # Right eye (36-41): indices 52-57
-    52, 53, 54, 55, 56, 57,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
     # Left eye (42-47): indices 58-63
-    58, 59, 60, 61, 62, 63,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
     # Outer lip (48-59):
     # upper: 64,65,66,67,68,69,70,71 (8 pts)
     # lower: 72,73,74,75 (4 pts)
     # We need 12 pts for outer lip in 68 scheme
-    64, 65, 66, 67, 68, 69, 70, 71, 75, 74, 73, 72,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    75,
+    74,
+    73,
+    72,
     # Inner lip (60-67):
     # upper: 76,77,78,79 (pick 4 from 8)
     # lower: 84,85,86,87 (pick 4 from 4)
-    76, 78, 80, 82, 87, 85, 83, 81,
+    76,
+    78,
+    80,
+    82,
+    87,
+    85,
+    83,
+    81,
 ]
 
 
@@ -222,7 +338,10 @@ class FlameFitter:
 
         logger.info(
             "Video: %dfps, %d frames, sampling every %d frames (%.1f fps)",
-            int(video_fps), total_frames, frame_interval, video_fps / frame_interval,
+            int(video_fps),
+            total_frames,
+            frame_interval,
+            video_fps / frame_interval,
         )
 
         all_landmarks = []
@@ -296,9 +415,11 @@ class FlameFitter:
                 if (processed + skipped) % 200 == 0:
                     logger.info(
                         "Landmark extraction: %d/%d frames (%.0f%%), %d valid, %d skipped",
-                        frame_idx, total_frames,
+                        frame_idx,
+                        total_frames,
                         100 * frame_idx / max(total_frames, 1),
-                        processed, skipped,
+                        processed,
+                        skipped,
                     )
 
             frame_idx += 1
@@ -306,7 +427,8 @@ class FlameFitter:
         cap.release()
         logger.info(
             "Landmark extraction complete: %d valid frames, %d skipped",
-            processed, skipped,
+            processed,
+            skipped,
         )
 
         return (
@@ -339,7 +461,7 @@ class FlameFitter:
         Returns:
             Optimized (expr, jaw, scale, tx, ty).
         """
-        B = target_lmk.shape[0]
+        target_lmk.shape[0]
 
         # Optimizable parameters
         expr = init_expr.clone().detach().requires_grad_(True)
@@ -357,12 +479,15 @@ class FlameFitter:
             ],
         )
 
-        for i in range(self.num_iters):
+        for _i in range(self.num_iters):
             optimizer.zero_grad()
 
             # Get FLAME 3D landmarks
             lmk3d = _get_flame_lmk_verts(
-                self._flame, shape_params, expr, jaw,
+                self._flame,
+                shape_params,
+                expr,
+                jaw,
             )  # (B, 68, 3)
 
             # Project to 2D
@@ -372,8 +497,8 @@ class FlameFitter:
             loss_reproj = F.mse_loss(lmk2d, target_lmk)
 
             # Regularization: keep expression and jaw close to zero
-            loss_reg_expr = 0.0005 * torch.mean(expr ** 2)
-            loss_reg_jaw = 0.001 * torch.mean(jaw ** 2)
+            loss_reg_expr = 0.0005 * torch.mean(expr**2)
+            loss_reg_jaw = 0.001 * torch.mean(jaw**2)
 
             loss = loss_reproj + loss_reg_expr + loss_reg_jaw
             loss.backward()
@@ -415,7 +540,8 @@ class FlameFitter:
         landmarks, timestamps, crops = self._extract_landmarks()
         logger.info(
             "Landmark extraction took %.1fs for %d frames",
-            time.time() - start, len(landmarks),
+            time.time() - start,
+            len(landmarks),
         )
 
         if len(landmarks) == 0:
@@ -469,8 +595,13 @@ class FlameFitter:
 
             # Fit this batch
             expr, jaw, scale, tx, ty = self._fit_batch(
-                batch_target, batch_expr, batch_jaw,
-                batch_scale, batch_tx, batch_ty, batch_shape,
+                batch_target,
+                batch_expr,
+                batch_jaw,
+                batch_scale,
+                batch_tx,
+                batch_ty,
+                batch_shape,
             )
 
             all_expr[batch_start:batch_end] = expr
@@ -489,13 +620,19 @@ class FlameFitter:
                 remaining = (N - batch_end) / max(fps, 0.01)
                 logger.info(
                     "FLAME fit: %d/%d frames (%.0f%%), %.1f frames/sec, ~%.0fs remaining",
-                    batch_end, N, 100 * batch_end / N, fps, remaining,
+                    batch_end,
+                    N,
+                    100 * batch_end / N,
+                    fps,
+                    remaining,
                 )
 
         total_time = time.time() - fit_start
         logger.info(
             "FLAME fitting complete: %d frames in %.1fs (%.1f frames/sec)",
-            N, total_time, N / max(total_time, 0.01),
+            N,
+            total_time,
+            N / max(total_time, 0.01),
         )
 
         # Save results
@@ -518,8 +655,13 @@ class FlameFitter:
             else:
                 resized_crops.append(np.zeros((crop_size, crop_size, 3), dtype=np.uint8))
         np.savez_compressed(str(crops_path), crops=np.array(resized_crops))
-        logger.info("Saved %d face crops (RGB, %dx%d) to %s",
-                     len(resized_crops), crop_size, crop_size, crops_path)
+        logger.info(
+            "Saved %d face crops (RGB, %dx%d) to %s",
+            len(resized_crops),
+            crop_size,
+            crop_size,
+            crops_path,
+        )
 
         return result
 
@@ -538,8 +680,7 @@ def main() -> None:
         "--video",
         type=str,
         default=str(
-            Path.home()
-            / ".clipcannon/projects/proj_2ea7221d/source/2026-04-03 04-23-11.mp4"
+            Path.home() / ".clipcannon/projects/proj_2ea7221d/source/2026-04-03 04-23-11.mp4"
         ),
         help="Path to input video",
     )

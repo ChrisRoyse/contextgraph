@@ -34,6 +34,7 @@ def controller(library: SkillLibrary) -> ConstellationController:
 # Setting emotional state
 # ------------------------------------------------------------------
 
+
 class TestSetEmotionalState:
     def test_set_valid_constellation(self, controller: ConstellationController):
         controller.set_emotional_state("warm_conversational")
@@ -59,6 +60,7 @@ class TestSetEmotionalState:
 # ------------------------------------------------------------------
 # Queue expressions
 # ------------------------------------------------------------------
+
 
 class TestQueueExpressions:
     def test_queue_single(self, controller: ConstellationController):
@@ -98,6 +100,7 @@ class TestQueueExpressions:
 # Frame-by-frame prompt generation
 # ------------------------------------------------------------------
 
+
 class TestFramePrompts:
     def test_frame_zero(self, controller: ConstellationController):
         controller.set_emotional_state("warm_conversational")
@@ -129,36 +132,45 @@ class TestFramePrompts:
         # Frame 62 (t=2.5s, middle) is peak
         p_peak = controller.get_prompt_for_frame(62, fps=25)
         assert p_onset  # not empty
-        assert p_peak   # not empty
+        assert p_peak  # not empty
 
 
 # ------------------------------------------------------------------
 # Blending
 # ------------------------------------------------------------------
 
+
 class TestBlendConstellations:
     def test_blend_midpoint(self, controller: ConstellationController):
         result = controller.blend_constellations(
-            "warm_conversational", "emotional_recall", ratio=0.5,
+            "warm_conversational",
+            "emotional_recall",
+            ratio=0.5,
         )
         assert "blending" in result.lower()
 
     def test_blend_mostly_a(self, controller: ConstellationController):
         result = controller.blend_constellations(
-            "warm_conversational", "emotional_recall", ratio=0.1,
+            "warm_conversational",
+            "emotional_recall",
+            ratio=0.1,
         )
         assert "hint" in result.lower()
 
     def test_blend_mostly_b(self, controller: ConstellationController):
         result = controller.blend_constellations(
-            "warm_conversational", "emotional_recall", ratio=0.9,
+            "warm_conversational",
+            "emotional_recall",
+            ratio=0.9,
         )
         assert "hint" in result.lower()
 
     def test_blend_clamped_ratio(self, controller: ConstellationController):
         # ratio > 1 should be clamped
         result = controller.blend_constellations(
-            "warm_conversational", "emotional_recall", ratio=2.0,
+            "warm_conversational",
+            "emotional_recall",
+            ratio=2.0,
         )
         assert len(result) > 0
 
@@ -170,6 +182,7 @@ class TestBlendConstellations:
 # ------------------------------------------------------------------
 # Transitions
 # ------------------------------------------------------------------
+
 
 class TestTransitions:
     def test_transition_creates_entry(self, controller: ConstellationController):
@@ -203,6 +216,7 @@ class TestTransitions:
 # ------------------------------------------------------------------
 # Full sequence generation
 # ------------------------------------------------------------------
+
 
 class TestPromptSequence:
     def test_sequence_length(self, controller: ConstellationController):

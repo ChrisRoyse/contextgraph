@@ -359,7 +359,8 @@ def _insert_results(
                     logger.error(
                         "vec_emotion insert FAILED — %d embeddings LOST. "
                         "sqlite-vec may not be loaded: %s",
-                        len(results), vec_err,
+                        len(results),
+                        vec_err,
                     )
                     break
                 raise

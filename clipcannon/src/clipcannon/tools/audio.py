@@ -19,9 +19,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["AUDIO_TOOL_DEFINITIONS", "dispatch_audio_tool"]
 
 
-def _error(
-    code: str, message: str, details: dict[str, object] | None = None
-) -> dict[str, object]:
+def _error(code: str, message: str, details: dict[str, object] | None = None) -> dict[str, object]:
     """Build standardized error response dict."""
     return {"error": {"code": code, "message": message, "details": details or {}}}
 
@@ -81,10 +79,17 @@ def _validate_edit(project_id: str, edit_id: str) -> dict[str, object] | None:
 
 
 def _store_audio_asset(
-    project_id: str, edit_id: str, asset_id: str, asset_type: str,
-    file_path: str, duration_ms: int, sample_rate: int,
-    model_used: str | None, generation_params: dict[str, object],
-    seed: int | None, volume_db: float,
+    project_id: str,
+    edit_id: str,
+    asset_id: str,
+    asset_type: str,
+    file_path: str,
+    duration_ms: int,
+    sample_rate: int,
+    model_used: str | None,
+    generation_params: dict[str, object],
+    seed: int | None,
+    volume_db: float,
 ) -> None:
     """Insert an audio asset record into the database."""
     db = _db_path(project_id)
@@ -98,9 +103,17 @@ def _store_audio_asset(
                 seed, volume_db
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                asset_id, edit_id, project_id, asset_type, file_path,
-                duration_ms, sample_rate, model_used,
-                json.dumps(generation_params), seed, volume_db,
+                asset_id,
+                edit_id,
+                project_id,
+                asset_type,
+                file_path,
+                duration_ms,
+                sample_rate,
+                model_used,
+                json.dumps(generation_params),
+                seed,
+                volume_db,
             ),
         )
         conn.commit()
@@ -120,8 +133,8 @@ async def clipcannon_generate_music(
     """Generate AI music from a text prompt, store as audio asset.
 
     Args:
-        model: "ace-step" (default) or "musicgen". No fallback --
-            if the specified model is unavailable, an error is returned.
+        model: "ace-step" (default). No fallback -- if the specified model
+            is unavailable, an error is returned.
     """
     start_time = time.monotonic()
 
@@ -132,11 +145,15 @@ async def clipcannon_generate_music(
     if err is not None:
         return err
 
-    if model not in ("ace-step", "musicgen"):
+    if model != "ace-step":
+        logger.error(
+            "Unsupported music model requested: %s. Supported models: ace-step",
+            model,
+        )
         return _error(
             "INVALID_PARAMETER",
-            f"Unknown model: {model}. Must be 'ace-step' or 'musicgen'.",
-            {"model": model},
+            f"Unknown model: {model}. Must be 'ace-step'.",
+            {"model": model, "supported_models": ["ace-step"]},
         )
 
     if duration_s <= 0 or duration_s > 300:
@@ -151,28 +168,19 @@ async def clipcannon_generate_music(
     output_path = audio_dir / f"{asset_id}_music.wav"
 
     try:
-        if model == "musicgen":
-            from clipcannon.audio.musicgen import generate_music_musicgen
+        from clipcannon.audio.music_gen import generate_music
 
-            result = await generate_music_musicgen(
-                prompt=prompt,
-                duration_s=duration_s,
-                output_path=output_path,
-                seed=seed,
-            )
-        else:
-            from clipcannon.audio.music_gen import generate_music
-
-            result = await generate_music(
-                prompt=prompt,
-                duration_s=duration_s,
-                output_path=output_path,
-                seed=seed,
-            )
+        result = await generate_music(
+            prompt=prompt,
+            duration_s=duration_s,
+            output_path=output_path,
+            seed=seed,
+        )
     except ImportError as exc:
-        dep = "audiocraft" if model == "musicgen" else "ace-step"
         return _error(
-            "DEPENDENCY_MISSING", str(exc), {"dependency": dep},
+            "DEPENDENCY_MISSING",
+            str(exc),
+            {"dependency": "ace-step"},
         )
     except Exception as exc:
         logger.exception("Music generation failed (model=%s)", model)
@@ -183,15 +191,21 @@ async def clipcannon_generate_music(
         )
 
     _store_audio_asset(
-        project_id=project_id, edit_id=edit_id, asset_id=asset_id,
-        asset_type="music", file_path=str(result.file_path),
-        duration_ms=result.duration_ms, sample_rate=result.sample_rate,
+        project_id=project_id,
+        edit_id=edit_id,
+        asset_id=asset_id,
+        asset_type="music",
+        file_path=str(result.file_path),
+        duration_ms=result.duration_ms,
+        sample_rate=result.sample_rate,
         model_used=result.model_used,
         generation_params={
-            "prompt": prompt, "duration_s": duration_s,
+            "prompt": prompt,
+            "duration_s": duration_s,
             "model": model,
         },
-        seed=result.seed, volume_db=volume_db,
+        seed=result.seed,
+        volume_db=volume_db,
     )
 
     elapsed = time.monotonic() - start_time
@@ -260,8 +274,10 @@ async def clipcannon_compose_midi(
         )
 
     gen_params: dict[str, object] = {
-        "preset": preset, "duration_s": duration_s,
-        "tempo_bpm": midi_result.tempo_bpm, "key": midi_result.key,
+        "preset": preset,
+        "duration_s": duration_s,
+        "tempo_bpm": midi_result.tempo_bpm,
+        "key": midi_result.key,
     }
     wav_rendered = False
     try:
@@ -278,11 +294,17 @@ async def clipcannon_compose_midi(
     out_path = wav_path if wav_rendered else midi_path
     model = "midiutil+fluidsynth" if wav_rendered else "midiutil"
     _store_audio_asset(
-        project_id=project_id, edit_id=edit_id, asset_id=asset_id,
-        asset_type="midi", file_path=str(out_path),
-        duration_ms=midi_result.duration_ms, sample_rate=44100,
-        model_used=model, generation_params=gen_params,
-        seed=None, volume_db=0.0,
+        project_id=project_id,
+        edit_id=edit_id,
+        asset_id=asset_id,
+        asset_type="midi",
+        file_path=str(out_path),
+        duration_ms=midi_result.duration_ms,
+        sample_rate=44100,
+        model_used=model,
+        generation_params=gen_params,
+        seed=None,
+        volume_db=0.0,
     )
 
     elapsed = time.monotonic() - start_time
@@ -352,12 +374,21 @@ async def clipcannon_generate_sfx(
         )
 
     _store_audio_asset(
-        project_id=project_id, edit_id=edit_id, asset_id=asset_id,
-        asset_type="sfx", file_path=str(result.file_path),
-        duration_ms=result.duration_ms, sample_rate=result.sample_rate,
+        project_id=project_id,
+        edit_id=edit_id,
+        asset_id=asset_id,
+        asset_type="sfx",
+        file_path=str(result.file_path),
+        duration_ms=result.duration_ms,
+        sample_rate=result.sample_rate,
         model_used="dsp",
-        generation_params={"sfx_type": sfx_type, "duration_ms": duration_ms, "params": params or {}},
-        seed=None, volume_db=0.0,
+        generation_params={
+            "sfx_type": sfx_type,
+            "duration_ms": duration_ms,
+            "params": params or {},
+        },
+        seed=None,
+        volume_db=0.0,
     )
     elapsed = time.monotonic() - start_time
     return {
@@ -370,7 +401,8 @@ async def clipcannon_generate_sfx(
 
 
 async def clipcannon_auto_music(
-    project_id: str, edit_id: str,
+    project_id: str,
+    edit_id: str,
     style_override: str | None = None,
     tier: str = "auto",
     duration_override_s: float | None = None,
@@ -379,17 +411,27 @@ async def clipcannon_auto_music(
     from clipcannon.tools.audio_smart import (
         clipcannon_auto_music as _impl,
     )
+
     return await _impl(
-        project_id, edit_id, style_override, tier, duration_override_s,
-        validate_project=_validate_project, validate_edit=_validate_edit,
-        db_path_fn=_db_path, audio_dir_fn=_audio_dir,
-        store_asset_fn=_store_audio_asset, error_fn=_error,
+        project_id,
+        edit_id,
+        style_override,
+        tier,
+        duration_override_s,
+        validate_project=_validate_project,
+        validate_edit=_validate_edit,
+        db_path_fn=_db_path,
+        audio_dir_fn=_audio_dir,
+        store_asset_fn=_store_audio_asset,
+        error_fn=_error,
     )
 
 
 async def clipcannon_compose_music(
-    project_id: str, edit_id: str,
-    description: str, duration_s: float,
+    project_id: str,
+    edit_id: str,
+    description: str,
+    duration_s: float,
     tempo_bpm: int | None = None,
     key: str | None = None,
     energy: str | None = None,
@@ -398,11 +440,19 @@ async def clipcannon_compose_music(
     from clipcannon.tools.audio_smart import (
         clipcannon_compose_music as _impl,
     )
+
     return await _impl(
-        project_id, edit_id, description, duration_s,
-        tempo_bpm, key, energy,
-        validate_project=_validate_project, validate_edit=_validate_edit,
-        audio_dir_fn=_audio_dir, store_asset_fn=_store_audio_asset,
+        project_id,
+        edit_id,
+        description,
+        duration_s,
+        tempo_bpm,
+        key,
+        energy,
+        validate_project=_validate_project,
+        validate_edit=_validate_edit,
+        audio_dir_fn=_audio_dir,
+        store_asset_fn=_store_audio_asset,
         error_fn=_error,
     )
 
@@ -417,16 +467,21 @@ async def clipcannon_audio_cleanup(
     from clipcannon.tools.audio_cleanup import run_audio_cleanup
 
     return await run_audio_cleanup(
-        project_id=project_id, edit_id=edit_id,
-        operations=operations, hum_frequency=hum_frequency,
-        validate_project=_validate_project, validate_edit=_validate_edit,
-        project_dir_fn=_project_dir, store_asset_fn=_store_audio_asset,
+        project_id=project_id,
+        edit_id=edit_id,
+        operations=operations,
+        hum_frequency=hum_frequency,
+        validate_project=_validate_project,
+        validate_edit=_validate_edit,
+        project_dir_fn=_project_dir,
+        store_asset_fn=_store_audio_asset,
         error_fn=_error,
     )
 
 
 async def dispatch_audio_tool(
-    name: str, arguments: dict[str, object],
+    name: str,
+    arguments: dict[str, object],
 ) -> dict[str, object]:
     """Dispatch an audio tool call by name."""
     if name == "clipcannon_generate_music":
@@ -464,7 +519,9 @@ async def dispatch_audio_tool(
         return await clipcannon_auto_music(
             project_id=str(arguments["project_id"]),
             edit_id=str(arguments["edit_id"]),
-            style_override=str(arguments["style_override"]) if arguments.get("style_override") else None,
+            style_override=(
+                str(arguments["style_override"]) if arguments.get("style_override") else None
+            ),
             tier=str(arguments.get("tier", "auto")),
             duration_override_s=float(dur_raw) if dur_raw is not None else None,  # type: ignore[arg-type]
         )

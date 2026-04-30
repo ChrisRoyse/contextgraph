@@ -1,4 +1,5 @@
 """Context window manager for LLM token budgeting."""
+
 from __future__ import annotations
 
 import logging
@@ -17,13 +18,15 @@ class ContextManager:
         if tokenizer_path:
             try:
                 from transformers import AutoTokenizer
+
                 self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
                 logger.info("Loaded tokenizer from %s", tokenizer_path)
             except Exception as exc:
                 logger.warning(
                     "Failed to load tokenizer from '%s': %s. "
                     "Falling back to char-based estimation.",
-                    tokenizer_path, exc,
+                    tokenizer_path,
+                    exc,
                 )
 
     def _count_tokens(self, text: str) -> int:
@@ -54,7 +57,10 @@ class ContextManager:
         if budget < 0:
             logger.warning(
                 "System (%d) + user (%d) + reserve (%d) > MAX_TOKENS (%d). No history.",
-                system_tokens, user_tokens, self.RESPONSE_RESERVE, self.MAX_TOKENS,
+                system_tokens,
+                user_tokens,
+                self.RESPONSE_RESERVE,
+                self.MAX_TOKENS,
             )
             return [system_msg, user_msg]
 

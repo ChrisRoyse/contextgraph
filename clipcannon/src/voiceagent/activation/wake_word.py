@@ -12,6 +12,7 @@ This replaces openwakeword which was unreliable with PulseAudio TCP mic
 setups (very low gain, ~4% int16 peak). The energy VAD + whisper approach
 handles any mic gain level.
 """
+
 from __future__ import annotations
 
 import logging
@@ -98,6 +99,7 @@ class WakeWordDetector:
             return self._whisper
         try:
             from faster_whisper import WhisperModel
+
             self._whisper = WhisperModel("base", device="cpu", compute_type="int8")
             logger.info("Whisper base loaded (CPU, int8)")
         except Exception as e:
@@ -113,6 +115,7 @@ class WakeWordDetector:
             return
         try:
             from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
+
             self._speaker_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
                 _SPEAKER_MODEL_ID,
             )
@@ -128,14 +131,14 @@ class WakeWordDetector:
         """Append audio to ring buffer, shifting if full."""
         n = len(audio)
         if self._ring_len + n <= _RING_BUFFER_SAMPLES:
-            self._ring_buffer[self._ring_len:self._ring_len + n] = audio
+            self._ring_buffer[self._ring_len : self._ring_len + n] = audio
             self._ring_len += n
         else:
             # Shift left to make room
             keep = _RING_BUFFER_SAMPLES - n
             if keep > 0:
-                self._ring_buffer[:keep] = self._ring_buffer[self._ring_len - keep:self._ring_len]
-            self._ring_buffer[keep:keep + n] = audio
+                self._ring_buffer[:keep] = self._ring_buffer[self._ring_len - keep : self._ring_len]
+            self._ring_buffer[keep : keep + n] = audio
             self._ring_len = keep + n
 
     def _compute_rms(self, audio: np.ndarray) -> float:
@@ -149,9 +152,8 @@ class WakeWordDetector:
         # Bootstrap noise floor from first 5 quiet frames (~1s)
         if self._noise_samples < 5:
             if rms < 500:  # Quiet enough to be noise
-                self._noise_floor = (
-                    (self._noise_floor * self._noise_samples + rms)
-                    / (self._noise_samples + 1)
+                self._noise_floor = (self._noise_floor * self._noise_samples + rms) / (
+                    self._noise_samples + 1
                 )
                 self._noise_samples += 1
             return False
@@ -210,7 +212,9 @@ class WakeWordDetector:
 
         audio_f32 = audio_int16.astype(np.float32) / 32767.0
         inputs = self._speaker_extractor(
-            audio_f32, sampling_rate=16000, return_tensors="pt",
+            audio_f32,
+            sampling_rate=16000,
+            return_tensors="pt",
         )
         with torch.no_grad():
             out = self._speaker_model(**inputs)
@@ -222,7 +226,8 @@ class WakeWordDetector:
         passed = similarity >= self._speaker_threshold
         logger.info(
             "Speaker verify: sim=%.3f threshold=%.3f -> %s",
-            similarity, self._speaker_threshold,
+            similarity,
+            self._speaker_threshold,
             "PASS" if passed else "REJECT",
         )
         return passed
@@ -278,7 +283,7 @@ class WakeWordDetector:
         if not should_evaluate:
             return False
 
-        utterance = self._ring_buffer[:self._ring_len].copy()
+        utterance = self._ring_buffer[: self._ring_len].copy()
         self._speech_frames_total = 0
 
         if len(utterance) < 6400:  # < 400ms -- too short

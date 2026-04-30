@@ -12,6 +12,7 @@ listening for the wake phrase.
 Lifecycle:
   LISTENING -> (wake detected) -> AGENT_ACTIVE -> (agent exits) -> LISTENING
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,9 @@ def _ensure_pulse_server() -> None:
             try:
                 result = subprocess.run(
                     ["ip", "route", "show", "default"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 parts = result.stdout.strip().split()
                 if len(parts) >= 3:
@@ -71,7 +74,9 @@ def _ensure_mic_volume() -> None:
     try:
         result = subprocess.run(
             ["pactl", "get-source-volume", "@DEFAULT_SOURCE@"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         # Parse "Volume: front-left: 65536 / 100% / 0.00 dB"
         if "%" in result.stdout:
@@ -117,9 +122,12 @@ class WakeWordListener:
         if self._vad_model is not None:
             return self._vad_model
         import torch
+
         model, _utils = torch.hub.load(
-            "snakers4/silero-vad", "silero_vad",
-            trust_repo=True, verbose=False,
+            "snakers4/silero-vad",
+            "silero_vad",
+            trust_repo=True,
+            verbose=False,
         )
         self._vad_model = model
         logger.info("Wake listener: Silero VAD loaded")
@@ -129,12 +137,15 @@ class WakeWordListener:
         """Load tiny Whisper model (GPU for speed)."""
         if self._whisper is not None:
             return self._whisper
-        from faster_whisper import WhisperModel
         import torch
+        from faster_whisper import WhisperModel
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         compute = "float16" if device == "cuda" else "int8"
         self._whisper = WhisperModel(
-            "tiny", device=device, compute_type=compute,
+            "tiny",
+            device=device,
+            compute_type=compute,
         )
         logger.info("Wake listener: Whisper tiny loaded (%s, %s)", device, compute)
         return self._whisper
@@ -143,17 +154,21 @@ class WakeWordListener:
         """Load sentence embeddings on GPU and pre-compute wake phrase vectors."""
         if self._embedder is not None:
             return
-        from sentence_transformers import SentenceTransformer
         import torch
+        from sentence_transformers import SentenceTransformer
+
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self._embedder = SentenceTransformer(
-            "all-MiniLM-L6-v2", device=device,
+            "all-MiniLM-L6-v2",
+            device=device,
         )
         self._wake_embeddings = self._embedder.encode(
-            WAKE_PHRASES, normalize_embeddings=True,
+            WAKE_PHRASES,
+            normalize_embeddings=True,
         )
         logger.info(
-            "Wake listener: %d wake phrases embedded", len(WAKE_PHRASES),
+            "Wake listener: %d wake phrases embedded",
+            len(WAKE_PHRASES),
         )
 
     def _is_wake_phrase(self, text: str) -> bool:
@@ -167,12 +182,15 @@ class WakeWordListener:
         # Embedding similarity for fuzzy matching
         self._load_embedder()
         query = self._embedder.encode(
-            [text_lower], normalize_embeddings=True,
+            [text_lower],
+            normalize_embeddings=True,
         )[0]
         best = max(float(np.dot(query, e)) for e in self._wake_embeddings)
         if best >= self._threshold:
             logger.info(
-                "Wake phrase matched (%.3f): '%s'", best, text_lower,
+                "Wake phrase matched (%.3f): '%s'",
+                best,
+                text_lower,
             )
             return True
         return False
@@ -180,6 +198,7 @@ class WakeWordListener:
     def _start_mic(self) -> None:
         """Open mic stream via PyAudio."""
         import pyaudio
+
         self._pyaudio = pyaudio.PyAudio()
         self._stream = self._pyaudio.open(
             format=pyaudio.paInt16,
@@ -274,7 +293,8 @@ class WakeWordListener:
                     if energy_speech and confidence <= 0.5:
                         logger.debug(
                             "Energy fallback triggered: rms=%.0f, floor=%.0f",
-                            rms, noise_floor_rms,
+                            rms,
+                            noise_floor_rms,
                         )
                 speech_chunks.append(data)
                 silence_count = 0
@@ -302,7 +322,9 @@ class WakeWordListener:
         """Transcribe audio using tiny Whisper."""
         whisper = self._load_whisper()
         segments, _ = whisper.transcribe(
-            audio, language="en", beam_size=1,
+            audio,
+            language="en",
+            beam_size=1,
             vad_filter=False,  # Already VAD-filtered
         )
         text = " ".join(s.text.strip() for s in segments)
@@ -316,11 +338,13 @@ class WakeWordListener:
         import urllib.request
 
         try:
-            data = json.dumps({
-                "model": "qwen3:14b-nothink",
-                "prompt": "Hi",
-                "stream": False,
-            }).encode()
+            data = json.dumps(
+                {
+                    "model": "qwen3:14b-nothink",
+                    "prompt": "Hi",
+                    "stream": False,
+                }
+            ).encode()
             req = urllib.request.Request(
                 "http://localhost:11434/api/generate",
                 data=data,
@@ -335,10 +359,14 @@ class WakeWordListener:
         """Play a short confirmation tone to acknowledge wake word."""
         try:
             import pyaudio
+
             pa = pyaudio.PyAudio()
             stream = pa.open(
-                format=pyaudio.paInt16, channels=1,
-                rate=24000, output=True, frames_per_buffer=1024,
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=24000,
+                output=True,
+                frames_per_buffer=1024,
             )
             # 100ms 880Hz tone (A5) with 20ms fade-out
             t = np.linspace(0, 0.1, int(24000 * 0.1))
@@ -369,8 +397,12 @@ class WakeWordListener:
 
         proc = subprocess.Popen(
             [
-                sys.executable, "-m", "voiceagent", "talk",
-                "--voice", self._voice_name,
+                sys.executable,
+                "-m",
+                "voiceagent",
+                "talk",
+                "--voice",
+                self._voice_name,
             ],
             env=env,
             stdout=sys.stdout,
@@ -388,7 +420,8 @@ class WakeWordListener:
                 logger.info("Voice agent exited cleanly")
             else:
                 logger.warning(
-                    "Voice agent exited with code %d", returncode,
+                    "Voice agent exited with code %d",
+                    returncode,
                 )
         except KeyboardInterrupt:
             proc.terminate()
@@ -402,7 +435,7 @@ class WakeWordListener:
         self._running = True
 
         print("\n=== Voice Agent Wake Listener ===")
-        print(f"Wake phrase: 'Hey Jarvis' (or 'Hey Boris')")
+        print("Wake phrase: 'Hey Jarvis' (or 'Hey Boris')")
         print(f"Voice: {self._voice_name}")
         print("Listening... Say 'Hey Jarvis' to activate.")
         print("Press Ctrl+C to quit.")
@@ -431,17 +464,14 @@ class WakeWordListener:
 
                     # Check for wake phrase
                     if self._is_wake_phrase(text):
-                        print(f"\n>>> Wake word detected! Activating...\n")
+                        print("\n>>> Wake word detected! Activating...\n")
                         self._stop_mic()
 
                         # Launch full agent
                         self._launch_agent()
 
                         # Agent exited -- resume listening
-                        print(
-                            "\n>>> Agent sleeping. "
-                            "Say 'Hey Jarvis' to wake up.\n"
-                        )
+                        print("\n>>> Agent sleeping. Say 'Hey Jarvis' to wake up.\n")
                         break  # Break inner loop to restart mic
 
             except KeyboardInterrupt:
@@ -460,11 +490,15 @@ def main() -> None:
 
     @click.command()
     @click.option(
-        "--voice", default="boris", show_default=True,
+        "--voice",
+        default="boris",
+        show_default=True,
         help="Default voice profile",
     )
     @click.option(
-        "--threshold", default=SIMILARITY_THRESHOLD, show_default=True,
+        "--threshold",
+        default=SIMILARITY_THRESHOLD,
+        show_default=True,
         help="Wake phrase similarity threshold",
     )
     def cli(voice: str, threshold: float) -> None:
@@ -475,7 +509,8 @@ def main() -> None:
             stream=sys.stderr,
         )
         listener = WakeWordListener(
-            voice_name=voice, threshold=threshold,
+            voice_name=voice,
+            threshold=threshold,
         )
         listener.run()
 

@@ -78,8 +78,18 @@ def create_synthetic_project_db(db_path: str, project_id: str, source_sha: str) 
         """INSERT INTO project (project_id, name, source_path, source_sha256,
            duration_ms, resolution, fps, codec, status, file_size_bytes)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (project_id, "Test Project", "/tmp/test.mp4", source_sha,
-         30000, "1920x1080", 30.0, "h264", "ready", 1000000),
+        (
+            project_id,
+            "Test Project",
+            "/tmp/test.mp4",
+            source_sha,
+            30000,
+            "1920x1080",
+            30.0,
+            "h264",
+            "ready",
+            1000000,
+        ),
     )
 
     # Insert speakers
@@ -103,20 +113,40 @@ def create_synthetic_project_db(db_path: str, project_id: str, source_sha: str) 
         )
 
     # Insert transcript words (needed for caption generation)
-    segment_ids = [row[0] for row in cur.execute(
-        "SELECT segment_id FROM transcript_segments ORDER BY start_ms"
-    ).fetchall()]
+    segment_ids = [
+        row[0]
+        for row in cur.execute(
+            "SELECT segment_id FROM transcript_segments ORDER BY start_ms"
+        ).fetchall()
+    ]
 
     words_data = [
-        ("Hello", 0, 500, 0.95), ("world", 500, 1000, 0.90), ("this", 1000, 1500, 0.88),
-        ("is", 1500, 1800, 0.92), ("a", 1800, 2000, 0.95), ("test.", 2000, 2500, 0.91),
-        ("We", 2500, 3000, 0.89), ("are", 3000, 3400, 0.93), ("testing", 3400, 4000, 0.87),
-        ("the", 4000, 4300, 0.94), ("system", 4300, 5000, 0.90), ("now.", 5000, 5500, 0.92),
-        ("Everything", 10000, 10800, 0.88), ("works", 10800, 11200, 0.91), ("great.", 11200, 11700, 0.93),
-        ("The", 11700, 12000, 0.90), ("pipeline", 12000, 12600, 0.87), ("is", 12600, 12800, 0.95),
-        ("running", 12800, 13300, 0.89), ("smoothly.", 13300, 14000, 0.92),
-        ("Final", 20000, 20500, 0.90), ("segment", 20500, 21000, 0.88), ("here.", 21000, 21500, 0.93),
-        ("More", 21500, 22000, 0.91), ("words", 22000, 22500, 0.87), ("follow.", 22500, 23000, 0.94),
+        ("Hello", 0, 500, 0.95),
+        ("world", 500, 1000, 0.90),
+        ("this", 1000, 1500, 0.88),
+        ("is", 1500, 1800, 0.92),
+        ("a", 1800, 2000, 0.95),
+        ("test.", 2000, 2500, 0.91),
+        ("We", 2500, 3000, 0.89),
+        ("are", 3000, 3400, 0.93),
+        ("testing", 3400, 4000, 0.87),
+        ("the", 4000, 4300, 0.94),
+        ("system", 4300, 5000, 0.90),
+        ("now.", 5000, 5500, 0.92),
+        ("Everything", 10000, 10800, 0.88),
+        ("works", 10800, 11200, 0.91),
+        ("great.", 11200, 11700, 0.93),
+        ("The", 11700, 12000, 0.90),
+        ("pipeline", 12000, 12600, 0.87),
+        ("is", 12600, 12800, 0.95),
+        ("running", 12800, 13300, 0.89),
+        ("smoothly.", 13300, 14000, 0.92),
+        ("Final", 20000, 20500, 0.90),
+        ("segment", 20500, 21000, 0.88),
+        ("here.", 21000, 21500, 0.93),
+        ("More", 21500, 22000, 0.91),
+        ("words", 22000, 22500, 0.87),
+        ("follow.", 22500, 23000, 0.94),
     ]
 
     for word, start, end, conf in words_data:
@@ -204,14 +234,32 @@ def create_synthetic_project_db(db_path: str, project_id: str, source_sha: str) 
     cur.execute(
         """INSERT INTO storyboard_grids (project_id, grid_number, grid_path, cell_timestamps_ms)
            VALUES (?, ?, ?, ?)""",
-        (project_id, 1, "/tmp/grid_1.jpg", "[0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000]"),
+        (
+            project_id,
+            1,
+            "/tmp/grid_1.jpg",
+            "[0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000]",
+        ),
     )
 
     # Insert stream_status - all completed
     streams = [
-        "source_separation", "visual", "ocr", "quality", "shot_type",
-        "transcription", "semantic", "emotion", "speaker", "reactions",
-        "acoustic", "beats", "chronemic", "storyboards", "profanity", "highlights",
+        "source_separation",
+        "visual",
+        "ocr",
+        "quality",
+        "shot_type",
+        "transcription",
+        "semantic",
+        "emotion",
+        "speaker",
+        "reactions",
+        "acoustic",
+        "beats",
+        "chronemic",
+        "storyboards",
+        "profanity",
+        "highlights",
     ]
     for stream in streams:
         cur.execute(
@@ -224,22 +272,53 @@ def create_synthetic_project_db(db_path: str, project_id: str, source_sha: str) 
     from clipcannon.provenance.chain import GENESIS_HASH, compute_chain_hash
 
     prov_hash_1 = compute_chain_hash(
-        GENESIS_HASH, source_sha, source_sha, "create_project", "", "", {},
+        GENESIS_HASH,
+        source_sha,
+        source_sha,
+        "create_project",
+        "",
+        "",
+        {},
     )
     cur.execute(
         """INSERT INTO provenance (record_id, project_id, operation, input_sha256,
            output_sha256, parent_record_id, chain_hash, timestamp_utc, stage)
            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)""",
-        ("prov_001", project_id, "create_project", source_sha, source_sha, None, prov_hash_1, "create"),
+        (
+            "prov_001",
+            project_id,
+            "create_project",
+            source_sha,
+            source_sha,
+            None,
+            prov_hash_1,
+            "create",
+        ),
     )
     prov_hash_2 = compute_chain_hash(
-        prov_hash_1, source_sha, source_sha, "analyze", "whisper", "1.0", {},
+        prov_hash_1,
+        source_sha,
+        source_sha,
+        "analyze",
+        "whisper",
+        "1.0",
+        {},
     )
     cur.execute(
         """INSERT INTO provenance (record_id, project_id, operation, input_sha256,
            output_sha256, parent_record_id, chain_hash, timestamp_utc, stage, model_name)
            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)""",
-        ("prov_002", project_id, "analyze", source_sha, source_sha, "prov_001", prov_hash_2, "analyze", "whisper"),
+        (
+            "prov_002",
+            project_id,
+            "analyze",
+            source_sha,
+            source_sha,
+            "prov_001",
+            prov_hash_2,
+            "analyze",
+            "whisper",
+        ),
     )
 
     # Insert on_screen_text for OCR testing
@@ -257,6 +336,7 @@ def create_synthetic_project_db(db_path: str, project_id: str, source_sha: str) 
 # TEST SUITE
 # ============================================================
 
+
 async def test_config_tools() -> None:
     """Test config get/set/list tools."""
     separator("CONFIG TOOLS - Happy Path + Edge Cases")
@@ -269,9 +349,15 @@ async def test_config_tools() -> None:
     record("config_list has config key", "config" in result, f"keys={list(result.keys())}")
 
     # Happy path: get a known key
-    result = await dispatch_config_tool("clipcannon_config_get", {"key": "processing.whisper_model"})
+    result = await dispatch_config_tool(
+        "clipcannon_config_get", {"key": "processing.whisper_model"}
+    )
     record("config_get returns value", "value" in result, f"result={result}")
-    record("whisper_model is large-v3", result.get("value") == "large-v3", f"actual={result.get('value')}")
+    record(
+        "whisper_model is large-v3",
+        result.get("value") == "large-v3",
+        f"actual={result.get('value')}",
+    )
 
     # Happy path: set and verify
     result = await dispatch_config_tool(
@@ -281,11 +367,17 @@ async def test_config_tools() -> None:
     record("config_set succeeds", "error" not in result, f"result={result}")
 
     # Verify the set took effect
-    result = await dispatch_config_tool("clipcannon_config_get", {"key": "processing.frame_extraction_fps"})
-    record("config_get reflects set value", result.get("value") == 4, f"actual={result.get('value')}")
+    result = await dispatch_config_tool(
+        "clipcannon_config_get", {"key": "processing.frame_extraction_fps"}
+    )
+    record(
+        "config_get reflects set value", result.get("value") == 4, f"actual={result.get('value')}"
+    )
 
     # Reset it back
-    await dispatch_config_tool("clipcannon_config_set", {"key": "processing.frame_extraction_fps", "value": 2})
+    await dispatch_config_tool(
+        "clipcannon_config_set", {"key": "processing.frame_extraction_fps", "value": 2}
+    )
 
     # Edge case: invalid key
     result = await dispatch_config_tool("clipcannon_config_get", {"key": "nonexistent.key.path"})
@@ -309,7 +401,9 @@ async def test_billing_tools() -> None:
     # Happy path: estimate cost
     result = await dispatch_billing_tool("clipcannon_credits_estimate", {"operation": "analyze"})
     record("estimate returns dict", isinstance(result, dict), f"type={type(result)}")
-    record("analyze costs 10 credits", result.get("credits") == 10, f"actual={result.get('credits')}")
+    record(
+        "analyze costs 10 credits", result.get("credits") == 10, f"actual={result.get('credits')}"
+    )
 
     result = await dispatch_billing_tool("clipcannon_credits_estimate", {"operation": "render"})
     record("render costs 2 credits", result.get("credits") == 2, f"actual={result.get('credits')}")
@@ -322,7 +416,9 @@ async def test_billing_tools() -> None:
     record("credits_history returns dict", isinstance(result, dict), f"type={type(result)}")
 
     # Edge case: invalid operation estimate
-    result = await dispatch_billing_tool("clipcannon_credits_estimate", {"operation": "nonexistent"})
+    result = await dispatch_billing_tool(
+        "clipcannon_credits_estimate", {"operation": "nonexistent"}
+    )
     record("invalid operation returns error", "error" in result, f"result={result}")
 
     # Edge case: negative spending limit
@@ -337,22 +433,24 @@ async def test_editing_tools(project_id: str, db_path: str, project_dir: str) ->
     from clipcannon.tools.editing import dispatch_editing_tool
 
     # Happy path: create an edit
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Test Clip 1",
-        "target_platform": "tiktok",
-        "segments": [
-            {"source_start_ms": 0, "source_end_ms": 10000},
-            {"source_start_ms": 15000, "source_end_ms": 25000},
-        ],
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Test Clip 1",
+            "target_platform": "tiktok",
+            "segments": [
+                {"source_start_ms": 0, "source_end_ms": 10000},
+                {"source_start_ms": 15000, "source_end_ms": 25000},
+            ],
+        },
+    )
     record("create_edit returns dict", isinstance(result, dict), f"type={type(result)}")
     has_edit_id = "edit_id" in result
     record("create_edit has edit_id", has_edit_id, f"keys={list(result.keys())}")
 
     edit_id = result.get("edit_id", "")
-    record("edit_id starts with edit_", edit_id.startswith("edit_"),
-           f"actual={edit_id}")
+    record("edit_id starts with edit_", edit_id.startswith("edit_"), f"actual={edit_id}")
 
     # SOURCE OF TRUTH: Verify edit exists in database
     conn = sqlite3.connect(db_path)
@@ -361,9 +459,14 @@ async def test_editing_tools(project_id: str, db_path: str, project_dir: str) ->
     record("DB: edit row exists", row is not None, f"edit_id={edit_id}")
     if row:
         record("DB: edit status is draft", row["status"] == "draft", f"actual={row['status']}")
-        record("DB: target_platform is tiktok", row["target_platform"] == "tiktok",
-               f"actual={row['target_platform']}")
-        record("DB: segment_count is 2", row["segment_count"] == 2, f"actual={row['segment_count']}")
+        record(
+            "DB: target_platform is tiktok",
+            row["target_platform"] == "tiktok",
+            f"actual={row['target_platform']}",
+        )
+        record(
+            "DB: segment_count is 2", row["segment_count"] == 2, f"actual={row['segment_count']}"
+        )
         record("DB: edl_json is valid JSON", json.loads(row["edl_json"]) is not None, "")
 
     # Verify edit_segments in DB
@@ -372,11 +475,21 @@ async def test_editing_tools(project_id: str, db_path: str, project_dir: str) ->
     ).fetchall()
     record("DB: 2 edit_segments rows", len(seg_rows) == 2, f"actual={len(seg_rows)}")
     if len(seg_rows) >= 2:
-        record("DB: seg1 start=0", seg_rows[0]["source_start_ms"] == 0, f"actual={seg_rows[0]['source_start_ms']}")
-        record("DB: seg1 end=10000", seg_rows[0]["source_end_ms"] == 10000,
-               f"actual={seg_rows[0]['source_end_ms']}")
-        record("DB: seg2 start=15000", seg_rows[1]["source_start_ms"] == 15000,
-               f"actual={seg_rows[1]['source_start_ms']}")
+        record(
+            "DB: seg1 start=0",
+            seg_rows[0]["source_start_ms"] == 0,
+            f"actual={seg_rows[0]['source_start_ms']}",
+        )
+        record(
+            "DB: seg1 end=10000",
+            seg_rows[0]["source_end_ms"] == 10000,
+            f"actual={seg_rows[0]['source_end_ms']}",
+        )
+        record(
+            "DB: seg2 start=15000",
+            seg_rows[1]["source_start_ms"] == 15000,
+            f"actual={seg_rows[1]['source_start_ms']}",
+        )
 
     # Check captions were auto-generated
     edl_data = json.loads(row["edl_json"]) if row else {}
@@ -389,103 +502,152 @@ async def test_editing_tools(project_id: str, db_path: str, project_dir: str) ->
     record("Edit directory created", edit_dir.exists(), f"path={edit_dir}")
 
     # Happy path: list edits
-    result = await dispatch_editing_tool("clipcannon_list_edits", {
-        "project_id": project_id,
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_list_edits",
+        {
+            "project_id": project_id,
+        },
+    )
     record("list_edits returns dict", isinstance(result, dict), f"type={type(result)}")
     edits_list = result.get("edits", [])
     record("list_edits has 1 edit", len(edits_list) == 1, f"actual={len(edits_list)}")
 
     # Happy path: list edits with status filter
-    result = await dispatch_editing_tool("clipcannon_list_edits", {
-        "project_id": project_id,
-        "status_filter": "draft",
-    })
-    record("list_edits filter=draft has 1", len(result.get("edits", [])) == 1,
-           f"actual={len(result.get('edits', []))}")
+    result = await dispatch_editing_tool(
+        "clipcannon_list_edits",
+        {
+            "project_id": project_id,
+            "status_filter": "draft",
+        },
+    )
+    record(
+        "list_edits filter=draft has 1",
+        len(result.get("edits", [])) == 1,
+        f"actual={len(result.get('edits', []))}",
+    )
 
-    result = await dispatch_editing_tool("clipcannon_list_edits", {
-        "project_id": project_id,
-        "status_filter": "rendered",
-    })
-    record("list_edits filter=rendered has 0", len(result.get("edits", [])) == 0,
-           f"actual={len(result.get('edits', []))}")
+    result = await dispatch_editing_tool(
+        "clipcannon_list_edits",
+        {
+            "project_id": project_id,
+            "status_filter": "rendered",
+        },
+    )
+    record(
+        "list_edits filter=rendered has 0",
+        len(result.get("edits", [])) == 0,
+        f"actual={len(result.get('edits', []))}",
+    )
 
     # Happy path: modify edit
-    result = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-        "changes": {"name": "Updated Clip Name"},
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+            "changes": {"name": "Updated Clip Name"},
+        },
+    )
     record("modify_edit succeeds", "error" not in result, f"result={result}")
 
     # Verify modification in DB
     row = conn.execute("SELECT name FROM edits WHERE edit_id = ?", (edit_id,)).fetchone()
-    record("DB: name updated", row and row["name"] == "Updated Clip Name", f"actual={row['name'] if row else 'None'}")
+    record(
+        "DB: name updated",
+        row and row["name"] == "Updated Clip Name",
+        f"actual={row['name'] if row else 'None'}",
+    )
 
     # Happy path: generate metadata
-    result = await dispatch_editing_tool("clipcannon_generate_metadata", {
-        "project_id": project_id,
-        "edit_id": edit_id,
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_generate_metadata",
+        {
+            "project_id": project_id,
+            "edit_id": edit_id,
+        },
+    )
     record("generate_metadata returns dict", isinstance(result, dict), f"type={type(result)}")
     record("metadata has title", "title" in result, f"keys={list(result.keys())}")
     record("metadata has hashtags", "hashtags" in result, f"keys={list(result.keys())}")
 
     # Edge case: create edit with invalid platform
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Bad Platform",
-        "target_platform": "nonexistent_platform",
-        "segments": [{"source_start_ms": 0, "source_end_ms": 5000}],
-    })
-    record("invalid platform returns error", "error" in result, f"result keys={list(result.keys())}")
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Bad Platform",
+            "target_platform": "nonexistent_platform",
+            "segments": [{"source_start_ms": 0, "source_end_ms": 5000}],
+        },
+    )
+    record(
+        "invalid platform returns error", "error" in result, f"result keys={list(result.keys())}"
+    )
 
     # Edge case: modify non-existent edit
-    result = await dispatch_editing_tool("clipcannon_modify_edit", {
-        "project_id": project_id,
-        "edit_id": "edit_nonexistent",
-        "changes": {"name": "Bad"},
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_modify_edit",
+        {
+            "project_id": project_id,
+            "edit_id": "edit_nonexistent",
+            "changes": {"name": "Bad"},
+        },
+    )
     record("modify nonexistent edit returns error", "error" in result, f"result={result}")
 
     # Edge case: create edit with overlapping segments
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Overlapping",
-        "target_platform": "youtube_standard",
-        "segments": [
-            {"source_start_ms": 0, "source_end_ms": 30000},
-        ],
-    })
-    record("30s edit for youtube_standard succeeds", "edit_id" in result, f"result keys={list(result.keys())}")
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Overlapping",
+            "target_platform": "youtube_standard",
+            "segments": [
+                {"source_start_ms": 0, "source_end_ms": 30000},
+            ],
+        },
+    )
+    record(
+        "30s edit for youtube_standard succeeds",
+        "edit_id" in result,
+        f"result keys={list(result.keys())}",
+    )
 
     # Edge case: empty segments
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "No Segments",
-        "target_platform": "tiktok",
-        "segments": [],
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "No Segments",
+            "target_platform": "tiktok",
+            "segments": [],
+        },
+    )
     record("empty segments returns error", "error" in result, f"result={result}")
 
     # Edge case: segment beyond source duration
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Out of bounds",
-        "target_platform": "tiktok",
-        "segments": [{"source_start_ms": 0, "source_end_ms": 999999}],
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Out of bounds",
+            "target_platform": "tiktok",
+            "segments": [{"source_start_ms": 0, "source_end_ms": 999999}],
+        },
+    )
     # This might succeed or fail depending on validation - either is acceptable
     record("segment beyond source handled", isinstance(result, dict), f"type={type(result)}")
 
     # Edge case: speed out of range
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Bad Speed",
-        "target_platform": "tiktok",
-        "segments": [{"source_start_ms": 0, "source_end_ms": 10000, "speed": 10.0}],
-    })
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Bad Speed",
+            "target_platform": "tiktok",
+            "segments": [{"source_start_ms": 0, "source_end_ms": 10000, "speed": 10.0}],
+        },
+    )
     record("speed=10 returns error", "error" in result, f"result keys={list(result.keys())}")
 
     conn.close()
@@ -499,54 +661,77 @@ async def test_provenance_tools(project_id: str) -> None:
     from clipcannon.tools.provenance_tools import dispatch_provenance_tool
 
     # Happy path: verify chain
-    result = await dispatch_provenance_tool("clipcannon_provenance_verify", {
-        "project_id": project_id,
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_verify",
+        {
+            "project_id": project_id,
+        },
+    )
     record("provenance_verify returns dict", isinstance(result, dict), f"type={type(result)}")
     # Synthetic data may have hash mismatches - just verify the tool runs and returns verification result
-    record("provenance chain verify returns result",
-           "verified" in result or "valid" in result or "is_valid" in result,
-           f"keys={list(result.keys())}")
+    record(
+        "provenance chain verify returns result",
+        "verified" in result or "valid" in result or "is_valid" in result,
+        f"keys={list(result.keys())}",
+    )
 
     # Happy path: query records
-    result = await dispatch_provenance_tool("clipcannon_provenance_query", {
-        "project_id": project_id,
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_query",
+        {
+            "project_id": project_id,
+        },
+    )
     record("provenance_query returns dict", isinstance(result, dict), f"type={type(result)}")
     records = result.get("records", [])
     record("provenance has 2 records", len(records) == 2, f"actual={len(records)}")
 
     # Happy path: get chain
-    result = await dispatch_provenance_tool("clipcannon_provenance_chain", {
-        "project_id": project_id,
-        "provenance_id": "prov_002",
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_chain",
+        {
+            "project_id": project_id,
+            "provenance_id": "prov_002",
+        },
+    )
     record("provenance_chain returns dict", isinstance(result, dict), f"type={type(result)}")
     chain = result.get("chain", [])
     record("chain has 2 links (genesis->prov_002)", len(chain) == 2, f"actual={len(chain)}")
 
     # Happy path: timeline
-    result = await dispatch_provenance_tool("clipcannon_provenance_timeline", {
-        "project_id": project_id,
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_timeline",
+        {
+            "project_id": project_id,
+        },
+    )
     record("provenance_timeline returns dict", isinstance(result, dict), f"type={type(result)}")
     events = result.get("timeline", result.get("events", []))
     record("timeline has events", len(events) >= 2, f"actual={len(events)}")
 
     # Edge case: verify nonexistent project
-    result = await dispatch_provenance_tool("clipcannon_provenance_verify", {
-        "project_id": "proj_nonexistent",
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_verify",
+        {
+            "project_id": "proj_nonexistent",
+        },
+    )
     record("verify nonexistent project returns error", "error" in result, f"result={result}")
 
     # Edge case: chain with nonexistent provenance_id
-    result = await dispatch_provenance_tool("clipcannon_provenance_chain", {
-        "project_id": project_id,
-        "provenance_id": "prov_999",
-    })
+    result = await dispatch_provenance_tool(
+        "clipcannon_provenance_chain",
+        {
+            "project_id": project_id,
+            "provenance_id": "prov_999",
+        },
+    )
     # Chain may return all records or error depending on implementation
-    record("chain nonexistent prov_id returns valid response", isinstance(result, dict),
-           f"type={type(result)}")
+    record(
+        "chain nonexistent prov_id returns valid response",
+        isinstance(result, dict),
+        f"type={type(result)}",
+    )
 
 
 async def test_disk_tools(project_id: str) -> None:
@@ -558,8 +743,11 @@ async def test_disk_tools(project_id: str) -> None:
     # Happy path: disk status
     result = await dispatch_disk_tool("clipcannon_disk_status", {"project_id": project_id})
     record("disk_status returns dict", isinstance(result, dict), f"type={type(result)}")
-    record("disk_status has tiers", "sacred" in result or "tiers" in result or "total_bytes" in result,
-           f"keys={list(result.keys())}")
+    record(
+        "disk_status has tiers",
+        "sacred" in result or "tiers" in result or "total_bytes" in result,
+        f"keys={list(result.keys())}",
+    )
 
     # Edge case: nonexistent project
     result = await dispatch_disk_tool("clipcannon_disk_status", {"project_id": "proj_nonexistent"})
@@ -573,57 +761,89 @@ async def test_understanding_tools(project_id: str) -> None:
     from clipcannon.tools import dispatch_understanding_tool
 
     # Happy path: VUD summary
-    result = await dispatch_understanding_tool("clipcannon_get_vud_summary", {
-        "project_id": project_id,
-    })
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_vud_summary",
+        {
+            "project_id": project_id,
+        },
+    )
     record("vud_summary returns dict", isinstance(result, dict), f"type={type(result)}")
-    record("vud_summary has project info", "project" in result or "summary" in result or "name" in result,
-           f"keys={list(result.keys())[:5]}")
+    record(
+        "vud_summary has project info",
+        "project" in result or "summary" in result or "name" in result,
+        f"keys={list(result.keys())[:5]}",
+    )
 
     # Happy path: analytics
-    result = await dispatch_understanding_tool("clipcannon_get_analytics", {
-        "project_id": project_id,
-        "sections": ["highlights", "topics"],
-    })
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_analytics",
+        {
+            "project_id": project_id,
+            "sections": ["highlights", "topics"],
+        },
+    )
     record("analytics returns dict", isinstance(result, dict), f"type={type(result)}")
 
     # Happy path: transcript
-    result = await dispatch_understanding_tool("clipcannon_get_transcript", {
-        "project_id": project_id,
-        "start_ms": 0,
-    })
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_transcript",
+        {
+            "project_id": project_id,
+            "start_ms": 0,
+        },
+    )
     record("transcript returns dict", isinstance(result, dict), f"type={type(result)}")
     segments = result.get("segments", [])
     record("transcript has segments", len(segments) > 0, f"actual={len(segments)}")
 
     # Happy path: segment detail
-    result = await dispatch_understanding_tool("clipcannon_get_segment_detail", {
-        "project_id": project_id,
-        "start_ms": 0,
-        "end_ms": 10000,
-    })
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_segment_detail",
+        {
+            "project_id": project_id,
+            "start_ms": 0,
+            "end_ms": 10000,
+        },
+    )
     record("segment_detail returns dict", isinstance(result, dict), f"type={type(result)}")
 
     # Happy path: search content (text fallback)
-    result = await dispatch_understanding_tool("clipcannon_search_content", {
-        "project_id": project_id,
-        "query": "test",
-        "search_type": "text",
-    })
+    result = await dispatch_understanding_tool(
+        "clipcannon_search_content",
+        {
+            "project_id": project_id,
+            "query": "test",
+            "search_type": "text",
+        },
+    )
     record("search_content returns dict", isinstance(result, dict), f"type={type(result)}")
 
     # Edge case: nonexistent project
-    result = await dispatch_understanding_tool("clipcannon_get_vud_summary", {
-        "project_id": "proj_nonexistent",
-    })
-    record("vud_summary nonexistent returns error", "error" in result, f"result keys={list(result.keys())}")
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_vud_summary",
+        {
+            "project_id": "proj_nonexistent",
+        },
+    )
+    record(
+        "vud_summary nonexistent returns error",
+        "error" in result,
+        f"result keys={list(result.keys())}",
+    )
 
     # Edge case: transcript with out-of-range times
-    result = await dispatch_understanding_tool("clipcannon_get_transcript", {
-        "project_id": project_id,
-        "start_ms": 999999,
-    })
-    record("transcript out-of-range returns empty/valid", isinstance(result, dict), f"type={type(result)}")
+    result = await dispatch_understanding_tool(
+        "clipcannon_get_transcript",
+        {
+            "project_id": project_id,
+            "start_ms": 999999,
+        },
+    )
+    record(
+        "transcript out-of-range returns empty/valid",
+        isinstance(result, dict),
+        f"type={type(result)}",
+    )
 
 
 async def test_audio_tools(project_id: str, project_dir: str) -> None:
@@ -634,24 +854,34 @@ async def test_audio_tools(project_id: str, project_dir: str) -> None:
 
     # First create an edit for audio attachment
     from clipcannon.tools.editing import dispatch_editing_tool
-    result = await dispatch_editing_tool("clipcannon_create_edit", {
-        "project_id": project_id,
-        "name": "Audio Test Edit",
-        "target_platform": "youtube_standard",
-        "segments": [{"source_start_ms": 0, "source_end_ms": 30000}],
-    })
+
+    result = await dispatch_editing_tool(
+        "clipcannon_create_edit",
+        {
+            "project_id": project_id,
+            "name": "Audio Test Edit",
+            "target_platform": "youtube_standard",
+            "segments": [{"source_start_ms": 0, "source_end_ms": 30000}],
+        },
+    )
     audio_edit_id = result.get("edit_id", "edit_audio_test")
 
     # Happy path: generate SFX - whoosh
-    result = await dispatch_audio_tool("clipcannon_generate_sfx", {
-        "project_id": project_id,
-        "edit_id": audio_edit_id,
-        "sfx_type": "whoosh",
-        "duration_ms": 500,
-    })
+    result = await dispatch_audio_tool(
+        "clipcannon_generate_sfx",
+        {
+            "project_id": project_id,
+            "edit_id": audio_edit_id,
+            "sfx_type": "whoosh",
+            "duration_ms": 500,
+        },
+    )
     record("sfx whoosh returns dict", isinstance(result, dict), f"type={type(result)}")
-    record("sfx whoosh has file_path", "file_path" in result or "asset_id" in result,
-           f"keys={list(result.keys())}")
+    record(
+        "sfx whoosh has file_path",
+        "file_path" in result or "asset_id" in result,
+        f"keys={list(result.keys())}",
+    )
 
     # SOURCE OF TRUTH: Verify SFX file exists on disk
     sfx_path = result.get("file_path")
@@ -660,8 +890,16 @@ async def test_audio_tools(project_id: str, project_dir: str) -> None:
         # Verify it's a valid WAV
         try:
             with wave.open(sfx_path, "r") as wf:
-                record("SFX is valid WAV", True, f"channels={wf.getnchannels()}, rate={wf.getframerate()}")
-                record("SFX sample rate is 44100", wf.getframerate() == 44100, f"actual={wf.getframerate()}")
+                record(
+                    "SFX is valid WAV",
+                    True,
+                    f"channels={wf.getnchannels()}, rate={wf.getframerate()}",
+                )
+                record(
+                    "SFX sample rate is 44100",
+                    wf.getframerate() == 44100,
+                    f"actual={wf.getframerate()}",
+                )
         except Exception as e:
             record("SFX is valid WAV", False, f"error={e}")
     else:
@@ -677,35 +915,48 @@ async def test_audio_tools(project_id: str, project_dir: str) -> None:
     ).fetchone()
     record("DB: audio_asset row exists for SFX", asset_row is not None, "")
     if asset_row:
-        record("DB: model_used is 'dsp'", asset_row["model_used"] == "dsp", f"actual={asset_row['model_used']}")
+        record(
+            "DB: model_used is 'dsp'",
+            asset_row["model_used"] == "dsp",
+            f"actual={asset_row['model_used']}",
+        )
 
     # Test all 9 SFX types
     sfx_types = ["riser", "downer", "impact", "chime", "tick", "bass_drop", "shimmer", "stinger"]
     for sfx_type in sfx_types:
-        result = await dispatch_audio_tool("clipcannon_generate_sfx", {
-            "project_id": project_id,
-            "edit_id": audio_edit_id,
-            "sfx_type": sfx_type,
-            "duration_ms": 300,
-        })
+        result = await dispatch_audio_tool(
+            "clipcannon_generate_sfx",
+            {
+                "project_id": project_id,
+                "edit_id": audio_edit_id,
+                "sfx_type": sfx_type,
+                "duration_ms": 300,
+            },
+        )
         success = "file_path" in result or "asset_id" in result
-        record(f"SFX {sfx_type} generates successfully", success,
-               f"error={result.get('error', '')}" if not success else "")
+        record(
+            f"SFX {sfx_type} generates successfully",
+            success,
+            f"error={result.get('error', '')}" if not success else "",
+        )
 
     # Verify all 9 SFX assets in DB
     asset_count = conn.execute(
         "SELECT COUNT(*) as cnt FROM audio_assets WHERE project_id = ? AND type = 'sfx'",
         (project_id,),
     ).fetchone()["cnt"]
-    record(f"DB: 9 SFX audio_assets exist", asset_count == 9, f"actual={asset_count}")
+    record("DB: 9 SFX audio_assets exist", asset_count == 9, f"actual={asset_count}")
 
     # Happy path: compose MIDI (may fail without MIDIUtil)
-    result = await dispatch_audio_tool("clipcannon_compose_midi", {
-        "project_id": project_id,
-        "edit_id": audio_edit_id,
-        "preset": "ambient_pad",
-        "duration_s": 5,
-    })
+    result = await dispatch_audio_tool(
+        "clipcannon_compose_midi",
+        {
+            "project_id": project_id,
+            "edit_id": audio_edit_id,
+            "preset": "ambient_pad",
+            "duration_s": 5,
+        },
+    )
     record("compose_midi returns dict", isinstance(result, dict), f"type={type(result)}")
     if "error" not in result:
         midi_path = result.get("midi_path")
@@ -717,33 +968,46 @@ async def test_audio_tools(project_id: str, project_dir: str) -> None:
         ).fetchone()
         record("DB: music audio_asset exists", midi_asset is not None, "")
     else:
-        print(f"  [SKIP] compose_midi failed (likely missing MIDIUtil): {result.get('error', {}).get('message', '')}")
+        print(
+            f"  [SKIP] compose_midi failed (likely missing MIDIUtil): {result.get('error', {}).get('message', '')}"
+        )
 
     # Edge case: invalid SFX type
-    result = await dispatch_audio_tool("clipcannon_generate_sfx", {
-        "project_id": project_id,
-        "edit_id": audio_edit_id,
-        "sfx_type": "nonexistent_type",
-        "duration_ms": 500,
-    })
+    result = await dispatch_audio_tool(
+        "clipcannon_generate_sfx",
+        {
+            "project_id": project_id,
+            "edit_id": audio_edit_id,
+            "sfx_type": "nonexistent_type",
+            "duration_ms": 500,
+        },
+    )
     record("invalid sfx_type returns error", "error" in result, f"result={result}")
 
     # Edge case: SFX with zero duration
-    result = await dispatch_audio_tool("clipcannon_generate_sfx", {
-        "project_id": project_id,
-        "edit_id": audio_edit_id,
-        "sfx_type": "whoosh",
-        "duration_ms": 0,
-    })
-    record("zero duration sfx returns error", "error" in result, f"result keys={list(result.keys())}")
+    result = await dispatch_audio_tool(
+        "clipcannon_generate_sfx",
+        {
+            "project_id": project_id,
+            "edit_id": audio_edit_id,
+            "sfx_type": "whoosh",
+            "duration_ms": 0,
+        },
+    )
+    record(
+        "zero duration sfx returns error", "error" in result, f"result keys={list(result.keys())}"
+    )
 
     # Edge case: invalid MIDI preset
-    result = await dispatch_audio_tool("clipcannon_compose_midi", {
-        "project_id": project_id,
-        "edit_id": audio_edit_id,
-        "preset": "nonexistent_preset",
-        "duration_s": 5,
-    })
+    result = await dispatch_audio_tool(
+        "clipcannon_compose_midi",
+        {
+            "project_id": project_id,
+            "edit_id": audio_edit_id,
+            "preset": "nonexistent_preset",
+            "duration_s": 5,
+        },
+    )
     record("invalid midi preset returns error", "error" in result, f"result={result}")
 
     conn.close()
@@ -756,37 +1020,50 @@ async def test_rendering_tools(project_id: str) -> None:
     from clipcannon.tools.rendering import dispatch_rendering_tool
 
     # Happy path: render_status for nonexistent render (should return error)
-    result = await dispatch_rendering_tool("clipcannon_render_status", {
-        "project_id": project_id,
-        "render_id": "render_nonexistent",
-    })
+    result = await dispatch_rendering_tool(
+        "clipcannon_render_status",
+        {
+            "project_id": project_id,
+            "render_id": "render_nonexistent",
+        },
+    )
     record("render_status nonexistent returns error", "error" in result, f"result={result}")
 
     # Test rendering profiles
     from clipcannon.rendering.profiles import get_profile, list_profiles
 
     all_profile_names = list_profiles()
-    record("7 encoding profiles exist", len(all_profile_names) == 7, f"actual={len(all_profile_names)}")
+    record(
+        "7 encoding profiles exist", len(all_profile_names) == 7, f"actual={len(all_profile_names)}"
+    )
 
     for pname in all_profile_names:
         profile = get_profile(pname)
-        record(f"Profile {pname} has valid resolution",
-               profile.width > 0 and profile.height > 0,
-               f"w={profile.width}, h={profile.height}")
+        record(
+            f"Profile {pname} has valid resolution",
+            profile.width > 0 and profile.height > 0,
+            f"w={profile.width}, h={profile.height}",
+        )
 
     # Test software fallback
     from clipcannon.rendering.profiles import get_software_fallback
 
     tiktok = get_profile("tiktok_vertical")
     fallback = get_software_fallback(tiktok)
-    record("tiktok fallback codec is libx264", fallback.video_codec == "libx264",
-           f"actual={fallback.video_codec}")
+    record(
+        "tiktok fallback codec is libx264",
+        fallback.video_codec == "libx264",
+        f"actual={fallback.video_codec}",
+    )
 
     yt4k = get_profile("youtube_4k")
     fallback_4k = get_software_fallback(yt4k)
     # youtube_4k uses h264_nvenc, so fallback is libx264
-    record("youtube_4k fallback codec is libx264", fallback_4k.video_codec == "libx264",
-           f"actual={fallback_4k.video_codec}")
+    record(
+        "youtube_4k fallback codec is libx264",
+        fallback_4k.video_codec == "libx264",
+        f"actual={fallback_4k.video_codec}",
+    )
 
     # Generation loss prevention
     from clipcannon.rendering.renderer import RenderEngine
@@ -802,34 +1079,52 @@ async def test_recently_changed_tools(project_id: str, db_path: str) -> None:
     from clipcannon.tools.rendering import dispatch_rendering_tool
 
     # Test get_editing_context
-    result = await dispatch_rendering_tool("clipcannon_get_editing_context", {
-        "project_id": project_id,
-    })
+    result = await dispatch_rendering_tool(
+        "clipcannon_get_editing_context",
+        {
+            "project_id": project_id,
+        },
+    )
     record("get_editing_context returns dict", isinstance(result, dict), f"type={type(result)}")
-    record("editing_context has project info", "error" not in result or "project" in result,
-           f"keys={list(result.keys())[:5]}")
+    record(
+        "editing_context has project info",
+        "error" not in result or "project" in result,
+        f"keys={list(result.keys())[:5]}",
+    )
 
     # Test analyze_frame
-    result = await dispatch_rendering_tool("clipcannon_analyze_frame", {
-        "project_id": project_id,
-        "timestamp_ms": 5000,
-    })
+    result = await dispatch_rendering_tool(
+        "clipcannon_analyze_frame",
+        {
+            "project_id": project_id,
+            "timestamp_ms": 5000,
+        },
+    )
     record("analyze_frame returns dict", isinstance(result, dict), f"type={type(result)}")
 
     # Test preview_layout
-    result = await dispatch_rendering_tool("clipcannon_preview_layout", {
-        "project_id": project_id,
-        "timestamp_ms": 5000,
-        "canvas_width": 1080,
-        "canvas_height": 1920,
-        "regions": [
-            {
-                "source_x": 0, "source_y": 0, "source_w": 1920, "source_h": 1080,
-                "output_x": 0, "output_y": 0, "output_w": 1080, "output_h": 608,
-                "z_index": 1,
-            }
-        ],
-    })
+    result = await dispatch_rendering_tool(
+        "clipcannon_preview_layout",
+        {
+            "project_id": project_id,
+            "timestamp_ms": 5000,
+            "canvas_width": 1080,
+            "canvas_height": 1920,
+            "regions": [
+                {
+                    "source_x": 0,
+                    "source_y": 0,
+                    "source_w": 1920,
+                    "source_h": 1080,
+                    "output_x": 0,
+                    "output_y": 0,
+                    "output_w": 1080,
+                    "output_h": 608,
+                    "z_index": 1,
+                }
+            ],
+        },
+    )
     record("preview_layout returns dict", isinstance(result, dict), f"type={type(result)}")
 
 
@@ -849,7 +1144,9 @@ async def test_edl_models() -> None:
     # Happy path: basic EDL
     segments = [
         SegmentSpec(segment_id=1, source_start_ms=0, source_end_ms=10000, output_start_ms=0),
-        SegmentSpec(segment_id=2, source_start_ms=15000, source_end_ms=25000, output_start_ms=10000),
+        SegmentSpec(
+            segment_id=2, source_start_ms=15000, source_end_ms=25000, output_start_ms=10000
+        ),
     ]
     edl = EditDecisionList(
         edit_id="edit_test",
@@ -868,33 +1165,51 @@ async def test_edl_models() -> None:
 
     # Speed effects
     fast_seg = SegmentSpec(
-        segment_id=3, source_start_ms=0, source_end_ms=10000,
-        output_start_ms=0, speed=2.0,
+        segment_id=3,
+        source_start_ms=0,
+        source_end_ms=10000,
+        output_start_ms=0,
+        speed=2.0,
     )
     fast_duration = compute_total_duration([fast_seg])
     record("2x speed: 10s source -> 5s output", fast_duration == 5000, f"actual={fast_duration}")
 
     slow_seg = SegmentSpec(
-        segment_id=4, source_start_ms=0, source_end_ms=10000,
-        output_start_ms=0, speed=0.5,
+        segment_id=4,
+        source_start_ms=0,
+        source_end_ms=10000,
+        output_start_ms=0,
+        speed=0.5,
     )
     slow_duration = compute_total_duration([slow_seg])
-    record("0.5x speed: 10s source -> 20s output", slow_duration == 20000, f"actual={slow_duration}")
+    record(
+        "0.5x speed: 10s source -> 20s output", slow_duration == 20000, f"actual={slow_duration}"
+    )
 
     # Transitions
     trans = TransitionSpec(type="fade", duration_ms=500)
     seg_with_trans = SegmentSpec(
-        segment_id=5, source_start_ms=0, source_end_ms=10000,
-        output_start_ms=0, transition_out=trans,
+        segment_id=5,
+        source_start_ms=0,
+        source_end_ms=10000,
+        output_start_ms=0,
+        transition_out=trans,
     )
     seg_after_trans = SegmentSpec(
-        segment_id=6, source_start_ms=15000, source_end_ms=25000,
-        output_start_ms=10000, transition_in=trans,
+        segment_id=6,
+        source_start_ms=15000,
+        source_end_ms=25000,
+        output_start_ms=10000,
+        transition_in=trans,
     )
     trans_duration = compute_total_duration([seg_with_trans, seg_after_trans])
     # compute_total_duration reads output_start_ms directly; overlap deduction
     # happens during edit creation (adjusting output_start_ms), not here
-    record("Transition total = 20000 (raw segments)", trans_duration == 20000, f"actual={trans_duration}")
+    record(
+        "Transition total = 20000 (raw segments)",
+        trans_duration == 20000,
+        f"actual={trans_duration}",
+    )
 
     # CaptionSpec
     cap = CaptionSpec(enabled=True, style="bold_centered", font_size=48)
@@ -907,8 +1222,11 @@ async def test_edl_models() -> None:
 
     # Edge case: segment with reversed times (start > end)
     try:
-        bad_seg = SegmentSpec(
-            segment_id=7, source_start_ms=10000, source_end_ms=5000, output_start_ms=0,
+        SegmentSpec(
+            segment_id=7,
+            source_start_ms=10000,
+            source_end_ms=5000,
+            output_start_ms=0,
         )
         # The model might not reject this at creation, but validation should catch it
         record("Reversed times segment created (validation deferred)", True, "")
@@ -935,9 +1253,16 @@ async def test_caption_generation() -> None:
     chunks = chunk_transcript_words(words, max_words=3)
     record("Chunking produces chunks", len(chunks) > 0, f"count={len(chunks)}")
     record("Each chunk has text", all(hasattr(c, "text") for c in chunks), "")
-    record("Punctuation breaks at period", any(c.text.endswith("test.") for c in chunks), f"chunks={[c.text for c in chunks]}")
-    record("Max 3 words per chunk", all(len(c.text.split()) <= 3 for c in chunks),
-           f"sizes={[len(c.text.split()) for c in chunks]}")
+    record(
+        "Punctuation breaks at period",
+        any(c.text.endswith("test.") for c in chunks),
+        f"chunks={[c.text for c in chunks]}",
+    )
+    record(
+        "Max 3 words per chunk",
+        all(len(c.text.split()) <= 3 for c in chunks),
+        f"sizes={[len(c.text.split()) for c in chunks]}",
+    )
 
     # Edge case: empty word list
     empty_chunks = chunk_transcript_words([], max_words=3)
@@ -951,10 +1276,16 @@ async def test_caption_generation() -> None:
     from clipcannon.editing.edl import SegmentSpec
 
     segments = [
-        SegmentSpec(segment_id=1, source_start_ms=0, source_end_ms=3000, output_start_ms=0, speed=1.0),
+        SegmentSpec(
+            segment_id=1, source_start_ms=0, source_end_ms=3000, output_start_ms=0, speed=1.0
+        ),
     ]
     remapped = remap_timestamps(chunks, segments)
-    record("Remap produces same count", len(remapped) == len(chunks), f"in={len(chunks)}, out={len(remapped)}")
+    record(
+        "Remap produces same count",
+        len(remapped) == len(chunks),
+        f"in={len(chunks)}, out={len(remapped)}",
+    )
 
 
 async def test_smart_crop() -> None:
@@ -970,21 +1301,28 @@ async def test_smart_crop() -> None:
     record("Crop y >= 0", region.y >= 0, f"y={region.y}")
     record("Crop width > 0", region.width > 0, f"width={region.width}")
     record("Crop height > 0", region.height > 0, f"height={region.height}")
-    record("Crop within source bounds",
-           region.x + region.width <= 1920 and region.y + region.height <= 1080,
-           f"x+w={region.x + region.width}, y+h={region.y + region.height}")
+    record(
+        "Crop within source bounds",
+        region.x + region.width <= 1920 and region.y + region.height <= 1080,
+        f"x+w={region.x + region.width}, y+h={region.y + region.height}",
+    )
 
     # Verify aspect ratio approximately 9:16
     actual_ratio = region.width / region.height
     expected_ratio = 9 / 16
-    record("Aspect ~9:16", abs(actual_ratio - expected_ratio) < 0.05,
-           f"actual={actual_ratio:.3f}, expected={expected_ratio:.3f}")
+    record(
+        "Aspect ~9:16",
+        abs(actual_ratio - expected_ratio) < 0.05,
+        f"actual={actual_ratio:.3f}, expected={expected_ratio:.3f}",
+    )
 
     # Happy path: face at edge
     edge_region = compute_crop_region(1920, 1080, "9:16", face_position_x=0.95, face_position_y=0.5)
-    record("Edge face crop still within bounds",
-           edge_region.x + edge_region.width <= 1920,
-           f"x+w={edge_region.x + edge_region.width}")
+    record(
+        "Edge face crop still within bounds",
+        edge_region.x + edge_region.width <= 1920,
+        f"x+w={edge_region.x + edge_region.width}",
+    )
 
     # Happy path: 1:1 crop (LinkedIn)
     square = compute_crop_region(1920, 1080, "1:1")
@@ -993,6 +1331,7 @@ async def test_smart_crop() -> None:
 
     # Smooth crop positions
     from clipcannon.editing.smart_crop import CropRegion
+
     regions = [
         CropRegion(x=100, y=0, width=608, height=1080),
         CropRegion(x=900, y=0, width=608, height=1080),  # Sudden jump
@@ -1003,8 +1342,11 @@ async def test_smart_crop() -> None:
 
     # Edge case: source smaller than target aspect
     tiny = compute_crop_region(100, 100, "16:9")
-    record("Tiny source handled", tiny.width <= 100 and tiny.height <= 100,
-           f"w={tiny.width}, h={tiny.height}")
+    record(
+        "Tiny source handled",
+        tiny.width <= 100 and tiny.height <= 100,
+        f"w={tiny.width}, h={tiny.height}",
+    )
 
 
 async def test_sfx_detailed() -> None:
@@ -1018,24 +1360,35 @@ async def test_sfx_detailed() -> None:
         result = generate_sfx("whoosh", Path(tmpdir) / "whoosh.wav", duration_ms=1000)
         record("whoosh result has file_path", result.file_path is not None, "")
         record("whoosh file exists", result.file_path.exists(), f"path={result.file_path}")
-        record("whoosh duration ~1000ms", abs(result.duration_ms - 1000) <= 50,
-               f"actual={result.duration_ms}")
-        record("whoosh sample_rate=44100", result.sample_rate == 44100, f"actual={result.sample_rate}")
+        record(
+            "whoosh duration ~1000ms",
+            abs(result.duration_ms - 1000) <= 50,
+            f"actual={result.duration_ms}",
+        )
+        record(
+            "whoosh sample_rate=44100", result.sample_rate == 44100, f"actual={result.sample_rate}"
+        )
 
         # Verify WAV contents
         with wave.open(str(result.file_path), "r") as wf:
             record("WAV channels=1", wf.getnchannels() == 1, f"actual={wf.getnchannels()}")
-            record("WAV sampwidth=2 (16-bit)", wf.getsampwidth() == 2, f"actual={wf.getsampwidth()}")
+            record(
+                "WAV sampwidth=2 (16-bit)", wf.getsampwidth() == 2, f"actual={wf.getsampwidth()}"
+            )
             frames = wf.readframes(wf.getnframes())
             # Verify not all silence
-            samples = struct.unpack(f"<{len(frames)//2}h", frames)
+            samples = struct.unpack(f"<{len(frames) // 2}h", frames)
             max_sample = max(abs(s) for s in samples)
             record("WAV has non-zero audio", max_sample > 100, f"max_sample={max_sample}")
 
         # Test impact (short SFX)
         result = generate_sfx("impact", Path(tmpdir) / "impact.wav", duration_ms=100)
         record("impact 100ms generates", result.file_path.exists(), "")
-        record("impact duration ~100ms", abs(result.duration_ms - 100) <= 20, f"actual={result.duration_ms}")
+        record(
+            "impact duration ~100ms",
+            abs(result.duration_ms - 100) <= 20,
+            f"actual={result.duration_ms}",
+        )
 
         # Test bass_drop (sub-harmonic)
         result = generate_sfx("bass_drop", Path(tmpdir) / "bass.wav", duration_ms=2000)
@@ -1054,13 +1407,23 @@ async def test_midi_detailed() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Test all 6 presets
-        presets = ["ambient_pad", "upbeat_pop", "corporate", "dramatic", "minimal_piano", "intro_jingle"]
+        presets = [
+            "ambient_pad",
+            "upbeat_pop",
+            "corporate",
+            "dramatic",
+            "minimal_piano",
+            "intro_jingle",
+        ]
         for preset in presets:
             try:
                 result = compose_midi(preset, 3.0, Path(tmpdir) / f"{preset}.mid")
                 record(f"MIDI {preset} creates file", result.midi_path.exists(), "")
-                record(f"MIDI {preset} duration ~3000ms", abs(result.duration_ms - 3000) <= 500,
-                       f"actual={result.duration_ms}")
+                record(
+                    f"MIDI {preset} duration ~3000ms",
+                    abs(result.duration_ms - 3000) <= 500,
+                    f"actual={result.duration_ms}",
+                )
                 fsize = result.midi_path.stat().st_size
                 record(f"MIDI {preset} file > 50 bytes", fsize > 50, f"size={fsize}")
             except ImportError:
@@ -1080,7 +1443,7 @@ async def test_encoding_profiles_detailed() -> None:
     """Detailed encoding profile verification."""
     separator("ENCODING PROFILES - Detailed Validation")
 
-    from clipcannon.rendering.profiles import get_profile, list_profiles, get_software_fallback
+    from clipcannon.rendering.profiles import get_profile, list_profiles
 
     profile_names = list_profiles()
 
@@ -1103,7 +1466,6 @@ async def test_encoding_profiles_detailed() -> None:
     for pname in profile_names:
         p = get_profile(pname)
         record(f"{pname} fps=30", p.fps == 30, f"actual={p.fps}")
-
 
 
 async def main() -> None:

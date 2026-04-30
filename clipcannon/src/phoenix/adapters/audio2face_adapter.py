@@ -10,6 +10,7 @@ Both adapters produce BlendshapeFrame instances with temporal EMA smoothing.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 from typing import Any
@@ -51,6 +52,7 @@ _clamp = clamp
 # ---------------------------------------------------------------------------
 # Audio2FaceNIM: gRPC client to NVIDIA Audio2Face-3D NIM
 # ---------------------------------------------------------------------------
+
 
 class Audio2FaceNIM(Audio2FaceAdapter):
     """gRPC client to NVIDIA Audio2Face-3D NIM container.
@@ -106,8 +108,8 @@ class Audio2FaceNIM(Audio2FaceAdapter):
             return True
         except (ImportError, Exception) as exc:
             logger.warning(
-                "Failed to connect to Audio2Face NIM: %s. "
-                "Using local fallback.", exc,
+                "Failed to connect to Audio2Face NIM: %s. Using local fallback.",
+                exc,
             )
             self._connected = False
             return False
@@ -115,29 +117,29 @@ class Audio2FaceNIM(Audio2FaceAdapter):
     def disconnect(self) -> None:
         """Close the gRPC channel."""
         if self._channel is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._channel.close()
-            except Exception:
-                pass
         self._channel = None
         self._stub = None
         self._connected = False
 
     def process_audio_chunk(
-        self, audio: np.ndarray, sr: int,
+        self,
+        audio: np.ndarray,
+        sr: int,
     ) -> BlendshapeFrame:
         """Send audio to NIM and receive blendshapes.
 
         Falls back to local adapter on any gRPC error.
         """
-        if not self._connected:
-            if not self.connect():
-                return self._fallback.process_audio_chunk(audio, sr)
+        if not self._connected and not self.connect():
+            return self._fallback.process_audio_chunk(audio, sr)
         try:
             return self._grpc_infer(audio, sr)
         except Exception as exc:
             logger.warning(
-                "Audio2Face NIM inference failed: %s. Using fallback.", exc,
+                "Audio2Face NIM inference failed: %s. Using fallback.",
+                exc,
             )
             self._connected = False
             return self._fallback.process_audio_chunk(audio, sr)
@@ -147,6 +149,7 @@ class Audio2FaceNIM(Audio2FaceAdapter):
         from nvidia_audio2face_3d import (  # type: ignore[import-untyped]
             audio2face_pb2,
         )
+
         request = audio2face_pb2.Audio2FaceRequest(
             audio_data=audio.astype(np.float32).tobytes(),
             sample_rate=sr,
@@ -158,8 +161,7 @@ class Audio2FaceNIM(Audio2FaceAdapter):
         raw = np.array(response.blendshapes, dtype=np.float32)
         if raw.shape[0] < NUM_ARKIT_BLENDSHAPES:
             raise ExpressionError(
-                f"NIM returned {raw.shape[0]} blendshapes, "
-                f"expected {NUM_ARKIT_BLENDSHAPES}",
+                f"NIM returned {raw.shape[0]} blendshapes, expected {NUM_ARKIT_BLENDSHAPES}",
                 {"got": raw.shape[0]},
             )
         coeffs = np.clip(raw[:NUM_ARKIT_BLENDSHAPES], 0.0, 1.0)
@@ -178,6 +180,7 @@ class Audio2FaceNIM(Audio2FaceAdapter):
 # ---------------------------------------------------------------------------
 # Audio2FaceLocal: signal-processing fallback
 # ---------------------------------------------------------------------------
+
 
 class Audio2FaceLocal(Audio2FaceAdapter):
     """Local audio-to-blendshape using signal processing (no NIM).
@@ -200,7 +203,8 @@ class Audio2FaceLocal(Audio2FaceAdapter):
     ) -> None:
         if not (0.0 < ema_alpha <= 1.0):
             raise ExpressionError(
-                "ema_alpha must be in (0, 1]", {"ema_alpha": ema_alpha},
+                "ema_alpha must be in (0, 1]",
+                {"ema_alpha": ema_alpha},
             )
         self._alpha = ema_alpha
         self._silence_threshold = silence_threshold
@@ -212,7 +216,9 @@ class Audio2FaceLocal(Audio2FaceAdapter):
         self._prev_coeffs = None
 
     def process_audio_chunk(
-        self, audio: np.ndarray, sr: int,
+        self,
+        audio: np.ndarray,
+        sr: int,
     ) -> BlendshapeFrame:
         """Convert audio chunk to blendshapes via signal processing."""
         t0 = time.perf_counter()
@@ -252,7 +258,8 @@ class Audio2FaceLocal(Audio2FaceAdapter):
             )
         if sr <= 0:
             raise ExpressionError(
-                "Sample rate must be positive", {"sr": sr},
+                "Sample rate must be positive",
+                {"sr": sr},
             )
         if audio.ndim != 1:
             audio = audio.flatten()
@@ -263,7 +270,7 @@ class Audio2FaceLocal(Audio2FaceAdapter):
     @staticmethod
     def _compute_rms(audio: np.ndarray) -> float:
         """Compute RMS energy of audio chunk."""
-        return float(np.sqrt(np.mean(audio ** 2)))
+        return float(np.sqrt(np.mean(audio**2)))
 
     @staticmethod
     def _estimate_f0(audio: np.ndarray, sr: int) -> float:
@@ -286,7 +293,7 @@ class Audio2FaceLocal(Audio2FaceAdapter):
         max_lag = min(n - 1, sr // 60)
         if min_lag >= max_lag or max_lag >= len(acf):
             return 0.0
-        segment = acf[min_lag:max_lag + 1]
+        segment = acf[min_lag : max_lag + 1]
         if len(segment) == 0:
             return 0.0
         peak_idx = int(np.argmax(segment))
@@ -317,8 +324,12 @@ class Audio2FaceLocal(Audio2FaceAdapter):
     # -- Feature-to-blendshape mapping ---------------------------------------
 
     def _map_features(
-        self, rms: float, f0: float, centroid: float,
-        zcr: float, sr: int,
+        self,
+        rms: float,
+        f0: float,
+        centroid: float,
+        zcr: float,
+        sr: int,
     ) -> np.ndarray:
         """Map audio features to 52 ARKit blendshape coefficients."""
         c = np.zeros(NUM_ARKIT_BLENDSHAPES, dtype=np.float32)
@@ -384,10 +395,7 @@ class Audio2FaceLocal(Audio2FaceAdapter):
         if self._prev_coeffs is None:
             self._prev_coeffs = coeffs.copy()
             return coeffs
-        smoothed = (
-            self._alpha * coeffs
-            + (1.0 - self._alpha) * self._prev_coeffs
-        )
+        smoothed = self._alpha * coeffs + (1.0 - self._alpha) * self._prev_coeffs
         smoothed = np.clip(smoothed, 0.0, 1.0).astype(np.float32)
         self._prev_coeffs = smoothed.copy()
         return smoothed

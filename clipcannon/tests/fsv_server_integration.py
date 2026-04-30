@@ -9,9 +9,9 @@ Forensic verification of:
 
 Run with: python tests/fsv_server_integration.py
 """
+
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from pathlib import Path
@@ -88,19 +88,25 @@ EXPECTED_TOOLS = [
     "clipcannon_audio_cleanup",
 ]
 
-REQUIRED_CONFIG_SECTIONS = ["version", "directories", "processing", "rendering", "publishing", "gpu"]
+REQUIRED_CONFIG_SECTIONS = [
+    "version",
+    "directories",
+    "processing",
+    "rendering",
+    "publishing",
+    "gpu",
+]
 
 
 def separator(title: str) -> None:
     """Print a formatted separator line."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def verdict(label: str, passed: bool, detail: str = "") -> None:
     """Print a pass/fail verdict line."""
-    status = "PASS" if passed else "FAIL"
     marker = "[OK]" if passed else "[FAIL]"
     msg = f"  {marker} {label}"
     if detail:
@@ -132,8 +138,9 @@ def test_server_creation() -> None:
     separator("TEST 1: Server Creation")
     try:
         from mcp.server import Server
-        from clipcannon.server import create_server
+
         from clipcannon import __version__
+        from clipcannon.server import create_server
 
         server = create_server()
 
@@ -202,11 +209,16 @@ def test_tool_registry() -> None:
         # Category counts
         project_tools = [n for n in actual_names if n.startswith("clipcannon_project_")]
         understanding_tools = [
-            n for n in actual_names
-            if n in [
-                "clipcannon_ingest", "clipcannon_get_vud_summary",
-                "clipcannon_get_analytics", "clipcannon_get_transcript",
-                "clipcannon_get_segment_detail", "clipcannon_get_frame",
+            n
+            for n in actual_names
+            if n
+            in [
+                "clipcannon_ingest",
+                "clipcannon_get_vud_summary",
+                "clipcannon_get_analytics",
+                "clipcannon_get_transcript",
+                "clipcannon_get_segment_detail",
+                "clipcannon_get_frame",
                 "clipcannon_search_content",
             ]
         ]
@@ -214,17 +226,24 @@ def test_tool_registry() -> None:
         disk_tools = [n for n in actual_names if n.startswith("clipcannon_disk_")]
         config_tools = [n for n in actual_names if n.startswith("clipcannon_config_")]
         billing_tools = [
-            n for n in actual_names
+            n
+            for n in actual_names
             if n.startswith("clipcannon_credits_") or n == "clipcannon_spending_limit"
         ]
 
         print("\n  Category counts:")
-        record(f"Project tools = 5", len(project_tools) == 5, f"actual={len(project_tools)}")
-        record(f"Understanding tools = 7", len(understanding_tools) == 7, f"actual={len(understanding_tools)}")
-        record(f"Provenance tools = 4", len(provenance_tools) == 4, f"actual={len(provenance_tools)}")
-        record(f"Disk tools = 2", len(disk_tools) == 2, f"actual={len(disk_tools)}")
-        record(f"Config tools = 3", len(config_tools) == 3, f"actual={len(config_tools)}")
-        record(f"Billing tools = 4", len(billing_tools) == 4, f"actual={len(billing_tools)}")
+        record("Project tools = 5", len(project_tools) == 5, f"actual={len(project_tools)}")
+        record(
+            "Understanding tools = 7",
+            len(understanding_tools) == 7,
+            f"actual={len(understanding_tools)}",
+        )
+        record(
+            "Provenance tools = 4", len(provenance_tools) == 4, f"actual={len(provenance_tools)}"
+        )
+        record("Disk tools = 2", len(disk_tools) == 2, f"actual={len(disk_tools)}")
+        record("Config tools = 3", len(config_tools) == 3, f"actual={len(config_tools)}")
+        record("Billing tools = 4", len(billing_tools) == 4, f"actual={len(billing_tools)}")
 
         if missing:
             print(f"\n  MISSING TOOLS: {missing}")
@@ -280,7 +299,7 @@ def test_unknown_tool() -> None:
     try:
         from clipcannon.server import create_server
 
-        server = create_server()
+        create_server()
 
         # Access the call_tool handler by invoking it through server dispatch
         # We test the logic directly from the TOOL_DISPATCHERS lookup
@@ -297,6 +316,7 @@ def test_unknown_tool() -> None:
         # We simulate what server.py does at lines 104-116
         name = "totally_fake_tool_12345"
         from clipcannon.tools import ALL_TOOL_DEFINITIONS
+
         if dispatch_fn is None:
             error_result = {
                 "error": {
@@ -336,7 +356,7 @@ def test_default_config() -> None:
         with open(config_path) as f:
             config = json.load(f)
 
-        print(f"\n  Full config contents:")
+        print("\n  Full config contents:")
         print(json.dumps(config, indent=4))
 
         # Check all required sections
@@ -402,7 +422,9 @@ def test_tool_schema_integrity() -> None:
             has_name = bool(tool.name)
             has_desc = bool(tool.description)
             has_schema = bool(tool.inputSchema)
-            schema_has_type = tool.inputSchema.get("type") == "object" if tool.inputSchema else False
+            schema_has_type = (
+                tool.inputSchema.get("type") == "object" if tool.inputSchema else False
+            )
             schema_has_props = "properties" in (tool.inputSchema or {})
 
             all_good = has_name and has_desc and has_schema and schema_has_type and schema_has_props
@@ -452,7 +474,7 @@ def main() -> None:
     print(f"  Failed:       {results['failed']}")
 
     if results["errors"]:
-        print(f"\n  FAILURES:")
+        print("\n  FAILURES:")
         for err in results["errors"]:
             print(f"    - {err}")
 
@@ -461,7 +483,7 @@ def main() -> None:
     else:
         print(f"\n  VERDICT: {results['failed']} CHECK(S) FAILED - Server scaffold is GUILTY")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
 
     sys.exit(0 if results["failed"] == 0 else 1)
 

@@ -30,6 +30,7 @@ MODEL_DIR = (
 @dataclass
 class MidiSection:
     """A single section within a composition plan."""
+
     name: str
     bars: int
     dynamics: tuple[int, int]
@@ -38,6 +39,7 @@ class MidiSection:
 @dataclass
 class MidiPlan:
     """Structured MIDI parameters derived from a description."""
+
     tempo_bpm: int
     key: str
     time_sig: tuple[int, int]
@@ -50,12 +52,24 @@ class MidiPlan:
 # Specific multi-word matches first, then broader single-word matches.
 _KW: list[tuple[list[str], list[str], tuple[int, int], str, str]] = [
     (["lofi", "lo-fi", "lo fi"], ["lofi_chill"], (60, 80), "low", "C"),
-    (["cinematic epic", "epic cinematic", "cinematic_epic"], ["cinematic_epic"], (95, 125), "high", "C"),
+    (
+        ["cinematic epic", "epic cinematic", "cinematic_epic"],
+        ["cinematic_epic"],
+        (95, 125),
+        "high",
+        "C",
+    ),
     (["inspiring", "inspirational", "uplifting"], ["cinematic_epic"], (100, 130), "high", "C"),
     (["calm", "ambient", "relaxing"], ["ambient_pad"], (60, 80), "low", "C"),
     (["chill", "mellow"], ["lofi_chill"], (60, 80), "low", "C"),
     (["upbeat", "happy", "energetic", "pop"], ["upbeat_pop"], (120, 140), "high", "C"),
-    (["corporate", "professional", "business"], ["corporate", "tech_corporate"], (90, 110), "medium", "C"),
+    (
+        ["corporate", "professional", "business"],
+        ["corporate", "tech_corporate"],
+        (90, 110),
+        "medium",
+        "C",
+    ),
     (["epic", "cinematic"], ["cinematic_epic"], (95, 125), "high", "C"),
     (["dramatic", "intense", "tension"], ["dramatic"], (90, 120), "high", "C"),
     (["piano", "minimal", "simple"], ["minimal_piano"], (70, 90), "low", "C"),
@@ -69,14 +83,26 @@ def _default_sections(energy: str) -> list[MidiSection]:
     """Generate default sections based on energy level."""
     S = MidiSection
     if energy == "low":
-        return [S("intro", 4, (30, 50)), S("verse", 8, (40, 65)),
-                S("chorus", 8, (50, 70)), S("outro", 4, (30, 50))]
+        return [
+            S("intro", 4, (30, 50)),
+            S("verse", 8, (40, 65)),
+            S("chorus", 8, (50, 70)),
+            S("outro", 4, (30, 50)),
+        ]
     if energy == "high":
-        return [S("intro", 4, (50, 75)), S("verse", 8, (65, 90)),
-                S("chorus", 8, (80, 110)), S("bridge", 4, (60, 85)),
-                S("outro", 4, (50, 75))]
-    return [S("intro", 4, (40, 60)), S("verse", 8, (55, 75)),
-            S("chorus", 8, (65, 85)), S("outro", 4, (40, 60))]
+        return [
+            S("intro", 4, (50, 75)),
+            S("verse", 8, (65, 90)),
+            S("chorus", 8, (80, 110)),
+            S("bridge", 4, (60, 85)),
+            S("outro", 4, (50, 75)),
+        ]
+    return [
+        S("intro", 4, (40, 60)),
+        S("verse", 8, (55, 75)),
+        S("chorus", 8, (65, 85)),
+        S("outro", 4, (40, 60)),
+    ]
 
 
 def plan_midi_from_keywords(description: str) -> MidiPlan:
@@ -100,15 +126,19 @@ def plan_midi_from_keywords(description: str) -> MidiPlan:
     sections = _default_sections(energy)
 
     logger.info(
-        "Keyword MIDI plan: preset=%s, tempo=%d, key=%s, energy=%s, "
-        "sections=%d (desc='%s')",
-        preset, tempo, key, energy, len(sections), description[:80],
+        "Keyword MIDI plan: preset=%s, tempo=%d, key=%s, energy=%s, sections=%d (desc='%s')",
+        preset,
+        tempo,
+        key,
+        energy,
+        len(sections),
+        description[:80],
     )
     return MidiPlan(tempo, key, (4, 4), preset, energy, sections)
 
 
 # LLM worker script (Qwen3-8B subprocess)
-_WORKER_SCRIPT = r'''
+_WORKER_SCRIPT = r"""
 import json, sys, os, re
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -137,7 +167,7 @@ else:
     print(json.dumps({"error": "No JSON in response", "raw": response[:500]}))
 del model, tokenizer
 torch.cuda.empty_cache()
-'''
+"""
 
 _ALL_PRESETS = (
     "ambient_pad, upbeat_pop, corporate, dramatic, minimal_piano, "
@@ -176,11 +206,15 @@ def _parse_llm_response(raw: dict[str, object]) -> MidiPlan:
         energy = "medium"
 
     sections: list[MidiSection] = []
-    for s in (raw.get("sections") or []):
+    for s in raw.get("sections") or []:
         if not isinstance(s, dict):
             continue
         dyn = s.get("dynamics", [50, 80])
-        dynamics = (int(dyn[0]), int(dyn[1])) if isinstance(dyn, (list, tuple)) and len(dyn) >= 2 else (50, 80)
+        dynamics = (
+            (int(dyn[0]), int(dyn[1]))
+            if isinstance(dyn, (list, tuple)) and len(dyn) >= 2
+            else (50, 80)
+        )
         sections.append(MidiSection(str(s.get("name", "verse")), int(s.get("bars", 4)), dynamics))
 
     if not sections:
@@ -217,7 +251,10 @@ async def plan_midi_from_prompt(description: str) -> MidiPlan:
         proc = await asyncio.to_thread(
             lambda: subprocess.run(
                 ["python3", "-c", _WORKER_SCRIPT, MODEL_DIR, prompt_path],
-                env=env, capture_output=True, text=True, timeout=300,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300,
             )
         )
         os.unlink(prompt_path)
@@ -237,7 +274,11 @@ async def plan_midi_from_prompt(description: str) -> MidiPlan:
 
         logger.info(
             "LLM MIDI plan: preset=%s, tempo=%d, key=%s, energy=%s, sections=%d",
-            plan.preset, plan.tempo_bpm, plan.key, plan.energy, len(plan.sections),
+            plan.preset,
+            plan.tempo_bpm,
+            plan.key,
+            plan.energy,
+            len(plan.sections),
         )
         return plan
 

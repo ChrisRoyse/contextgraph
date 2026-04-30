@@ -12,16 +12,20 @@ Rules:
 - Stop immediately after answering
 - Use meeting history context when available and relevant
 """
+
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import httpx
 
-from voiceagent.meeting.config import ResponseConfig
 from voiceagent.meeting.errors import MeetingResponseError
-from voiceagent.meeting.mcp_client import OcrProvenanceClient
-from voiceagent.meeting.transcript_format import MeetingSegment
+
+if TYPE_CHECKING:
+    from voiceagent.meeting.config import ResponseConfig
+    from voiceagent.meeting.mcp_client import OcrProvenanceClient
+    from voiceagent.meeting.transcript_format import MeetingSegment
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +92,7 @@ class MeetingResponder:
         self._base_url = "http://localhost:11434"
         self._ocr_client = ocr_client
         self._system_prompt = config.system_prompt_override or (
-            SYSTEM_PROMPT_WITH_HISTORY if ocr_client
-            else SYSTEM_PROMPT_TEMPLATE
+            SYSTEM_PROMPT_WITH_HISTORY if ocr_client else SYSTEM_PROMPT_TEMPLATE
         ).format(clone_name=clone_name)
 
     # ------------------------------------------------------------------
@@ -123,9 +126,7 @@ class MeetingResponder:
         # Build prompt with all available context
         parts: list[str] = []
         if history_str:
-            parts.append(
-                f"Relevant context from past meetings:\n{history_str}"
-            )
+            parts.append(f"Relevant context from past meetings:\n{history_str}")
         if context_str:
             parts.append(f"Current meeting context:\n{context_str}")
         parts.append(f"Question directed at you: {question}")
@@ -261,8 +262,7 @@ class MeetingResponder:
                 ) from exc
             except httpx.TimeoutException as exc:
                 raise MeetingResponseError(
-                    f"Ollama response timed out after "
-                    f"{_OLLAMA_TIMEOUT_S:.0f}s: {exc}"
+                    f"Ollama response timed out after {_OLLAMA_TIMEOUT_S:.0f}s: {exc}"
                 ) from exc
         return resp
 
@@ -275,22 +275,18 @@ class MeetingResponder:
         """
         if resp.status_code != 200:
             raise MeetingResponseError(
-                f"Ollama returned HTTP {resp.status_code}: "
-                f"{resp.text[:300]}"
+                f"Ollama returned HTTP {resp.status_code}: {resp.text[:300]}"
             )
 
         try:
             body = resp.json()
         except ValueError as exc:
-            raise MeetingResponseError(
-                f"Invalid JSON from Ollama: {exc}"
-            ) from exc
+            raise MeetingResponseError(f"Invalid JSON from Ollama: {exc}") from exc
 
         response_text = body.get("response", "").strip()
         if not response_text:
             raise MeetingResponseError(
-                f"Ollama returned empty response for question: "
-                f"'{question[:100]}'"
+                f"Ollama returned empty response for question: '{question[:100]}'"
             )
 
         logger.info(

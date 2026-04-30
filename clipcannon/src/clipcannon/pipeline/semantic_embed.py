@@ -255,7 +255,7 @@ def _compute_embeddings(
     import subprocess
     import tempfile
 
-    worker_script = r'''
+    worker_script = r"""
 import json, sys
 import numpy as np
 
@@ -277,10 +277,13 @@ norms = np.maximum(norms, 1e-10)
 emb_array = (emb_array / norms).tolist()
 
 json.dump(emb_array, sys.stdout)
-'''
+"""
 
     tmp_texts = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", prefix="nomic_texts_", delete=False,
+        mode="w",
+        suffix=".json",
+        prefix="nomic_texts_",
+        delete=False,
     )
     try:
         json.dump(texts, tmp_texts)
@@ -305,6 +308,7 @@ json.dump(emb_array, sys.stdout)
 
     finally:
         import os
+
         os.unlink(tmp_texts.name)
 
     return emb_array
@@ -599,7 +603,7 @@ async def run_semantic_embed(
             except Exception:
                 pass  # Column already exists
 
-            for seg, sent in zip(segments, sentiments):
+            for seg, sent in zip(segments, sentiments, strict=False):
                 execute(
                     conn2,
                     "UPDATE transcript_segments SET sentiment = ?, sentiment_score = ? "

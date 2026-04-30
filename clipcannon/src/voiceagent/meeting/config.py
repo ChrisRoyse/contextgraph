@@ -3,6 +3,7 @@
 All config classes are frozen dataclasses (immutable after creation).
 MeetingConfig is the top-level container that aggregates all sub-configs.
 """
+
 from __future__ import annotations
 
 import json
@@ -98,7 +99,7 @@ class VoiceConfig:
     secs_threshold: float = 0.95
     secs_candidates_max: int = 5
     prosody_selection: str = "always"
-    enhance: bool = True
+    enhance: bool = False
     enhance_sample_rate: int = 44100
 
 
@@ -371,10 +372,7 @@ def _build_section(section_name: str, cls: type, data: dict) -> object:
     for nested_key, nested_cls in nested_map.items():
         if nested_key in filtered and isinstance(filtered[nested_key], dict):
             nested_fields = {f.name for f in dataclasses.fields(nested_cls)}
-            nested_data = {
-                k: v for k, v in filtered[nested_key].items()
-                if k in nested_fields
-            }
+            nested_data = {k: v for k, v in filtered[nested_key].items() if k in nested_fields}
             filtered[nested_key] = nested_cls(**nested_data)
 
     try:

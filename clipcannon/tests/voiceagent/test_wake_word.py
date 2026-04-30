@@ -1,9 +1,9 @@
 """Tests for wake word detector -- real model, NO MOCKS."""
+
 import numpy as np
 import pytest
 
 openwakeword = pytest.importorskip("openwakeword", reason="openwakeword not installed")
-
 
 
 def test_detector_instantiates(session_wake_word):

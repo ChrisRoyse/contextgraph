@@ -154,13 +154,9 @@ class TestSmoothCropPositions:
         assert len(smoothed) == 5
 
         # Calculate total jump distance for original vs smoothed
-        original_jumps = sum(
-            abs(regions[i].x - regions[i - 1].x)
-            for i in range(1, len(regions))
-        )
+        original_jumps = sum(abs(regions[i].x - regions[i - 1].x) for i in range(1, len(regions)))
         smoothed_jumps = sum(
-            abs(smoothed[i].x - smoothed[i - 1].x)
-            for i in range(1, len(smoothed))
+            abs(smoothed[i].x - smoothed[i - 1].x) for i in range(1, len(smoothed))
         )
         assert smoothed_jumps < original_jumps
 

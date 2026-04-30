@@ -1,4 +1,5 @@
 """FastAPI server for the voice agent."""
+
 from __future__ import annotations
 
 import json

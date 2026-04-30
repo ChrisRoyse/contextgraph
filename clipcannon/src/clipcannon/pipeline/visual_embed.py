@@ -14,6 +14,7 @@ monotonic stretches in screen recordings.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -173,7 +174,7 @@ def _run_embedding_pipeline(
 
     # Worker script runs in a clean Python process with no inherited state.
     # All imports happen fresh, avoiding meta tensor corruption.
-    worker_script = r'''
+    worker_script = r"""
 import json
 import os
 import sys
@@ -262,7 +263,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
+"""
 
     # Write frame paths to a temp file to avoid command-line length limits
     tmp_frame_list = None
@@ -292,7 +293,9 @@ if __name__ == "__main__":
 
         proc = subprocess.run(
             [
-                "python3", "-c", worker_script,
+                "python3",
+                "-c",
+                worker_script,
                 tmp_frame_list.name,
                 device,
                 str(subprocess_batch_size),
@@ -322,8 +325,7 @@ if __name__ == "__main__":
 
         if len(all_embeddings) != len(frame_paths):
             raise RuntimeError(
-                f"Embedding count mismatch: got {len(all_embeddings)}, "
-                f"expected {len(frame_paths)}"
+                f"Embedding count mismatch: got {len(all_embeddings)}, expected {len(frame_paths)}"
             )
 
         logger.info("Computed %d visual embeddings via subprocess", len(all_embeddings))
@@ -332,10 +334,8 @@ if __name__ == "__main__":
     finally:
         # Clean up temp file
         if tmp_frame_list is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_frame_list.name)
-            except OSError:
-                pass
 
 
 def _detect_scenes(

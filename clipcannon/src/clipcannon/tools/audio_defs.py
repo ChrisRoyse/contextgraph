@@ -16,8 +16,7 @@ AUDIO_TOOL_DEFINITIONS: list[Tool] = [
         name="clipcannon_generate_music",
         description=(
             "Generate original AI background music from a text prompt. "
-            "Supports ACE-Step v1.5 (GPU, 4+ GB VRAM) and Meta MusicGen "
-            "(GPU, medium model). Use 'model' to select."
+            "Supports ACE-Step v1.5 (GPU, 4+ GB VRAM). Use 'model' to select."
         ),
         inputSchema={
             "type": "object",
@@ -30,8 +29,8 @@ AUDIO_TOOL_DEFINITIONS: list[Tool] = [
                 "volume_db": {"type": "number", "description": "Volume in dB", "default": -18},
                 "model": {
                     "type": "string",
-                    "description": "Model to use: ace-step (default) or musicgen",
-                    "enum": ["ace-step", "musicgen"],
+                    "description": "Model to use: ace-step",
+                    "enum": ["ace-step"],
                     "default": "ace-step",
                 },
             },
@@ -53,12 +52,21 @@ AUDIO_TOOL_DEFINITIONS: list[Tool] = [
                 "project_id": _PID,
                 "edit_id": _EID,
                 "preset": {
-                    "type": "string", "description": "Composition preset",
+                    "type": "string",
+                    "description": "Composition preset",
                     "enum": [
-                        "ambient_pad", "upbeat_pop", "corporate",
-                        "dramatic", "minimal_piano", "intro_jingle",
-                        "lofi_chill", "cinematic_epic", "tech_corporate",
-                        "acoustic_folk", "synth_wave", "jazz_smooth",
+                        "ambient_pad",
+                        "upbeat_pop",
+                        "corporate",
+                        "dramatic",
+                        "minimal_piano",
+                        "intro_jingle",
+                        "lofi_chill",
+                        "cinematic_epic",
+                        "tech_corporate",
+                        "acoustic_folk",
+                        "synth_wave",
+                        "jazz_smooth",
                     ],
                 },
                 "duration_s": {"type": "number", "description": "Duration in seconds"},
@@ -81,16 +89,27 @@ AUDIO_TOOL_DEFINITIONS: list[Tool] = [
                 "project_id": _PID,
                 "edit_id": _EID,
                 "sfx_type": {
-                    "type": "string", "description": "Sound effect type",
+                    "type": "string",
+                    "description": "Sound effect type",
                     "enum": [
-                        "whoosh", "riser", "downer", "impact", "chime",
-                        "tick", "bass_drop", "shimmer", "stinger",
-                        "ambient_drone", "ambient_texture", "pad_swell",
+                        "whoosh",
+                        "riser",
+                        "downer",
+                        "impact",
+                        "chime",
+                        "tick",
+                        "bass_drop",
+                        "shimmer",
+                        "stinger",
+                        "ambient_drone",
+                        "ambient_texture",
+                        "pad_swell",
                         "nature_bed",
                     ],
                 },
                 "duration_ms": {
-                    "type": "integer", "description": "Duration in ms",
+                    "type": "integer",
+                    "description": "Duration in ms",
                     "default": 500,
                 },
                 "params": {"type": "object", "description": "Effect-specific params"},
@@ -114,8 +133,10 @@ AUDIO_TOOL_DEFINITIONS: list[Tool] = [
                     "items": {
                         "type": "string",
                         "enum": [
-                            "noise_reduction", "de_hum",
-                            "de_ess", "normalize_loudness",
+                            "noise_reduction",
+                            "de_hum",
+                            "de_ess",
+                            "normalize_loudness",
                         ],
                     },
                     "minItems": 1,

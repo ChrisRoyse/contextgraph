@@ -30,6 +30,7 @@ def _safe_fetch_all(
     except Exception:
         return []
 
+
 _FRAME_INTERVAL_MS = 500  # 2fps => one frame every 500ms
 
 
@@ -161,7 +162,8 @@ async def clipcannon_get_frame(
         frame_path, actual_ms = _find_nearest_frame(frames_dir, timestamp_ms)
         if frame_path is None:
             return _error(
-                "FRAME_NOT_FOUND", f"No frame near {timestamp_ms}ms",
+                "FRAME_NOT_FOUND",
+                f"No frame near {timestamp_ms}ms",
                 {"frames_dir": str(frames_dir)},
             )
         context = _get_moment_context(_db_path(project_id), project_id, actual_ms)
@@ -311,18 +313,20 @@ async def clipcannon_get_segment_detail(
         # The cross-stream alignment logic below still needs the rows for
         # matching, so we always query but only include in the response when
         # include_ocr is True.
-        on_screen = _safe_fetch_all(
-            conn,
-            "SELECT start_ms, end_ms, texts, type, change_from_previous"
-            f" FROM on_screen_text WHERE {rq}"
-            " ORDER BY start_ms",
-            rp,
-        ) if include_ocr else _safe_fetch_all(
-            conn,
-            "SELECT start_ms, end_ms"
-            f" FROM on_screen_text WHERE {rq}"
-            " ORDER BY start_ms",
-            rp,
+        on_screen = (
+            _safe_fetch_all(
+                conn,
+                "SELECT start_ms, end_ms, texts, type, change_from_previous"
+                f" FROM on_screen_text WHERE {rq}"
+                " ORDER BY start_ms",
+                rp,
+            )
+            if include_ocr
+            else _safe_fetch_all(
+                conn,
+                f"SELECT start_ms, end_ms FROM on_screen_text WHERE {rq} ORDER BY start_ms",
+                rp,
+            )
         )
 
         # -- Text change events (slide transitions) --
@@ -383,19 +387,25 @@ async def clipcannon_get_segment_detail(
             }
             if row.get("face_x") is not None:
                 sm["face"] = {
-                    "x": int(row["face_x"]), "y": int(row["face_y"]),
-                    "w": int(row["face_w"]), "h": int(row["face_h"]),
+                    "x": int(row["face_x"]),
+                    "y": int(row["face_y"]),
+                    "w": int(row["face_w"]),
+                    "h": int(row["face_h"]),
                     "confidence": float(row.get("face_confidence") or 0),
                 }
             if row.get("webcam_x") is not None:
                 sm["webcam"] = {
-                    "x": int(row["webcam_x"]), "y": int(row["webcam_y"]),
-                    "w": int(row["webcam_w"]), "h": int(row["webcam_h"]),
+                    "x": int(row["webcam_x"]),
+                    "y": int(row["webcam_y"]),
+                    "w": int(row["webcam_w"]),
+                    "h": int(row["webcam_h"]),
                 }
             if row.get("content_x") is not None:
                 sm["content"] = {
-                    "x": int(row["content_x"]), "y": int(row["content_y"]),
-                    "w": int(row["content_w"]), "h": int(row["content_h"]),
+                    "x": int(row["content_x"]),
+                    "y": int(row["content_y"]),
+                    "w": int(row["content_w"]),
+                    "h": int(row["content_h"]),
                 }
             canvas_json = str(row.get("canvas_regions_json", "{}"))
             try:
@@ -454,8 +464,7 @@ async def clipcannon_get_segment_detail(
         # -- Narrative analysis from LLM --
         narrative = _safe_fetch_all(
             conn,
-            "SELECT analysis_json FROM narrative_analysis"
-            " WHERE project_id = ? LIMIT 1",
+            "SELECT analysis_json FROM narrative_analysis WHERE project_id = ? LIMIT 1",
             (project_id,),
         )
 
@@ -472,18 +481,33 @@ async def clipcannon_get_segment_detail(
             curr_start = int(words[i].get("start_ms", 0))
             gap_ms = curr_start - prev_end
             if gap_ms > 300:
-                emphasis_words.append({
-                    "word": str(words[i].get("word", "")),
-                    "start_ms": curr_start,
-                    "pause_before_ms": gap_ms,
-                })
+                emphasis_words.append(
+                    {
+                        "word": str(words[i].get("word", "")),
+                        "start_ms": curr_start,
+                        "pause_before_ms": gap_ms,
+                    }
+                )
 
     # Detect speech-content alignment (speaker references screen content)
     speech_screen_alignment: list[dict[str, object]] = []
     visual_keywords = [
-        "look at", "you can see", "right here", "this is", "let me show",
-        "check this", "dashboard", "screen", "code", "file", "click",
-        "open", "scroll", "tab", "window", "button",
+        "look at",
+        "you can see",
+        "right here",
+        "this is",
+        "let me show",
+        "check this",
+        "dashboard",
+        "screen",
+        "code",
+        "file",
+        "click",
+        "open",
+        "scroll",
+        "tab",
+        "window",
+        "button",
     ]
     on_screen_dicts = [dict(o) for o in on_screen]
     for seg in transcript:
@@ -493,29 +517,35 @@ async def clipcannon_get_segment_detail(
             seg_start = int(seg.get("start_ms", 0))
             seg_end = int(seg.get("end_ms", 0))
             visible_ocr = [
-                o for o in on_screen_dicts
-                if int(o.get("start_ms", 0)) <= seg_end
-                and int(o.get("end_ms", 0)) >= seg_start
+                o
+                for o in on_screen_dicts
+                if int(o.get("start_ms", 0)) <= seg_end and int(o.get("end_ms", 0)) >= seg_start
             ]
-            speech_screen_alignment.append({
-                "transcript_ms": seg_start,
-                "text": str(seg.get("text", "")),
-                "keywords": matched_keywords,
-                "screen_text_visible": len(visible_ocr) > 0,
-            })
+            speech_screen_alignment.append(
+                {
+                    "transcript_ms": seg_start,
+                    "text": str(seg.get("text", "")),
+                    "keywords": matched_keywords,
+                    "screen_text_visible": len(visible_ocr) > 0,
+                }
+            )
 
     # Find peak emotion moments in this range (top 3 by energy)
     emotion_peaks: list[dict[str, object]] = []
     if emotion:
         sorted_by_energy = sorted(
-            emotion, key=lambda e: float(e.get("energy", 0)), reverse=True,
+            emotion,
+            key=lambda e: float(e.get("energy", 0)),
+            reverse=True,
         )
         for e in sorted_by_energy[:3]:
-            emotion_peaks.append({
-                "start_ms": int(e["start_ms"]),
-                "energy": round(float(e["energy"]), 4),
-                "arousal": round(float(e["arousal"]), 4),
-            })
+            emotion_peaks.append(
+                {
+                    "start_ms": int(e["start_ms"]),
+                    "energy": round(float(e["energy"]), 4),
+                    "arousal": round(float(e["arousal"]), 4),
+                }
+            )
 
     result: dict[str, object] = {
         "project_id": project_id,
@@ -540,9 +570,7 @@ async def clipcannon_get_segment_detail(
         "speech_screen_alignment": speech_screen_alignment,
         "emotion_peaks": emotion_peaks,
         "narrative_analysis": (
-            json_mod.loads(narrative[0]["analysis_json"])
-            if narrative
-            else None
+            json_mod.loads(narrative[0]["analysis_json"]) if narrative else None
         ),
     }
 

@@ -8,16 +8,17 @@ No CPU fallbacks. Errors raise BehaviorError with full context.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from phoenix.errors import BehaviorError
-from phoenix.expression.gesture_library import GestureClip, GestureLibrary
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from phoenix.expression.emotion_fusion import EmotionState
+    from phoenix.expression.gesture_library import GestureClip, GestureLibrary
 
 
 def _hash_embedding(text: str, dim: int = 768) -> np.ndarray:
@@ -36,7 +37,7 @@ def _hash_embedding(text: str, dim: int = 768) -> np.ndarray:
     """
     # Use a stable hash: sum of character ordinals * position.
     seed = 0
-    for i, ch in enumerate(text):
+    for _i, ch in enumerate(text):
         seed = (seed * 31 + ord(ch)) & 0xFFFF_FFFF
     rng = np.random.default_rng(seed)
     vec = rng.standard_normal(dim).astype(np.float32)

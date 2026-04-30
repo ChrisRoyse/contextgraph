@@ -22,10 +22,11 @@ class TestConfig:
 
 # --- Model Loading ---
 
+
 def test_model_loads_to_gpu(session_llm_brain, check_gpu):
     """Model is loaded and consuming significant VRAM."""
     assert session_llm_brain.is_loaded is True
-    vram_gb = session_llm_brain.vram_bytes / (1024 ** 3)
+    vram_gb = session_llm_brain.vram_bytes / (1024**3)
     print(f"VRAM allocated: {vram_gb:.2f} GB")
     assert vram_gb > 1.0, f"Expected >1GB VRAM, got {vram_gb:.2f}GB"
 
@@ -43,6 +44,7 @@ def test_model_load_time_recorded(session_llm_brain):
 
 
 # --- Chat Prompt Building ---
+
 
 def test_build_chat_prompt_basic(session_llm_brain):
     """Produces non-empty prompt containing user message."""
@@ -86,6 +88,7 @@ def test_build_chat_prompt_empty_raises(session_llm_brain):
 
 
 # --- Token Streaming ---
+
 
 @pytest.mark.asyncio
 async def test_generate_stream_yields_tokens(session_llm_brain):
@@ -134,9 +137,11 @@ async def test_generate_stream_records_metrics(session_llm_brain):
     assert m.time_to_first_token_ms > 0
     assert m.total_generation_ms > 0
     assert m.tokens_per_second > 0
-    print(f"Metrics: prompt={m.prompt_tokens}, gen={m.generated_tokens}, "
-          f"ttft={m.time_to_first_token_ms}ms, total={m.total_generation_ms}ms, "
-          f"speed={m.tokens_per_second} tok/s")
+    print(
+        f"Metrics: prompt={m.prompt_tokens}, gen={m.generated_tokens}, "
+        f"ttft={m.time_to_first_token_ms}ms, total={m.total_generation_ms}ms, "
+        f"speed={m.tokens_per_second} tok/s"
+    )
 
 
 @pytest.mark.asyncio
@@ -166,31 +171,37 @@ async def test_generate_greedy(session_llm_brain):
 
 # --- Error Handling ---
 
+
 def test_bad_model_path_raises(check_gpu):
     """Nonexistent model path raises LLMError with descriptive message."""
+
     class BadConfig:
         model_path = "/nonexistent/model/path"
         quantization = "fp8"
         gpu_memory_utilization = 0.45
         max_model_len = 32768
         max_tokens = 64
+
     with pytest.raises(LLMError, match="Failed to load tokenizer"):
         LLMBrain(BadConfig())
 
 
 def test_bad_quantization_raises(check_gpu):
     """Invalid quantization string raises LLMError."""
+
     class BadConfig:
         model_path = MODEL_PATH
         quantization = "int3_nonsense"
         gpu_memory_utilization = 0.45
         max_model_len = 32768
         max_tokens = 64
+
     with pytest.raises(LLMError, match="Unsupported quantization"):
         LLMBrain(BadConfig())
 
 
 # --- Release ---
+
 
 def test_release_clears_model_state(check_gpu):
     """release() dereferences model and tokenizer, marks as not loaded."""
@@ -217,6 +228,7 @@ async def test_generate_after_release_raises(check_gpu):
 
 
 # --- Dtype Resolution ---
+
 
 def test_resolve_dtype():
     """All supported quantization strings resolve correctly."""

@@ -14,6 +14,7 @@ References:
   - Blink rate: 15-20/min relaxed, up to 26/min stressed
   - Saccade duration: 20-200ms depending on amplitude
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,9 +28,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EyeState:
     """Current eye parameters for avatar rendering."""
+
     # Gaze direction (relative to center, in degrees)
-    gaze_x: float = 0.0      # Left(-) / Right(+)
-    gaze_y: float = 0.0      # Down(-) / Up(+)
+    gaze_x: float = 0.0  # Left(-) / Right(+)
+    gaze_y: float = 0.0  # Down(-) / Up(+)
 
     # Blink state (0 = fully open, 1 = fully closed)
     blink_left: float = 0.0

@@ -46,7 +46,7 @@ def main() -> None:
     for i in range(device_count):
         props = torch.cuda.get_device_properties(i)
         cc = f"{props.major}.{props.minor}"
-        vram_gb = props.total_memory / (1024 ** 3)
+        vram_gb = props.total_memory / (1024**3)
 
         # Precision selection
         precision_map = {
@@ -71,7 +71,7 @@ def main() -> None:
         print(f"    Loading strategy:   {strategy}")
 
         if vram_gb < 8:
-            print(f"    WARNING: VRAM < 8GB. Some stages may fail.")
+            print("    WARNING: VRAM < 8GB. Some stages may fail.")
         print()
 
     print("=" * 60)

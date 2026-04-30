@@ -17,10 +17,10 @@ from phoenix.expression.emotion_fusion import (
 from phoenix.expression.gesture_library import GestureClip, GestureLibrary
 from phoenix.expression.speaker_tracker import SpeakerInfo, SpeakerTracker
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build real data with known properties
 # ---------------------------------------------------------------------------
+
 
 def _make_prosody(
     *,
@@ -58,6 +58,7 @@ def _make_prosody(
 # EmotionFusion tests
 # ===================================================================
 
+
 class TestEmotionFusion:
     """Tests for EmotionFusion cross-modal fusion."""
 
@@ -78,7 +79,11 @@ class TestEmotionFusion:
         assert 0.0 <= state.dominance <= 1.0
         assert 0.0 <= state.confidence <= 1.0
         assert state.prosody_style in (
-            "energetic", "calm", "emphatic", "varied", "question",
+            "energetic",
+            "calm",
+            "emphatic",
+            "varied",
+            "question",
         )
         assert isinstance(state.is_sarcastic, bool)
 
@@ -281,15 +286,14 @@ class TestEmotionFusion:
 # SpeakerTracker tests
 # ===================================================================
 
+
 class TestSpeakerTracker:
     """Tests for SpeakerTracker speaker identification."""
 
     def test_new_speaker_registration(self) -> None:
         """First embedding creates speaker_0."""
         tracker = SpeakerTracker(similarity_threshold=0.7)
-        embedding = np.random.default_rng(42).standard_normal(512).astype(
-            np.float32
-        )
+        embedding = np.random.default_rng(42).standard_normal(512).astype(np.float32)
 
         info = tracker.track(embedding, timestamp_ms=1000)
 
@@ -390,13 +394,13 @@ class TestSpeakerTracker:
     def test_get_all_speakers_order(self) -> None:
         """Speakers are returned in registration order."""
         tracker = SpeakerTracker(similarity_threshold=0.7)
-        rng = np.random.default_rng(100)
+        np.random.default_rng(100)
 
         for i in range(3):
             # Create clearly distinct embeddings.
             emb = np.zeros(512, dtype=np.float32)
             start = i * 170
-            emb[start:start + 170] = 1.0
+            emb[start : start + 170] = 1.0
             emb = emb / np.linalg.norm(emb)
             tracker.track(emb, timestamp_ms=i * 1000)
 
@@ -446,6 +450,7 @@ class TestSpeakerTracker:
 # GestureLibrary tests
 # ===================================================================
 
+
 class TestGestureLibrary:
     """Tests for GestureLibrary semantic gesture selection."""
 
@@ -462,15 +467,9 @@ class TestGestureLibrary:
         lib.build_default_library()
 
         categories = {g.category for g in lib.get_by_category("agreement")}
-        categories.update(
-            g.category for g in lib.get_by_category("disagreement")
-        )
-        categories.update(
-            g.category for g in lib.get_by_category("uncertainty")
-        )
-        categories.update(
-            g.category for g in lib.get_by_category("emphasis")
-        )
+        categories.update(g.category for g in lib.get_by_category("disagreement"))
+        categories.update(g.category for g in lib.get_by_category("uncertainty"))
+        categories.update(g.category for g in lib.get_by_category("emphasis"))
 
         assert "agreement" in categories
         assert "disagreement" in categories
@@ -490,10 +489,8 @@ class TestGestureLibrary:
         emb_b[384:] = 1.0
         emb_b = emb_b / np.linalg.norm(emb_b)
 
-        lib.add_gesture("gesture_a", "agreement", "Nod", emb_a, 500,
-                        ["head"], 0.5)
-        lib.add_gesture("gesture_b", "emphasis", "Chop", emb_b, 600,
-                        ["hands"], 0.8)
+        lib.add_gesture("gesture_a", "agreement", "Nod", emb_a, 500, ["head"], 0.5)
+        lib.add_gesture("gesture_b", "emphasis", "Chop", emb_b, 600, ["hands"], 0.8)
 
         # Query embedding close to gesture_a.
         query = np.zeros(768, dtype=np.float32)
@@ -527,10 +524,8 @@ class TestGestureLibrary:
         emb_emphasis = np.ones(768, dtype=np.float32) * 0.5
         emb_emphasis = emb_emphasis / np.linalg.norm(emb_emphasis)
 
-        lib.add_gesture("nod", "agreement", "Nod", emb_agree, 500,
-                        ["head"], 0.5)
-        lib.add_gesture("chop", "emphasis", "Chop", emb_emphasis, 600,
-                        ["hands"], 0.8)
+        lib.add_gesture("nod", "agreement", "Nod", emb_agree, 500, ["head"], 0.5)
+        lib.add_gesture("chop", "emphasis", "Chop", emb_emphasis, 600, ["hands"], 0.8)
 
         # Even though both have similar embeddings, filter should
         # restrict to agreement only.
@@ -559,12 +554,10 @@ class TestGestureLibrary:
         lib = GestureLibrary()
         emb = np.ones(768, dtype=np.float32)
 
-        lib.add_gesture("test_1", "agreement", "Test", emb, 500,
-                        ["head"], 0.5)
+        lib.add_gesture("test_1", "agreement", "Test", emb, 500, ["head"], 0.5)
 
         with pytest.raises(BehaviorError, match="already exists"):
-            lib.add_gesture("test_1", "emphasis", "Test2", emb, 600,
-                            ["hands"], 0.8)
+            lib.add_gesture("test_1", "emphasis", "Test2", emb, 600, ["hands"], 0.8)
 
     def test_add_gesture_invalid_embedding_raises(self) -> None:
         """Non-1D embedding raises BehaviorError."""
@@ -572,8 +565,13 @@ class TestGestureLibrary:
 
         with pytest.raises(BehaviorError):
             lib.add_gesture(
-                "bad", "agreement", "Bad", np.zeros((2, 384)),
-                500, ["head"], 0.5,
+                "bad",
+                "agreement",
+                "Bad",
+                np.zeros((2, 384)),
+                500,
+                ["head"],
+                0.5,
             )
 
     def test_select_invalid_embedding_raises(self) -> None:
@@ -592,8 +590,7 @@ class TestGestureLibrary:
         lib1 = GestureLibrary(db_path=db_file)
         emb = np.ones(768, dtype=np.float32)
         emb = emb / np.linalg.norm(emb)
-        lib1.add_gesture("test_persist", "agreement", "Persist test",
-                         emb, 500, ["head"], 0.6)
+        lib1.add_gesture("test_persist", "agreement", "Persist test", emb, 500, ["head"], 0.6)
         assert lib1.size == 1
 
         # Read back from new instance.
@@ -620,8 +617,13 @@ class TestGestureLibrary:
         lib = GestureLibrary()
         emb = np.ones(768, dtype=np.float32)
         lib.add_gesture(
-            "multi_part", "emphasis", "Multi part gesture",
-            emb, 700, ["head", "shoulders", "hands"], 0.9,
+            "multi_part",
+            "emphasis",
+            "Multi part gesture",
+            emb,
+            700,
+            ["head", "shoulders", "hands"],
+            0.9,
         )
 
         gestures = lib.get_by_category("emphasis")
@@ -632,40 +634,48 @@ class TestGestureLibrary:
 # Integration: imports from phoenix.expression
 # ===================================================================
 
+
 class TestExpressionPackageExports:
     """Verify that all public types are re-exported from the package."""
 
     def test_emotion_fusion_importable(self) -> None:
         """EmotionFusion is importable from phoenix.expression."""
         from phoenix.expression import EmotionFusion as EF
+
         assert EF is EmotionFusion
 
     def test_emotion_state_importable(self) -> None:
         """EmotionState is importable from phoenix.expression."""
         from phoenix.expression import EmotionState as ES
+
         assert ES is EmotionState
 
     def test_prosody_features_importable(self) -> None:
         """ProsodyFeatures is importable from phoenix.expression."""
         from phoenix.expression import ProsodyFeatures as PF
+
         assert PF is ProsodyFeatures
 
     def test_speaker_tracker_importable(self) -> None:
         """SpeakerTracker is importable from phoenix.expression."""
         from phoenix.expression import SpeakerTracker as ST
+
         assert ST is SpeakerTracker
 
     def test_speaker_info_importable(self) -> None:
         """SpeakerInfo is importable from phoenix.expression."""
         from phoenix.expression import SpeakerInfo as SI
+
         assert SI is SpeakerInfo
 
     def test_gesture_library_importable(self) -> None:
         """GestureLibrary is importable from phoenix.expression."""
         from phoenix.expression import GestureLibrary as GL
+
         assert GL is GestureLibrary
 
     def test_gesture_clip_importable(self) -> None:
         """GestureClip is importable from phoenix.expression."""
         from phoenix.expression import GestureClip as GC
+
         assert GC is GestureClip

@@ -46,7 +46,8 @@ class TestPrepareVoiceData:
         reason="Real project vocals.wav not available",
     )
     def test_prepare_voice_data_creates_output(
-        self, voice_output_dir: Path,
+        self,
+        voice_output_dir: Path,
     ) -> None:
         """Prepare voice data produces WAV clips and manifest files."""
         from clipcannon.voice.data_prep import prepare_voice_training_data
@@ -91,12 +92,8 @@ class TestPrepareVoiceData:
         for wav_file in wav_files:
             audio = AudioSegment.from_wav(str(wav_file))
             duration_ms = len(audio)
-            assert duration_ms >= 1000, (
-                f"Clip {wav_file.name} is too short: {duration_ms}ms"
-            )
-            assert duration_ms <= 12000, (
-                f"Clip {wav_file.name} is too long: {duration_ms}ms"
-            )
+            assert duration_ms >= 1000, f"Clip {wav_file.name} is too short: {duration_ms}ms"
+            assert duration_ms <= 12000, f"Clip {wav_file.name} is too long: {duration_ms}ms"
 
         # Verify manifest format: path|text|speaker
         for line in train_lines + val_lines:
@@ -112,7 +109,8 @@ class TestPrepareVoiceData:
         reason="Real project vocals.wav not available",
     )
     def test_prepare_voice_data_phonemizes(
-        self, voice_output_dir: Path,
+        self,
+        voice_output_dir: Path,
     ) -> None:
         """Verify phonemized text contains IPA-like characters."""
         from clipcannon.voice.data_prep import prepare_voice_training_data
@@ -135,16 +133,13 @@ class TestPrepareVoiceData:
 
         # Phonemized text should contain IPA characters not in
         # normal English (e.g., vowels with diacritics, schwa)
-        has_ipa = any(
-            ord(c) > 127 or c in "??e??i??u??a??o???"
-            for c in phonemes
-        )
-        assert has_ipa, (
-            f"Phonemes don't look phonemized: {phonemes!r}"
-        )
+        has_ipa = any(ord(c) > 127 or c in "??e??i??u??a??o???" for c in phonemes)
+        assert has_ipa, f"Phonemes don't look phonemized: {phonemes!r}"
 
     def test_prepare_voice_data_missing_vocals(
-        self, voice_output_dir: Path, tmp_path: Path,
+        self,
+        voice_output_dir: Path,
+        tmp_path: Path,
     ) -> None:
         """Raises FileNotFoundError when vocals.wav is missing."""
         from clipcannon.voice.data_prep import prepare_voice_training_data
@@ -178,7 +173,9 @@ class TestVoiceProfileCrud:
         )
 
         profile_id = create_voice_profile(
-            voice_db, "test_voice", "/models/test_voice",
+            voice_db,
+            "test_voice",
+            "/models/test_voice",
         )
         assert profile_id.startswith("vp_")
 
@@ -215,7 +212,8 @@ class TestVoiceProfileCrud:
 
         create_voice_profile(voice_db, "update_test", "/models/update")
         update_voice_profile(
-            voice_db, "update_test",
+            voice_db,
+            "update_test",
             training_status="training",
             training_hours=2.5,
         )
@@ -252,7 +250,9 @@ class TestVoiceProfileCrud:
 
         with pytest.raises(ValueError, match="Voice profile not found"):
             update_voice_profile(
-                voice_db, "nope", training_status="ready",
+                voice_db,
+                "nope",
+                training_status="ready",
             )
 
     def test_get_nonexistent_returns_none(self, voice_db: Path) -> None:

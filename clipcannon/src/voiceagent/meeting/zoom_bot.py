@@ -16,6 +16,7 @@ SDK provides:
 This module wraps the C++ SDK via subprocess (the SDK runs as a
 separate process, communicating via stdin/stdout JSON protocol).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,12 +24,15 @@ import json
 import logging
 import re
 import subprocess
-from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from voiceagent.meeting.errors import MeetingDeviceError
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +106,8 @@ class ZoomBotSession:
         while self.is_connected:
             try:
                 line = await loop.run_in_executor(
-                    None, self._process.stdout.readline,
+                    None,
+                    self._process.stdout.readline,
                 )
                 if not line:
                     break
@@ -124,35 +129,52 @@ class ZoomBotSession:
 
         # Convert to 16-bit PCM
         pcm = (audio * 32767).astype(np.int16).tobytes()
-        msg = json.dumps({
-            "type": "send_audio",
-            "data": pcm.hex(),
-            "sample_rate": sample_rate,
-        }) + "\n"
+        msg = (
+            json.dumps(
+                {
+                    "type": "send_audio",
+                    "data": pcm.hex(),
+                    "sample_rate": sample_rate,
+                }
+            )
+            + "\n"
+        )
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None, self._process.stdin.write, msg.encode(),
+            None,
+            self._process.stdin.write,
+            msg.encode(),
         )
         await loop.run_in_executor(None, self._process.stdin.flush)
 
     async def send_video_frame(
-        self, frame: np.ndarray, width: int, height: int,
+        self,
+        frame: np.ndarray,
+        width: int,
+        height: int,
     ) -> None:
         """Send a video frame to the meeting (I420 format via SDK)."""
         if not self.is_connected:
             raise MeetingDeviceError("Zoom bot is not connected")
 
-        msg = json.dumps({
-            "type": "send_video",
-            "data": frame.tobytes().hex(),
-            "width": width,
-            "height": height,
-        }) + "\n"
+        msg = (
+            json.dumps(
+                {
+                    "type": "send_video",
+                    "data": frame.tobytes().hex(),
+                    "width": width,
+                    "height": height,
+                }
+            )
+            + "\n"
+        )
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None, self._process.stdin.write, msg.encode(),
+            None,
+            self._process.stdin.write,
+            msg.encode(),
         )
         await loop.run_in_executor(None, self._process.stdin.flush)
 
@@ -214,11 +236,16 @@ class ZoomBotJoin:
 
         cmd = [
             str(sdk_path),
-            "--client-id", self._client_id,
-            "--client-secret", self._client_secret,
-            "--meeting-id", meeting_id,
-            "--password", password,
-            "--display-name", display_name,
+            "--client-id",
+            self._client_id,
+            "--client-secret",
+            self._client_secret,
+            "--meeting-id",
+            meeting_id,
+            "--password",
+            password,
+            "--display-name",
+            display_name,
             "--json-protocol",  # Use JSON lines on stdin/stdout
         ]
 
@@ -226,7 +253,9 @@ class ZoomBotJoin:
             cmd.append("--enable-video")
 
         logger.info(
-            "Joining Zoom meeting %s as '%s'...", meeting_id, display_name,
+            "Joining Zoom meeting %s as '%s'...",
+            meeting_id,
+            display_name,
         )
 
         try:
@@ -257,7 +286,7 @@ class ZoomBotJoin:
                 raise MeetingDeviceError(
                     f"Zoom SDK failed to join meeting: {msg}. stderr: {stderr[:500]}"
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             process.kill()
             raise MeetingDeviceError(
                 f"Zoom SDK timed out joining meeting {meeting_id} (30s). "
@@ -265,9 +294,7 @@ class ZoomBotJoin:
             )
         except (json.JSONDecodeError, ValueError) as e:
             process.kill()
-            raise MeetingDeviceError(
-                f"Zoom SDK returned invalid response: {e}"
-            ) from e
+            raise MeetingDeviceError(f"Zoom SDK returned invalid response: {e}") from e
 
         logger.info("Joined Zoom meeting %s as '%s'", meeting_id, display_name)
         return ZoomBotSession(
@@ -284,6 +311,7 @@ class ZoomBotJoin:
             MeetingDeviceError: If not found.
         """
         import shutil
+
         path = shutil.which(SDK_BINARY)
         if path:
             return Path(path)

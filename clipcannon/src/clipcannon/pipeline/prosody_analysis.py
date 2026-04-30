@@ -21,7 +21,6 @@ import sqlite3
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -36,6 +35,8 @@ from clipcannon.provenance import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from clipcannon.config import ClipCannonConfig
 
 logger = logging.getLogger(__name__)
@@ -125,8 +126,9 @@ def _load_audio(audio_path: Path) -> tuple[np.ndarray, int]:
     return audio, sr
 
 
-def _extract_prosody(audio: np.ndarray, sr: int, word_count: int,
-                     duration_s: float) -> ProsodyFeatures:
+def _extract_prosody(
+    audio: np.ndarray, sr: int, word_count: int, duration_s: float
+) -> ProsodyFeatures:
     """Extract prosodic features from an audio segment."""
     import pyworld as pw
 
@@ -136,10 +138,19 @@ def _extract_prosody(audio: np.ndarray, sr: int, word_count: int,
 
     if len(voiced) < 5:
         return ProsodyFeatures(
-            f0_mean=0, f0_std=0, f0_min=0, f0_max=0, f0_range=0,
-            energy_mean=0, energy_peak=0, energy_std=0,
-            speaking_rate_wpm=0, pitch_contour_type="flat",
-            energy_level="low", has_emphasis=False, has_breath=False,
+            f0_mean=0,
+            f0_std=0,
+            f0_min=0,
+            f0_max=0,
+            f0_range=0,
+            energy_mean=0,
+            energy_peak=0,
+            energy_std=0,
+            speaking_rate_wpm=0,
+            pitch_contour_type="flat",
+            energy_level="low",
+            has_emphasis=False,
+            has_breath=False,
             prosody_score=0,
         )
 
@@ -152,10 +163,7 @@ def _extract_prosody(audio: np.ndarray, sr: int, word_count: int,
     # Energy (RMS in 50ms windows)
     hop = int(sr * 0.05)
     n_frames = max(1, len(audio) // hop)
-    rms = np.array([
-        np.sqrt(np.mean(audio[i * hop:(i + 1) * hop] ** 2))
-        for i in range(n_frames)
-    ])
+    rms = np.array([np.sqrt(np.mean(audio[i * hop : (i + 1) * hop] ** 2)) for i in range(n_frames)])
     energy_mean = float(np.mean(rms))
     energy_peak = float(np.max(rms))
     energy_std = float(np.std(rms))
@@ -165,9 +173,9 @@ def _extract_prosody(audio: np.ndarray, sr: int, word_count: int,
 
     # Pitch contour classification
     if len(voiced) >= 10:
-        first_quarter = np.mean(voiced[:len(voiced) // 4])
-        last_quarter = np.mean(voiced[-len(voiced) // 4:])
-        mid_half = np.mean(voiced[len(voiced) // 4: -len(voiced) // 4])
+        first_quarter = np.mean(voiced[: len(voiced) // 4])
+        last_quarter = np.mean(voiced[-len(voiced) // 4 :])
+        np.mean(voiced[len(voiced) // 4 : -len(voiced) // 4])
 
         if last_quarter > first_quarter * 1.1:
             pitch_contour_type = "rising"
@@ -255,17 +263,29 @@ def _extract_prosody(audio: np.ndarray, sr: int, word_count: int,
 
 
 def _extract_clip(
-    vocal_path: Path, output_path: Path,
-    start_ms: int, end_ms: int,
+    vocal_path: Path,
+    output_path: Path,
+    start_ms: int,
+    end_ms: int,
 ) -> bool:
     """Extract a WAV clip from the vocal stem using FFmpeg."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
-        "-i", str(vocal_path),
-        "-ss", f"{start_ms / 1000:.3f}",
-        "-to", f"{end_ms / 1000:.3f}",
-        "-ar", "24000", "-ac", "1",
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(vocal_path),
+        "-ss",
+        f"{start_ms / 1000:.3f}",
+        "-to",
+        f"{end_ms / 1000:.3f}",
+        "-ar",
+        "24000",
+        "-ac",
+        "1",
         str(output_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -273,7 +293,8 @@ def _extract_clip(
 
 
 def _get_transcript_sentences(
-    db_path: Path, project_id: str,
+    db_path: Path,
+    project_id: str,
 ) -> list[dict[str, object]]:
     """Get sentence-aligned segments from transcript."""
     conn = sqlite3.connect(str(db_path))
@@ -299,7 +320,10 @@ def _get_transcript_sentences(
 
 
 def _get_emotion_for_time(
-    db_path: Path, project_id: str, start_ms: int, end_ms: int,
+    db_path: Path,
+    project_id: str,
+    start_ms: int,
+    end_ms: int,
 ) -> str:
     """Get the dominant emotion label for a time range."""
     conn = sqlite3.connect(str(db_path))
@@ -374,7 +398,8 @@ async def run_prosody_analysis(
                 vocal_path = wavs[0]
             else:
                 return StageResult(
-                    success=True, operation=OPERATION,
+                    success=True,
+                    operation=OPERATION,
                     duration_ms=0,
                     provenance_record_id=None,
                 )
@@ -384,7 +409,8 @@ async def run_prosody_analysis(
         if not sentences:
             logger.info("Prosody analysis: no transcript segments, skipping")
             return StageResult(
-                success=True, operation=OPERATION,
+                success=True,
+                operation=OPERATION,
                 duration_ms=int((time.monotonic() - start_time) * 1000),
                 provenance_record_id=None,
             )
@@ -449,23 +475,37 @@ async def run_prosody_analysis(
             # Get emotion label from emotion_curve
             emotion = _get_emotion_for_time(db_path, project_id, start_ms, end_ms)
 
-            records.append((
-                project_id, start_ms, end_ms,
-                str(clip_path) if clip_extracted else None,
-                text, word_count,
-                features.f0_mean, features.f0_std,
-                features.f0_min, features.f0_max, features.f0_range,
-                features.energy_mean, features.energy_peak, features.energy_std,
-                features.speaking_rate_wpm, features.pitch_contour_type,
-                features.energy_level,
-                1 if features.has_emphasis else 0,
-                1 if features.has_breath else 0,
-                features.prosody_score, emotion,
-                json.dumps({
-                    "duration_s": round(duration_s, 2),
-                    "sentence_index": i,
-                }),
-            ))
+            records.append(
+                (
+                    project_id,
+                    start_ms,
+                    end_ms,
+                    str(clip_path) if clip_extracted else None,
+                    text,
+                    word_count,
+                    features.f0_mean,
+                    features.f0_std,
+                    features.f0_min,
+                    features.f0_max,
+                    features.f0_range,
+                    features.energy_mean,
+                    features.energy_peak,
+                    features.energy_std,
+                    features.speaking_rate_wpm,
+                    features.pitch_contour_type,
+                    features.energy_level,
+                    1 if features.has_emphasis else 0,
+                    1 if features.has_breath else 0,
+                    features.prosody_score,
+                    emotion,
+                    json.dumps(
+                        {
+                            "duration_s": round(duration_s, 2),
+                            "sentence_index": i,
+                        }
+                    ),
+                )
+            )
 
             if clip_extracted:
                 clip_count += 1
@@ -483,7 +523,9 @@ async def run_prosody_analysis(
 
         logger.info(
             "Prosody analysis: %d segments analyzed, %d clips extracted, took %dms",
-            len(records), clip_count, elapsed_ms,
+            len(records),
+            clip_count,
+            elapsed_ms,
         )
 
         content_hash = sha256_string(
@@ -507,8 +549,7 @@ async def run_prosody_analysis(
             execution_info=ExecutionInfo(duration_ms=elapsed_ms),
             parent_record_id=None,
             description=(
-                f"Prosody analysis: {len(records)} segments, "
-                f"{clip_count} clips extracted"
+                f"Prosody analysis: {len(records)} segments, {clip_count} clips extracted"
             ),
         )
 

@@ -1,4 +1,5 @@
 """Silence-based endpoint detection for streaming ASR."""
+
 import logging
 
 logger = logging.getLogger(__name__)

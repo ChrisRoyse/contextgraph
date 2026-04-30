@@ -90,7 +90,9 @@ def select_prosody_reference(
 
         training_projects = profile.get("training_projects", "[]")
         try:
-            project_ids = _json.loads(training_projects) if isinstance(training_projects, str) else []
+            project_ids = (
+                _json.loads(training_projects) if isinstance(training_projects, str) else []
+            )
         except Exception:
             project_ids = []
 
@@ -104,7 +106,9 @@ def select_prosody_reference(
         projects_base = Path.home() / ".clipcannon" / "projects"
         for pid in project_ids:
             result = _search_prosody_db(
-                projects_base / pid / "analysis.db", pid, preset,
+                projects_base / pid / "analysis.db",
+                pid,
+                preset,
             )
             if result and result[1] > best_score:
                 best_clip, best_score = result
@@ -119,7 +123,9 @@ def select_prosody_reference(
     if best_clip is not None:
         logger.info(
             "Prosody reference selected: style=%s, score=%.1f, clip=%s",
-            style, best_score, best_clip.name,
+            style,
+            best_score,
+            best_clip.name,
         )
 
     return best_clip

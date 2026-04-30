@@ -10,6 +10,7 @@ safety, then DELETED after successful ingest.
 The MCP server MUST be running. If it's not, operations fail fast with
 MeetingTranscriptStoreError.
 """
+
 from __future__ import annotations
 
 import gc
@@ -80,7 +81,8 @@ class MeetingTranscriptStore:
             return
         try:
             await self._client.call_tool(
-                "ocr_db_select", {"database_name": self._config.database_name},
+                "ocr_db_select",
+                {"database_name": self._config.database_name},
             )
             self._db_ensured = True
             return
@@ -94,7 +96,8 @@ class MeetingTranscriptStore:
             },
         )
         await self._client.call_tool(
-            "ocr_db_select", {"database_name": self._config.database_name},
+            "ocr_db_select",
+            {"database_name": self._config.database_name},
         )
         self._db_ensured = True
 
@@ -112,9 +115,7 @@ class MeetingTranscriptStore:
         """
         doc = self._active_meetings.get(meeting_id)
         if doc is None:
-            raise MeetingTranscriptStoreError(
-                f"No active meeting with id '{meeting_id}'"
-            )
+            raise MeetingTranscriptStoreError(f"No active meeting with id '{meeting_id}'")
         return doc
 
     def create_meeting(
@@ -142,12 +143,16 @@ class MeetingTranscriptStore:
         self._active_meetings[meeting_id] = doc
         self._segment_counts[meeting_id] = 0
         logger.info(
-            "Meeting created: %s (clones=%s)", meeting_id, clone_names,
+            "Meeting created: %s (clones=%s)",
+            meeting_id,
+            clone_names,
         )
         return meeting_id
 
     def append_segment(
-        self, meeting_id: str, segment: MeetingSegment,
+        self,
+        meeting_id: str,
+        segment: MeetingSegment,
     ) -> None:
         """Append a transcript segment to the in-memory buffer.
 
@@ -165,9 +170,7 @@ class MeetingTranscriptStore:
         """
         doc = self._get_meeting(meeting_id)
         doc.segments.append(segment)
-        self._segment_counts[meeting_id] = (
-            self._segment_counts.get(meeting_id, 0) + 1
-        )
+        self._segment_counts[meeting_id] = self._segment_counts.get(meeting_id, 0) + 1
         if segment.speaker_name and not segment.is_clone:
             if segment.speaker_name not in doc.participant_names:
                 doc.participant_names.append(segment.speaker_name)
@@ -179,11 +182,14 @@ class MeetingTranscriptStore:
             del doc.segments[:trim]
             logger.debug(
                 "Trimmed %d old segments from memory for %s",
-                trim, meeting_id,
+                trim,
+                meeting_id,
             )
 
     def record_interaction(
-        self, meeting_id: str, interaction: CloneInteraction,
+        self,
+        meeting_id: str,
+        interaction: CloneInteraction,
     ) -> None:
         """Record a clone Q&A interaction.
 
@@ -230,7 +236,9 @@ class MeetingTranscriptStore:
         path.write_text(md, encoding="utf-8")
         self._segment_counts[meeting_id] = 0
         logger.debug(
-            "Flushed %s (%d segments)", meeting_id, len(doc.segments),
+            "Flushed %s (%d segments)",
+            meeting_id,
+            len(doc.segments),
         )
         return path
 
@@ -261,9 +269,7 @@ class MeetingTranscriptStore:
         doc = self._get_meeting(meeting_id)
 
         doc.ended_at = datetime.now()
-        doc.duration_minutes = int(
-            (doc.ended_at - doc.started_at).total_seconds() / 60
-        )
+        doc.duration_minutes = int((doc.ended_at - doc.started_at).total_seconds() / 60)
         doc.summary = summary
         if tags:
             doc.tags = tags
@@ -383,7 +389,9 @@ class MeetingTranscriptStore:
             if doc_id:
                 logger.debug(
                     "Live transcript ingested: %s -> %s (%d segments)",
-                    meeting_id, doc_id, len(doc.segments),
+                    meeting_id,
+                    doc_id,
+                    len(doc.segments),
                 )
             return doc_id or None
 
@@ -406,11 +414,14 @@ class MeetingTranscriptStore:
         """
         await self._ensure_db()
         return await self._client.call_tool(
-            "ocr_search", {"query": query, "limit": limit},
+            "ocr_search",
+            {"query": query, "limit": limit},
         )
 
     async def list_meetings(
-        self, limit: int = 50, cursor: str | None = None,
+        self,
+        limit: int = 50,
+        cursor: str | None = None,
     ) -> dict:
         """List all meeting documents in OCR Provenance.
 
@@ -444,11 +455,14 @@ class MeetingTranscriptStore:
         """
         await self._ensure_db()
         return await self._client.call_tool(
-            "ocr_document_get", {"id": document_id},
+            "ocr_document_get",
+            {"id": document_id},
         )
 
     async def export_meeting(
-        self, document_id: str, export_format: str = "markdown",
+        self,
+        document_id: str,
+        export_format: str = "markdown",
     ) -> dict:
         """Export a meeting via OCR Provenance.
 

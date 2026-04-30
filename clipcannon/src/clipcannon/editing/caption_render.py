@@ -145,9 +145,7 @@ ASS_STYLES: dict[str, dict[str, str | int]] = {
 }
 
 # Valid caption style type
-CaptionStyleLiteral = Literal[
-    "bold_centered", "word_highlight", "subtitle_bar", "karaoke"
-]
+CaptionStyleLiteral = Literal["bold_centered", "word_highlight", "subtitle_bar", "karaoke"]
 
 
 # ============================================================
@@ -256,10 +254,7 @@ def _highlight_dialogue_text(
         escaped = _escape_ass_text(word.word)
         duration_cs = max(1, (word.end_ms - word.start_ms) // 10)
         if i == 0:
-            parts.append(
-                f"{{\\c{default_color}&\\kf{duration_cs}"
-                f"\\1c{highlight_color}&}}{escaped}"
-            )
+            parts.append(f"{{\\c{default_color}&\\kf{duration_cs}\\1c{highlight_color}&}}{escaped}")
         else:
             parts.append(f"{{\\kf{duration_cs}}}{escaped}")
 
@@ -306,9 +301,7 @@ def generate_ass_file(
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, "
         "MarginV, Encoding"
     )
-    style_line = "Style: " + ",".join(
-        str(style_fields[k]) for k in _ASS_STYLE_KEYS
-    )
+    style_line = "Style: " + ",".join(str(style_fields[k]) for k in _ASS_STYLE_KEYS)
 
     lines: list[str] = [
         "[Script Info]",
@@ -324,8 +317,7 @@ def generate_ass_file(
         style_line,
         "",
         "[Events]",
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, "
-        "MarginV, Effect, Text",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
 
     style_name = str(style_def["Name"])
@@ -341,9 +333,7 @@ def generate_ass_file(
         else:
             text = _escape_ass_text(chunk.text)
 
-        dialogue = (
-            f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}"
-        )
+        dialogue = f"Dialogue: 0,{start},{end},{style_name},,0,0,0,,{text}"
         lines.append(dialogue)
 
     return "\n".join(lines) + "\n"
@@ -397,18 +387,32 @@ def generate_drawtext_filters(
 
         if style == "subtitle_bar":
             _append_subtitle_bar(
-                filters, escaped_text, font_name, font_size,
-                start_s, end_s,
+                filters,
+                escaped_text,
+                font_name,
+                font_size,
+                start_s,
+                end_s,
             )
         elif style in ("bold_centered", "word_highlight", "karaoke"):
             _append_highlight_filters(
-                filters, chunk, escaped_text, font_name, font_size,
-                start_s, end_s, style,
+                filters,
+                chunk,
+                escaped_text,
+                font_name,
+                font_size,
+                start_s,
+                end_s,
+                style,
             )
         else:
             _append_basic_filter(
-                filters, escaped_text, font_name, font_size,
-                start_s, end_s,
+                filters,
+                escaped_text,
+                font_name,
+                font_size,
+                start_s,
+                end_s,
             )
 
     return filters

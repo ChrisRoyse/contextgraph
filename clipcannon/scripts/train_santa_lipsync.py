@@ -48,15 +48,15 @@ log = logging.getLogger("lipsync")
 
 sys.path.insert(0, "/home/cabdru/echomimic_v3")
 
-import numpy as np
 import librosa
+import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from safetensors.torch import load_file
+from einops import rearrange
 from omegaconf import OmegaConf
 from PIL import Image
-from einops import rearrange
+from safetensors.torch import load_file
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -74,17 +74,26 @@ CONFIG_PATH = "/home/cabdru/echomimic_v3/config/config.yaml"
 DATA_DIR = Path.home() / "echomimic_v3" / "datasets" / "santa_teleological"
 COND_DIR = DATA_DIR / "conditioning"
 LABELS_FILE = DATA_DIR / "labels.json"
-SOURCE_VIDEO = Path.home() / ".clipcannon" / "projects" / "proj_2ea7221d" / "source" / "2026-04-03 04-23-11.mp4"
+SOURCE_VIDEO = (
+    Path.home()
+    / ".clipcannon"
+    / "projects"
+    / "proj_2ea7221d"
+    / "source"
+    / "2026-04-03 04-23-11.mp4"
+)
 VOCALS_WAV = Path.home() / ".clipcannon" / "projects" / "proj_2ea7221d" / "stems" / "vocals.wav"
-REFERENCE_IMAGE = Path.home() / ".clipcannon" / "models" / "santa" / "reference" / "santa_fullframe_600s.png"
+REFERENCE_IMAGE = (
+    Path.home() / ".clipcannon" / "models" / "santa" / "reference" / "santa_fullframe_600s.png"
+)
 
 OUTPUT_DIR = Path.home() / ".clipcannon" / "models" / "santa" / "echov3_lipsync"
 
 # Training dimensions
-VIDEO_LENGTH = 49           # frames at 25 fps
-LATENT_T = 13               # (49-1)//4 + 1
-RESOLUTION = 480            # 480x480 input
-LATENT_SPATIAL = 60         # 480 / 8
+VIDEO_LENGTH = 49  # frames at 25 fps
+LATENT_T = 13  # (49-1)//4 + 1
+RESOLUTION = 480  # 480x480 input
+LATENT_SPATIAL = 60  # 480 / 8
 
 # Loss weighting
 MOUTH_WEIGHT = 10.0
@@ -96,7 +105,8 @@ BG_WEIGHT = 1.0
 #  Utility: fail-fast preflight
 # ============================================================
 
-def preflight_check():
+
+def preflight_check() -> None:
     """Verify every required input exists before starting."""
     required = {
         "MODEL_PATH": Path(MODEL_PATH),
@@ -117,8 +127,7 @@ def preflight_check():
         for e in errors:
             log.error("  %s", e)
         raise FileNotFoundError(
-            "Preflight failed. Run precompute_face_landmarks.py and "
-            "label_training_clips.py first."
+            "Preflight failed. Run precompute_face_landmarks.py and label_training_clips.py first."
         )
     log.info("Preflight OK — all required inputs present")
 
@@ -127,8 +136,10 @@ def preflight_check():
 #  Video extraction (BLOCKER 1 FIX: use FFmpeg at explicit 25fps)
 # ============================================================
 
-def extract_clip_frames_ffmpeg(source_video: Path, start_ms: int, n_frames: int,
-                                resolution: int) -> torch.Tensor:
+
+def extract_clip_frames_ffmpeg(
+    source_video: Path, start_ms: int, n_frames: int, resolution: int
+) -> torch.Tensor:
     """Extract exactly n_frames starting at start_ms, at 25fps, sized to resolution.
 
     FIX: Previous version used cv2.VideoCapture which reads at source FPS (60).
@@ -154,26 +165,31 @@ def extract_clip_frames_ffmpeg(source_video: Path, start_ms: int, n_frames: int,
         #   -r 25 force output fps
         #   -vf scale to short-edge=resolution, then center crop
         cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-ss", f"{start_s:.3f}",
-            "-i", str(source_video),
-            "-t", f"{duration_s:.3f}",
-            "-r", "25",
-            "-vf", f"scale=-2:{resolution},crop={resolution}:{resolution}",
-            "-q:v", "3",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-ss",
+            f"{start_s:.3f}",
+            "-i",
+            str(source_video),
+            "-t",
+            f"{duration_s:.3f}",
+            "-r",
+            "25",
+            "-vf",
+            f"scale=-2:{resolution},crop={resolution}:{resolution}",
+            "-q:v",
+            "3",
             str(frame_pattern),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(
-                f"FFmpeg failed for clip at {start_ms}ms: {result.stderr}"
-            )
+            raise RuntimeError(f"FFmpeg failed for clip at {start_ms}ms: {result.stderr}")
 
         frame_files = sorted(tmp_path.glob("f_*.jpg"))
         if len(frame_files) < n_frames:
-            raise RuntimeError(
-                f"Expected {n_frames} frames but FFmpeg produced {len(frame_files)}"
-            )
+            raise RuntimeError(f"Expected {n_frames} frames but FFmpeg produced {len(frame_files)}")
 
         frames = []
         for i in range(n_frames):
@@ -193,8 +209,10 @@ def extract_clip_frames_ffmpeg(source_video: Path, start_ms: int, n_frames: int,
 #  Audio extraction (unchanged, already correct)
 # ============================================================
 
+
 def loudness_norm(audio, sr, target=-23.0):
     import pyloudnorm as pyln
+
     meter = pyln.Meter(sr)
     loudness = meter.integrated_loudness(audio)
     if loudness == float("-inf"):
@@ -202,29 +220,24 @@ def loudness_norm(audio, sr, target=-23.0):
     return pyln.normalize.loudness(audio, loudness, target)
 
 
-def extract_audio_features(vocals_path: Path, start_ms: int,
-                           wav2vec_model, feature_extractor,
-                           video_length: int, device) -> torch.Tensor:
+def extract_audio_features(
+    vocals_path: Path, start_ms: int, wav2vec_model, feature_extractor, video_length: int, device
+) -> torch.Tensor:
     """Extract Wav2Vec features for a clip."""
     start_s = start_ms / 1000.0
     duration_s = video_length / 25.0  # match video duration
-    audio, sr = librosa.load(str(vocals_path), sr=16000, offset=start_s,
-                             duration=duration_s)
+    audio, sr = librosa.load(str(vocals_path), sr=16000, offset=start_s, duration=duration_s)
     audio = loudness_norm(audio, sr)
     audio = audio[: int(video_length / 25 * sr)]
-    audio_feature = np.squeeze(
-        feature_extractor(audio, sampling_rate=16000).input_values
-    )
+    audio_feature = np.squeeze(feature_extractor(audio, sampling_rate=16000).input_values)
     audio_feature = torch.from_numpy(audio_feature).float().unsqueeze(0).to(device)
     with torch.no_grad():
-        embeddings = wav2vec_model(audio_feature, seq_len=video_length,
-                                   output_hidden_states=True)
+        embeddings = wav2vec_model(audio_feature, seq_len=video_length, output_hidden_states=True)
         audio_emb = torch.stack(embeddings.hidden_states[1:], dim=1).squeeze(0)
         audio_emb = rearrange(audio_emb, "b s d -> s b d")
 
     indices = (torch.arange(2 * 2 + 1) - 2) * 1
-    center_indices = (torch.arange(0, video_length, 1).unsqueeze(1)
-                      + indices.unsqueeze(0))
+    center_indices = torch.arange(0, video_length, 1).unsqueeze(1) + indices.unsqueeze(0)
     center_indices = torch.clamp(center_indices, min=0, max=audio_emb.shape[0] - 1)
     return audio_emb[center_indices].unsqueeze(0).cpu()  # (1, F, 5, 12, 768)
 
@@ -233,8 +246,10 @@ def extract_audio_features(vocals_path: Path, start_ms: int,
 #  Mouth mask computation (FIXED: uses real per-frame mouth bboxes)
 # ============================================================
 
-def compute_latent_mouth_mask(label: dict, latent_t: int, latent_s: int,
-                              resolution: int) -> torch.Tensor:
+
+def compute_latent_mouth_mask(
+    label: dict, latent_t: int, latent_s: int, resolution: int
+) -> torch.Tensor:
     """Build weight mask in latent space from per-frame mouth bboxes.
 
     Mouth bboxes come from YOLOv5-Face landmarks (precomputed), expressed
@@ -252,9 +267,9 @@ def compute_latent_mouth_mask(label: dict, latent_t: int, latent_s: int,
 
     src_w, src_h = 2560, 1440
     scale = resolution / src_h  # 0.333
-    new_w = src_w * scale        # 853
+    new_w = src_w * scale  # 853
     x_off = (new_w - resolution) / 2  # 186.5
-    y_off = 0                    # top-aligned (new_h == resolution)
+    y_off = 0  # top-aligned (new_h == resolution)
 
     face_bboxes = label.get("face_bbox_per_frame", [])
     mouth_bboxes = label.get("mouth_bbox_per_frame", [])
@@ -277,8 +292,7 @@ def compute_latent_mouth_mask(label: dict, latent_t: int, latent_s: int,
         lx2 = max(lx1 + 1, int(math.ceil(x2 / 8)))
         ly1 = int(y1 / 8)
         ly2 = max(ly1 + 1, int(math.ceil(y2 / 8)))
-        return (max(0, lx1), max(0, ly1),
-                min(latent_s, lx2), min(latent_s, ly2))
+        return (max(0, lx1), max(0, ly1), min(latent_s, lx2), min(latent_s, ly2))
 
     # WAN VAE is causal: latent[0] comes from pixel[0] alone, then
     # latent[k] for k>=1 comes from pixel frames [4k-3 : 4k+1]. We sample
@@ -306,7 +320,8 @@ def compute_latent_mouth_mask(label: dict, latent_t: int, latent_s: int,
 #  FIX: audio features stream to disk per-clip (not dict accumulation)
 # ============================================================
 
-def pre_encode_all():
+
+def pre_encode_all() -> None:
     """Pre-encode all conditioning tensors per clip.
 
     Encoding order: T5 (once), CLIP (once), Wav2Vec+VAE per-clip.
@@ -331,18 +346,29 @@ def pre_encode_all():
     # --- T5 (shared prompt) ---
     from src.wan_text_encoder import WanT5EncoderModel
     from transformers import AutoTokenizer
+
     log.info("Loading T5...")
     tokenizer = AutoTokenizer.from_pretrained(
-        os.path.join(MODEL_PATH, config["text_encoder_kwargs"].get("tokenizer_subpath", "tokenizer"))
+        os.path.join(
+            MODEL_PATH, config["text_encoder_kwargs"].get("tokenizer_subpath", "tokenizer")
+        )
     )
-    text_encoder = WanT5EncoderModel.from_pretrained(
-        os.path.join(MODEL_PATH, config["text_encoder_kwargs"].get("text_encoder_subpath", "text_encoder")),
-        additional_kwargs=OmegaConf.to_container(config["text_encoder_kwargs"]),
-        torch_dtype=torch.bfloat16,
-    ).to(device).eval()
+    text_encoder = (
+        WanT5EncoderModel.from_pretrained(
+            os.path.join(
+                MODEL_PATH,
+                config["text_encoder_kwargs"].get("text_encoder_subpath", "text_encoder"),
+            ),
+            additional_kwargs=OmegaConf.to_container(config["text_encoder_kwargs"]),
+            torch_dtype=torch.bfloat16,
+        )
+        .to(device)
+        .eval()
+    )
 
-    text_inputs = tokenizer(base_prompt, return_tensors="pt", padding="max_length",
-                            max_length=512, truncation=True)
+    text_inputs = tokenizer(
+        base_prompt, return_tensors="pt", padding="max_length", max_length=512, truncation=True
+    )
     seq_lens = text_inputs.attention_mask.sum(dim=1).tolist()
     with torch.no_grad():
         prompt_embeds = text_encoder(
@@ -358,10 +384,19 @@ def pre_encode_all():
     # --- CLIP (shared reference image) ---
     import torchvision.transforms.functional as TF
     from src.wan_image_encoder import CLIPModel
+
     log.info("Loading CLIP...")
-    clip_encoder = CLIPModel.from_pretrained(
-        os.path.join(MODEL_PATH, config["image_encoder_kwargs"].get("image_encoder_subpath", "image_encoder")),
-    ).to(torch.bfloat16).to(device).eval()
+    clip_encoder = (
+        CLIPModel.from_pretrained(
+            os.path.join(
+                MODEL_PATH,
+                config["image_encoder_kwargs"].get("image_encoder_subpath", "image_encoder"),
+            ),
+        )
+        .to(torch.bfloat16)
+        .to(device)
+        .eval()
+    )
 
     ref_img = Image.open(REFERENCE_IMAGE).convert("RGB").resize((RESOLUTION, RESOLUTION))
     clip_image = TF.to_tensor(ref_img).sub_(0.5).div_(0.5).to(device, dtype=torch.bfloat16)
@@ -375,22 +410,26 @@ def pre_encode_all():
     # --- Wav2Vec (loaded once, used per-clip) ---
     from src.wav2vec2 import Wav2Vec2Model
     from transformers import Wav2Vec2FeatureExtractor
+
     log.info("Loading Wav2Vec...")
-    audio_encoder = Wav2Vec2Model.from_pretrained(
-        WAV2VEC_DIR, local_files_only=True
-    ).to(device).eval()
-    wav2vec_fe = Wav2Vec2FeatureExtractor.from_pretrained(
-        WAV2VEC_DIR, local_files_only=True
+    audio_encoder = (
+        Wav2Vec2Model.from_pretrained(WAV2VEC_DIR, local_files_only=True).to(device).eval()
     )
+    wav2vec_fe = Wav2Vec2FeatureExtractor.from_pretrained(WAV2VEC_DIR, local_files_only=True)
     log.info("Wav2Vec loaded")
 
     # --- VAE (FP32 for WSL2 stability) ---
     from src.wan_vae import AutoencoderKLWan
+
     log.info("Loading VAE (FP32)...")
-    vae = AutoencoderKLWan.from_pretrained(
-        os.path.join(MODEL_PATH, config["vae_kwargs"].get("vae_subpath", "vae")),
-        additional_kwargs=OmegaConf.to_container(config["vae_kwargs"]),
-    ).to(torch.float32).to(device)
+    vae = (
+        AutoencoderKLWan.from_pretrained(
+            os.path.join(MODEL_PATH, config["vae_kwargs"].get("vae_subpath", "vae")),
+            additional_kwargs=OmegaConf.to_container(config["vae_kwargs"]),
+        )
+        .to(torch.float32)
+        .to(device)
+    )
 
     # Reference image latent (shared)
     ref_tensor = torch.from_numpy(np.array(ref_img)).permute(2, 0, 1).float() / 127.5 - 1.0
@@ -411,8 +450,12 @@ def pre_encode_all():
         try:
             # Audio features (stay on GPU briefly, move to CPU immediately)
             audio_emb = extract_audio_features(
-                VOCALS_WAV, clip["start_ms"],
-                audio_encoder, wav2vec_fe, VIDEO_LENGTH, device,
+                VOCALS_WAV,
+                clip["start_ms"],
+                audio_encoder,
+                wav2vec_fe,
+                VIDEO_LENGTH,
+                device,
             )
 
             # Video tensor via FFmpeg (25fps guaranteed)
@@ -424,25 +467,26 @@ def pre_encode_all():
             del video
 
             # Mouth mask in latent space
-            mouth_mask = compute_latent_mouth_mask(
-                clip, LATENT_T, LATENT_SPATIAL, RESOLUTION
-            )
+            mouth_mask = compute_latent_mouth_mask(clip, LATENT_T, LATENT_SPATIAL, RESOLUTION)
 
-            torch.save({
-                "text_context": text_context_cpu,
-                "clip_fea": clip_fea_cpu,
-                "audio_emb": audio_emb,
-                "latent": latent_cpu,
-                "ref_latent": ref_latent_cpu,
-                "mouth_mask": mouth_mask,
-                "latent_t": LATENT_T,
-                "video_length": VIDEO_LENGTH,
-                "clip_id": clip_id,
-                "viseme_sequence": clip["viseme_sequence"],
-                "clip_category": clip["clip_category"],
-                "has_speech": clip["has_speech"],
-                "prosody_energy_level": clip["prosody_energy_level"],
-            }, out_path)
+            torch.save(
+                {
+                    "text_context": text_context_cpu,
+                    "clip_fea": clip_fea_cpu,
+                    "audio_emb": audio_emb,
+                    "latent": latent_cpu,
+                    "ref_latent": ref_latent_cpu,
+                    "mouth_mask": mouth_mask,
+                    "latent_t": LATENT_T,
+                    "video_length": VIDEO_LENGTH,
+                    "clip_id": clip_id,
+                    "viseme_sequence": clip["viseme_sequence"],
+                    "clip_category": clip["clip_category"],
+                    "has_speech": clip["has_speech"],
+                    "prosody_energy_level": clip["prosody_energy_level"],
+                },
+                out_path,
+            )
 
         except Exception as e:
             log.error("Failed clip %s: %s", clip_id, e)
@@ -450,9 +494,13 @@ def pre_encode_all():
             continue
 
         if (idx + 1) % 100 == 0:
-            log.info("  %d/%d | VRAM=%.1fGB | failed=%d",
-                     idx + 1, len(clips),
-                     torch.cuda.memory_allocated() / 1e9, failed)
+            log.info(
+                "  %d/%d | VRAM=%.1fGB | failed=%d",
+                idx + 1,
+                len(clips),
+                torch.cuda.memory_allocated() / 1e9,
+                failed,
+            )
 
     del vae, audio_encoder, wav2vec_fe
     gc.collect()
@@ -468,10 +516,11 @@ def pre_encode_all():
 #  Phase 2: Training with mouth-weighted loss + viseme-weighted sampler
 # ============================================================
 
+
 class VisemeWeightedDataset(Dataset):
     """Dataset with per-clip viseme rarity weights for sampler."""
 
-    def __init__(self, cond_dir: Path):
+    def __init__(self, cond_dir: Path) -> None:
         self.cond_dir = cond_dir
         self.files = sorted(cond_dir.glob("*.pt"))
         if not self.files:
@@ -503,19 +552,21 @@ class VisemeWeightedDataset(Dataset):
             self.sample_weights.append(w)
 
         self.sample_weights = torch.tensor(self.sample_weights, dtype=torch.double)
-        log.info("Viseme rarity weights: min=%.3f max=%.3f mean=%.3f",
-                 float(self.sample_weights.min()),
-                 float(self.sample_weights.max()),
-                 float(self.sample_weights.mean()))
+        log.info(
+            "Viseme rarity weights: min=%.3f max=%.3f mean=%.3f",
+            float(self.sample_weights.min()),
+            float(self.sample_weights.max()),
+            float(self.sample_weights.mean()),
+        )
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.files)
 
     def __getitem__(self, idx):
         return torch.load(self.files[idx], weights_only=False, map_location="cpu")
 
 
-def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500):
+def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500) -> None:
     """Train lipsync LoRA with all fixes applied."""
     preflight_check()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -531,9 +582,14 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500):
     # --- Load transformer ---
     log.info("Loading transformer...")
     from src.wan_transformer3d_audio_2512 import WanTransformerAudioMask3DModel as WanTransformer
+
     transformer = WanTransformer.from_pretrained(
-        os.path.join(MODEL_PATH, config["transformer_additional_kwargs"].get("transformer_subpath", "./")),
-        transformer_additional_kwargs=OmegaConf.to_container(config["transformer_additional_kwargs"]),
+        os.path.join(
+            MODEL_PATH, config["transformer_additional_kwargs"].get("transformer_subpath", "./")
+        ),
+        transformer_additional_kwargs=OmegaConf.to_container(
+            config["transformer_additional_kwargs"]
+        ),
         torch_dtype=torch.bfloat16,
     )
     transformer.load_state_dict(load_file(TRANSFORMER_PATH), strict=False)
@@ -555,30 +611,36 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500):
     transformer = get_peft_model(transformer, lipsync_lora_config)
     trainable = sum(p.numel() for p in transformer.parameters() if p.requires_grad)
     total = sum(p.numel() for p in transformer.parameters())
-    log.info("LoRA rank=%d: %d trainable (%.2f%% of %d)",
-             rank, trainable, 100 * trainable / total, total)
+    log.info(
+        "LoRA rank=%d: %d trainable (%.2f%% of %d)", rank, trainable, 100 * trainable / total, total
+    )
 
     # --- Dataset with viseme-weighted sampler ---
     dataset = VisemeWeightedDataset(COND_DIR)
     sampler = WeightedRandomSampler(
         weights=dataset.sample_weights,
-        num_samples=steps * 2,   # enough for all training steps (with some headroom)
+        num_samples=steps * 2,  # enough for all training steps (with some headroom)
         replacement=True,
     )
     loader = DataLoader(
-        dataset, batch_size=1, sampler=sampler, num_workers=0,
+        dataset,
+        batch_size=1,
+        sampler=sampler,
+        num_workers=0,
         collate_fn=lambda x: x[0],
     )
 
     # --- Optimizer ---
     optimizer = torch.optim.AdamW(
         [p for p in transformer.parameters() if p.requires_grad],
-        lr=lr, weight_decay=1e-2,
+        lr=lr,
+        weight_decay=1e-2,
     )
     lr_sched = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps)
 
-    log.info("Training: %d steps, rank=%d, lr=%.1e, mouth_weight=%.0f",
-             steps, rank, lr, MOUTH_WEIGHT)
+    log.info(
+        "Training: %d steps, rank=%d, lr=%.1e, mouth_weight=%.0f", steps, rank, lr, MOUTH_WEIGHT
+    )
     transformer.train()
 
     step = 0
@@ -664,7 +726,11 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500):
                 best_loss = avg
             log.info(
                 "Step %d/%d | loss=%.4f mouth_loss=%.4f | lr=%.2e | %.0fs | VRAM=%.1f/%.1fGB",
-                step, steps, avg, mouth_avg, lr_sched.get_last_lr()[0],
+                step,
+                steps,
+                avg,
+                mouth_avg,
+                lr_sched.get_last_lr()[0],
                 time.time() - t0,
                 torch.cuda.memory_allocated() / 1e9,
                 torch.cuda.max_memory_allocated() / 1e9,
@@ -679,8 +745,13 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500):
 
     final_dir = OUTPUT_DIR / "final"
     transformer.save_pretrained(str(final_dir))
-    log.info("Done: %d steps in %.1f min | best_loss=%.4f | saved %s",
-             steps, (time.time() - t0) / 60, best_loss, final_dir)
+    log.info(
+        "Done: %d steps in %.1f min | best_loss=%.4f | saved %s",
+        steps,
+        (time.time() - t0) / 60,
+        best_loss,
+        final_dir,
+    )
 
 
 if __name__ == "__main__":

@@ -9,15 +9,19 @@ speakers and the mic picks it up. Since we know exactly when the bot
 is speaking (from the pipeline), mic gating handles 95% of cases.
 The spectral suppression catches residual echo in the tail.
 """
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import numpy as np
 from pipecat.audio.filters.base_audio_filter import BaseAudioFilter
-from pipecat.frames.frames import FilterControlFrame
+
+if TYPE_CHECKING:
+    from pipecat.frames.frames import FilterControlFrame
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +74,9 @@ class AECFilter(BaseAudioFilter):
         self._initialized = True
         logger.info(
             "AEC filter started (tail=%dms, fade=%dms, rate=%d)",
-            self._echo_tail_ms, self._fade_in_ms, sample_rate,
+            self._echo_tail_ms,
+            self._fade_in_ms,
+            sample_rate,
         )
 
     async def stop(self) -> None:

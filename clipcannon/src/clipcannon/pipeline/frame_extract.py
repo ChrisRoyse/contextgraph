@@ -261,9 +261,7 @@ async def run_frame_extract(
             sha_conn.close()
 
         source_sha256 = (
-            str(sha_row["source_sha256"])
-            if sha_row and sha_row.get("source_sha256")
-            else ""
+            str(sha_row["source_sha256"]) if sha_row and sha_row.get("source_sha256") else ""
         )
         if not source_sha256:
             logger.warning("Source SHA-256 not found in database, computing from file")

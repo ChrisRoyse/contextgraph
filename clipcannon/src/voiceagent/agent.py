@@ -10,6 +10,7 @@ Lifecycle:
 Activation: Wake word ("Hey Jarvis") or hotkey (Ctrl+Space).
 Dismissal: Say "go to sleep" during conversation.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -108,6 +109,7 @@ class VoiceAgent:
             force_free_gpu_memory,
             pause_gpu_workers,
         )
+
         self._paused_worker_pids = pause_gpu_workers()
         force_free_gpu_memory()
 
@@ -122,11 +124,14 @@ class VoiceAgent:
             reserved = torch.cuda.memory_reserved() / (1024**3)
             logger.info(
                 "%s: allocated=%.1fGB, reserved=%.1fGB",
-                label, used, reserved,
+                label,
+                used,
+                reserved,
             )
 
         # 1. ASR (VAD on CPU + Whisper on GPU)
         from voiceagent.asr.streaming import StreamingASR
+
         self._asr = StreamingASR(self.config.asr)
         gc.collect()
         torch.cuda.empty_cache()
@@ -134,6 +139,7 @@ class VoiceAgent:
 
         # 2. LLM Brain (biggest model, load after ASR is settled)
         from voiceagent.brain.llm import LLMBrain
+
         self._brain = LLMBrain(self.config.llm)
         gc.collect()
         torch.cuda.empty_cache()
@@ -143,6 +149,7 @@ class VoiceAgent:
         from voiceagent.adapters.fast_tts import FastTTSAdapter
         from voiceagent.tts.chunker import SentenceChunker
         from voiceagent.tts.streaming import StreamingTTS
+
         self._tts_adapter = FastTTSAdapter(
             voice_name=self.config.tts.voice_name,
         )
@@ -154,6 +161,7 @@ class VoiceAgent:
         # 4. Context + prompt (no GPU, just tokenizer on CPU)
         from voiceagent.brain.context import ContextManager
         from voiceagent.brain.prompts import build_system_prompt
+
         self._system_prompt = build_system_prompt(
             self.config.tts.voice_name,
         )
@@ -164,12 +172,12 @@ class VoiceAgent:
         vram_after = torch.cuda.memory_allocated()
         total_gb = (vram_after - vram_before) / (1024**3)
         free_gb = (
-            torch.cuda.get_device_properties(0).total_memory
-            - torch.cuda.memory_reserved()
+            torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_reserved()
         ) / (1024**3)
         logger.info(
             "All models loaded: %.1fGB used, %.1fGB free",
-            total_gb, free_gb,
+            total_gb,
+            free_gb,
         )
         self._initialized = True
 
@@ -198,9 +206,9 @@ class VoiceAgent:
 
         # ASR holds Whisper model -- delete explicitly
         if self._asr:
-            if hasattr(self._asr, 'model'):
+            if hasattr(self._asr, "model"):
                 del self._asr.model
-            if hasattr(self._asr, 'vad') and hasattr(self._asr.vad, 'model'):
+            if hasattr(self._asr, "vad") and hasattr(self._asr.vad, "model"):
                 del self._asr.vad.model
             self._asr = None
 
@@ -217,12 +225,14 @@ class VoiceAgent:
         reserved = torch.cuda.memory_reserved() / (1024**3)
         logger.info(
             "Models unloaded. allocated=%.2fGB, reserved=%.2fGB",
-            vram, reserved,
+            vram,
+            reserved,
         )
 
         # Resume paused GPU workers now that VRAM is free
         if self._paused_worker_pids:
             from voiceagent.gpu_manager import resume_gpu_workers
+
             resume_gpu_workers(self._paused_worker_pids)
             self._paused_worker_pids = []
 
@@ -236,6 +246,7 @@ class VoiceAgent:
     def _wire_conversation(self, transport: object) -> None:
         """Wire conversation manager to a transport."""
         from voiceagent.conversation.manager import ConversationManager
+
         self._conversation = ConversationManager(
             asr=self._asr,
             brain=self._brain,
@@ -269,7 +280,7 @@ class VoiceAgent:
         try:
             audio = await self._tts_adapter.synthesize("I'm here.")
             await transport.send_audio(audio)
-            if hasattr(transport, 'stop_speaking'):
+            if hasattr(transport, "stop_speaking"):
                 transport.stop_speaking()
         except Exception as e:
             logger.warning("Could not speak greeting: %s", e)
@@ -286,7 +297,7 @@ class VoiceAgent:
         try:
             audio = await self._tts_adapter.synthesize("Going to sleep.")
             await transport.send_audio(audio)
-            if hasattr(transport, 'stop_speaking'):
+            if hasattr(transport, "stop_speaking"):
                 transport.stop_speaking()
         except Exception as e:
             logger.warning("Could not speak farewell: %s", e)
@@ -317,10 +328,7 @@ class VoiceAgent:
 
         # --- Dormant: wake word only ---
         if self._lifecycle == AgentLifecycle.DORMANT:
-            if (
-                self._wake_word is not None
-                and self._wake_word.detect(audio)
-            ):
+            if self._wake_word is not None and self._wake_word.detect(audio):
                 logger.info("Wake word detected!")
                 await self._activate(transport)
             return
@@ -336,7 +344,7 @@ class VoiceAgent:
         event = await self._asr.process_chunk(audio)
         if event is None:
             return
-        if not (hasattr(event, 'final') and event.final):
+        if not (hasattr(event, "final") and event.final):
             return
         if not event.text.strip():
             return
@@ -353,6 +361,7 @@ class VoiceAgent:
 
         # --- Forward to conversation manager for LLM response ---
         from voiceagent.conversation.state import ConversationState
+
         state = self._conversation.state
         if state == ConversationState.IDLE:
             await self._conversation._set_state(ConversationState.LISTENING)
@@ -381,17 +390,18 @@ class VoiceAgent:
         # Init wake word detector (CPU only)
         try:
             from voiceagent.activation.wake_word import WakeWordDetector
+
             self._wake_word = WakeWordDetector()
             logger.info("Wake word detector ready (say 'Hey Jarvis' to activate)")
         except Exception as e:
             logger.warning(
-                "Wake word unavailable: %s. "
-                "Will activate immediately on any speech.",
+                "Wake word unavailable: %s. Will activate immediately on any speech.",
                 e,
             )
 
         # Init local audio transport
         from voiceagent.transport.local_audio import LocalAudioTransport
+
         self._local_transport = LocalAudioTransport(
             chunk_ms=self.config.asr.chunk_ms,
         )
@@ -435,6 +445,7 @@ class VoiceAgent:
         self._load_models()
 
         from voiceagent.transport.websocket import WebSocketTransport
+
         self._transport = WebSocketTransport(
             host=self.config.transport.host,
             port=self.config.transport.port,
@@ -444,18 +455,21 @@ class VoiceAgent:
         # Activation (optional)
         try:
             from voiceagent.activation.wake_word import WakeWordDetector
+
             self._wake_word = WakeWordDetector()
         except Exception as e:
             logger.warning("Wake word unavailable: %s", e)
 
         try:
             from voiceagent.activation.hotkey import HotkeyActivator
+
             self._hotkey = HotkeyActivator(callback=self._on_hotkey)
         except Exception as e:
             logger.warning("Hotkey unavailable: %s", e)
 
         # Server app
         from voiceagent.server import create_app
+
         self._app = create_app()
         self._app.state.on_audio = self._on_audio_ws
         self._app.state.on_control = self._on_control_ws
@@ -480,9 +494,11 @@ class VoiceAgent:
         """Initialize and start WebSocket server (serve mode)."""
         self._init_components()
         import uvicorn
+
         logger.info(
             "Server on %s:%d",
-            self.config.transport.host, self.config.transport.port,
+            self.config.transport.host,
+            self.config.transport.port,
         )
         uvicorn.run(
             self._app,
@@ -500,8 +516,7 @@ class VoiceAgent:
         now = datetime.now(UTC).isoformat()
         if self._db_conn:
             self._db_conn.execute(
-                "INSERT INTO conversations "
-                "(id, started_at, voice_profile) VALUES (?, ?, ?)",
+                "INSERT INTO conversations (id, started_at, voice_profile) VALUES (?, ?, ?)",
                 (conv_id, now, self.config.tts.voice_name),
             )
             self._db_conn.commit()
@@ -529,13 +544,19 @@ class VoiceAgent:
                 " asr_ms, llm_ttft_ms, tts_ttfb_ms, total_ms)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    turn_id, conversation_id, role, text, now,
-                    asr_ms, llm_ttft_ms, tts_ttfb_ms, total_ms,
+                    turn_id,
+                    conversation_id,
+                    role,
+                    text,
+                    now,
+                    asr_ms,
+                    llm_ttft_ms,
+                    tts_ttfb_ms,
+                    total_ms,
                 ),
             )
             self._db_conn.execute(
-                "UPDATE conversations "
-                "SET turn_count = turn_count + 1 WHERE id = ?",
+                "UPDATE conversations SET turn_count = turn_count + 1 WHERE id = ?",
                 (conversation_id,),
             )
             self._db_conn.commit()

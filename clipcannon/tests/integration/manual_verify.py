@@ -7,10 +7,10 @@ detailed output for every table, file, and verification check.
 Usage:
     PYTHONPATH=src python tests/integration/manual_verify.py
 """
+
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 import sys
 import time
@@ -77,8 +77,7 @@ async def main() -> int:
                 project_id, name, source_path, source_sha256,
                 duration_ms, resolution, fps, codec, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'created')""",
-            (project_id, "Manual Verify", str(source_video), "pending",
-             0, "unknown", 0, "unknown"),
+            (project_id, "Manual Verify", str(source_video), "pending", 0, "unknown", 0, "unknown"),
         )
         for stream_name in PIPELINE_STREAMS:
             conn.execute(
@@ -211,8 +210,7 @@ async def main() -> int:
     try:
         # --- PROJECT ---
         print_section("PROJECT")
-        proj = fetch_one(conn, "SELECT * FROM project WHERE project_id = ?",
-                         (project_id,))
+        proj = fetch_one(conn, "SELECT * FROM project WHERE project_id = ?", (project_id,))
         if proj:
             print(f"  project_id: {proj['project_id']}")
             print(f"  name: {proj['name']}")
@@ -265,6 +263,7 @@ async def main() -> int:
         print(f"  Total grids in DB: {len(grids)}")
         if grids:
             from PIL import Image
+
             for g in grids[:3]:
                 gp = Path(str(g["grid_path"]))
                 exists = gp.exists()
@@ -288,8 +287,10 @@ async def main() -> int:
         )
         print(f"  Total gaps: {len(gaps)}")
         for g in gaps[:5]:
-            print(f"  Gap: start={g['start_ms']}ms, end={g['end_ms']}ms, "
-                  f"duration={g['duration_ms']}ms, type={g.get('type')}")
+            print(
+                f"  Gap: start={g['start_ms']}ms, end={g['end_ms']}ms, "
+                f"duration={g['duration_ms']}ms, type={g.get('type')}"
+            )
         if len(gaps) > 5:
             print(f"  ... and {len(gaps) - 5} more gaps")
 
@@ -334,8 +335,10 @@ async def main() -> int:
         )
         print(f"  Total windows: {len(pacing)}")
         for p in pacing[:3]:
-            print(f"  Window: start={p['start_ms']}ms, end={p['end_ms']}ms, "
-                  f"wpm={p['words_per_minute']}, label={p['label']}")
+            print(
+                f"  Window: start={p['start_ms']}ms, end={p['end_ms']}ms, "
+                f"wpm={p['words_per_minute']}, label={p['label']}"
+            )
         if len(pacing) > 3:
             print(f"  ... and {len(pacing) - 3} more windows")
 
@@ -364,8 +367,9 @@ async def main() -> int:
         )
         print(f"  Total highlights: {len(highlights)}")
         for h in highlights[:5]:
-            print(f"  Score={float(h['score']):.4f}, type={h['type']}, "
-                  f"reason={str(h['reason'])[:80]}")
+            print(
+                f"  Score={float(h['score']):.4f}, type={h['type']}, reason={str(h['reason'])[:80]}"
+            )
         if len(highlights) > 5:
             print(f"  ... and {len(highlights) - 5} more highlights")
 
@@ -398,8 +402,10 @@ async def main() -> int:
 
         for prov in provenance:
             chain_hash = str(prov["chain_hash"])
-            print(f"  [{prov['record_id']}] op={prov['operation']}, "
-                  f"stage={prov['stage']}, chain={chain_hash[:16]}...")
+            print(
+                f"  [{prov['record_id']}] op={prov['operation']}, "
+                f"stage={prov['stage']}, chain={chain_hash[:16]}..."
+            )
 
     finally:
         conn.close()

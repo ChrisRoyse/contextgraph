@@ -20,16 +20,16 @@ Based on: "Proactive Conversational Agents with Inner Thoughts"
 (CHI 2025, arxiv 2501.00383) — maintains parallel thought stream
 and evaluates whether each thought is worth externalizing.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import enum
 import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -38,15 +38,15 @@ logger = logging.getLogger(__name__)
 # Action intents (Tier 2 output)
 # ---------------------------------------------------------------------------
 class ActionIntent(enum.Enum):
-    IDLE = "idle"                         # No one talking, stay neutral
-    LISTEN_ATTENTIVE = "listen_attentive" # Someone talking, look engaged
-    LISTEN_AMUSED = "listen_amused"       # Humor detected, smile
+    IDLE = "idle"  # No one talking, stay neutral
+    LISTEN_ATTENTIVE = "listen_attentive"  # Someone talking, look engaged
+    LISTEN_AMUSED = "listen_amused"  # Humor detected, smile
     LISTEN_EMPATHETIC = "listen_empathetic"  # Sadness detected, soften
-    THINK = "think"                       # Question directed at me, thinking
-    RESPOND = "respond"                   # I should speak now
-    INTERJECT = "interject"               # Natural opening, maybe speak
-    REACT_LAUGH = "react_laugh"           # Laugh reaction (no speech)
-    REACT_NOD = "react_nod"              # Nod reaction (no speech)
+    THINK = "think"  # Question directed at me, thinking
+    RESPOND = "respond"  # I should speak now
+    INTERJECT = "interject"  # Natural opening, maybe speak
+    REACT_LAUGH = "react_laugh"  # Laugh reaction (no speech)
+    REACT_NOD = "react_nod"  # Nod reaction (no speech)
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +55,7 @@ class ActionIntent(enum.Enum):
 @dataclass
 class SituationalAwareness:
     """Rolling state of what's happening in the meeting."""
+
     current_speaker: str | None = None
     speaker_is_addressing_me: bool = False
     detected_emotion: str = "neutral"
@@ -170,18 +171,20 @@ class ReasoningController:
         Called by the audio loop every time Whisper produces a segment.
         This is Tier 1 — pure rule-based, no LLM.
         """
-        self._awareness.recent_segments.append({
-            "text": text, "speaker": speaker,
-            "time": time.time(), "ts_ms": timestamp_ms,
-        })
+        self._awareness.recent_segments.append(
+            {
+                "text": text,
+                "speaker": speaker,
+                "time": time.time(),
+                "ts_ms": timestamp_ms,
+            }
+        )
         self._last_segment_time = time.time()
         self._awareness.silence_duration_ms = 0
 
         # Update addressing detection
         low = text.lower()
-        self._awareness.speaker_is_addressing_me = any(
-            w in low for w in _ADDRESS_WORDS
-        )
+        self._awareness.speaker_is_addressing_me = any(w in low for w in _ADDRESS_WORDS)
 
         # Simple sentiment from keywords (Tier 1 — no model needed)
         self._awareness.detected_emotion = self._detect_emotion_keywords(low)
@@ -191,9 +194,12 @@ class ReasoningController:
         if len(words) > 3:
             self._awareness.conversation_topic = " ".join(words[-5:])
 
-        logger.debug("Observe: '%s' [addr=%s, emo=%s]",
-                     text[:50], self._awareness.speaker_is_addressing_me,
-                     self._awareness.detected_emotion)
+        logger.debug(
+            "Observe: '%s' [addr=%s, emo=%s]",
+            text[:50],
+            self._awareness.speaker_is_addressing_me,
+            self._awareness.detected_emotion,
+        )
 
     def tick_silence(self, elapsed_ms: int) -> None:
         """Called periodically to track silence duration."""
@@ -215,7 +221,7 @@ class ReasoningController:
             The action intent for the avatar.
         """
         a = self._awareness
-        now = time.time()
+        time.time()
 
         # Don't reason while actively responding
         if self._responding:
@@ -225,18 +231,20 @@ class ReasoningController:
         if a.speaker_is_addressing_me:
             # Check if there's a question
             recent_text = self._get_recent_text(10)  # last 10s
-            if "?" in recent_text or any(w in a.conversation_topic.lower()
-                                          for w in ["what", "how", "why", "when", "tell", "can you"]):
+            if "?" in recent_text or any(
+                w in a.conversation_topic.lower()
+                for w in ["what", "how", "why", "when", "tell", "can you"]
+            ):
                 a.current_intent = ActionIntent.RESPOND
                 a.speak_urgency = 0.95
-                a.inner_thought = f"They said my name and asked a question"
+                a.inner_thought = "They said my name and asked a question"
                 logger.info("Reason: RESPOND (addressed + question)")
                 return ActionIntent.RESPOND
 
             # Name mentioned but no clear question — still respond
             a.current_intent = ActionIntent.RESPOND
             a.speak_urgency = 0.8
-            a.inner_thought = f"They said my name"
+            a.inner_thought = "They said my name"
             logger.info("Reason: RESPOND (addressed)")
             return ActionIntent.RESPOND
 
@@ -250,9 +258,11 @@ class ReasoningController:
             return ActionIntent.LISTEN_EMPATHETIC
 
         # 3. Long silence — maybe interject
-        if (a.silence_duration_ms > 8000
-                and a.time_since_last_spoke_ms > 30000
-                and len(a.recent_segments) > 3):
+        if (
+            a.silence_duration_ms > 8000
+            and a.time_since_last_spoke_ms > 30000
+            and len(a.recent_segments) > 3
+        ):
             a.current_intent = ActionIntent.INTERJECT
             a.speak_urgency = 0.4
             a.inner_thought = "It's been quiet, maybe I should say something"
@@ -302,14 +312,14 @@ class ReasoningController:
 
         # Send to avatar pipeline
         if self._avatar_cb:
-            try:
+            with contextlib.suppress(Exception):
                 self._avatar_cb(cmd)
-            except Exception:
-                pass
 
         return cmd
 
-    def _intent_to_blendshapes(self, intent: ActionIntent, a: SituationalAwareness) -> dict[str, float]:
+    def _intent_to_blendshapes(
+        self, intent: ActionIntent, a: SituationalAwareness
+    ) -> dict[str, float]:
         """Map intent + awareness to ARKit blendshape values."""
         bs: dict[str, float] = {}
 
@@ -381,7 +391,9 @@ class ReasoningController:
             return (0.0, -1.0)  # Slightly downward when idle
         return (0.0, 0.0)
 
-    def _intent_to_head_pose(self, intent: ActionIntent, a: SituationalAwareness) -> tuple[float, float, float]:
+    def _intent_to_head_pose(
+        self, intent: ActionIntent, a: SituationalAwareness
+    ) -> tuple[float, float, float]:
         """Map intent to head pose (pitch, yaw, roll in degrees)."""
         if intent == ActionIntent.REACT_NOD:
             return (-5.0, 0.0, 0.0)  # Slight nod down
@@ -455,14 +467,12 @@ class ReasoningController:
                 intent = self.reason()
 
                 # Produce full avatar command from intent
-                cmd = self.produce_command(intent)
+                self.produce_command(intent)
 
                 # Legacy expression callback
                 if self._update_expression:
-                    try:
+                    with contextlib.suppress(Exception):
                         self._update_expression(intent, self._awareness)
-                    except Exception:
-                        pass
 
                 self._awareness.last_decision_time = time.time()
 

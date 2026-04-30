@@ -11,64 +11,43 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from phoenix.errors import BehaviorError
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 # Default gesture definitions for build_default_library().
 # Each tuple: (gesture_id, category, description, duration_ms,
 #               body_parts, intensity)
-_DEFAULT_GESTURES: list[
-    tuple[str, str, str, int, list[str], float]
-] = [
-    ("nod_agreement", "agreement", "Slow vertical head nod",
-     800, ["head"], 0.6),
-    ("double_nod", "agreement", "Two quick affirmative nods",
-     600, ["head"], 0.7),
-    ("thumbs_up", "agreement", "Thumbs-up hand gesture",
-     500, ["hands"], 0.8),
-    ("head_shake", "disagreement", "Horizontal head shake",
-     900, ["head"], 0.6),
-    ("wave_off", "disagreement", "Dismissive hand wave",
-     700, ["hands"], 0.5),
-    ("brow_furrow", "disagreement", "Furrowed brows with slight head tilt",
-     400, ["head"], 0.4),
-    ("head_tilt", "uncertainty", "Slight head tilt to one side",
-     600, ["head"], 0.4),
-    ("shrug", "uncertainty", "Shoulder shrug with raised palms",
-     800, ["shoulders", "hands"], 0.5),
-    ("lip_purse", "uncertainty", "Pursed lips with micro head shake",
-     400, ["head"], 0.3),
-    ("hand_chop", "emphasis", "Downward hand chop for emphasis",
-     500, ["hands"], 0.8),
-    ("finger_point", "emphasis", "Forward finger point",
-     400, ["hands"], 0.9),
-    ("palm_press", "emphasis", "Flat palm press downward",
-     600, ["hands"], 0.7),
-    ("wave_hello", "greeting", "Open-palm wave greeting",
-     700, ["hands"], 0.6),
-    ("slight_bow", "greeting", "Slight forward bow of head",
-     500, ["head"], 0.4),
-    ("chin_stroke", "thinking", "Hand on chin thinking gesture",
-     1000, ["hands", "head"], 0.5),
-    ("look_up", "thinking", "Eyes and head tilt upward in thought",
-     800, ["head"], 0.4),
-    ("eyes_wide", "surprise", "Wide eyes with slight head back",
-     400, ["head"], 0.7),
-    ("head_back_laugh", "humor", "Head tilted back in laughter",
-     900, ["head", "shoulders"], 0.8),
-    ("open_palms", "explanation", "Open palms outward while explaining",
-     700, ["hands"], 0.5),
-    ("point_aside", "reference", "Point to the side referencing something",
-     500, ["hands"], 0.6),
+_DEFAULT_GESTURES: list[tuple[str, str, str, int, list[str], float]] = [
+    ("nod_agreement", "agreement", "Slow vertical head nod", 800, ["head"], 0.6),
+    ("double_nod", "agreement", "Two quick affirmative nods", 600, ["head"], 0.7),
+    ("thumbs_up", "agreement", "Thumbs-up hand gesture", 500, ["hands"], 0.8),
+    ("head_shake", "disagreement", "Horizontal head shake", 900, ["head"], 0.6),
+    ("wave_off", "disagreement", "Dismissive hand wave", 700, ["hands"], 0.5),
+    ("brow_furrow", "disagreement", "Furrowed brows with slight head tilt", 400, ["head"], 0.4),
+    ("head_tilt", "uncertainty", "Slight head tilt to one side", 600, ["head"], 0.4),
+    ("shrug", "uncertainty", "Shoulder shrug with raised palms", 800, ["shoulders", "hands"], 0.5),
+    ("lip_purse", "uncertainty", "Pursed lips with micro head shake", 400, ["head"], 0.3),
+    ("hand_chop", "emphasis", "Downward hand chop for emphasis", 500, ["hands"], 0.8),
+    ("finger_point", "emphasis", "Forward finger point", 400, ["hands"], 0.9),
+    ("palm_press", "emphasis", "Flat palm press downward", 600, ["hands"], 0.7),
+    ("wave_hello", "greeting", "Open-palm wave greeting", 700, ["hands"], 0.6),
+    ("slight_bow", "greeting", "Slight forward bow of head", 500, ["head"], 0.4),
+    ("chin_stroke", "thinking", "Hand on chin thinking gesture", 1000, ["hands", "head"], 0.5),
+    ("look_up", "thinking", "Eyes and head tilt upward in thought", 800, ["head"], 0.4),
+    ("eyes_wide", "surprise", "Wide eyes with slight head back", 400, ["head"], 0.7),
+    ("head_back_laugh", "humor", "Head tilted back in laughter", 900, ["head", "shoulders"], 0.8),
+    ("open_palms", "explanation", "Open palms outward while explaining", 700, ["hands"], 0.5),
+    ("point_aside", "reference", "Point to the side referencing something", 500, ["hands"], 0.6),
 ]
 
 # All valid categories.
-VALID_CATEGORIES: frozenset[str] = frozenset(
-    g[1] for g in _DEFAULT_GESTURES
-)
+VALID_CATEGORIES: frozenset[str] = frozenset(g[1] for g in _DEFAULT_GESTURES)
 
 
 @dataclass(frozen=True)
@@ -250,9 +229,7 @@ class GestureLibrary:
 
         candidates = self._gestures
         if category is not None:
-            candidates = [
-                g for g in self._gestures if g.category == category
-            ]
+            candidates = [g for g in self._gestures if g.category == category]
 
         if not candidates:
             if category is not None:
@@ -291,9 +268,7 @@ class GestureLibrary:
         """
         existing_ids = {g.gesture_id for g in self._gestures}
 
-        for idx, (gid, cat, desc, dur, parts, intensity) in enumerate(
-            _DEFAULT_GESTURES
-        ):
+        for idx, (gid, cat, desc, dur, parts, intensity) in enumerate(_DEFAULT_GESTURES):
             if gid in existing_ids:
                 continue
 
@@ -330,8 +305,7 @@ class GestureLibrary:
 
                 # Check if table exists.
                 cursor.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name='gestures'"
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='gestures'"
                 )
                 if cursor.fetchone() is None:
                     # Table doesn't exist yet, create it.

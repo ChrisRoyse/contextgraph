@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import fetch_all, fetch_one
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +60,7 @@ _DEFAULT_BRIEF = MusicBrief(
     suggested_key="C",
     suggested_preset="corporate",
     ace_step_prompt=(
-        "professional corporate background music, "
-        "100 BPM, medium energy, warm, polished"
+        "professional corporate background music, 100 BPM, medium energy, warm, polished"
     ),
     edit_duration_ms=60000,
     speech_regions=[],
@@ -79,7 +81,10 @@ def _table_exists(conn: object, table_name: str) -> bool:
 
 
 def _aggregate_emotions(
-    conn: object, project_id: str, start_ms: int, end_ms: int,
+    conn: object,
+    project_id: str,
+    start_ms: int,
+    end_ms: int,
 ) -> tuple[str, float, float]:
     """Aggregate emotion_curve data for a time range.
 
@@ -133,7 +138,9 @@ def _aggregate_emotions(
     if not rows:
         logger.debug(
             "No emotion_curve rows for project=%s range=[%d, %d]; defaults",
-            project_id, start_ms, end_ms,
+            project_id,
+            start_ms,
+            end_ms,
         )
         return "neutral", 0.5, 0.5
 
@@ -144,7 +151,9 @@ def _aggregate_emotions(
         total_valence += float(row.get("valence", 0.5) if isinstance(row, dict) else 0.5)
         total_arousal += float(row.get("arousal", 0.5) if isinstance(row, dict) else 0.5)
         if has_dominant:
-            emotion = str(row.get("dominant_emotion", "neutral") if isinstance(row, dict) else "neutral").lower()
+            emotion = str(
+                row.get("dominant_emotion", "neutral") if isinstance(row, dict) else "neutral"
+            ).lower()
         else:
             emotion = ""  # Will be classified from valence/arousal below
         if emotion:
@@ -163,7 +172,10 @@ def _aggregate_emotions(
 
 
 def _determine_energy(
-    conn: object, project_id: str, start_ms: int, end_ms: int,
+    conn: object,
+    project_id: str,
+    start_ms: int,
+    end_ms: int,
     avg_arousal: float,
 ) -> str:
     """Determine energy level from pacing data and arousal.
@@ -212,12 +224,8 @@ def _determine_energy(
         return "medium"
 
     # Count pace labels
-    fast_count = sum(
-        1 for r in rows if str(r.get("pace_label", "")).lower() == "fast"
-    )
-    slow_count = sum(
-        1 for r in rows if str(r.get("pace_label", "")).lower() == "slow"
-    )
+    fast_count = sum(1 for r in rows if str(r.get("pace_label", "")).lower() == "fast")
+    slow_count = sum(1 for r in rows if str(r.get("pace_label", "")).lower() == "slow")
     total = len(rows)
 
     if fast_count > total * 0.5:
@@ -228,8 +236,12 @@ def _determine_energy(
 
 
 def _suggest_tempo(
-    conn: object, project_id: str, start_ms: int, end_ms: int,
-    mood: str, energy: str,
+    conn: object,
+    project_id: str,
+    start_ms: int,
+    end_ms: int,
+    mood: str,
+    energy: str,
 ) -> int:
     """Suggest tempo from beat_sections or mood mapping.
 
@@ -265,9 +277,7 @@ def _suggest_tempo(
             return max(50, min(180, int(round(avg_bpm))))
 
     # Fall back to mood-based tempo
-    _, _, bpm_low, bpm_high = _MOOD_MAP.get(
-        mood, ("corporate", "C", 90, 110)
-    )
+    _, _, bpm_low, bpm_high = _MOOD_MAP.get(mood, ("corporate", "C", 90, 110))
     # Shift within range based on energy
     if energy == "high":
         return bpm_high
@@ -290,7 +300,10 @@ def _map_mood_to_music(mood: str) -> tuple[str, str]:
 
 
 def _build_ace_step_prompt(
-    mood: str, energy: str, tempo: int, key: str,
+    mood: str,
+    energy: str,
+    tempo: int,
+    key: str,
 ) -> str:
     """Build a text prompt suitable for ACE-Step generation.
 
@@ -332,7 +345,10 @@ def _build_ace_step_prompt(
 
 
 def _get_speech_regions(
-    conn: object, project_id: str, start_ms: int, end_ms: int,
+    conn: object,
+    project_id: str,
+    start_ms: int,
+    end_ms: int,
 ) -> list[tuple[int, int]]:
     """Extract speech regions from transcript_segments for ducking.
 
@@ -394,9 +410,7 @@ class MusicPlanner:
             ValueError: If the edit is not found in the database.
         """
         if not db_path.exists():
-            logger.warning(
-                "Database not found at %s; returning default brief", db_path
-            )
+            logger.warning("Database not found at %s; returning default brief", db_path)
             return _DEFAULT_BRIEF
 
         conn = get_connection(db_path, enable_vec=False, dict_rows=True)
@@ -406,17 +420,25 @@ class MusicPlanner:
             conn.close()
 
     def _plan(
-        self, conn: object, project_id: str, edit_id: str,
+        self,
+        conn: object,
+        project_id: str,
+        edit_id: str,
     ) -> MusicBrief:
         """Core planning logic with an open connection."""
         # Step 1: Get edit duration and time range
         edit_duration_ms, start_ms, end_ms = self._get_edit_range(
-            conn, project_id, edit_id,
+            conn,
+            project_id,
+            edit_id,
         )
 
         # Step 2: Aggregate emotions
         dominant_emotion, avg_valence, avg_arousal = _aggregate_emotions(
-            conn, project_id, start_ms, end_ms,
+            conn,
+            project_id,
+            start_ms,
+            end_ms,
         )
 
         # Step 3: Map raw emotion to our mood categories
@@ -424,12 +446,21 @@ class MusicPlanner:
 
         # Step 4: Determine energy from pacing
         energy = _determine_energy(
-            conn, project_id, start_ms, end_ms, avg_arousal,
+            conn,
+            project_id,
+            start_ms,
+            end_ms,
+            avg_arousal,
         )
 
         # Step 5: Suggest tempo
         tempo = _suggest_tempo(
-            conn, project_id, start_ms, end_ms, mood, energy,
+            conn,
+            project_id,
+            start_ms,
+            end_ms,
+            mood,
+            energy,
         )
 
         # Step 6: Map mood to preset and key
@@ -440,7 +471,10 @@ class MusicPlanner:
 
         # Step 8: Get speech regions for ducking
         speech_regions = _get_speech_regions(
-            conn, project_id, start_ms, end_ms,
+            conn,
+            project_id,
+            start_ms,
+            end_ms,
         )
 
         brief = MusicBrief(
@@ -457,14 +491,23 @@ class MusicPlanner:
         logger.info(
             "MusicBrief for edit=%s: mood=%s, energy=%s, tempo=%d, "
             "preset=%s, key=%s, duration=%dms, speech_regions=%d",
-            edit_id, mood, energy, tempo, preset, key,
-            edit_duration_ms, len(speech_regions),
+            edit_id,
+            mood,
+            energy,
+            tempo,
+            preset,
+            key,
+            edit_duration_ms,
+            len(speech_regions),
         )
 
         return brief
 
     def _get_edit_range(
-        self, conn: object, project_id: str, edit_id: str,
+        self,
+        conn: object,
+        project_id: str,
+        edit_id: str,
     ) -> tuple[int, int, int]:
         """Get total duration and source time range of an edit.
 
@@ -478,9 +521,7 @@ class MusicPlanner:
             (edit_id, project_id),
         )
         if edit_row is None:
-            raise ValueError(
-                f"Edit not found: {edit_id} in project {project_id}"
-            )
+            raise ValueError(f"Edit not found: {edit_id} in project {project_id}")
 
         total_duration_ms = int(edit_row.get("total_duration_ms", 60000))
 
@@ -495,12 +536,8 @@ class MusicPlanner:
                 (edit_id,),
             )
             if segments:
-                start_ms = min(
-                    int(s["source_start_ms"]) for s in segments
-                )
-                end_ms = max(
-                    int(s["source_end_ms"]) for s in segments
-                )
+                start_ms = min(int(s["source_start_ms"]) for s in segments)
+                end_ms = max(int(s["source_end_ms"]) for s in segments)
                 return total_duration_ms, start_ms, end_ms
 
         # Fallback: use 0 to total_duration_ms
@@ -508,7 +545,9 @@ class MusicPlanner:
 
     @staticmethod
     def _classify_mood(
-        dominant_emotion: str, avg_valence: float, avg_arousal: float,
+        dominant_emotion: str,
+        avg_valence: float,
+        avg_arousal: float,
     ) -> str:
         """Classify raw emotion data into our mood categories.
 

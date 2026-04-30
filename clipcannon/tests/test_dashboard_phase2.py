@@ -159,8 +159,17 @@ def dashboard_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     # Insert project
     conn.execute(
         "INSERT INTO project VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-        (project_id, "Dashboard Test", "/tmp/source.mp4", "hash123",
-         300000, "1920x1080", 30.0, "h264", "ready"),
+        (
+            project_id,
+            "Dashboard Test",
+            "/tmp/source.mp4",
+            "hash123",
+            300000,
+            "1920x1080",
+            30.0,
+            "h264",
+            "ready",
+        ),
     )
 
     # Insert VUD data
@@ -188,24 +197,48 @@ def dashboard_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     )
 
     # Insert edits
-    edl_json = json.dumps({
-        "segments": [{"source_start_ms": 0, "source_end_ms": 30000}],
-    })
+    edl_json = json.dumps(
+        {
+            "segments": [{"source_start_ms": 0, "source_end_ms": 30000}],
+        }
+    )
     conn.execute(
         "INSERT INTO edits (edit_id, project_id, name, status, target_platform, "
         "target_profile, edl_json, source_sha256, total_duration_ms, segment_count, "
         "metadata_title, metadata_description, metadata_hashtags) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("edit_dash_01", project_id, "Test Edit 1", "draft", "tiktok",
-         "tiktok_vertical", edl_json, "hash123", 30000, 1,
-         "Test Title", "Test Desc", '["#test"]'),
+        (
+            "edit_dash_01",
+            project_id,
+            "Test Edit 1",
+            "draft",
+            "tiktok",
+            "tiktok_vertical",
+            edl_json,
+            "hash123",
+            30000,
+            1,
+            "Test Title",
+            "Test Desc",
+            '["#test"]',
+        ),
     )
     conn.execute(
         "INSERT INTO edits (edit_id, project_id, name, status, target_platform, "
         "target_profile, edl_json, source_sha256, total_duration_ms, segment_count) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("edit_dash_02", project_id, "Rendered Edit", "rendered", "tiktok",
-         "tiktok_vertical", edl_json, "hash123", 30000, 1),
+        (
+            "edit_dash_02",
+            project_id,
+            "Rendered Edit",
+            "rendered",
+            "tiktok",
+            "tiktok_vertical",
+            edl_json,
+            "hash123",
+            30000,
+            1,
+        ),
     )
 
     # Insert edit segments
@@ -278,9 +311,7 @@ class TestEditEndpoints:
 
     def test_get_edit_detail(self, client: TestClient, dashboard_project: str) -> None:
         """GET /api/projects/{id}/edits/{edit_id} returns edit detail."""
-        resp = client.get(
-            f"/api/projects/{dashboard_project}/edits/edit_dash_01"
-        )
+        resp = client.get(f"/api/projects/{dashboard_project}/edits/edit_dash_01")
         assert resp.status_code == 200
         data = resp.json()
         assert "edit" in data
@@ -289,17 +320,13 @@ class TestEditEndpoints:
 
     def test_approve_edit(self, client: TestClient, dashboard_project: str) -> None:
         """POST /api/projects/{id}/edits/{edit_id}/approve changes status."""
-        resp = client.post(
-            f"/api/projects/{dashboard_project}/edits/edit_dash_01/approve"
-        )
+        resp = client.post(f"/api/projects/{dashboard_project}/edits/edit_dash_01/approve")
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
         assert data["status"] == "approved"
 
-    def test_reject_edit_with_feedback(
-        self, client: TestClient, dashboard_project: str
-    ) -> None:
+    def test_reject_edit_with_feedback(self, client: TestClient, dashboard_project: str) -> None:
         """POST /api/projects/{id}/edits/{edit_id}/reject with feedback."""
         resp = client.post(
             f"/api/projects/{dashboard_project}/edits/edit_dash_02/reject",
@@ -359,13 +386,9 @@ class TestErrorHandling:
         data = resp.json()
         assert "error" in data
 
-    def test_missing_edit_detail(
-        self, client: TestClient, dashboard_project: str
-    ) -> None:
+    def test_missing_edit_detail(self, client: TestClient, dashboard_project: str) -> None:
         """Missing edit returns error, not 500."""
-        resp = client.get(
-            f"/api/projects/{dashboard_project}/edits/nonexistent_edit"
-        )
+        resp = client.get(f"/api/projects/{dashboard_project}/edits/nonexistent_edit")
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data

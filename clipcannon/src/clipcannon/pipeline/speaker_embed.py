@@ -270,7 +270,8 @@ def _insert_results(
                 if vec_inserted == 0:
                     logger.error(
                         "vec_speakers insert FAILED — %d embeddings LOST: %s",
-                        len(embeddings), ve,
+                        len(embeddings),
+                        ve,
                     )
                     break
                 raise

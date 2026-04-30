@@ -15,6 +15,7 @@ Architecture: Qwen2.5-0.5B-Instruct, knowledge-distilled from 7B teacher
 Runtime: ONNX Runtime on CPU (~12ms per inference)
 Memory: ~165MB for the quantized model
 """
+
 from __future__ import annotations
 
 import logging
@@ -84,8 +85,8 @@ class SemanticTurnDetector(FrameProcessor):
             from transformers import AutoTokenizer
         except ImportError as e:
             logger.warning(
-                "SemanticTurnDetector requires onnxruntime, "
-                "huggingface_hub, and transformers: %s", e,
+                "SemanticTurnDetector requires onnxruntime, huggingface_hub, and transformers: %s",
+                e,
             )
             return
 
@@ -93,7 +94,8 @@ class SemanticTurnDetector(FrameProcessor):
         t0 = time.perf_counter()
 
         model_path = hf_hub_download(
-            "livekit/turn-detector", "model_quantized.onnx",
+            "livekit/turn-detector",
+            "model_quantized.onnx",
         )
         self._tokenizer = AutoTokenizer.from_pretrained("livekit/turn-detector")
         self._im_end_id = self._tokenizer.convert_tokens_to_ids("<|im_end|>")
@@ -103,7 +105,8 @@ class SemanticTurnDetector(FrameProcessor):
         so.intra_op_num_threads = 2
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self._session = ort.InferenceSession(
-            model_path, sess_options=so,
+            model_path,
+            sess_options=so,
             providers=["CPUExecutionProvider"],
         )
 
@@ -111,7 +114,8 @@ class SemanticTurnDetector(FrameProcessor):
         self._initialized = True
         logger.info(
             "LiveKit turn detector loaded (%.0fms, im_end_id=%d)",
-            elapsed, self._im_end_id,
+            elapsed,
+            self._im_end_id,
         )
 
     def _predict_eou(self, user_text: str) -> float:
@@ -132,7 +136,9 @@ class SemanticTurnDetector(FrameProcessor):
 
         # Apply Qwen chat template
         text = self._tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False,
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
         )
         # Strip trailing <|im_end|> so model predicts its probability
         if text.endswith("<|im_end|>\n"):
@@ -141,7 +147,10 @@ class SemanticTurnDetector(FrameProcessor):
             text = text[: -len("<|im_end|>")]
 
         input_ids = self._tokenizer(
-            text, return_tensors="np", truncation=True, max_length=512,
+            text,
+            return_tensors="np",
+            truncation=True,
+            max_length=512,
         )["input_ids"].astype(np.int64)
 
         t0 = time.perf_counter()
@@ -170,7 +179,6 @@ class SemanticTurnDetector(FrameProcessor):
         if text and text.strip():
             self._context.append({"role": "assistant", "content": text.strip()})
 
-
     @property
     def last_eou_probability(self) -> float:
         """The most recent end-of-utterance probability."""
@@ -182,7 +190,9 @@ class SemanticTurnDetector(FrameProcessor):
         return self._last_inference_ms
 
     async def process_frame(
-        self, frame: Frame, direction: FrameDirection,
+        self,
+        frame: Frame,
+        direction: FrameDirection,
     ) -> None:
         """Process frames, computing EOU probability on transcriptions."""
         await super().process_frame(frame, direction)
@@ -200,7 +210,9 @@ class SemanticTurnDetector(FrameProcessor):
             decision = "COMPLETE" if eou_prob > self._threshold else "INCOMPLETE"
             logger.info(
                 "SemanticTurn: '%s' -> EOU=%.3f (%s, %.1fms)",
-                frame.text[:60], eou_prob, decision,
+                frame.text[:60],
+                eou_prob,
+                decision,
                 self._last_inference_ms,
             )
 

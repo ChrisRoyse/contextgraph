@@ -6,16 +6,20 @@ Controls:
 3. Comfort noise generation for mic keepalive
 4. Natural speaking timing (pre/post pauses)
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from voiceagent.meeting.app_controller import MeetingAppController
-from voiceagent.meeting.config import BehaviorConfig
 from voiceagent.meeting.errors import MeetingBehaviorError
+
+if TYPE_CHECKING:
+    from voiceagent.meeting.config import BehaviorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +104,7 @@ class MeetingBehavior:
         try:
             await play_fn(audio)
         except Exception as e:
-            raise MeetingBehaviorError(
-                f"Failed to play audio: {e}"
-            ) from e
+            raise MeetingBehaviorError(f"Failed to play audio: {e}") from e
 
         # Post-speech pause (natural delay after finishing)
         post_ms = self._config.mute_after_speak_ms
@@ -112,9 +114,7 @@ class MeetingBehavior:
         self._app_controller.mute()
         self._is_muted = True
 
-        logger.debug(
-            "Speak cycle complete: pre=%dms, post=%dms", pre_ms, post_ms
-        )
+        logger.debug("Speak cycle complete: pre=%dms, post=%dms", pre_ms, post_ms)
 
     @property
     def is_muted(self) -> bool:

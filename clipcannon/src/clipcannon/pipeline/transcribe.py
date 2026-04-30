@@ -514,9 +514,7 @@ def _filter_hallucinations(
 
             seg["words"] = good_words
             seg["text"] = " ".join(
-                str(w.get("word", "")).strip()
-                for w in good_words
-                if str(w.get("word", "")).strip()
+                str(w.get("word", "")).strip() for w in good_words if str(w.get("word", "")).strip()
             )
 
         # Keep the segment
@@ -685,6 +683,7 @@ async def _transcribe_faster_whisper(
 
         del model
         import gc
+
         import torch
 
         gc.collect()

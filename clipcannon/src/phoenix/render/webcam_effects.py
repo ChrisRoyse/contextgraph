@@ -14,13 +14,17 @@ adds them back deliberately:
 
 All effects run on GPU via CuPy for zero latency overhead.
 """
+
 from __future__ import annotations
 
 import logging
 import math
+from typing import TYPE_CHECKING
 
 import cupy as cp
-import numpy as np
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +112,17 @@ class WebcamEffects:
 
     def _get_vignette_mask(self, h: int, w: int) -> cp.ndarray:
         """Get or create the vignette mask (cached per resolution)."""
-        if (self._vignette_mask is not None
-                and self._vignette_mask.shape[0] == h
-                and self._vignette_mask.shape[1] == w):
+        if (
+            self._vignette_mask is not None
+            and self._vignette_mask.shape[0] == h
+            and self._vignette_mask.shape[1] == w
+        ):
             return self._vignette_mask
 
         # Create radial gradient from center
         y = cp.linspace(-1, 1, h).reshape(-1, 1)
         x = cp.linspace(-1, 1, w).reshape(1, -1)
-        r = cp.sqrt(x ** 2 + y ** 2)
+        r = cp.sqrt(x**2 + y**2)
         # Smooth falloff: 1.0 at center, (1 - strength) at corners
         mask = 1.0 - self._vignette_str * cp.clip(r - 0.5, 0, 1) * 2
         # Expand to (H, W, 1) for broadcasting

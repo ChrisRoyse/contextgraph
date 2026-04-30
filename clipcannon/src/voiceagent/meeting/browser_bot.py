@@ -16,18 +16,23 @@ Requirements:
     pip install playwright
     playwright install chromium
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-import os
-from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voiceagent.meeting.config import BrowserBotConfig
 from voiceagent.meeting.errors import MeetingDeviceError
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from voiceagent.meeting.config import BrowserBotConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,7 @@ _GOOGLE_MEET_SELECTORS = {
     "mic_off": ['[aria-label*="Turn off microphone"]', '[data-tooltip*="Turn off microphone"]'],
     "cam_off": ['[aria-label*="Turn off camera"]', '[data-tooltip*="Turn off camera"]'],
     # In-meeting indicators
-    "in_meeting": ['[data-meeting-title]', '[aria-label="Leave call"]'],
+    "in_meeting": ["[data-meeting-title]", '[aria-label="Leave call"]'],
     # Name change (for signed-in users, name comes from Google account)
     "got_kicked": ['text="You\'ve been removed from the meeting"'],
     "meeting_ended": ['text="The meeting has ended"', 'text="You left the meeting"'],
@@ -50,7 +55,7 @@ _GOOGLE_MEET_SELECTORS = {
 _TEAMS_SELECTORS = {
     "name_input": 'input[data-tid="prejoin-display-name-input"]',
     "join_button": 'button[data-tid="prejoin-join-button"]',
-    "leave_button": 'button#hang-up-button',
+    "leave_button": "button#hang-up-button",
     "mic_off": 'button[aria-label*="Mute"]',
     "cam_off": 'button[aria-label*="Camera"]',
 }
@@ -139,7 +144,10 @@ class BrowserBotSession:
         await proc.wait()
 
     async def send_video_frame(
-        self, frame: np.ndarray, width: int, height: int,
+        self,
+        frame: np.ndarray,
+        width: int,
+        height: int,
     ) -> None:
         """Not supported for browser bots."""
         raise MeetingDeviceError(
@@ -163,15 +171,11 @@ class BrowserBotSession:
             except Exception:
                 continue
 
-        try:
+        with contextlib.suppress(Exception):
             await self._context.close()
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             await self._pw.stop()
-        except Exception:
-            pass
 
         self._connected = False
         logger.info("Browser bot left %s meeting", self._platform)
@@ -264,10 +268,8 @@ async def setup_google_account() -> None:
     except Exception:
         pass
 
-    try:
+    with contextlib.suppress(Exception):
         await context.close()
-    except Exception:
-        pass
 
     await pw.stop()
 
@@ -455,9 +457,7 @@ class BrowserBotJoin:
             for sel in _GOOGLE_MEET_SELECTORS.get("got_kicked", []):
                 try:
                     if await page.locator(sel).first.is_visible(timeout=200):
-                        raise MeetingDeviceError(
-                            "Bot was removed from the meeting by the host."
-                        )
+                        raise MeetingDeviceError("Bot was removed from the meeting by the host.")
                 except MeetingDeviceError:
                     raise
                 except Exception:
@@ -489,6 +489,5 @@ class BrowserBotJoin:
         except Exception as e:
             await page.screenshot(path="/tmp/teams_bot_join_failed.png")
             raise MeetingDeviceError(
-                f"Failed to join Teams meeting: {e}. "
-                f"Screenshot: /tmp/teams_bot_join_failed.png"
+                f"Failed to join Teams meeting: {e}. Screenshot: /tmp/teams_bot_join_failed.png"
             ) from e

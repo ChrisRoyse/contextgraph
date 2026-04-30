@@ -4,6 +4,7 @@ IMPORTANT: pynput requires X11 or Wayland on Linux. In headless environments
 (CI, WSL2 without X server, Docker), this module will raise ActivationError
 on start().
 """
+
 import logging
 from collections.abc import Callable
 
@@ -24,8 +25,7 @@ class HotkeyActivator:
             import pynput  # noqa: F401
         except ImportError as err:
             raise ImportError(
-                "pynput is required for hotkey activation. "
-                "Install with: pip install pynput"
+                "pynput is required for hotkey activation. Install with: pip install pynput"
             ) from err
         self.callback = callback
         self._key_combo = key_combo
@@ -51,6 +51,7 @@ class HotkeyActivator:
             self.stop()
         try:
             from pynput.keyboard import GlobalHotKeys
+
             self._listener = GlobalHotKeys({self._key_combo: self._on_activate})
             self._listener.daemon = True
             self._listener.start()

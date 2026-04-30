@@ -8,19 +8,18 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from phoenix.errors import BehaviorError
-from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
-from phoenix.expression.gesture_library import GestureLibrary
-
 from phoenix.behavior.cross_modal_detector import CrossModalDetector, SocialSignal
 from phoenix.behavior.emotion_mirror import AvatarExpression, EmotionMirror
 from phoenix.behavior.gesture_selector import GestureSelector
 from phoenix.behavior.prosody_matcher import ProsodyMatch, ProsodyMatcher
-
+from phoenix.errors import BehaviorError
+from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
+from phoenix.expression.gesture_library import GestureLibrary
 
 # ---------------------------------------------------------------------------
 # Helpers: build real data with known properties
 # ---------------------------------------------------------------------------
+
 
 def _make_prosody(
     *,
@@ -86,6 +85,7 @@ def _build_library() -> GestureLibrary:
 # ===================================================================
 # GestureSelector tests
 # ===================================================================
+
 
 class TestGestureSelector:
     """Tests for GestureSelector behavior-level gesture selection."""
@@ -193,6 +193,7 @@ class TestGestureSelector:
 # ProsodyMatcher tests
 # ===================================================================
 
+
 class TestProsodyMatcher:
     """Tests for ProsodyMatcher TTS style matching."""
 
@@ -202,11 +203,13 @@ class TestProsodyMatcher:
 
         # Add 5 high-energy, fast-speaking observations.
         for _ in range(5):
-            matcher.update(_make_prosody(
-                energy_mean=0.8,
-                speaking_rate_wpm=180.0,
-                f0_mean=200.0,
-            ))
+            matcher.update(
+                _make_prosody(
+                    energy_mean=0.8,
+                    speaking_rate_wpm=180.0,
+                    f0_mean=200.0,
+                )
+            )
 
         result = matcher.match("I agree with that point.")
 
@@ -254,11 +257,13 @@ class TestProsodyMatcher:
         matcher = ProsodyMatcher(history_window=5)
 
         for _ in range(5):
-            matcher.update(_make_prosody(
-                energy_mean=0.15,
-                speaking_rate_wpm=120.0,
-                f0_mean=130.0,
-            ))
+            matcher.update(
+                _make_prosody(
+                    energy_mean=0.15,
+                    speaking_rate_wpm=120.0,
+                    f0_mean=130.0,
+                )
+            )
 
         result = matcher.match("That makes sense.")
 
@@ -301,10 +306,8 @@ class TestProsodyMatcher:
         """Room averages reflect the actual prosody observations."""
         matcher = ProsodyMatcher(history_window=10)
 
-        matcher.update(_make_prosody(energy_mean=0.4, f0_mean=100.0,
-                                     speaking_rate_wpm=120.0))
-        matcher.update(_make_prosody(energy_mean=0.6, f0_mean=200.0,
-                                     speaking_rate_wpm=180.0))
+        matcher.update(_make_prosody(energy_mean=0.4, f0_mean=100.0, speaking_rate_wpm=120.0))
+        matcher.update(_make_prosody(energy_mean=0.6, f0_mean=200.0, speaking_rate_wpm=180.0))
 
         result = matcher.match("Test statement.")
 
@@ -316,6 +319,7 @@ class TestProsodyMatcher:
 # ===================================================================
 # EmotionMirror tests
 # ===================================================================
+
 
 class TestEmotionMirror:
     """Tests for EmotionMirror expression mapping."""
@@ -416,7 +420,10 @@ class TestEmotionMirror:
 
         # Extreme emotion state.
         emotion = _make_emotion(
-            arousal=1.0, valence=1.0, energy=1.0, dominance=1.0,
+            arousal=1.0,
+            valence=1.0,
+            energy=1.0,
+            dominance=1.0,
         )
 
         expr = mirror.mirror(emotion, is_speaking=True)
@@ -468,6 +475,7 @@ class TestEmotionMirror:
 # ===================================================================
 # CrossModalDetector tests
 # ===================================================================
+
 
 class TestCrossModalDetector:
     """Tests for CrossModalDetector social signal detection."""
@@ -640,7 +648,9 @@ class TestCrossModalDetector:
 
         # Extreme values to push confidence high.
         emotion = _make_emotion(
-            arousal=1.0, valence=1.0, energy=1.0,
+            arousal=1.0,
+            valence=1.0,
+            energy=1.0,
         )
         prosody = _make_prosody(
             pitch_contour_type="rising",
@@ -657,40 +667,48 @@ class TestCrossModalDetector:
 # Integration: imports from phoenix.behavior
 # ===================================================================
 
+
 class TestBehaviorPackageExports:
     """Verify that all public types are re-exported from the package."""
 
     def test_gesture_selector_importable(self) -> None:
         """GestureSelector is importable from phoenix.behavior."""
         from phoenix.behavior import GestureSelector as GS
+
         assert GS is GestureSelector
 
     def test_prosody_matcher_importable(self) -> None:
         """ProsodyMatcher is importable from phoenix.behavior."""
         from phoenix.behavior import ProsodyMatcher as PM
+
         assert PM is ProsodyMatcher
 
     def test_prosody_match_importable(self) -> None:
         """ProsodyMatch is importable from phoenix.behavior."""
         from phoenix.behavior import ProsodyMatch as PMR
+
         assert PMR is ProsodyMatch
 
     def test_emotion_mirror_importable(self) -> None:
         """EmotionMirror is importable from phoenix.behavior."""
         from phoenix.behavior import EmotionMirror as EM
+
         assert EM is EmotionMirror
 
     def test_avatar_expression_importable(self) -> None:
         """AvatarExpression is importable from phoenix.behavior."""
         from phoenix.behavior import AvatarExpression as AE
+
         assert AE is AvatarExpression
 
     def test_cross_modal_detector_importable(self) -> None:
         """CrossModalDetector is importable from phoenix.behavior."""
         from phoenix.behavior import CrossModalDetector as CMD
+
         assert CMD is CrossModalDetector
 
     def test_social_signal_importable(self) -> None:
         """SocialSignal is importable from phoenix.behavior."""
         from phoenix.behavior import SocialSignal as SS
+
         assert SS is SocialSignal

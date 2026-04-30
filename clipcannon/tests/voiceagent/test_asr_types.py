@@ -1,4 +1,5 @@
 """Tests for voiceagent.asr.types module."""
+
 import time
 
 import numpy as np

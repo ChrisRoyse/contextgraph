@@ -13,12 +13,15 @@ time constants:
   - Head pose: slow (alpha=0.2) — very smooth head movement
   - Gaze: fast (alpha=0.7) — eyes should be responsive
 """
+
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -26,34 +29,66 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SmoothingConfig:
     """EMA smoothing parameters for different body regions."""
-    jaw_alpha: float = 0.6       # Fast — tracks speech
-    mouth_alpha: float = 0.5     # Medium-fast — lip shapes
-    brow_alpha: float = 0.35     # Medium — emotion tracking
-    eye_alpha: float = 0.4       # Medium — blinks, squint
-    gaze_alpha: float = 0.7      # Fast — eye direction
-    head_pose_alpha: float = 0.2 # Slow — smooth head movement
-    default_alpha: float = 0.4   # Fallback for unlisted params
+
+    jaw_alpha: float = 0.6  # Fast — tracks speech
+    mouth_alpha: float = 0.5  # Medium-fast — lip shapes
+    brow_alpha: float = 0.35  # Medium — emotion tracking
+    eye_alpha: float = 0.4  # Medium — blinks, squint
+    gaze_alpha: float = 0.7  # Fast — eye direction
+    head_pose_alpha: float = 0.2  # Slow — smooth head movement
+    default_alpha: float = 0.4  # Fallback for unlisted params
 
 
 # ARKit blendshape name → region mapping
 _REGION_MAP: dict[str, str] = {}
 _JAW_NAMES = {"jawOpen", "jawForward", "jawLeft", "jawRight"}
 _MOUTH_NAMES = {
-    "mouthClose", "mouthFunnel", "mouthPucker", "mouthLeft", "mouthRight",
-    "mouthSmileLeft", "mouthSmileRight", "mouthFrownLeft", "mouthFrownRight",
-    "mouthDimpleLeft", "mouthDimpleRight", "mouthStretchLeft", "mouthStretchRight",
-    "mouthRollLower", "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper",
-    "mouthPressLeft", "mouthPressRight", "mouthLowerDownLeft", "mouthLowerDownRight",
-    "mouthUpperUpLeft", "mouthUpperUpRight",
+    "mouthClose",
+    "mouthFunnel",
+    "mouthPucker",
+    "mouthLeft",
+    "mouthRight",
+    "mouthSmileLeft",
+    "mouthSmileRight",
+    "mouthFrownLeft",
+    "mouthFrownRight",
+    "mouthDimpleLeft",
+    "mouthDimpleRight",
+    "mouthStretchLeft",
+    "mouthStretchRight",
+    "mouthRollLower",
+    "mouthRollUpper",
+    "mouthShrugLower",
+    "mouthShrugUpper",
+    "mouthPressLeft",
+    "mouthPressRight",
+    "mouthLowerDownLeft",
+    "mouthLowerDownRight",
+    "mouthUpperUpLeft",
+    "mouthUpperUpRight",
 }
 _BROW_NAMES = {
-    "browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight",
+    "browDownLeft",
+    "browDownRight",
+    "browInnerUp",
+    "browOuterUpLeft",
+    "browOuterUpRight",
 }
 _EYE_NAMES = {
-    "eyeBlinkLeft", "eyeBlinkRight", "eyeLookDownLeft", "eyeLookDownRight",
-    "eyeLookInLeft", "eyeLookInRight", "eyeLookOutLeft", "eyeLookOutRight",
-    "eyeLookUpLeft", "eyeLookUpRight", "eyeSquintLeft", "eyeSquintRight",
-    "eyeWideLeft", "eyeWideRight",
+    "eyeBlinkLeft",
+    "eyeBlinkRight",
+    "eyeLookDownLeft",
+    "eyeLookDownRight",
+    "eyeLookInLeft",
+    "eyeLookInRight",
+    "eyeLookOutLeft",
+    "eyeLookOutRight",
+    "eyeLookUpLeft",
+    "eyeLookUpRight",
+    "eyeSquintLeft",
+    "eyeSquintRight",
+    "eyeWideLeft",
+    "eyeWideRight",
 }
 for n in _JAW_NAMES:
     _REGION_MAP[n] = "jaw"

@@ -151,9 +151,7 @@ class TestGenerateSfx:
         assert sr == SAMPLE_RATE
         # Stinger should have front-loaded energy (impact) then rising
         mid = len(data) // 2
-        rms_first_quarter = np.sqrt(
-            np.mean(data[: mid // 2].astype(float) ** 2)
-        )
+        rms_first_quarter = np.sqrt(np.mean(data[: mid // 2].astype(float) ** 2))
         # First quarter should have significant energy (impact)
         assert rms_first_quarter > 0
 

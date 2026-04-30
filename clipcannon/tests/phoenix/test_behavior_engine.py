@@ -16,15 +16,15 @@ from phoenix.behavior.cross_modal_detector import SocialSignal
 from phoenix.behavior.emotion_mirror import AvatarExpression
 from phoenix.behavior.engine import BehaviorEngine, BehaviorOutput
 from phoenix.config import PhoenixConfig
-from phoenix.errors import BehaviorError, ExpressionError
+from phoenix.errors import BehaviorError
 from phoenix.expression.emotion_fusion import EmotionState, ProsodyFeatures
 from phoenix.expression.gesture_library import GestureClip
 from phoenix.expression.speaker_tracker import SpeakerInfo
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build real data with known properties
 # ---------------------------------------------------------------------------
+
 
 def _make_prosody(
     *,
@@ -105,6 +105,7 @@ def _sarcastic_semantic() -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Listening mode tests
 # ---------------------------------------------------------------------------
+
 
 class TestProcessListening:
     """Tests for BehaviorEngine.process_listening()."""
@@ -238,6 +239,7 @@ class TestProcessListening:
 # Speaking mode tests
 # ---------------------------------------------------------------------------
 
+
 class TestProcessSpeaking:
     """Tests for BehaviorEngine.process_speaking()."""
 
@@ -358,6 +360,7 @@ class TestProcessSpeaking:
 # Reset tests
 # ---------------------------------------------------------------------------
 
+
 class TestReset:
     """Tests for BehaviorEngine.reset()."""
 
@@ -430,6 +433,7 @@ class TestReset:
 # ---------------------------------------------------------------------------
 # Edge case tests
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     """Tests for edge cases and error handling."""
@@ -555,6 +559,7 @@ class TestEdgeCases:
 # Config integration tests
 # ---------------------------------------------------------------------------
 
+
 class TestConfigIntegration:
     """Tests for BehaviorEngine with custom PhoenixConfig."""
 
@@ -585,6 +590,7 @@ class TestConfigIntegration:
 # ---------------------------------------------------------------------------
 # Multi-turn integration tests
 # ---------------------------------------------------------------------------
+
 
 class TestMultiTurn:
     """Tests for multi-turn conversation scenarios."""

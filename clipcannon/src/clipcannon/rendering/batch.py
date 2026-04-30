@@ -99,10 +99,7 @@ async def render_batch(
                 )
             return result
 
-    tasks = [
-        _render_with_limit(edl, i)
-        for i, edl in enumerate(edl_list)
-    ]
+    tasks = [_render_with_limit(edl, i) for i, edl in enumerate(edl_list)]
     results = await asyncio.gather(*tasks)
 
     succeeded = sum(1 for r in results if r.success)

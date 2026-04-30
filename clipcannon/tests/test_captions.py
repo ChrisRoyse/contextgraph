@@ -55,9 +55,7 @@ def _fast_words(texts: list[str]) -> list[CaptionWord]:
     dur_per_word = 100
     gap = 20
     for text in texts:
-        words.append(
-            CaptionWord(word=text, start_ms=cursor, end_ms=cursor + dur_per_word)
-        )
+        words.append(CaptionWord(word=text, start_ms=cursor, end_ms=cursor + dur_per_word))
         cursor += dur_per_word + gap
     return words
 
@@ -126,8 +124,7 @@ class TestChunkTranscriptWords:
     def test_10_words_max3_produces_chunks(self) -> None:
         """10 words with max_words=3 -> 3-4 chunks."""
         words = _words(
-            ["The", "quick", "brown", "fox", "jumps",
-             "over", "the", "lazy", "brown", "dog"]
+            ["The", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "brown", "dog"]
         )
         chunks = chunk_transcript_words(words, max_words=3)
         assert 3 <= len(chunks) <= 5
@@ -160,9 +157,7 @@ class TestChunkTranscriptWords:
             CaptionWord(word="word4", start_ms=3100, end_ms=4000),
             CaptionWord(word="word5", start_ms=4100, end_ms=5000),
         ]
-        chunks = chunk_transcript_words(
-            words, max_words=10, max_display_ms=2000
-        )
+        chunks = chunk_transcript_words(words, max_words=10, max_display_ms=2000)
         for chunk in chunks:
             duration = chunk.end_ms - chunk.start_ms
             # Each chunk should be at most 2000ms (plus min enforcement)

@@ -17,13 +17,16 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import soundfile as sf
 import torch
 
 from clipcannon.voice.verify import VerificationResult, VoiceVerifier
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +99,15 @@ def _trim_reference(audio_path: Path, max_duration_s: float = _MAX_REF_DURATION_
 
     # Only save if something changed
     original_wav, _ = torchaudio.load(str(audio_path))
-    if wav.shape != original_wav.shape or not torch.allclose(wav, original_wav[:1, :wav.shape[-1]], atol=1e-4):
+    if wav.shape != original_wav.shape or not torch.allclose(
+        wav, original_wav[:1, : wav.shape[-1]], atol=1e-4
+    ):
         trimmed = audio_path.parent / f"{audio_path.stem}_trimmed.wav"
         torchaudio.save(str(trimmed), wav, sr)
         logger.info(
             "Preprocessed reference %s: %.1fs, normalized",
-            audio_path.name, wav.shape[-1] / sr,
+            audio_path.name,
+            wav.shape[-1] / sr,
         )
         return trimmed
 
@@ -136,6 +142,7 @@ class VoiceSynthesizer:
         VRAM leaks on WSL2.
         """
         import gc
+
         if self._engine is not None:
             del self._engine
             self._engine = None
@@ -171,7 +178,8 @@ class VoiceSynthesizer:
         elapsed = time.monotonic() - start
         logger.info(
             "Qwen3-TTS loaded in %.1fs, VRAM: %.2fGB",
-            elapsed, torch.cuda.memory_allocated() / 1024**3,
+            elapsed,
+            torch.cuda.memory_allocated() / 1024**3,
         )
         return self._engine
 
@@ -205,7 +213,8 @@ class VoiceSynthesizer:
 
         logger.info(
             "Creating voice clone prompt: ref=%s, x_vector_only=%s",
-            ref_path.name, use_xvec,
+            ref_path.name,
+            use_xvec,
         )
 
         items = engine.create_voice_clone_prompt(  # type: ignore[union-attr]
@@ -290,7 +299,11 @@ class VoiceSynthesizer:
 
             logger.info(
                 "Attempt %d/%d: temp=%.1f, max_tokens=%d, seed=%d",
-                attempt_idx + 1, max_attempts, temperature, max_new_tokens, seed,
+                attempt_idx + 1,
+                max_attempts,
+                temperature,
+                max_new_tokens,
+                seed,
             )
 
             # Generate voice clone
@@ -334,7 +347,9 @@ class VoiceSynthesizer:
             if verifier is None:
                 logger.info(
                     "Attempt %d/%d: generated %dms audio (no verification)",
-                    attempt_idx + 1, max_attempts, duration_ms,
+                    attempt_idx + 1,
+                    max_attempts,
+                    duration_ms,
                 )
                 return result
 
@@ -349,7 +364,9 @@ class VoiceSynthesizer:
 
             logger.info(
                 "Attempt %d/%d: SECS=%.3f (threshold=%.2f), gate=%s%s",
-                attempt_idx + 1, max_attempts, vr.secs_score,
+                attempt_idx + 1,
+                max_attempts,
+                vr.secs_score,
                 verification_threshold,
                 vr.gate_failed or "pass",
                 "" if vr.passed else ", retrying...",
@@ -365,6 +382,7 @@ class VoiceSynthesizer:
         assert best_result is not None
         logger.warning(
             "Max attempts (%d) exhausted. Best SECS=%.3f",
-            max_attempts, best_secs,
+            max_attempts,
+            best_secs,
         )
         return best_result

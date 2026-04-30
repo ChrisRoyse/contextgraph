@@ -14,12 +14,30 @@ from clipcannon.db.queries import fetch_all, fetch_one, table_exists
 
 logger = logging.getLogger(__name__)
 
-FILLER_WORDS: frozenset[str] = frozenset({
-    "um", "uh", "uhm", "uhh", "hmm", "hm",
-    "like", "basically", "literally", "actually",
-    "you know", "i mean", "right", "okay", "ok",
-    "so", "well", "yeah", "yep", "erm",
-})
+FILLER_WORDS: frozenset[str] = frozenset(
+    {
+        "um",
+        "uh",
+        "uhm",
+        "uhh",
+        "hmm",
+        "hm",
+        "like",
+        "basically",
+        "literally",
+        "actually",
+        "you know",
+        "i mean",
+        "right",
+        "okay",
+        "ok",
+        "so",
+        "well",
+        "yeah",
+        "yep",
+        "erm",
+    }
+)
 
 
 def analyze_fillers(
@@ -35,9 +53,7 @@ def analyze_fillers(
     """
     effective = filler_words if filler_words is not None else FILLER_WORDS
     single = frozenset(w for w in effective if " " not in w)
-    multi: dict[str, list[str]] = {
-        p: p.split() for p in effective if " " in p
-    }
+    multi: dict[str, list[str]] = {p: p.split() for p in effective if " " in p}
 
     conn = get_connection(db_path, enable_vec=False, dict_rows=True)
     try:
@@ -78,16 +94,17 @@ def analyze_fillers(
                     break
             if ok:
                 consumed.update(range(i, i + n))
-                results.append({
-                    "word": phrase,
-                    "start_ms": rows[i]["start_ms"],
-                    "end_ms": rows[i + n - 1]["end_ms"],
-                    "confidence": min(
-                        float(rows[i + k].get("confidence") or 0.0)
-                        for k in range(n)
-                    ),
-                    "word_id": rows[i]["word_id"],
-                })
+                results.append(
+                    {
+                        "word": phrase,
+                        "start_ms": rows[i]["start_ms"],
+                        "end_ms": rows[i + n - 1]["end_ms"],
+                        "confidence": min(
+                            float(rows[i + k].get("confidence") or 0.0) for k in range(n)
+                        ),
+                        "word_id": rows[i]["word_id"],
+                    }
+                )
 
     # Single-word filler detection
     for i, row in enumerate(rows):
@@ -96,11 +113,15 @@ def analyze_fillers(
         w = str(row["word"]).lower().strip(".,!?;:")
         c = float(row.get("confidence") or 0.0)
         if w in single and c >= min_confidence:
-            results.append({
-                "word": w, "start_ms": row["start_ms"],
-                "end_ms": row["end_ms"], "confidence": c,
-                "word_id": row["word_id"],
-            })
+            results.append(
+                {
+                    "word": w,
+                    "start_ms": row["start_ms"],
+                    "end_ms": row["end_ms"],
+                    "confidence": c,
+                    "word_id": row["word_id"],
+                }
+            )
 
     results.sort(key=lambda d: int(d["start_ms"]))  # type: ignore[arg-type]
     logger.info("Found %d fillers in project %s", len(results), project_id)
@@ -166,8 +187,13 @@ def build_trimmed_segments(
             dead.append((s, e))
 
     if not dead:
-        return [{"source_start_ms": 0, "source_end_ms": source_duration_ms,
-                 "duration_ms": source_duration_ms}]
+        return [
+            {
+                "source_start_ms": 0,
+                "source_end_ms": source_duration_ms,
+                "duration_ms": source_duration_ms,
+            }
+        ]
 
     # 2-3. Sort and merge overlapping dead zones
     dead.sort()
@@ -205,8 +231,7 @@ def build_trimmed_segments(
     for ss, se in merged:
         dur = se - ss
         if dur >= min_segment_ms:
-            segments.append({"source_start_ms": ss, "source_end_ms": se,
-                             "duration_ms": dur})
+            segments.append({"source_start_ms": ss, "source_end_ms": se, "duration_ms": dur})
 
     logger.debug("Built %d segments from %d dead zones", len(segments), len(merged_dead))
     return segments
@@ -231,7 +256,8 @@ def auto_trim(
     conn = get_connection(db_path, enable_vec=False, dict_rows=True)
     try:
         row = fetch_one(
-            conn, "SELECT duration_ms FROM project WHERE project_id = ?",
+            conn,
+            "SELECT duration_ms FROM project WHERE project_id = ?",
             (project_id,),
         )
     finally:
@@ -246,16 +272,20 @@ def auto_trim(
     fillers = analyze_fillers(db_path, project_id, filler_words=filler_words)
     pauses = analyze_long_pauses(db_path, project_id, threshold_ms=pause_threshold_ms)
     segments = build_trimmed_segments(
-        source_duration_ms, fillers, pauses,
-        merge_gap_ms=merge_gap_ms, min_segment_ms=min_segment_ms,
+        source_duration_ms,
+        fillers,
+        pauses,
+        merge_gap_ms=merge_gap_ms,
+        min_segment_ms=min_segment_ms,
     )
 
     trimmed_ms = sum(int(s["duration_ms"]) for s in segments)
     saved_ms = source_duration_ms - trimmed_ms
     saved_pct = (saved_ms / source_duration_ms * 100.0) if source_duration_ms > 0 else 0.0
 
-    logger.info("Auto-trim %s: %d segs, saved %dms (%.1f%%)",
-                project_id, len(segments), saved_ms, saved_pct)
+    logger.info(
+        "Auto-trim %s: %d segs, saved %dms (%.1f%%)", project_id, len(segments), saved_ms, saved_pct
+    )
 
     return {
         "segments": segments,

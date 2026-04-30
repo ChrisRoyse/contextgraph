@@ -1,4 +1,5 @@
 """Tests for SentenceChunker."""
+
 import pytest
 
 from voiceagent.tts.chunker import SentenceChunker
@@ -54,13 +55,19 @@ def test_prd_example_hello_how_are_you(chunker):
 def test_long_clause_at_comma(chunker):
     text = "This is a very long clause that keeps going on and on and exceeds sixty characters, and then continues"
     result = chunker.extract_sentence(text)
-    assert result == "This is a very long clause that keeps going on and on and exceeds sixty characters,"
+    assert (
+        result
+        == "This is a very long clause that keeps going on and on and exceeds sixty characters,"
+    )
 
 
 def test_long_clause_at_semicolon(chunker):
     text = "This is another very long clause that keeps going on and on past sixty characters; then more"
     result = chunker.extract_sentence(text)
-    assert result == "This is another very long clause that keeps going on and on past sixty characters;"
+    assert (
+        result
+        == "This is another very long clause that keeps going on and on past sixty characters;"
+    )
 
 
 def test_short_clause_not_extracted(chunker):

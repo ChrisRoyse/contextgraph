@@ -130,18 +130,25 @@ VOICE_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "enhance": {
                     "type": "boolean",
-                    "default": True,
+                    "default": False,
                     "description": (
                         "Post-process with Resemble Enhance to remove metallic "
                         "vocoder artifacts and upsample to 44.1kHz broadcast quality. "
-                        "Adds ~10s processing time. Set false for raw TTS output."
+                        "Adds ~10s processing time."
                     ),
                 },
                 "prosody_style": {
                     "type": "string",
                     "enum": [
-                        "energetic", "calm", "emphatic", "varied",
-                        "fast", "slow", "rising", "question", "best",
+                        "energetic",
+                        "calm",
+                        "emphatic",
+                        "varied",
+                        "fast",
+                        "slow",
+                        "rising",
+                        "question",
+                        "best",
                     ],
                     "description": (
                         "Auto-select a reference clip whose prosody matches "
@@ -191,7 +198,7 @@ VOICE_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "enhance": {
                     "type": "boolean",
-                    "default": True,
+                    "default": False,
                     "description": (
                         "Post-process with Resemble Enhance to remove metallic "
                         "vocoder artifacts and upsample to 44.1kHz broadcast quality."

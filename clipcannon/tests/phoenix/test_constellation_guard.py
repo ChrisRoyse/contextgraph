@@ -12,9 +12,7 @@ import numpy as np
 import pytest
 
 # Paths to real data
-CONSTELLATION_PATH = os.path.expanduser(
-    "~/.clipcannon/models/santa/embeddings/all_embeddings.npz"
-)
+CONSTELLATION_PATH = os.path.expanduser("~/.clipcannon/models/santa/embeddings/all_embeddings.npz")
 SOURCE_VIDEO = os.path.expanduser(
     "~/.clipcannon/projects/proj_2ea7221d/source/2026-04-03 04-23-11.mp4"
 )
@@ -36,22 +34,32 @@ def _extract_frame(video_path: str, time_sec: float = 5.0) -> np.ndarray:
 
     cmd = [
         "ffmpeg",
-        "-ss", str(time_sec),
-        "-i", video_path,
-        "-frames:v", "1",
-        "-f", "rawvideo",
-        "-pix_fmt", "rgb24",
-        "-v", "error",
+        "-ss",
+        str(time_sec),
+        "-i",
+        video_path,
+        "-frames:v",
+        "1",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-v",
+        "error",
         "-",
     ]
 
     # First get the frame dimensions
     probe_cmd = [
         "ffprobe",
-        "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "csv=p=0",
         video_path,
     ]
     probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
@@ -210,8 +218,7 @@ class TestFrameValidation:
 
         # Based on constellation analysis, real frames have min ~0.89 cosine sim
         assert result.visual_similarity > 0.85, (
-            f"Unexpectedly low similarity for real Santa frame: "
-            f"{result.visual_similarity:.4f}"
+            f"Unexpectedly low similarity for real Santa frame: {result.visual_similarity:.4f}"
         )
 
     def test_random_frame_rejected(self, guard):
@@ -397,7 +404,7 @@ class TestEdgeCases:
         assert "thresholds" in stats
         assert "modalities" in stats
 
-        for name, info in stats["modalities"].items():
+        for _name, info in stats["modalities"].items():
             assert "dim" in info
             assert "samples" in info
             assert "spread_std" in info

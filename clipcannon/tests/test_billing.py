@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import uuid
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +29,8 @@ from clipcannon.billing.hmac_integrity import (
 )
 from clipcannon.exceptions import BillingError
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------
 # HMAC Integrity Tests
@@ -233,7 +235,9 @@ class TestLicenseServer:
     def client(self):
         """Create a TestClient for the FastAPI app."""
         from fastapi.testclient import TestClient
+
         from license_server.server import app
+
         return TestClient(app)
 
     def test_health_check(self, client) -> None:
@@ -255,13 +259,16 @@ class TestLicenseServer:
     def test_charge_credits(self, client) -> None:
         """Charging credits decreases balance."""
         mid = get_machine_id()
-        resp = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test",
-            "idempotency_key": str(uuid.uuid4()),
-        })
+        resp = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test",
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
@@ -271,13 +278,16 @@ class TestLicenseServer:
     def test_charge_insufficient_credits(self, client) -> None:
         """Charging more credits than available fails gracefully."""
         mid = get_machine_id()
-        resp = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 999,
-            "project_id": "proj_test",
-            "idempotency_key": str(uuid.uuid4()),
-        })
+        resp = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 999,
+                "project_id": "proj_test",
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
@@ -289,25 +299,31 @@ class TestLicenseServer:
         idem_key = str(uuid.uuid4())
 
         # First charge
-        resp1 = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test",
-            "idempotency_key": idem_key,
-        })
+        resp1 = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test",
+                "idempotency_key": idem_key,
+            },
+        )
         data1 = resp1.json()
         assert data1["success"] is True
         assert data1["balance_after"] == 90
 
         # Second charge with same key
-        resp2 = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test",
-            "idempotency_key": idem_key,
-        })
+        resp2 = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test",
+                "idempotency_key": idem_key,
+            },
+        )
         data2 = resp2.json()
         assert data2["success"] is True
         assert data2["balance_after"] == 90  # Not 80! Idempotent.
@@ -322,22 +338,28 @@ class TestLicenseServer:
         mid = get_machine_id()
 
         # Charge first
-        resp1 = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test",
-            "idempotency_key": str(uuid.uuid4()),
-        })
+        resp1 = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test",
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
         txn_id = resp1.json()["transaction_id"]
 
         # Refund
-        resp2 = client.post("/v1/refund", json={
-            "machine_id": mid,
-            "transaction_id": txn_id,
-            "reason": "pipeline_failed",
-            "project_id": "proj_test",
-        })
+        resp2 = client.post(
+            "/v1/refund",
+            json={
+                "machine_id": mid,
+                "transaction_id": txn_id,
+                "reason": "pipeline_failed",
+                "project_id": "proj_test",
+            },
+        )
         data = resp2.json()
         assert data["success"] is True
         assert data["balance_after"] == 100  # Fully restored
@@ -345,11 +367,14 @@ class TestLicenseServer:
     def test_refund_unknown_transaction(self, client) -> None:
         """Refunding an unknown transaction returns 404."""
         mid = get_machine_id()
-        resp = client.post("/v1/refund", json={
-            "machine_id": mid,
-            "transaction_id": "txn_nonexistent",
-            "reason": "test",
-        })
+        resp = client.post(
+            "/v1/refund",
+            json={
+                "machine_id": mid,
+                "transaction_id": "txn_nonexistent",
+                "reason": "test",
+            },
+        )
         assert resp.status_code == 404
 
     def test_transaction_history(self, client) -> None:
@@ -358,13 +383,16 @@ class TestLicenseServer:
 
         # Make a few charges
         for i in range(3):
-            client.post("/v1/charge", json={
-                "machine_id": mid,
-                "operation": "analyze",
-                "credits": 10,
-                "project_id": f"proj_{i}",
-                "idempotency_key": str(uuid.uuid4()),
-            })
+            client.post(
+                "/v1/charge",
+                json={
+                    "machine_id": mid,
+                    "operation": "analyze",
+                    "credits": 10,
+                    "project_id": f"proj_{i}",
+                    "idempotency_key": str(uuid.uuid4()),
+                },
+            )
 
         resp = client.get("/v1/history", params={"limit": 10})
         assert resp.status_code == 200
@@ -374,10 +402,13 @@ class TestLicenseServer:
 
     def test_add_credits_dev(self, client) -> None:
         """Dev endpoint adds credits to balance."""
-        resp = client.post("/v1/add_credits", json={
-            "credits": 50,
-            "reason": "testing",
-        })
+        resp = client.post(
+            "/v1/add_credits",
+            json={
+                "credits": 50,
+                "reason": "testing",
+            },
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
@@ -402,23 +433,29 @@ class TestLicenseServer:
         mid = get_machine_id()
 
         # First charge (10 credits) should succeed
-        resp1 = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test",
-            "idempotency_key": str(uuid.uuid4()),
-        })
+        resp1 = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test",
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
         assert resp1.json()["success"] is True
 
         # Second charge (10 credits, total would be 20 > 15 limit) should fail
-        resp2 = client.post("/v1/charge", json={
-            "machine_id": mid,
-            "operation": "analyze",
-            "credits": 10,
-            "project_id": "proj_test2",
-            "idempotency_key": str(uuid.uuid4()),
-        })
+        resp2 = client.post(
+            "/v1/charge",
+            json={
+                "machine_id": mid,
+                "operation": "analyze",
+                "credits": 10,
+                "project_id": "proj_test2",
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
         data2 = resp2.json()
         assert data2["success"] is False
         assert data2["error"] == "SPENDING_LIMIT_EXCEEDED"
@@ -457,18 +494,21 @@ class TestD1Sync:
     def test_sync_push_local_only(self) -> None:
         """sync_push returns skip message in local-only mode."""
         from license_server.d1_sync import sync_push
+
         result = sync_push()
         assert "local-only" in result.lower() or "skipped" in result.lower()
 
     def test_sync_pull_local_only(self) -> None:
         """sync_pull returns skip message in local-only mode."""
         from license_server.d1_sync import sync_pull
+
         result = sync_pull()
         assert "local-only" in result.lower() or "skipped" in result.lower()
 
     def test_is_d1_configured_false(self) -> None:
         """is_d1_configured returns False without env vars."""
         from license_server.d1_sync import is_d1_configured
+
         with patch.dict(os.environ, {}, clear=True):
             # Remove the env vars if set
             os.environ.pop("CLIPCANNON_D1_API_URL", None)
@@ -490,6 +530,7 @@ class TestStripeWebhooks:
     def test_packages_dict(self) -> None:
         """PACKAGES dict has all expected entries."""
         from license_server.stripe_webhooks import PACKAGES
+
         assert PACKAGES["starter"] == 50
         assert PACKAGES["creator"] == 250
         assert PACKAGES["pro"] == 1000

@@ -8,13 +8,16 @@ Multi-signal detection:
 Threshold: Only trigger when confidence > address_threshold (default 0.8).
 Conservative: silence is better than false triggers.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from voiceagent.meeting.config import CloneConfig
-from voiceagent.meeting.transcript_format import MeetingSegment
+if TYPE_CHECKING:
+    from voiceagent.meeting.config import CloneConfig
+    from voiceagent.meeting.transcript_format import MeetingSegment
 
 logger = logging.getLogger(__name__)
 
@@ -147,11 +150,7 @@ class AddressDetector:
             trigger = "name_mention"
 
         # Signal 3: Contextual boost from recent segments.
-        if (
-            recent_context
-            and confidence > 0
-            and confidence < self._config.address_threshold
-        ):
+        if recent_context and confidence > 0 and confidence < self._config.address_threshold:
             for ctx_seg in recent_context[-3:]:
                 ctx_lower = ctx_seg.text.lower()
                 if any(n in ctx_lower for n in self._clean_names):
@@ -166,8 +165,7 @@ class AddressDetector:
 
         if is_addressed:
             logger.info(
-                "Address detected: clone=%s, confidence=%.2f, trigger=%s, "
-                "text='%s'",
+                "Address detected: clone=%s, confidence=%.2f, trigger=%s, text='%s'",
                 self._clone_name,
                 confidence,
                 trigger,

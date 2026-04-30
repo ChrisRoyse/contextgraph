@@ -19,6 +19,7 @@ Usage:
     blendshapes = face.to_blendshapes()    # 52 ARKit blendshapes
     exp, jaw = face.to_flame_params()       # FLAME expression + jaw
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -29,8 +30,14 @@ import numpy as np
 
 from phoenix.render.audio_features import (
     clamp as _clamp,
+)
+from phoenix.render.audio_features import (
     extract_f0_yin as _extract_f0_yin,
+)
+from phoenix.render.audio_features import (
     extract_formants_lpc as _extract_formants_lpc,
+)
+from phoenix.render.audio_features import (
     zero_crossing_rate as _zero_crossing_rate,
 )
 
@@ -41,12 +48,14 @@ logger = logging.getLogger(__name__)
 # FaceState
 # ---------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class FaceState:
     """Complete face state derived from audio physics.
 
     All values are normalized to [0, 1] unless noted otherwise.
     """
+
     jaw_open: float = 0.0
     lip_spread: float = 0.0
     lip_round: float = 0.0
@@ -146,24 +155,25 @@ class FaceState:
         Returns numpy arrays: expression (100,) float32, jaw (3,) float32.
         """
         exp = np.zeros(100, dtype=np.float32)
-        exp[0] = self.jaw_open * 5.0       # jaw drop
-        exp[1] = self.lip_spread * 3.0     # lip stretch
+        exp[0] = self.jaw_open * 5.0  # jaw drop
+        exp[1] = self.lip_spread * 3.0  # lip stretch
         exp[2] = self.lip_pucker * 4.0 - self.lip_spread * 2.0
-        exp[3] = self.jaw_open * 1.5       # upper lip raise
-        exp[4] = self.jaw_open * 2.0       # lower lip depress
+        exp[3] = self.jaw_open * 1.5  # upper lip raise
+        exp[4] = self.jaw_open * 2.0  # lower lip depress
         exp[5] = self.brow_raise * 3.0
         exp[6] = self.squint * 2.0
         exp[7] = self.effort * 2.5
-        exp[8] = self.lip_round * 1.5      # lip roll
+        exp[8] = self.lip_round * 1.5  # lip roll
         exp[9] = self.chin_tension * 2.0
 
         jaw = np.zeros(3, dtype=np.float32)
-        jaw[0] = self.jaw_open * 0.4       # X rotation (open/close)
+        jaw[0] = self.jaw_open * 0.4  # X rotation (open/close)
         return exp, jaw
 
     def to_flame_params_torch(self, device: str = "cuda") -> tuple[Any, Any]:
         """Like to_flame_params but returns torch tensors on device."""
         import torch
+
         exp_np, jaw_np = self.to_flame_params()
         return (
             torch.from_numpy(exp_np).to(device),
@@ -174,6 +184,7 @@ class FaceState:
 # ---------------------------------------------------------------------------
 # PhysicsFaceEngine
 # ---------------------------------------------------------------------------
+
 
 class PhysicsFaceEngine:
     """Deterministic audio-to-face engine based on articulatory acoustics.
@@ -221,7 +232,10 @@ class PhysicsFaceEngine:
 
         logger.debug(
             "PhysicsFaceEngine: sr=%d fps=%d lpc=%d alpha=%.2f",
-            sample_rate, fps, lpc_order, smoothing_alpha,
+            sample_rate,
+            fps,
+            lpc_order,
+            smoothing_alpha,
         )
 
     def reset(self) -> None:
@@ -249,7 +263,7 @@ class PhysicsFaceEngine:
             audio = audio.flatten()
 
         # RMS energy
-        energy = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
+        energy = float(np.sqrt(np.mean(audio**2))) if len(audio) > 0 else 0.0
 
         # Adaptive max energy
         if energy > self._max_energy:
@@ -301,12 +315,24 @@ class PhysicsFaceEngine:
         self._prev_f0 = f0 if f0 > 0 else self._prev_f0
 
         state = FaceState(
-            jaw_open=jaw_open, lip_spread=lip_spread, lip_round=lip_round,
-            lip_pucker=lip_pucker, tongue_front=lip_spread,
-            teeth_visible=teeth_visible, chin_tension=chin_tension,
-            effort=effort, brow_raise=brow_raise, squint=squint,
-            head_nod=head_nod, is_silence=False,
-            _f0=f0, _f1=f1, _f2=f2, _f3=f3, _energy=energy, _zcr=zcr,
+            jaw_open=jaw_open,
+            lip_spread=lip_spread,
+            lip_round=lip_round,
+            lip_pucker=lip_pucker,
+            tongue_front=lip_spread,
+            teeth_visible=teeth_visible,
+            chin_tension=chin_tension,
+            effort=effort,
+            brow_raise=brow_raise,
+            squint=squint,
+            head_nod=head_nod,
+            is_silence=False,
+            _f0=f0,
+            _f1=f1,
+            _f2=f2,
+            _f3=f3,
+            _energy=energy,
+            _zcr=zcr,
         )
         return self._smooth(state)
 
@@ -316,13 +342,15 @@ class PhysicsFaceEngine:
             audio = audio.flatten()
         n_frames = max(1, len(audio) // self._spf)
         return [
-            self.process_audio_chunk(audio[i * self._spf:(i + 1) * self._spf])
+            self.process_audio_chunk(audio[i * self._spf : (i + 1) * self._spf])
             for i in range(n_frames)
         ]
 
     def _make_silence_state(self) -> FaceState:
         return FaceState(
-            tongue_front=0.5, head_nod=0.5, is_silence=True,
+            tongue_front=0.5,
+            head_nod=0.5,
+            is_silence=True,
         )
 
     def _smooth(self, state: FaceState) -> FaceState:
@@ -348,8 +376,12 @@ class PhysicsFaceEngine:
             squint=ema(state.squint, p.squint, a_med),
             head_nod=ema(state.head_nod, p.head_nod, a_slow),
             is_silence=state.is_silence,
-            _f0=state._f0, _f1=state._f1, _f2=state._f2, _f3=state._f3,
-            _energy=state._energy, _zcr=state._zcr,
+            _f0=state._f0,
+            _f1=state._f1,
+            _f2=state._f2,
+            _f3=state._f3,
+            _energy=state._energy,
+            _zcr=state._zcr,
         )
         self._prev = smoothed
         return smoothed

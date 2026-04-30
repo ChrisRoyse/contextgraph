@@ -14,17 +14,21 @@ Usage:
     await session.send_audio(tts_output)
     await session.leave()
 """
+
 from __future__ import annotations
 
 import logging
 import re
-from collections.abc import AsyncIterator
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-import numpy as np
-
-from voiceagent.meeting.config import BotJoinConfig
 from voiceagent.meeting.errors import MeetingDeviceError
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    import numpy as np
+
+    from voiceagent.meeting.config import BotJoinConfig
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +72,10 @@ class MeetingBotSession(Protocol):
         ...
 
     async def send_video_frame(
-        self, frame: np.ndarray, width: int, height: int,
+        self,
+        frame: np.ndarray,
+        width: int,
+        height: int,
     ) -> None:
         """Send a video frame to the meeting.
 
@@ -118,7 +125,7 @@ class MeetingBotJoiner:
         config: Bot join configuration with SDK credentials.
     """
 
-    def __init__(self, config: BotJoinConfig):
+    def __init__(self, config: BotJoinConfig) -> None:
         self._config = config
 
     async def join(
@@ -156,7 +163,10 @@ class MeetingBotJoiner:
         )
 
     async def _join_zoom(
-        self, url: str, display_name: str, send_video: bool,
+        self,
+        url: str,
+        display_name: str,
+        send_video: bool,
     ) -> MeetingBotSession:
         """Join a Zoom meeting via Meeting SDK."""
         from voiceagent.meeting.zoom_bot import ZoomBotJoin
@@ -176,7 +186,10 @@ class MeetingBotJoiner:
         return await bot.join(url=url, display_name=display_name, send_video=send_video)
 
     async def _join_browser(
-        self, url: str, display_name: str, platform: str,
+        self,
+        url: str,
+        display_name: str,
+        platform: str,
     ) -> MeetingBotSession:
         """Join a Google Meet or Teams meeting via Playwright browser."""
         from voiceagent.meeting.browser_bot import BrowserBotJoin

@@ -14,11 +14,11 @@ Targets:
   - VRAM growth < 100MB over 100 cycles (if GPU available)
   - No uncollectable garbage objects
 """
+
 from __future__ import annotations
 
 import gc
 import os
-import time
 
 import numpy as np
 import pytest
@@ -26,6 +26,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def get_rss_mb() -> float:
     """Get current process RSS in MB (Linux only)."""
@@ -35,6 +36,7 @@ def get_rss_mb() -> float:
         return pages * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024)
     except (OSError, ValueError):
         import resource
+
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
 
@@ -42,6 +44,7 @@ def get_vram_mb() -> float | None:
     """Get current CuPy VRAM allocated in MB, or None if unavailable."""
     try:
         import cupy as cp
+
         pool = cp.get_default_memory_pool()
         return pool.used_bytes() / (1024 * 1024)
     except Exception:
@@ -58,6 +61,7 @@ def force_gc():
 # ---------------------------------------------------------------------------
 # Test: Audio buffer cycle (simulates santa_meet_bot.py main loop)
 # ---------------------------------------------------------------------------
+
 
 class TestAudioBufferMemory:
     """Test that audio buffer accumulation and processing doesn't leak."""
@@ -80,7 +84,7 @@ class TestAudioBufferMemory:
             assert audio.shape[0] == 80000  # 5s at 16kHz
 
             # Simulate processing
-            energy = float(np.sqrt(np.mean(audio ** 2)))
+            energy = float(np.sqrt(np.mean(audio**2)))
             assert energy > 0
 
             # Simulate PCM conversion for playback
@@ -98,7 +102,9 @@ class TestAudioBufferMemory:
         rss_end = get_rss_mb()
         growth = rss_end - rss_start
 
-        print(f"\nAudio buffer test: RSS start={rss_start:.1f}MB, end={rss_end:.1f}MB, growth={growth:.1f}MB")
+        print(
+            f"\nAudio buffer test: RSS start={rss_start:.1f}MB, end={rss_end:.1f}MB, growth={growth:.1f}MB"
+        )
         print(f"  RSS samples every 10 cycles: {[f'{x:.1f}' for x in rss_samples]}")
         assert growth < 50, f"RSS grew {growth:.1f}MB > 50MB limit over 100 audio cycles"
 
@@ -106,6 +112,7 @@ class TestAudioBufferMemory:
 # ---------------------------------------------------------------------------
 # Test: EmotionFusion repeated processing
 # ---------------------------------------------------------------------------
+
 
 class TestEmotionFusionMemory:
     """Test EmotionFusion doesn't leak across repeated fuse/update calls."""
@@ -156,6 +163,7 @@ class TestEmotionFusionMemory:
 # Test: SpeakerTracker repeated tracking
 # ---------------------------------------------------------------------------
 
+
 class TestSpeakerTrackerMemory:
     """Test SpeakerTracker doesn't leak with repeated track() calls."""
 
@@ -190,7 +198,9 @@ class TestSpeakerTrackerMemory:
 
         # Should have identified approximately 5 speakers (allow some noise-induced extras)
         assert tracker.speaker_count <= 10, f"Too many speakers: {tracker.speaker_count}"
-        print(f"\nSpeakerTracker: identified {tracker.speaker_count} speakers from 5 sources over 500 calls")
+        print(
+            f"\nSpeakerTracker: identified {tracker.speaker_count} speakers from 5 sources over 500 calls"
+        )
 
         force_gc()
         rss_end = get_rss_mb()
@@ -203,6 +213,7 @@ class TestSpeakerTrackerMemory:
 # ---------------------------------------------------------------------------
 # Test: BehaviorEngine full cycle
 # ---------------------------------------------------------------------------
+
 
 class TestBehaviorEngineMemory:
     """Test BehaviorEngine doesn't leak across repeated process cycles."""
@@ -226,12 +237,18 @@ class TestBehaviorEngineMemory:
             semantic_emb = np.random.randn(768).astype(np.float32)
             f0_mean = 140.0 + np.random.randn() * 30
             prosody = ProsodyFeatures(
-                f0_mean=f0_mean, f0_std=25.0, f0_min=f0_mean - 30,
-                f0_max=f0_mean + 30, f0_range=60.0,
+                f0_mean=f0_mean,
+                f0_std=25.0,
+                f0_min=f0_mean - 30,
+                f0_max=f0_mean + 30,
+                f0_range=60.0,
                 energy_mean=0.4 + np.random.rand() * 0.4,
-                energy_peak=0.8, energy_std=0.1,
-                speaking_rate_wpm=150.0, pitch_contour_type="varied",
-                has_emphasis=False, has_breath=False,
+                energy_peak=0.8,
+                energy_std=0.1,
+                speaking_rate_wpm=150.0,
+                pitch_contour_type="varied",
+                has_emphasis=False,
+                has_breath=False,
             )
 
             output = engine.process_listening(
@@ -266,6 +283,7 @@ class TestBehaviorEngineMemory:
 # Test: Transcript segment accumulation and trimming
 # ---------------------------------------------------------------------------
 
+
 class TestTranscriptMemory:
     """Test transcript buffer trimming keeps memory bounded."""
 
@@ -280,14 +298,15 @@ class TestTranscriptMemory:
         for i in range(1000):
             seg = {
                 "speaker": f"Speaker_{i % 5}",
-                "text": f"This is test segment number {i} with some realistic length text content " * 3,
+                "text": f"This is test segment number {i} with some realistic length text content "
+                * 3,
                 "timestamp": f"{i // 3600:02d}:{(i % 3600) // 60:02d}:{i % 60:02d}",
             }
             segments.append(seg)
 
             # Trim (matches santa_meet_bot.py pattern)
             if len(segments) > MAX_SEGMENTS:
-                del segments[:len(segments) - MAX_SEGMENTS]
+                del segments[: len(segments) - MAX_SEGMENTS]
 
         assert len(segments) == MAX_SEGMENTS
         assert segments[0]["text"].startswith("This is test segment number 800")
@@ -304,6 +323,7 @@ class TestTranscriptMemory:
 # Test: CuPy GPU memory leak test
 # ---------------------------------------------------------------------------
 
+
 class TestGPUMemoryLeak:
     """Test CuPy operations don't leak VRAM."""
 
@@ -312,6 +332,7 @@ class TestGPUMemoryLeak:
         """Skip if CuPy/CUDA not available."""
         try:
             import cupy as cp
+
             cp.cuda.Device(0).compute_capability
         except Exception:
             pytest.skip("CuPy/CUDA not available")
@@ -421,6 +442,7 @@ class TestGPUMemoryLeak:
 # Test: Combined pipeline memory stress
 # ---------------------------------------------------------------------------
 
+
 class TestCombinedPipelineMemory:
     """Test the full pipeline cycle doesn't leak memory."""
 
@@ -441,7 +463,7 @@ class TestCombinedPipelineMemory:
         for i in range(50):
             # 1. Audio capture simulation
             audio_buf = np.random.randn(80000).astype(np.float32)
-            energy = float(np.sqrt(np.mean(audio_buf ** 2)))
+            energy = float(np.sqrt(np.mean(audio_buf**2)))
 
             # 2. Embeddings
             emotion_emb = np.random.randn(1024).astype(np.float32)
@@ -450,12 +472,18 @@ class TestCombinedPipelineMemory:
             semantic_emb = np.random.randn(768).astype(np.float32)
             f0_mean = 150.0 + np.random.randn() * 20
             prosody = ProsodyFeatures(
-                f0_mean=f0_mean, f0_std=30.0, f0_min=f0_mean - 30,
-                f0_max=f0_mean + 30, f0_range=60.0,
+                f0_mean=f0_mean,
+                f0_std=30.0,
+                f0_min=f0_mean - 30,
+                f0_max=f0_mean + 30,
+                f0_range=60.0,
                 energy_mean=min(max(energy, 0.0), 1.0),
-                energy_peak=0.8, energy_std=0.1,
-                speaking_rate_wpm=150.0, pitch_contour_type="varied",
-                has_emphasis=False, has_breath=False,
+                energy_peak=0.8,
+                energy_std=0.1,
+                speaking_rate_wpm=150.0,
+                pitch_contour_type="varied",
+                has_emphasis=False,
+                has_breath=False,
             )
 
             # 3. Emotion fusion
@@ -481,7 +509,7 @@ class TestCombinedPipelineMemory:
             # 7. Transcript
             segments.append({"speaker": speaker.speaker_id, "text": f"Turn {i}", "ts": f"{i}"})
             if len(segments) > 200:
-                del segments[:len(segments) - 200]
+                del segments[: len(segments) - 200]
 
             # 8. Cleanup (matches real pipeline)
             del audio_buf, emotion_emb, speaker_emb, semantic_emb
@@ -501,6 +529,7 @@ class TestCombinedPipelineMemory:
 # Test: gc.collect() effectiveness
 # ---------------------------------------------------------------------------
 
+
 class TestGarbageCollection:
     """Test that gc.collect() properly frees circular references."""
 
@@ -518,14 +547,23 @@ class TestGarbageCollection:
 
         # Create typical Phoenix objects (embeddings, states, etc.)
         from phoenix.expression.emotion_fusion import EmotionFusion, ProsodyFeatures
+
         fusion = EmotionFusion()
         for _ in range(50):
             emb = np.random.randn(1024).astype(np.float32)
             prosody = ProsodyFeatures(
-                f0_mean=150.0, f0_std=30.0, f0_min=120.0, f0_max=180.0,
-                f0_range=60.0, energy_mean=0.5, energy_peak=0.8,
-                energy_std=0.1, speaking_rate_wpm=150.0,
-                pitch_contour_type="varied", has_emphasis=False, has_breath=False,
+                f0_mean=150.0,
+                f0_std=30.0,
+                f0_min=120.0,
+                f0_max=180.0,
+                f0_range=60.0,
+                energy_mean=0.5,
+                energy_peak=0.8,
+                energy_std=0.1,
+                speaking_rate_wpm=150.0,
+                pitch_contour_type="varied",
+                has_emphasis=False,
+                has_breath=False,
             )
             state = fusion.fuse(emb, prosody)
             fusion.update(state)
@@ -555,5 +593,7 @@ class TestGarbageCollection:
         rss_after = get_rss_mb()
 
         freed = rss_peak - rss_after
-        print(f"\nLarge array GC: peak={rss_peak:.0f}MB, after gc={rss_after:.0f}MB, freed={freed:.0f}MB")
+        print(
+            f"\nLarge array GC: peak={rss_peak:.0f}MB, after gc={rss_after:.0f}MB, freed={freed:.0f}MB"
+        )
         assert freed > 200, f"gc.collect() only freed {freed:.0f}MB of ~500MB allocated"

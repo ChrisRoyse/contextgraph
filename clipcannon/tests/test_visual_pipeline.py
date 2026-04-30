@@ -11,15 +11,17 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from PIL import Image
 
-from clipcannon.config import ClipCannonConfig
-from clipcannon.db.schema import create_project_db
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import execute, fetch_all, fetch_one
+from clipcannon.db.schema import create_project_db
 
+if TYPE_CHECKING:
+    from clipcannon.config import ClipCannonConfig
 
 # ============================================================
 # FIXTURES
@@ -75,8 +77,14 @@ def tmp_project(tmp_path: Path) -> tuple[str, Path, Path]:
             "source_sha256, duration_ms, resolution, fps, codec) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                project_id, "Test Visual", "/tmp/test.mp4",
-                "abc123", 10000, "640x480", 30.0, "h264",
+                project_id,
+                "Test Visual",
+                "/tmp/test.mp4",
+                "abc123",
+                10000,
+                "640x480",
+                30.0,
+                "h264",
             ),
         )
         conn.commit()
@@ -154,8 +162,7 @@ class TestStoryboard:
         try:
             rows = fetch_all(
                 conn,
-                "SELECT * FROM storyboard_grids WHERE project_id = ? "
-                "ORDER BY grid_number",
+                "SELECT * FROM storyboard_grids WHERE project_id = ? ORDER BY grid_number",
                 (project_id,),
             )
         finally:
@@ -188,8 +195,7 @@ class TestStoryboard:
         try:
             row = fetch_one(
                 conn,
-                "SELECT * FROM provenance WHERE project_id = ? "
-                "AND operation = ?",
+                "SELECT * FROM provenance WHERE project_id = ? AND operation = ?",
                 (project_id, "storyboard_generation"),
             )
         finally:
@@ -326,15 +332,13 @@ class TestQuality:
                 conn,
                 "INSERT INTO scenes (project_id, start_ms, end_ms, "
                 "key_frame_path, key_frame_timestamp_ms) VALUES (?, ?, ?, ?, ?)",
-                (project_id, 0, 5000,
-                 str(project_dir / "frames" / "frame_000001.jpg"), 0),
+                (project_id, 0, 5000, str(project_dir / "frames" / "frame_000001.jpg"), 0),
             )
             execute(
                 conn,
                 "INSERT INTO scenes (project_id, start_ms, end_ms, "
                 "key_frame_path, key_frame_timestamp_ms) VALUES (?, ?, ?, ?, ?)",
-                (project_id, 5000, 10000,
-                 str(project_dir / "frames" / "frame_000011.jpg"), 5000),
+                (project_id, 5000, 10000, str(project_dir / "frames" / "frame_000011.jpg"), 5000),
             )
             conn.commit()
         finally:
@@ -350,8 +354,7 @@ class TestQuality:
         try:
             scenes = fetch_all(
                 conn,
-                "SELECT quality_avg, quality_classification FROM scenes "
-                "WHERE project_id = ?",
+                "SELECT quality_avg, quality_classification FROM scenes WHERE project_id = ?",
                 (project_id,),
             )
         finally:
@@ -361,7 +364,9 @@ class TestQuality:
         for scene in scenes:
             assert scene["quality_avg"] is not None
             assert scene["quality_classification"] in (
-                "good", "acceptable", "poor",
+                "good",
+                "acceptable",
+                "poor",
             )
 
 
@@ -399,7 +404,8 @@ class TestVisualEmbedHelpers:
         assert frame_timestamp_ms(Path("frame_000003.jpg"), 2) == 1000
 
     def test_extract_dominant_colors(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Verify dominant color extraction returns hex strings."""
         from clipcannon.pipeline.visual_embed import _extract_dominant_colors
@@ -485,12 +491,20 @@ class TestOCRHelpers:
         assert _texts_differ_significantly([], ["new text"]) is True
         assert _texts_differ_significantly(["old"], []) is True
         assert _texts_differ_significantly(["same"], ["same"]) is False
-        assert _texts_differ_significantly(
-            ["A", "B", "C"], ["D", "E", "F"],
-        ) is True
-        assert _texts_differ_significantly(
-            ["A", "B", "C"], ["A", "B", "D"],
-        ) is False
+        assert (
+            _texts_differ_significantly(
+                ["A", "B", "C"],
+                ["D", "E", "F"],
+            )
+            is True
+        )
+        assert (
+            _texts_differ_significantly(
+                ["A", "B", "C"],
+                ["A", "B", "D"],
+            )
+            is False
+        )
 
 
 # ============================================================
@@ -517,7 +531,11 @@ class TestShotTypeHelpers:
 
         labels = [label for _, label in SHOT_PROMPTS]
         expected = [
-            "extreme_closeup", "closeup", "medium", "wide", "establishing",
+            "extreme_closeup",
+            "closeup",
+            "medium",
+            "wide",
+            "establishing",
         ]
         assert labels == expected
 
@@ -534,21 +552,23 @@ class TestModuleImports:
         """Verify visual_embed module imports."""
         from clipcannon.pipeline.visual_embed import (
             OPERATION,
-            STAGE,
             run_visual_embed,
         )
+
         assert OPERATION == "visual_embedding"
         assert callable(run_visual_embed)
 
     def test_import_ocr(self) -> None:
         """Verify ocr module imports."""
-        from clipcannon.pipeline.ocr import OPERATION, STAGE, run_ocr
+        from clipcannon.pipeline.ocr import OPERATION, run_ocr
+
         assert OPERATION == "ocr_detection"
         assert callable(run_ocr)
 
     def test_import_quality(self) -> None:
         """Verify quality module imports."""
-        from clipcannon.pipeline.quality import OPERATION, STAGE, run_quality
+        from clipcannon.pipeline.quality import OPERATION, run_quality
+
         assert OPERATION == "quality_assessment"
         assert callable(run_quality)
 
@@ -556,9 +576,9 @@ class TestModuleImports:
         """Verify shot_type module imports."""
         from clipcannon.pipeline.shot_type import (
             OPERATION,
-            STAGE,
             run_shot_type,
         )
+
         assert OPERATION == "shot_type_classification"
         assert callable(run_shot_type)
 
@@ -566,9 +586,9 @@ class TestModuleImports:
         """Verify storyboard module imports."""
         from clipcannon.pipeline.storyboard import (
             OPERATION,
-            STAGE,
             run_storyboard,
         )
+
         assert OPERATION == "storyboard_generation"
         assert callable(run_storyboard)
 
@@ -581,6 +601,7 @@ class TestModuleImports:
             run_storyboard,
             run_visual_embed,
         )
+
         assert callable(run_visual_embed)
         assert callable(run_ocr)
         assert callable(run_quality)

@@ -37,9 +37,7 @@ _RENDER_CREDITS = 2
 # ============================================================
 # HELPERS
 # ============================================================
-def _error(
-    code: str, message: str, details: dict[str, object] | None = None
-) -> dict[str, object]:
+def _error(code: str, message: str, details: dict[str, object] | None = None) -> dict[str, object]:
     """Build standardized error response dict.
 
     Args:
@@ -111,8 +109,7 @@ def _resolve_render_path(project_id: str, render_id: str) -> Path | None:
     try:
         row = fetch_one(
             conn,
-            "SELECT output_path FROM renders "
-            "WHERE render_id = ? AND project_id = ?",
+            "SELECT output_path FROM renders WHERE render_id = ? AND project_id = ?",
             (render_id, project_id),
         )
     finally:
@@ -139,9 +136,17 @@ async def _extract_render_frame(video_path: Path, timestamp_ms: int) -> Path | N
 
     output = Path(tempfile.mktemp(suffix=".jpg"))
     cmd = [
-        "ffmpeg", "-y", "-ss", f"{timestamp_ms / 1000:.3f}",
-        "-i", str(video_path),
-        "-vframes", "1", "-q:v", "2", str(output),
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{timestamp_ms / 1000:.3f}",
+        "-i",
+        str(video_path),
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+        str(output),
     ]
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
@@ -167,8 +172,7 @@ def _resolve_source(project_id: str) -> Path | None:
     try:
         row = fetch_one(
             conn,
-            "SELECT source_path, source_cfr_path FROM project "
-            "WHERE project_id = ?",
+            "SELECT source_path, source_cfr_path FROM project WHERE project_id = ?",
             (project_id,),
         )
     finally:
@@ -220,8 +224,7 @@ def _load_edl(
     try:
         row = fetch_one(
             conn,
-            "SELECT edl_json, status FROM edits "
-            "WHERE edit_id = ? AND project_id = ?",
+            "SELECT edl_json, status FROM edits WHERE edit_id = ? AND project_id = ?",
             (edit_id, project_id),
         )
     finally:
@@ -508,7 +511,8 @@ async def clipcannon_preview_layout(
     try:
         image_b64 = base64.b64encode(preview_path.read_bytes()).decode("ascii")
         image_payload: dict[str, str] | None = {
-            "data": image_b64, "mimeType": "image/jpeg",
+            "data": image_b64,
+            "mimeType": "image/jpeg",
         }
     except Exception:
         image_payload = None
@@ -729,8 +733,7 @@ async def clipcannon_get_scene_map(
         # Get project info
         proj = fetch_one(
             conn,
-            "SELECT resolution, duration_ms, fps FROM project "
-            "WHERE project_id = ?",
+            "SELECT resolution, duration_ms, fps FROM project WHERE project_id = ?",
             (project_id,),
         )
         if proj is None:
@@ -742,8 +745,7 @@ async def clipcannon_get_scene_map(
         # Total scene count (whole project)
         total_row = fetch_one(
             conn,
-            "SELECT COUNT(*) AS cnt FROM scene_map "
-            "WHERE project_id = ?",
+            "SELECT COUNT(*) AS cnt FROM scene_map WHERE project_id = ?",
             (project_id,),
         )
         total_scenes_in_project = int(total_row["cnt"]) if total_row else 0
@@ -759,8 +761,7 @@ async def clipcannon_get_scene_map(
         # Check if more scenes exist beyond window
         next_row = fetch_one(
             conn,
-            "SELECT MIN(start_ms) AS next_ms FROM scene_map "
-            "WHERE project_id = ? AND start_ms >= ?",
+            "SELECT MIN(start_ms) AS next_ms FROM scene_map WHERE project_id = ? AND start_ms >= ?",
             (project_id, end_ms),
         )
 
@@ -990,8 +991,7 @@ async def clipcannon_preview_segment(
     if segment_index < 1 or segment_index > segment_count:
         return _error(
             "INVALID_PARAMETER",
-            f"segment_index {segment_index} out of range. "
-            f"Valid range: 1 to {segment_count}.",
+            f"segment_index {segment_index} out of range. Valid range: 1 to {segment_count}.",
             {
                 "segment_index": segment_index,
                 "segment_count": segment_count,
@@ -1074,9 +1074,7 @@ async def clipcannon_preview_segment(
         )
 
     # Extract midpoint frame for visual inspection
-    segment_duration_ms = int(
-        (segment.source_end_ms - segment.source_start_ms) / segment.speed
-    )
+    segment_duration_ms = int((segment.source_end_ms - segment.source_start_ms) / segment.speed)
     midpoint_ms = segment_duration_ms // 2
     frame_path = await _extract_render_frame(preview_path, midpoint_ms)
 
@@ -1099,7 +1097,9 @@ async def clipcannon_preview_segment(
 
     logger.info(
         "Preview segment %d of edit %s rendered in %dms",
-        segment_index, edit_id, elapsed_ms,
+        segment_index,
+        edit_id,
+        elapsed_ms,
     )
 
     return result
@@ -1295,8 +1295,7 @@ async def clipcannon_get_editing_context(
     try:
         proj = fetch_one(
             conn,
-            "SELECT duration_ms, resolution, fps, status FROM project "
-            "WHERE project_id = ?",
+            "SELECT duration_ms, resolution, fps, status FROM project WHERE project_id = ?",
             (project_id,),
         )
         if proj is None:
@@ -1414,8 +1413,7 @@ async def clipcannon_get_editing_context(
         try:
             narr_row = fetch_one(
                 conn,
-                "SELECT analysis_json FROM narrative_analysis "
-                "WHERE project_id = ? LIMIT 1",
+                "SELECT analysis_json FROM narrative_analysis WHERE project_id = ? LIMIT 1",
                 (project_id,),
             )
             if narr_row and narr_row.get("analysis_json"):
@@ -1434,14 +1432,11 @@ async def clipcannon_get_editing_context(
         try:
             ts_rows = fetch_all(
                 conn,
-                "SELECT text FROM transcript_segments "
-                "WHERE project_id = ? ORDER BY start_ms",
+                "SELECT text FROM transcript_segments WHERE project_id = ? ORDER BY start_ms",
                 (project_id,),
             )
             if ts_rows:
-                full_text = " ".join(
-                    str(r["text"]).strip() for r in ts_rows if r.get("text")
-                )
+                full_text = " ".join(str(r["text"]).strip() for r in ts_rows if r.get("text"))
                 words = full_text.split()
                 transcript_preview = " ".join(words[:500])
         except Exception:
@@ -1483,7 +1478,8 @@ async def clipcannon_get_editing_context(
                 "count": counts["speakers"],
                 "dominant": (
                     f"{speaker_row['label']} ({speaker_row['speaking_pct']}%)"
-                    if speaker_row else "unknown"
+                    if speaker_row
+                    else "unknown"
                 ),
             },
             "topics": {
@@ -1494,14 +1490,16 @@ async def clipcannon_get_editing_context(
                 "data_points": counts["emotion_curve"],
                 "avg_energy": (
                     round(float(energy_row["avg_e"]), 2)
-                    if energy_row and energy_row["avg_e"] else None
+                    if energy_row and energy_row["avg_e"]
+                    else None
                 ),
             },
             "pacing": {
                 "dominant": str(pacing_row["label"]) if pacing_row else "unknown",
                 "wpm_range": (
                     f"{int(wpm_row['min_wpm'])}-{int(wpm_row['max_wpm'])}"
-                    if wpm_row and wpm_row["min_wpm"] else "unknown"
+                    if wpm_row and wpm_row["min_wpm"]
+                    else "unknown"
                 ),
             },
             "webcam": {
@@ -1509,7 +1507,9 @@ async def clipcannon_get_editing_context(
             },
             "beats": {
                 "detected": bool(beats_row and beats_row["has_music"]),
-                "bpm": int(beats_row["tempo_bpm"]) if beats_row and beats_row["tempo_bpm"] else None,
+                "bpm": int(beats_row["tempo_bpm"])
+                if beats_row and beats_row["tempo_bpm"]
+                else None,
             },
             "ocr_text": {
                 "detected": counts["on_screen_text"] > 0,
@@ -1518,9 +1518,7 @@ async def clipcannon_get_editing_context(
             "reactions": {
                 "count": counts["reactions"],
             },
-            "content_rating": (
-                str(safety_row["content_rating"]) if safety_row else "unknown"
-            ),
+            "content_rating": (str(safety_row["content_rating"]) if safety_row else "unknown"),
             "provenance_records": counts["provenance"],
         },
         "speakers": [

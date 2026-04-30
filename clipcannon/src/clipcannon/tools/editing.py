@@ -16,7 +16,7 @@ from copy import deepcopy
 
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import execute, fetch_all, fetch_one
-from clipcannon.editing.change_classifier import RenderHint, classify_changes
+from clipcannon.editing.change_classifier import classify_changes
 from clipcannon.editing.edl import (
     CanvasSpec,
     ColorSpec,
@@ -71,9 +71,7 @@ def _ensure_render_hint_column(conn: _sqlite3.Connection) -> None:
     try:
         conn.execute("SELECT render_hint_json FROM edits LIMIT 1")
     except _sqlite3.OperationalError:
-        conn.execute(
-            "ALTER TABLE edits ADD COLUMN render_hint_json TEXT"
-        )
+        conn.execute("ALTER TABLE edits ADD COLUMN render_hint_json TEXT")
         logger.info("Added render_hint_json column to edits table (migration).")
 
 
@@ -117,8 +115,13 @@ async def clipcannon_create_edit(
         return err
 
     valid_platforms = {
-        "tiktok", "instagram_reels", "youtube_shorts",
-        "youtube_standard", "youtube_4k", "facebook", "linkedin",
+        "tiktok",
+        "instagram_reels",
+        "youtube_shorts",
+        "youtube_standard",
+        "youtube_4k",
+        "facebook",
+        "linkedin",
     }
     if target_platform not in valid_platforms:
         return error_response(
@@ -223,11 +226,20 @@ async def clipcannon_create_edit(
                 metadata_title, metadata_description, metadata_hashtags
             ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                edit_id, project_id, name, target_platform, target_profile,
-                edl_json, source_sha256, total_duration_ms,
-                len(segment_specs), caption_spec.enabled, crop_spec.mode,
+                edit_id,
+                project_id,
+                name,
+                target_platform,
+                target_profile,
+                edl_json,
+                source_sha256,
+                total_duration_ms,
+                len(segment_specs),
+                caption_spec.enabled,
+                crop_spec.mode,
                 metadata_spec.thumbnail_timestamp_ms,
-                metadata_spec.title, metadata_spec.description,
+                metadata_spec.title,
+                metadata_spec.description,
                 json.dumps(metadata_spec.hashtags),
             ),
         )
@@ -283,13 +295,11 @@ async def clipcannon_create_edit(
                                 "AND start_ms >= ? AND end_ms <= ? ORDER BY start_ms",
                                 (project_id, current_end, next_start),
                             )
-                            gap_words = sum(
-                                len(str(r["text"]).split()) for r in gap_text_rows
-                            )
+                            gap_words = sum(len(str(r["text"]).split()) for r in gap_text_rows)
                             if gap_words > 20:
                                 narrative_warnings.append(
-                                    f"Gap between segments {i+1}-{i+2}: "
-                                    f"{gap_ms/1000:.0f}s skipped ({gap_words} words)"
+                                    f"Gap between segments {i + 1}-{i + 2}: "
+                                    f"{gap_ms / 1000:.0f}s skipped ({gap_words} words)"
                                 )
                         except Exception:
                             pass
@@ -307,7 +317,7 @@ async def clipcannon_create_edit(
                             last_text = str(last_text_row["text"]).strip()
                             if last_text and not last_text.endswith((".", "!", "?")):
                                 narrative_warnings.append(
-                                    f"Segment {i+1}: may cut mid-thought "
+                                    f"Segment {i + 1}: may cut mid-thought "
                                     f"(last text: '...{last_text[-40:]}')"
                                 )
                     except Exception:
@@ -363,7 +373,8 @@ async def clipcannon_modify_edit(
 
     if edit_row is None:
         return error_response(
-            "EDIT_NOT_FOUND", f"Edit not found: {edit_id}",
+            "EDIT_NOT_FOUND",
+            f"Edit not found: {edit_id}",
             {"edit_id": edit_id, "project_id": project_id},
         )
 
@@ -374,7 +385,7 @@ async def clipcannon_modify_edit(
     if current_status == "rendering":
         return error_response(
             "INVALID_STATE",
-            f"Cannot modify edit while rendering is in progress.",
+            "Cannot modify edit while rendering is in progress.",
             {"edit_id": edit_id, "status": current_status},
         )
 
@@ -383,7 +394,8 @@ async def clipcannon_modify_edit(
         current_edl = EditDecisionList(**edl_data)
     except Exception as exc:
         return error_response(
-            "INTERNAL_ERROR", f"Failed to parse existing EDL: {exc}",
+            "INTERNAL_ERROR",
+            f"Failed to parse existing EDL: {exc}",
             {"edit_id": edit_id},
         )
 
@@ -404,14 +416,16 @@ async def clipcannon_modify_edit(
         return err
     if not updated_fields:
         return error_response(
-            "INVALID_PARAMETER", "No valid changes provided",
+            "INVALID_PARAMETER",
+            "No valid changes provided",
             {"changes_keys": list(changes.keys())},
         )
 
     validation_errors = validate_edl(current_edl, db)
     if validation_errors:
         return error_response(
-            "VALIDATION_ERROR", "Modified EDL validation failed",
+            "VALIDATION_ERROR",
+            "Modified EDL validation failed",
             {"errors": validation_errors},  # type: ignore[dict-item]
         )
 
@@ -443,13 +457,19 @@ async def clipcannon_modify_edit(
                 updated_at = datetime('now')
             WHERE edit_id = ? AND project_id = ?""",
             (
-                current_edl.name, edl_json, total_duration_ms,
-                len(current_edl.segments), current_edl.captions.enabled,
-                current_edl.crop.mode, current_edl.metadata.thumbnail_timestamp_ms,
-                current_edl.metadata.title, current_edl.metadata.description,
+                current_edl.name,
+                edl_json,
+                total_duration_ms,
+                len(current_edl.segments),
+                current_edl.captions.enabled,
+                current_edl.crop.mode,
+                current_edl.metadata.thumbnail_timestamp_ms,
+                current_edl.metadata.title,
+                current_edl.metadata.description,
                 json.dumps(current_edl.metadata.hashtags),
                 render_hint_json,
-                edit_id, project_id,
+                edit_id,
+                project_id,
             ),
         )
         if segments_changed:
@@ -531,8 +551,11 @@ async def clipcannon_color_adjust(
 
     try:
         color = ColorSpec(
-            brightness=brightness, contrast=contrast,
-            saturation=saturation, gamma=gamma, hue_shift=hue_shift,
+            brightness=brightness,
+            contrast=contrast,
+            saturation=saturation,
+            gamma=gamma,
+            hue_shift=hue_shift,
         )
     except Exception as exc:
         return error_response("INVALID_PARAMETER", f"Invalid color values: {exc}")
@@ -543,8 +566,7 @@ async def clipcannon_color_adjust(
     try:
         row = fetch_one(
             conn,
-            "SELECT edl_json, status FROM edits "
-            "WHERE edit_id = ? AND project_id = ?",
+            "SELECT edl_json, status FROM edits WHERE edit_id = ? AND project_id = ?",
             (edit_id, project_id),
         )
         if row is None:
@@ -573,8 +595,7 @@ async def clipcannon_color_adjust(
         # Save back
         execute(
             conn,
-            "UPDATE edits SET edl_json = ?,"
-            " updated_at = datetime('now') WHERE edit_id = ?",
+            "UPDATE edits SET edl_json = ?, updated_at = datetime('now') WHERE edit_id = ?",
             (edl.model_dump_json(), edit_id),
         )
         conn.commit()
@@ -621,8 +642,7 @@ async def clipcannon_add_motion(
     try:
         row = fetch_one(
             conn,
-            "SELECT edl_json, status FROM edits "
-            "WHERE edit_id = ? AND project_id = ?",
+            "SELECT edl_json, status FROM edits WHERE edit_id = ? AND project_id = ?",
             (edit_id, project_id),
         )
         if row is None:
@@ -643,8 +663,7 @@ async def clipcannon_add_motion(
 
         execute(
             conn,
-            "UPDATE edits SET edl_json = ?,"
-            " updated_at = datetime('now') WHERE edit_id = ?",
+            "UPDATE edits SET edl_json = ?, updated_at = datetime('now') WHERE edit_id = ?",
             (edl.model_dump_json(), edit_id),
         )
         conn.commit()
@@ -686,10 +705,18 @@ async def clipcannon_add_overlay(
 
     try:
         overlay = OverlaySpec(
-            overlay_type=overlay_type, text=text, subtitle=subtitle,
-            position=position, start_ms=start_ms, end_ms=end_ms,
-            opacity=opacity, font_size=font_size, text_color=text_color,
-            bg_color=bg_color, bg_opacity=bg_opacity, animation=animation,
+            overlay_type=overlay_type,
+            text=text,
+            subtitle=subtitle,
+            position=position,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            opacity=opacity,
+            font_size=font_size,
+            text_color=text_color,
+            bg_color=bg_color,
+            bg_opacity=bg_opacity,
+            animation=animation,
             animation_duration_ms=animation_duration_ms,
         )
     except Exception as exc:
@@ -700,8 +727,7 @@ async def clipcannon_add_overlay(
     try:
         row = fetch_one(
             conn,
-            "SELECT edl_json, status FROM edits "
-            "WHERE edit_id = ? AND project_id = ?",
+            "SELECT edl_json, status FROM edits WHERE edit_id = ? AND project_id = ?",
             (edit_id, project_id),
         )
         if row is None:
@@ -714,8 +740,7 @@ async def clipcannon_add_overlay(
 
         execute(
             conn,
-            "UPDATE edits SET edl_json = ?,"
-            " updated_at = datetime('now') WHERE edit_id = ?",
+            "UPDATE edits SET edl_json = ?, updated_at = datetime('now') WHERE edit_id = ?",
             (edl.model_dump_json(), edit_id),
         )
         conn.commit()
@@ -764,7 +789,8 @@ async def clipcannon_edit_history(
         )
         if edit_row is None:
             return error_response(
-                "EDIT_NOT_FOUND", f"Edit not found: {edit_id}",
+                "EDIT_NOT_FOUND",
+                f"Edit not found: {edit_id}",
                 {"edit_id": edit_id, "project_id": project_id},
             )
 
@@ -789,12 +815,14 @@ async def clipcannon_edit_history(
         },
     ]
     for row in version_rows:
-        versions.append({
-            "version_id": str(row["version_id"]),
-            "version_number": int(row["version_number"]),
-            "change_description": str(row["change_description"] or ""),
-            "created_at": str(row["created_at"]),
-        })
+        versions.append(
+            {
+                "version_id": str(row["version_id"]),
+                "version_number": int(row["version_number"]),
+                "change_description": str(row["change_description"] or ""),
+                "created_at": str(row["created_at"]),
+            }
+        )
 
     return {
         "edit_id": edit_id,
@@ -842,7 +870,8 @@ async def clipcannon_revert_edit(
         )
         if edit_row is None:
             return error_response(
-                "EDIT_NOT_FOUND", f"Edit not found: {edit_id}",
+                "EDIT_NOT_FOUND",
+                f"Edit not found: {edit_id}",
                 {"edit_id": edit_id, "project_id": project_id},
             )
 
@@ -873,11 +902,12 @@ async def clipcannon_revert_edit(
         current_edl_json = str(edit_row["edl_json"])
         max_row = fetch_one(
             conn,
-            "SELECT MAX(version_number) as max_ver FROM edit_versions "
-            "WHERE edit_id = ?",
+            "SELECT MAX(version_number) as max_ver FROM edit_versions WHERE edit_id = ?",
             (edit_id,),
         )
-        next_ver = (int(max_row["max_ver"]) + 1) if max_row and max_row["max_ver"] is not None else 1
+        next_ver = (
+            (int(max_row["max_ver"]) + 1) if max_row and max_row["max_ver"] is not None else 1
+        )
         revert_version_id = f"ver_{secrets.token_hex(6)}"
 
         execute(
@@ -887,7 +917,10 @@ async def clipcannon_revert_edit(
                 edl_json, change_description
             ) VALUES (?, ?, ?, ?, ?, ?)""",
             (
-                revert_version_id, edit_id, None, next_ver,
+                revert_version_id,
+                edit_id,
+                None,
+                next_ver,
                 current_edl_json,
                 f"State before revert to version {version_number}",
             ),
@@ -900,7 +933,11 @@ async def clipcannon_revert_edit(
         # Regenerate captions if segments exist and captions enabled
         if target_edl.captions.enabled and target_edl.segments:
             auto_generate_captions(
-                target_edl, db, project_id, target_edl.segments, edit_id,
+                target_edl,
+                db,
+                project_id,
+                target_edl.segments,
+                edit_id,
             )
 
         total_duration_ms = compute_total_duration(target_edl.segments)
@@ -917,12 +954,18 @@ async def clipcannon_revert_edit(
                 updated_at = datetime('now')
             WHERE edit_id = ? AND project_id = ?""",
             (
-                target_edl.name, restored_edl_json, total_duration_ms,
-                len(target_edl.segments), target_edl.captions.enabled,
-                target_edl.crop.mode, target_edl.metadata.thumbnail_timestamp_ms,
-                target_edl.metadata.title, target_edl.metadata.description,
+                target_edl.name,
+                restored_edl_json,
+                total_duration_ms,
+                len(target_edl.segments),
+                target_edl.captions.enabled,
+                target_edl.crop.mode,
+                target_edl.metadata.thumbnail_timestamp_ms,
+                target_edl.metadata.title,
+                target_edl.metadata.description,
                 json.dumps(target_edl.metadata.hashtags),
-                edit_id, project_id,
+                edit_id,
+                project_id,
             ),
         )
 
@@ -940,7 +983,9 @@ async def clipcannon_revert_edit(
 
     logger.info(
         "Reverted edit %s to version %d (saved current as version %d)",
-        edit_id, version_number, next_ver,
+        edit_id,
+        version_number,
+        next_ver,
     )
 
     return {
@@ -999,7 +1044,8 @@ async def clipcannon_apply_feedback(
 
     if edit_row is None:
         return error_response(
-            "EDIT_NOT_FOUND", f"Edit not found: {edit_id}",
+            "EDIT_NOT_FOUND",
+            f"Edit not found: {edit_id}",
             {"edit_id": edit_id, "project_id": project_id},
         )
 
@@ -1016,7 +1062,8 @@ async def clipcannon_apply_feedback(
         edl = EditDecisionList(**edl_data)
     except Exception as exc:
         return error_response(
-            "INTERNAL_ERROR", f"Failed to parse existing EDL: {exc}",
+            "INTERNAL_ERROR",
+            f"Failed to parse existing EDL: {exc}",
             {"edit_id": edit_id},
         )
 
@@ -1061,20 +1108,26 @@ async def clipcannon_apply_feedback(
     # Collect any special actions that need separate tool calls
     special_actions: list[dict[str, object]] = []
     if "_color" in changes:
-        special_actions.append({
-            "action": "color_adjust",
-            "parameters": changes["_color"],
-        })
+        special_actions.append(
+            {
+                "action": "color_adjust",
+                "parameters": changes["_color"],
+            }
+        )
     if "_overlay" in changes:
-        special_actions.append({
-            "action": "add_overlay",
-            "parameters": changes["_overlay"],
-        })
+        special_actions.append(
+            {
+                "action": "add_overlay",
+                "parameters": changes["_overlay"],
+            }
+        )
     if "_motion_targets" in changes:
-        special_actions.append({
-            "action": "add_motion",
-            "parameters": changes["_motion_targets"],
-        })
+        special_actions.append(
+            {
+                "action": "add_motion",
+                "parameters": changes["_motion_targets"],
+            }
+        )
 
     return {
         "parsed_intent": intent_dump,
@@ -1113,8 +1166,13 @@ async def clipcannon_branch_edit(
         return err
 
     valid_platforms = {
-        "tiktok", "instagram_reels", "youtube_shorts",
-        "youtube_standard", "youtube_4k", "facebook", "linkedin",
+        "tiktok",
+        "instagram_reels",
+        "youtube_shorts",
+        "youtube_standard",
+        "youtube_4k",
+        "facebook",
+        "linkedin",
     }
     if target_platform not in valid_platforms:
         return error_response(
@@ -1185,10 +1243,13 @@ async def clipcannon_branch_edit(
                 parent_edit_id, branch_name
             ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                new_edit_id, project_id,
+                new_edit_id,
+                project_id,
                 f"{edit_row['name']} ({branch_name})",
-                target_platform, new_profile,
-                edl_json_str, str(edit_row["source_sha256"]),
+                target_platform,
+                new_profile,
+                edl_json_str,
+                str(edit_row["source_sha256"]),
                 total_duration_ms,
                 int(edit_row.get("segment_count", 0) or 0),
                 bool(edit_row.get("captions_enabled", True)),
@@ -1228,7 +1289,10 @@ async def clipcannon_branch_edit(
 
     logger.info(
         "Branched edit %s -> %s (branch=%s, platform=%s)",
-        edit_id, new_edit_id, branch_name, target_platform,
+        edit_id,
+        new_edit_id,
+        branch_name,
+        target_platform,
     )
 
     return {
@@ -1275,8 +1339,7 @@ async def clipcannon_list_branches(
         # parent_edit_id, use that as the root. Otherwise, it IS the root.
         row = fetch_one(
             conn,
-            "SELECT edit_id, parent_edit_id FROM edits "
-            "WHERE edit_id = ? AND project_id = ?",
+            "SELECT edit_id, parent_edit_id FROM edits WHERE edit_id = ? AND project_id = ?",
             (edit_id, project_id),
         )
     finally:
@@ -1308,13 +1371,15 @@ async def clipcannon_list_branches(
 
     branch_list: list[dict[str, object]] = []
     for b in branches:
-        branch_list.append({
-            "edit_id": str(b["edit_id"]),
-            "branch_name": str(b.get("branch_name") or "main"),
-            "target_platform": str(b["target_platform"]),
-            "status": str(b["status"]),
-            "created_at": str(b["created_at"]),
-        })
+        branch_list.append(
+            {
+                "edit_id": str(b["edit_id"]),
+                "branch_name": str(b.get("branch_name") or "main"),
+                "target_platform": str(b["target_platform"]),
+                "status": str(b["status"]),
+                "created_at": str(b["created_at"]),
+            }
+        )
 
     return {
         "root_edit_id": root_id,

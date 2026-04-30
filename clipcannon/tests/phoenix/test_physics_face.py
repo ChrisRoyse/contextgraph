@@ -4,17 +4,23 @@ Validates that deterministic articulatory-acoustic mappings produce
 correct face states for known vowel sounds, silence, and edge cases.
 All audio is synthesized directly -- no external data files needed.
 """
+
 from __future__ import annotations
 
 import time
 
 import numpy as np
-import pytest
 
 from phoenix.render.audio_features import (
     clamp as _clamp,
+)
+from phoenix.render.audio_features import (
     extract_f0_yin as _extract_f0_yin,
+)
+from phoenix.render.audio_features import (
     extract_formants_lpc as _extract_formants_lpc,
+)
+from phoenix.render.audio_features import (
     zero_crossing_rate as _zero_crossing_rate,
 )
 from phoenix.render.physics_face import (
@@ -30,6 +36,7 @@ FRAME_SAMPLES = SR // FPS  # 800 samples per frame
 # ---------------------------------------------------------------------------
 # Audio synthesis helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_sine(freq: float, duration: float = 0.1, sr: int = SR) -> np.ndarray:
     """Generate a pure sine tone."""
@@ -115,6 +122,7 @@ def _make_silence(duration: float = 0.1, sr: int = SR) -> np.ndarray:
 # Unit tests: helper functions
 # ---------------------------------------------------------------------------
 
+
 class TestClamp:
     def test_within_range(self):
         assert _clamp(0.5) == 0.5
@@ -194,6 +202,7 @@ class TestFormantExtraction:
 # FaceState tests
 # ---------------------------------------------------------------------------
 
+
 class TestFaceState:
     def test_default_is_silence(self):
         state = FaceState()
@@ -217,9 +226,14 @@ class TestFaceState:
 
     def test_to_blendshapes_values_clamped(self):
         state = FaceState(
-            jaw_open=1.0, lip_spread=1.0, lip_round=1.0,
-            lip_pucker=1.0, effort=1.0, brow_raise=1.0,
-            squint=1.0, is_silence=False,
+            jaw_open=1.0,
+            lip_spread=1.0,
+            lip_round=1.0,
+            lip_pucker=1.0,
+            effort=1.0,
+            brow_raise=1.0,
+            squint=1.0,
+            is_silence=False,
         )
         bs = state.to_blendshapes()
         for name, val in bs.items():
@@ -264,6 +278,7 @@ class TestFaceState:
 # ---------------------------------------------------------------------------
 # PhysicsFaceEngine tests
 # ---------------------------------------------------------------------------
+
 
 class TestPhysicsFaceEngine:
     def test_init(self):

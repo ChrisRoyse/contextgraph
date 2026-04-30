@@ -17,9 +17,6 @@ from phoenix.video.expression_skills import (
     FLAME_TO_AU,
     SKILL_PROMPTS,
     ActionUnit,
-    BehavioralConstellation,
-    ExpressionSkill,
-    MicroExpressionGroup,
     SkillLibrary,
 )
 
@@ -38,6 +35,7 @@ def library() -> SkillLibrary:
 # ------------------------------------------------------------------
 # Data loading / extraction
 # ------------------------------------------------------------------
+
 
 class TestDataLoading:
     def test_flame_params_exist(self):
@@ -86,6 +84,7 @@ class TestGroupExtraction:
 # Skills
 # ------------------------------------------------------------------
 
+
 class TestSkillExtraction:
     def test_skill_count(self, library: SkillLibrary):
         skills = library.list_skills()
@@ -117,6 +116,7 @@ class TestSkillExtraction:
 # Prompt generation
 # ------------------------------------------------------------------
 
+
 class TestPromptGeneration:
     def test_skill_to_prompt_default(self, library: SkillLibrary):
         prompt = library.skill_to_prompt("warm_smile")
@@ -145,6 +145,7 @@ class TestPromptGeneration:
 # ------------------------------------------------------------------
 # Constellations
 # ------------------------------------------------------------------
+
 
 class TestConstellations:
     def test_constellation_count(self, library: SkillLibrary):
@@ -179,7 +180,9 @@ class TestConstellations:
 
     def test_constellation_prompt_sequence_duration(self, library: SkillLibrary):
         seq = library.constellation_to_prompt_sequence(
-            "warm_conversational", duration_s=5.0, fps=25,
+            "warm_conversational",
+            duration_s=5.0,
+            fps=25,
         )
         assert len(seq) > 0
         # All frame indices should be within [0, 125)
@@ -189,7 +192,9 @@ class TestConstellations:
 
     def test_constellation_prompt_sequence_covers_time(self, library: SkillLibrary):
         seq = library.constellation_to_prompt_sequence(
-            "happy_storytelling", duration_s=10.0, fps=25,
+            "happy_storytelling",
+            duration_s=10.0,
+            fps=25,
         )
         frames = [f for f, _ in seq]
         assert frames[0] == 0, "Sequence should start at frame 0"
@@ -199,6 +204,7 @@ class TestConstellations:
 # ------------------------------------------------------------------
 # Edge cases
 # ------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_zero_intensity_prompt(self, library: SkillLibrary):
@@ -211,19 +217,23 @@ class TestEdgeCases:
 
     def test_short_duration_sequence(self, library: SkillLibrary):
         seq = library.constellation_to_prompt_sequence(
-            "warm_conversational", duration_s=0.1, fps=25,
+            "warm_conversational",
+            duration_s=0.1,
+            fps=25,
         )
         # Should produce at least one prompt (frame 0)
         assert len(seq) >= 1
 
     def test_zero_duration_sequence(self, library: SkillLibrary):
         seq = library.constellation_to_prompt_sequence(
-            "warm_conversational", duration_s=0.0, fps=25,
+            "warm_conversational",
+            duration_s=0.0,
+            fps=25,
         )
         assert seq == []
 
     def test_flame_to_au_mapping_completeness(self):
-        for idx, au in FLAME_TO_AU.items():
+        for _idx, au in FLAME_TO_AU.items():
             assert isinstance(au, ActionUnit)
             assert au.name
             assert au.au_id

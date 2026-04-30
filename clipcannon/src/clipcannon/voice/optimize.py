@@ -16,13 +16,16 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import soundfile as sf
 import torch
 
-from clipcannon.voice.verify import VoiceVerifier
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from clipcannon.voice.verify import VoiceVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +74,7 @@ def select_best_reference(
         ValueError: If no valid clips found.
     """
     import random
+
     clips = list(candidate_clips)
     if len(clips) > max_candidates:
         random.seed(42)
@@ -167,7 +171,11 @@ def best_of_n_speak(
 
         logger.debug(
             "Candidate %d/%d (temp=%.1f): SECS=%.4f (seed=%d)",
-            i + 1, n_candidates, current_temp, secs, seed,
+            i + 1,
+            n_candidates,
+            current_temp,
+            secs,
+            seed,
         )
 
     temp_path.unlink(missing_ok=True)
@@ -180,8 +188,11 @@ def best_of_n_speak(
 
     logger.info(
         "Best-of-%d: winner=%d, SECS=%.4f (range: %.4f-%.4f)",
-        n_candidates, best_idx, best_secs,
-        candidates[-1][0], candidates[0][0],
+        n_candidates,
+        best_idx,
+        best_secs,
+        candidates[-1][0],
+        candidates[0][0],
     )
 
     return best_wav, best_secs, best_idx, best_sr
@@ -256,7 +267,9 @@ def optimized_speak(
 
     logger.info(
         "Optimized speak: SECS=%.4f, %d candidates, %.1fs",
-        best_secs, n_candidates, elapsed,
+        best_secs,
+        n_candidates,
+        elapsed,
     )
 
     return OptimizedSpeakResult(

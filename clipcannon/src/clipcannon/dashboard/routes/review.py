@@ -186,19 +186,23 @@ async def batch_review(
             feedback = decision.get("feedback", "")
 
             if not edit_id:
-                results.append({
-                    "edit_id": edit_id,
-                    "success": False,
-                    "error": "Missing edit_id",
-                })
+                results.append(
+                    {
+                        "edit_id": edit_id,
+                        "success": False,
+                        "error": "Missing edit_id",
+                    }
+                )
                 continue
 
             if action not in ("approve", "reject"):
-                results.append({
-                    "edit_id": edit_id,
-                    "success": False,
-                    "error": f"Invalid action: {action}. Must be 'approve' or 'reject'",
-                })
+                results.append(
+                    {
+                        "edit_id": edit_id,
+                        "success": False,
+                        "error": f"Invalid action: {action}. Must be 'approve' or 'reject'",
+                    }
+                )
                 continue
 
             # Verify edit exists
@@ -209,11 +213,13 @@ async def batch_review(
             )
 
             if edit is None:
-                results.append({
-                    "edit_id": edit_id,
-                    "success": False,
-                    "error": "Edit not found",
-                })
+                results.append(
+                    {
+                        "edit_id": edit_id,
+                        "success": False,
+                        "error": "Edit not found",
+                    }
+                )
                 continue
 
             if action == "approve":
@@ -239,12 +245,14 @@ async def batch_review(
                     (feedback, edit_id, project_id),
                 )
 
-            results.append({
-                "edit_id": edit_id,
-                "success": True,
-                "action": action,
-                "previous_status": edit.get("status"),
-            })
+            results.append(
+                {
+                    "edit_id": edit_id,
+                    "success": True,
+                    "action": action,
+                    "previous_status": edit.get("status"),
+                }
+            )
             success_count += 1
 
         conn.commit()

@@ -3,6 +3,7 @@
 Three tables: conversations, turns, metrics.
 init_db() is idempotent -- safe to call multiple times.
 """
+
 import logging
 from pathlib import Path
 

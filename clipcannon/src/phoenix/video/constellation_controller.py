@@ -7,23 +7,27 @@ prompts for EchoMimicV3 video generation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from phoenix.video.expression_skills import SkillLibrary
+if TYPE_CHECKING:
+    from phoenix.video.expression_skills import SkillLibrary
 
 
 @dataclass
 class _QueuedExpression:
     """An expression skill queued at a specific time."""
+
     skill: str
-    start_time: float      # seconds
-    duration: float        # seconds
+    start_time: float  # seconds
+    duration: float  # seconds
     intensity: float = 1.0
 
 
 @dataclass
 class _Transition:
     """A smooth transition between two constellations."""
+
     from_constellation: str
     to_constellation: str
     start_time: float
@@ -91,11 +95,13 @@ class ConstellationController:
             else:
                 at_time = 0.0
 
-        self._queue.append(_QueuedExpression(
-            skill=skill,
-            start_time=at_time,
-            duration=duration,
-        ))
+        self._queue.append(
+            _QueuedExpression(
+                skill=skill,
+                start_time=at_time,
+                duration=duration,
+            )
+        )
         self._queue.sort(key=lambda q: q.start_time)
 
     def get_prompt_for_frame(self, frame_idx: int, fps: int = 25) -> str:
@@ -202,12 +208,10 @@ class ConstellationController:
         skills_b = const_b.skill_sequence
 
         # Take first skill from each for the blend
-        prompt_a = self._library.skill_to_prompt(
-            skills_a[0], intensity=1.0 - ratio
-        ) if skills_a else ""
-        prompt_b = self._library.skill_to_prompt(
-            skills_b[0], intensity=ratio
-        ) if skills_b else ""
+        prompt_a = (
+            self._library.skill_to_prompt(skills_a[0], intensity=1.0 - ratio) if skills_a else ""
+        )
+        prompt_b = self._library.skill_to_prompt(skills_b[0], intensity=ratio) if skills_b else ""
 
         if ratio < 0.3:
             return f"{prompt_a}, with a hint of {prompt_b}"
@@ -232,12 +236,14 @@ class ConstellationController:
             start = last.start_time + last.duration
 
         old = self._current_constellation or new_constellation
-        self._transitions.append(_Transition(
-            from_constellation=old,
-            to_constellation=new_constellation,
-            start_time=start,
-            duration=duration_s,
-        ))
+        self._transitions.append(
+            _Transition(
+                from_constellation=old,
+                to_constellation=new_constellation,
+                start_time=start,
+                duration=duration_s,
+            )
+        )
         self._current_constellation = new_constellation
 
     # ------------------------------------------------------------------
@@ -252,7 +258,7 @@ class ConstellationController:
                 elapsed = t - qe.start_time
                 frac = elapsed / qe.duration if qe.duration > 0 else 1.0
                 if frac < 0.2:
-                    intensity = frac / 0.2   # onset ramp
+                    intensity = frac / 0.2  # onset ramp
                 elif frac > 0.7:
                     intensity = (1.0 - frac) / 0.3  # offset ramp
                 else:
@@ -266,9 +272,7 @@ class ConstellationController:
             if tr.start_time <= t < tr.start_time + tr.duration:
                 elapsed = t - tr.start_time
                 ratio = elapsed / tr.duration if tr.duration > 0 else 1.0
-                return self.blend_constellations(
-                    tr.from_constellation, tr.to_constellation, ratio
-                )
+                return self.blend_constellations(tr.from_constellation, tr.to_constellation, ratio)
         return None
 
     def _prompt_from_constellation(self, t: float) -> str:

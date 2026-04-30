@@ -24,9 +24,10 @@ Architecture:
     Transcript segments capped in memory, overflow flushed to OCR Provenance
     gc.collect() after each response cycle
 """
+
 import asyncio
+import contextlib
 import gc
-import json
 import logging
 import os
 import re
@@ -40,7 +41,8 @@ import cv2
 import numpy as np
 
 logging.basicConfig(
-    level=logging.INFO, stream=sys.stderr,
+    level=logging.INFO,
+    stream=sys.stderr,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("santa_bot")
@@ -77,8 +79,8 @@ CHUNK_BYTES = 3200  # 100ms at 16kHz mono 16-bit
 # PulseAudio TCP bridge delivers very low amplitude (~0.0004 RMS)
 # so threshold must be much lower than local audio
 ENERGY_THRESHOLD = 0.00005  # PulseAudio TCP is extremely quiet
-SILENCE_TIMEOUT_S = 0.8     # Fast cutoff — respond quickly after user stops
-MIN_SPEECH_BYTES = 8000     # ~0.25s minimum (catch short phrases)
+SILENCE_TIMEOUT_S = 0.8  # Fast cutoff — respond quickly after user stops
+MIN_SPEECH_BYTES = 8000  # ~0.25s minimum (catch short phrases)
 
 # Expression library — expanded to 28 clips across 5 emotional categories
 LAUGH_CLIPS = [
@@ -93,6 +95,7 @@ _ref_mapping: dict = {}
 _default_ref: str = ""
 try:
     import json as _json
+
     _ref_map_path = REFS_DIR / "ref_mapping.json"
     if _ref_map_path.exists():
         with open(_ref_map_path) as _f:
@@ -103,7 +106,16 @@ except Exception:
 
 # Prosody style keywords for response-text analysis
 _PROSODY_STYLE_KEYWORDS = {
-    "ref_energetic": ["excited", "amazing", "wonderful", "fantastic", "great", "love", "ho ho ho", "[LAUGH]"],
+    "ref_energetic": [
+        "excited",
+        "amazing",
+        "wonderful",
+        "fantastic",
+        "great",
+        "love",
+        "ho ho ho",
+        "[LAUGH]",
+    ],
     "ref_calm": ["okay", "sure", "indeed", "yes", "I see", "understood", "agreed"],
     "ref_emphatic": ["must", "important", "absolutely", "never", "always", "critical", "truly"],
     "ref_question": ["?", "wonder", "perhaps", "maybe", "might"],
@@ -135,6 +147,7 @@ def select_prosody_ref(response_text: str) -> str | None:
         return _ref_mapping[best_style].get("path")
     return None
 
+
 # Transcript buffer
 _transcript_segments: list[dict] = []
 _MAX_TRANSCRIPT_SEGMENTS = 200
@@ -143,10 +156,16 @@ _MAX_TRANSCRIPT_SEGMENTS = 200
 # PulseAudio setup
 # ---------------------------------------------------------------------------
 try:
-    _gw = subprocess.run(
-        ["ip", "route", "show", "default"],
-        capture_output=True, text=True, timeout=5,
-    ).stdout.strip().split()[2]
+    _gw = (
+        subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        .stdout.strip()
+        .split()[2]
+    )
     os.environ["PULSE_SERVER"] = f"tcp:{_gw}:4713"
 except Exception:
     pass
@@ -157,18 +176,23 @@ os.environ["PULSE_SINK"] = "bot_output"
 
 # Remove ALL loopbacks — wrapped in try/except since PulseAudio TCP can timeout
 try:
-    subprocess.run(["pactl", "set-default-source", "output.monitor"],
-                   capture_output=True, timeout=10)
-    subprocess.run(["pactl", "set-default-sink", "output"],
-                   capture_output=True, timeout=10)
-    for line in subprocess.run(
-        ["pactl", "list", "short", "modules"],
-        capture_output=True, text=True, timeout=10,
-    ).stdout.strip().split("\n"):
+    subprocess.run(
+        ["pactl", "set-default-source", "output.monitor"], capture_output=True, timeout=10
+    )
+    subprocess.run(["pactl", "set-default-sink", "output"], capture_output=True, timeout=10)
+    for line in (
+        subprocess.run(
+            ["pactl", "list", "short", "modules"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        .stdout.strip()
+        .split("\n")
+    ):
         if "loopback" in line.lower():
             mid = line.split()[0]
-            subprocess.run(["pactl", "unload-module", mid],
-                           capture_output=True, timeout=10)
+            subprocess.run(["pactl", "unload-module", mid], capture_output=True, timeout=10)
             logger.info("Removed loopback module %s", mid)
 except Exception as e:
     logger.warning("PulseAudio setup issue (continuing): %s", e)
@@ -182,13 +206,13 @@ except Exception as e:
 # Key: Lazy module loading + expandable segments + no unnecessary syncs
 #
 os.environ.setdefault("CUDA_MODULE_LOADING", "LAZY")  # Don't load all modules at startup
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF",
-                       "expandable_segments:True,max_split_size_mb:256")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:256")
 os.environ.setdefault("PYTORCH_NO_CUDA_MEMORY_CACHING", "0")  # Keep caching on
 
 # Limit CuPy memory pool to prevent competition with PyTorch
 try:
     import cupy as _cp
+
     _pool = _cp.get_default_memory_pool()
     _pool.set_limit(size=512 * 1024 * 1024)  # 512MB cap for compositor
 except ImportError:
@@ -197,17 +221,19 @@ except ImportError:
 _GPU_VRAM_WARNING_GB = 28.0  # Warn if VRAM usage exceeds this
 
 
-def gpu_cleanup():
+def gpu_cleanup() -> None:
     """Free fragmented GPU memory. Call between heavy CUDA operations."""
     gc.collect()
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except ImportError:
         pass
     try:
         import cupy as cp
+
         cp.get_default_memory_pool().free_all_blocks()
     except ImportError:
         pass
@@ -217,11 +243,12 @@ def gpu_health_check() -> bool:
     """Check GPU health. Returns False if VRAM critically high or GPU unreachable."""
     try:
         import torch
+
         if not torch.cuda.is_available():
             logger.error("GPU: CUDA not available!")
             return False
         alloc = torch.cuda.memory_allocated() / 1e9
-        reserved = torch.cuda.memory_reserved() / 1e9
+        torch.cuda.memory_reserved() / 1e9
         total = torch.cuda.get_device_properties(0).total_memory / 1e9
         if alloc > _GPU_VRAM_WARNING_GB:
             logger.warning("GPU: VRAM HIGH %.1fGB/%.1fGB — forcing cleanup", alloc, total)
@@ -234,10 +261,11 @@ def gpu_health_check() -> bool:
         return False
 
 
-def log_gpu_state(label: str = ""):
+def log_gpu_state(label: str = "") -> None:
     """Log current GPU memory usage."""
     try:
         import torch
+
         if torch.cuda.is_available():
             alloc = torch.cuda.memory_allocated() / 1e9
             reserved = torch.cuda.memory_reserved() / 1e9
@@ -259,9 +287,12 @@ def get_whisper():
     global _whisper_model
     if _whisper_model is None:
         from faster_whisper import WhisperModel
+
         logger.info("Loading Whisper %s...", WHISPER_MODEL)
         _whisper_model = WhisperModel(
-            WHISPER_MODEL, device="cuda", compute_type="float16",
+            WHISPER_MODEL,
+            device="cuda",
+            compute_type="float16",
         )
         logger.info("Whisper loaded")
     return _whisper_model
@@ -272,20 +303,19 @@ def get_tts():
     global _tts_adapter
     if _tts_adapter is None:
         from voiceagent.adapters.fast_tts import FastTTSAdapter
+
         logger.info("Loading TTS (voice=%s)...", VOICE_NAME)
         _tts_adapter = FastTTSAdapter(voice_name=VOICE_NAME)
         logger.info("TTS loaded")
     return _tts_adapter
 
 
-def release_models():
+def release_models() -> None:
     """Release all GPU models and free VRAM."""
     global _whisper_model, _tts_adapter
     if _tts_adapter is not None:
-        try:
+        with contextlib.suppress(Exception):
             _tts_adapter.release()
-        except Exception:
-            pass
         _tts_adapter = None
     if _whisper_model is not None:
         del _whisper_model
@@ -295,6 +325,7 @@ def release_models():
     gc.collect()
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
@@ -303,6 +334,7 @@ def release_models():
         pass
     try:
         import cupy as cp
+
         cp.get_default_memory_pool().free_all_blocks()
         cp.get_default_pinned_memory_pool().free_all_blocks()
     except (ImportError, RuntimeError):
@@ -318,16 +350,20 @@ async def get_ocr_client():
     global _ocr_client
     if _ocr_client is None:
         from voiceagent.meeting.mcp_client import OcrProvenanceClient
+
         _ocr_client = OcrProvenanceClient(base_url=OCR_PROVENANCE_URL)
         # Ensure database exists
         try:
             await _ocr_client.call_tool("ocr_db_select", {"database_name": OCR_DB_NAME})
         except Exception:
             try:
-                await _ocr_client.call_tool("ocr_db_create", {
-                    "name": OCR_DB_NAME,
-                    "description": "Clone meeting transcripts",
-                })
+                await _ocr_client.call_tool(
+                    "ocr_db_create",
+                    {
+                        "name": OCR_DB_NAME,
+                        "description": "Clone meeting transcripts",
+                    },
+                )
                 await _ocr_client.call_tool("ocr_db_select", {"database_name": OCR_DB_NAME})
             except Exception as e:
                 logger.warning("OCR Provenance unavailable: %s", e)
@@ -343,9 +379,13 @@ async def search_meeting_history(query: str) -> str:
     if client is None:
         return ""
     try:
-        result = await client.call_tool("ocr_search", {
-            "query": query, "limit": 5,
-        })
+        result = await client.call_tool(
+            "ocr_search",
+            {
+                "query": query,
+                "limit": 5,
+            },
+        )
         if not isinstance(result, dict):
             return ""
         results = result.get("results", result.get("chunks", []))
@@ -382,10 +422,13 @@ async def ingest_transcript(segments: list[dict], meeting_id: str) -> None:
         # Write to temp file and ingest
         path = Path(f"/tmp/{meeting_id}_live.md")
         path.write_text(md, encoding="utf-8")
-        await client.call_tool("ocr_ingest_files", {
-            "files": [str(path)],
-            "disable_image_extraction": True,
-        })
+        await client.call_tool(
+            "ocr_ingest_files",
+            {
+                "files": [str(path)],
+                "disable_image_extraction": True,
+            },
+        )
         path.unlink(missing_ok=True)
         logger.debug("Ingested %d segments into OCR Provenance", len(segments))
     except Exception as e:
@@ -400,31 +443,44 @@ _physics_face = None
 _semantic_model = None  # SemanticCloneModel for meaning-aware face control
 # Cached mean embeddings for runtime — computed from training data on model load.
 # At runtime, prosody varies per-frame but identity embeddings stay constant.
-_semantic_vis_identity = None   # (1152,) mean SigLIP for Santa
-_semantic_emo_identity = None   # (1024,) mean Wav2Vec2 emotion for Santa
-_semantic_sem_identity = None   # (768,) mean Nomic semantic for Santa
-_semantic_spk_identity = None   # (512,) mean WavLM speaker for Santa
+_semantic_vis_identity = None  # (1152,) mean SigLIP for Santa
+_semantic_emo_identity = None  # (1024,) mean Wav2Vec2 emotion for Santa
+_semantic_sem_identity = None  # (768,) mean Nomic semantic for Santa
+_semantic_spk_identity = None  # (512,) mean WavLM speaker for Santa
 _semantic_sent_identity = None  # (384,) mean MiniLM sentence for Santa
-_semantic_voice_identity = None # (192,) mean ECAPA voice for Santa
+_semantic_voice_identity = None  # (192,) mean ECAPA voice for Santa
 
 
-def init_face_warper():
+def init_face_warper() -> None:
     """Initialize the face warper from the reference frame (legacy fallback)."""
     global _face_warper
     import subprocess
+
     src_video = SANTA_IDLE_VIDEO
     if not Path(src_video).exists():
         return
     try:
         r = subprocess.run(
-            ["ffmpeg", "-i", src_video, "-vframes", "1",
-             "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
-            capture_output=True, timeout=10,
+            [
+                "ffmpeg",
+                "-i",
+                src_video,
+                "-vframes",
+                "1",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "bgr24",
+                "-",
+            ],
+            capture_output=True,
+            timeout=10,
         )
         if r.returncode != 0 or len(r.stdout) == 0:
             return
         ref_frame = np.frombuffer(r.stdout, dtype=np.uint8).reshape(720, 1280, 3)
         from phoenix.render.face_warper import FaceWarper
+
         _face_warper = FaceWarper(ref_frame, max_pixel_shift=20)
         if _face_warper.ready:
             logger.info("Face warper ready (legacy fallback)")
@@ -435,18 +491,19 @@ def init_face_warper():
         logger.warning("Face warper init failed: %s", e)
 
 
-def init_physics_face():
+def init_physics_face() -> None:
     """Initialize the physics-based face animation engine."""
     global _physics_face
     try:
         from phoenix.render.physics_face import PhysicsFaceEngine
+
         _physics_face = PhysicsFaceEngine(sample_rate=24000, fps=15)
         logger.info("PhysicsFaceEngine ready (deterministic audio-to-face)")
     except Exception as e:
         logger.warning("PhysicsFaceEngine init failed: %s", e)
 
 
-def init_semantic_model():
+def init_semantic_model() -> None:
     """Initialize the SemanticCloneModel for meaning-aware face control.
 
     Loads the trained model from disk. Falls back to PhysicsFaceEngine
@@ -461,12 +518,16 @@ def init_semantic_model():
             try:
                 import torch
                 from phoenix.clone.semantic_model import SemanticCloneModel
+
                 checkpoint = torch.load(str(model_path), map_location="cuda", weights_only=False)
                 _semantic_model = SemanticCloneModel()
                 _semantic_model.load_state_dict(checkpoint["model_state"])
                 _semantic_model = _semantic_model.to("cuda").eval()
-                logger.info("SemanticCloneModel loaded from %s (%.1fM params)",
-                            model_path, _semantic_model.param_count / 1e6)
+                logger.info(
+                    "SemanticCloneModel loaded from %s (%.1fM params)",
+                    model_path,
+                    _semantic_model.param_count / 1e6,
+                )
                 # Load cached identity embeddings from training data
                 _load_identity_embeddings()
                 return
@@ -480,6 +541,7 @@ def _load_identity_embeddings() -> None:
     global _semantic_vis_identity, _semantic_emo_identity, _semantic_sem_identity
     global _semantic_spk_identity, _semantic_sent_identity, _semantic_voice_identity
     import torch
+
     emb_path = Path("~/.clipcannon/models/santa/embeddings/all_embeddings.npz").expanduser()
     if not emb_path.exists():
         logger.error("Identity embeddings not found at %s", emb_path)
@@ -491,10 +553,15 @@ def _load_identity_embeddings() -> None:
     _semantic_spk_identity = torch.from_numpy(data["spk_emb"].mean(axis=0)).float().cuda()
     _semantic_sent_identity = torch.from_numpy(data["sent_emb"].mean(axis=0)).float().cuda()
     _semantic_voice_identity = torch.from_numpy(data["voice_emb"].mean(axis=0)).float().cuda()
-    logger.info("Loaded identity embeddings: vis=%d emo=%d sem=%d spk=%d sent=%d voice=%d",
-                _semantic_vis_identity.shape[0], _semantic_emo_identity.shape[0],
-                _semantic_sem_identity.shape[0], _semantic_spk_identity.shape[0],
-                _semantic_sent_identity.shape[0], _semantic_voice_identity.shape[0])
+    logger.info(
+        "Loaded identity embeddings: vis=%d emo=%d sem=%d spk=%d sent=%d voice=%d",
+        _semantic_vis_identity.shape[0],
+        _semantic_emo_identity.shape[0],
+        _semantic_sem_identity.shape[0],
+        _semantic_spk_identity.shape[0],
+        _semantic_sent_identity.shape[0],
+        _semantic_voice_identity.shape[0],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -552,17 +619,21 @@ async def launch_browser():
 
     # Start Xvfb virtual display — Chrome runs invisible, no window on user's screen
     import subprocess as _sp
+
     _xvfb = _sp.Popen(
         ["Xvfb", ":99", "-screen", "0", "1280x720x24", "-ac"],
-        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+        stdout=_sp.DEVNULL,
+        stderr=_sp.DEVNULL,
     )
     os.environ["DISPLAY"] = ":99"
     logger.info("Xvfb started on :99 (invisible virtual display)")
 
     from playwright.async_api import async_playwright
+
     pw = await async_playwright().start()
     context = await pw.chromium.launch_persistent_context(
-        user_data_dir=SESSION_DIR, headless=False,  # headful on virtual display
+        user_data_dir=SESSION_DIR,
+        headless=False,  # headful on virtual display
         args=[
             "--no-sandbox",
             "--disable-blink-features=AutomationControlled",
@@ -768,10 +839,12 @@ async def launch_browser():
 
                 # UNMUTE mic — this makes Google Meet add an audio sender
                 # to the RTCPeerConnection so we can replace its track
-                for sel in ['[aria-label*="Turn on microphone"]',
-                            '[aria-label*="Unmute"]',
-                            '[aria-label*="microphone"][data-is-muted="true"]',
-                            'button[aria-label*="micro"]']:
+                for sel in [
+                    '[aria-label*="Turn on microphone"]',
+                    '[aria-label*="Unmute"]',
+                    '[aria-label*="microphone"][data-is-muted="true"]',
+                    'button[aria-label*="micro"]',
+                ]:
                     try:
                         btn = page.locator(sel).first
                         if await btn.is_visible(timeout=2000):
@@ -811,7 +884,7 @@ async def launch_browser():
 # ---------------------------------------------------------------------------
 # Audio capture + Reasoning Controller loop
 # ---------------------------------------------------------------------------
-async def audio_loop(page, stop):
+async def audio_loop(page, stop) -> None:
     """Continuous listening loop driven by the Reasoning Controller.
 
     The controller observes all speech, reasons about what to do,
@@ -843,7 +916,7 @@ async def audio_loop(page, stop):
         history.append({"role": "user", "content": user_text})
         history.append({"role": "assistant", "content": resp})
         if len(history) > 6:
-            del history[:len(history) - 6]
+            del history[: len(history) - 6]
 
         await speak(page, resp)
         t_total = time.time() - t_start
@@ -859,11 +932,15 @@ async def audio_loop(page, stop):
         _last_avatar_cmd = cmd
 
     def handle_expression(intent: ActionIntent, awareness) -> None:
-        if intent in (ActionIntent.RESPOND, ActionIntent.INTERJECT,
-                       ActionIntent.LISTEN_AMUSED, ActionIntent.LISTEN_EMPATHETIC):
+        if intent in (
+            ActionIntent.RESPOND,
+            ActionIntent.INTERJECT,
+            ActionIntent.LISTEN_AMUSED,
+            ActionIntent.LISTEN_EMPATHETIC,
+        ):
             logger.info("Avatar: %s [emo=%s]", intent.value, awareness.detected_emotion)
 
-    async def video_render_loop():
+    async def video_render_loop() -> None:
         """Render avatar → push JPEG to Chrome via page.evaluate.
 
         Chrome's init script uses MediaStreamTrackGenerator + OffscreenCanvas.
@@ -871,7 +948,8 @@ async def audio_loop(page, stop):
         The generator loop decodes it and produces VideoFrames at 15fps.
         Much smaller than raw RGBA (30KB vs 4.9MB per frame).
         """
-        import base64, math
+        import base64
+        import math
 
         FPS = 15  # 15fps JPEG updates, generator runs at 30fps
         frame_count = 0
@@ -882,6 +960,7 @@ async def audio_loop(page, stop):
         if os.path.exists(gaussian_model_path):
             try:
                 from phoenix.render.avatar_renderer import GaussianAvatarRenderer
+
                 _gaussian_renderer = GaussianAvatarRenderer.load_trained(gaussian_model_path)
                 logger.info("Gaussian Avatar loaded — rendering real 3D video at 731 FPS")
             except Exception as e:
@@ -895,10 +974,12 @@ async def audio_loop(page, stop):
 
         use_gaussian = _gaussian_renderer is not None
         has_physics = _physics_face is not None
-        logger.info("Video render: %s + %s at %dfps -> Insertable Streams",
-                     "Gaussian 3D" if use_gaussian else "FaceWarper 2D",
-                     "PhysicsFace" if has_physics else "manual blend",
-                     FPS)
+        logger.info(
+            "Video render: %s + %s at %dfps -> Insertable Streams",
+            "Gaussian 3D" if use_gaussian else "FaceWarper 2D",
+            "PhysicsFace" if has_physics else "manual blend",
+            FPS,
+        )
 
         while not stop.is_set():
             frame_count += 1
@@ -926,6 +1007,7 @@ async def audio_loop(page, stop):
             if use_gaussian:
                 try:
                     import torch
+
                     if has_physics and cmd is not None:
                         # PhysicsFaceEngine provides FLAME params directly
                         # from the last processed audio chunk (set by speak())
@@ -949,7 +1031,8 @@ async def audio_loop(page, stop):
                         jp = torch.zeros(3, device="cuda")
                         jp[0] = jaw_open * 0.3
                     result = _gaussian_renderer.render_frame(
-                        expression_params=exp, jaw_pose=jp,
+                        expression_params=exp,
+                        jaw_pose=jp,
                     )
                     img = result["image"]
                     frame_np = (img.detach().cpu().clamp(0, 1).numpy() * 255).astype(np.uint8)
@@ -957,22 +1040,28 @@ async def audio_loop(page, stop):
                 except Exception as e:
                     if frame_count % 100 == 1:
                         logger.warning("Gaussian render failed: %s", e)
-                    frame_bgr = _face_warper.warp_mouth(jaw_open, head_tilt) if _face_warper and _face_warper.ready else np.zeros((720, 1280, 3), dtype=np.uint8)
+                    frame_bgr = (
+                        _face_warper.warp_mouth(jaw_open, head_tilt)
+                        if _face_warper and _face_warper.ready
+                        else np.zeros((720, 1280, 3), dtype=np.uint8)
+                    )
             else:
                 frame_bgr = _face_warper.warp_mouth(jaw_open, head_tilt)
 
             # Encode as JPEG (~30KB vs 4.9MB for raw RGBA)
             _, jpg_buf = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 60])
-            jpg_b64 = base64.b64encode(jpg_buf).decode('ascii')
+            jpg_b64 = base64.b64encode(jpg_buf).decode("ascii")
 
-            try:
+            with contextlib.suppress(Exception):
                 await page.evaluate("b64 => { window.__santaJpegB64 = b64; }", jpg_b64)
-            except Exception:
-                pass
 
             if frame_count % (FPS * 10) == 1:
-                logger.info("Video frame #%d (%dKB JPEG, jaw=%.2f)",
-                            frame_count, len(jpg_b64) // 1024, jaw_open)
+                logger.info(
+                    "Video frame #%d (%dKB JPEG, jaw=%.2f)",
+                    frame_count,
+                    len(jpg_b64) // 1024,
+                    jaw_open,
+                )
 
             await asyncio.sleep(1.0 / FPS)
 
@@ -991,8 +1080,11 @@ async def audio_loop(page, stop):
 
     # Start audio capture
     parec = await asyncio.create_subprocess_exec(
-        "parec", f"--device={CAPTURE_DEVICE}",
-        "--format=s16le", f"--rate={SAMPLE_RATE}", "--channels=1",
+        "parec",
+        f"--device={CAPTURE_DEVICE}",
+        "--format=s16le",
+        f"--rate={SAMPLE_RATE}",
+        "--channels=1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -1006,9 +1098,10 @@ async def audio_loop(page, stop):
     while not stop.is_set():
         try:
             chunk = await asyncio.wait_for(
-                parec.stdout.read(CHUNK_BYTES), timeout=0.2,
+                parec.stdout.read(CHUNK_BYTES),
+                timeout=0.2,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             chunk = None
             # Track silence for the controller
             controller.tick_silence(200)
@@ -1045,12 +1138,15 @@ async def audio_loop(page, stop):
                 controller.observe(text)
 
                 # Store transcript
-                _transcript_segments.append({
-                    "speaker": "Participant", "text": text,
-                    "timestamp": time.strftime("%H:%M:%S"),
-                })
+                _transcript_segments.append(
+                    {
+                        "speaker": "Participant",
+                        "text": text,
+                        "timestamp": time.strftime("%H:%M:%S"),
+                    }
+                )
                 if len(_transcript_segments) > _MAX_TRANSCRIPT_SEGMENTS:
-                    del _transcript_segments[:len(_transcript_segments) - _MAX_TRANSCRIPT_SEGMENTS]
+                    del _transcript_segments[: len(_transcript_segments) - _MAX_TRANSCRIPT_SEGMENTS]
 
                 # Let the controller decide what to do (Tier 2)
                 intent = controller.reason()
@@ -1071,7 +1167,7 @@ async def audio_loop(page, stop):
     await ingest_transcript(_transcript_segments, meeting_id)
 
 
-async def process(buf, history, page, meeting_id):
+async def process(buf, history, page, meeting_id) -> None:
     """Process speech buffer: transcribe -> search -> respond -> speak.
 
     Catches all errors so the bot continues running even if one
@@ -1091,11 +1187,15 @@ async def process(buf, history, page, meeting_id):
 
         # Store in transcript
         ts = time.strftime("%H:%M:%S")
-        _transcript_segments.append({
-            "speaker": "Participant", "text": text, "timestamp": ts,
-        })
+        _transcript_segments.append(
+            {
+                "speaker": "Participant",
+                "text": text,
+                "timestamp": ts,
+            }
+        )
         if len(_transcript_segments) > _MAX_TRANSCRIPT_SEGMENTS:
-            del _transcript_segments[:len(_transcript_segments) - _MAX_TRANSCRIPT_SEGMENTS]
+            del _transcript_segments[: len(_transcript_segments) - _MAX_TRANSCRIPT_SEGMENTS]
 
         # Only respond when directly addressed
         if not _is_addressed(text):
@@ -1109,16 +1209,19 @@ async def process(buf, history, page, meeting_id):
         logger.info("SANTA: '%s'", resp)
 
         # Store response in transcript
-        _transcript_segments.append({
-            "speaker": "Santa (Clone)", "text": resp,
-            "timestamp": time.strftime("%H:%M:%S"),
-        })
+        _transcript_segments.append(
+            {
+                "speaker": "Santa (Clone)",
+                "text": resp,
+                "timestamp": time.strftime("%H:%M:%S"),
+            }
+        )
 
         history.append({"role": "user", "content": text})
         history.append({"role": "assistant", "content": resp})
         # Keep history bounded
         if len(history) > 20:
-            del history[:len(history) - 20]
+            del history[: len(history) - 20]
 
         await speak(page, resp)
         # Extra silence gap after speaking to prevent echo pickup
@@ -1127,6 +1230,7 @@ async def process(buf, history, page, meeting_id):
     except Exception as e:
         logger.error("Process cycle failed (bot continues): %s", e)
         import traceback
+
         logger.error(traceback.format_exc())
     finally:
         # Free GPU + CPU memory after every response cycle
@@ -1150,16 +1254,26 @@ async def respond(text, history):
     # Skip slow OCR search for simple conversational messages
     # Only search when the question seems to reference past context
     history_context = ""
-    needs_search = any(kw in text.lower() for kw in [
-        "remember", "last time", "before", "earlier", "you said",
-        "we talked", "mentioned", "discussed",
-    ])
+    needs_search = any(
+        kw in text.lower()
+        for kw in [
+            "remember",
+            "last time",
+            "before",
+            "earlier",
+            "you said",
+            "we talked",
+            "mentioned",
+            "discussed",
+        ]
+    )
     if needs_search:
         try:
             history_context = await asyncio.wait_for(
-                search_meeting_history(text), timeout=3.0,
+                search_meeting_history(text),
+                timeout=3.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.debug("OCR search timed out, skipping")
 
     system = (
@@ -1187,10 +1301,7 @@ async def respond(text, history):
     # Build user message with RAG context
     user_msg = text
     if history_context:
-        user_msg = (
-            f"[Context from past meetings]\n{history_context}\n\n"
-            f"[Current question]\n{text}"
-        )
+        user_msg = f"[Context from past meetings]\n{history_context}\n\n[Current question]\n{text}"
     msgs.append({"role": "user", "content": user_msg})
 
     try:
@@ -1224,11 +1335,10 @@ async def respond(text, history):
 # No post-join track replacement needed
 
 
-async def speak(page, text):
+async def speak(page, text) -> None:
     """Synthesize speech with prosody-matched refs, laugh clips, and inject to meeting."""
     global _laugh_idx
     import base64
-    import soundfile as sf
 
     tts = get_tts()
     try:
@@ -1243,7 +1353,7 @@ async def speak(page, text):
             logger.info("Prosody ref: %s", Path(ref_path).name)
 
         # Strip all tags — synthesize clean text only
-        clean = re.sub(r'\[.*?\]', '', text).strip()
+        clean = re.sub(r"\[.*?\]", "", text).strip()
         if not clean:
             logger.warning("speak(): empty text after cleanup")
             return
@@ -1264,15 +1374,13 @@ async def speak(page, text):
             return
         audio = np.concatenate(segs)
         audio_duration = len(audio) / sr
-        logger.info("Audio: %.1fs (%d samples), %d segments",
-                     audio_duration, len(audio), len(segs))
+        logger.info("Audio: %.1fs (%d samples), %d segments", audio_duration, len(audio), len(segs))
         del segs
 
         # Compute physics-based face animation and send to browser
         # Pipeline: PhysicsFaceEngine -> (optional) SemanticCloneModel -> blendshapes
         if _physics_face is not None:
             try:
-                from phoenix.render.physics_face import PhysicsFaceEngine
                 _physics_face.reset()
                 face_states = _physics_face.process_audio_batch(audio)
 
@@ -1280,6 +1388,7 @@ async def speak(page, text):
                 if _semantic_model is not None:
                     try:
                         import torch
+
                         blendshape_schedule = []
                         with torch.no_grad():
                             for fs in face_states:
@@ -1287,12 +1396,12 @@ async def speak(page, text):
                                 # At runtime we construct approximations from available audio data.
                                 # The model requires all 7 — no fallbacks.
                                 pro = torch.zeros(1, 12, device="cuda")
-                                pro[0, 0] = fs._f0       # f0_mean (raw Hz)
+                                pro[0, 0] = fs._f0  # f0_mean (raw Hz)
                                 pro[0, 1] = fs._f0 * 0.2  # f0_range estimate
                                 pro[0, 2] = fs._energy * 100  # energy (raw scale)
-                                pro[0, 3] = 180.0         # speaking_rate WPM est
+                                pro[0, 3] = 180.0  # speaking_rate WPM est
                                 pro[0, 4] = fs.effort * 300  # emphasis proxy (raw scale)
-                                pro[0, 5] = 0.03          # rising pitch default
+                                pro[0, 5] = 0.03  # rising pitch default
 
                                 # Emotion: 1024d Wav2Vec2 — use cached identity embedding
                                 emo = _semantic_emo_identity.unsqueeze(0)
@@ -1308,42 +1417,77 @@ async def speak(page, text):
                                 voi = _semantic_voice_identity.unsqueeze(0)
 
                                 out = _semantic_model(
-                                    visual=vis, emotion=emo, prosody=pro,
-                                    semantic=sem, speaker=spk, sentence=sent,
+                                    visual=vis,
+                                    emotion=emo,
+                                    prosody=pro,
+                                    semantic=sem,
+                                    speaker=spk,
+                                    sentence=sent,
                                     voice=voi,
                                 )
                                 bs_tensor = out["blendshapes"][0].cpu().numpy()
                                 bs_dict = {}
                                 # Map 52-dim tensor to ARKit names
                                 arkit_names = [
-                                    "jawOpen", "jawForward", "jawLeft", "jawRight",
-                                    "mouthSmileLeft", "mouthSmileRight", "mouthPucker",
-                                    "mouthFunnel", "mouthClose", "mouthStretchLeft",
-                                    "mouthStretchRight", "mouthUpperUpLeft",
-                                    "mouthUpperUpRight", "mouthLowerDownLeft",
-                                    "mouthLowerDownRight", "mouthShrugUpper",
-                                    "mouthShrugLower", "mouthRollUpper", "mouthRollLower",
-                                    "mouthPressLeft", "mouthPressRight",
-                                    "mouthDimpleLeft", "mouthDimpleRight",
-                                    "browInnerUp", "browDownLeft", "browDownRight",
-                                    "browOuterUpLeft", "browOuterUpRight",
-                                    "eyeBlinkLeft", "eyeBlinkRight",
-                                    "eyeWideLeft", "eyeWideRight",
-                                    "eyeSquintLeft", "eyeSquintRight",
-                                    "eyeLookUpLeft", "eyeLookUpRight",
-                                    "eyeLookDownLeft", "eyeLookDownRight",
-                                    "eyeLookInLeft", "eyeLookInRight",
-                                    "eyeLookOutLeft", "eyeLookOutRight",
-                                    "cheekPuff", "cheekSquintLeft", "cheekSquintRight",
-                                    "noseSneerLeft", "noseSneerRight",
-                                    "mouthFrownLeft", "mouthFrownRight",
-                                    "mouthLeft", "mouthRight", "tongueOut",
+                                    "jawOpen",
+                                    "jawForward",
+                                    "jawLeft",
+                                    "jawRight",
+                                    "mouthSmileLeft",
+                                    "mouthSmileRight",
+                                    "mouthPucker",
+                                    "mouthFunnel",
+                                    "mouthClose",
+                                    "mouthStretchLeft",
+                                    "mouthStretchRight",
+                                    "mouthUpperUpLeft",
+                                    "mouthUpperUpRight",
+                                    "mouthLowerDownLeft",
+                                    "mouthLowerDownRight",
+                                    "mouthShrugUpper",
+                                    "mouthShrugLower",
+                                    "mouthRollUpper",
+                                    "mouthRollLower",
+                                    "mouthPressLeft",
+                                    "mouthPressRight",
+                                    "mouthDimpleLeft",
+                                    "mouthDimpleRight",
+                                    "browInnerUp",
+                                    "browDownLeft",
+                                    "browDownRight",
+                                    "browOuterUpLeft",
+                                    "browOuterUpRight",
+                                    "eyeBlinkLeft",
+                                    "eyeBlinkRight",
+                                    "eyeWideLeft",
+                                    "eyeWideRight",
+                                    "eyeSquintLeft",
+                                    "eyeSquintRight",
+                                    "eyeLookUpLeft",
+                                    "eyeLookUpRight",
+                                    "eyeLookDownLeft",
+                                    "eyeLookDownRight",
+                                    "eyeLookInLeft",
+                                    "eyeLookInRight",
+                                    "eyeLookOutLeft",
+                                    "eyeLookOutRight",
+                                    "cheekPuff",
+                                    "cheekSquintLeft",
+                                    "cheekSquintRight",
+                                    "noseSneerLeft",
+                                    "noseSneerRight",
+                                    "mouthFrownLeft",
+                                    "mouthFrownRight",
+                                    "mouthLeft",
+                                    "mouthRight",
+                                    "tongueOut",
                                 ]
-                                for j, name in enumerate(arkit_names[:len(bs_tensor)]):
+                                for j, name in enumerate(arkit_names[: len(bs_tensor)]):
                                     # Blend: 60% semantic, 40% physics for smooth result
                                     physics_val = fs.to_blendshapes().get(name, 0.0)
                                     bs_dict[name] = round(
-                                        0.6 * float(bs_tensor[j]) + 0.4 * physics_val, 3,
+                                        0.6 * float(bs_tensor[j]) + 0.4 * physics_val,
+                                        3,
                                     )
                                 blendshape_schedule.append(bs_dict)
                         logger.info("SemanticModel: %d frames enhanced", len(blendshape_schedule))
@@ -1354,9 +1498,12 @@ async def speak(page, text):
                     blendshape_schedule = [s.to_blendshapes() for s in face_states]
 
                 mouth_schedule = [round(s.jaw_open, 2) for s in face_states]
-                logger.info("PhysicsFace: %d frames, jaw range %.2f-%.2f",
-                            len(face_states),
-                            min(mouth_schedule), max(mouth_schedule))
+                logger.info(
+                    "PhysicsFace: %d frames, jaw range %.2f-%.2f",
+                    len(face_states),
+                    min(mouth_schedule),
+                    max(mouth_schedule),
+                )
                 await page.evaluate(
                     "schedule => { window.__santaMouthSchedule = schedule; }",
                     mouth_schedule,
@@ -1371,6 +1518,7 @@ async def speak(page, text):
             # Legacy fallback: energy-only lip sync
             try:
                 from phoenix.render.lip_sync import LipSync
+
                 lip = LipSync(fps=25, sample_rate=sr)
                 lip_frames = lip.from_audio(audio)
                 mouth_schedule = [round(f.mouth_open, 2) for f in lip_frames]
@@ -1384,7 +1532,7 @@ async def speak(page, text):
 
         # Inject audio into WebRTC via JavaScript WebAudio API
         audio_bytes = audio.astype(np.float32).tobytes()
-        b64 = base64.b64encode(audio_bytes).decode('ascii')
+        b64 = base64.b64encode(audio_bytes).decode("ascii")
         b64_len = len(b64)
         del audio, audio_bytes
 
@@ -1409,6 +1557,7 @@ async def speak(page, text):
         if _y4m_writer is not None:
             try:
                 from phoenix.render.y4m_writer import AvatarState
+
                 _y4m_writer.set_state(AvatarState.LISTENING)
             except Exception:
                 pass
@@ -1418,6 +1567,7 @@ async def speak(page, text):
         if _y4m_writer is not None:
             try:
                 from phoenix.render.y4m_writer import AvatarState
+
                 _y4m_writer.set_state(AvatarState.LISTENING)
             except Exception:
                 pass
@@ -1426,7 +1576,7 @@ async def speak(page, text):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-async def main():
+async def main() -> None:
     pw, ctx, page = await launch_browser()
     if not pw:
         return
@@ -1466,10 +1616,8 @@ async def main():
             await _ocr_client.close()
 
         # Kill Xvfb
-        try:
+        with contextlib.suppress(Exception):
             _xvfb.kill()
-        except Exception:
-            pass
         logger.info("Shutdown complete")
 
 

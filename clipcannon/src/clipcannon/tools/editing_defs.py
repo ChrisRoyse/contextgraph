@@ -26,8 +26,13 @@ EDITING_TOOL_DEFINITIONS: list[Tool] = [
                     "type": "string",
                     "description": "Target platform for the output clip",
                     "enum": [
-                        "tiktok", "instagram_reels", "youtube_shorts",
-                        "youtube_standard", "youtube_4k", "facebook", "linkedin",
+                        "tiktok",
+                        "instagram_reels",
+                        "youtube_shorts",
+                        "youtube_standard",
+                        "youtube_4k",
+                        "facebook",
+                        "linkedin",
                     ],
                 },
                 "segments": {
@@ -220,9 +225,12 @@ EDITING_TOOL_DEFINITIONS: list[Tool] = [
                 "effect": {
                     "type": "string",
                     "enum": [
-                        "zoom_in", "zoom_out",
-                        "pan_left", "pan_right",
-                        "pan_up", "pan_down",
+                        "zoom_in",
+                        "zoom_out",
+                        "pan_left",
+                        "pan_right",
+                        "pan_up",
+                        "pan_down",
                         "ken_burns",
                     ],
                     "description": "Motion effect type",
@@ -269,8 +277,13 @@ EDITING_TOOL_DEFINITIONS: list[Tool] = [
                 "position": {
                     "type": "string",
                     "enum": [
-                        "bottom_left", "bottom_center", "bottom_right",
-                        "top_left", "top_center", "top_right", "center",
+                        "bottom_left",
+                        "bottom_center",
+                        "bottom_right",
+                        "top_left",
+                        "top_center",
+                        "top_right",
+                        "center",
                     ],
                     "default": "bottom_left",
                 },
@@ -404,23 +417,27 @@ EDITING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "branch_name": {
                     "type": "string",
-                    "description": (
-                        "Name for this branch (e.g., 'instagram', "
-                        "'youtube_shorts')"
-                    ),
+                    "description": ("Name for this branch (e.g., 'instagram', 'youtube_shorts')"),
                 },
                 "target_platform": {
                     "type": "string",
                     "description": "Target platform for the branched edit",
                     "enum": [
-                        "tiktok", "instagram_reels", "youtube_shorts",
-                        "youtube_standard", "youtube_4k", "facebook",
+                        "tiktok",
+                        "instagram_reels",
+                        "youtube_shorts",
+                        "youtube_standard",
+                        "youtube_4k",
+                        "facebook",
                         "linkedin",
                     ],
                 },
             },
             "required": [
-                "project_id", "edit_id", "branch_name", "target_platform",
+                "project_id",
+                "edit_id",
+                "branch_name",
+                "target_platform",
             ],
         },
     ),
@@ -440,9 +457,7 @@ EDITING_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "edit_id": {
                     "type": "string",
-                    "description": (
-                        "Edit identifier (root or any branch)"
-                    ),
+                    "description": ("Edit identifier (root or any branch)"),
                 },
             },
             "required": ["project_id", "edit_id"],

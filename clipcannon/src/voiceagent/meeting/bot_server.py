@@ -4,10 +4,18 @@ POST /join  {"url": "https://meet.google.com/xxx-yyyy-zzz"}
 POST /leave
 GET  /status -> {"state": "idle|joining|in-meeting", ...}
 """
+
 from __future__ import annotations
 
-import json, logging, os, signal, subprocess, sys, time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import contextlib
+import json
+import logging
+import os
+import signal
+import subprocess
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Lock, Thread
 
@@ -55,14 +63,17 @@ class BotManager:
 
     def _start_xvfb(self) -> None:
         try:
-            r = subprocess.run(["xdpyinfo", "-display", XVFB_DISPLAY], capture_output=True, timeout=2)
+            r = subprocess.run(
+                ["xdpyinfo", "-display", XVFB_DISPLAY], capture_output=True, timeout=2
+            )
             if r.returncode == 0:
                 return
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         self.xvfb_proc = subprocess.Popen(
             ["Xvfb", XVFB_DISPLAY, "-screen", "0", "1920x1080x24"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         time.sleep(0.5)
         logger.info("Xvfb started on %s (pid=%d)", XVFB_DISPLAY, self.xvfb_proc.pid)
@@ -74,7 +85,9 @@ class BotManager:
         bot_log = open("/tmp/santa_bot.log", "w")
         self.bot_proc = subprocess.Popen(
             [sys.executable, str(_BOT_SCRIPT), url],
-            env=env, stdout=bot_log, stderr=subprocess.STDOUT,
+            env=env,
+            stdout=bot_log,
+            stderr=subprocess.STDOUT,
         )
         logger.info("Bot started (pid=%d) for %s", self.bot_proc.pid, url)
         Thread(target=self._monitor_bot, daemon=True).start()
@@ -106,10 +119,8 @@ class BotManager:
                     proc.send_signal(signal.SIGTERM)
                     proc.wait(timeout=5)
                 except (subprocess.TimeoutExpired, OSError):
-                    try:
+                    with contextlib.suppress(OSError):
                         proc.kill()
-                    except OSError:
-                        pass
             setattr(self, attr, None)
 
     def status(self) -> dict:
@@ -131,9 +142,11 @@ class BotRequestHandler(BaseHTTPRequestHandler):
     def _send_json(self, data: dict, status: int = 200) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
-        for k, v in [("Content-Type", "application/json"),
-                      ("Content-Length", str(len(body))),
-                      ("Access-Control-Allow-Origin", "*")]:
+        for k, v in [
+            ("Content-Type", "application/json"),
+            ("Content-Length", str(len(body))),
+            ("Access-Control-Allow-Origin", "*"),
+        ]:
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -149,9 +162,11 @@ class BotRequestHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(204)
-        for k, v in [("Access-Control-Allow-Origin", "*"),
-                      ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
-                      ("Access-Control-Allow-Headers", "Content-Type")]:
+        for k, v in [
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type"),
+        ]:
             self.send_header(k, v)
         self.end_headers()
 

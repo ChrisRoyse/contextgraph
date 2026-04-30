@@ -12,6 +12,7 @@ import logging
 import secrets
 import sqlite3 as _sqlite3
 from pathlib import Path
+
 from clipcannon.config import ClipCannonConfig
 from clipcannon.db.connection import get_connection
 from clipcannon.db.queries import execute, fetch_one
@@ -432,7 +433,8 @@ def auto_generate_captions(
             edl.captions.chunks = remapped_chunks
             logger.info(
                 "Auto-generated %d caption chunks for edit %s",
-                len(remapped_chunks), edit_id,
+                len(remapped_chunks),
+                edit_id,
             )
     except Exception as exc:
         logger.warning("Caption auto-generation failed for edit %s: %s", edit_id, exc)
@@ -582,15 +584,10 @@ def save_edit_version(
 
         max_row = fetch_one(
             conn,
-            "SELECT MAX(version_number) as max_ver FROM edit_versions "
-            "WHERE edit_id = ?",
+            "SELECT MAX(version_number) as max_ver FROM edit_versions WHERE edit_id = ?",
             (edit_id,),
         )
-        next_ver = (
-            int(max_row["max_ver"]) + 1
-            if max_row and max_row["max_ver"] is not None
-            else 1
-        )
+        next_ver = int(max_row["max_ver"]) + 1 if max_row and max_row["max_ver"] is not None else 1
 
         version_id = f"ver_{secrets.token_hex(6)}"
         change_desc = generate_change_description(current_edl, changes)
@@ -616,7 +613,10 @@ def save_edit_version(
 
         logger.info(
             "Saved edit version %s (v%d) for edit %s: %s",
-            version_id, next_ver, edit_id, change_desc,
+            version_id,
+            next_ver,
+            edit_id,
+            change_desc,
         )
         return version_id
     finally:
@@ -654,9 +654,14 @@ def apply_changes(
                 segments_changed = True
                 updated.append("segments")
             except (ValueError, KeyError, TypeError) as exc:
-                return [], False, error_response(
-                    "INVALID_PARAMETER", f"Invalid segment data: {exc}",
-                    {"error": str(exc)},
+                return (
+                    [],
+                    False,
+                    error_response(
+                        "INVALID_PARAMETER",
+                        f"Invalid segment data: {exc}",
+                        {"error": str(exc)},
+                    ),
                 )
 
     if "captions" in changes and isinstance(changes["captions"], dict):
@@ -677,7 +682,8 @@ def apply_changes(
 
     if "render_settings" in changes and isinstance(changes["render_settings"], dict):
         edl.render_settings = build_render_settings(
-            changes["render_settings"], edl.render_settings,  # type: ignore[arg-type]
+            changes["render_settings"],
+            edl.render_settings,  # type: ignore[arg-type]
         )
         updated.append("render_settings")
 

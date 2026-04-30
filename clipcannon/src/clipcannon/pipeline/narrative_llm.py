@@ -126,8 +126,7 @@ def _ensure_narrative_table(db_path: Path) -> None:
     try:
         conn.execute(_CREATE_TABLE_SQL)
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_narrative_project "
-            "ON narrative_analysis(project_id)"
+            "CREATE INDEX IF NOT EXISTS idx_narrative_project ON narrative_analysis(project_id)"
         )
         conn.commit()
     finally:
@@ -207,9 +206,7 @@ def _run_qwen_subprocess(transcript_path: str) -> dict[str, object]:
 
     if proc.returncode != 0:
         stderr_tail = proc.stderr[-500:] if proc.stderr else ""
-        raise RuntimeError(
-            f"Qwen3-8B subprocess failed (exit {proc.returncode}): {stderr_tail}"
-        )
+        raise RuntimeError(f"Qwen3-8B subprocess failed (exit {proc.returncode}): {stderr_tail}")
 
     stdout = proc.stdout.strip()
     if not stdout:
@@ -227,8 +224,7 @@ def _run_qwen_subprocess(transcript_path: str) -> dict[str, object]:
         result = json.loads(last_line)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"Qwen3-8B subprocess returned invalid JSON: {exc}. "
-            f"stdout tail: {stdout[-200:]}"
+            f"Qwen3-8B subprocess returned invalid JSON: {exc}. stdout tail: {stdout[-200:]}"
         ) from exc
 
     return result
@@ -314,7 +310,9 @@ async def run_narrative_llm(
 
         # Write transcript to temp file for subprocess
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False,
+            mode="w",
+            suffix=".txt",
+            delete=False,
         ) as tmp:
             tmp.write(transcript_text)
             transcript_path = tmp.name
@@ -322,7 +320,8 @@ async def run_narrative_llm(
         try:
             # Run subprocess (blocking I/O in thread)
             analysis = await asyncio.to_thread(
-                _run_qwen_subprocess, transcript_path,
+                _run_qwen_subprocess,
+                transcript_path,
             )
         finally:
             Path(transcript_path).unlink(missing_ok=True)
@@ -332,7 +331,9 @@ async def run_narrative_llm(
             error_msg = str(analysis.get("error", "Unknown model error"))
             raw = str(analysis.get("raw", ""))[:200]
             logger.warning(
-                "Qwen3-8B returned error: %s (raw: %s)", error_msg, raw,
+                "Qwen3-8B returned error: %s (raw: %s)",
+                error_msg,
+                raw,
             )
             return StageResult(
                 success=False,
@@ -352,9 +353,12 @@ async def run_narrative_llm(
         key_moments = len(analysis.get("key_moments", []))
 
         logger.info(
-            "Narrative analysis complete: %d beats, %d loops, "
-            "%d chapters, %d key moments (%d ms)",
-            story_beats, open_loops, chapters, key_moments, elapsed_ms,
+            "Narrative analysis complete: %d beats, %d loops, %d chapters, %d key moments (%d ms)",
+            story_beats,
+            open_loops,
+            chapters,
+            key_moments,
+            elapsed_ms,
         )
 
         # Provenance
@@ -411,7 +415,9 @@ async def run_narrative_llm(
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         error_msg = f"{type(exc).__name__}: {exc}"
         logger.error(
-            "Narrative analysis failed after %d ms: %s", elapsed_ms, error_msg,
+            "Narrative analysis failed after %d ms: %s",
+            elapsed_ms,
+            error_msg,
         )
         return StageResult(
             success=False,

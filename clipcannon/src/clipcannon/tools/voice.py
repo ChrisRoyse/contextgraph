@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def _error(
-    code: str, message: str, details: dict[str, object] | None = None,
+    code: str,
+    message: str,
+    details: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build standardized error response dict."""
     return {"error": {"code": code, "message": message, "details": details or {}}}
@@ -65,7 +67,8 @@ def resolve_voice_profile(voice_name: str) -> dict[str, object]:
     reference_embedding = None
     if profile.get("reference_embedding"):
         reference_embedding = np.frombuffer(
-            profile["reference_embedding"], dtype=np.float32,
+            profile["reference_embedding"],
+            dtype=np.float32,
         ).copy()
         # Detect stale 192-dim SpeechBrain embeddings (now need 2048-dim)
         if reference_embedding.shape[0] != 2048:
@@ -83,6 +86,7 @@ def resolve_voice_profile(voice_name: str) -> dict[str, object]:
     reference_audio = None
     training_projects = profile.get("training_projects", "[]")
     import json as _json
+
     try:
         proj_ids = _json.loads(training_projects) if isinstance(training_projects, str) else []
     except Exception:
@@ -100,6 +104,7 @@ def resolve_voice_profile(voice_name: str) -> dict[str, object]:
     # Fallback: check voice_data directory for training clips
     if reference_audio is None:
         from pathlib import Path as _Path
+
         voice_data = _Path.home() / ".clipcannon" / "voice_data" / voice_name / "wavs"
         if voice_data.exists():
             clips = sorted(voice_data.glob("*.wav"))
@@ -109,6 +114,7 @@ def resolve_voice_profile(voice_name: str) -> dict[str, object]:
     # Collect ALL available reference clips for optimized synthesis
     all_reference_clips: list[str] = []
     from pathlib import Path as _Path
+
     voice_data = _Path.home() / ".clipcannon" / "voice_data" / voice_name / "wavs"
     if voice_data.exists():
         all_reference_clips = [str(c) for c in sorted(voice_data.glob("*.wav"))]
@@ -141,9 +147,7 @@ async def _handle_prepare_voice_data(
     if output_dir_raw:
         output_dir = Path(str(output_dir_raw))
     else:
-        output_dir = (
-            Path.home() / ".clipcannon" / "voice_data" / speaker_label
-        )
+        output_dir = Path.home() / ".clipcannon" / "voice_data" / speaker_label
 
     min_clip_ms = int(arguments.get("min_clip_duration_ms", 1000))  # type: ignore[arg-type]
     max_clip_ms = int(arguments.get("max_clip_duration_ms", 12000))  # type: ignore[arg-type]
@@ -231,7 +235,11 @@ async def _handle_voice_profiles(
         for p in profiles:
             if "reference_embedding" in p:
                 has_emb = p["reference_embedding"] is not None
-                p["reference_embedding"] = f"<{len(p['reference_embedding'])} bytes>" if has_emb else None  # type: ignore[arg-type]
+                p["reference_embedding"] = (
+                    f"<{len(p['reference_embedding'])} bytes>"  # type: ignore[arg-type]
+                    if has_emb
+                    else None
+                )
         return {"profiles": profiles, "count": len(profiles)}
 
     if action == "get":
@@ -249,13 +257,14 @@ async def _handle_voice_profiles(
             return _error("MISSING_PARAMETER", "name is required for create")
         model_path = str(arguments.get("model_path", ""))
         if not model_path:
-            return _error(
-                "MISSING_PARAMETER", "model_path is required for create"
-            )
+            return _error("MISSING_PARAMETER", "model_path is required for create")
         sample_rate = int(arguments.get("sample_rate", 24000))  # type: ignore[arg-type]
         try:
             profile_id = create_voice_profile(
-                db_path, name, model_path, sample_rate,
+                db_path,
+                name,
+                model_path,
+                sample_rate,
             )
         except Exception as exc:
             if "UNIQUE" in str(exc):
@@ -280,7 +289,9 @@ async def _handle_voice_profiles(
             return _error("MISSING_PARAMETER", "name is required for update")
         update_kwargs: dict[str, object] = {}
         for field in (
-            "training_status", "training_hours", "model_path",
+            "training_status",
+            "training_hours",
+            "model_path",
             "sample_rate",
         ):
             if field in arguments and arguments[field] is not None:
@@ -339,13 +350,15 @@ async def _handle_speak(arguments: dict[str, object]) -> dict[str, object]:
             from clipcannon.voice.prosody_select import select_prosody_reference
 
             prosody_ref = select_prosody_reference(
-                str(voice_name), prosody_style,
+                str(voice_name),
+                prosody_style,
             )
             if prosody_ref is not None:
                 reference_audio_path = prosody_ref
                 logger.info(
                     "Prosody style '%s': using reference %s",
-                    prosody_style, prosody_ref.name,
+                    prosody_style,
+                    prosody_ref.name,
                 )
         except Exception as exc:
             logger.debug("Prosody reference selection failed: %s", exc)
@@ -383,7 +396,7 @@ async def _handle_speak(arguments: dict[str, object]) -> dict[str, object]:
     enhanced_duration_ms = result.duration_ms
     enhanced_sample_rate = result.sample_rate
 
-    enhance = arguments.get("enhance", True)
+    enhance = arguments.get("enhance", False)
     if enhance:
         try:
             from clipcannon.voice.enhance import enhance_speech
@@ -393,11 +406,16 @@ async def _handle_speak(arguments: dict[str, object]) -> dict[str, object]:
             enhanced_audio_path = enhanced_path
             # Update duration/SR from enhanced file
             import soundfile as _sf
+
             _info = _sf.info(str(enhanced_path))
             enhanced_duration_ms = int(_info.duration * 1000)
             enhanced_sample_rate = _info.samplerate
         except Exception as exc:
-            logger.warning("Enhancement failed, using raw TTS output: %s", exc)
+            logger.exception("Enhancement failed for project %s", project_id)
+            return _error(
+                "ENHANCEMENT_FAILED",
+                f"Enhancement failed; raw TTS output was not returned: {exc}",
+            )
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
@@ -496,7 +514,7 @@ async def _handle_speak_optimized(arguments: dict[str, object]) -> dict[str, obj
     enhanced_duration_ms = result.duration_ms
     enhanced_sample_rate = result.sample_rate
 
-    enhance = arguments.get("enhance", True)
+    enhance = arguments.get("enhance", False)
     if enhance:
         try:
             from clipcannon.voice.enhance import enhance_speech
@@ -505,11 +523,16 @@ async def _handle_speak_optimized(arguments: dict[str, object]) -> dict[str, obj
             enhance_speech(result.audio_path, enhanced_path)
             enhanced_audio_path = enhanced_path
             import soundfile as _sf
+
             _info = _sf.info(str(enhanced_path))
             enhanced_duration_ms = int(_info.duration * 1000)
             enhanced_sample_rate = _info.samplerate
         except Exception as exc:
-            logger.warning("Enhancement failed, using raw TTS output: %s", exc)
+            logger.exception("Optimized enhancement failed for voice %s", voice_name)
+            return _error(
+                "ENHANCEMENT_FAILED",
+                f"Enhancement failed; raw TTS output was not returned: {exc}",
+            )
 
     return {
         "audio_asset_id": asset_id,

@@ -14,18 +14,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-REAL_VOCALS = (
-    Path.home()
-    / ".clipcannon"
-    / "projects"
-    / "proj_76961210"
-    / "stems"
-    / "vocals.wav"
-)
+REAL_VOCALS = Path.home() / ".clipcannon" / "projects" / "proj_76961210" / "stems" / "vocals.wav"
 
 HAVE_VOCALS = REAL_VOCALS.exists()
 SKIP_NO_VOCALS = pytest.mark.skipif(
-    not HAVE_VOCALS, reason="Real project vocals.wav not available",
+    not HAVE_VOCALS,
+    reason="Real project vocals.wav not available",
 )
 
 
@@ -157,7 +151,9 @@ class TestEmbeddingExtraction:
         assert emb.dtype == np.float32
 
     def test_same_audio_high_similarity(
-        self, segment_a: Path, segment_b: Path,
+        self,
+        segment_a: Path,
+        segment_b: Path,
     ) -> None:
         """Two segments from the same speaker have cosine similarity > 0.7."""
         from clipcannon.voice.verify import build_reference_embedding
@@ -165,14 +161,14 @@ class TestEmbeddingExtraction:
         emb_a = build_reference_embedding([segment_a])
         emb_b = build_reference_embedding([segment_b])
 
-        cos_sim = float(
-            np.dot(emb_a, emb_b)
-            / (np.linalg.norm(emb_a) * np.linalg.norm(emb_b))
-        )
+        cos_sim = float(np.dot(emb_a, emb_b) / (np.linalg.norm(emb_a) * np.linalg.norm(emb_b)))
         assert cos_sim > 0.7, f"Same-speaker cosine similarity too low: {cos_sim:.3f}"
 
     def test_build_reference_embedding_from_3_clips(
-        self, segment_a: Path, segment_b: Path, segment_c: Path,
+        self,
+        segment_a: Path,
+        segment_b: Path,
+        segment_c: Path,
     ) -> None:
         """Average embedding from 3 clips has shape (2048,) and is L2-normalized."""
         from clipcannon.voice.verify import build_reference_embedding
@@ -211,7 +207,9 @@ class TestGateSanity:
         assert "snr_db" in details
 
     def test_gate_sanity_fails_silent_audio(
-        self, silent_wav: Path, segment_a: Path,
+        self,
+        silent_wav: Path,
+        segment_a: Path,
     ) -> None:
         """Gate 1 fails on a completely silent audio file (low SNR)."""
         from clipcannon.voice.verify import VoiceVerifier, build_reference_embedding
@@ -220,7 +218,8 @@ class TestGateSanity:
         verifier = VoiceVerifier(ref_emb, threshold=0.50)
 
         passed, details = verifier.gate_sanity(
-            silent_wav, "hello world this is a test",
+            silent_wav,
+            "hello world this is a test",
         )
         assert not passed, f"Gate 1 should fail on silence: {details}"
 
@@ -235,7 +234,9 @@ class TestGateIdentity:
     """Tests for Gate 3: speaker identity verification."""
 
     def test_gate_identity_passes_same_speaker(
-        self, segment_a: Path, segment_b: Path,
+        self,
+        segment_a: Path,
+        segment_b: Path,
     ) -> None:
         """Gate 3 passes when reference and test are same speaker."""
         from clipcannon.voice.verify import VoiceVerifier, build_reference_embedding
@@ -258,12 +259,14 @@ class TestVerifyPipeline:
     """Tests for the full verify() pipeline."""
 
     def test_verify_returns_result(
-        self, segment_a: Path, segment_b: Path,
+        self,
+        segment_a: Path,
+        segment_b: Path,
     ) -> None:
         """Full verify() returns a VerificationResult with all fields."""
         from clipcannon.voice.verify import (
-            VoiceVerifier,
             VerificationResult,
+            VoiceVerifier,
             build_reference_embedding,
         )
 
@@ -287,7 +290,9 @@ class TestVerifyPipeline:
         assert isinstance(result.gate_details, dict)
 
     def test_verify_silent_fails_at_sanity(
-        self, segment_a: Path, silent_wav: Path,
+        self,
+        segment_a: Path,
+        silent_wav: Path,
     ) -> None:
         """Verify on silent audio fails at the sanity gate."""
         from clipcannon.voice.verify import VoiceVerifier, build_reference_embedding

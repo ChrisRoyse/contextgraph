@@ -4,6 +4,7 @@ Generates FFmpeg filter expressions for text-based overlays (lower thirds,
 title cards, CTAs) and image-based overlays (logos, watermarks). Each
 overlay type has specific positioning, styling, and animation behavior.
 """
+
 from __future__ import annotations
 
 import logging
@@ -116,8 +117,7 @@ def build_lower_third_filter(
         bar_y = f"(h-{bar_height})/2"
 
     filters.append(
-        f"drawbox=x=0:y={bar_y}:w=iw:h={bar_height}"
-        f":color={bg_color_fmt}:t=fill:{time_enable}"
+        f"drawbox=x=0:y={bar_y}:w=iw:h={bar_height}:color={bg_color_fmt}:t=fill:{time_enable}"
     )
 
     # Main text
@@ -168,10 +168,7 @@ def build_title_card_filter(
     text_color_fmt = _hex_to_ffmpeg_color(text_color)
 
     # Full-screen background
-    filters.append(
-        f"drawbox=x=0:y=0:w=iw:h=ih"
-        f":color={bg_color_fmt}:t=fill:{time_enable}"
-    )
+    filters.append(f"drawbox=x=0:y=0:w=iw:h=ih:color={bg_color_fmt}:t=fill:{time_enable}")
 
     # Centered text
     filters.append(
@@ -285,24 +282,51 @@ def build_overlay_filters(
     """
     if overlay_type == "lower_third":
         return build_lower_third_filter(
-            text, subtitle, position, start_ms, end_ms,
-            font, font_size, text_color, bg_color, bg_opacity,
-            animation, animation_duration_ms,
+            text,
+            subtitle,
+            position,
+            start_ms,
+            end_ms,
+            font,
+            font_size,
+            text_color,
+            bg_color,
+            bg_opacity,
+            animation,
+            animation_duration_ms,
         )
     elif overlay_type == "title_card":
         return build_title_card_filter(
-            text, start_ms, end_ms, font_size, text_color,
-            bg_color, bg_opacity, animation, animation_duration_ms,
+            text,
+            start_ms,
+            end_ms,
+            font_size,
+            text_color,
+            bg_color,
+            bg_opacity,
+            animation,
+            animation_duration_ms,
         )
     elif overlay_type == "watermark":
         return build_watermark_filter(
-            text, position, start_ms, end_ms, font_size,
-            text_color, opacity,
+            text,
+            position,
+            start_ms,
+            end_ms,
+            font_size,
+            text_color,
+            opacity,
         )
     elif overlay_type == "cta":
         return build_cta_filter(
-            text, position, start_ms, end_ms, font_size,
-            text_color, bg_color, bg_opacity,
+            text,
+            position,
+            start_ms,
+            end_ms,
+            font_size,
+            text_color,
+            bg_color,
+            bg_opacity,
         )
     elif overlay_type == "logo":
         if image_path:
@@ -311,8 +335,13 @@ def build_overlay_filters(
             pos = _POSITION_MAP.get(position, _POSITION_MAP["top_right"])
             return [f"overlay=x={pos[0]}:y={pos[1]}:{time_enable}"]
         return build_watermark_filter(
-            text or "LOGO", position, start_ms, end_ms,
-            font_size, text_color, opacity,
+            text or "LOGO",
+            position,
+            start_ms,
+            end_ms,
+            font_size,
+            text_color,
+            opacity,
         )
     else:
         raise ValueError(f"Unknown overlay type: {overlay_type!r}")

@@ -6,9 +6,7 @@ Each test verifies:
   2. The context buffer state (source of truth: _context deque)
   3. Frame passthrough (source of truth: pushed frames)
 """
-import asyncio
 
-import numpy as np
 import pytest
 
 from voiceagent.audio.semantic_turn_detector import (
@@ -27,6 +25,7 @@ def detector():
 # ------------------------------------------------------------------
 # Unit tests: model loading and inference
 # ------------------------------------------------------------------
+
 
 class TestModelLoading:
     def test_not_initialized_before_first_use(self, detector):
@@ -55,6 +54,7 @@ class TestModelLoading:
 # ------------------------------------------------------------------
 # Happy path: complete utterances → high EOU probability
 # ------------------------------------------------------------------
+
 
 class TestCompleteUtterances:
     """Verify the model correctly identifies complete turns."""
@@ -100,6 +100,7 @@ class TestCompleteUtterances:
 # Happy path: incomplete utterances → low EOU probability
 # ------------------------------------------------------------------
 
+
 class TestIncompleteUtterances:
     """Verify the model correctly identifies incomplete turns."""
 
@@ -136,6 +137,7 @@ class TestIncompleteUtterances:
 # Edge cases
 # ------------------------------------------------------------------
 
+
 class TestEdgeCases:
     def test_empty_text_returns_zero(self, detector):
         """Empty text should not crash, returns 0.0."""
@@ -162,7 +164,9 @@ class TestEdgeCases:
             detector._context.append(
                 {"role": "user", "content": f"Message {i}"},
             )
-        print(f"EDGE: context size after {MAX_CONTEXT_TURNS + 5} appends = {len(detector._context)}")
+        print(
+            f"EDGE: context size after {MAX_CONTEXT_TURNS + 5} appends = {len(detector._context)}"
+        )
         assert len(detector._context) == MAX_CONTEXT_TURNS
 
     def test_uninitialized_predict_returns_zero(self, detector):
@@ -176,6 +180,7 @@ class TestEdgeCases:
 # Pipecat frame processing integration
 # ------------------------------------------------------------------
 
+
 class TestFrameProcessing:
     @pytest.mark.asyncio
     async def test_transcription_frame_triggers_prediction(self, detector):
@@ -184,7 +189,6 @@ class TestFrameProcessing:
 
         # Track pushed frames
         pushed = []
-        original_push = detector.push_frame
 
         async def capture_push(frame, direction):
             pushed.append(frame)
@@ -197,6 +201,7 @@ class TestFrameProcessing:
             timestamp="2026-04-03T00:00:00",
         )
         from pipecat.processors.frame_processor import FrameDirection
+
         await detector.process_frame(frame, FrameDirection.DOWNSTREAM)
 
         # Source of truth 1: _last_eou_prob was updated
@@ -221,8 +226,10 @@ class TestFrameProcessing:
         from pipecat.processors.frame_processor import FrameDirection
 
         pushed = []
+
         async def capture_push(frame, direction):
             pushed.append(frame)
+
         detector.push_frame = capture_push
 
         frame = TTSStartedFrame()
@@ -258,6 +265,7 @@ class TestFrameProcessing:
 # ------------------------------------------------------------------
 # Performance verification
 # ------------------------------------------------------------------
+
 
 class TestPerformance:
     def test_inference_under_50ms(self, detector):

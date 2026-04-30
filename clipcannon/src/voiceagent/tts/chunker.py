@@ -32,12 +32,15 @@ class SentenceChunker:
 
         words = buffer.split()
         if len(words) > self.MAX_WORDS:
-            return " ".join(words[:self.MAX_WORDS])
+            return " ".join(words[: self.MAX_WORDS])
 
         return None
 
     def _find_boundary(
-        self, buffer: str, delimiters: list[str], min_position: int = 0,
+        self,
+        buffer: str,
+        delimiters: list[str],
+        min_position: int = 0,
     ) -> str | None:
         """Find the earliest delimiter that yields a chunk with enough words.
 
@@ -50,7 +53,7 @@ class SentenceChunker:
         for delim in delimiters:
             idx = buffer.find(delim)
             if idx >= min_position:
-                candidate = buffer[:idx + 1].strip()
+                candidate = buffer[: idx + 1].strip()
                 candidates.append((idx, candidate))
 
         candidates.sort(key=lambda x: x[0])

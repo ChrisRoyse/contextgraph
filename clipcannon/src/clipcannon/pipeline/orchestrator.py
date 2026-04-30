@@ -409,11 +409,9 @@ class PipelineOrchestrator:
             )
             return result
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             elapsed_ms = int((time.monotonic() - start) * 1000)
-            error_msg = (
-                f"Stage '{stage.name}' timed out after {stage.timeout_s}s"
-            )
+            error_msg = f"Stage '{stage.name}' timed out after {stage.timeout_s}s"
             logger.error(error_msg)
             update_stream_status(
                 db_path,

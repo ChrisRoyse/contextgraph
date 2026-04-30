@@ -18,29 +18,61 @@ from phoenix.errors import ExpressionError
 # ---------------------------------------------------------------------------
 
 ARKIT_BLENDSHAPE_NAMES: list[str] = [
-    "eyeBlinkLeft", "eyeLookDownLeft", "eyeLookInLeft",
-    "eyeLookOutLeft", "eyeLookUpLeft", "eyeSquintLeft",
-    "eyeWideLeft", "eyeBlinkRight", "eyeLookDownRight",
-    "eyeLookInRight", "eyeLookOutRight", "eyeLookUpRight",
-    "eyeSquintRight", "eyeWideRight", "jawForward",
-    "jawLeft", "jawRight", "jawOpen",
-    "mouthClose", "mouthFunnel", "mouthPucker",
-    "mouthLeft", "mouthRight", "mouthSmileLeft",
-    "mouthSmileRight", "mouthFrownLeft", "mouthFrownRight",
-    "mouthDimpleLeft", "mouthDimpleRight", "mouthStretchLeft",
-    "mouthStretchRight", "mouthRollLower", "mouthRollUpper",
-    "mouthShrugLower", "mouthShrugUpper", "mouthPressLeft",
-    "mouthPressRight", "mouthLowerDownLeft", "mouthLowerDownRight",
-    "mouthUpperUpLeft", "mouthUpperUpRight", "browDownLeft",
-    "browDownRight", "browInnerUp", "browOuterUpLeft",
-    "browOuterUpRight", "cheekPuff", "cheekSquintLeft",
-    "cheekSquintRight", "noseSneerLeft", "noseSneerRight",
+    "eyeBlinkLeft",
+    "eyeLookDownLeft",
+    "eyeLookInLeft",
+    "eyeLookOutLeft",
+    "eyeLookUpLeft",
+    "eyeSquintLeft",
+    "eyeWideLeft",
+    "eyeBlinkRight",
+    "eyeLookDownRight",
+    "eyeLookInRight",
+    "eyeLookOutRight",
+    "eyeLookUpRight",
+    "eyeSquintRight",
+    "eyeWideRight",
+    "jawForward",
+    "jawLeft",
+    "jawRight",
+    "jawOpen",
+    "mouthClose",
+    "mouthFunnel",
+    "mouthPucker",
+    "mouthLeft",
+    "mouthRight",
+    "mouthSmileLeft",
+    "mouthSmileRight",
+    "mouthFrownLeft",
+    "mouthFrownRight",
+    "mouthDimpleLeft",
+    "mouthDimpleRight",
+    "mouthStretchLeft",
+    "mouthStretchRight",
+    "mouthRollLower",
+    "mouthRollUpper",
+    "mouthShrugLower",
+    "mouthShrugUpper",
+    "mouthPressLeft",
+    "mouthPressRight",
+    "mouthLowerDownLeft",
+    "mouthLowerDownRight",
+    "mouthUpperUpLeft",
+    "mouthUpperUpRight",
+    "browDownLeft",
+    "browDownRight",
+    "browInnerUp",
+    "browOuterUpLeft",
+    "browOuterUpRight",
+    "cheekPuff",
+    "cheekSquintLeft",
+    "cheekSquintRight",
+    "noseSneerLeft",
+    "noseSneerRight",
     "tongueOut",
 ]
 
-BLENDSHAPE_INDEX: dict[str, int] = {
-    name: i for i, name in enumerate(ARKIT_BLENDSHAPE_NAMES)
-}
+BLENDSHAPE_INDEX: dict[str, int] = {name: i for i, name in enumerate(ARKIT_BLENDSHAPE_NAMES)}
 
 NUM_ARKIT_BLENDSHAPES = 52
 NUM_FLAME_EXPRESSIONS = 53
@@ -54,6 +86,7 @@ def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
 # ---------------------------------------------------------------------------
 # BlendshapeFrame dataclass
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class BlendshapeFrame:
@@ -78,7 +111,8 @@ class BlendshapeFrame:
             )
         if np.any(np.isnan(self.coefficients)):
             raise ExpressionError(
-                "BlendshapeFrame coefficients contain NaN values", {},
+                "BlendshapeFrame coefficients contain NaN values",
+                {},
             )
 
     def get(self, name: str) -> float:
@@ -106,12 +140,15 @@ class BlendshapeFrame:
 # Abstract base
 # ---------------------------------------------------------------------------
 
+
 class Audio2FaceAdapter(abc.ABC):
     """Abstract base for audio-to-blendshape adapters."""
 
     @abc.abstractmethod
     def process_audio_chunk(
-        self, audio: np.ndarray, sr: int,
+        self,
+        audio: np.ndarray,
+        sr: int,
     ) -> BlendshapeFrame:
         """Convert an audio chunk to a BlendshapeFrame.
 
@@ -131,6 +168,7 @@ class Audio2FaceAdapter(abc.ABC):
 # ---------------------------------------------------------------------------
 # BlendshapeToFLAME: ARKit -> FLAME mapping
 # ---------------------------------------------------------------------------
+
 
 class BlendshapeToFLAME:
     """Maps 52 ARKit blendshapes to FLAME's 53 expression coefficients.
@@ -171,17 +209,27 @@ class BlendshapeToFLAME:
             m[fi, idx[name]] = w
 
         # Jaw and mouth (FLAME 0-9)
-        _s(0, "jawOpen", 1.8);       _s(1, "jawForward", 1.2)
-        _s(2, "jawLeft", 1.0);       _s(3, "jawRight", 1.0)
-        _s(4, "mouthClose", -1.0);   _s(5, "mouthFunnel", 1.5)
-        _s(6, "mouthPucker", 1.5);   _s(7, "mouthLeft", 1.0)
-        _s(8, "mouthRight", 1.0);    _s(9, "mouthRollLower", 1.2)
+        _s(0, "jawOpen", 1.8)
+        _s(1, "jawForward", 1.2)
+        _s(2, "jawLeft", 1.0)
+        _s(3, "jawRight", 1.0)
+        _s(4, "mouthClose", -1.0)
+        _s(5, "mouthFunnel", 1.5)
+        _s(6, "mouthPucker", 1.5)
+        _s(7, "mouthLeft", 1.0)
+        _s(8, "mouthRight", 1.0)
+        _s(9, "mouthRollLower", 1.2)
         # Lips (FLAME 10-19)
-        _s(10, "mouthRollUpper", 1.2); _s(11, "mouthShrugLower", 1.0)
-        _s(12, "mouthShrugUpper", 1.0); _s(13, "mouthSmileLeft", 1.5)
-        _s(14, "mouthSmileRight", 1.5); _s(15, "mouthFrownLeft", 1.5)
-        _s(16, "mouthFrownRight", 1.5); _s(17, "mouthStretchLeft", 1.0)
-        _s(18, "mouthStretchRight", 1.0); _s(19, "mouthPressLeft", 0.8)
+        _s(10, "mouthRollUpper", 1.2)
+        _s(11, "mouthShrugLower", 1.0)
+        _s(12, "mouthShrugUpper", 1.0)
+        _s(13, "mouthSmileLeft", 1.5)
+        _s(14, "mouthSmileRight", 1.5)
+        _s(15, "mouthFrownLeft", 1.5)
+        _s(16, "mouthFrownRight", 1.5)
+        _s(17, "mouthStretchLeft", 1.0)
+        _s(18, "mouthStretchRight", 1.0)
+        _s(19, "mouthPressLeft", 0.8)
         # Cheeks and nose (FLAME 20-29)
         _s(20, "mouthPressRight", 0.8)
         _s(21, "mouthLowerDownLeft", 1.2)
@@ -189,13 +237,18 @@ class BlendshapeToFLAME:
         _s(23, "mouthUpperUpLeft", 1.2)
         _s(24, "mouthUpperUpRight", 1.2)
         _s(25, "cheekPuff", 1.5)
-        _s(26, "cheekSquintLeft", 1.0); _s(27, "cheekSquintRight", 1.0)
-        _s(28, "noseSneerLeft", 1.0);   _s(29, "noseSneerRight", 1.0)
+        _s(26, "cheekSquintLeft", 1.0)
+        _s(27, "cheekSquintRight", 1.0)
+        _s(28, "noseSneerLeft", 1.0)
+        _s(29, "noseSneerRight", 1.0)
         # Brows (FLAME 30-39)
-        _s(30, "browDownLeft", 1.5);  _s(31, "browDownRight", 1.5)
-        _s(32, "browInnerUp", 1.5);   _s(33, "browOuterUpLeft", 1.2)
+        _s(30, "browDownLeft", 1.5)
+        _s(31, "browDownRight", 1.5)
+        _s(32, "browInnerUp", 1.5)
+        _s(33, "browOuterUpLeft", 1.2)
         _s(34, "browOuterUpRight", 1.2)
-        _s(35, "mouthDimpleLeft", 0.8); _s(36, "mouthDimpleRight", 0.8)
+        _s(35, "mouthDimpleLeft", 0.8)
+        _s(36, "mouthDimpleRight", 0.8)
         # Composite brow expressions
         m[37, idx["browInnerUp"]] = 0.5
         m[37, idx["browOuterUpLeft"]] = 0.5
@@ -205,11 +258,16 @@ class BlendshapeToFLAME:
         m[39, idx["browOuterUpLeft"]] = 0.3
         m[39, idx["browOuterUpRight"]] = 0.3
         # Eyes (FLAME 40-49)
-        _s(40, "eyeBlinkLeft", 1.5);  _s(41, "eyeBlinkRight", 1.5)
-        _s(42, "eyeWideLeft", 1.2);   _s(43, "eyeWideRight", 1.2)
-        _s(44, "eyeSquintLeft", 1.0); _s(45, "eyeSquintRight", 1.0)
-        _s(46, "eyeLookUpLeft", 0.8); _s(47, "eyeLookUpRight", 0.8)
-        _s(48, "eyeLookDownLeft", 0.8); _s(49, "eyeLookDownRight", 0.8)
+        _s(40, "eyeBlinkLeft", 1.5)
+        _s(41, "eyeBlinkRight", 1.5)
+        _s(42, "eyeWideLeft", 1.2)
+        _s(43, "eyeWideRight", 1.2)
+        _s(44, "eyeSquintLeft", 1.0)
+        _s(45, "eyeSquintRight", 1.0)
+        _s(46, "eyeLookUpLeft", 0.8)
+        _s(47, "eyeLookUpRight", 0.8)
+        _s(48, "eyeLookDownLeft", 0.8)
+        _s(49, "eyeLookDownRight", 0.8)
         # Tongue and misc (FLAME 50-52)
         _s(50, "tongueOut", 1.5)
         m[51, idx["eyeLookInLeft"]] = 0.5

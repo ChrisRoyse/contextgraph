@@ -167,10 +167,8 @@ def _run_paddleocr_on_frames(
         RuntimeError: If the OCR subprocess fails.
     """
     import os
-    import subprocess
     import site
-
-    from PIL import Image
+    import subprocess
 
     # Build the LD_LIBRARY_PATH for PaddlePaddle-GPU
     cu13_lib = os.path.join(site.getsitepackages()[0], "nvidia", "cu13", "lib")
@@ -315,9 +313,7 @@ print(json.dumps({{'text_records': text_records, 'change_events': change_events}
 
     if proc.returncode != 0:
         stderr_tail = proc.stderr[-500:] if proc.stderr else ""
-        raise RuntimeError(
-            f"PaddleOCR subprocess failed (exit {proc.returncode}): {stderr_tail}"
-        )
+        raise RuntimeError(f"PaddleOCR subprocess failed (exit {proc.returncode}): {stderr_tail}")
 
     # Log progress messages from subprocess stderr
     for line in (proc.stderr or "").strip().split("\n"):
@@ -330,8 +326,7 @@ print(json.dumps({{'text_records': text_records, 'change_events': change_events}
     except json.JSONDecodeError as exc:
         stdout_tail = proc.stdout[-200:] if proc.stdout else ""
         raise RuntimeError(
-            f"PaddleOCR subprocess returned invalid JSON: {exc}. "
-            f"stdout tail: {stdout_tail}"
+            f"PaddleOCR subprocess returned invalid JSON: {exc}. stdout tail: {stdout_tail}"
         ) from exc
 
     text_records = result.get("text_records", [])

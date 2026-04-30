@@ -42,9 +42,7 @@ DISCOVERY_TOOL_DEFINITIONS: list[Tool] = [
                 },
                 "target_duration_s": {
                     "type": "integer",
-                    "description": (
-                        "Target clip duration in seconds (default 30, range 5-180)"
-                    ),
+                    "description": ("Target clip duration in seconds (default 30, range 5-180)"),
                     "default": 30,
                     "minimum": 5,
                     "maximum": 180,

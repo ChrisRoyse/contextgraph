@@ -165,12 +165,12 @@ def _detect_faces_mediapipe(frame_path: Path) -> list[FaceDetection]:
         half_w, half_h = img_w // 2, img_h // 2
 
         quadrants = [
-            (half_w, 0, img_w, img_h, half_w, 0),       # right half
-            (0, 0, half_w, img_h, 0, 0),                 # left half
+            (half_w, 0, img_w, img_h, half_w, 0),  # right half
+            (0, 0, half_w, img_h, 0, 0),  # left half
             (half_w, half_h, img_w, img_h, half_w, half_h),  # bottom-right
-            (0, half_h, half_w, img_h, 0, half_h),       # bottom-left
-            (half_w, 0, img_w, half_h, half_w, 0),       # top-right
-            (0, 0, half_w, half_h, 0, 0),                # top-left
+            (0, half_h, half_w, img_h, 0, half_h),  # bottom-left
+            (half_w, 0, img_w, half_h, half_w, 0),  # top-right
+            (0, 0, half_w, half_h, 0, 0),  # top-left
         ]
 
         import tempfile
@@ -185,12 +185,17 @@ def _detect_faces_mediapipe(frame_path: Path) -> list[FaceDetection]:
 
             if crop_result.detections:
                 faces = _parse_mediapipe_detections(
-                    crop_result.detections, offset_x, offset_y,
+                    crop_result.detections,
+                    offset_x,
+                    offset_y,
                 )
                 if faces:
                     logger.info(
                         "Face found in quadrant crop (%d,%d)-(%d,%d)",
-                        x1, y1, x2, y2,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
                     )
                     return faces
 
@@ -223,9 +228,7 @@ def _parse_mediapipe_detections(
         w = bbox.width
         h = bbox.height
         conf = float(detection.categories[0].score)
-        faces.append(
-            FaceDetection(x=x, y=y, width=w, height=h, confidence=conf)
-        )
+        faces.append(FaceDetection(x=x, y=y, width=w, height=h, confidence=conf))
     return faces
 
 
@@ -414,16 +417,22 @@ def get_crop_for_scene(
     # Extreme closeup with safe framing: always center, ignore face
     if shot_type == "extreme_closeup" and crop_rec == "safe_for_vertical":
         return compute_crop_region(
-            source_w, source_h, target_aspect,
-            face_position_x=0.5, face_position_y=0.5,
+            source_w,
+            source_h,
+            target_aspect,
+            face_position_x=0.5,
+            face_position_y=0.5,
         )
 
     # Wide shots with landscape framing get a wider safe area to
     # preserve more context around the subject
     if shot_type == "wide" and crop_rec == "keep_landscape" and face_detected:
         return compute_crop_region(
-            source_w, source_h, target_aspect,
-            face_position_x=face_x, face_position_y=face_y,
+            source_w,
+            source_h,
+            target_aspect,
+            face_position_x=face_x,
+            face_position_y=face_y,
             safe_area_pct=0.9,
         )
 
@@ -431,8 +440,11 @@ def get_crop_for_scene(
     pos_x = face_x if face_detected else 0.5
     pos_y = face_y if face_detected else 0.5
     return compute_crop_region(
-        source_w, source_h, target_aspect,
-        face_position_x=pos_x, face_position_y=pos_y,
+        source_w,
+        source_h,
+        target_aspect,
+        face_position_x=pos_x,
+        face_position_y=pos_y,
     )
 
 
@@ -463,11 +475,7 @@ def smooth_crop_positions(
     prev_x = float(crop_regions[0].x)
 
     for i, region in enumerate(crop_regions):
-        smooth_x = (
-            float(region.x)
-            if i == 0
-            else alpha * region.x + (1 - alpha) * prev_x
-        )
+        smooth_x = float(region.x) if i == 0 else alpha * region.x + (1 - alpha) * prev_x
 
         prev_x = smooth_x
 

@@ -69,7 +69,7 @@ def download_model(name: str, repo_id: str, size_gb: float) -> bool:
         return True
     except ImportError:
         print(f"  [{name}] ERROR: huggingface_hub not installed.")
-        print(f"           Install with: pip install huggingface_hub")
+        print("           Install with: pip install huggingface_hub")
         return False
     except Exception as exc:
         print(f"  [{name}] ERROR: {exc}")
@@ -93,9 +93,9 @@ def download_latentsync() -> bool:
     if not latentsync_dir.exists():
         print("  [latentsync] Cloning ByteDance/LatentSync...")
         result = subprocess.run(
-            ["git", "clone", "https://github.com/bytedance/LatentSync.git",
-             str(latentsync_dir)],
-            capture_output=True, text=True,
+            ["git", "clone", "https://github.com/bytedance/LatentSync.git", str(latentsync_dir)],
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print(f"  [latentsync] ERROR: git clone failed: {result.stderr.strip()[:200]}")

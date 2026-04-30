@@ -4,7 +4,6 @@ Source of truth: observer.stats (SessionStats dataclass).
 Each test verifies the stats object reflects the correct state
 after simulated pipeline events.
 """
-import asyncio
 
 import pytest
 
@@ -19,6 +18,7 @@ def observer():
 # ------------------------------------------------------------------
 # SessionStats unit tests
 # ------------------------------------------------------------------
+
 
 class TestSessionStats:
     def test_empty_stats(self):
@@ -45,6 +45,7 @@ class TestSessionStats:
 # Observer frame processing
 # ------------------------------------------------------------------
 
+
 class TestObserverFrames:
     def test_initializes_clean(self, observer):
         assert observer.stats.turn_count == 0
@@ -53,6 +54,7 @@ class TestObserverFrames:
     @pytest.mark.asyncio
     async def test_user_started_activates(self, observer):
         from pipecat.frames.frames import UserStartedSpeakingFrame
+
         await observer.on_push_frame(None, UserStartedSpeakingFrame(), None, None)
         assert observer._turn_active is True
         print(f"FSV: turn_active={observer._turn_active}")
@@ -60,6 +62,7 @@ class TestObserverFrames:
     @pytest.mark.asyncio
     async def test_user_stopped_records_time(self, observer):
         from pipecat.frames.frames import UserStartedSpeakingFrame, UserStoppedSpeakingFrame
+
         await observer.on_push_frame(None, UserStartedSpeakingFrame(), None, None)
         await observer.on_push_frame(None, UserStoppedSpeakingFrame(), None, None)
         assert observer._user_stop > 0
@@ -69,6 +72,8 @@ class TestObserverFrames:
     @pytest.mark.asyncio
     async def test_full_turn_records_stats(self, observer):
         """Simulate a complete turn and verify stats are populated."""
+        import time
+
         from pipecat.frames.frames import (
             LLMFullResponseStartFrame,
             TranscriptionFrame,
@@ -77,19 +82,25 @@ class TestObserverFrames:
             UserStartedSpeakingFrame,
             UserStoppedSpeakingFrame,
         )
-        import time
 
         await observer.on_push_frame(None, UserStartedSpeakingFrame(), None, None)
         time.sleep(0.01)  # simulate speech
         await observer.on_push_frame(None, UserStoppedSpeakingFrame(), None, None)
         time.sleep(0.01)  # simulate ASR processing
-        await observer.on_push_frame(None, TranscriptionFrame(text="hello", user_id="t", timestamp="t"), None, None)
+        await observer.on_push_frame(
+            None, TranscriptionFrame(text="hello", user_id="t", timestamp="t"), None, None
+        )
         time.sleep(0.01)  # simulate LLM processing
         await observer.on_push_frame(None, LLMFullResponseStartFrame(), None, None)
         time.sleep(0.01)  # simulate TTS processing
         await observer.on_push_frame(None, TTSStartedFrame(), None, None)
         time.sleep(0.01)
-        await observer.on_push_frame(None, TTSAudioRawFrame(audio=b"\x00" * 100, sample_rate=24000, num_channels=1), None, None)
+        await observer.on_push_frame(
+            None,
+            TTSAudioRawFrame(audio=b"\x00" * 100, sample_rate=24000, num_channels=1),
+            None,
+            None,
+        )
 
         # Source of truth: stats object
         print(f"FSV: turn_count={observer.stats.turn_count}")
@@ -112,12 +123,16 @@ class TestObserverFrames:
 # Edge cases
 # ------------------------------------------------------------------
 
+
 class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_audio_without_turn_start_ignored(self, observer):
         """Audio frames without a preceding UserStartedSpeaking should be ignored."""
         from pipecat.frames.frames import TTSAudioRawFrame
-        await observer.on_push_frame(None, TTSAudioRawFrame(audio=b"\x00", sample_rate=24000, num_channels=1), None, None)
+
+        await observer.on_push_frame(
+            None, TTSAudioRawFrame(audio=b"\x00", sample_rate=24000, num_channels=1), None, None
+        )
         assert observer.stats.turn_count == 0
         print(f"FSV: orphan audio ignored, turn_count={observer.stats.turn_count}")
 

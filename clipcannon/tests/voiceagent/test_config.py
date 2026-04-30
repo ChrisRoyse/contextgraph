@@ -1,4 +1,5 @@
 """Tests for voiceagent.config module."""
+
 import json
 
 import pytest
@@ -52,11 +53,15 @@ def test_load_config_missing_file_returns_defaults(tmp_path):
 
 def test_load_config_valid_json(tmp_path):
     config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({
-        "asr": {"vad_threshold": 0.7, "endpoint_silence_ms": 800},
-        "tts": {"voice_name": "nova"},
-        "transport": {"port": 9000},
-    }))
+    config_file.write_text(
+        json.dumps(
+            {
+                "asr": {"vad_threshold": 0.7, "endpoint_silence_ms": 800},
+                "tts": {"voice_name": "nova"},
+                "transport": {"port": 9000},
+            }
+        )
+    )
     c = load_config(config_file)
     assert c.asr.vad_threshold == 0.7
     assert c.asr.endpoint_silence_ms == 800
@@ -91,10 +96,14 @@ def test_load_config_partial_preserves_defaults(tmp_path):
 
 def test_load_config_unknown_keys_ignored(tmp_path):
     config_file = tmp_path / "config.json"
-    config_file.write_text(json.dumps({
-        "asr": {"vad_threshold": 0.6, "unknown_field": 42},
-        "totally_unknown_section": {"a": 1},
-    }))
+    config_file.write_text(
+        json.dumps(
+            {
+                "asr": {"vad_threshold": 0.6, "unknown_field": 42},
+                "totally_unknown_section": {"a": 1},
+            }
+        )
+    )
     c = load_config(config_file)
     assert c.asr.vad_threshold == 0.6
 

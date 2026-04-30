@@ -3,13 +3,17 @@
 Creates structured Markdown with YAML-like frontmatter that OCR Provenance
 can ingest as a text document (Markdown passthrough -- no OCR, no GPU).
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from voiceagent.meeting.errors import MeetingTranscriptStoreError
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

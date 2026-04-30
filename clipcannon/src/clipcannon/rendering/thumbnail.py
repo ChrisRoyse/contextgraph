@@ -63,8 +63,7 @@ async def generate_thumbnail(
     filters: list[str] = []
     if crop_region is not None:
         filters.append(
-            f"crop={crop_region.width}:{crop_region.height}"
-            f":{crop_region.x}:{crop_region.y}"
+            f"crop={crop_region.width}:{crop_region.height}:{crop_region.x}:{crop_region.y}"
         )
     filters.append(f"scale={width}:{height}")
 
@@ -73,11 +72,16 @@ async def generate_thumbnail(
     cmd: list[str] = [
         "ffmpeg",
         "-y",
-        "-ss", f"{timestamp_s:.3f}",
-        "-i", str(source_path),
-        "-vf", filter_str,
-        "-frames:v", "1",
-        "-q:v", "2",
+        "-ss",
+        f"{timestamp_s:.3f}",
+        "-i",
+        str(source_path),
+        "-vf",
+        filter_str,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
         str(output_path),
     ]
 

@@ -22,7 +22,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +176,8 @@ def _lbs(
             rel_trans = local_trans - J[:, parent_idx]
             local_T = _make_4x4(local_rot, rel_trans)
             world_transforms[j_idx] = torch.bmm(
-                world_transforms[parent_idx], local_T,
+                world_transforms[parent_idx],
+                local_T,
             )
 
     # Stack all world transforms: (B, J, 4, 4)
@@ -203,10 +203,13 @@ def _lbs(
     T = torch.bmm(W, G_flat).reshape(batch_size, -1, 4, 4)  # (B, V, 4, 4)
 
     # 7. Apply blended transforms to posed vertices
-    v_homo = torch.cat([
-        v_posed,
-        torch.ones(batch_size, v_posed.shape[1], 1, device=device, dtype=dtype),
-    ], dim=-1)  # (B, V, 4)
+    v_homo = torch.cat(
+        [
+            v_posed,
+            torch.ones(batch_size, v_posed.shape[1], 1, device=device, dtype=dtype),
+        ],
+        dim=-1,
+    )  # (B, V, 4)
 
     v_out = torch.einsum("bvij,bvj->bvi", T, v_homo)[:, :, :3]
 
@@ -249,10 +252,13 @@ class FlameModel(nn.Module):
         shapedirs_full = torch.from_numpy(data["shapedirs"]).to(dtype)
         n_shape = min(self.config.num_shape_params, 300)
         n_exp = min(self.config.num_exp_params, 100)
-        shapedirs = torch.cat([
-            shapedirs_full[:, :, :n_shape],
-            shapedirs_full[:, :, 300:300 + n_exp],
-        ], dim=2)
+        shapedirs = torch.cat(
+            [
+                shapedirs_full[:, :, :n_shape],
+                shapedirs_full[:, :, 300 : 300 + n_exp],
+            ],
+            dim=2,
+        )
         self.register_buffer("shapedirs", shapedirs)
 
         # Pose corrective blendshapes
@@ -310,7 +316,10 @@ class FlameModel(nn.Module):
 
         logger.info(
             "FLAME model loaded: %d verts, %d faces, %d shape + %d exp params",
-            self.num_vertices, self.num_faces, n_shape, n_exp,
+            self.num_vertices,
+            self.num_faces,
+            n_shape,
+            n_exp,
         )
 
     def forward(
@@ -371,9 +380,13 @@ class FlameModel(nn.Module):
 
         # Linear Blend Skinning
         vertices = _lbs(
-            betas, full_pose, self.v_template,
-            self.shapedirs, self.posedirs,
-            self.J_regressor, self.parents,
+            betas,
+            full_pose,
+            self.v_template,
+            self.shapedirs,
+            self.posedirs,
+            self.J_regressor,
+            self.parents,
             self.lbs_weights,
         )
 

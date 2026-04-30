@@ -1,4 +1,5 @@
 """Tests for the FastAPI server."""
+
 import sqlite3
 
 import numpy as np

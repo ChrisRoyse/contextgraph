@@ -3,9 +3,9 @@
 Handles dispatch for micro-expression constellation control and
 clone video generation with behavioral state management.
 """
+
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
@@ -16,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 FLAME_PATH = Path.home() / ".clipcannon" / "models" / "{person}" / "flame_params.npz"
 LORA_PATH = Path.home() / ".clipcannon" / "models" / "{person}" / "echov3_lora" / "final"
-REF_IMAGE_PATH = Path.home() / ".clipcannon" / "models" / "{person}" / "reference" / "{person}_portrait.jpg"
+REF_IMAGE_PATH = (
+    Path.home() / ".clipcannon" / "models" / "{person}" / "reference" / "{person}_portrait.jpg"
+)
 AUDIO_REF_PATH = Path.home() / ".clipcannon" / "models" / "{person}" / "reference"
 
 # Cache loaded skill libraries per person
@@ -35,7 +37,9 @@ def _get_skill_library(person: str):
     from phoenix.video.expression_skills import SkillLibrary
 
     flame_path = str(FLAME_PATH).format(person=person)
-    embeddings_path = str(Path.home() / ".clipcannon" / "models" / person / "embeddings" / "all_embeddings.npz")
+    embeddings_path = str(
+        Path.home() / ".clipcannon" / "models" / person / "embeddings" / "all_embeddings.npz"
+    )
 
     if not Path(flame_path).exists():
         raise FileNotFoundError(f"FLAME params not found for '{person}' at {flame_path}")
@@ -58,12 +62,14 @@ async def _handle_list_constellations(arguments: dict) -> dict:
             c = library.get_constellation(name)
             # skill_sequence can be strings or ExpressionSkill objects
             skills = [s if isinstance(s, str) else s.name for s in c.skill_sequence]
-            result.append({
-                "name": name,
-                "emotion": c.emotion,
-                "description": c.description,
-                "skills": skills,
-            })
+            result.append(
+                {
+                    "name": name,
+                    "emotion": c.emotion,
+                    "description": c.description,
+                    "skills": skills,
+                }
+            )
         return {"person": person, "constellations": result, "count": len(result)}
     except Exception as e:
         return _error("CONSTELLATION_ERROR", str(e))
@@ -78,11 +84,13 @@ async def _handle_list_skills(arguments: dict) -> dict:
         for name in skills:
             skill = library.get_skill(name)
             prompt = library.skill_to_prompt(name)
-            result.append({
-                "name": name,
-                "prompt": prompt[:100],
-                "phases": len(skill.phases) if hasattr(skill, 'phases') else 0,
-            })
+            result.append(
+                {
+                    "name": name,
+                    "prompt": prompt[:100],
+                    "phases": len(skill.phases) if hasattr(skill, "phases") else 0,
+                }
+            )
         return {"person": person, "skills": result, "count": len(result)}
     except Exception as e:
         return _error("SKILL_ERROR", str(e))
@@ -104,7 +112,9 @@ async def _handle_generate_video(arguments: dict) -> dict:
     # Check LoRA exists
     lora_path = str(LORA_PATH).format(person=person)
     if not Path(lora_path).exists():
-        return _error("MODEL_NOT_FOUND", f"LoRA not found for '{person}' at {lora_path}. Train first.")
+        return _error(
+            "MODEL_NOT_FOUND", f"LoRA not found for '{person}' at {lora_path}. Train first."
+        )
 
     # Check reference image
     ref_path = str(REF_IMAGE_PATH).format(person=person)
@@ -115,6 +125,7 @@ async def _handle_generate_video(arguments: dict) -> dict:
     try:
         library = _get_skill_library(person)
         from phoenix.video.constellation_controller import ConstellationController
+
         controller = ConstellationController(library)
         controller.set_emotional_state(constellation, intensity)
         # Get the initial prompt (the full constellation description)
@@ -139,31 +150,56 @@ async def _handle_generate_video(arguments: dict) -> dict:
     # Build inference command
     echomimic_dir = "/home/cabdru/echomimic_v3"
     cmd = [
-        "python", f"{echomimic_dir}/infer_flash.py",
-        "--image_path", ref_path,
-        "--audio_path", audio_path,
-        "--prompt", full_prompt,
-        "--negative_prompt", "tears, crying, watery eyes, blurry, distorted, deformed",
-        "--num_inference_steps", "8",
-        "--config_path", f"{echomimic_dir}/config/config.yaml",
-        "--model_name", f"{echomimic_dir}/pretrained_weights/Wan2.1-Fun-V1.1-1.3B-InP",
-        "--ckpt_idx", "50000",
-        "--transformer_path", f"{echomimic_dir}/pretrained_weights/echomimicv3-flash-pro/diffusion_pytorch_model.safetensors",
-        "--lora_path", lora_path,
-        "--save_path", str(Path(output_path).parent),
-        "--wav2vec_model_dir", f"{echomimic_dir}/pretrained_weights/chinese-wav2vec2-base",
-        "--sampler_name", "Flow_DPM++",
-        "--video_length", "249",
-        "--guidance_scale", "7.0",
-        "--audio_guidance_scale", "3.5",
-        "--seed", str(seed),
+        "python",
+        f"{echomimic_dir}/infer_flash.py",
+        "--image_path",
+        ref_path,
+        "--audio_path",
+        audio_path,
+        "--prompt",
+        full_prompt,
+        "--negative_prompt",
+        "tears, crying, watery eyes, blurry, distorted, deformed",
+        "--num_inference_steps",
+        "8",
+        "--config_path",
+        f"{echomimic_dir}/config/config.yaml",
+        "--model_name",
+        f"{echomimic_dir}/pretrained_weights/Wan2.1-Fun-V1.1-1.3B-InP",
+        "--ckpt_idx",
+        "50000",
+        "--transformer_path",
+        f"{echomimic_dir}/pretrained_weights/echomimicv3-flash-pro/diffusion_pytorch_model.safetensors",
+        "--lora_path",
+        lora_path,
+        "--save_path",
+        str(Path(output_path).parent),
+        "--wav2vec_model_dir",
+        f"{echomimic_dir}/pretrained_weights/chinese-wav2vec2-base",
+        "--sampler_name",
+        "Flow_DPM++",
+        "--video_length",
+        "249",
+        "--guidance_scale",
+        "7.0",
+        "--audio_guidance_scale",
+        "3.5",
+        "--seed",
+        str(seed),
         "--enable_teacache",
-        "--teacache_threshold", "0.1",
-        "--num_skip_start_steps", "5",
-        "--weight_dtype", "bfloat16",
-        "--sample_size", "480", "480",
-        "--fps", "25",
-        "--shift", "5.0",
+        "--teacache_threshold",
+        "0.1",
+        "--num_skip_start_steps",
+        "5",
+        "--weight_dtype",
+        "bfloat16",
+        "--sample_size",
+        "480",
+        "480",
+        "--fps",
+        "25",
+        "--shift",
+        "5.0",
     ]
 
     env = os.environ.copy()
@@ -175,8 +211,9 @@ async def _handle_generate_video(arguments: dict) -> dict:
     t0 = time.time()
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
-                                cwd=echomimic_dir, env=env)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=600, cwd=echomimic_dir, env=env
+        )
         elapsed = time.time() - t0
 
         # Find the output file (EchoMimicV3 names it based on image name)
@@ -197,9 +234,11 @@ async def _handle_generate_video(arguments: dict) -> dict:
                 "seed": seed,
             }
         else:
-            return _error("GENERATION_FAILED",
-                          f"Output not found at {expected_output}",
-                          {"stderr": result.stderr[-500:] if result.stderr else ""})
+            return _error(
+                "GENERATION_FAILED",
+                f"Output not found at {expected_output}",
+                {"stderr": result.stderr[-500:] if result.stderr else ""},
+            )
     except subprocess.TimeoutExpired:
         return _error("TIMEOUT", "Video generation timed out after 600s")
     except Exception as e:
@@ -219,6 +258,7 @@ async def _handle_expression_sequence(arguments: dict) -> dict:
     try:
         library = _get_skill_library(person)
         from phoenix.video.constellation_controller import ConstellationController
+
         controller = ConstellationController(library)
         controller.set_emotional_state(constellation, intensity)
         sequence = controller.get_prompt_sequence(duration_s, fps)
@@ -231,7 +271,9 @@ async def _handle_expression_sequence(arguments: dict) -> dict:
             "intensity": intensity,
             "total_frames": len(sequence),
             "duration_s": duration_s,
-            "sample_prompts": [{"frame": idx, "time_s": idx/fps, "prompt": p} for idx, p in sampled],
+            "sample_prompts": [
+                {"frame": idx, "time_s": idx / fps, "prompt": p} for idx, p in sampled
+            ],
         }
     except Exception as e:
         return _error("SEQUENCE_ERROR", str(e))

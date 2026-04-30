@@ -6,6 +6,7 @@ sends platform-specific keyboard shortcuts to toggle mute/unmute.
 Layer 2 control -- Layer 1 is audio-level silence on the virtual mic.
 If xdotool fails (e.g., Wayland), audio silence still prevents leaks.
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,9 +47,7 @@ class MeetingAppController:
             platform: Meeting platform name ("zoom", "google_meet",
                 "teams", "generic") or "auto" for auto-detection.
         """
-        self._platform = (
-            platform if platform != "auto" else self._detect_platform()
-        )
+        self._platform = platform if platform != "auto" else self._detect_platform()
         self._window_id: str | None = None
         logger.info("MeetingAppController: platform=%s", self._platform)
 
@@ -69,15 +68,11 @@ class MeetingAppController:
                     timeout=3,
                 )
                 if result.stdout.strip():
-                    logger.info(
-                        "Detected meeting platform: %s", platform
-                    )
+                    logger.info("Detected meeting platform: %s", platform)
                     return platform
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
-        logger.warning(
-            "No meeting app detected, using generic shortcuts"
-        )
+        logger.warning("No meeting app detected, using generic shortcuts")
         return "generic"
 
     @property
@@ -137,17 +132,11 @@ class MeetingAppController:
                 capture_output=True,
                 timeout=5,
             )
-            logger.debug(
-                "Sent shortcut '%s' to window %s", shortcut, window_id
-            )
+            logger.debug("Sent shortcut '%s' to window %s", shortcut, window_id)
         except FileNotFoundError:
-            raise MeetingBehaviorError(
-                "xdotool not found. Install: apt install xdotool"
-            )
+            raise MeetingBehaviorError("xdotool not found. Install: apt install xdotool")
         except subprocess.TimeoutExpired:
-            logger.warning(
-                "xdotool timed out sending '%s'", shortcut
-            )
+            logger.warning("xdotool timed out sending '%s'", shortcut)
 
     def unmute(self) -> None:
         """Send unmute shortcut to meeting app."""

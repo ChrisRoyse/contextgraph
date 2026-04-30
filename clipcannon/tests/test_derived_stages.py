@@ -3,22 +3,22 @@
 Tests profanity detection, chronemic analysis, highlight scoring,
 and the finalize stage using mock data in a temporary database.
 """
+
 from __future__ import annotations
 
 import asyncio
 import uuid
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from clipcannon.config import ClipCannonConfig
 from clipcannon.db.connection import get_connection
-from clipcannon.db.queries import execute, fetch_all, fetch_one, batch_insert
+from clipcannon.db.queries import batch_insert, execute, fetch_all, fetch_one
 from clipcannon.db.schema import create_project_db
 from clipcannon.pipeline.chronemic import run_chronemic
 from clipcannon.pipeline.finalize import run_finalize
 from clipcannon.pipeline.highlights import run_highlights
-from clipcannon.pipeline.orchestrator import StageResult
 from clipcannon.pipeline.profanity import (
     _compute_content_rating,
     _load_wordlist,
@@ -26,6 +26,9 @@ from clipcannon.pipeline.profanity import (
     run_profanity,
 )
 from clipcannon.provenance import verify_chain
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -52,8 +55,15 @@ def mock_project(tmp_path: Path):
                 duration_ms, resolution, fps, codec, status
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                project_id, "Test Video", "/tmp/test.mp4",
-                "abc123", 180000, "1920x1080", 30.0, "h264", "probed",
+                project_id,
+                "Test Video",
+                "/tmp/test.mp4",
+                "abc123",
+                180000,
+                "1920x1080",
+                30.0,
+                "h264",
+                "probed",
             ),
         )
 
@@ -175,8 +185,16 @@ def mock_project(tmp_path: Path):
         batch_insert(
             conn,
             "reactions",
-            ["project_id", "start_ms", "end_ms", "type", "confidence",
-             "duration_ms", "intensity", "context_transcript"],
+            [
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "type",
+                "confidence",
+                "duration_ms",
+                "intensity",
+                "context_transcript",
+            ],
             reactions_data,
         )
 
@@ -189,40 +207,145 @@ def mock_project(tmp_path: Path):
         batch_insert(
             conn,
             "topics",
-            ["project_id", "start_ms", "end_ms", "label", "keywords",
-             "coherence_score", "semantic_density"],
+            [
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "label",
+                "keywords",
+                "coherence_score",
+                "semantic_density",
+            ],
             topics_data,
         )
 
         # Insert scenes
         scenes_data = [
-            (project_id, 0, 30000, "/tmp/f1.jpg", 15000, 0.9, None, False,
-             None, None, "medium", 0.8, None, 0.7, 0.6, "good", None),
-            (project_id, 30000, 70000, "/tmp/f2.jpg", 50000, 0.85, None, True,
-             0.5, 0.5, "close_up", 0.9, None, 0.8, 0.7, "excellent", None),
-            (project_id, 70000, 120000, "/tmp/f3.jpg", 95000, 0.88, None, True,
-             0.4, 0.6, "medium", 0.85, None, 0.75, 0.65, "good", None),
-            (project_id, 120000, 160000, "/tmp/f4.jpg", 140000, 0.92, None, False,
-             None, None, "wide", 0.7, None, 0.65, 0.5, "fair", None),
-            (project_id, 160000, 180000, "/tmp/f5.jpg", 170000, 0.87, None, True,
-             0.5, 0.5, "close_up", 0.9, None, 0.8, 0.7, "good", None),
+            (
+                project_id,
+                0,
+                30000,
+                "/tmp/f1.jpg",
+                15000,
+                0.9,
+                None,
+                False,
+                None,
+                None,
+                "medium",
+                0.8,
+                None,
+                0.7,
+                0.6,
+                "good",
+                None,
+            ),
+            (
+                project_id,
+                30000,
+                70000,
+                "/tmp/f2.jpg",
+                50000,
+                0.85,
+                None,
+                True,
+                0.5,
+                0.5,
+                "close_up",
+                0.9,
+                None,
+                0.8,
+                0.7,
+                "excellent",
+                None,
+            ),
+            (
+                project_id,
+                70000,
+                120000,
+                "/tmp/f3.jpg",
+                95000,
+                0.88,
+                None,
+                True,
+                0.4,
+                0.6,
+                "medium",
+                0.85,
+                None,
+                0.75,
+                0.65,
+                "good",
+                None,
+            ),
+            (
+                project_id,
+                120000,
+                160000,
+                "/tmp/f4.jpg",
+                140000,
+                0.92,
+                None,
+                False,
+                None,
+                None,
+                "wide",
+                0.7,
+                None,
+                0.65,
+                0.5,
+                "fair",
+                None,
+            ),
+            (
+                project_id,
+                160000,
+                180000,
+                "/tmp/f5.jpg",
+                170000,
+                0.87,
+                None,
+                True,
+                0.5,
+                0.5,
+                "close_up",
+                0.9,
+                None,
+                0.8,
+                0.7,
+                "good",
+                None,
+            ),
         ]
         batch_insert(
             conn,
             "scenes",
-            ["project_id", "start_ms", "end_ms", "key_frame_path",
-             "key_frame_timestamp_ms", "visual_similarity_avg", "dominant_colors",
-             "face_detected", "face_position_x", "face_position_y",
-             "shot_type", "shot_type_confidence", "crop_recommendation",
-             "quality_avg", "quality_min", "quality_classification", "quality_issues"],
+            [
+                "project_id",
+                "start_ms",
+                "end_ms",
+                "key_frame_path",
+                "key_frame_timestamp_ms",
+                "visual_similarity_avg",
+                "dominant_colors",
+                "face_detected",
+                "face_position_x",
+                "face_position_y",
+                "shot_type",
+                "shot_type_confidence",
+                "crop_recommendation",
+                "quality_avg",
+                "quality_min",
+                "quality_classification",
+                "quality_issues",
+            ],
             scenes_data,
         )
 
         # Insert acoustic data
         execute(
             conn,
-            "INSERT INTO acoustic (project_id, avg_volume_db, dynamic_range_db) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO acoustic (project_id, avg_volume_db, dynamic_range_db) VALUES (?, ?, ?)",
             (project_id, -18.5, 24.3),
         )
 
@@ -363,7 +486,10 @@ class TestChronemicStage:
             assert float(w1["words_per_minute"]) >= 0
             assert float(w1["pause_ratio"]) >= 0
             assert w1["label"] in (
-                "fast_dialogue", "normal", "slow_monologue", "dead_air",
+                "fast_dialogue",
+                "normal",
+                "slow_monologue",
+                "dead_air",
             )
         finally:
             conn.close()
@@ -447,17 +573,15 @@ class TestFinalizeStage:
             # Check stream_status has all streams
             statuses = fetch_all(
                 conn,
-                "SELECT stream_name, status FROM stream_status "
-                "WHERE project_id = ?",
+                "SELECT stream_name, status FROM stream_status WHERE project_id = ?",
                 (project_id,),
             )
             stream_names = {str(s["stream_name"]) for s in statuses}
             # All pipeline streams should be tracked
             from clipcannon.db.schema import PIPELINE_STREAMS
+
             for stream in PIPELINE_STREAMS:
-                assert stream in stream_names, (
-                    f"Stream '{stream}' missing from stream_status"
-                )
+                assert stream in stream_names, f"Stream '{stream}' missing from stream_status"
         finally:
             conn.close()
 
@@ -552,10 +676,10 @@ class TestFullDerivedPipeline:
 
             # stream_status has all streams
             from clipcannon.db.schema import PIPELINE_STREAMS
+
             statuses = fetch_all(
                 conn,
-                "SELECT stream_name, status FROM stream_status "
-                "WHERE project_id = ?",
+                "SELECT stream_name, status FROM stream_status WHERE project_id = ?",
                 (project_id,),
             )
             stream_names = {str(s["stream_name"]) for s in statuses}

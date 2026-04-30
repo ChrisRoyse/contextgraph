@@ -297,9 +297,7 @@ class TestCreateEdit:
         assert "edit_id" in result
 
     @pytest.mark.asyncio()
-    async def test_create_edit_segments_in_db(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_create_edit_segments_in_db(self, project_setup: str, tmp_path: Path) -> None:
         """Created edit stores segment rows in edit_segments table."""
         project_id = project_setup
         result = await dispatch_editing_tool(
@@ -334,9 +332,7 @@ class TestCreateEdit:
         assert rows[1]["source_end_ms"] == 25000
 
     @pytest.mark.asyncio()
-    async def test_create_edit_with_captions(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_create_edit_with_captions(self, project_setup: str, tmp_path: Path) -> None:
         """Create edit with captions enabled auto-chunks from transcript."""
         project_id = project_setup
         result = await dispatch_editing_tool(
@@ -356,9 +352,7 @@ class TestCreateEdit:
         assert result["caption_chunks"] >= 0
 
     @pytest.mark.asyncio()
-    async def test_create_edit_nonexistent_project(
-        self, project_setup: str
-    ) -> None:
+    async def test_create_edit_nonexistent_project(self, project_setup: str) -> None:
         """Non-existent project returns error."""
         result = await dispatch_editing_tool(
             "clipcannon_create_edit",
@@ -374,9 +368,7 @@ class TestCreateEdit:
         assert "error" in result
 
     @pytest.mark.asyncio()
-    async def test_create_edit_out_of_range(
-        self, project_setup: str
-    ) -> None:
+    async def test_create_edit_out_of_range(self, project_setup: str) -> None:
         """Segments beyond source duration trigger validation error."""
         project_id = project_setup
         result = await dispatch_editing_tool(
@@ -397,9 +389,7 @@ class TestModifyEdit:
     """Test clipcannon_modify_edit tool."""
 
     @pytest.mark.asyncio()
-    async def test_modify_name(
-        self, project_setup: str
-    ) -> None:
+    async def test_modify_name(self, project_setup: str) -> None:
         """Modify edit name updates DB."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -427,9 +417,7 @@ class TestModifyEdit:
         assert "name" in modify_result["updated_fields"]
 
     @pytest.mark.asyncio()
-    async def test_modify_rendering_rejected(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_modify_rendering_rejected(self, project_setup: str, tmp_path: Path) -> None:
         """Cannot modify edit that is actively rendering."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -465,9 +453,7 @@ class TestModifyEdit:
         )
         assert "error" in modify_result
 
-    async def test_modify_rendered_allowed(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_modify_rendered_allowed(self, project_setup: str, tmp_path: Path) -> None:
         """Can modify a rendered edit — resets to draft."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -508,9 +494,7 @@ class TestEditVersionHistory:
     """Tests for edit version history (P0 iterative editing)."""
 
     @pytest.mark.asyncio()
-    async def test_modify_creates_version(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_modify_creates_version(self, project_setup: str, tmp_path: Path) -> None:
         """Modifying an edit saves the previous state as a version."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -554,9 +538,7 @@ class TestEditVersionHistory:
         assert rows[0]["edl_json"] is not None
 
     @pytest.mark.asyncio()
-    async def test_version_number_increments(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_version_number_increments(self, project_setup: str, tmp_path: Path) -> None:
         """Multiple modifications produce incrementing version numbers."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -589,8 +571,7 @@ class TestEditVersionHistory:
         conn = sqlite3.connect(str(db_file))
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT version_number FROM edit_versions WHERE edit_id = ? "
-            "ORDER BY version_number",
+            "SELECT version_number FROM edit_versions WHERE edit_id = ? ORDER BY version_number",
             (edit_id,),
         ).fetchall()
         conn.close()
@@ -599,9 +580,7 @@ class TestEditVersionHistory:
         assert [r["version_number"] for r in rows] == [1, 2, 3]
 
     @pytest.mark.asyncio()
-    async def test_change_description_generated(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_change_description_generated(self, project_setup: str, tmp_path: Path) -> None:
         """Version change description mentions what was modified."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -650,7 +629,8 @@ class TestEditVersionHistory:
 
     @pytest.mark.asyncio()
     async def test_edit_history_returns_versions(
-        self, project_setup: str,
+        self,
+        project_setup: str,
     ) -> None:
         """edit_history returns all versions including current."""
         project_id = project_setup
@@ -695,9 +675,7 @@ class TestEditVersionHistory:
         assert versions[2]["version_number"] == 1
 
     @pytest.mark.asyncio()
-    async def test_revert_edit_restores_state(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_revert_edit_restores_state(self, project_setup: str, tmp_path: Path) -> None:
         """Reverting to version 1 restores the original name."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -752,9 +730,7 @@ class TestEditVersionHistory:
         assert row["status"] == "draft"
 
     @pytest.mark.asyncio()
-    async def test_revert_creates_version(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_revert_creates_version(self, project_setup: str, tmp_path: Path) -> None:
         """Reverting creates a new version preserving the pre-revert state."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -815,9 +791,7 @@ class TestEditBranching:
     """Tests for edit branching (P4 iterative editing)."""
 
     @pytest.mark.asyncio()
-    async def test_branch_creates_new_edit(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_branch_creates_new_edit(self, project_setup: str, tmp_path: Path) -> None:
         """Branching creates a new edit with parent_edit_id set."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -863,9 +837,7 @@ class TestEditBranching:
         assert row["branch_name"] == "instagram"
 
     @pytest.mark.asyncio()
-    async def test_branch_copies_segments(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_branch_copies_segments(self, project_setup: str, tmp_path: Path) -> None:
         """Branched edit copies all segments from the source."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -913,9 +885,7 @@ class TestEditBranching:
         assert rows[1]["source_end_ms"] == 25000
 
     @pytest.mark.asyncio()
-    async def test_branch_has_new_platform(
-        self, project_setup: str
-    ) -> None:
+    async def test_branch_has_new_platform(self, project_setup: str) -> None:
         """Branched edit has the new target platform."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -946,9 +916,7 @@ class TestEditBranching:
         assert branch_result["target_profile"] == "instagram_reels"
 
     @pytest.mark.asyncio()
-    async def test_list_branches_includes_root_and_branch(
-        self, project_setup: str
-    ) -> None:
+    async def test_list_branches_includes_root_and_branch(self, project_setup: str) -> None:
         """list_branches returns both root and branched edits."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(
@@ -991,9 +959,7 @@ class TestEditBranching:
         assert str(branch_result["edit_id"]) in branch_ids
 
     @pytest.mark.asyncio()
-    async def test_branch_name_stored(
-        self, project_setup: str, tmp_path: Path
-    ) -> None:
+    async def test_branch_name_stored(self, project_setup: str, tmp_path: Path) -> None:
         """Branch name is correctly stored in the database."""
         project_id = project_setup
         create_result = await dispatch_editing_tool(

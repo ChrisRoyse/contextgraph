@@ -13,6 +13,7 @@ RTX 5090 Blackwell (CUDA 13.2) optimizations:
 - CUDA_MODULE_LOADING=LAZY: don't load all CUDA modules at context init
 - TF32 matmul: use tensor cores for FP32 operations (2x throughput)
 """
+
 from __future__ import annotations
 
 import gc
@@ -25,11 +26,7 @@ logger = logging.getLogger(__name__)
 
 # --- Set CUDA env vars BEFORE any torch import ---
 # These must be set before the first torch.cuda call or they have no effect.
-_CUDA_ALLOC_CONF = (
-    "expandable_segments:True,"
-    "max_split_size_mb:512,"
-    "garbage_collection_threshold:0.6"
-)
+_CUDA_ALLOC_CONF = "expandable_segments:True,max_split_size_mb:512,garbage_collection_threshold:0.6"
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", _CUDA_ALLOC_CONF)
 os.environ.setdefault("CUDA_MODULE_LOADING", "LAZY")
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
@@ -82,13 +79,15 @@ def check_vram(required_mb: int, operation: str) -> None:
     if not torch.cuda.is_available():
         raise RuntimeError(f"CUDA not available for {operation}")
 
-    free_mb = (torch.cuda.get_device_properties(0).total_memory
-               - torch.cuda.memory_allocated()) / 1e6
+    free_mb = (
+        torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+    ) / 1e6
     if free_mb < required_mb:
         # Try cleanup first
         gpu_cleanup()
-        free_mb = (torch.cuda.get_device_properties(0).total_memory
-                   - torch.cuda.memory_allocated()) / 1e6
+        free_mb = (
+            torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+        ) / 1e6
         if free_mb < required_mb:
             raise RuntimeError(
                 f"Insufficient VRAM for {operation}: need {required_mb}MB, "
@@ -119,9 +118,12 @@ def _gpu_temperature() -> int:
     """Read GPU temperature via nvidia-smi. Returns -1 on failure."""
     try:
         import subprocess
+
         out = subprocess.run(
             ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         return int(out.stdout.strip())
     except Exception:

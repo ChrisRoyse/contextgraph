@@ -4,6 +4,7 @@ Provides noise reduction, de-hum, de-ess, and loudness normalization
 using FFmpeg's built-in audio filters. All processing creates a new
 cleaned audio file without modifying the original.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,17 +18,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_CLEANUP_OPS = frozenset({
-    "noise_reduction",
-    "de_hum",
-    "de_ess",
-    "normalize_loudness",
-})
+SUPPORTED_CLEANUP_OPS = frozenset(
+    {
+        "noise_reduction",
+        "de_hum",
+        "de_ess",
+        "normalize_loudness",
+    }
+)
 
 
 @dataclass
 class CleanupResult:
     """Result of audio cleanup processing."""
+
     file_path: Path
     duration_ms: int
     sample_rate: int
@@ -56,8 +60,7 @@ def build_cleanup_filters(
     for op in operations:
         if op not in SUPPORTED_CLEANUP_OPS:
             raise ValueError(
-                f"Unknown cleanup operation: {op!r}. "
-                f"Valid: {sorted(SUPPORTED_CLEANUP_OPS)}"
+                f"Unknown cleanup operation: {op!r}. Valid: {sorted(SUPPORTED_CLEANUP_OPS)}"
             )
 
     if "noise_reduction" in operations:
@@ -118,18 +121,25 @@ async def cleanup_audio(
     asset_id = f"audio_{secrets.token_hex(6)}"
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-af", filter_chain,
-        "-ar", "44100",
-        "-ac", "1",
-        "-acodec", "pcm_s16le",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-af",
+        filter_chain,
+        "-ar",
+        "44100",
+        "-ac",
+        "1",
+        "-acodec",
+        "pcm_s16le",
         str(output_path),
     ]
 
     logger.info(
         "Running audio cleanup: ops=%s, filter=%s",
-        operations, filter_chain,
+        operations,
+        filter_chain,
     )
 
     proc = await asyncio.create_subprocess_exec(
@@ -142,9 +152,7 @@ async def cleanup_audio(
     if proc.returncode != 0:
         error_msg = stderr.decode(errors="replace")[-500:]
         logger.error("FFmpeg cleanup failed: %s", error_msg)
-        raise RuntimeError(
-            f"FFmpeg cleanup failed (exit {proc.returncode}): {error_msg}"
-        )
+        raise RuntimeError(f"FFmpeg cleanup failed (exit {proc.returncode}): {error_msg}")
 
     if not output_path.exists():
         raise RuntimeError(f"FFmpeg completed but output missing: {output_path}")
@@ -164,9 +172,13 @@ async def cleanup_audio(
 async def _get_audio_duration_ms(audio_path: Path) -> int:
     """Get audio duration in milliseconds via ffprobe."""
     cmd = [
-        "ffprobe", "-v", "quiet",
-        "-show_entries", "format=duration",
-        "-of", "csv=p=0",
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "csv=p=0",
         str(audio_path),
     ]
     proc = await asyncio.create_subprocess_exec(

@@ -129,8 +129,7 @@ async def clipcannon_ingest(
     try:
         execute(
             status_conn,
-            "UPDATE project SET status = ?, updated_at = datetime('now') "
-            "WHERE project_id = ?",
+            "UPDATE project SET status = ?, updated_at = datetime('now') WHERE project_id = ?",
             (final_status, project_id),
         )
         status_conn.commit()

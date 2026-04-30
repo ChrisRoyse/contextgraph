@@ -85,9 +85,7 @@ def apply_effects(
         import pedalboard  # type: ignore[import-untyped]
         from pedalboard.io import AudioFile  # type: ignore[import-untyped]
     except ImportError as exc:
-        raise ImportError(
-            "pedalboard not installed. Install with: pip install pedalboard"
-        ) from exc
+        raise ImportError("pedalboard not installed. Install with: pip install pedalboard") from exc
 
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -96,15 +94,14 @@ def apply_effects(
     for effect_name in effects:
         if effect_name not in SUPPORTED_EFFECTS:
             valid = ", ".join(sorted(SUPPORTED_EFFECTS))
-            raise ValueError(
-                f"Unsupported effect: {effect_name}. Supported: {valid}"
-            )
+            raise ValueError(f"Unsupported effect: {effect_name}. Supported: {valid}")
 
     effective_params = params or {}
 
     logger.info(
         "Applying effects chain %s to %s",
-        effects, audio_path,
+        effects,
+        audio_path,
     )
 
     # Build the effects chain
@@ -169,7 +166,8 @@ def apply_effects(
     processed = board(audio, sample_rate)
 
     with AudioFile(
-        str(output_path), "w",
+        str(output_path),
+        "w",
         samplerate=sample_rate,
         num_channels=processed.shape[0],
     ) as f:

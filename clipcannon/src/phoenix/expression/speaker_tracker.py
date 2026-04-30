@@ -149,8 +149,7 @@ class SpeakerTracker:
                 best_idx = idx
 
         if best_idx >= 0 and best_sim >= self._threshold:
-            return self._update_speaker(best_idx, speaker_embedding,
-                                        timestamp_ms)
+            return self._update_speaker(best_idx, speaker_embedding, timestamp_ms)
         return self._register_speaker(speaker_embedding, timestamp_ms)
 
     def get_active_speaker(self) -> SpeakerInfo | None:
@@ -263,6 +262,5 @@ class SpeakerTracker:
     def _deactivate_all(self) -> None:
         """Set is_speaking=False for all tracked speakers."""
         self._speakers = [
-            replace(s, is_speaking=False) if s.is_speaking else s
-            for s in self._speakers
+            replace(s, is_speaking=False) if s.is_speaking else s for s in self._speakers
         ]

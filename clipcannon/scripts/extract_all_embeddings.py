@@ -16,11 +16,7 @@ identify Santa as the dominant speaker, build time masks, and filter all modalit
 """
 
 import os
-import sys
-import struct
 import sqlite3
-import warnings
-import shutil
 
 # --- Offline mode BEFORE any ML imports ---
 os.environ["HF_HUB_OFFLINE"] = "1"
@@ -43,6 +39,7 @@ MARGIN_MS = 500  # Interviewer filtering margin
 # ============================================================
 # sqlite-vec binary extraction helpers
 # ============================================================
+
 
 def decode_validity(blob, chunk_size=1024):
     """Decode sqlite-vec validity bitmap (LSB-first bit ordering)."""
@@ -143,7 +140,10 @@ def extract_db_embeddings():
     pro_ends = np.array([r[1] for r in rows], dtype=np.int64)
     pro_ts = (pro_starts + pro_ends) // 2  # midpoint
     pro_data = np.array(
-        [[r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13]] for r in rows],
+        [
+            [r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13]]
+            for r in rows
+        ],
         dtype=np.float32,
     )
     print(f"  pro_data: {pro_data.shape}, pro_ts: {pro_ts.shape}")
@@ -169,12 +169,20 @@ def extract_db_embeddings():
     conn.close()
 
     return {
-        "vis_emb": vis_emb, "vis_ts": vis_ts,
-        "sem_emb": sem_emb, "sem_ts": sem_ts,
-        "emo_emb": emo_emb, "emo_ts": emo_ts,
-        "spk_emb": spk_emb, "spk_ts": spk_ts,
-        "pro_data": pro_data, "pro_ts": pro_ts, "pro_starts": pro_starts, "pro_ends": pro_ends,
-        "sent_ts": sent_ts, "sent_texts": sent_texts,
+        "vis_emb": vis_emb,
+        "vis_ts": vis_ts,
+        "sem_emb": sem_emb,
+        "sem_ts": sem_ts,
+        "emo_emb": emo_emb,
+        "emo_ts": emo_ts,
+        "spk_emb": spk_emb,
+        "spk_ts": spk_ts,
+        "pro_data": pro_data,
+        "pro_ts": pro_ts,
+        "pro_starts": pro_starts,
+        "pro_ends": pro_ends,
+        "sent_ts": sent_ts,
+        "sent_texts": sent_texts,
         "pro_segments": pro_segments,
     }
 
@@ -192,7 +200,9 @@ def compute_sentence_embeddings(texts):
         "sentence-transformers/all-MiniLM-L6-v2",
         cache_folder=os.path.expanduser("~/.cache/huggingface/hub"),
     )
-    embeddings = model.encode(texts, batch_size=64, show_progress_bar=True, normalize_embeddings=True)
+    embeddings = model.encode(
+        texts, batch_size=64, show_progress_bar=True, normalize_embeddings=True
+    )
     embeddings = np.array(embeddings, dtype=np.float32)
     print(f"  sent_emb: {embeddings.shape}")
     return embeddings
@@ -210,7 +220,9 @@ def compute_voice_embeddings(pro_segments):
     from speechbrain.inference.speaker import EncoderClassifier
 
     # Load ECAPA model
-    cache_dir = os.path.expanduser("~/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286")
+    cache_dir = os.path.expanduser(
+        "~/.cache/huggingface/hub/models--speechbrain--spkrec-ecapa-voxceleb/snapshots/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286"
+    )
     classifier = EncoderClassifier.from_hparams(
         source=cache_dir,
         run_opts={"device": "cuda" if torch.cuda.is_available() else "cpu"},
@@ -219,6 +231,7 @@ def compute_voice_embeddings(pro_segments):
     # Load audio (vocals stem)
     # Use soundfile for reliability
     import soundfile as sf
+
     audio_data, sr = sf.read(VOCALS_PATH, dtype="float32")
     if audio_data.ndim == 2:
         audio_data = audio_data.mean(axis=1)  # mono
@@ -319,7 +332,7 @@ def build_santa_mask(spk_emb, spk_ts):
             merged.append((start, end))
 
     total_santa_ms = sum(e - s for s, e in merged)
-    print(f"  Santa intervals: {len(merged)}, total: {total_santa_ms/1000:.1f}s")
+    print(f"  Santa intervals: {len(merged)}, total: {total_santa_ms / 1000:.1f}s")
 
     return merged
 
@@ -344,7 +357,7 @@ def filter_flame_by_santa_intervals(flame_exp, flame_ts_float, intervals):
 # ============================================================
 # Main
 # ============================================================
-def main():
+def main() -> None:
     print("=" * 60)
     print("Extracting ALL 7 embedding modalities for Santa")
     print("=" * 60)
@@ -367,14 +380,22 @@ def main():
         print(f"\nSaving unfiltered backup to {BACKUP_PATH}...")
         np.savez_compressed(
             BACKUP_PATH,
-            vis_emb=data["vis_emb"], vis_ts=data["vis_ts"],
-            sem_emb=data["sem_emb"], sem_ts=data["sem_ts"],
-            emo_emb=data["emo_emb"], emo_ts=data["emo_ts"],
-            spk_emb=data["spk_emb"], spk_ts=data["spk_ts"],
-            pro_data=data["pro_data"], pro_ts=data["pro_ts"],
-            sent_emb=sent_emb, sent_ts=data["sent_ts"],
-            voice_emb=voice_emb, voice_ts=voice_ts,
-            flame_exp=flame_exp, flame_ts=flame_ts,
+            vis_emb=data["vis_emb"],
+            vis_ts=data["vis_ts"],
+            sem_emb=data["sem_emb"],
+            sem_ts=data["sem_ts"],
+            emo_emb=data["emo_emb"],
+            emo_ts=data["emo_ts"],
+            spk_emb=data["spk_emb"],
+            spk_ts=data["spk_ts"],
+            pro_data=data["pro_data"],
+            pro_ts=data["pro_ts"],
+            sent_emb=sent_emb,
+            sent_ts=data["sent_ts"],
+            voice_emb=voice_emb,
+            voice_ts=voice_ts,
+            flame_exp=flame_exp,
+            flame_ts=flame_ts,
         )
     else:
         print(f"\nBackup already exists at {BACKUP_PATH}, not overwriting.")
@@ -385,19 +406,29 @@ def main():
     # Filter each modality
     print("\nFiltering modalities to Santa-only...")
 
-    vis_emb_f, vis_ts_f = filter_by_santa_intervals(data["vis_emb"], data["vis_ts"], santa_intervals)
+    vis_emb_f, vis_ts_f = filter_by_santa_intervals(
+        data["vis_emb"], data["vis_ts"], santa_intervals
+    )
     print(f"  vis_emb: {data['vis_emb'].shape[0]} -> {vis_emb_f.shape[0]}")
 
-    sem_emb_f, sem_ts_f = filter_by_santa_intervals(data["sem_emb"], data["sem_ts"], santa_intervals)
+    sem_emb_f, sem_ts_f = filter_by_santa_intervals(
+        data["sem_emb"], data["sem_ts"], santa_intervals
+    )
     print(f"  sem_emb: {data['sem_emb'].shape[0]} -> {sem_emb_f.shape[0]}")
 
-    emo_emb_f, emo_ts_f = filter_by_santa_intervals(data["emo_emb"], data["emo_ts"], santa_intervals)
+    emo_emb_f, emo_ts_f = filter_by_santa_intervals(
+        data["emo_emb"], data["emo_ts"], santa_intervals
+    )
     print(f"  emo_emb: {data['emo_emb'].shape[0]} -> {emo_emb_f.shape[0]}")
 
-    spk_emb_f, spk_ts_f = filter_by_santa_intervals(data["spk_emb"], data["spk_ts"], santa_intervals)
+    spk_emb_f, spk_ts_f = filter_by_santa_intervals(
+        data["spk_emb"], data["spk_ts"], santa_intervals
+    )
     print(f"  spk_emb: {data['spk_emb'].shape[0]} -> {spk_emb_f.shape[0]}")
 
-    pro_data_f, pro_ts_f = filter_by_santa_intervals(data["pro_data"], data["pro_ts"], santa_intervals)
+    pro_data_f, pro_ts_f = filter_by_santa_intervals(
+        data["pro_data"], data["pro_ts"], santa_intervals
+    )
     print(f"  pro_data: {data['pro_data'].shape[0]} -> {pro_data_f.shape[0]}")
 
     sent_emb_f, sent_ts_f = filter_by_santa_intervals(sent_emb, data["sent_ts"], santa_intervals)
@@ -413,14 +444,22 @@ def main():
     print(f"\nSaving final NPZ to {OUTPUT_PATH}...")
     np.savez_compressed(
         OUTPUT_PATH,
-        vis_emb=vis_emb_f, vis_ts=vis_ts_f,
-        sem_emb=sem_emb_f, sem_ts=sem_ts_f,
-        emo_emb=emo_emb_f, emo_ts=emo_ts_f,
-        spk_emb=spk_emb_f, spk_ts=spk_ts_f,
-        pro_data=pro_data_f, pro_ts=pro_ts_f,
-        sent_emb=sent_emb_f, sent_ts=sent_ts_f,
-        voice_emb=voice_emb_f, voice_ts=voice_ts_f,
-        flame_exp=flame_exp_f, flame_ts=flame_ts_f,
+        vis_emb=vis_emb_f,
+        vis_ts=vis_ts_f,
+        sem_emb=sem_emb_f,
+        sem_ts=sem_ts_f,
+        emo_emb=emo_emb_f,
+        emo_ts=emo_ts_f,
+        spk_emb=spk_emb_f,
+        spk_ts=spk_ts_f,
+        pro_data=pro_data_f,
+        pro_ts=pro_ts_f,
+        sent_emb=sent_emb_f,
+        sent_ts=sent_ts_f,
+        voice_emb=voice_emb_f,
+        voice_ts=voice_ts_f,
+        flame_exp=flame_exp_f,
+        flame_ts=flame_ts_f,
     )
 
     # Verification

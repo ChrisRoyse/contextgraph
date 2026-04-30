@@ -52,7 +52,10 @@ def _ensure_model(device: str = "cuda") -> tuple[object, str]:
     from basicsr.archs.codeformer_arch import CodeFormer
 
     model = CodeFormer(
-        dim_embd=512, codebook_size=1024, n_head=8, n_layers=9,
+        dim_embd=512,
+        codebook_size=1024,
+        n_head=8,
+        n_layers=9,
         connect_list=["32", "64", "128", "256"],
     )
     ckpt = torch.load(str(_WEIGHTS_PATH), map_location="cpu", weights_only=False)
@@ -76,7 +79,9 @@ def _ensure_face_analyzer() -> object:
 
     app = FaceAnalysis(
         name="buffalo_l",
-        root=str(Path.home() / ".clipcannon" / "models" / "latentsync" / "checkpoints" / "auxiliary"),
+        root=str(
+            Path.home() / ".clipcannon" / "models" / "latentsync" / "checkpoints" / "auxiliary"
+        ),
         providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
     )
     app.prepare(ctx_id=0, det_size=(512, 512))
@@ -257,15 +262,28 @@ def enhance_video_mouths(
 
     # Mux audio from original video
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
-        "-i", str(temp_video),
-        "-i", str(input_path),
-        "-map", "0:v:0",
-        "-map", "1:a:0?",
-        "-c:v", "libx264", "-crf", "18",
-        "-c:a", "copy",
+        "ffmpeg",
+        "-y",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(temp_video),
+        "-i",
+        str(input_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0?",
+        "-c:v",
+        "libx264",
+        "-crf",
+        "18",
+        "-c:a",
+        "copy",
         "-shortest",
-        "-movflags", "+faststart",
+        "-movflags",
+        "+faststart",
         str(output_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)

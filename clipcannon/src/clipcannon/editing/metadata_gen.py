@@ -341,8 +341,14 @@ def _build_hashtags(
 
     # Pad with generic tags if under minimum
     generic_tags = [
-        "#viral", "#trending", "#fyp", "#content",
-        "#video", "#mustwatch", "#reels", "#shorts",
+        "#viral",
+        "#trending",
+        "#fyp",
+        "#content",
+        "#video",
+        "#mustwatch",
+        "#reels",
+        "#shorts",
     ]
     for gt in generic_tags:
         if len(tags) >= limits.hashtag_min:
@@ -350,7 +356,7 @@ def _build_hashtags(
         if gt not in tags:
             tags.append(gt)
 
-    return tags[:limits.hashtag_max]
+    return tags[: limits.hashtag_max]
 
 
 # ============================================================
@@ -459,19 +465,11 @@ def _generate_description(
 
     # Call-to-action based on tone
     if limits.tone == "professional":
-        parts.append(
-            "Share your thoughts in the comments. "
-            "Follow for more insights."
-        )
+        parts.append("Share your thoughts in the comments. Follow for more insights.")
     elif limits.tone == "seo":
-        parts.append(
-            "Like and subscribe for more content! "
-            "Hit the bell for notifications."
-        )
+        parts.append("Like and subscribe for more content! Hit the bell for notifications.")
     else:
-        parts.append(
-            "Follow for more! Like and share if you enjoyed this."
-        )
+        parts.append("Follow for more! Like and share if you enjoyed this.")
 
     description = "\n\n".join(parts)
 
@@ -573,21 +571,15 @@ def generate_metadata(
 
     # Fetch VUD data for the edit's time range
     topics = _fetch_topics_for_range(db_path, project_id, start_ms, end_ms)
-    highlights = _fetch_highlights_for_range(
-        db_path, project_id, start_ms, end_ms
-    )
-    transcript_text = _fetch_transcript_for_range(
-        db_path, project_id, start_ms, end_ms
-    )
+    highlights = _fetch_highlights_for_range(db_path, project_id, start_ms, end_ms)
+    transcript_text = _fetch_transcript_for_range(db_path, project_id, start_ms, end_ms)
 
     # Extract keywords for hashtags
     keywords = _extract_keywords(topics, highlights)
 
     # Generate each metadata component
     title = _generate_title(topics, highlights, limits)
-    description = _generate_description(
-        topics, highlights, transcript_text, limits
-    )
+    description = _generate_description(topics, highlights, transcript_text, limits)
     hashtags = _build_hashtags(keywords, limits)
     thumbnail_ts = _select_thumbnail_timestamp(highlights, start_ms, end_ms)
 

@@ -1,0 +1,13 @@
+[project]
+name = "contextgraph-monolith"
+version = "0.1.0"
+description = "Context Graph monorepo integration metadata."
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.contextgraph.python]
+clipcannon_project = "clipcannon"
+clipcannon_lockfile = "clipcannon/uv.lock"

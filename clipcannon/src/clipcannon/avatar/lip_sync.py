@@ -18,6 +18,7 @@ Requirements:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import shutil
@@ -145,11 +146,10 @@ class LipSyncEngine:
         _add_latentsync_to_path()
 
         from diffusers import AutoencoderKL, DDIMScheduler
-        from omegaconf import OmegaConf
-
         from latentsync.models.unet import UNet3DConditionModel
         from latentsync.pipelines.lipsync_pipeline import LipsyncPipeline
         from latentsync.whisper.audio2feature import Audio2Feature
+        from omegaconf import OmegaConf
 
         logger.info("Loading LatentSync 1.6 pipeline...")
         start = time.monotonic()
@@ -157,10 +157,7 @@ class LipSyncEngine:
         config = OmegaConf.load(str(_CONFIG_PATH))
         self._config = config
 
-        is_fp16 = (
-            torch.cuda.is_available()
-            and torch.cuda.get_device_capability()[0] > 7
-        )
+        is_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] > 7
         dtype = torch.float16 if is_fp16 else torch.float32
 
         # Scheduler from configs/scheduler_config.json
@@ -176,7 +173,8 @@ class LipSyncEngine:
 
         # SD VAE
         vae = AutoencoderKL.from_pretrained(
-            "stabilityai/sd-vae-ft-mse", torch_dtype=dtype,
+            "stabilityai/sd-vae-ft-mse",
+            torch_dtype=dtype,
         )
         vae.config.scaling_factor = 0.18215
         vae.config.shift_factor = 0
@@ -215,7 +213,9 @@ class LipSyncEngine:
         elapsed = time.monotonic() - start
         logger.info(
             "LatentSync loaded in %.1fs (dtype=%s, deepcache=%s)",
-            elapsed, dtype, self._deepcache_helper is not None,
+            elapsed,
+            dtype,
+            self._deepcache_helper is not None,
         )
 
         self._pipeline = pipeline
@@ -265,22 +265,23 @@ class LipSyncEngine:
 
         if seed is not None:
             from accelerate.utils import set_seed
+
             set_seed(seed)
         else:
             torch.seed()
 
         # Determine dtype from GPU capability
-        is_fp16 = (
-            torch.cuda.is_available()
-            and torch.cuda.get_device_capability()[0] > 7
-        )
+        is_fp16 = torch.cuda.is_available() and torch.cuda.get_device_capability()[0] > 7
         weight_dtype = torch.float16 if is_fp16 else torch.float32
 
         config = self._config
 
         logger.info(
             "Generating lip-sync: video=%s, audio=%s, steps=%d, guidance=%.1f",
-            video_path.name, audio_path.name, inference_steps, guidance_scale,
+            video_path.name,
+            audio_path.name,
+            inference_steps,
+            guidance_scale,
         )
 
         start = time.monotonic()
@@ -318,24 +319,35 @@ class LipSyncEngine:
         elapsed = time.monotonic() - start
 
         if not output_path.exists():
-            raise RuntimeError(
-                f"LatentSync completed but output not found at {output_path}"
-            )
+            raise RuntimeError(f"LatentSync completed but output not found at {output_path}")
 
         # LatentSync outputs 16kHz AAC audio (downsampled from input).
         # Replace with the original high-quality audio to preserve
         # 44.1kHz broadcast quality. The video timing already matches.
         remuxed_path = output_path.parent / f"{output_path.stem}_hq{output_path.suffix}"
         remux_cmd = [
-            "ffmpeg", "-y", "-loglevel", "error", "-nostdin",
-            "-i", str(output_path),
-            "-i", str(audio_path),
-            "-map", "0:v:0",      # video from lip-sync output
-            "-map", "1:a:0",      # audio from original input
-            "-c:v", "copy",       # no re-encode video
-            "-c:a", "aac", "-b:a", "192k",  # high-quality AAC
-            "-shortest",          # trim to shorter stream
-            "-movflags", "+faststart",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-i",
+            str(output_path),
+            "-i",
+            str(audio_path),
+            "-map",
+            "0:v:0",  # video from lip-sync output
+            "-map",
+            "1:a:0",  # audio from original input
+            "-c:v",
+            "copy",  # no re-encode video
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",  # high-quality AAC
+            "-shortest",  # trim to shorter stream
+            "-movflags",
+            "+faststart",
             str(remuxed_path),
         ]
         remux_proc = subprocess.run(remux_cmd, capture_output=True, text=True)
@@ -352,9 +364,9 @@ class LipSyncEngine:
 
         # Probe output for metadata
         probe = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_streams", str(output_path)],
-            capture_output=True, text=True,
+            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(output_path)],
+            capture_output=True,
+            text=True,
         )
         duration_ms = 0
         resolution = "unknown"
@@ -368,7 +380,10 @@ class LipSyncEngine:
 
         logger.info(
             "Lip-sync complete: %s, %dms, %s, %.1fs",
-            output_path.name, duration_ms, resolution, elapsed,
+            output_path.name,
+            duration_ms,
+            resolution,
+            elapsed,
         )
 
         return LipSyncResult(
@@ -411,11 +426,15 @@ class LipSyncEngine:
 
         for i in range(n_candidates):
             seed = random.randint(1, 99999)
-            candidate_path = output_path.parent / f"{output_path.stem}_candidate_{i}{output_path.suffix}"
+            candidate_path = (
+                output_path.parent / f"{output_path.stem}_candidate_{i}{output_path.suffix}"
+            )
 
             logger.info(
                 "Generating candidate %d/%d (seed=%d)",
-                i + 1, n_candidates, seed,
+                i + 1,
+                n_candidates,
+                seed,
             )
 
             try:
@@ -436,7 +455,9 @@ class LipSyncEngine:
             candidates.append((candidate_path, result, score))
             logger.info(
                 "Candidate %d: seed=%d, sync_score=%.3f",
-                i + 1, seed, score,
+                i + 1,
+                seed,
+                score,
             )
 
         if not candidates:
@@ -465,7 +486,9 @@ class LipSyncEngine:
 
         logger.info(
             "Best of %d: sync_score=%.3f (selected from %d candidates)",
-            n_candidates, best_score, len(candidates),
+            n_candidates,
+            best_score,
+            len(candidates),
         )
 
         return best_result
@@ -479,8 +502,13 @@ class LipSyncEngine:
         # Try SyncNet scoring
         try:
             syncnet_path = (
-                Path.home() / ".clipcannon" / "models" / "latentsync"
-                / "checkpoints" / "auxiliary" / "syncnet_v2.model"
+                Path.home()
+                / ".clipcannon"
+                / "models"
+                / "latentsync"
+                / "checkpoints"
+                / "auxiliary"
+                / "syncnet_v2.model"
             )
             if syncnet_path.exists():
                 return self._syncnet_score(video_path, audio_path, syncnet_path)
@@ -494,7 +522,10 @@ class LipSyncEngine:
             return 0.0
 
     def _syncnet_score(
-        self, video_path: Path, audio_path: Path, syncnet_path: Path,
+        self,
+        video_path: Path,
+        audio_path: Path,
+        syncnet_path: Path,
     ) -> float:
         """Score using SyncNet confidence."""
         # SyncNet scoring requires specific setup -- use file size fallback
@@ -506,10 +537,8 @@ class LipSyncEngine:
         import gc
 
         if self._deepcache_helper is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._deepcache_helper.disable()
-            except Exception:
-                pass
             self._deepcache_helper = None
 
         self._pipeline = None
@@ -518,6 +547,7 @@ class LipSyncEngine:
 
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:

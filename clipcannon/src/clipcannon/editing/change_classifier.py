@@ -9,9 +9,12 @@ Pure functions -- no DB access, no side effects.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, Field
 
-from clipcannon.editing.edl import EditDecisionList, SegmentSpec
+if TYPE_CHECKING:
+    from clipcannon.editing.edl import EditDecisionList, SegmentSpec
 
 
 class RenderHint(BaseModel):
@@ -40,14 +43,15 @@ class RenderHint(BaseModel):
 
 
 def _segments_match_by_id(
-    old_edl: EditDecisionList, new_edl: EditDecisionList,
+    old_edl: EditDecisionList,
+    new_edl: EditDecisionList,
 ) -> bool:
     """Return True if old and new EDLs have the same segment IDs in order."""
     if len(old_edl.segments) != len(new_edl.segments):
         return False
     return all(
         o.segment_id == n.segment_id
-        for o, n in zip(old_edl.segments, new_edl.segments)
+        for o, n in zip(old_edl.segments, new_edl.segments, strict=False)
     )
 
 
@@ -64,9 +68,12 @@ def _timing_changed(old: SegmentSpec, new: SegmentSpec) -> bool:
 
 
 def _overlays_changed_for_segment(
-    old_edl: EditDecisionList, new_edl: EditDecisionList, segment_id: int,
+    old_edl: EditDecisionList,
+    new_edl: EditDecisionList,
+    segment_id: int,
 ) -> bool:
     """Return True if overlays affecting *segment_id* differ between EDLs."""
+
     def _seg_range(edl: EditDecisionList, sid: int) -> tuple[int, int] | None:
         for seg in edl.segments:
             if seg.segment_id == sid:
@@ -74,10 +81,7 @@ def _overlays_changed_for_segment(
         return None
 
     def _overlapping(edl: EditDecisionList, start: int, end: int) -> list[dict[str, object]]:
-        return [
-            ov.model_dump() for ov in edl.overlays
-            if ov.start_ms < end and ov.end_ms > start
-        ]
+        return [ov.model_dump() for ov in edl.overlays if ov.start_ms < end and ov.end_ms > start]
 
     old_r = _seg_range(old_edl, segment_id)
     new_r = _seg_range(new_edl, segment_id)
@@ -148,7 +152,7 @@ def classify_changes(
 
     # 6. Per-segment comparison (skip if already all-invalidated)
     if not hint.all_segments_invalidated:
-        for old_seg, new_seg in zip(old_edl.segments, new_edl.segments):
+        for old_seg, new_seg in zip(old_edl.segments, new_edl.segments, strict=False):
             sid = old_seg.segment_id
 
             if _timing_changed(old_seg, new_seg):

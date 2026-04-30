@@ -1,4 +1,5 @@
 """Conversation state enum."""
+
 from enum import Enum
 
 

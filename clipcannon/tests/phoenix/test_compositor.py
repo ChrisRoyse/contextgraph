@@ -20,7 +20,6 @@ from phoenix.render.cupy_compositor import (
     resize_gpu,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -62,9 +61,7 @@ def gray_frame() -> cp.ndarray:
 class TestAlphaBlend:
     """Tests for alpha_blend_gpu."""
 
-    def test_red_on_blue_half_alpha(
-        self, red_frame: cp.ndarray, blue_frame: cp.ndarray
-    ) -> None:
+    def test_red_on_blue_half_alpha(self, red_frame: cp.ndarray, blue_frame: cp.ndarray) -> None:
         """Red blended onto blue at 0.5 alpha should produce purple."""
         alpha = cp.full((100, 100), 0.5, dtype=cp.float32)
         result = alpha_blend_gpu(red_frame, blue_frame, alpha)
@@ -97,9 +94,7 @@ class TestAlphaBlend:
         cpu = result.get()
         np.testing.assert_allclose(cpu[50, 50], [0.0, 0.0, 1.0], atol=0.01)
 
-    def test_mismatched_sizes_resizes_foreground(
-        self, blue_frame: cp.ndarray
-    ) -> None:
+    def test_mismatched_sizes_resizes_foreground(self, blue_frame: cp.ndarray) -> None:
         """Foreground of different size gets resized to match background."""
         small_red = cp.zeros((50, 50, 3), dtype=cp.float32)
         small_red[:, :, 0] = 1.0
@@ -108,9 +103,7 @@ class TestAlphaBlend:
         result = alpha_blend_gpu(small_red, blue_frame, alpha)
         assert result.shape == (100, 100, 3)
 
-    def test_4channel_foreground_strips_alpha(
-        self, blue_frame: cp.ndarray
-    ) -> None:
+    def test_4channel_foreground_strips_alpha(self, blue_frame: cp.ndarray) -> None:
         """Foreground with 4 channels has alpha channel stripped."""
         fg_4ch = cp.zeros((100, 100, 4), dtype=cp.float32)
         fg_4ch[:, :, 0] = 1.0  # Red
@@ -168,9 +161,9 @@ class TestResize:
         """Resize a gradient and check that interpolation is reasonable."""
         # Horizontal gradient from 0 to 1 in red channel
         grad = cp.zeros((100, 100, 3), dtype=cp.float32)
-        grad[:, :, 0] = cp.linspace(0.0, 1.0, 100, dtype=cp.float32)[
-            cp.newaxis, :
-        ].repeat(100, axis=0)
+        grad[:, :, 0] = cp.linspace(0.0, 1.0, 100, dtype=cp.float32)[cp.newaxis, :].repeat(
+            100, axis=0
+        )
 
         resized = resize_gpu(grad, 50, 200)
         cpu = resized.get()
@@ -192,9 +185,7 @@ class TestColorConvert:
         bgr = color_convert_gpu(red_frame, "rgb", "bgr")
         roundtrip = color_convert_gpu(bgr, "bgr", "rgb")
 
-        np.testing.assert_allclose(
-            roundtrip.get(), red_frame.get(), atol=0.001
-        )
+        np.testing.assert_allclose(roundtrip.get(), red_frame.get(), atol=0.001)
 
     def test_rgb_to_bgr_swaps_channels(self, red_frame: cp.ndarray) -> None:
         """Red in RGB channel 0 should move to BGR channel 2."""
@@ -209,9 +200,7 @@ class TestColorConvert:
         yuv = color_convert_gpu(white_frame, "rgb", "yuv420")
         roundtrip = color_convert_gpu(yuv, "yuv420", "rgb")
 
-        np.testing.assert_allclose(
-            roundtrip.get(), white_frame.get(), atol=0.05
-        )
+        np.testing.assert_allclose(roundtrip.get(), white_frame.get(), atol=0.05)
 
     def test_same_colorspace_copies(self, red_frame: cp.ndarray) -> None:
         """Same src and dst returns a copy."""
@@ -257,9 +246,7 @@ class TestPasteFace:
         face = cp.ones((50, 50, 3), dtype=cp.float32)  # White face
 
         # Place at x=180, face is 50 wide -> extends to 230, frame is 200
-        result = paste_face_region_gpu(
-            gray_frame, face, x=180, y=75, w=50, h=50
-        )
+        result = paste_face_region_gpu(gray_frame, face, x=180, y=75, w=50, h=50)
         cpu = result.get()
         assert cpu.shape == (200, 200, 3)
         # Pixel at (100, 190) should be white (within clipped face area)
@@ -271,35 +258,25 @@ class TestPasteFace:
         """Face extending beyond top-left edge should be clipped."""
         face = cp.ones((50, 50, 3), dtype=cp.float32)
 
-        result = paste_face_region_gpu(
-            gray_frame, face, x=-25, y=-25, w=50, h=50
-        )
+        result = paste_face_region_gpu(gray_frame, face, x=-25, y=-25, w=50, h=50)
         cpu = result.get()
         # Pixel at (10, 10) should be white (within clipped region)
         np.testing.assert_allclose(cpu[10, 10], [1.0, 1.0, 1.0], atol=0.02)
         # Far corner should still be gray
         np.testing.assert_allclose(cpu[150, 150], [0.5, 0.5, 0.5], atol=0.01)
 
-    def test_completely_outside_returns_frame(
-        self, gray_frame: cp.ndarray
-    ) -> None:
+    def test_completely_outside_returns_frame(self, gray_frame: cp.ndarray) -> None:
         """Face completely outside the frame returns the original frame."""
         face = cp.ones((50, 50, 3), dtype=cp.float32)
 
-        result = paste_face_region_gpu(
-            gray_frame, face, x=500, y=500, w=50, h=50
-        )
-        np.testing.assert_allclose(
-            result.get(), gray_frame.get(), atol=0.001
-        )
+        result = paste_face_region_gpu(gray_frame, face, x=500, y=500, w=50, h=50)
+        np.testing.assert_allclose(result.get(), gray_frame.get(), atol=0.001)
 
     def test_paste_with_alpha(self, gray_frame: cp.ndarray) -> None:
         """Paste with alpha=0.5 should blend face and background."""
         face = cp.ones((50, 50, 3), dtype=cp.float32)  # White
 
-        result = paste_face_region_gpu(
-            gray_frame, face, x=75, y=75, w=50, h=50, alpha=0.5
-        )
+        result = paste_face_region_gpu(gray_frame, face, x=75, y=75, w=50, h=50, alpha=0.5)
         cpu = result.get()
         # Center: 1.0 * 0.5 + 0.5 * 0.5 = 0.75
         assert cpu[100, 100, 0] == pytest.approx(0.75, abs=0.02)
@@ -331,9 +308,7 @@ class TestFilmGrain:
     def test_zero_intensity_is_identity(self, gray_frame: cp.ndarray) -> None:
         """Intensity=0 should produce (approximately) the original frame."""
         grained = film_grain_gpu(gray_frame, intensity=0.0)
-        np.testing.assert_allclose(
-            grained.get(), gray_frame.get(), atol=0.001
-        )
+        np.testing.assert_allclose(grained.get(), gray_frame.get(), atol=0.001)
 
     def test_grain_varies_spatially(self, gray_frame: cp.ndarray) -> None:
         """Different pixels should get different noise values."""

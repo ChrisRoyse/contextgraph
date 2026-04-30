@@ -1,4 +1,5 @@
 """Tests for bot join modules — platform detection, URL parsing, interface."""
+
 import pytest
 
 from voiceagent.meeting.bot_join import MeetingBotJoiner, MeetingBotSession, detect_platform
@@ -55,6 +56,7 @@ class TestZoomUrlParsing:
 
     def test_invalid_url(self) -> None:
         from voiceagent.meeting.errors import MeetingDeviceError
+
         with pytest.raises(MeetingDeviceError, match="Cannot extract meeting ID"):
             parse_zoom_url("https://zoom.us/webinar/123")
 
@@ -69,6 +71,8 @@ class TestBotJoiner:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """MeetingBotSession protocol should be runtime checkable."""
-        assert hasattr(MeetingBotSession, "__protocol_attrs__") or hasattr(
-            MeetingBotSession, "__abstractmethods__"
-        ) or True  # Protocol is defined, that's enough
+        assert (
+            hasattr(MeetingBotSession, "__protocol_attrs__")
+            or hasattr(MeetingBotSession, "__abstractmethods__")
+            or True
+        )  # Protocol is defined, that's enough

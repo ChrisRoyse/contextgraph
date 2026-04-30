@@ -11,18 +11,20 @@ No CPU fallbacks. Errors propagate with full context.
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from phoenix.behavior.cross_modal_detector import CrossModalDetector, SocialSignal
 from phoenix.behavior.emotion_mirror import AvatarExpression, EmotionMirror
 from phoenix.behavior.gesture_selector import GestureSelector
-from phoenix.behavior.prosody_matcher import ProsodyMatch, ProsodyMatcher
+from phoenix.behavior.prosody_matcher import ProsodyMatcher
 from phoenix.config import PhoenixConfig
-from phoenix.errors import BehaviorError, ExpressionError
+from phoenix.errors import BehaviorError
 from phoenix.expression.emotion_fusion import EmotionFusion, EmotionState, ProsodyFeatures
 from phoenix.expression.gesture_library import GestureClip, GestureLibrary
 from phoenix.expression.speaker_tracker import SpeakerInfo, SpeakerTracker
+
+if TYPE_CHECKING:
+    import numpy as np
 
 # Canonical embedding dimensions.
 _EMOTION_DIM = 1024
@@ -184,7 +186,9 @@ class BehaviorEngine:
         emotion = _DEFAULT_EMOTION
         if emotion_embedding is not None and prosody is not None:
             raw_emotion = self._emotion_fusion.fuse(
-                emotion_embedding, prosody, semantic_embedding,
+                emotion_embedding,
+                prosody,
+                semantic_embedding,
             )
             emotion = self._emotion_fusion.update(raw_emotion)
 
@@ -211,7 +215,9 @@ class BehaviorEngine:
         social_signal = _DEFAULT_SOCIAL_SIGNAL
         if emotion is not _DEFAULT_EMOTION and prosody is not None:
             social_signal = self._cross_modal.detect(
-                emotion, prosody, semantic_embedding,
+                emotion,
+                prosody,
+                semantic_embedding,
             )
 
         return BehaviorOutput(
@@ -268,7 +274,9 @@ class BehaviorEngine:
         emotion = _DEFAULT_EMOTION
         if emotion_embedding is not None and prosody is not None:
             raw_emotion = self._emotion_fusion.fuse(
-                emotion_embedding, prosody, semantic_embedding,
+                emotion_embedding,
+                prosody,
+                semantic_embedding,
             )
             emotion = self._emotion_fusion.update(raw_emotion)
 
@@ -282,7 +290,8 @@ class BehaviorEngine:
         # --- Gesture Selection ---
         emotion_for_gesture = emotion if emotion is not _DEFAULT_EMOTION else None
         gesture: GestureClip | None = self._gesture_selector.select_for_response(
-            response_text, emotion_for_gesture,
+            response_text,
+            emotion_for_gesture,
         )
 
         # --- Expression ---
@@ -296,7 +305,9 @@ class BehaviorEngine:
         social_signal = _DEFAULT_SOCIAL_SIGNAL
         if emotion is not _DEFAULT_EMOTION and prosody is not None:
             social_signal = self._cross_modal.detect(
-                emotion, prosody, semantic_embedding,
+                emotion,
+                prosody,
+                semantic_embedding,
             )
 
         return BehaviorOutput(

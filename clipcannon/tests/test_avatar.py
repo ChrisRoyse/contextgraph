@@ -10,17 +10,13 @@ so pipeline tests are gated behind model availability.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from clipcannon.avatar.lip_sync import (
-    LipSyncEngine,
-    LipSyncResult,
     _CHECKPOINT_PATH,
-    _LATENTSYNC_DIR,
-    _MASK_PATH,
-    _WHISPER_TINY,
+    LipSyncEngine,
     _validate_prerequisites,
 )
 from clipcannon.tools.avatar import (
@@ -29,6 +25,9 @@ from clipcannon.tools.avatar import (
     dispatch_avatar_tool,
 )
 from clipcannon.tools.avatar_defs import AVATAR_TOOL_DEFINITIONS
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestAvatarToolDefinitions:
@@ -52,7 +51,9 @@ class TestAvatarToolDefinitions:
         """Lip sync tool requires project_id, audio_path, driver_video_path."""
         tool = next(t for t in AVATAR_TOOL_DEFINITIONS if t.name == "clipcannon_lip_sync")
         assert set(tool.inputSchema["required"]) == {
-            "project_id", "audio_path", "driver_video_path",
+            "project_id",
+            "audio_path",
+            "driver_video_path",
         }
 
     def test_extract_webcam_required_params(self) -> None:
@@ -83,13 +84,17 @@ class TestPrerequisites:
     def test_validate_missing_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing LatentSync dir raises FileNotFoundError."""
         import clipcannon.avatar.lip_sync as ls
+
         monkeypatch.setattr(ls, "_LATENTSYNC_DIR", tmp_path / "nonexistent")
         with pytest.raises(FileNotFoundError, match="LatentSync not found"):
             _validate_prerequisites()
 
-    def test_validate_missing_checkpoint(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_validate_missing_checkpoint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Missing checkpoint raises FileNotFoundError with download instructions."""
         import clipcannon.avatar.lip_sync as ls
+
         monkeypatch.setattr(ls, "_LATENTSYNC_DIR", tmp_path)
         monkeypatch.setattr(ls, "_CHECKPOINT_PATH", tmp_path / "checkpoints" / "missing.pt")
         monkeypatch.setattr(ls, "_CONFIG_PATH", tmp_path / "configs" / "unet" / "stage2_512.yaml")
@@ -100,6 +105,7 @@ class TestPrerequisites:
     def test_validate_missing_mask(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing mask raises FileNotFoundError."""
         import clipcannon.avatar.lip_sync as ls
+
         # Create all prerequisites except mask
         monkeypatch.setattr(ls, "_LATENTSYNC_DIR", tmp_path)
         monkeypatch.setattr(ls, "_CHECKPOINT_PATH", tmp_path / "ckpt.pt")
@@ -231,8 +237,7 @@ class TestAvatarToolDispatch:
 class TestWebcamRegionExtraction:
     """Test webcam region detection from scene_map data."""
 
-    def _create_scene_map_db(self, db_path: Path, project_id: str,
-                              scenes: list[dict]) -> None:
+    def _create_scene_map_db(self, db_path: Path, project_id: str, scenes: list[dict]) -> None:
         """Create a test DB with scene_map entries."""
         conn = sqlite3.connect(str(db_path))
         conn.execute("""
@@ -277,14 +282,22 @@ class TestWebcamRegionExtraction:
                 "content_x, content_y, content_w, content_h) "
                 "VALUES (?,?,?, ?,?,?,?,?, ?,?,?,?, ?,?,?,?)",
                 (
-                    project_id, scene.get("start_ms", 0), scene.get("end_ms", 5000),
-                    scene.get("face_x"), scene.get("face_y"),
-                    scene.get("face_w"), scene.get("face_h"),
+                    project_id,
+                    scene.get("start_ms", 0),
+                    scene.get("end_ms", 5000),
+                    scene.get("face_x"),
+                    scene.get("face_y"),
+                    scene.get("face_w"),
+                    scene.get("face_h"),
                     scene.get("face_confidence"),
-                    scene.get("webcam_x"), scene.get("webcam_y"),
-                    scene.get("webcam_w"), scene.get("webcam_h"),
-                    scene.get("content_x", 0), scene.get("content_y", 0),
-                    scene.get("content_w", 1920), scene.get("content_h", 1080),
+                    scene.get("webcam_x"),
+                    scene.get("webcam_y"),
+                    scene.get("webcam_w"),
+                    scene.get("webcam_h"),
+                    scene.get("content_x", 0),
+                    scene.get("content_y", 0),
+                    scene.get("content_w", 1920),
+                    scene.get("content_h", 1080),
                 ),
             )
         conn.commit()
@@ -293,10 +306,14 @@ class TestWebcamRegionExtraction:
     def test_webcam_region_from_explicit_webcam(self, tmp_path: Path) -> None:
         """Finds webcam region when webcam_x/y/w/h are stored."""
         db_path = tmp_path / "analysis.db"
-        self._create_scene_map_db(db_path, "proj_1", [
-            {"webcam_x": 1800, "webcam_y": 900, "webcam_w": 400, "webcam_h": 350},
-            {"webcam_x": 1810, "webcam_y": 910, "webcam_w": 410, "webcam_h": 360},
-        ])
+        self._create_scene_map_db(
+            db_path,
+            "proj_1",
+            [
+                {"webcam_x": 1800, "webcam_y": 900, "webcam_w": 400, "webcam_h": 350},
+                {"webcam_x": 1810, "webcam_y": 910, "webcam_w": 410, "webcam_h": 360},
+            ],
+        )
         region = _get_webcam_region(db_path, "proj_1")
         assert region is not None
         assert region["x"] == 1805  # median
@@ -305,10 +322,19 @@ class TestWebcamRegionExtraction:
     def test_webcam_region_from_face(self, tmp_path: Path) -> None:
         """Falls back to face bbox when no explicit webcam region."""
         db_path = tmp_path / "analysis.db"
-        self._create_scene_map_db(db_path, "proj_1", [
-            {"face_x": 100, "face_y": 50, "face_w": 200, "face_h": 250,
-             "face_confidence": 0.95},
-        ])
+        self._create_scene_map_db(
+            db_path,
+            "proj_1",
+            [
+                {
+                    "face_x": 100,
+                    "face_y": 50,
+                    "face_w": 200,
+                    "face_h": 250,
+                    "face_confidence": 0.95,
+                },
+            ],
+        )
         region = _get_webcam_region(db_path, "proj_1")
         assert region is not None
         assert region["w"] > 200  # expanded from face
@@ -316,9 +342,13 @@ class TestWebcamRegionExtraction:
     def test_webcam_region_no_faces(self, tmp_path: Path) -> None:
         """Returns None when no faces detected."""
         db_path = tmp_path / "analysis.db"
-        self._create_scene_map_db(db_path, "proj_1", [
-            {"content_x": 0, "content_y": 0, "content_w": 2560, "content_h": 1440},
-        ])
+        self._create_scene_map_db(
+            db_path,
+            "proj_1",
+            [
+                {"content_x": 0, "content_y": 0, "content_w": 2560, "content_h": 1440},
+            ],
+        )
         region = _get_webcam_region(db_path, "proj_1")
         assert region is None
 

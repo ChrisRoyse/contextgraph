@@ -6,9 +6,11 @@ Voice Output -> Meeting Behavior -> Webcam Writer
 
 Supports Mode 1 (virtual device -- replace me) and Mode 2 (bot join -- placeholder).
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
@@ -25,12 +27,12 @@ from voiceagent.meeting.errors import MeetingError
 from voiceagent.meeting.meeting_behavior import MeetingBehavior
 from voiceagent.meeting.meeting_summary import MeetingSummaryGenerator
 from voiceagent.meeting.responder import MeetingResponder
+from voiceagent.meeting.transcriber import MeetingTranscriber
 from voiceagent.meeting.transcript_format import (
     CloneInteraction,
     MeetingSegment,
 )
 from voiceagent.meeting.transcript_store import MeetingTranscriptStore
-from voiceagent.meeting.transcriber import MeetingTranscriber
 from voiceagent.meeting.voice_output import MeetingVoiceOutput
 
 logger = logging.getLogger(__name__)
@@ -92,13 +94,15 @@ class CloneMeetingManager:
 
         voice = voice_profile or clone_name
         clone_cfg = self._config.clones.get(
-            clone_name, CloneConfig(voice_profile=voice),
+            clone_name,
+            CloneConfig(voice_profile=voice),
         )
 
         # Create transcript store
         store = MeetingTranscriptStore(config=self._config.transcript)
         meeting_id = store.create_meeting(
-            clone_names=[clone_name], platform=platform,
+            clone_names=[clone_name],
+            platform=platform,
         )
 
         meeting_start_ms = int(time.time() * 1000)
@@ -124,10 +128,12 @@ class CloneMeetingManager:
             ocr_client=store._client,  # Share the OCR Provenance connection
         )
         voice_out = MeetingVoiceOutput(
-            config=self._config.voice, clone_name=voice,
+            config=self._config.voice,
+            clone_name=voice,
         )
         behavior = MeetingBehavior(
-            config=self._config.behavior, platform=platform,
+            config=self._config.behavior,
+            platform=platform,
         )
         summary_gen = MeetingSummaryGenerator()
 
@@ -167,7 +173,9 @@ class CloneMeetingManager:
 
         logger.info(
             "Clone '%s' started (meeting=%s, platform=%s)",
-            clone_name, meeting_id, platform,
+            clone_name,
+            meeting_id,
+            platform,
         )
         return instance
 
@@ -202,18 +210,20 @@ class CloneMeetingManager:
 
         # Store segment in transcript
         instance.transcript_store.append_segment(
-            instance.meeting_id, segment,
+            instance.meeting_id,
+            segment,
         )
         instance.recent_segments.append(segment)
 
         # Keep last 40 segments for context window — slice in-place to
         # avoid creating a new list object and leaking the old one
         if len(instance.recent_segments) > 50:
-            del instance.recent_segments[:len(instance.recent_segments) - 40]
+            del instance.recent_segments[: len(instance.recent_segments) - 40]
 
         # Check if clone is addressed
         result = instance.address_detector.check_segment(
-            segment, recent_context=instance.recent_segments,
+            segment,
+            recent_context=instance.recent_segments,
         )
 
         if result.is_addressed:
@@ -231,9 +241,7 @@ class CloneMeetingManager:
                     )
                 )
             except RuntimeError:
-                logger.error(
-                    "No event loop available for response scheduling"
-                )
+                logger.error("No event loop available for response scheduling")
 
     async def _handle_address(
         self,
@@ -257,10 +265,8 @@ class CloneMeetingManager:
             )
 
             # Synthesize voice with SECS >0.95
-            audio, secs_score, prosody_style = (
-                await instance.voice_output.synthesize_verified(
-                    text=response_text,
-                )
+            audio, secs_score, prosody_style = await instance.voice_output.synthesize_verified(
+                text=response_text,
             )
 
             response_end_ms = int(time.time() * 1000)
@@ -280,7 +286,8 @@ class CloneMeetingManager:
                 address_confidence=address_confidence,
             )
             instance.transcript_store.record_interaction(
-                instance.meeting_id, interaction,
+                instance.meeting_id,
+                interaction,
             )
 
             # Add clone response as a transcript segment
@@ -296,28 +303,34 @@ class CloneMeetingManager:
                 secs_score=secs_score,
             )
             instance.transcript_store.append_segment(
-                instance.meeting_id, response_segment,
+                instance.meeting_id,
+                response_segment,
             )
 
             # Unmute, play audio, re-mute
-            async def play_audio(a):
+            async def play_audio(a) -> None:
                 # Routes to PulseAudio sink in production
                 logger.info(
-                    "Playing %d samples of clone audio", len(a),
+                    "Playing %d samples of clone audio",
+                    len(a),
                 )
 
             await instance.behavior.unmute_and_speak(audio, play_audio)
 
             logger.info(
-                "Clone '%s' responded: SECS=%.3f, prosody=%s, "
-                "latency=%dms, text='%s'",
-                clone_name, secs_score, prosody_style,
-                latency_ms, response_text[:80],
+                "Clone '%s' responded: SECS=%.3f, prosody=%s, latency=%dms, text='%s'",
+                clone_name,
+                secs_score,
+                prosody_style,
+                latency_ms,
+                response_text[:80],
             )
 
         except MeetingError as e:
             logger.error(
-                "Clone '%s' response failed: %s", clone_name, e,
+                "Clone '%s' response failed: %s",
+                clone_name,
+                e,
             )
 
     # ------------------------------------------------------------------
@@ -357,7 +370,9 @@ class CloneMeetingManager:
                     )
             except MeetingError as e:
                 logger.error(
-                    "Flush failed for '%s': %s", clone_name, e,
+                    "Flush failed for '%s': %s",
+                    clone_name,
+                    e,
                 )
 
     # ------------------------------------------------------------------
@@ -376,10 +391,8 @@ class CloneMeetingManager:
         # Cancel flush task
         if instance._flush_task is not None:
             instance._flush_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await instance._flush_task
-            except asyncio.CancelledError:
-                pass
 
         # Stop audio capture (joins background thread)
         instance.audio_capture.stop()
@@ -393,22 +406,14 @@ class CloneMeetingManager:
         doc = instance.transcript_store._active_meetings.get(
             instance.meeting_id,
         )
-        if (
-            doc
-            and doc.segments
-            and self._config.transcript.auto_summary
-        ):
+        if doc and doc.segments and self._config.transcript.auto_summary:
             try:
-                summary = (
-                    await instance.summary_generator.generate_summary(
-                        doc.segments,
-                    )
+                summary = await instance.summary_generator.generate_summary(
+                    doc.segments,
                 )
                 if self._config.transcript.auto_tag:
-                    tags = (
-                        await instance.summary_generator.extract_topics(
-                            summary,
-                        )
+                    tags = await instance.summary_generator.extract_topics(
+                        summary,
                     )
             except MeetingError as e:
                 logger.error("Summary generation failed: %s", e)
@@ -417,11 +422,15 @@ class CloneMeetingManager:
         doc_id = None
         try:
             doc_id = await instance.transcript_store.end_meeting(
-                instance.meeting_id, summary=summary, tags=tags,
+                instance.meeting_id,
+                summary=summary,
+                tags=tags,
             )
         except MeetingError as e:
             logger.error(
-                "Meeting end failed for '%s': %s", clone_name, e,
+                "Meeting end failed for '%s': %s",
+                clone_name,
+                e,
             )
 
         # Release GPU resources
@@ -435,7 +444,9 @@ class CloneMeetingManager:
         await instance.transcript_store.close()
 
         logger.info(
-            "Clone '%s' stopped (doc_id=%s)", clone_name, doc_id,
+            "Clone '%s' stopped (doc_id=%s)",
+            clone_name,
+            doc_id,
         )
         return doc_id
 

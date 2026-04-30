@@ -11,9 +11,12 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from phoenix.errors import BehaviorError
-from phoenix.expression.emotion_fusion import ProsodyFeatures
+
+if TYPE_CHECKING:
+    from phoenix.expression.emotion_fusion import ProsodyFeatures
 
 
 @dataclass(frozen=True)

@@ -15,13 +15,12 @@ VRAM budget (RTX 5090 32GB):
     Activations:      ~8GB (with gradient checkpointing)
     Total:            ~13GB (19GB headroom)
 """
+
 from __future__ import annotations
 
 import gc
-import json
 import logging
 import os
-import random
 import sys
 import time
 from pathlib import Path
@@ -49,14 +48,13 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.benchmark = True
 
-from diffusers import CogVideoXPipeline, DDIMScheduler
-from diffusers.training_utils import compute_snr
+from diffusers import CogVideoXPipeline
 from peft import LoraConfig, get_peft_model
 
 
@@ -72,16 +70,19 @@ class SantaVideoDataset(Dataset):
         num_frames: int = 49,
         height: int = 480,
         width: int = 720,
-    ):
+    ) -> None:
         self.clips_dir = Path(clips_dir)
         self.num_frames = num_frames
         self.height = height
         self.width = width
 
-        self.clip_dirs = sorted([
-            d for d in self.clips_dir.iterdir()
-            if d.is_dir() and len(list(d.glob("*.jpg"))) >= num_frames
-        ])
+        self.clip_dirs = sorted(
+            [
+                d
+                for d in self.clips_dir.iterdir()
+                if d.is_dir() and len(list(d.glob("*.jpg"))) >= num_frames
+            ]
+        )
 
         if not self.clip_dirs:
             raise ValueError(f"No valid clips found in {clips_dir}")
@@ -92,14 +93,20 @@ class SantaVideoDataset(Dataset):
             "and red suit talking emotionally in an interview setting with warm lighting"
         )
 
-        logger.info("Dataset: %d clips of %d frames at %dx%d", len(self.clip_dirs), num_frames, width, height)
+        logger.info(
+            "Dataset: %d clips of %d frames at %dx%d",
+            len(self.clip_dirs),
+            num_frames,
+            width,
+            height,
+        )
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.clip_dirs)
 
     def __getitem__(self, idx):
         clip_dir = self.clip_dirs[idx]
-        frames = sorted(clip_dir.glob("*.jpg"))[:self.num_frames]
+        frames = sorted(clip_dir.glob("*.jpg"))[: self.num_frames]
 
         # Load and normalize frames to [-1, 1]
         video = []
@@ -131,7 +138,7 @@ def train_lora(
     grad_accum: int = 4,
     save_every: int = 250,
     num_frames: int = 13,  # Fewer frames to fit in VRAM during training
-):
+) -> None:
     os.makedirs(output_dir, exist_ok=True)
     device = torch.device("cuda")
 
@@ -162,15 +169,21 @@ def train_lora(
         "A close-up video of Santa Claus with a white beard, round glasses, "
         "and red suit talking emotionally in an interview setting with warm lighting"
     )
-    prompt_inputs = tokenizer(prompt, return_tensors="pt", padding="max_length",
-                              max_length=tokenizer.model_max_length, truncation=True)
+    prompt_inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        padding="max_length",
+        max_length=tokenizer.model_max_length,
+        truncation=True,
+    )
     with torch.no_grad():
         prompt_embeds = text_encoder(prompt_inputs.input_ids.to(device))[0]
 
     # Free T5 after encoding — saves ~5GB
     text_encoder.to("cpu")
     del text_encoder, tokenizer
-    gc.collect(); torch.cuda.empty_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
     logger.info("T5 freed. VRAM: %.1fGB", torch.cuda.memory_allocated() / 1e9)
 
     # --- Apply LoRA to transformer ---
@@ -183,8 +196,13 @@ def train_lora(
     transformer = get_peft_model(transformer, lora_config)
     trainable_params = sum(p.numel() for p in transformer.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in transformer.parameters())
-    logger.info("LoRA: rank=%d, trainable=%d (%.2f%% of %d)", rank, trainable_params,
-                100 * trainable_params / total_params, total_params)
+    logger.info(
+        "LoRA: rank=%d, trainable=%d (%.2f%% of %d)",
+        rank,
+        trainable_params,
+        100 * trainable_params / total_params,
+        total_params,
+    )
 
     # --- Dataset ---
     dataset = SantaVideoDataset(clips_dir, num_frames=num_frames)
@@ -222,8 +240,9 @@ def train_lora(
 
             # Sample noise
             noise = torch.randn_like(latents)
-            timesteps = torch.randint(0, scheduler.config.num_train_timesteps,
-                                      (latents.shape[0],), device=device).long()
+            timesteps = torch.randint(
+                0, scheduler.config.num_train_timesteps, (latents.shape[0],), device=device
+            ).long()
 
             # Add noise to latents
             noisy_latents = scheduler.add_noise(latents, noise, timesteps)
@@ -260,8 +279,13 @@ def train_lora(
                 peak = torch.cuda.max_memory_allocated() / 1e9
                 logger.info(
                     "Step %d/%d | loss=%.4f | lr=%.2e | %.1fs | VRAM=%.1f/%.1fGB",
-                    global_step, steps, avg_loss, lr_scheduler.get_last_lr()[0],
-                    elapsed, vram, peak,
+                    global_step,
+                    steps,
+                    avg_loss,
+                    lr_scheduler.get_last_lr()[0],
+                    elapsed,
+                    vram,
+                    peak,
                 )
                 if avg_loss < best_loss:
                     best_loss = avg_loss
@@ -277,16 +301,20 @@ def train_lora(
     transformer.save_pretrained(final_path)
 
     elapsed = time.time() - t0
-    logger.info("Training complete: %d steps in %.1f min, best_loss=%.4f", steps, elapsed / 60, best_loss)
+    logger.info(
+        "Training complete: %d steps in %.1f min, best_loss=%.4f", steps, elapsed / 60, best_loss
+    )
     logger.info("LoRA saved: %s", final_path)
 
     # Cleanup
     del transformer, vae, optimizer
-    gc.collect(); torch.cuda.empty_cache()
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--steps", type=int, default=1000)
     p.add_argument("--lr", type=float, default=1e-4)
@@ -298,7 +326,11 @@ if __name__ == "__main__":
     args = p.parse_args()
 
     train_lora(
-        steps=args.steps, lr=args.lr, rank=args.rank,
-        batch_size=args.batch_size, grad_accum=args.grad_accum,
-        save_every=args.save_every, num_frames=args.num_frames,
+        steps=args.steps,
+        lr=args.lr,
+        rank=args.rank,
+        batch_size=args.batch_size,
+        grad_accum=args.grad_accum,
+        save_every=args.save_every,
+        num_frames=args.num_frames,
     )

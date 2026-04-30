@@ -9,21 +9,26 @@ When the clone is NOT speaking, this renders:
 The driver video is the single most important element for realism.
 It must be a real recording of the person sitting naturally at their desk.
 """
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
-import numpy as np
 
-from voiceagent.meeting.config import BehaviorConfig, LipSyncConfig
 from voiceagent.meeting.errors import MeetingLipSyncError
 from voiceagent.meeting.realism import (
     BlinkGenerator,
     add_film_grain,
     apply_brightness_jitter,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
+
+    from voiceagent.meeting.config import BehaviorConfig, LipSyncConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +50,10 @@ class IdleRenderer:
         lip_sync_config: LipSyncConfig,
         behavior_config: BehaviorConfig,
         eye_region: tuple[int, int, int, int] | None = None,
-    ):
+    ) -> None:
         self._driver_path = Path(driver_path)
         if not self._driver_path.exists():
-            raise MeetingLipSyncError(
-                f"Driver video not found: {self._driver_path}"
-            )
+            raise MeetingLipSyncError(f"Driver video not found: {self._driver_path}")
 
         self._config = lip_sync_config
         self._eye_region = eye_region
@@ -58,9 +61,7 @@ class IdleRenderer:
         # Load driver video frames
         self._frames = self._load_driver_video()
         if not self._frames:
-            raise MeetingLipSyncError(
-                f"Driver video has no frames: {self._driver_path}"
-            )
+            raise MeetingLipSyncError(f"Driver video has no frames: {self._driver_path}")
 
         # Ping-pong: forward + reverse (minus first and last to avoid double)
         self._pingpong = self._frames + self._frames[-2:0:-1]
@@ -73,7 +74,8 @@ class IdleRenderer:
         blink_mean = (blink_min + blink_max) / 2.0
         blink_std = (blink_max - blink_min) / 4.0
         self._blink_gen = BlinkGenerator(
-            mean_interval_s=blink_mean, std_s=blink_std,
+            mean_interval_s=blink_mean,
+            std_s=blink_std,
         )
 
         logger.info(
@@ -87,9 +89,7 @@ class IdleRenderer:
         """Load all frames from the driver video."""
         cap = cv2.VideoCapture(str(self._driver_path))
         if not cap.isOpened():
-            raise MeetingLipSyncError(
-                f"Cannot open driver video: {self._driver_path}"
-            )
+            raise MeetingLipSyncError(f"Cannot open driver video: {self._driver_path}")
 
         frames: list[np.ndarray] = []
         target_w, target_h = self._config.resolution
@@ -104,7 +104,9 @@ class IdleRenderer:
             h, w = frame.shape[:2]
             if w != target_w or h != target_h:
                 frame = cv2.resize(
-                    frame, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4,
+                    frame,
+                    (target_w, target_h),
+                    interpolation=cv2.INTER_LANCZOS4,
                 )
             frames.append(frame)
 
@@ -128,7 +130,9 @@ class IdleRenderer:
             blink_alpha = self._blink_gen.get_blink_alpha(self._global_frame)
             if blink_alpha > 0.05:
                 base = self._blink_gen.apply_blink(
-                    base, blink_alpha, self._eye_region,
+                    base,
+                    blink_alpha,
+                    self._eye_region,
                 )
 
         # Micro-saccade (applied to eye region if available)
@@ -142,16 +146,20 @@ class IdleRenderer:
                 gpu_brightness_jitter,
                 gpu_film_grain,
             )
+
             base = gpu_film_grain(base, intensity=0.015)
             self._brightness_phase += 0.02
             import math
+
             amount = 0.01 * math.sin(self._brightness_phase)
             base = gpu_brightness_jitter(base, amount=amount)
         except ImportError:
             base = add_film_grain(base, intensity=0.015)
             self._brightness_phase += 0.02
             base = apply_brightness_jitter(
-                base, self._brightness_phase, amplitude=0.01,
+                base,
+                self._brightness_phase,
+                amplitude=0.01,
             )
 
         return base

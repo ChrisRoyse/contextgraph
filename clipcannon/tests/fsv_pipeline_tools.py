@@ -6,12 +6,12 @@ Every assertion is backed by direct source-of-truth inspection.
 
 HOLMES: *adjusts magnifying glass* The game is afoot.
 """
+
 from __future__ import annotations
 
 import asyncio
 import inspect
 import json
-import os
 import sqlite3
 import sys
 import tempfile
@@ -28,39 +28,37 @@ sys.path.insert(0, str(_ROOT / "src"))
 # ---------------------------------------------------------------------------
 # Imports under test
 # ---------------------------------------------------------------------------
+from clipcannon.config import ClipCannonConfig
+from clipcannon.pipeline.acoustic import run_acoustic
+from clipcannon.pipeline.audio_extract import run_audio_extract
+from clipcannon.pipeline.chronemic import run_chronemic
 from clipcannon.pipeline.dag import topological_sort
+from clipcannon.pipeline.emotion_embed import run_emotion_embed
+from clipcannon.pipeline.finalize import run_finalize
+from clipcannon.pipeline.frame_extract import run_frame_extract
+from clipcannon.pipeline.highlights import run_highlights
+from clipcannon.pipeline.ocr import run_ocr
 from clipcannon.pipeline.orchestrator import (
     PipelineOrchestrator,
     PipelineStage,
     StageResult,
 )
-from clipcannon.pipeline.registry import _STAGES, build_pipeline
-from clipcannon.config import ClipCannonConfig
-from clipcannon.db.connection import get_connection
-from clipcannon.db.queries import execute, fetch_all, fetch_one
-from clipcannon.provenance.chain import GENESIS_HASH, compute_chain_hash
 
 # Pipeline stage run functions -- import each to verify existence
 from clipcannon.pipeline.probe import run_probe
-from clipcannon.pipeline.vfr_normalize import run_vfr_normalize
-from clipcannon.pipeline.audio_extract import run_audio_extract
-from clipcannon.pipeline.frame_extract import run_frame_extract
-from clipcannon.pipeline.source_separation import run_source_separation
-from clipcannon.pipeline.visual_embed import run_visual_embed
-from clipcannon.pipeline.ocr import run_ocr
-from clipcannon.pipeline.quality import run_quality
-from clipcannon.pipeline.shot_type import run_shot_type
-from clipcannon.pipeline.transcribe import run_transcribe
-from clipcannon.pipeline.storyboard import run_storyboard
-from clipcannon.pipeline.semantic_embed import run_semantic_embed
-from clipcannon.pipeline.speaker_embed import run_speaker_embed
-from clipcannon.pipeline.emotion_embed import run_emotion_embed
-from clipcannon.pipeline.reactions import run_reactions
-from clipcannon.pipeline.acoustic import run_acoustic
 from clipcannon.pipeline.profanity import run_profanity
-from clipcannon.pipeline.chronemic import run_chronemic
-from clipcannon.pipeline.highlights import run_highlights
-from clipcannon.pipeline.finalize import run_finalize
+from clipcannon.pipeline.quality import run_quality
+from clipcannon.pipeline.reactions import run_reactions
+from clipcannon.pipeline.registry import _STAGES, build_pipeline
+from clipcannon.pipeline.semantic_embed import run_semantic_embed
+from clipcannon.pipeline.shot_type import run_shot_type
+from clipcannon.pipeline.source_separation import run_source_separation
+from clipcannon.pipeline.speaker_embed import run_speaker_embed
+from clipcannon.pipeline.storyboard import run_storyboard
+from clipcannon.pipeline.transcribe import run_transcribe
+from clipcannon.pipeline.vfr_normalize import run_vfr_normalize
+from clipcannon.pipeline.visual_embed import run_visual_embed
+from clipcannon.provenance.chain import GENESIS_HASH, compute_chain_hash
 
 # ============================================================================
 # Test harness
@@ -86,9 +84,9 @@ def _test(name: str, condition: bool, detail: str = ""):
 
 
 def _section(title: str):
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print(f"  {title}")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
 
 
 # ============================================================================
@@ -109,10 +107,8 @@ def test_dag_dependency_resolution():
 
     _test("topological_sort returns list of levels", isinstance(levels, list))
     _test("Level 0 contains A", len(levels) > 0 and any(s.name == "A" for s in levels[0]))
-    _test("Level 1 contains B and C",
-          len(levels) > 1 and {s.name for s in levels[1]} == {"B", "C"})
-    _test("Level 2 contains D",
-          len(levels) > 2 and any(s.name == "D" for s in levels[2]))
+    _test("Level 1 contains B and C", len(levels) > 1 and {s.name for s in levels[1]} == {"B", "C"})
+    _test("Level 2 contains D", len(levels) > 2 and any(s.name == "D" for s in levels[2]))
 
     # Test cycle detection
     cyclic_stages = [
@@ -180,34 +176,49 @@ def test_stage_registration():
     pipeline = build_pipeline(config)
 
     expected_stage_names = {
-        "probe", "vfr_normalize", "audio_extract", "frame_extract",
-        "source_separation", "visual_embed", "ocr", "quality", "shot_type",
-        "transcribe", "storyboard", "semantic_embed", "speaker_embed",
-        "emotion_embed", "reactions", "acoustic", "profanity", "chronemic",
-        "highlights", "finalize",
+        "probe",
+        "vfr_normalize",
+        "audio_extract",
+        "frame_extract",
+        "source_separation",
+        "visual_embed",
+        "ocr",
+        "quality",
+        "shot_type",
+        "transcribe",
+        "storyboard",
+        "semantic_embed",
+        "speaker_embed",
+        "emotion_embed",
+        "reactions",
+        "acoustic",
+        "profanity",
+        "chronemic",
+        "highlights",
+        "finalize",
     }
     actual_names = {s.name for s in pipeline.stages}
 
-    _test(f"Registry defines {len(_STAGES)} stages", len(_STAGES) == 20,
-          f"got {len(_STAGES)}")
-    _test(f"Pipeline has {len(pipeline.stages)} registered stages",
-          len(pipeline.stages) == 20,
-          f"got {len(pipeline.stages)}")
-    _test("All expected stages are registered",
-          actual_names == expected_stage_names,
-          f"missing: {expected_stage_names - actual_names}, extra: {actual_names - expected_stage_names}")
+    _test(f"Registry defines {len(_STAGES)} stages", len(_STAGES) == 20, f"got {len(_STAGES)}")
+    _test(
+        f"Pipeline has {len(pipeline.stages)} registered stages",
+        len(pipeline.stages) == 20,
+        f"got {len(pipeline.stages)}",
+    )
+    _test(
+        "All expected stages are registered",
+        actual_names == expected_stage_names,
+        f"missing: {expected_stage_names - actual_names}, extra: {actual_names - expected_stage_names}",
+    )
 
     # Verify no duplicate stages
     names_list = [s.name for s in pipeline.stages]
-    _test("No duplicate stage names",
-          len(names_list) == len(set(names_list)))
+    _test("No duplicate stage names", len(names_list) == len(set(names_list)))
 
     # Verify duplicate registration is rejected
     dup_rejected = False
     try:
-        pipeline.register_stage(
-            PipelineStage(name="probe", operation="probe", required=True)
-        )
+        pipeline.register_stage(PipelineStage(name="probe", operation="probe", required=True))
     except Exception:
         dup_rejected = True
     _test("Duplicate registration raises PipelineError", dup_rejected)
@@ -226,28 +237,49 @@ def test_required_optional():
     )
     pipeline = build_pipeline(config)
 
-    stage_map = {s.name: s for s in pipeline.stages}
+    {s.name: s for s in pipeline.stages}
 
     # Per the registry, these should be REQUIRED:
-    expected_required = {"probe", "vfr_normalize", "audio_extract",
-                         "frame_extract", "transcribe", "finalize"}
+    expected_required = {
+        "probe",
+        "vfr_normalize",
+        "audio_extract",
+        "frame_extract",
+        "transcribe",
+        "finalize",
+    }
 
     # Everything else is OPTIONAL
     expected_optional = {
-        "source_separation", "visual_embed", "ocr", "quality", "shot_type",
-        "storyboard", "semantic_embed", "speaker_embed", "emotion_embed",
-        "reactions", "acoustic", "profanity", "chronemic", "highlights",
+        "source_separation",
+        "visual_embed",
+        "ocr",
+        "quality",
+        "shot_type",
+        "storyboard",
+        "semantic_embed",
+        "speaker_embed",
+        "emotion_embed",
+        "reactions",
+        "acoustic",
+        "profanity",
+        "chronemic",
+        "highlights",
     }
 
     actual_required = {s.name for s in pipeline.stages if s.required}
     actual_optional = {s.name for s in pipeline.stages if not s.required}
 
-    _test("Required stages match spec",
-          actual_required == expected_required,
-          f"expected {expected_required}, got {actual_required}")
-    _test("Optional stages match spec",
-          actual_optional == expected_optional,
-          f"missing optional: {expected_optional - actual_optional}, extra: {actual_optional - expected_optional}")
+    _test(
+        "Required stages match spec",
+        actual_required == expected_required,
+        f"expected {expected_required}, got {actual_required}",
+    )
+    _test(
+        "Optional stages match spec",
+        actual_optional == expected_optional,
+        f"missing optional: {expected_optional - actual_optional}, extra: {actual_optional - expected_optional}",
+    )
 
     # Verify counts
     _test("6 required stages", len(actual_required) == 6, f"got {len(actual_required)}")
@@ -293,14 +325,15 @@ def test_stage_signatures():
         # Verify parameters (ignoring 'self' and 'return')
         sig = inspect.signature(func)
         params = set(sig.parameters.keys())
-        _test(f"{name} has correct params",
-              params == expected_params,
-              f"expected {expected_params}, got {params}")
+        _test(
+            f"{name} has correct params",
+            params == expected_params,
+            f"expected {expected_params}, got {params}",
+        )
 
     # Verify each stage in registry has a non-None run function
     for stage in _STAGES:
-        _test(f"Stage '{stage.name}' has run function assigned",
-              stage.run is not None)
+        _test(f"Stage '{stage.name}' has run function assigned", stage.run is not None)
 
 
 # ============================================================================
@@ -342,51 +375,78 @@ def test_graceful_degradation():
             return StageResult(success=True, operation="test_ok")
 
         async def _fail_optional(project_id, db_path, project_dir, config):
-            return StageResult(success=False, operation="test_fail", error_message="Simulated failure")
+            return StageResult(
+                success=False, operation="test_fail", error_message="Simulated failure"
+            )
 
         orchestrator.register_stage(
-            PipelineStage(name="stage_a", operation="a", required=True, run=_succeed))
+            PipelineStage(name="stage_a", operation="a", required=True, run=_succeed)
+        )
         orchestrator.register_stage(
-            PipelineStage(name="stage_b", operation="b", required=False, depends_on=["stage_a"], run=_fail_optional))
+            PipelineStage(
+                name="stage_b",
+                operation="b",
+                required=False,
+                depends_on=["stage_a"],
+                run=_fail_optional,
+            )
+        )
         orchestrator.register_stage(
-            PipelineStage(name="stage_c", operation="c", required=True, depends_on=["stage_a"], run=_succeed))
+            PipelineStage(
+                name="stage_c", operation="c", required=True, depends_on=["stage_a"], run=_succeed
+            )
+        )
 
         result = asyncio.get_event_loop().run_until_complete(
             orchestrator.run("test_proj", db_path, Path(tmpdir))
         )
 
-        _test("Pipeline succeeds when only optional stage fails",
-              result.success is True,
-              f"success={result.success}, failed_required={result.failed_required}")
-        _test("Failed optional stage recorded",
-              "stage_b" in result.failed_optional,
-              f"failed_optional={result.failed_optional}")
-        _test("Required stages completed",
-              "stage_a" in result.stage_results and result.stage_results["stage_a"].success)
-        _test("Required stage C completed despite B failure",
-              "stage_c" in result.stage_results and result.stage_results["stage_c"].success)
+        _test(
+            "Pipeline succeeds when only optional stage fails",
+            result.success is True,
+            f"success={result.success}, failed_required={result.failed_required}",
+        )
+        _test(
+            "Failed optional stage recorded",
+            "stage_b" in result.failed_optional,
+            f"failed_optional={result.failed_optional}",
+        )
+        _test(
+            "Required stages completed",
+            "stage_a" in result.stage_results and result.stage_results["stage_a"].success,
+        )
+        _test(
+            "Required stage C completed despite B failure",
+            "stage_c" in result.stage_results and result.stage_results["stage_c"].success,
+        )
 
         # Now test REQUIRED stage failure aborts pipeline
         orchestrator2 = PipelineOrchestrator(config)
 
         async def _fail_required(project_id, db_path, project_dir, config):
-            return StageResult(success=False, operation="test_fail", error_message="Required failure")
+            return StageResult(
+                success=False, operation="test_fail", error_message="Required failure"
+            )
 
         orchestrator2.register_stage(
-            PipelineStage(name="stage_x", operation="x", required=True, run=_fail_required))
+            PipelineStage(name="stage_x", operation="x", required=True, run=_fail_required)
+        )
         orchestrator2.register_stage(
-            PipelineStage(name="stage_y", operation="y", required=True, depends_on=["stage_x"], run=_succeed))
+            PipelineStage(
+                name="stage_y", operation="y", required=True, depends_on=["stage_x"], run=_succeed
+            )
+        )
 
         result2 = asyncio.get_event_loop().run_until_complete(
             orchestrator2.run("test_proj2", db_path, Path(tmpdir))
         )
 
-        _test("Pipeline fails when required stage fails",
-              result2.success is False)
-        _test("Failed required stage recorded",
-              "stage_x" in result2.failed_required)
-        _test("Downstream stage skipped after required failure",
-              "stage_y" in result2.stage_results and not result2.stage_results["stage_y"].success)
+        _test("Pipeline fails when required stage fails", result2.success is False)
+        _test("Failed required stage recorded", "stage_x" in result2.failed_required)
+        _test(
+            "Downstream stage skipped after required failure",
+            "stage_y" in result2.stage_results and not result2.stage_results["stage_y"].success,
+        )
 
 
 # ============================================================================
@@ -416,6 +476,7 @@ def create_synthetic_db(tmpdir: Path) -> Path:
 
     # Import and create schema
     from clipcannon.db.schema import _CORE_TABLES_SQL, _INDEXES_SQL
+
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -426,24 +487,33 @@ def create_synthetic_db(tmpdir: Path) -> Path:
     conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (1)")
 
     # ---- PROJECT RECORD ----
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO project (project_id, name, source_path, source_sha256,
             duration_ms, resolution, fps, codec, audio_codec, audio_channels,
             file_size_bytes, vfr_detected, status, created_at, updated_at)
         VALUES (?, 'Test Video', '/tmp/source.mp4', 'abc123hash',
             60000, '1920x1080', 30.0, 'h264', 'aac', 2,
             10485760, 0, 'ready', datetime('now'), datetime('now'))
-    """, (PROJECT_ID,))
+    """,
+        (PROJECT_ID,),
+    )
 
     # ---- SPEAKERS (2) ----
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO speakers (project_id, label, total_speaking_ms, speaking_pct)
         VALUES (?, 'Speaker A', 30000, 50.0)
-    """, (PROJECT_ID,))
-    conn.execute("""
+    """,
+        (PROJECT_ID,),
+    )
+    conn.execute(
+        """
         INSERT INTO speakers (project_id, label, total_speaking_ms, speaking_pct)
         VALUES (?, 'Speaker B', 20000, 33.3)
-    """, (PROJECT_ID,))
+    """,
+        (PROJECT_ID,),
+    )
 
     # ---- TRANSCRIPT SEGMENTS (5) ----
     segments = [
@@ -454,11 +524,14 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (PROJECT_ID, 35000, 50000, "Thank you for watching the entire video", 2, "en", 7),
     ]
     for seg in segments:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO transcript_segments (project_id, start_ms, end_ms, text,
                 speaker_id, language, word_count)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, seg)
+        """,
+            seg,
+        )
 
     # ---- TRANSCRIPT WORDS (15 total, 3 per segment) ----
     words = [
@@ -484,27 +557,87 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (5, "for", 35900, 36100, 0.99, 2),
     ]
     for w in words:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO transcript_words (segment_id, word, start_ms, end_ms,
                 confidence, speaker_id)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, w)
+        """,
+            w,
+        )
 
     # ---- SCENES (3) ----
     scenes = [
-        (PROJECT_ID, 0, 15000, "/tmp/frames/frame_000001.jpg", 500, 0.85, '["#FF0000"]', 0, None, None, "medium", 0.9, None, 78.5, 65.0, "good", None),
-        (PROJECT_ID, 15000, 35000, "/tmp/frames/frame_000031.jpg", 15500, 0.80, '["#00FF00"]', 0, None, None, "wide", 0.85, None, 82.0, 72.0, "good", None),
-        (PROJECT_ID, 35000, 60000, "/tmp/frames/frame_000071.jpg", 35500, 0.75, '["#0000FF"]', 0, None, None, "closeup", 0.95, None, 90.0, 85.0, "excellent", None),
+        (
+            PROJECT_ID,
+            0,
+            15000,
+            "/tmp/frames/frame_000001.jpg",
+            500,
+            0.85,
+            '["#FF0000"]',
+            0,
+            None,
+            None,
+            "medium",
+            0.9,
+            None,
+            78.5,
+            65.0,
+            "good",
+            None,
+        ),
+        (
+            PROJECT_ID,
+            15000,
+            35000,
+            "/tmp/frames/frame_000031.jpg",
+            15500,
+            0.80,
+            '["#00FF00"]',
+            0,
+            None,
+            None,
+            "wide",
+            0.85,
+            None,
+            82.0,
+            72.0,
+            "good",
+            None,
+        ),
+        (
+            PROJECT_ID,
+            35000,
+            60000,
+            "/tmp/frames/frame_000071.jpg",
+            35500,
+            0.75,
+            '["#0000FF"]',
+            0,
+            None,
+            None,
+            "closeup",
+            0.95,
+            None,
+            90.0,
+            85.0,
+            "excellent",
+            None,
+        ),
     ]
     for s in scenes:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO scenes (project_id, start_ms, end_ms, key_frame_path,
                 key_frame_timestamp_ms, visual_similarity_avg, dominant_colors,
                 face_detected, face_position_x, face_position_y, shot_type,
                 shot_type_confidence, crop_recommendation, quality_avg, quality_min,
                 quality_classification, quality_issues)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, s)
+        """,
+            s,
+        )
 
     # ---- EMOTION CURVE (3 entries) ----
     emotions = [
@@ -513,10 +646,13 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (PROJECT_ID, 40000, 60000, 0.4, 0.7, 0.5),
     ]
     for e in emotions:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO emotion_curve (project_id, start_ms, end_ms, arousal, valence, energy)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, e)
+        """,
+            e,
+        )
 
     # ---- TOPICS (2) ----
     topics = [
@@ -524,25 +660,73 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (PROJECT_ID, 20000, 60000, "Main Discussion", "explain,concept,discuss", 0.92, 0.8),
     ]
     for t in topics:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO topics (project_id, start_ms, end_ms, label, keywords,
                 coherence_score, semantic_density)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, t)
+        """,
+            t,
+        )
 
     # ---- HIGHLIGHTS (3) ----
     highlights = [
-        (PROJECT_ID, 0, 10000, "opening", 0.95, "Strong opening hook", 0.8, 0.7, 0.9, 0.6, 0.5, 0.8, 0.7),
-        (PROJECT_ID, 20000, 35000, "key_moment", 0.88, "Concept explanation peak", 0.7, 0.6, 0.85, 0.5, 0.6, 0.9, 0.8),
-        (PROJECT_ID, 35000, 50000, "closing", 0.72, "Emotional closing segment", 0.9, 0.8, 0.7, 0.6, 0.4, 0.7, 0.6),
+        (
+            PROJECT_ID,
+            0,
+            10000,
+            "opening",
+            0.95,
+            "Strong opening hook",
+            0.8,
+            0.7,
+            0.9,
+            0.6,
+            0.5,
+            0.8,
+            0.7,
+        ),
+        (
+            PROJECT_ID,
+            20000,
+            35000,
+            "key_moment",
+            0.88,
+            "Concept explanation peak",
+            0.7,
+            0.6,
+            0.85,
+            0.5,
+            0.6,
+            0.9,
+            0.8,
+        ),
+        (
+            PROJECT_ID,
+            35000,
+            50000,
+            "closing",
+            0.72,
+            "Emotional closing segment",
+            0.9,
+            0.8,
+            0.7,
+            0.6,
+            0.4,
+            0.7,
+            0.6,
+        ),
     ]
     for h in highlights:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO highlights (project_id, start_ms, end_ms, type, score, reason,
                 emotion_score, reaction_score, semantic_score, narrative_score,
                 visual_score, quality_score, speaker_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, h)
+        """,
+            h,
+        )
 
     # ---- REACTIONS (2) ----
     reactions = [
@@ -550,24 +734,33 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (PROJECT_ID, 40000, 43000, "applause", 0.92, 3000, "medium", "Thank you for watching"),
     ]
     for r in reactions:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reactions (project_id, start_ms, end_ms, type, confidence,
                 duration_ms, intensity, context_transcript)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, r)
+        """,
+            r,
+        )
 
     # ---- ACOUSTIC (1) ----
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO acoustic (project_id, avg_volume_db, dynamic_range_db)
         VALUES (?, -18.5, 12.3)
-    """, (PROJECT_ID,))
+    """,
+        (PROJECT_ID,),
+    )
 
     # ---- BEATS (1) ----
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO beats (project_id, has_music, source, tempo_bpm,
             tempo_confidence, beat_positions_ms, downbeat_positions_ms, beat_count)
         VALUES (?, 1, 'librosa', 120.5, 0.85, '[0,500,1000,1500]', '[0,2000]', 4)
-    """, (PROJECT_ID,))
+    """,
+        (PROJECT_ID,),
+    )
 
     # ---- PACING (2) ----
     pacing = [
@@ -575,30 +768,51 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         (PROJECT_ID, 30000, 60000, 160.0, 0.08, 1, "fast"),
     ]
     for p in pacing:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO pacing (project_id, start_ms, end_ms, words_per_minute,
                 pause_ratio, speaker_changes, label)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, p)
+        """,
+            p,
+        )
 
     # ---- CONTENT SAFETY (1) ----
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO content_safety (project_id, profanity_count, profanity_density,
             content_rating, nsfw_frame_count)
         VALUES (?, 2, 0.033, 'PG-13', 0)
-    """, (PROJECT_ID,))
+    """,
+        (PROJECT_ID,),
+    )
 
     # ---- STORYBOARD GRIDS (2) ----
     grids = [
-        (PROJECT_ID, 1, "/tmp/storyboards/grid_001.jpg", "[0,2000,4000,6000,8000,10000,12000,14000,16000]", '{"cells": 9}'),
-        (PROJECT_ID, 2, "/tmp/storyboards/grid_002.jpg", "[18000,20000,22000,24000,26000,28000,30000,32000,34000]", '{"cells": 9}'),
+        (
+            PROJECT_ID,
+            1,
+            "/tmp/storyboards/grid_001.jpg",
+            "[0,2000,4000,6000,8000,10000,12000,14000,16000]",
+            '{"cells": 9}',
+        ),
+        (
+            PROJECT_ID,
+            2,
+            "/tmp/storyboards/grid_002.jpg",
+            "[18000,20000,22000,24000,26000,28000,30000,32000,34000]",
+            '{"cells": 9}',
+        ),
     ]
     for g in grids:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO storyboard_grids (project_id, grid_number, grid_path,
                 cell_timestamps_ms, cell_metadata)
             VALUES (?, ?, ?, ?, ?)
-        """, g)
+        """,
+            g,
+        )
 
     # ---- PROVENANCE (3 records forming a chain) ----
     # Record 1: genesis
@@ -611,14 +825,17 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         model_version="",
         model_params={},
     )
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO provenance (record_id, project_id, timestamp_utc, operation,
             stage, description, input_sha256, output_sha256, output_record_count,
             parent_record_id, chain_hash, execution_duration_ms)
         VALUES (?, ?, '2024-01-01T00:00:00Z', 'probe', 'ffprobe',
             'Initial probe', 'input_hash_1', 'output_hash_1', 1,
             NULL, ?, 100)
-    """, (f"prov_001", PROJECT_ID, chain_hash_1))
+    """,
+        ("prov_001", PROJECT_ID, chain_hash_1),
+    )
 
     # Record 2: child of 1
     chain_hash_2 = compute_chain_hash(
@@ -630,7 +847,8 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         model_version="large-v3",
         model_params={"compute_type": "int8"},
     )
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO provenance (record_id, project_id, timestamp_utc, operation,
             stage, description, input_sha256, output_sha256, output_record_count,
             parent_record_id, model_name, model_version, model_parameters,
@@ -639,7 +857,9 @@ def create_synthetic_db(tmpdir: Path) -> Path:
             'WhisperX transcription', 'input_hash_2', 'output_hash_2', 5,
             'prov_001', 'whisperx', 'large-v3', '{"compute_type": "int8"}',
             ?, 5000)
-    """, (f"prov_002", PROJECT_ID, chain_hash_2))
+    """,
+        ("prov_002", PROJECT_ID, chain_hash_2),
+    )
 
     # Record 3: child of 2
     chain_hash_3 = compute_chain_hash(
@@ -651,7 +871,8 @@ def create_synthetic_db(tmpdir: Path) -> Path:
         model_version="v1.5",
         model_params={},
     )
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO provenance (record_id, project_id, timestamp_utc, operation,
             stage, description, input_sha256, output_sha256, output_record_count,
             parent_record_id, model_name, model_version,
@@ -660,17 +881,23 @@ def create_synthetic_db(tmpdir: Path) -> Path:
             'Nomic semantic embeddings', 'input_hash_3', 'output_hash_3', 5,
             'prov_002', 'nomic-embed', 'v1.5',
             ?, 3000)
-    """, (f"prov_003", PROJECT_ID, chain_hash_3))
+    """,
+        ("prov_003", PROJECT_ID, chain_hash_3),
+    )
 
     # ---- STREAM STATUS (16 streams, all completed) ----
     from clipcannon.db.schema import PIPELINE_STREAMS
+
     for stream_name in PIPELINE_STREAMS:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO stream_status (project_id, stream_name, status,
                 started_at, completed_at, duration_ms)
             VALUES (?, ?, 'completed', datetime('now', '-1 minute'),
                 datetime('now'), 5000)
-        """, (PROJECT_ID, stream_name))
+        """,
+            (PROJECT_ID, stream_name),
+        )
 
     conn.commit()
     conn.close()
@@ -697,19 +924,24 @@ def test_mcp_tools(tmpdir: Path, db_path: Path):
         # ------------------------------------------------------------------
         _section("6a. clipcannon_project_list")
         from clipcannon.tools.project import clipcannon_project_list
+
         with patch("clipcannon.tools.project._get_projects_dir", return_value=tmpdir):
             result = await clipcannon_project_list()
         _test("project_list returns dict", isinstance(result, dict))
         _test("project_list has 'projects' key", "projects" in result)
         projects = result.get("projects", [])
-        _test("project_list contains our test project",
-              any(p.get("project_id") == PROJECT_ID for p in projects),
-              f"got projects: {[p.get('project_id') for p in projects]}")
+        _test(
+            "project_list contains our test project",
+            any(p.get("project_id") == PROJECT_ID for p in projects),
+            f"got projects: {[p.get('project_id') for p in projects]}",
+        )
 
         # Direct DB verification
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT project_id, name, status FROM project WHERE project_id = ?", (PROJECT_ID,)).fetchone()
+        row = conn.execute(
+            "SELECT project_id, name, status FROM project WHERE project_id = ?", (PROJECT_ID,)
+        ).fetchone()
         conn.close()
         _test("DB confirms project exists", row is not None and row["project_id"] == PROJECT_ID)
 
@@ -718,129 +950,164 @@ def test_mcp_tools(tmpdir: Path, db_path: Path):
         # ------------------------------------------------------------------
         _section("6b. clipcannon_project_status")
         from clipcannon.tools.project import clipcannon_project_status
+
         with patch("clipcannon.tools.project._get_projects_dir", return_value=tmpdir):
             status = await clipcannon_project_status(PROJECT_ID)
         _test("project_status returns dict", isinstance(status, dict))
         _test("project_status has 'pipeline' key", "pipeline" in status)
         pipeline = status.get("pipeline", {})
-        _test("pipeline progress shows all completed",
-              pipeline.get("completed") == 16,
-              f"completed={pipeline.get('completed')}, total={pipeline.get('total_streams')}")
-        _test("pipeline progress 100%", pipeline.get("progress_pct") == 100.0,
-              f"progress_pct={pipeline.get('progress_pct')}")
+        _test(
+            "pipeline progress shows all completed",
+            pipeline.get("completed") == 16,
+            f"completed={pipeline.get('completed')}, total={pipeline.get('total_streams')}",
+        )
+        _test(
+            "pipeline progress 100%",
+            pipeline.get("progress_pct") == 100.0,
+            f"progress_pct={pipeline.get('progress_pct')}",
+        )
 
         # Direct DB verification
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         ss_rows = conn.execute(
             "SELECT count(*) as cnt FROM stream_status WHERE project_id = ? AND status = 'completed'",
-            (PROJECT_ID,)
+            (PROJECT_ID,),
         ).fetchone()
         conn.close()
-        _test("DB confirms 16 completed streams", ss_rows["cnt"] == 16,
-              f"got {ss_rows['cnt']}")
+        _test("DB confirms 16 completed streams", ss_rows["cnt"] == 16, f"got {ss_rows['cnt']}")
 
         # ------------------------------------------------------------------
         # 6c. clipcannon_get_vud_summary
         # ------------------------------------------------------------------
         _section("6c. clipcannon_get_vud_summary")
         from clipcannon.tools.understanding import clipcannon_get_vud_summary
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             vud = await clipcannon_get_vud_summary(PROJECT_ID)
         _test("vud_summary returns dict", isinstance(vud, dict))
-        _test("vud_summary has speaker count",
-              vud.get("speakers", {}).get("count") == 2,
-              f"speakers={vud.get('speakers')}")
-        _test("vud_summary has topic count",
-              vud.get("topics", {}).get("count") == 2,
-              f"topics count={vud.get('topics', {}).get('count')}")
-        _test("vud_summary has top_highlights",
-              len(vud.get("top_highlights", [])) == 3,
-              f"highlights={len(vud.get('top_highlights', []))}")
-        _test("vud_summary has reactions",
-              "laughter" in vud.get("reactions", {}) and "applause" in vud.get("reactions", {}),
-              f"reactions={vud.get('reactions')}")
-        _test("vud_summary has beats",
-              vud.get("beats") is not None and vud["beats"].get("has_music") == 1)
-        _test("vud_summary has content_safety",
-              vud.get("content_safety") is not None and vud["content_safety"].get("content_rating") == "PG-13")
-        _test("vud_summary has avg_energy",
-              vud.get("avg_energy") is not None,
-              f"avg_energy={vud.get('avg_energy')}")
-        _test("vud_summary has provenance_records count of 3",
-              vud.get("provenance_records") == 3,
-              f"prov_records={vud.get('provenance_records')}")
-        _test("vud_summary stream_status all completed",
-              vud.get("stream_status", {}).get("completed") == 16,
-              f"stream_status={vud.get('stream_status')}")
+        _test(
+            "vud_summary has speaker count",
+            vud.get("speakers", {}).get("count") == 2,
+            f"speakers={vud.get('speakers')}",
+        )
+        _test(
+            "vud_summary has topic count",
+            vud.get("topics", {}).get("count") == 2,
+            f"topics count={vud.get('topics', {}).get('count')}",
+        )
+        _test(
+            "vud_summary has top_highlights",
+            len(vud.get("top_highlights", [])) == 3,
+            f"highlights={len(vud.get('top_highlights', []))}",
+        )
+        _test(
+            "vud_summary has reactions",
+            "laughter" in vud.get("reactions", {}) and "applause" in vud.get("reactions", {}),
+            f"reactions={vud.get('reactions')}",
+        )
+        _test(
+            "vud_summary has beats",
+            vud.get("beats") is not None and vud["beats"].get("has_music") == 1,
+        )
+        _test(
+            "vud_summary has content_safety",
+            vud.get("content_safety") is not None
+            and vud["content_safety"].get("content_rating") == "PG-13",
+        )
+        _test(
+            "vud_summary has avg_energy",
+            vud.get("avg_energy") is not None,
+            f"avg_energy={vud.get('avg_energy')}",
+        )
+        _test(
+            "vud_summary has provenance_records count of 3",
+            vud.get("provenance_records") == 3,
+            f"prov_records={vud.get('provenance_records')}",
+        )
+        _test(
+            "vud_summary stream_status all completed",
+            vud.get("stream_status", {}).get("completed") == 16,
+            f"stream_status={vud.get('stream_status')}",
+        )
 
         # ------------------------------------------------------------------
         # 6d. clipcannon_get_analytics
         # ------------------------------------------------------------------
         _section("6d. clipcannon_get_analytics")
         from clipcannon.tools.understanding import clipcannon_get_analytics
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             analytics = await clipcannon_get_analytics(PROJECT_ID)
         _test("analytics returns dict", isinstance(analytics, dict))
 
         # Scenes
         scenes_data = analytics.get("scenes", {})
-        _test("analytics has 3 scenes",
-              scenes_data.get("total") == 3,
-              f"scene total={scenes_data.get('total')}")
+        _test(
+            "analytics has 3 scenes",
+            scenes_data.get("total") == 3,
+            f"scene total={scenes_data.get('total')}",
+        )
 
         # Topics
         topics_data = analytics.get("topics", [])
-        _test("analytics has 2 topics",
-              len(topics_data) == 2,
-              f"topic count={len(topics_data)}")
+        _test("analytics has 2 topics", len(topics_data) == 2, f"topic count={len(topics_data)}")
 
         # Highlights
         highlights_data = analytics.get("highlights", [])
-        _test("analytics has 3 highlights",
-              len(highlights_data) == 3,
-              f"highlight count={len(highlights_data)}")
+        _test(
+            "analytics has 3 highlights",
+            len(highlights_data) == 3,
+            f"highlight count={len(highlights_data)}",
+        )
 
         # Reactions
         reactions_data = analytics.get("reactions", [])
-        _test("analytics has 2 reactions",
-              len(reactions_data) == 2,
-              f"reaction count={len(reactions_data)}")
+        _test(
+            "analytics has 2 reactions",
+            len(reactions_data) == 2,
+            f"reaction count={len(reactions_data)}",
+        )
 
         # Pacing
         pacing_data = analytics.get("pacing", [])
-        _test("analytics has 2 pacing entries",
-              len(pacing_data) == 2,
-              f"pacing count={len(pacing_data)}")
+        _test(
+            "analytics has 2 pacing entries",
+            len(pacing_data) == 2,
+            f"pacing count={len(pacing_data)}",
+        )
 
         # Beats
         beats_data = analytics.get("beats", {})
-        _test("analytics has beats summary",
-              beats_data.get("summary") is not None)
+        _test("analytics has beats summary", beats_data.get("summary") is not None)
 
         # ------------------------------------------------------------------
         # 6e. clipcannon_get_transcript
         # ------------------------------------------------------------------
         _section("6e. clipcannon_get_transcript")
         from clipcannon.tools.understanding import clipcannon_get_transcript
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             transcript = await clipcannon_get_transcript(PROJECT_ID, start_ms=0, end_ms=60000)
         _test("transcript returns dict", isinstance(transcript, dict))
-        _test("transcript has 5 segments",
-              transcript.get("segment_count") == 5,
-              f"segment_count={transcript.get('segment_count')}")
+        _test(
+            "transcript has 5 segments",
+            transcript.get("segment_count") == 5,
+            f"segment_count={transcript.get('segment_count')}",
+        )
         # Verify words are included
         first_seg = transcript.get("segments", [{}])[0]
-        _test("transcript segments have words",
-              len(first_seg.get("words", [])) == 3,
-              f"first segment words={len(first_seg.get('words', []))}")
+        _test(
+            "transcript segments have words",
+            len(first_seg.get("words", [])) == 3,
+            f"first segment words={len(first_seg.get('words', []))}",
+        )
 
         # Direct DB cross-verification
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
         db_seg_count = conn.execute(
-            "SELECT count(*) as cnt FROM transcript_segments WHERE project_id = ?",
-            (PROJECT_ID,)
+            "SELECT count(*) as cnt FROM transcript_segments WHERE project_id = ?", (PROJECT_ID,)
         ).fetchone()["cnt"]
         conn.close()
         _test("DB confirms 5 segments", db_seg_count == 5)
@@ -850,27 +1117,37 @@ def test_mcp_tools(tmpdir: Path, db_path: Path):
         # ------------------------------------------------------------------
         _section("6f. clipcannon_get_segment_detail")
         from clipcannon.tools.understanding_visual import clipcannon_get_segment_detail
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             detail = await clipcannon_get_segment_detail(PROJECT_ID, start_ms=0, end_ms=30000)
         _test("segment_detail returns dict", isinstance(detail, dict))
-        _test("segment_detail has transcript",
-              len(detail.get("transcript", [])) >= 3,
-              f"transcript count={len(detail.get('transcript', []))}")
-        _test("segment_detail has emotion_curve",
-              len(detail.get("emotion_curve", [])) >= 1,
-              f"emotion count={len(detail.get('emotion_curve', []))}")
-        _test("segment_detail has reactions",
-              len(detail.get("reactions", [])) >= 1,
-              f"reactions count={len(detail.get('reactions', []))}")
-        _test("segment_detail has pacing",
-              len(detail.get("pacing", [])) >= 1,
-              f"pacing count={len(detail.get('pacing', []))}")
+        _test(
+            "segment_detail has transcript",
+            len(detail.get("transcript", [])) >= 3,
+            f"transcript count={len(detail.get('transcript', []))}",
+        )
+        _test(
+            "segment_detail has emotion_curve",
+            len(detail.get("emotion_curve", [])) >= 1,
+            f"emotion count={len(detail.get('emotion_curve', []))}",
+        )
+        _test(
+            "segment_detail has reactions",
+            len(detail.get("reactions", [])) >= 1,
+            f"reactions count={len(detail.get('reactions', []))}",
+        )
+        _test(
+            "segment_detail has pacing",
+            len(detail.get("pacing", [])) >= 1,
+            f"pacing count={len(detail.get('pacing', []))}",
+        )
 
         # ------------------------------------------------------------------
         # 6g. clipcannon_get_frame (metadata check -- no actual frame files)
         # ------------------------------------------------------------------
         _section("6g. clipcannon_get_frame")
         from clipcannon.tools.understanding_visual import clipcannon_get_frame
+
         # Create a fake frame file so the tool can find it
         frames_dir = proj_dir / "frames"
         (frames_dir / "frame_000001.jpg").write_bytes(b"fake_jpg")
@@ -889,120 +1166,159 @@ def test_mcp_tools(tmpdir: Path, db_path: Path):
         # ------------------------------------------------------------------
         _section("6h. clipcannon_get_storyboard")
         from clipcannon.tools.understanding_visual import clipcannon_get_storyboard
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             storyboard = await clipcannon_get_storyboard(PROJECT_ID, batch=1)
         _test("get_storyboard returns dict", isinstance(storyboard, dict))
-        _test("get_storyboard has total_grids == 2",
-              storyboard.get("total_grids") == 2,
-              f"total_grids={storyboard.get('total_grids')}")
-        _test("get_storyboard returns our 2 grids",
-              storyboard.get("grid_count") == 2,
-              f"grid_count={storyboard.get('grid_count')}")
+        _test(
+            "get_storyboard has total_grids == 2",
+            storyboard.get("total_grids") == 2,
+            f"total_grids={storyboard.get('total_grids')}",
+        )
+        _test(
+            "get_storyboard returns our 2 grids",
+            storyboard.get("grid_count") == 2,
+            f"grid_count={storyboard.get('grid_count')}",
+        )
         grids = storyboard.get("grids", [])
         if grids:
-            _test("storyboard grids have cell_timestamps_ms",
-                  isinstance(grids[0].get("cell_timestamps_ms"), list))
+            _test(
+                "storyboard grids have cell_timestamps_ms",
+                isinstance(grids[0].get("cell_timestamps_ms"), list),
+            )
 
         # ------------------------------------------------------------------
         # 6i. clipcannon_search_content (text search)
         # ------------------------------------------------------------------
         _section("6i. clipcannon_search_content")
         from clipcannon.tools.understanding_search import clipcannon_search_content
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
-            search = await clipcannon_search_content(PROJECT_ID, query="searchable", search_type="text")
+            search = await clipcannon_search_content(
+                PROJECT_ID, query="searchable", search_type="text"
+            )
         _test("search_content returns dict", isinstance(search, dict))
-        _test("search_content finds 'searchable' in segment 4",
-              search.get("result_count", 0) >= 1,
-              f"result_count={search.get('result_count')}")
+        _test(
+            "search_content finds 'searchable' in segment 4",
+            search.get("result_count", 0) >= 1,
+            f"result_count={search.get('result_count')}",
+        )
         if search.get("results"):
             first = search["results"][0]
-            _test("search result has text field",
-                  "searchable" in str(first.get("text", "")).lower(),
-                  f"text={first.get('text')}")
+            _test(
+                "search result has text field",
+                "searchable" in str(first.get("text", "")).lower(),
+                f"text={first.get('text')}",
+            )
 
         # Search for something in multiple segments
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             search2 = await clipcannon_search_content(PROJECT_ID, query="the", search_type="text")
-        _test("search for 'the' returns multiple results",
-              search2.get("result_count", 0) >= 2,
-              f"result_count={search2.get('result_count')}")
+        _test(
+            "search for 'the' returns multiple results",
+            search2.get("result_count", 0) >= 2,
+            f"result_count={search2.get('result_count')}",
+        )
 
         # ------------------------------------------------------------------
         # 6j. clipcannon_provenance_verify
         # ------------------------------------------------------------------
         _section("6j. clipcannon_provenance_verify")
         from clipcannon.tools.provenance_tools import clipcannon_provenance_verify
+
         with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=db_path):
             verify = await clipcannon_provenance_verify(PROJECT_ID)
         _test("provenance_verify returns dict", isinstance(verify, dict))
-        _test("provenance chain is VERIFIED",
-              verify.get("verified") is True,
-              f"verified={verify.get('verified')}, issue={verify.get('issue')}")
-        _test("provenance has 3 total records",
-              verify.get("total_records") == 3,
-              f"total_records={verify.get('total_records')}")
+        _test(
+            "provenance chain is VERIFIED",
+            verify.get("verified") is True,
+            f"verified={verify.get('verified')}, issue={verify.get('issue')}",
+        )
+        _test(
+            "provenance has 3 total records",
+            verify.get("total_records") == 3,
+            f"total_records={verify.get('total_records')}",
+        )
 
         # ------------------------------------------------------------------
         # 6k. clipcannon_provenance_query
         # ------------------------------------------------------------------
         _section("6k. clipcannon_provenance_query")
         from clipcannon.tools.provenance_tools import clipcannon_provenance_query
+
         with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=db_path):
             prov_q = await clipcannon_provenance_query(PROJECT_ID)
         _test("provenance_query returns dict", isinstance(prov_q, dict))
-        _test("provenance_query returns 3 records",
-              prov_q.get("total") == 3,
-              f"total={prov_q.get('total')}")
+        _test(
+            "provenance_query returns 3 records",
+            prov_q.get("total") == 3,
+            f"total={prov_q.get('total')}",
+        )
 
         # Filter by operation
         with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=db_path):
             prov_q2 = await clipcannon_provenance_query(PROJECT_ID, operation="probe")
-        _test("provenance_query filter by operation=probe returns 1",
-              prov_q2.get("total") == 1,
-              f"total={prov_q2.get('total')}")
+        _test(
+            "provenance_query filter by operation=probe returns 1",
+            prov_q2.get("total") == 1,
+            f"total={prov_q2.get('total')}",
+        )
 
         # ------------------------------------------------------------------
         # 6l. clipcannon_provenance_chain
         # ------------------------------------------------------------------
         _section("6l. clipcannon_provenance_chain")
         from clipcannon.tools.provenance_tools import clipcannon_provenance_chain
+
         with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=db_path):
             chain = await clipcannon_provenance_chain(PROJECT_ID, record_id="prov_003")
         _test("provenance_chain returns dict", isinstance(chain, dict))
         chain_records = chain.get("chain", [])
-        _test("provenance_chain from prov_003 has 3 records (genesis to target)",
-              len(chain_records) == 3,
-              f"chain length={len(chain_records)}")
+        _test(
+            "provenance_chain from prov_003 has 3 records (genesis to target)",
+            len(chain_records) == 3,
+            f"chain length={len(chain_records)}",
+        )
         if chain_records:
-            _test("chain is ordered genesis-first",
-                  chain_records[0].get("record_id") == "prov_001",
-                  f"first record={chain_records[0].get('record_id')}")
-            _test("chain ends at target",
-                  chain_records[-1].get("record_id") == "prov_003",
-                  f"last record={chain_records[-1].get('record_id')}")
+            _test(
+                "chain is ordered genesis-first",
+                chain_records[0].get("record_id") == "prov_001",
+                f"first record={chain_records[0].get('record_id')}",
+            )
+            _test(
+                "chain ends at target",
+                chain_records[-1].get("record_id") == "prov_003",
+                f"last record={chain_records[-1].get('record_id')}",
+            )
 
         # ------------------------------------------------------------------
         # 6m. clipcannon_provenance_timeline
         # ------------------------------------------------------------------
         _section("6m. clipcannon_provenance_timeline")
         from clipcannon.tools.provenance_tools import clipcannon_provenance_timeline
+
         with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=db_path):
             timeline = await clipcannon_provenance_timeline(PROJECT_ID)
         _test("provenance_timeline returns dict", isinstance(timeline, dict))
-        _test("provenance_timeline has 3 records",
-              timeline.get("total_records") == 3,
-              f"total_records={timeline.get('total_records')}")
+        _test(
+            "provenance_timeline has 3 records",
+            timeline.get("total_records") == 3,
+            f"total_records={timeline.get('total_records')}",
+        )
         entries = timeline.get("timeline", [])
         if len(entries) >= 2:
-            _test("timeline is chronologically ordered",
-                  entries[0].get("timestamp", "") <= entries[1].get("timestamp", ""),
-                  f"t0={entries[0].get('timestamp')}, t1={entries[1].get('timestamp')}")
+            _test(
+                "timeline is chronologically ordered",
+                entries[0].get("timestamp", "") <= entries[1].get("timestamp", ""),
+                f"t0={entries[0].get('timestamp')}, t1={entries[1].get('timestamp')}",
+            )
 
         # ------------------------------------------------------------------
         # 6n. clipcannon_disk_status
         # ------------------------------------------------------------------
         _section("6n. clipcannon_disk_status")
         from clipcannon.tools.disk import clipcannon_disk_status
+
         with patch("clipcannon.tools.disk._get_projects_dir", return_value=tmpdir):
             disk = await clipcannon_disk_status(PROJECT_ID)
         _test("disk_status returns dict", isinstance(disk, dict))
@@ -1013,21 +1329,26 @@ def test_mcp_tools(tmpdir: Path, db_path: Path):
         _test("disk_status has ephemeral tier", "ephemeral" in tiers)
         # Sacred should include analysis.db and source/test_video.mp4
         sacred = tiers.get("sacred", {})
-        _test("sacred tier has files",
-              int(sacred.get("count", 0)) >= 1,
-              f"sacred count={sacred.get('count')}")
+        _test(
+            "sacred tier has files",
+            int(sacred.get("count", 0)) >= 1,
+            f"sacred count={sacred.get('count')}",
+        )
 
         # ------------------------------------------------------------------
         # 6o. clipcannon_config_get
         # ------------------------------------------------------------------
         _section("6o. clipcannon_config_get / config_list")
         from clipcannon.tools.config_tools import clipcannon_config_get, clipcannon_config_list
+
         conf_result = await clipcannon_config_get("processing.whisper_model")
         _test("config_get returns dict", isinstance(conf_result, dict))
         if "error" not in conf_result:
-            _test("config_get returns known value 'large-v3'",
-                  conf_result.get("value") == "large-v3",
-                  f"value={conf_result.get('value')}")
+            _test(
+                "config_get returns known value 'large-v3'",
+                conf_result.get("value") == "large-v3",
+                f"value={conf_result.get('value')}",
+            )
         else:
             _test("config_get returns known value", False, f"error={conf_result}")
 
@@ -1053,87 +1374,108 @@ def test_edge_cases(tmpdir: Path, db_path: Path):
     async def _run_edge_cases():
         # 7a. project_open with non-existent project
         from clipcannon.tools.project import clipcannon_project_open
+
         with patch("clipcannon.tools.project._get_projects_dir", return_value=tmpdir):
             result = await clipcannon_project_open("nonexistent_proj_999")
-        _test("project_open nonexistent -> error response",
-              "error" in result,
-              f"result={result}")
+        _test("project_open nonexistent -> error response", "error" in result, f"result={result}")
         if "error" in result:
-            _test("project_open nonexistent -> PROJECT_NOT_FOUND code",
-                  result["error"].get("code") == "PROJECT_NOT_FOUND",
-                  f"code={result['error'].get('code')}")
+            _test(
+                "project_open nonexistent -> PROJECT_NOT_FOUND code",
+                result["error"].get("code") == "PROJECT_NOT_FOUND",
+                f"code={result['error'].get('code')}",
+            )
 
         # 7b. get_transcript with start_ms > end_ms
         from clipcannon.tools.understanding import clipcannon_get_transcript
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             # start_ms=50000, end_ms=10000 -- start > end
             # The tool doesn't validate start > end, it just returns segments
             # where start_ms < end_ms AND end_ms > start_ms, which returns 0 segments
             result = await clipcannon_get_transcript(PROJECT_ID, start_ms=50000, end_ms=10000)
-        _test("get_transcript start>end returns result (no crash)",
-              isinstance(result, dict) and "error" not in result,
-              f"type={type(result)}, keys={result.keys() if isinstance(result, dict) else 'N/A'}")
-        _test("get_transcript start>end returns 0 segments",
-              result.get("segment_count", -1) == 0,
-              f"segment_count={result.get('segment_count')}")
+        _test(
+            "get_transcript start>end returns result (no crash)",
+            isinstance(result, dict) and "error" not in result,
+            f"type={type(result)}, keys={result.keys() if isinstance(result, dict) else 'N/A'}",
+        )
+        _test(
+            "get_transcript start>end returns 0 segments",
+            result.get("segment_count", -1) == 0,
+            f"segment_count={result.get('segment_count')}",
+        )
 
         # 7c. get_analytics with invalid section
         from clipcannon.tools.understanding import clipcannon_get_analytics
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             result = await clipcannon_get_analytics(PROJECT_ID, sections=["invalid_section"])
-        _test("get_analytics invalid section -> error",
-              "error" in result,
-              f"result keys={list(result.keys())}")
+        _test(
+            "get_analytics invalid section -> error",
+            "error" in result,
+            f"result keys={list(result.keys())}",
+        )
 
         # 7d. search_content with empty query
         from clipcannon.tools.understanding_search import clipcannon_search_content
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             result = await clipcannon_search_content(PROJECT_ID, query="", search_type="text")
-        _test("search_content empty query -> returns result (no crash)",
-              isinstance(result, dict),
-              f"type={type(result)}")
+        _test(
+            "search_content empty query -> returns result (no crash)",
+            isinstance(result, dict),
+            f"type={type(result)}",
+        )
         # Empty LIKE pattern "%%" matches everything
-        _test("search_content empty query returns all segments",
-              result.get("result_count", 0) == 5,
-              f"result_count={result.get('result_count')}")
+        _test(
+            "search_content empty query returns all segments",
+            result.get("result_count", 0) == 5,
+            f"result_count={result.get('result_count')}",
+        )
 
         # 7e. search_content with invalid search_type
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
-            result = await clipcannon_search_content(PROJECT_ID, query="hello", search_type="invalid")
-        _test("search_content invalid search_type -> error",
-              "error" in result,
-              f"result={result}")
+            result = await clipcannon_search_content(
+                PROJECT_ID, query="hello", search_type="invalid"
+            )
+        _test("search_content invalid search_type -> error", "error" in result, f"result={result}")
 
         # 7f. segment_detail with end <= start
         from clipcannon.tools.understanding_visual import clipcannon_get_segment_detail
+
         with patch("clipcannon.tools.understanding._projects_dir", return_value=tmpdir):
             result = await clipcannon_get_segment_detail(PROJECT_ID, start_ms=5000, end_ms=5000)
-        _test("segment_detail end==start -> error",
-              "error" in result,
-              f"result keys={list(result.keys())}")
+        _test(
+            "segment_detail end==start -> error",
+            "error" in result,
+            f"result keys={list(result.keys())}",
+        )
 
         # 7g. provenance_verify on nonexistent project
         from clipcannon.tools.provenance_tools import clipcannon_provenance_verify
-        with patch("clipcannon.tools.provenance_tools._get_db_path", return_value=Path("/tmp/nonexistent.db")):
+
+        with patch(
+            "clipcannon.tools.provenance_tools._get_db_path",
+            return_value=Path("/tmp/nonexistent.db"),
+        ):
             result = await clipcannon_provenance_verify("nonexistent")
-        _test("provenance_verify nonexistent -> PROJECT_NOT_FOUND",
-              "error" in result and result["error"].get("code") == "PROJECT_NOT_FOUND",
-              f"result={result}")
+        _test(
+            "provenance_verify nonexistent -> PROJECT_NOT_FOUND",
+            "error" in result and result["error"].get("code") == "PROJECT_NOT_FOUND",
+            f"result={result}",
+        )
 
         # 7h. disk_status on nonexistent project
         from clipcannon.tools.disk import clipcannon_disk_status
+
         with patch("clipcannon.tools.disk._get_projects_dir", return_value=tmpdir):
             result = await clipcannon_disk_status("nonexistent_proj")
-        _test("disk_status nonexistent -> PROJECT_NOT_FOUND",
-              "error" in result,
-              f"result={result}")
+        _test("disk_status nonexistent -> PROJECT_NOT_FOUND", "error" in result, f"result={result}")
 
         # 7i. config_get with invalid key
         from clipcannon.tools.config_tools import clipcannon_config_get
+
         result = await clipcannon_config_get("nonexistent.deeply.nested.key")
-        _test("config_get invalid key -> error",
-              "error" in result,
-              f"result={result}")
+        _test("config_get invalid key -> error", "error" in result, f"result={result}")
 
     asyncio.get_event_loop().run_until_complete(_run_edge_cases())
 
@@ -1170,35 +1512,31 @@ def test_db_cross_verification(db_path: Path):
 
     for table, expected_count in tables.items():
         actual = conn.execute(f"SELECT count(*) as cnt FROM {table}").fetchone()["cnt"]
-        _test(f"DB table '{table}' has {expected_count} rows",
-              actual == expected_count,
-              f"expected {expected_count}, got {actual}")
+        _test(
+            f"DB table '{table}' has {expected_count} rows",
+            actual == expected_count,
+            f"expected {expected_count}, got {actual}",
+        )
 
     # Verify provenance chain integrity at DB level
     prov_rows = conn.execute(
         "SELECT record_id, parent_record_id, chain_hash FROM provenance WHERE project_id = ? ORDER BY timestamp_utc",
-        (PROJECT_ID,)
+        (PROJECT_ID,),
     ).fetchall()
 
-    _test("provenance prov_001 has no parent (genesis)",
-          prov_rows[0]["parent_record_id"] is None)
-    _test("provenance prov_002 parent is prov_001",
-          prov_rows[1]["parent_record_id"] == "prov_001")
-    _test("provenance prov_003 parent is prov_002",
-          prov_rows[2]["parent_record_id"] == "prov_002")
+    _test("provenance prov_001 has no parent (genesis)", prov_rows[0]["parent_record_id"] is None)
+    _test("provenance prov_002 parent is prov_001", prov_rows[1]["parent_record_id"] == "prov_001")
+    _test("provenance prov_003 parent is prov_002", prov_rows[2]["parent_record_id"] == "prov_002")
 
     # Verify all stream statuses are 'completed'
     ss_rows = conn.execute(
-        "SELECT stream_name, status FROM stream_status WHERE project_id = ?",
-        (PROJECT_ID,)
+        "SELECT stream_name, status FROM stream_status WHERE project_id = ?", (PROJECT_ID,)
     ).fetchall()
     all_completed = all(r["status"] == "completed" for r in ss_rows)
     _test("All 16 stream_status entries are 'completed'", all_completed)
 
     # Verify project status is 'ready'
-    proj = conn.execute(
-        "SELECT status FROM project WHERE project_id = ?", (PROJECT_ID,)
-    ).fetchone()
+    proj = conn.execute("SELECT status FROM project WHERE project_id = ?", (PROJECT_ID,)).fetchone()
     _test("Project status is 'ready'", proj["status"] == "ready")
 
     conn.close()
@@ -1281,15 +1619,15 @@ def main():
 
 
 def _print_summary():
-    print(f"\n{'='*72}")
+    print(f"\n{'=' * 72}")
     print("  INVESTIGATION SUMMARY")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
     print(f"\n  PASSED: {_passed}")
     print(f"  FAILED: {_failed}")
     print(f"  TOTAL:  {_passed + _failed}")
 
     if _errors:
-        print(f"\n  FAILURES:")
+        print("\n  FAILURES:")
         for err in _errors:
             print(f"    {err}")
 
@@ -1297,7 +1635,7 @@ def _print_summary():
     confidence = "HIGH" if _failed == 0 else ("MEDIUM" if _failed <= 3 else "LOW")
     print(f"\n  VERDICT: {verdict}")
     print(f"  CONFIDENCE: {confidence}")
-    print(f"{'='*72}")
+    print(f"{'=' * 72}")
 
     # Exit with non-zero if any failures
     sys.exit(1 if _failed > 0 else 0)

@@ -315,10 +315,7 @@ def _remap_single_chunk(
     """
     for seg in segments:
         # Check if chunk overlaps with this segment's source range
-        if (
-            chunk.start_ms >= seg.source_start_ms
-            and chunk.start_ms < seg.source_end_ms
-        ):
+        if chunk.start_ms >= seg.source_start_ms and chunk.start_ms < seg.source_end_ms:
             # Compute the offset within the segment.
             # Use round() instead of int() to avoid cumulative
             # truncation drift — int() always rounds toward zero,

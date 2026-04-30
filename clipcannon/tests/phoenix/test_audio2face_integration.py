@@ -22,10 +22,10 @@ from phoenix.adapters.audio2face_adapter import (
     BlendshapeToFLAME,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def flame_converter() -> BlendshapeToFLAME:
@@ -37,11 +37,13 @@ def flame_converter() -> BlendshapeToFLAME:
 # BlendshapeToFLAME tests
 # ---------------------------------------------------------------------------
 
+
 class TestBlendshapeToFLAME:
     """Tests for ARKit-to-FLAME blendshape conversion."""
 
     def test_neutral_produces_zero_flame(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         frame = BlendshapeFrame(
             coefficients=np.zeros(NUM_ARKIT_BLENDSHAPES, dtype=np.float32),
@@ -51,17 +53,23 @@ class TestBlendshapeToFLAME:
         np.testing.assert_array_equal(flame, 0.0)
 
     def test_flame_output_shape(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
-        coeffs = np.random.default_rng(42).random(
-            NUM_ARKIT_BLENDSHAPES,
-        ).astype(np.float32)
+        coeffs = (
+            np.random.default_rng(42)
+            .random(
+                NUM_ARKIT_BLENDSHAPES,
+            )
+            .astype(np.float32)
+        )
         frame = BlendshapeFrame(coefficients=coeffs)
         flame = flame_converter.convert(frame)
         assert flame.shape == (NUM_FLAME_EXPRESSIONS,)
 
     def test_flame_values_clipped(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         coeffs = np.ones(NUM_ARKIT_BLENDSHAPES, dtype=np.float32)
         frame = BlendshapeFrame(coefficients=coeffs)
@@ -70,7 +78,8 @@ class TestBlendshapeToFLAME:
         assert np.all(flame <= 2.0)
 
     def test_jaw_open_maps_to_flame_jaw(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         coeffs = np.zeros(NUM_ARKIT_BLENDSHAPES, dtype=np.float32)
         coeffs[ARKIT_BLENDSHAPE_NAMES.index("jawOpen")] = 1.0
@@ -79,7 +88,8 @@ class TestBlendshapeToFLAME:
         assert flame[0] > 0.0
 
     def test_smile_maps_to_flame_lips(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         coeffs = np.zeros(NUM_ARKIT_BLENDSHAPES, dtype=np.float32)
         coeffs[ARKIT_BLENDSHAPE_NAMES.index("mouthSmileLeft")] = 0.8
@@ -90,7 +100,8 @@ class TestBlendshapeToFLAME:
         assert flame[14] > 0.0
 
     def test_blink_maps_to_flame_eyes(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         coeffs = np.zeros(NUM_ARKIT_BLENDSHAPES, dtype=np.float32)
         coeffs[ARKIT_BLENDSHAPE_NAMES.index("eyeBlinkLeft")] = 1.0
@@ -99,7 +110,8 @@ class TestBlendshapeToFLAME:
         assert flame[40] > 0.0
 
     def test_from_local_adapter(
-        self, flame_converter: BlendshapeToFLAME,
+        self,
+        flame_converter: BlendshapeToFLAME,
     ) -> None:
         adapter = Audio2FaceLocal(ema_alpha=1.0)
         sr = 16000
@@ -114,6 +126,7 @@ class TestBlendshapeToFLAME:
 # ---------------------------------------------------------------------------
 # Real speech audio tests
 # ---------------------------------------------------------------------------
+
 
 class TestRealSpeechAudio:
     """Tests using real voice data from ~/.clipcannon/voice_data/santa/wavs/."""
@@ -162,15 +175,13 @@ class TestRealSpeechAudio:
         total_frames = 0
 
         for start in range(0, len(audio) - chunk_size, chunk_size):
-            chunk = audio[start:start + chunk_size]
+            chunk = audio[start : start + chunk_size]
             frame = adapter.process_audio_chunk(chunk, sr)
             total_frames += 1
             if frame.get("jawOpen") > 0.05:
                 active_frames += 1
 
-        assert active_frames > 0, (
-            f"No active jaw frames out of {total_frames} total"
-        )
+        assert active_frames > 0, f"No active jaw frames out of {total_frames} total"
 
     def test_real_speech_jaw_varies(self) -> None:
         wavs = self._find_voice_wavs()
@@ -183,7 +194,7 @@ class TestRealSpeechAudio:
         jaw_values: list[float] = []
 
         for start in range(0, len(audio) - chunk_size, chunk_size):
-            chunk = audio[start:start + chunk_size]
+            chunk = audio[start : start + chunk_size]
             frame = adapter.process_audio_chunk(chunk, sr)
             jaw_values.append(frame.get("jawOpen"))
 
@@ -202,7 +213,7 @@ class TestRealSpeechAudio:
         chunk_size = sr // 20
 
         for start in range(0, len(audio) - chunk_size, chunk_size):
-            chunk = audio[start:start + chunk_size]
+            chunk = audio[start : start + chunk_size]
             frame = adapter.process_audio_chunk(chunk, sr)
             assert np.all(frame.coefficients >= 0.0)
             assert np.all(frame.coefficients <= 1.0)
@@ -231,6 +242,7 @@ class TestRealSpeechAudio:
 # Performance benchmark
 # ---------------------------------------------------------------------------
 
+
 class TestPerformance:
     """Benchmark: measure ms per chunk (target <5ms)."""
 
@@ -239,9 +251,9 @@ class TestPerformance:
         sr = 16000
         chunk_size = sr // 20
         audio = (
-            0.3 * np.sin(
-                2 * np.pi * 200
-                * np.linspace(0, 0.05, chunk_size, dtype=np.float32),
+            0.3
+            * np.sin(
+                2 * np.pi * 200 * np.linspace(0, 0.05, chunk_size, dtype=np.float32),
             )
         ).astype(np.float32)
 
@@ -254,15 +266,17 @@ class TestPerformance:
             adapter.process_audio_chunk(audio, sr)
         avg_ms = (time.perf_counter() - t0) * 1000.0 / n_runs
 
-        assert avg_ms < 5.0, (
-            f"Average processing time {avg_ms:.2f}ms exceeds 5ms target"
-        )
+        assert avg_ms < 5.0, f"Average processing time {avg_ms:.2f}ms exceeds 5ms target"
 
     def test_flame_conversion_under_1ms(self) -> None:
         converter = BlendshapeToFLAME()
-        coeffs = np.random.default_rng(42).random(
-            NUM_ARKIT_BLENDSHAPES,
-        ).astype(np.float32)
+        coeffs = (
+            np.random.default_rng(42)
+            .random(
+                NUM_ARKIT_BLENDSHAPES,
+            )
+            .astype(np.float32)
+        )
         frame = BlendshapeFrame(coefficients=coeffs)
 
         for _ in range(5):
@@ -274,6 +288,4 @@ class TestPerformance:
             converter.convert(frame)
         avg_ms = (time.perf_counter() - t0) * 1000.0 / n_runs
 
-        assert avg_ms < 1.0, (
-            f"FLAME conversion {avg_ms:.3f}ms exceeds 1ms target"
-        )
+        assert avg_ms < 1.0, f"FLAME conversion {avg_ms:.3f}ms exceeds 1ms target"

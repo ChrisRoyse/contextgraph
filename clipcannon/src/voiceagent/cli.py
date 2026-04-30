@@ -1,4 +1,5 @@
 """CLI entry point for the voice agent."""
+
 from __future__ import annotations
 
 import asyncio
@@ -69,7 +70,9 @@ def talk(voice: str) -> None:
 
 @cli.command()
 @click.option("--voice", default="boris", show_default=True, help="Default voice profile")
-@click.option("--threshold", default=0.72, show_default=True, help="Wake phrase similarity threshold")
+@click.option(
+    "--threshold", default=0.72, show_default=True, help="Wake phrase similarity threshold"
+)
 def listen(voice: str, threshold: float) -> None:
     """Always-on wake word listener. Say 'Hey Jarvis' to activate."""
     from voiceagent.wake_listener import WakeWordListener
@@ -112,8 +115,15 @@ def meeting() -> None:
 @meeting.command()
 @click.option("--clone", required=True, help="Clone name (must match a voice profile)")
 @click.option("--voice", default=None, help="Override voice profile name")
-@click.option("--driver", default=None, type=click.Path(exists=True), help="Driver video path for avatar")
-@click.option("--platform", default="unknown", show_default=True, help="Meeting platform (zoom, google_meet, teams)")
+@click.option(
+    "--driver", default=None, type=click.Path(exists=True), help="Driver video path for avatar"
+)
+@click.option(
+    "--platform",
+    default="unknown",
+    show_default=True,
+    help="Meeting platform (zoom, google_meet, teams)",
+)
 def start(clone: str, voice: str | None, driver: str | None, platform: str) -> None:
     """Start a clone in Mode 1 (virtual device -- replace me)."""
     from voiceagent.meeting.config import load_meeting_config
@@ -129,10 +139,7 @@ def start(clone: str, voice: str | None, driver: str | None, platform: str) -> N
             driver_video=driver,
             platform=platform,
         )
-        click.echo(
-            f"Clone '{clone}' started (meeting={instance.meeting_id}, "
-            f"platform={platform})"
-        )
+        click.echo(f"Clone '{clone}' started (meeting={instance.meeting_id}, platform={platform})")
         click.echo("Press Ctrl+C to stop...")
 
         stop_event = asyncio.Event()
@@ -214,7 +221,13 @@ def list_clones() -> None:
 
 @meeting.command()
 @click.option("--url", required=True, help="Meeting URL to join")
-@click.option("--name", "display_name", default="AI Notes", show_default=True, help="Display name in participant list")
+@click.option(
+    "--name",
+    "display_name",
+    default="AI Notes",
+    show_default=True,
+    help="Display name in participant list",
+)
 @click.option("--clone", required=True, help="Clone name for responses")
 @click.option("--voice", default=None, help="Override voice profile name")
 def join(url: str, display_name: str, clone: str, voice: str | None) -> None:

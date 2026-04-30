@@ -13,10 +13,13 @@ The enhancement pipeline:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 import torchaudio
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,7 @@ def _ensure_nvrtc() -> None:
         return
     import ctypes
     import os
+
     for path in _NVRTC_PATHS:
         if os.path.exists(path):
             try:
@@ -108,14 +112,19 @@ def enhance_speech(
 
     logger.info(
         "Enhancing %s (%.1fs, %dHz) -> %dHz",
-        input_path.name, input_dur, sr, 44100,
+        input_path.name,
+        input_dur,
+        sr,
+        44100,
     )
 
     if denoise_first:
         dwav, sr = denoise(dwav, sr, device)
 
     hwav, new_sr = enhance(
-        dwav, sr, device,
+        dwav,
+        sr,
+        device,
         nfe=nfe,
         solver="midpoint",
         lambd=lambd,
@@ -127,6 +136,9 @@ def enhance_speech(
 
     logger.info(
         "Enhanced: %dHz -> %dHz, %.1fs -> %s",
-        sr, new_sr, input_dur, output_path.name,
+        sr,
+        new_sr,
+        input_dur,
+        output_path.name,
     )
     return output_path

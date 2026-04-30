@@ -16,7 +16,7 @@ import sys
 import tempfile
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Ensure src/ is importable
@@ -78,8 +78,12 @@ def test_hmac_integrity() -> None:
     if mid1 == mid2:
         ok("machine_id is deterministic (same on two calls)", f"{mid1} == {mid2}")
     else:
-        fail("machine_id determinism", mid1, mid2,
-             "get_machine_id() returned different values on same machine")
+        fail(
+            "machine_id determinism",
+            mid1,
+            mid2,
+            "get_machine_id() returned different values on same machine",
+        )
 
     # 1.2 Sign balance=1000 -> 64-char hex signature
     sig = sign_balance(1000, mid1)
@@ -141,14 +145,13 @@ def test_hmac_integrity() -> None:
         verify_balance_or_raise(999, sig, mid1)
     except BillingError as e:
         raised = True
-        print(f"\n  verify_balance_or_raise(999, sig_for_1000) raised BillingError:")
+        print("\n  verify_balance_or_raise(999, sig_for_1000) raised BillingError:")
         print(f"    message: {e.message}")
         print(f"    details: {e.details}")
         if e.details.get("code") == "BALANCE_TAMPERED":
             ok("verify_balance_or_raise raises BillingError with BALANCE_TAMPERED code")
         else:
-            fail("BillingError code", "BALANCE_TAMPERED",
-                 str(e.details.get("code")))
+            fail("BillingError code", "BALANCE_TAMPERED", str(e.details.get("code")))
     if not raised:
         fail("verify_balance_or_raise on tamper", "BillingError raised", "no exception")
 
@@ -206,7 +209,10 @@ def test_credit_system() -> None:
 
     # 2.2 analyze costs 10 credits
     if CREDIT_RATES.get("analyze") == 10:
-        ok("analyze operation costs 10 credits", f"CREDIT_RATES['analyze'] = {CREDIT_RATES['analyze']}")
+        ok(
+            "analyze operation costs 10 credits",
+            f"CREDIT_RATES['analyze'] = {CREDIT_RATES['analyze']}",
+        )
     else:
         fail("analyze cost", "10", str(CREDIT_RATES.get("analyze")))
 
@@ -289,7 +295,7 @@ def test_credit_system() -> None:
     # 2.7 Credit packages exist
     print("\n  CREDIT PACKAGES:")
     for name, info in CREDIT_PACKAGES.items():
-        print(f"    {name}: {info['credits']} credits @ ${info['price_cents']/100:.2f}")
+        print(f"    {name}: {info['credits']} credits @ ${info['price_cents'] / 100:.2f}")
 
     expected_packages = {"starter", "creator", "pro", "studio"}
     actual_packages = set(CREDIT_PACKAGES.keys())
@@ -307,8 +313,8 @@ def test_license_server() -> None:
     print("SECTION 3: LICENSE SERVER (server.py)")
     print("=" * 70)
 
-    from license_server.server import _SCHEMA_SQL, app
     from clipcannon.billing.hmac_integrity import get_machine_id, sign_balance, verify_balance
+    from license_server.server import _SCHEMA_SQL, app
 
     # 3.1 Verify expected HTTP endpoints exist on the FastAPI app
     routes = [r.path for r in app.routes if hasattr(r, "path")]
@@ -355,7 +361,7 @@ def test_license_server() -> None:
         machine_id = get_machine_id()
         initial_balance = 1000
         initial_hmac = sign_balance(initial_balance, machine_id)
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         conn.execute(
             """INSERT INTO balance
@@ -365,7 +371,9 @@ def test_license_server() -> None:
             (machine_id, initial_balance, initial_hmac, now, now),
         )
         conn.commit()
-        print(f"\n  Inserted balance record: balance={initial_balance}, hmac={initial_hmac[:16]}...")
+        print(
+            f"\n  Inserted balance record: balance={initial_balance}, hmac={initial_hmac[:16]}..."
+        )
 
         # 3.4 Read it back, verify HMAC validates
         row = conn.execute(
@@ -382,15 +390,18 @@ def test_license_server() -> None:
         if read_balance == 1000 and hmac_valid:
             ok("balance=1000 read back with valid HMAC")
         else:
-            fail("balance readback", "balance=1000, hmac=True",
-                 f"balance={read_balance}, hmac={hmac_valid}")
+            fail(
+                "balance readback",
+                "balance=1000, hmac=True",
+                f"balance={read_balance}, hmac={hmac_valid}",
+            )
 
         # 3.5 Simulate a charge: deduct 10 credits, update HMAC, insert transaction
         charge_amount = 10
         new_balance = read_balance - charge_amount
         new_hmac = sign_balance(new_balance, machine_id)
         txn_id = f"txn_{uuid.uuid4().hex[:12]}"
-        charge_time = datetime.now(timezone.utc).isoformat()
+        charge_time = datetime.now(UTC).isoformat()
         idem_key = str(uuid.uuid4())
 
         conn.execute(
@@ -403,8 +414,17 @@ def test_license_server() -> None:
                 balance_before, balance_after, project_id,
                 idempotency_key, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (txn_id, machine_id, "analyze", -charge_amount, read_balance,
-             new_balance, "test-project", idem_key, charge_time),
+            (
+                txn_id,
+                machine_id,
+                "analyze",
+                -charge_amount,
+                read_balance,
+                new_balance,
+                "test-project",
+                idem_key,
+                charge_time,
+            ),
         )
         conn.commit()
         print(f"\n  Charged {charge_amount} credits: txn={txn_id}")
@@ -418,13 +438,18 @@ def test_license_server() -> None:
         post_spending = row2["spending_this_month"]
 
         hmac_valid2 = verify_balance(post_charge_bal, post_charge_hmac, machine_id)
-        print(f"  After charge: balance={post_charge_bal}, hmac_valid={hmac_valid2}, spending={post_spending}")
+        print(
+            f"  After charge: balance={post_charge_bal}, hmac_valid={hmac_valid2}, spending={post_spending}"
+        )
 
         if post_charge_bal == 990 and hmac_valid2:
             ok("after charge: balance=990 with valid HMAC")
         else:
-            fail("post-charge balance", "990 + valid HMAC",
-                 f"balance={post_charge_bal}, hmac={hmac_valid2}")
+            fail(
+                "post-charge balance",
+                "990 + valid HMAC",
+                f"balance={post_charge_bal}, hmac={hmac_valid2}",
+            )
 
         if post_spending == 10:
             ok("spending_this_month incremented to 10")
@@ -436,7 +461,7 @@ def test_license_server() -> None:
         refund_balance = post_charge_bal + refund_amount
         refund_hmac = sign_balance(refund_balance, machine_id)
         refund_txn_id = f"txn_{uuid.uuid4().hex[:12]}"
-        refund_time = datetime.now(timezone.utc).isoformat()
+        refund_time = datetime.now(UTC).isoformat()
 
         conn.execute(
             "UPDATE balance SET balance = ?, balance_hmac = ?, spending_this_month = spending_this_month - ?, updated_at = ? WHERE id = 1",
@@ -448,9 +473,17 @@ def test_license_server() -> None:
                 balance_before, balance_after, project_id,
                 reason, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (refund_txn_id, machine_id, "refund:analyze", refund_amount,
-             post_charge_bal, refund_balance, "test-project",
-             "test refund", refund_time),
+            (
+                refund_txn_id,
+                machine_id,
+                "refund:analyze",
+                refund_amount,
+                post_charge_bal,
+                refund_balance,
+                "test-project",
+                "test refund",
+                refund_time,
+            ),
         )
         conn.commit()
         print(f"  Refunded {refund_amount} credits: txn={refund_txn_id}")
@@ -461,13 +494,18 @@ def test_license_server() -> None:
         final_bal = row3["balance"]
         final_hmac_valid = verify_balance(final_bal, row3["balance_hmac"], machine_id)
         final_spending = row3["spending_this_month"]
-        print(f"  After refund: balance={final_bal}, hmac_valid={final_hmac_valid}, spending={final_spending}")
+        print(
+            f"  After refund: balance={final_bal}, hmac_valid={final_hmac_valid}, spending={final_spending}"
+        )
 
         if final_bal == 1000 and final_hmac_valid:
             ok("after refund: balance=1000 with valid HMAC")
         else:
-            fail("post-refund balance", "1000 + valid HMAC",
-                 f"balance={final_bal}, hmac={final_hmac_valid}")
+            fail(
+                "post-refund balance",
+                "1000 + valid HMAC",
+                f"balance={final_bal}, hmac={final_hmac_valid}",
+            )
 
         if final_spending == 0:
             ok("spending_this_month decremented back to 0")
@@ -498,8 +536,16 @@ def test_license_server() -> None:
                    (transaction_id, machine_id, operation, credits,
                     balance_before, balance_after, idempotency_key, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (f"txn_dup_{uuid.uuid4().hex[:8]}", machine_id, "analyze", -10,
-                 1000, 990, idem_key, datetime.now(timezone.utc).isoformat()),
+                (
+                    f"txn_dup_{uuid.uuid4().hex[:8]}",
+                    machine_id,
+                    "analyze",
+                    -10,
+                    1000,
+                    990,
+                    idem_key,
+                    datetime.now(UTC).isoformat(),
+                ),
             )
             conn.commit()
             fail("idempotency constraint", "UNIQUE violation on duplicate key", "insert succeeded")
@@ -537,10 +583,6 @@ def test_billing_tools() -> None:
     from clipcannon.tools.billing_tools import (
         BILLING_TOOL_DEFINITIONS,
         dispatch_billing_tool,
-        clipcannon_credits_balance,
-        clipcannon_credits_history,
-        clipcannon_credits_estimate,
-        clipcannon_spending_limit,
     )
 
     # 4.1 Verify all 4 tool definitions exist
@@ -595,8 +637,11 @@ def test_billing_tools() -> None:
         else:
             fail("estimate enum", "'analyze' in enum", str(enum_vals))
     else:
-        fail("estimate schema", "required 'operation'",
-             f"props={list(est_props.keys())}, required={est_required}")
+        fail(
+            "estimate schema",
+            "required 'operation'",
+            f"props={list(est_props.keys())}, required={est_required}",
+        )
 
     # spending_limit: required limit_credits
     sl_schema = tool_map["clipcannon_spending_limit"].inputSchema
@@ -605,14 +650,19 @@ def test_billing_tools() -> None:
     if "limit_credits" in sl_props and "limit_credits" in sl_required:
         ok("spending_limit tool has required 'limit_credits' field")
     else:
-        fail("spending_limit schema", "required 'limit_credits'",
-             f"props={list(sl_props.keys())}, required={sl_required}")
+        fail(
+            "spending_limit schema",
+            "required 'limit_credits'",
+            f"props={list(sl_props.keys())}, required={sl_required}",
+        )
 
     # 4.3 Test dispatch function routes correctly
     import asyncio
 
     # Dispatch estimate (local, no server needed)
-    result = asyncio.run(dispatch_billing_tool("clipcannon_credits_estimate", {"operation": "analyze"}))
+    result = asyncio.run(
+        dispatch_billing_tool("clipcannon_credits_estimate", {"operation": "analyze"})
+    )
     print(f"\n  dispatch('clipcannon_credits_estimate', operation='analyze') = {result}")
     if result.get("credits") == 10:
         ok("dispatch routes estimate correctly, returns 10 credits")
@@ -628,7 +678,9 @@ def test_billing_tools() -> None:
         fail("dispatch unknown", "error dict", str(result_unk))
 
     # Dispatch spending_limit with negative value (local validation)
-    result_neg = asyncio.run(dispatch_billing_tool("clipcannon_spending_limit", {"limit_credits": -1}))
+    result_neg = asyncio.run(
+        dispatch_billing_tool("clipcannon_spending_limit", {"limit_credits": -1})
+    )
     print(f"  dispatch('spending_limit', limit_credits=-1) = {result_neg}")
     if "error" in result_neg:
         ok("spending_limit rejects negative limit locally")
@@ -646,6 +698,7 @@ def test_dashboard() -> None:
 
     # 5.1 Verify FastAPI app creates successfully
     from clipcannon.dashboard.app import create_app
+
     app = create_app()
     print(f"\n  Dashboard app created: {app.title} v{app.version}")
 
@@ -663,13 +716,13 @@ def test_dashboard() -> None:
     # 5.2 Verify auth module functions
     from clipcannon.dashboard.auth import (
         create_session_token,
-        verify_session_token,
         get_current_user,
         is_dev_mode,
         require_auth,
+        verify_session_token,
     )
 
-    print(f"\n  Auth module functions present:")
+    print("\n  Auth module functions present:")
     for fn_name, fn in [
         ("create_session_token", create_session_token),
         ("verify_session_token", verify_session_token),
@@ -683,10 +736,10 @@ def test_dashboard() -> None:
             fail(f"auth.{fn_name}", "callable", str(type(fn)))
 
     # 5.3 Verify all route modules define their endpoint functions
-    from clipcannon.dashboard.routes.home import router as home_router
     from clipcannon.dashboard.routes.credits import router as credits_router
-    from clipcannon.dashboard.routes.provenance import router as prov_router
+    from clipcannon.dashboard.routes.home import router as home_router
     from clipcannon.dashboard.routes.projects import router as proj_router
+    from clipcannon.dashboard.routes.provenance import router as prov_router
 
     for name, router_obj in [
         ("home", home_router),
@@ -733,7 +786,7 @@ def test_dashboard() -> None:
             iat = payload["iat"]
             exp = payload["exp"]
             ttl = exp - iat
-            print(f"  iat={iat}, exp={exp}, ttl={ttl}s ({ttl/86400:.1f} days)")
+            print(f"  iat={iat}, exp={exp}, ttl={ttl}s ({ttl / 86400:.1f} days)")
             if 29 * 86400 <= ttl <= 31 * 86400:
                 ok("JWT TTL is ~30 days", f"{ttl}s")
             else:
@@ -776,7 +829,9 @@ def test_dashboard() -> None:
 
     # 5.7 is_dev_mode check
     dev = is_dev_mode()
-    print(f"\n  is_dev_mode() = {dev} (CLIPCANNON_DEV_MODE={os.environ.get('CLIPCANNON_DEV_MODE', 'not set')})")
+    print(
+        f"\n  is_dev_mode() = {dev} (CLIPCANNON_DEV_MODE={os.environ.get('CLIPCANNON_DEV_MODE', 'not set')})"
+    )
     if isinstance(dev, bool):
         ok("is_dev_mode returns bool", str(dev))
     else:
@@ -791,7 +846,7 @@ def test_d1_sync() -> None:
     print("SECTION 6: D1 SYNC MODULE (d1_sync.py)")
     print("=" * 70)
 
-    from license_server.d1_sync import is_d1_configured, sync_push, sync_pull
+    from license_server.d1_sync import is_d1_configured, sync_pull, sync_push
 
     # 6.1 D1 not configured in test environment
     configured = is_d1_configured()
@@ -827,15 +882,15 @@ def test_stripe_webhooks() -> None:
     print("=" * 70)
 
     from license_server.stripe_webhooks import (
-        router,
         PACKAGES,
         _verify_stripe_signature,
+        router,
     )
 
     # 7.1 Stripe packages
     print(f"\n  Stripe PACKAGES: {PACKAGES}")
     expected_pkgs = {"starter": 50, "creator": 250, "pro": 1000, "studio": 5000}
-    if PACKAGES == expected_pkgs:
+    if expected_pkgs == PACKAGES:
         ok("Stripe packages match expected values")
     else:
         fail("stripe packages", str(expected_pkgs), str(PACKAGES))
@@ -856,9 +911,7 @@ def test_stripe_webhooks() -> None:
     test_timestamp = "1234567890"
     test_payload = b'{"type":"checkout.session.completed"}'
     signed_payload = f"{test_timestamp}.".encode() + test_payload
-    expected_sig = hmac_mod.new(
-        test_secret.encode(), signed_payload, hashlib.sha256
-    ).hexdigest()
+    expected_sig = hmac_mod.new(test_secret.encode(), signed_payload, hashlib.sha256).hexdigest()
     sig_header = f"t={test_timestamp},v1={expected_sig}"
 
     result = _verify_stripe_signature(test_payload, sig_header, test_secret)
@@ -889,10 +942,19 @@ def test_cross_module() -> None:
     import clipcannon.billing as billing_mod
 
     expected_exports = [
-        "BalanceInfo", "CREDIT_PACKAGES", "CREDIT_RATES", "ChargeResult",
-        "LicenseClient", "RefundResult", "TransactionRecord",
-        "check_spending_warning", "estimate_cost", "get_machine_id",
-        "sign_balance", "validate_spending_limit", "verify_balance",
+        "BalanceInfo",
+        "CREDIT_PACKAGES",
+        "CREDIT_RATES",
+        "ChargeResult",
+        "LicenseClient",
+        "RefundResult",
+        "TransactionRecord",
+        "check_spending_warning",
+        "estimate_cost",
+        "get_machine_id",
+        "sign_balance",
+        "validate_spending_limit",
+        "verify_balance",
         "verify_balance_or_raise",
     ]
 
@@ -915,6 +977,7 @@ def test_cross_module() -> None:
 
     # 8.3 LicenseClient.estimate delegates to credits.estimate_cost
     import asyncio
+
     est = asyncio.run(client.estimate("analyze"))
     print(f"  LicenseClient.estimate('analyze') = {est}")
     if est == 10:
@@ -930,7 +993,7 @@ def main() -> None:
     print("=" * 70)
     print("SHERLOCK HOLMES FSV: BILLING SYSTEM & DASHBOARD")
     print("Full State Verification - Physical Evidence Collection")
-    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    print(f"Timestamp: {datetime.now(UTC).isoformat()}")
     print("=" * 70)
 
     test_hmac_integrity()

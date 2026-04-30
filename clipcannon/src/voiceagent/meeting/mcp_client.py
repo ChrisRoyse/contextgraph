@@ -10,6 +10,7 @@ The session proxy returns SSE (Server-Sent Events) format responses:
 
 This client parses the SSE `data:` line to extract the JSON-RPC payload.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,9 +62,7 @@ def _parse_sse_response(text: str) -> dict[str, Any]:
                 except (json.JSONDecodeError, ValueError):
                     continue
 
-    raise MeetingTranscriptStoreError(
-        f"No valid JSON found in SSE response: {text[:300]}"
-    )
+    raise MeetingTranscriptStoreError(f"No valid JSON found in SSE response: {text[:300]}")
 
 
 class OcrProvenanceClient:
@@ -146,17 +145,16 @@ class OcrProvenanceClient:
 
         try:
             resp = await client.post(
-                self._base_url, json=init_payload, headers=headers,
+                self._base_url,
+                json=init_payload,
+                headers=headers,
             )
         except httpx.HTTPError as e:
-            raise MeetingTranscriptStoreError(
-                f"MCP initialize handshake failed: {e}"
-            ) from e
+            raise MeetingTranscriptStoreError(f"MCP initialize handshake failed: {e}") from e
 
         if resp.status_code != 200:
             raise MeetingTranscriptStoreError(
-                f"MCP initialize returned HTTP {resp.status_code}: "
-                f"{resp.text[:300]}"
+                f"MCP initialize returned HTTP {resp.status_code}: {resp.text[:300]}"
             )
 
         # Use server-assigned session ID for all subsequent calls
@@ -185,7 +183,9 @@ class OcrProvenanceClient:
         logger.info("MCP session initialized: %s", self._session_id)
 
     async def call_tool(
-        self, tool_name: str, arguments: dict[str, Any],
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
     ) -> dict[str, Any]:
         """Call an OCR Provenance MCP tool via JSON-RPC over HTTP.
 
@@ -220,7 +220,9 @@ class OcrProvenanceClient:
 
         try:
             response = await client.post(
-                self._base_url, json=payload, headers=self._headers(),
+                self._base_url,
+                json=payload,
+                headers=self._headers(),
             )
         except httpx.ConnectError as e:
             raise MeetingTranscriptStoreError(
@@ -295,5 +297,6 @@ class OcrProvenanceClient:
             self._client = None
             self._initialized = False
             logger.info(
-                "OcrProvenanceClient closed (session=%s)", self._session_id,
+                "OcrProvenanceClient closed (session=%s)",
+                self._session_id,
             )

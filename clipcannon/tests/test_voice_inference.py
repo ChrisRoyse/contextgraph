@@ -8,14 +8,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-os.environ.setdefault('HF_TOKEN', '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')
+os.environ.setdefault("HF_TOKEN", "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")
 
 from clipcannon.voice.inference import SpeakResult, VoiceSynthesizer
 from clipcannon.voice.verify import build_reference_embedding
-
 
 # Shared synthesizer to avoid reloading model for every test
 _synth: VoiceSynthesizer | None = None

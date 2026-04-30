@@ -229,7 +229,11 @@ class TestSegmentSpeedChange:
         """Changing speed on segment 2 invalidates [2] + captions + audio."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[1] = _make_segment(
-            2, 6000, 11000, output_start_ms=5000, speed=1.5,
+            2,
+            6000,
+            11000,
+            output_start_ms=5000,
+            speed=1.5,
         )
 
         hint = classify_changes(base_edl, new_edl)
@@ -243,7 +247,10 @@ class TestSegmentSpeedChange:
         """Changing source_start_ms on segment 3 invalidates [3]."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[2] = _make_segment(
-            3, 16000, 20000, output_start_ms=10000,
+            3,
+            16000,
+            20000,
+            output_start_ms=10000,
         )
 
         hint = classify_changes(base_edl, new_edl)
@@ -288,10 +295,16 @@ class TestSegmentsAdded:
         new_edl = deepcopy(base_edl)
         # Swap segment IDs for segments 1 and 2
         new_edl.segments[0] = _make_segment(
-            2, 0, 5000, output_start_ms=0,
+            2,
+            0,
+            5000,
+            output_start_ms=0,
         )
         new_edl.segments[1] = _make_segment(
-            1, 6000, 11000, output_start_ms=5000,
+            1,
+            6000,
+            11000,
+            output_start_ms=5000,
         )
 
         hint = classify_changes(base_edl, new_edl)
@@ -360,7 +373,10 @@ class TestPerSegmentCanvasChange:
         """Adding a canvas override to segment 1 invalidates [1] + captions."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[0] = _make_segment(
-            1, 0, 5000, output_start_ms=0,
+            1,
+            0,
+            5000,
+            output_start_ms=0,
             canvas=SegmentCanvasSpec(
                 background_color="#FF0000",
                 regions=[
@@ -397,7 +413,10 @@ class TestMotionChange:
         """Adding motion to segment 4 invalidates [4] only."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[3] = _make_segment(
-            4, 25000, 32000, output_start_ms=15000,
+            4,
+            25000,
+            32000,
+            output_start_ms=15000,
             motion=MotionSpec(effect="zoom_in", start_scale=1.0, end_scale=1.3),
         )
 
@@ -414,7 +433,10 @@ class TestMotionChange:
             segments=[
                 _make_segment(1, 0, 5000, output_start_ms=0),
                 _make_segment(
-                    2, 6000, 11000, output_start_ms=5000,
+                    2,
+                    6000,
+                    11000,
+                    output_start_ms=5000,
                     motion=MotionSpec(
                         effect="pan_left",
                         start_scale=1.0,
@@ -427,7 +449,10 @@ class TestMotionChange:
         )
         new_edl = deepcopy(old_edl)
         new_edl.segments[1] = _make_segment(
-            2, 6000, 11000, output_start_ms=5000,
+            2,
+            6000,
+            11000,
+            output_start_ms=5000,
         )
 
         hint = classify_changes(old_edl, new_edl)
@@ -444,7 +469,8 @@ class TestMetadataChangeNoInvalidation:
     """Metadata changes should not invalidate anything."""
 
     def test_metadata_change_no_invalidation(
-        self, base_edl: EditDecisionList,
+        self,
+        base_edl: EditDecisionList,
     ) -> None:
         """Changing metadata produces an empty render hint."""
         new_edl = deepcopy(base_edl)
@@ -585,7 +611,11 @@ class TestMultipleChanges:
         """Speed on seg 2 + audio change sets all relevant flags."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[1] = _make_segment(
-            2, 6000, 11000, output_start_ms=5000, speed=2.0,
+            2,
+            6000,
+            11000,
+            output_start_ms=5000,
+            speed=2.0,
         )
         new_edl.audio = AudioSpec(source_volume_db=-6.0)
 
@@ -617,7 +647,10 @@ class TestPerSegmentColorChange:
         """Adding color to segment 2 invalidates [2] + captions."""
         new_edl = deepcopy(base_edl)
         new_edl.segments[1] = _make_segment(
-            2, 6000, 11000, output_start_ms=5000,
+            2,
+            6000,
+            11000,
+            output_start_ms=5000,
             color=ColorSpec(brightness=0.5, saturation=1.8),
         )
 
@@ -641,11 +674,17 @@ class TestSegmentsInvalidatedSorted:
         new_edl = deepcopy(old_edl)
         # Change motion on seg 4 and color on seg 1
         new_edl.segments[3] = _make_segment(
-            4, 25000, 32000, output_start_ms=15000,
+            4,
+            25000,
+            32000,
+            output_start_ms=15000,
             motion=MotionSpec(effect="zoom_out"),
         )
         new_edl.segments[0] = _make_segment(
-            1, 0, 5000, output_start_ms=0,
+            1,
+            0,
+            5000,
+            output_start_ms=0,
             color=ColorSpec(hue_shift=30.0),
         )
 

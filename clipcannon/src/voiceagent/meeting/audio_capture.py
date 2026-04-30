@@ -6,25 +6,31 @@ Audio is delivered as PCM 16-bit mono 16kHz chunks to a callback function.
 Uses PyAudio to read from the PulseAudio monitor source. On WSL2, the
 PULSE_SERVER env var must point to the Windows PulseAudio TCP bridge.
 """
+
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
 import threading
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from voiceagent.meeting.config import AudioCaptureConfig
 from voiceagent.meeting.errors import MeetingAudioError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from voiceagent.meeting.config import AudioCaptureConfig
 
 logger = logging.getLogger(__name__)
 
 CHUNK_FRAMES = 1024  # frames per read (~64ms at 16kHz)
-SAMPLE_WIDTH = 2     # 16-bit = 2 bytes
-CHANNELS = 1         # mono
+SAMPLE_WIDTH = 2  # 16-bit = 2 bytes
+CHANNELS = 1  # mono
 
 
 class MeetingAudioCapture:
@@ -72,7 +78,8 @@ class MeetingAudioCapture:
                     if len(parts) >= 3:
                         os.environ["PULSE_SERVER"] = f"tcp:{parts[2]}"
                         logger.info(
-                            "WSL2 PULSE_SERVER set to tcp:%s", parts[2],
+                            "WSL2 PULSE_SERVER set to tcp:%s",
+                            parts[2],
                         )
                 except (OSError, subprocess.TimeoutExpired) as e:
                     logger.debug("WSL2 PulseAudio detection failed: %s", e)
@@ -95,8 +102,7 @@ class MeetingAudioCapture:
             import pyaudio
         except ImportError as exc:
             raise MeetingAudioError(
-                "pyaudio is required for audio capture. "
-                "Install: pip install pyaudio"
+                "pyaudio is required for audio capture. Install: pip install pyaudio"
             ) from exc
 
         try:
@@ -115,9 +121,7 @@ class MeetingAudioCapture:
             info = pa.get_device_info_by_index(i)
             name = info.get("name", "")
             max_input = info.get("maxInputChannels", 0)
-            if max_input > 0 and (
-                "monitor" in name.lower() or source_name in name
-            ):
+            if max_input > 0 and ("monitor" in name.lower() or source_name in name):
                 logger.info("Found monitor device %d: %s", i, name)
                 return i
 
@@ -175,7 +179,9 @@ class MeetingAudioCapture:
 
         self._running = True
         self._thread = threading.Thread(
-            target=self._capture_loop, daemon=True, name="meeting-audio-capture",
+            target=self._capture_loop,
+            daemon=True,
+            name="meeting-audio-capture",
         )
         self._thread.start()
         logger.info(
@@ -195,9 +201,7 @@ class MeetingAudioCapture:
             try:
                 data = self._stream.read(CHUNK_FRAMES, exception_on_overflow=False)
                 # Convert int16 bytes to float32 [-1, 1]
-                audio = (
-                    np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                )
+                audio = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
                 self._on_audio(audio, self._config.sample_rate)
             except Exception as exc:
                 if self._running:
@@ -214,10 +218,8 @@ class MeetingAudioCapture:
                 pass
             self._stream = None
         if self._pa is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._pa.terminate()
-            except Exception:
-                pass
             self._pa = None
 
     def stop(self) -> None:

@@ -1,4 +1,5 @@
 """Integration tests for ClipCannonAdapter -- REAL boris profile, NO MOCKS."""
+
 import asyncio
 import glob
 import tempfile
@@ -51,9 +52,7 @@ def test_synthesize_whitespace_raises(session_tts_adapter):
 def test_temp_wav_cleaned(session_tts_adapter):
     """Temporary WAV file must be cleaned up after synthesis."""
     before = set(glob.glob(f"{tempfile.gettempdir()}/*.wav"))
-    asyncio.get_event_loop().run_until_complete(
-        session_tts_adapter.synthesize("Testing cleanup")
-    )
+    asyncio.get_event_loop().run_until_complete(session_tts_adapter.synthesize("Testing cleanup"))
     after = set(glob.glob(f"{tempfile.gettempdir()}/*.wav"))
     new = after - before
     assert len(new) == 0, f"Temp WAV not cleaned: {new}"

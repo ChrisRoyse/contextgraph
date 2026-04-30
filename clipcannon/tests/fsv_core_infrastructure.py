@@ -20,9 +20,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
-import os
 import shutil
 import sqlite3
 import sys
@@ -74,13 +74,15 @@ def record(test_name: str, passed: bool, expected: str, actual: str, detail: str
     if detail:
         print(f"         Detail   : {detail}")
 
-    EVIDENCE.append({
-        "test": test_name,
-        "status": status,
-        "expected": expected,
-        "actual": actual,
-        "detail": detail,
-    })
+    EVIDENCE.append(
+        {
+            "test": test_name,
+            "status": status,
+            "expected": expected,
+            "actual": actual,
+            "detail": detail,
+        }
+    )
 
 
 def safe_run(name: str, fn):
@@ -323,19 +325,38 @@ def test_db_schema():
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).fetchall()
     table_names = sorted([r["name"] for r in tables_raw])
-    print(f"  PHYSICAL EVIDENCE - Tables in sqlite_master:")
+    print("  PHYSICAL EVIDENCE - Tables in sqlite_master:")
     for t in table_names:
         print(f"    - {t}")
 
     # Expected core tables (24)
-    expected_core = sorted([
-        "schema_version", "project", "transcript_segments", "transcript_words",
-        "scenes", "speakers", "emotion_curve", "topics", "highlights",
-        "reactions", "silence_gaps", "acoustic", "music_sections", "beats",
-        "beat_sections", "on_screen_text", "text_change_events",
-        "profanity_events", "content_safety", "pacing", "storyboard_grids",
-        "stream_status", "provenance",
-    ])
+    expected_core = sorted(
+        [
+            "schema_version",
+            "project",
+            "transcript_segments",
+            "transcript_words",
+            "scenes",
+            "speakers",
+            "emotion_curve",
+            "topics",
+            "highlights",
+            "reactions",
+            "silence_gaps",
+            "acoustic",
+            "music_sections",
+            "beats",
+            "beat_sections",
+            "on_screen_text",
+            "text_change_events",
+            "profanity_events",
+            "content_safety",
+            "pacing",
+            "storyboard_grids",
+            "stream_status",
+            "provenance",
+        ]
+    )
 
     for tbl in expected_core:
         found = tbl in table_names
@@ -370,14 +391,20 @@ def test_db_schema():
         "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%' ORDER BY name"
     ).fetchall()
     index_names = [r["name"] for r in indexes_raw]
-    print(f"  PHYSICAL EVIDENCE - Custom indexes:")
+    print("  PHYSICAL EVIDENCE - Custom indexes:")
     for idx in index_names:
         print(f"    - {idx}")
 
     expected_indexes = [
-        "idx_segments_time", "idx_words_time", "idx_words_segment",
-        "idx_scenes_time", "idx_emotion_time", "idx_highlights_score",
-        "idx_reactions_time", "idx_provenance_project", "idx_provenance_chain",
+        "idx_segments_time",
+        "idx_words_time",
+        "idx_words_segment",
+        "idx_scenes_time",
+        "idx_emotion_time",
+        "idx_highlights_score",
+        "idx_reactions_time",
+        "idx_provenance_project",
+        "idx_provenance_chain",
     ]
     for idx in expected_indexes:
         found = idx in index_names
@@ -429,6 +456,7 @@ def test_db_queries():
     db_path = create_project_db(project_id, base_dir=base_dir)
 
     from clipcannon.db.connection import get_connection
+
     conn = get_connection(db_path, enable_vec=False, dict_rows=True)
 
     sub_banner("Happy Path: table_exists for core tables")
@@ -474,7 +502,9 @@ def test_db_queries():
     db_rows = fetch_all(conn, "SELECT * FROM transcript_segments ORDER BY start_ms")
     print(f"  Retrieved {len(db_rows)} rows:")
     for r in db_rows:
-        print(f"    segment_id={r['segment_id']}, start={r['start_ms']}, end={r['end_ms']}, text='{r['text']}'")
+        print(
+            f"    segment_id={r['segment_id']}, start={r['start_ms']}, end={r['end_ms']}, text='{r['text']}'"
+        )
 
     record(
         "fetch_all returns 5 rows",
@@ -626,9 +656,13 @@ def test_config():
     config2 = ClipCannonConfig.load()
     config2.config_path = tmp_config_path
 
-    print(f"  STATE BEFORE set: processing.whisper_model = {config2.get('processing.whisper_model')}")
+    print(
+        f"  STATE BEFORE set: processing.whisper_model = {config2.get('processing.whisper_model')}"
+    )
     config2.set("processing.whisper_model", "medium")
-    print(f"  STATE AFTER set: processing.whisper_model = {config2.get('processing.whisper_model')}")
+    print(
+        f"  STATE AFTER set: processing.whisper_model = {config2.get('processing.whisper_model')}"
+    )
     record(
         "set() updates value",
         config2.get("processing.whisper_model") == "medium",
@@ -726,15 +760,32 @@ def test_gpu_manager():
     print(f"  HEALTH REPORT: {health.to_dict()}")
     record("health.cpu_only == True", health.cpu_only, "True", str(health.cpu_only))
     record("health.device_name == 'CPU'", health.device_name == "CPU", "CPU", health.device_name)
-    record("health.vram_total_bytes == 0", health.vram_total_bytes == 0, "0", str(health.vram_total_bytes))
-    record("health.loaded_models == []", health.loaded_models == [], "[]", str(health.loaded_models))
+    record(
+        "health.vram_total_bytes == 0",
+        health.vram_total_bytes == 0,
+        "0",
+        str(health.vram_total_bytes),
+    )
+    record(
+        "health.loaded_models == []", health.loaded_models == [], "[]", str(health.loaded_models)
+    )
     record(
         "health.to_dict() has all keys",
-        all(k in health.to_dict() for k in [
-            "device_name", "compute_capability", "vram_total_gb", "vram_used_gb",
-            "vram_free_gb", "vram_usage_pct", "precision", "concurrent_mode",
-            "loaded_models", "cpu_only",
-        ]),
+        all(
+            k in health.to_dict()
+            for k in [
+                "device_name",
+                "compute_capability",
+                "vram_total_gb",
+                "vram_used_gb",
+                "vram_free_gb",
+                "vram_usage_pct",
+                "precision",
+                "concurrent_mode",
+                "loaded_models",
+                "cpu_only",
+            ]
+        ),
         "All 10 keys present",
         str(list(health.to_dict().keys())),
     )
@@ -746,8 +797,18 @@ def test_gpu_manager():
     print(f"  STATE AFTER load: loaded_models = {mgr.loaded_model_names}")
 
     record("load returns model", result == dummy_model, "dummy_model", str(type(result)))
-    record("is_model_loaded('whisperx')", mgr.is_model_loaded("whisperx"), "True", str(mgr.is_model_loaded("whisperx")))
-    record("loaded_model_names contains 'whisperx'", "whisperx" in mgr.loaded_model_names, "True", str(mgr.loaded_model_names))
+    record(
+        "is_model_loaded('whisperx')",
+        mgr.is_model_loaded("whisperx"),
+        "True",
+        str(mgr.is_model_loaded("whisperx")),
+    )
+    record(
+        "loaded_model_names contains 'whisperx'",
+        "whisperx" in mgr.loaded_model_names,
+        "True",
+        str(mgr.loaded_model_names),
+    )
 
     # get_model
     got = mgr.get_model("whisperx")
@@ -755,13 +816,20 @@ def test_gpu_manager():
 
     # Re-load same model (should return cached)
     result2 = mgr.load("whisperx")
-    record("Re-load returns cached model", result2 is dummy_model, "True", str(result2 is dummy_model))
+    record(
+        "Re-load returns cached model", result2 is dummy_model, "True", str(result2 is dummy_model)
+    )
 
     # Unload
     print(f"  STATE BEFORE unload: loaded_models = {mgr.loaded_model_names}")
     mgr.unload("whisperx")
     print(f"  STATE AFTER unload: loaded_models = {mgr.loaded_model_names}")
-    record("After unload: is_model_loaded == False", not mgr.is_model_loaded("whisperx"), "False", str(mgr.is_model_loaded("whisperx")))
+    record(
+        "After unload: is_model_loaded == False",
+        not mgr.is_model_loaded("whisperx"),
+        "False",
+        str(mgr.is_model_loaded("whisperx")),
+    )
 
     sub_banner("Edge Case: unload non-loaded model (no-op)")
     mgr.unload("nonexistent_model")
@@ -769,6 +837,7 @@ def test_gpu_manager():
 
     sub_banner("Edge Case: load without loader_fn raises GPUError")
     from clipcannon.exceptions import GPUError
+
     try:
         mgr.load("unknown_model")
         record("load without loader_fn raises GPUError", False, "GPUError", "No exception")
@@ -792,7 +861,12 @@ def test_gpu_manager():
     # In CPU mode, concurrent=False, so loading a new model should unload old ones
     mgr2 = ModelManager(device="cpu")
     mgr2.load("first", loader_fn=lambda: "F", vram_estimate_bytes=100)
-    record("Sequential: first model loaded", mgr2.is_model_loaded("first"), "True", str(mgr2.is_model_loaded("first")))
+    record(
+        "Sequential: first model loaded",
+        mgr2.is_model_loaded("first"),
+        "True",
+        str(mgr2.is_model_loaded("first")),
+    )
     mgr2.load("second", loader_fn=lambda: "S", vram_estimate_bytes=100)
     record(
         "Sequential: first model evicted when second loaded",
@@ -808,8 +882,18 @@ def test_gpu_manager():
     )
 
     sub_banner("Edge Case: Health report properties")
-    record("vram_usage_pct == 0.0 for CPU", health.vram_usage_pct == 0.0, "0.0", str(health.vram_usage_pct))
-    record("vram_total_gb == 0.0 for CPU", health.vram_total_gb == 0.0, "0.0", str(health.vram_total_gb))
+    record(
+        "vram_usage_pct == 0.0 for CPU",
+        health.vram_usage_pct == 0.0,
+        "0.0",
+        str(health.vram_usage_pct),
+    )
+    record(
+        "vram_total_gb == 0.0 for CPU",
+        health.vram_total_gb == 0.0,
+        "0.0",
+        str(health.vram_total_gb),
+    )
 
 
 # ============================================================
@@ -817,13 +901,13 @@ def test_gpu_manager():
 # ============================================================
 def test_provenance_hasher():
     banner("PROVENANCE HASHER")
+    from clipcannon.exceptions import ProvenanceError
     from clipcannon.provenance.hasher import (
         sha256_bytes,
         sha256_file,
         sha256_string,
         verify_file_hash,
     )
-    from clipcannon.exceptions import ProvenanceError
 
     sub_banner("Happy Path: sha256_file with known content")
     test_file = TMP_ROOT / "hash_test" / "known.txt"
@@ -893,21 +977,30 @@ def test_provenance_hasher():
     record("verify_file_hash returns True for matching", verified, "True", str(verified))
 
     not_verified = verify_file_hash(test_file, "0000" * 16)
-    record("verify_file_hash returns False for mismatch", not not_verified, "False", str(not_verified))
+    record(
+        "verify_file_hash returns False for mismatch", not not_verified, "False", str(not_verified)
+    )
 
     sub_banner("Edge Case: sha256_file on non-existent file raises ProvenanceError")
     try:
         sha256_file(Path("/tmp/definitely_does_not_exist_fsv.txt"))
         record("Non-existent file raises ProvenanceError", False, "ProvenanceError", "No exception")
     except ProvenanceError:
-        record("Non-existent file raises ProvenanceError", True, "ProvenanceError", "ProvenanceError raised")
+        record(
+            "Non-existent file raises ProvenanceError",
+            True,
+            "ProvenanceError",
+            "ProvenanceError raised",
+        )
 
     sub_banner("Edge Case: sha256_file on directory raises ProvenanceError")
     try:
         sha256_file(TMP_ROOT)
         record("Directory raises ProvenanceError", False, "ProvenanceError", "No exception")
     except ProvenanceError:
-        record("Directory raises ProvenanceError", True, "ProvenanceError", "ProvenanceError raised")
+        record(
+            "Directory raises ProvenanceError", True, "ProvenanceError", "ProvenanceError raised"
+        )
 
     sub_banner("Edge Case: sha256_bytes with empty bytes")
     empty_hash = sha256_bytes(b"")
@@ -935,15 +1028,14 @@ def test_provenance_hasher():
 # ============================================================
 def test_provenance_chain():
     banner("PROVENANCE CHAIN")
+    from clipcannon.db.connection import get_connection
+    from clipcannon.db.schema import create_project_db
     from clipcannon.provenance.chain import (
         GENESIS_HASH,
-        ChainVerificationResult,
         compute_chain_hash,
         get_chain_from_genesis,
         verify_chain,
     )
-    from clipcannon.db.schema import create_project_db
-    from clipcannon.db.connection import get_connection
 
     sub_banner("Happy Path: Compute 5 chain hashes in sequence")
     hashes = []
@@ -998,7 +1090,7 @@ def test_provenance_chain():
     parent_hash = GENESIS_HASH
     record_ids = []
     for i in range(5):
-        rid = f"prov_{i+1:03d}"
+        rid = f"prov_{i + 1:03d}"
         record_ids.append(rid)
         chain_h = compute_chain_hash(
             parent_hash=parent_hash,
@@ -1016,9 +1108,20 @@ def test_provenance_chain():
             "input_sha256, output_sha256, parent_record_id, model_name, model_version, "
             "model_parameters, chain_hash) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (rid, project_id, ts, f"stage_{i}", f"stage_{i}",
-             f"input_{i:03d}", f"output_{i:03d}", parent_record_id,
-             "testmodel", "1.0", json.dumps({"batch_size": 32}, sort_keys=True), chain_h),
+            (
+                rid,
+                project_id,
+                ts,
+                f"stage_{i}",
+                f"stage_{i}",
+                f"input_{i:03d}",
+                f"output_{i:03d}",
+                parent_record_id,
+                "testmodel",
+                "1.0",
+                json.dumps({"batch_size": 32}, sort_keys=True),
+                chain_h,
+            ),
         )
         parent_hash = chain_h
 
@@ -1027,7 +1130,9 @@ def test_provenance_chain():
 
     # Verify chain
     result = verify_chain(project_id, db_path)
-    print(f"  EVIDENCE: verify_chain result = verified={result.verified}, total={result.total_records}")
+    print(
+        f"  EVIDENCE: verify_chain result = verified={result.verified}, total={result.total_records}"
+    )
     record(
         "verify_chain passes for valid chain",
         result.verified,
@@ -1064,7 +1169,7 @@ def test_provenance_chain():
 
     sub_banner("TAMPER TEST: Modify record 3 chain_hash, verify chain fails AT record 3")
     conn2 = get_connection(db_path, enable_vec=False, dict_rows=True)
-    print(f"  STATE BEFORE tamper: Fetching prov_003 chain_hash...")
+    print("  STATE BEFORE tamper: Fetching prov_003 chain_hash...")
     original_row = conn2.execute(
         "SELECT chain_hash FROM provenance WHERE record_id = 'prov_003'"
     ).fetchone()
@@ -1080,7 +1185,9 @@ def test_provenance_chain():
     conn2.close()
 
     tampered_result = verify_chain(project_id, db_path)
-    print(f"  EVIDENCE: verify_chain after tamper = verified={tampered_result.verified}, broken_at={tampered_result.broken_at}")
+    print(
+        f"  EVIDENCE: verify_chain after tamper = verified={tampered_result.verified}, broken_at={tampered_result.broken_at}"
+    )
     record(
         "Tampered chain fails verification",
         not tampered_result.verified,
@@ -1115,7 +1222,12 @@ def test_provenance_chain():
     record("Same inputs produce same hash", h1 == h2, h1[:32], h2[:32])
 
     h3 = compute_chain_hash("GENESIS", "in", "out", "op", "m", "v", {"k": 2})
-    record("Different params produce different hash", h1 != h3, "Different", f"h1={h1[:16]}... h3={h3[:16]}...")
+    record(
+        "Different params produce different hash",
+        h1 != h3,
+        "Different",
+        f"h1={h1[:16]}... h3={h3[:16]}...",
+    )
 
 
 # ============================================================
@@ -1123,6 +1235,9 @@ def test_provenance_chain():
 # ============================================================
 def test_provenance_recorder():
     banner("PROVENANCE RECORDER")
+    from clipcannon.db.connection import get_connection
+    from clipcannon.db.schema import create_project_db
+    from clipcannon.provenance.chain import verify_chain
     from clipcannon.provenance.recorder import (
         ExecutionInfo,
         InputInfo,
@@ -1132,9 +1247,6 @@ def test_provenance_recorder():
         get_provenance_timeline,
         record_provenance,
     )
-    from clipcannon.provenance.chain import verify_chain
-    from clipcannon.db.schema import create_project_db
-    from clipcannon.db.connection import get_connection
 
     project_id = "fsv_recorder_test"
     base_dir = TMP_ROOT / "recorder_projects"
@@ -1157,16 +1269,16 @@ def test_provenance_recorder():
         rid = record_provenance(
             db_path=db_path,
             project_id=project_id,
-            operation=f"operation_{i+1}",
-            stage=f"stage_{i+1}",
+            operation=f"operation_{i + 1}",
+            stage=f"stage_{i + 1}",
             input_info=InputInfo(
-                file_path=f"/tmp/input_{i+1}.txt",
-                sha256=hashlib.sha256(f"input_{i+1}".encode()).hexdigest(),
+                file_path=f"/tmp/input_{i + 1}.txt",
+                sha256=hashlib.sha256(f"input_{i + 1}".encode()).hexdigest(),
                 size_bytes=1000 * (i + 1),
             ),
             output_info=OutputInfo(
-                file_path=f"/tmp/output_{i+1}.txt",
-                sha256=hashlib.sha256(f"output_{i+1}".encode()).hexdigest(),
+                file_path=f"/tmp/output_{i + 1}.txt",
+                sha256=hashlib.sha256(f"output_{i + 1}".encode()).hexdigest(),
                 size_bytes=2000 * (i + 1),
                 record_count=10 * (i + 1),
             ),
@@ -1182,7 +1294,7 @@ def test_provenance_recorder():
                 vram_peak_mb=0.0,
             ),
             parent_record_id=parent,
-            description=f"Test operation {i+1}",
+            description=f"Test operation {i + 1}",
         )
         records_made.append(rid)
         print(f"  Recorded provenance: {rid}")
@@ -1208,8 +1320,10 @@ def test_provenance_recorder():
     ).fetchall()
     print(f"  Retrieved {len(raw_rows)} rows from provenance table:")
     for r in raw_rows:
-        print(f"    record_id={r['record_id']}, op={r['operation']}, stage={r['stage']}, "
-              f"chain_hash={str(r['chain_hash'])[:24]}..., parent={r['parent_record_id']}")
+        print(
+            f"    record_id={r['record_id']}, op={r['operation']}, stage={r['stage']}, "
+            f"chain_hash={str(r['chain_hash'])[:24]}..., parent={r['parent_record_id']}"
+        )
 
     record(
         "Physical SELECT returns 3 rows",
@@ -1250,7 +1364,9 @@ def test_provenance_recorder():
 
     sub_banner("Happy Path: verify_chain passes for recorded entries")
     chain_result = verify_chain(project_id, db_path)
-    print(f"  EVIDENCE: verify_chain = verified={chain_result.verified}, total={chain_result.total_records}")
+    print(
+        f"  EVIDENCE: verify_chain = verified={chain_result.verified}, total={chain_result.total_records}"
+    )
     record(
         "verify_chain passes",
         chain_result.verified,
@@ -1333,9 +1449,9 @@ def test_provenance_recorder():
 # ============================================================
 def test_sha256_table_content():
     banner("PROVENANCE HASHER - TABLE CONTENT HASHING")
-    from clipcannon.provenance.hasher import sha256_table_content
-    from clipcannon.db.schema import create_project_db
     from clipcannon.db.connection import get_connection
+    from clipcannon.db.schema import create_project_db
+    from clipcannon.provenance.hasher import sha256_table_content
 
     project_id = "fsv_table_hash"
     base_dir = TMP_ROOT / "table_hash_projects"
@@ -1370,7 +1486,9 @@ def test_sha256_table_content():
     )
     conn.commit()
     h3 = sha256_table_content(conn, "transcript_segments", project_id)
-    record("New data changes hash", h3 != h1, "Different", f"before={h1[:16]}... after={h3[:16]}...")
+    record(
+        "New data changes hash", h3 != h1, "Different", f"before={h1[:16]}... after={h3[:16]}..."
+    )
 
     sub_banner("Edge Case: Non-existent project returns hash of empty list")
     h_empty = sha256_table_content(conn, "transcript_segments", "nonexistent_proj")
@@ -1378,11 +1496,19 @@ def test_sha256_table_content():
 
     sub_banner("Edge Case: Invalid table name raises ProvenanceError")
     from clipcannon.exceptions import ProvenanceError
+
     try:
         sha256_table_content(conn, "table; DROP TABLE--", project_id)
-        record("Invalid table name raises ProvenanceError", False, "ProvenanceError", "No exception")
+        record(
+            "Invalid table name raises ProvenanceError", False, "ProvenanceError", "No exception"
+        )
     except ProvenanceError:
-        record("Invalid table name raises ProvenanceError", True, "ProvenanceError", "ProvenanceError raised")
+        record(
+            "Invalid table name raises ProvenanceError",
+            True,
+            "ProvenanceError",
+            "ProvenanceError raised",
+        )
 
     conn.close()
 
@@ -1448,9 +1574,7 @@ if __name__ == "__main__":
     failures = print_summary()
 
     # Cleanup
-    try:
+    with contextlib.suppress(Exception):
         shutil.rmtree(TMP_ROOT, ignore_errors=True)
-    except Exception:
-        pass
 
     sys.exit(failures)
