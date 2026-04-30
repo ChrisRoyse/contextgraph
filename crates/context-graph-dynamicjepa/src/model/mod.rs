@@ -305,6 +305,21 @@ pub fn train_tiny_jepa(
         });
     }
     validate_examples(examples, input_dim, target_dim, action_dim)?;
+    let zeroed_action_examples = if config.model.predictor.ignore_action {
+        Some(
+            examples
+                .iter()
+                .cloned()
+                .map(|mut example| {
+                    example.action.fill(0.0);
+                    example
+                })
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
+    let examples = zeroed_action_examples.as_deref().unwrap_or(examples);
     let train_indices = split_indices(examples, "train");
     if train_indices.is_empty() {
         return Err(DynamicJepaError::TrainingFailed {

@@ -291,6 +291,7 @@ required_cfs = [
 expected_trajectory_count = 1
 expected_event_count = 15
 expected_panel_count = 15
+expected_dataset_row_count = 14
 expected_train_rows_min = 9
 expected_train_rows_max = 9
 expected_val_rows_min = 3

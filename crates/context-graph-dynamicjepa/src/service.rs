@@ -835,7 +835,10 @@ fn predict_vector(
     panel: &LatentPanel,
     action: &NormalizedAction,
 ) -> DynamicJepaResult<Vec<f32>> {
-    let action = action_dense_vector(domain, action)?;
+    let mut action = action_dense_vector(domain, action)?;
+    if artifact.config.model.predictor.ignore_action {
+        action.fill(0.0);
+    }
     let input = flatten_panel_with_action_override(panel, Some(&action))?;
     if artifact.config.model.predictor.in_action_dim != action.len() {
         return Err(DynamicJepaError::PanelShapeMismatch {
@@ -875,10 +878,13 @@ fn encode_panel_vector(
     panel: &LatentPanel,
     action: &NormalizedAction,
 ) -> DynamicJepaResult<Vec<f32>> {
-    let action = action_dense_vector(domain, action)?;
+    let mut action = action_dense_vector(domain, action)?;
+    if artifact.config.model.predictor.ignore_action {
+        action.fill(0.0);
+    }
     mlp_forward(
         &artifact.tensors,
-        "online.encoder",
+        "target.encoder",
         artifact.config.model.encoder.hidden.len() + 1,
         &flatten_panel_with_action_override(panel, Some(&action))?,
         artifact.loaded.registry.training_run_id,

@@ -37,6 +37,8 @@ pub struct PredictorConfig {
     pub hidden: Vec<usize>,
     pub in_action_dim: usize,
     pub out_dim: usize,
+    #[serde(default)]
+    pub ignore_action: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

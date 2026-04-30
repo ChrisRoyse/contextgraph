@@ -3335,7 +3335,7 @@ fn run_research_smoke(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<Value
     }
 
     run_career_reproducibility(ctx)?;
-    run_career_novicreg_ablation(ctx)?;
+    run_career_ablation_matrix(ctx)?;
 
     write_json_file(
         &ctx.run_dir.join("db_counts_before.json"),
@@ -3865,6 +3865,13 @@ fn run_career_reproducibility(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
     let after = verify_domain_source_of_truth(ctx, "career_taxonomy_repro", &db, &output)?;
     let evidence_dir = evidence_dir_from_output(&output)?;
     let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
+    let artifact_hashes =
+        read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
+    ctx.artifact_rows.push(json!({
+        "domain": "career_taxonomy_repro",
+        "verification_run_id": output["verification_run_id"],
+        "artifact_hashes": artifact_hashes,
+    }));
     let metrics = &training_summary["summary"]["metrics"];
     let mut metric_deltas = BTreeMap::new();
     for metric in [
@@ -3930,14 +3937,166 @@ fn run_career_reproducibility(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
     Ok(())
 }
 
-fn run_career_novicreg_ablation(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
-    let fixtures = ctx
-        .run_dir
-        .join("ablations/career_taxonomy_novicreg_fixtures");
+#[derive(Debug, Clone, Copy)]
+struct CareerAblationSpec {
+    ablation_id: &'static str,
+    domain_label: &'static str,
+    panel: &'static str,
+    include_skill_vectors: bool,
+    include_transition_distance: bool,
+    include_pairwise_features: bool,
+    action_conditioning: bool,
+    vicreg: bool,
+    stopping_target: f64,
+    max_seconds: u64,
+}
+
+fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<()> {
+    let base_spec = CareerAblationSpec {
+        ablation_id: "A1_taxonomy_skill_action_vicreg",
+        domain_label: "career_taxonomy",
+        panel: "taxonomy_plus_skills",
+        include_skill_vectors: true,
+        include_transition_distance: false,
+        include_pairwise_features: false,
+        action_conditioning: true,
+        vicreg: true,
+        stopping_target: 0.20,
+        max_seconds: 120,
+    };
+    let base_domain_pack = ctx
+        .fixtures_root
+        .join("domain_packs/career_taxonomy.v1.toml");
+    let base_train_config = ctx
+        .fixtures_root
+        .join("verification/career_taxonomy_train_config.json");
+    push_career_ablation_row_from_evidence(
+        ctx,
+        base_spec,
+        &base_domain_pack,
+        &base_train_config,
+        false,
+    )?;
+
+    let specs = [
+        CareerAblationSpec {
+            ablation_id: "A0_taxonomy_only_action_vicreg",
+            domain_label: "career_taxonomy_ablation_A0_taxonomy_only",
+            panel: "taxonomy_scalar_categorical",
+            include_skill_vectors: false,
+            include_transition_distance: false,
+            include_pairwise_features: false,
+            action_conditioning: true,
+            vicreg: true,
+            stopping_target: 0.08,
+            max_seconds: 180,
+        },
+        CareerAblationSpec {
+            ablation_id: "A2_taxonomy_skill_transition_action_vicreg",
+            domain_label: "career_taxonomy_ablation_A2_transition",
+            panel: "taxonomy_plus_skills_plus_transition_distance",
+            include_skill_vectors: true,
+            include_transition_distance: true,
+            include_pairwise_features: false,
+            action_conditioning: true,
+            vicreg: true,
+            stopping_target: 0.08,
+            max_seconds: 180,
+        },
+        CareerAblationSpec {
+            ablation_id: "A3_taxonomy_skill_transition_no_action_vicreg",
+            domain_label: "career_taxonomy_ablation_A3_no_action",
+            panel: "taxonomy_plus_skills_plus_transition_distance",
+            include_skill_vectors: true,
+            include_transition_distance: true,
+            include_pairwise_features: false,
+            action_conditioning: false,
+            vicreg: true,
+            stopping_target: 0.08,
+            max_seconds: 180,
+        },
+        CareerAblationSpec {
+            ablation_id: "A4_taxonomy_skill_transition_pairwise_action_vicreg",
+            domain_label: "career_taxonomy_ablation_A4_pairwise",
+            panel: "taxonomy_plus_skills_plus_transition_distance_plus_pairwise",
+            include_skill_vectors: true,
+            include_transition_distance: true,
+            include_pairwise_features: true,
+            action_conditioning: true,
+            vicreg: true,
+            stopping_target: 0.08,
+            max_seconds: 180,
+        },
+        CareerAblationSpec {
+            ablation_id: "A5_taxonomy_skill_transition_action_no_vicreg",
+            domain_label: "career_taxonomy_ablation_A5_no_vicreg",
+            panel: "taxonomy_plus_skills_plus_transition_distance",
+            include_skill_vectors: true,
+            include_transition_distance: true,
+            include_pairwise_features: false,
+            action_conditioning: true,
+            vicreg: false,
+            stopping_target: 0.08,
+            max_seconds: 180,
+        },
+    ];
+
+    for spec in specs {
+        let fixtures = materialize_career_ablation_fixtures(ctx, spec)?;
+        let db = ctx.db_path(spec.domain_label)?;
+        let artifact_root = ctx.artifact_root.join("ablations").join(spec.ablation_id);
+        fs::create_dir_all(&artifact_root).map_err(|err| DynamicJepaError::Storage {
+            operation: "research_smoke.create_ablation_artifact_root".to_string(),
+            cf: "filesystem".to_string(),
+            message: format!("failed to create {}: {err}", artifact_root.display()),
+            remediation: "use a writable artifact root".to_string(),
+        })?;
+        let old_fixtures_root = ctx.fixtures_root.clone();
+        ctx.fixtures_root = fixtures.clone();
+        let output = run_research_domain_verifier(
+            ctx,
+            spec.domain_label,
+            "verify-career-taxonomy",
+            &db,
+            &artifact_root,
+        );
+        ctx.fixtures_root = old_fixtures_root;
+        let output = output?;
+        let after = verify_domain_source_of_truth(ctx, spec.domain_label, &db, &output)?;
+        ctx.domain_reports.insert(
+            spec.domain_label.to_string(),
+            json!({
+                "status": "passed",
+                "verification_run_id": output["verification_run_id"],
+                "db_path": output["db_path"],
+                "artifact_root": output["artifact_root"],
+                "evidence_dir": output["evidence_dir"],
+                "after_counts": output["after_counts"],
+                "summary": output["summary"],
+            }),
+        );
+        push_career_ablation_row_from_output(
+            ctx,
+            spec,
+            &output,
+            &after["counts"],
+            &fixtures.join("domain_packs/career_taxonomy.v1.toml"),
+            &fixtures.join("verification/career_taxonomy_train_config.json"),
+            true,
+        )?;
+    }
+    Ok(())
+}
+
+fn materialize_career_ablation_fixtures(
+    ctx: &ResearchSmokeContext,
+    spec: CareerAblationSpec,
+) -> DynamicJepaResult<PathBuf> {
+    let fixtures = ctx.run_dir.join("ablations").join(spec.ablation_id);
     fs::create_dir_all(fixtures.join("domain_packs")).map_err(|err| DynamicJepaError::Storage {
         operation: "research_smoke.create_ablation_fixtures".to_string(),
         cf: "filesystem".to_string(),
-        message: format!("failed to create ablation fixtures: {err}"),
+        message: format!("failed to create ablation domain fixtures: {err}"),
         remediation: "use a writable --run-root".to_string(),
     })?;
     fs::create_dir_all(fixtures.join("verification")).map_err(|err| DynamicJepaError::Storage {
@@ -3946,89 +4105,796 @@ fn run_career_novicreg_ablation(ctx: &mut ResearchSmokeContext) -> DynamicJepaRe
         message: format!("failed to create ablation verification fixtures: {err}"),
         remediation: "use a writable --run-root".to_string(),
     })?;
-    let files = [
-        "domain_packs/career_taxonomy.v1.toml",
-        "verification/career_taxonomy_smoke.jsonl",
-        "verification/career_taxonomy_edge_empty.jsonl",
-        "verification/career_taxonomy_edge_missing_license.jsonl",
-        "verification/career_taxonomy_edge_invalid_action.jsonl",
-        "verification/career_taxonomy_edge_wrong_vector_dim.jsonl",
-        "verification/career_taxonomy_edge_oob_job_zone.jsonl",
-        "verification/career_taxonomy_data_manifest.json",
-    ];
-    for rel in files {
-        copy_fixture_file(&ctx.fixtures_root.join(rel), &fixtures.join(rel))?;
+
+    mutate_career_domain_pack_for_ablation(
+        &ctx.fixtures_root
+            .join("domain_packs/career_taxonomy.v1.toml"),
+        &fixtures.join("domain_packs/career_taxonomy.v1.toml"),
+        spec,
+    )?;
+    write_career_ablation_train_config(
+        &ctx.fixtures_root
+            .join("verification/career_taxonomy_train_config.json"),
+        &fixtures.join("verification/career_taxonomy_train_config.json"),
+        spec,
+    )?;
+    copy_fixture_file(
+        &ctx.fixtures_root
+            .join("verification/career_taxonomy_data_manifest.json"),
+        &fixtures.join("verification/career_taxonomy_data_manifest.json"),
+    )?;
+    for rel in [
+        "career_taxonomy_smoke.jsonl",
+        "career_taxonomy_edge_empty.jsonl",
+        "career_taxonomy_edge_missing_license.jsonl",
+        "career_taxonomy_edge_invalid_action.jsonl",
+        "career_taxonomy_edge_wrong_vector_dim.jsonl",
+        "career_taxonomy_edge_oob_job_zone.jsonl",
+    ] {
+        transform_career_jsonl_for_ablation(
+            &ctx.fixtures_root.join("verification").join(rel),
+            &fixtures.join("verification").join(rel),
+            spec,
+            rel,
+        )?;
     }
-    let config_src = ctx
-        .fixtures_root
-        .join("verification/career_taxonomy_train_config.json");
-    let config_dst = fixtures.join("verification/career_taxonomy_train_config.json");
-    let mut config = read_json_file(&config_src)?;
+    Ok(fixtures)
+}
+
+fn mutate_career_domain_pack_for_ablation(
+    src: &Path,
+    dst: &Path,
+    spec: CareerAblationSpec,
+) -> DynamicJepaResult<()> {
+    let text = read_text_file(src, "career ablation domain pack")?;
+    let mut value: toml::Value = toml::from_str(&text).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.toml",
+            format!("failed to parse {}: {err}", src.display()),
+            "fix the checked-in career domain pack before generating ablation variants",
+        )
+    })?;
+
+    if !spec.include_skill_vectors {
+        remove_toml_schema_field(&mut value, "state", "skill_vector")?;
+        remove_toml_schema_field(&mut value, "outcome", "next_skill_vector")?;
+        remove_toml_instruments(&mut value, &["skill_vector", "next_skill_vector"])?;
+        remove_toml_adapter_mappings(
+            &mut value,
+            &["state.skill_vector", "outcome.next_skill_vector"],
+        )?;
+        set_toml_objective_target(&mut value, "outcome.next_occupation_cluster")?;
+    }
+    if spec.include_transition_distance {
+        push_toml_schema_field(
+            &mut value,
+            "state",
+            toml_field_table(
+                "transition_distance",
+                toml_kind_table("f64", &[]),
+                true,
+                Some(0.0),
+                Some(1.0),
+            ),
+        )?;
+        push_toml_instrument(&mut value, transition_distance_instrument())?;
+        insert_toml_adapter_mapping(
+            &mut value,
+            "state.transition_distance",
+            "$.state.transition_distance",
+        )?;
+    }
+    if spec.include_pairwise_features {
+        push_toml_schema_field(
+            &mut value,
+            "state",
+            toml_field_table(
+                "occupation_move_pair",
+                toml_kind_table("categorical", &occupation_move_pair_variants()),
+                true,
+                None,
+                None,
+            ),
+        )?;
+        push_toml_instrument(&mut value, occupation_move_pair_instrument())?;
+        insert_toml_adapter_mapping(
+            &mut value,
+            "state.occupation_move_pair",
+            "$.state.occupation_move_pair",
+        )?;
+    }
+
+    let serialized = toml::to_string_pretty(&value).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.serialize",
+            format!(
+                "failed to serialize ablation domain pack {}: {err}",
+                dst.display()
+            ),
+            "inspect the TOML mutation code for a non-serializable value",
+        )
+    })?;
+    write_text_file(dst, &serialized)?;
+    parse_domain_pack_file(dst)?;
+    Ok(())
+}
+
+fn write_career_ablation_train_config(
+    src: &Path,
+    dst: &Path,
+    spec: CareerAblationSpec,
+) -> DynamicJepaResult<()> {
+    let mut config = read_json_file(src)?;
     if config.get("loss").and_then(Value::as_object).is_none() {
         return Err(DynamicJepaError::validation(
             "research_smoke.ablation_config.loss",
-            format!("{} is missing required loss object", config_src.display()),
+            format!("{} is missing required loss object", src.display()),
             "fix the checked-in training config before generating ablation configs",
         ));
     }
-    config["loss"]["vicreg_variance_weight"] = json!(0.0);
-    config["loss"]["vicreg_covariance_weight"] = json!(0.0);
-    write_json_file(&config_dst, &config)?;
-
-    let db = ctx.db_path("career_taxonomy_novicreg")?;
-    let artifact_root = ctx.artifact_root.join("ablations/career_taxonomy_novicreg");
-    fs::create_dir_all(&artifact_root).map_err(|err| DynamicJepaError::Storage {
-        operation: "research_smoke.create_ablation_artifact_root".to_string(),
-        cf: "filesystem".to_string(),
-        message: format!("failed to create {}: {err}", artifact_root.display()),
-        remediation: "use a writable artifact root".to_string(),
+    if config
+        .get("model")
+        .and_then(|model| model.get("predictor"))
+        .and_then(Value::as_object)
+        .is_none()
+    {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_config.model.predictor",
+            format!(
+                "{} is missing required model.predictor object",
+                src.display()
+            ),
+            "fix the checked-in training config before generating ablation configs",
+        ));
+    }
+    config["model"]["predictor"]["ignore_action"] = json!(!spec.action_conditioning);
+    config["stopping"]["target"] = json!(spec.stopping_target);
+    config["stopping"]["max_seconds"] = json!(spec.max_seconds);
+    if !spec.vicreg {
+        config["loss"]["vicreg_variance_weight"] = json!(0.0);
+        config["loss"]["vicreg_covariance_weight"] = json!(0.0);
+    }
+    let parsed: TrainConfig = serde_json::from_value(config.clone()).map_err(|err| {
+        DynamicJepaError::validation(
+            "research_smoke.ablation_config",
+            format!("generated ablation config is invalid: {err}"),
+            "fix ablation config mutation before running the verifier",
+        )
     })?;
-    let old_fixtures_root = ctx.fixtures_root.clone();
-    ctx.fixtures_root = fixtures.clone();
-    let output = run_research_domain_verifier(
+    parsed.validate()?;
+    write_json_file(dst, &config)
+}
+
+fn transform_career_jsonl_for_ablation(
+    src: &Path,
+    dst: &Path,
+    spec: CareerAblationSpec,
+    fixture_name: &str,
+) -> DynamicJepaResult<()> {
+    let text = read_text_file(src, "career ablation JSONL")?;
+    let mut out = String::new();
+    for (idx, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut value: Value = serde_json::from_str(line).map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_jsonl",
+                format!("failed to parse {} line {}: {err}", src.display(), idx + 1),
+                "checked-in career fixtures must be valid JSONL before ablation transforms run",
+            )
+        })?;
+        transform_career_event_for_ablation(&mut value, spec, fixture_name)?;
+        let line = serde_json::to_string(&value).map_err(|err| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_jsonl.serialize",
+                format!(
+                    "failed to serialize {} line {}: {err}",
+                    dst.display(),
+                    idx + 1
+                ),
+                "ablation fixture rows must remain JSON serializable",
+            )
+        })?;
+        out.push_str(&line);
+        out.push('\n');
+    }
+    write_text_file(dst, &out)
+}
+
+fn transform_career_event_for_ablation(
+    value: &mut Value,
+    spec: CareerAblationSpec,
+    fixture_name: &str,
+) -> DynamicJepaResult<()> {
+    let root = value.as_object().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.ablation_jsonl.row",
+            "career fixture row must be a JSON object",
+            "fix the checked-in career JSONL fixtures",
+        )
+    })?;
+    let outcome_label = root
+        .get("outcome")
+        .and_then(|outcome| outcome.get("mobility_label"))
+        .and_then(Value::as_str)
+        .unwrap_or("same")
+        .to_string();
+    let action_move = root
+        .get("action")
+        .and_then(|action| action.get("move"))
+        .and_then(Value::as_str)
+        .unwrap_or("noop")
+        .to_string();
+    let occupation_cluster = root
+        .get("state")
+        .and_then(|state| state.get("occupation_cluster"))
+        .and_then(Value::as_str)
+        .unwrap_or("software")
+        .to_string();
+    let object = value.as_object_mut().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.ablation_jsonl.row",
+            "career fixture row must be a JSON object",
+            "fix the checked-in career JSONL fixtures",
+        )
+    })?;
+    let state = object
+        .get_mut("state")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_jsonl.state",
+                "career fixture row is missing object state",
+                "fix the checked-in career JSONL fixtures",
+            )
+        })?;
+
+    if spec.include_transition_distance {
+        let distance = match outcome_label.as_str() {
+            "same" => 0.0,
+            "near_transition" => 0.5,
+            "far_transition" => 1.0,
+            other => {
+                return Err(DynamicJepaError::validation(
+                    "research_smoke.ablation_jsonl.mobility_label",
+                    format!("unsupported mobility_label {other:?}"),
+                    "career ablation fixtures must use declared mobility labels",
+                ));
+            }
+        };
+        state.insert("transition_distance".to_string(), json!(distance));
+    }
+    if spec.include_pairwise_features {
+        let pair_action = if career_action_moves()
+            .iter()
+            .any(|move_id| move_id == &action_move)
+        {
+            action_move.as_str()
+        } else {
+            "noop"
+        };
+        let pair = format!("{occupation_cluster}__{pair_action}");
+        if !occupation_move_pair_variants()
+            .iter()
+            .any(|item| item == &pair)
+        {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.ablation_jsonl.occupation_move_pair",
+                format!("derived pair {pair:?} is not declared"),
+                "update occupation/action variants together before running pairwise ablations",
+            ));
+        }
+        state.insert("occupation_move_pair".to_string(), json!(pair));
+    }
+    if !spec.include_skill_vectors {
+        if fixture_name == "career_taxonomy_edge_wrong_vector_dim.jsonl" {
+            state.insert("skill_vector".to_string(), json!([0.2, 0.1, 0.1]));
+        } else {
+            state.remove("skill_vector");
+            if let Some(outcome) = object.get_mut("outcome").and_then(Value::as_object_mut) {
+                outcome.remove("next_skill_vector");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn push_career_ablation_row_from_evidence(
+    ctx: &mut ResearchSmokeContext,
+    spec: CareerAblationSpec,
+    domain_pack_path: &Path,
+    train_config_path: &Path,
+    record_artifact_row: bool,
+) -> DynamicJepaResult<()> {
+    let report = ctx
+        .domain_reports
+        .get(spec.domain_label)
+        .cloned()
+        .ok_or_else(|| DynamicJepaError::VerificationFailed {
+            test_name: "mejepa_research_smoke_ablation".to_string(),
+            message: format!(
+                "domain report {} missing before ablation row build",
+                spec.domain_label
+            ),
+            evidence_path: ctx.run_dir.display().to_string(),
+        })?;
+    push_career_ablation_row(
         ctx,
-        "career_taxonomy_novicreg",
-        "verify-career-taxonomy",
-        &db,
-        &artifact_root,
-    );
-    ctx.fixtures_root = old_fixtures_root;
-    let output = output?;
-    let after = verify_domain_source_of_truth(ctx, "career_taxonomy_novicreg", &db, &output)?;
-    let evidence_dir = evidence_dir_from_output(&output)?;
+        spec,
+        report["verification_run_id"].clone(),
+        report["db_path"].clone(),
+        report["artifact_root"].clone(),
+        report["evidence_dir"].clone(),
+        report["after_counts"].clone(),
+        domain_pack_path,
+        train_config_path,
+        record_artifact_row,
+    )
+}
+
+fn push_career_ablation_row_from_output(
+    ctx: &mut ResearchSmokeContext,
+    spec: CareerAblationSpec,
+    output: &Value,
+    after_counts: &Value,
+    domain_pack_path: &Path,
+    train_config_path: &Path,
+    record_artifact_row: bool,
+) -> DynamicJepaResult<()> {
+    push_career_ablation_row(
+        ctx,
+        spec,
+        output["verification_run_id"].clone(),
+        output["db_path"].clone(),
+        output["artifact_root"].clone(),
+        output["evidence_dir"].clone(),
+        after_counts.clone(),
+        domain_pack_path,
+        train_config_path,
+        record_artifact_row,
+    )
+}
+
+fn push_career_ablation_row(
+    ctx: &mut ResearchSmokeContext,
+    spec: CareerAblationSpec,
+    verification_run_id: Value,
+    db_path: Value,
+    artifact_root: Value,
+    evidence_dir_value: Value,
+    after_counts: Value,
+    domain_pack_path: &Path,
+    train_config_path: &Path,
+    record_artifact_row: bool,
+) -> DynamicJepaResult<()> {
+    let evidence_dir = path_value(&evidence_dir_value, "ablation.evidence_dir")?;
     let training_summary = read_json_file(&evidence_dir.join("decoded/training_summary.json"))?;
+    let dataset_train = read_json_file(&evidence_dir.join("decoded/dataset_train.json"))?;
+    let artifact_hashes =
+        read_json_file(&evidence_dir.join("artifact_files_recomputed_hashes.json"))?;
+    let domain_pack = parse_domain_pack_file(domain_pack_path)?;
+    let train_config = read_json_file(train_config_path)?;
+    if record_artifact_row {
+        ctx.artifact_rows.push(json!({
+            "domain": spec.domain_label,
+            "verification_run_id": verification_run_id.clone(),
+            "artifact_hashes": artifact_hashes.clone(),
+        }));
+    }
+    let metrics = training_summary["summary"]["metrics"].clone();
     ctx.ablation_rows.push(json!({
-        "ablation_id": "career_taxonomy_no_vicreg",
+        "ablation_id": spec.ablation_id,
         "domain": "career_taxonomy",
+        "domain_run_label": spec.domain_label,
+        "panel": spec.panel,
+        "panel_slots": domain_pack.instrument_specs.len(),
+        "input_dim": dataset_train["summary"]["input_dim"],
+        "target_dim": dataset_train["summary"]["target_dim"],
+        "latent_dim": train_config["model"]["encoder"]["out_dim"],
+        "action_dim": dataset_train["summary"]["action_dim"],
+        "action_conditioning": spec.action_conditioning,
+        "pairwise_features": spec.include_pairwise_features,
+        "vicreg": spec.vicreg,
         "objective_configuration": {
-            "vicreg_variance_weight": 0.0,
-            "vicreg_covariance_weight": 0.0,
+            "vicreg_variance_weight": train_config["loss"]["vicreg_variance_weight"],
+            "vicreg_covariance_weight": train_config["loss"]["vicreg_covariance_weight"],
+            "ignore_action": train_config["model"]["predictor"]["ignore_action"],
+            "stopping_target": train_config["stopping"]["target"],
+            "max_seconds": train_config["stopping"]["max_seconds"],
         },
-        "parameter_count": training_summary["summary"]["metrics"]["parameter_count_trainable"],
-        "metrics": training_summary["summary"]["metrics"],
-        "artifact_id": output["summary"]["artifact_id"],
-        "source_verification_run_id": output["verification_run_id"],
-        "db_counts_after": after["counts"],
+        "parameter_count": metrics["parameter_count_trainable"],
+        "metrics": metrics,
+        "artifact_id": training_summary["created_ids"]["artifact_id"],
+        "artifact_hashes": artifact_hashes,
+        "source_verification_run_id": verification_run_id,
+        "db_counts_after": after_counts,
         "source_of_truth": {
-            "db_path": db,
-            "evidence_dir": output["evidence_dir"],
-            "artifact_root": output["artifact_root"],
-            "train_config": config_dst,
+            "db_path": db_path,
+            "evidence_dir": evidence_dir_value,
+            "artifact_root": artifact_root,
+            "domain_pack": domain_pack_path,
+            "train_config": train_config_path,
+            "dataset_train": evidence_dir.join("decoded/dataset_train.json"),
         },
     }));
-    ctx.domain_reports.insert(
-        "career_taxonomy_novicreg".to_string(),
-        json!({
-            "status": "passed",
-            "verification_run_id": output["verification_run_id"],
-            "db_path": output["db_path"],
-            "artifact_root": output["artifact_root"],
-            "evidence_dir": output["evidence_dir"],
-            "after_counts": output["after_counts"],
-            "summary": output["summary"],
-        }),
+    Ok(())
+}
+
+fn path_value(value: &Value, field: &str) -> DynamicJepaResult<PathBuf> {
+    value.as_str().map(PathBuf::from).ok_or_else(|| {
+        DynamicJepaError::validation(
+            field,
+            format!("{field} must be a string path, got {value}"),
+            "inspect the verifier output; source-of-truth paths must be serialized strings",
+        )
+    })
+}
+
+fn remove_toml_schema_field(
+    value: &mut toml::Value,
+    scope: &str,
+    name: &str,
+) -> DynamicJepaResult<()> {
+    let fields = toml_schema_fields_mut(value, scope)?;
+    let before = fields.len();
+    fields.retain(|field| {
+        field
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .map(|field_name| field_name != name)
+            .unwrap_or(true)
+    });
+    if fields.len() == before {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.schema",
+            format!("schema field {scope}.{name} was not found"),
+            "fix the checked-in career domain pack or the ablation mutation spec",
+        ));
+    }
+    Ok(())
+}
+
+fn push_toml_schema_field(
+    value: &mut toml::Value,
+    scope: &str,
+    field: toml::Value,
+) -> DynamicJepaResult<()> {
+    let name = field
+        .get("name")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.schema",
+                "generated schema field missing name",
+                "fix the ablation TOML field builder",
+            )
+        })?
+        .to_string();
+    let fields = toml_schema_fields_mut(value, scope)?;
+    if fields.iter().any(|existing| {
+        existing
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .map(|existing_name| existing_name == name)
+            .unwrap_or(false)
+    }) {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.schema",
+            format!("schema field {scope}.{name} already exists"),
+            "do not add duplicate ablation schema fields",
+        ));
+    }
+    fields.push(field);
+    Ok(())
+}
+
+fn toml_schema_fields_mut<'a>(
+    value: &'a mut toml::Value,
+    scope: &str,
+) -> DynamicJepaResult<&'a mut Vec<toml::Value>> {
+    value
+        .get_mut(scope)
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|table| table.get_mut("fields"))
+        .and_then(toml::Value::as_array_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.schema",
+                format!("domain pack missing {scope}.fields array"),
+                "fix the checked-in career domain pack before generating ablations",
+            )
+        })
+}
+
+fn remove_toml_instruments(value: &mut toml::Value, ids: &[&str]) -> DynamicJepaResult<()> {
+    let instruments = value
+        .get_mut("instruments")
+        .and_then(toml::Value::as_array_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.instruments",
+                "domain pack missing instruments array",
+                "fix the checked-in career domain pack before generating ablations",
+            )
+        })?;
+    for id in ids {
+        let before = instruments.len();
+        instruments.retain(|instrument| {
+            instrument
+                .get("id")
+                .and_then(toml::Value::as_str)
+                .map(|instrument_id| instrument_id != *id)
+                .unwrap_or(true)
+        });
+        if instruments.len() == before {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.instruments",
+                format!("instrument {id:?} was not found"),
+                "fix the checked-in career domain pack or the ablation mutation spec",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn push_toml_instrument(value: &mut toml::Value, instrument: toml::Value) -> DynamicJepaResult<()> {
+    let id = instrument
+        .get("id")
+        .and_then(toml::Value::as_str)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.instruments",
+                "generated instrument missing id",
+                "fix the ablation TOML instrument builder",
+            )
+        })?
+        .to_string();
+    let instruments = value
+        .get_mut("instruments")
+        .and_then(toml::Value::as_array_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.instruments",
+                "domain pack missing instruments array",
+                "fix the checked-in career domain pack before generating ablations",
+            )
+        })?;
+    if instruments.iter().any(|existing| {
+        existing
+            .get("id")
+            .and_then(toml::Value::as_str)
+            .map(|existing_id| existing_id == id)
+            .unwrap_or(false)
+    }) {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.instruments",
+            format!("instrument {id:?} already exists"),
+            "do not add duplicate ablation instruments",
+        ));
+    }
+    instruments.push(instrument);
+    Ok(())
+}
+
+fn remove_toml_adapter_mappings(value: &mut toml::Value, keys: &[&str]) -> DynamicJepaResult<()> {
+    let mapping = first_toml_adapter_mapping_mut(value)?;
+    for key in keys {
+        if mapping.remove(*key).is_none() {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.adapter_mapping",
+                format!("adapter mapping {key:?} was not found"),
+                "fix the checked-in career domain pack or the ablation mutation spec",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn insert_toml_adapter_mapping(
+    value: &mut toml::Value,
+    key: &str,
+    source_path: &str,
+) -> DynamicJepaResult<()> {
+    let mapping = first_toml_adapter_mapping_mut(value)?;
+    if mapping.contains_key(key) {
+        return Err(DynamicJepaError::validation(
+            "research_smoke.ablation_domain_pack.adapter_mapping",
+            format!("adapter mapping {key:?} already exists"),
+            "do not add duplicate ablation adapter mappings",
+        ));
+    }
+    mapping.insert(
+        key.to_string(),
+        toml::Value::String(source_path.to_string()),
     );
     Ok(())
+}
+
+fn first_toml_adapter_mapping_mut(
+    value: &mut toml::Value,
+) -> DynamicJepaResult<&mut toml::map::Map<String, toml::Value>> {
+    value
+        .get_mut("adapters")
+        .and_then(toml::Value::as_array_mut)
+        .and_then(|adapters| adapters.first_mut())
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|adapter| adapter.get_mut("mapping"))
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.adapter_mapping",
+                "domain pack missing first adapter mapping table",
+                "fix the checked-in career domain pack before generating ablations",
+            )
+        })
+}
+
+fn set_toml_objective_target(value: &mut toml::Value, target: &str) -> DynamicJepaResult<()> {
+    let objective = value
+        .get_mut("objectives")
+        .and_then(toml::Value::as_array_mut)
+        .and_then(|objectives| objectives.first_mut())
+        .and_then(toml::Value::as_table_mut)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.ablation_domain_pack.objectives",
+                "domain pack missing first objective table",
+                "fix the checked-in career domain pack before generating ablations",
+            )
+        })?;
+    objective.insert(
+        "target".to_string(),
+        toml::Value::String(target.to_string()),
+    );
+    Ok(())
+}
+
+fn toml_field_table(
+    name: &str,
+    kind: toml::Value,
+    required: bool,
+    min: Option<f64>,
+    max: Option<f64>,
+) -> toml::Value {
+    let mut table = toml::map::Map::new();
+    table.insert("name".to_string(), toml::Value::String(name.to_string()));
+    table.insert("kind".to_string(), kind);
+    table.insert("required".to_string(), toml::Value::Boolean(required));
+    if let Some(min) = min {
+        table.insert("min".to_string(), toml::Value::Float(min));
+    }
+    if let Some(max) = max {
+        table.insert("max".to_string(), toml::Value::Float(max));
+    }
+    toml::Value::Table(table)
+}
+
+fn toml_kind_table(kind_type: &str, variants: &[String]) -> toml::Value {
+    let mut table = toml::map::Map::new();
+    table.insert(
+        "type".to_string(),
+        toml::Value::String(kind_type.to_string()),
+    );
+    if !variants.is_empty() {
+        table.insert("variants".to_string(), toml_string_array(variants));
+    }
+    toml::Value::Table(table)
+}
+
+fn transition_distance_instrument() -> toml::Value {
+    let mut table = toml::map::Map::new();
+    table.insert(
+        "id".to_string(),
+        toml::Value::String("transition_distance_scalar".to_string()),
+    );
+    table.insert("kind".to_string(), toml_kind_table("scalar", &[]));
+    table.insert(
+        "input_fields".to_string(),
+        toml_string_array(&["state.transition_distance".to_string()]),
+    );
+    table.insert(
+        "output_shape".to_string(),
+        toml::Value::Array(vec![toml::Value::Integer(1)]),
+    );
+    table.insert(
+        "normalization".to_string(),
+        normalization_table("none", None, None),
+    );
+    table.insert("required".to_string(), toml::Value::Boolean(true));
+    table.insert("version".to_string(), toml::Value::Integer(1));
+    table.insert(
+        "validation".to_string(),
+        validation_table(Some(0.0), Some(1.0)),
+    );
+    toml::Value::Table(table)
+}
+
+fn occupation_move_pair_instrument() -> toml::Value {
+    let variants = occupation_move_pair_variants();
+    let mut table = toml::map::Map::new();
+    table.insert(
+        "id".to_string(),
+        toml::Value::String("occupation_move_pair_onehot".to_string()),
+    );
+    table.insert(
+        "kind".to_string(),
+        toml_kind_table("categorical", &variants),
+    );
+    table.insert(
+        "input_fields".to_string(),
+        toml_string_array(&["state.occupation_move_pair".to_string()]),
+    );
+    table.insert(
+        "output_shape".to_string(),
+        toml::Value::Array(vec![toml::Value::Integer(variants.len() as i64)]),
+    );
+    table.insert(
+        "normalization".to_string(),
+        normalization_table("none", None, None),
+    );
+    table.insert("required".to_string(), toml::Value::Boolean(true));
+    table.insert("version".to_string(), toml::Value::Integer(1));
+    table.insert("validation".to_string(), validation_table(None, None));
+    toml::Value::Table(table)
+}
+
+fn normalization_table(kind: &str, mean: Option<f64>, std: Option<f64>) -> toml::Value {
+    let mut table = toml::map::Map::new();
+    table.insert("type".to_string(), toml::Value::String(kind.to_string()));
+    if let Some(mean) = mean {
+        table.insert("mean".to_string(), toml::Value::Float(mean));
+    }
+    if let Some(std) = std {
+        table.insert("std".to_string(), toml::Value::Float(std));
+    }
+    toml::Value::Table(table)
+}
+
+fn validation_table(min: Option<f64>, max: Option<f64>) -> toml::Value {
+    let mut table = toml::map::Map::new();
+    table.insert("require_finite".to_string(), toml::Value::Boolean(true));
+    table.insert("reject_nan".to_string(), toml::Value::Boolean(true));
+    table.insert("reject_inf".to_string(), toml::Value::Boolean(true));
+    if let Some(min) = min {
+        table.insert("min".to_string(), toml::Value::Float(min));
+    }
+    if let Some(max) = max {
+        table.insert("max".to_string(), toml::Value::Float(max));
+    }
+    toml::Value::Table(table)
+}
+
+fn toml_string_array(values: &[String]) -> toml::Value {
+    toml::Value::Array(
+        values
+            .iter()
+            .map(|value| toml::Value::String(value.clone()))
+            .collect(),
+    )
+}
+
+fn occupation_move_pair_variants() -> Vec<String> {
+    let occupations = ["software", "data", "systems", "management"];
+    let moves = career_action_moves();
+    occupations
+        .iter()
+        .flat_map(|occupation| {
+            moves
+                .iter()
+                .map(move |move_id| format!("{occupation}__{move_id}"))
+        })
+        .collect()
+}
+
+fn career_action_moves() -> [&'static str; 5] {
+    [
+        "skill_gain_adjacent",
+        "skill_gain_high_demand",
+        "role_move_near",
+        "experience_gain",
+        "noop",
+    ]
 }
 
 fn write_evaluation_report(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
@@ -4107,16 +4973,19 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     write_text_file(&ctx.paper_tables_dir.join("table_runtime.csv"), &runtime)?;
 
     let mut metrics =
-        "domain,verification_run_id,train_rows,val_rows,test_rows,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine,val_action_contrast_acc\n"
+        "domain,verification_run_id,train_rows,val_rows,test_rows,parameter_count,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine,val_action_contrast_acc,random_init_cosine,shuffled_target_cosine\n"
             .to_string();
     for row in &ctx.training_rows {
         metrics.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             csv_escape(row["domain"].as_str().unwrap_or("")),
             csv_escape(row["verification_run_id"].as_str().unwrap_or("")),
             row["split_counts"]["train"].as_u64().unwrap_or(0),
             row["split_counts"]["val"].as_u64().unwrap_or(0),
             row["split_counts"]["test"].as_u64().unwrap_or(0),
+            row["metrics"]["parameter_count_trainable"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
             row["metrics"]["val_latent_mse"]
                 .as_f64()
                 .unwrap_or(f64::NAN),
@@ -4132,6 +5001,12 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
             row["metrics"]["val_action_contrast_acc"]
                 .as_f64()
                 .unwrap_or(f64::NAN),
+            row["metrics"]["random_init_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["shuffled_target_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
         ));
     }
     write_text_file(
@@ -4140,13 +5015,23 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     )?;
 
     let mut ablation =
-        "ablation_id,domain,verification_run_id,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine\n"
+        "ablation_id,domain_run_label,panel,panel_slots,input_dim,target_dim,latent_dim,action_dim,action_conditioning,pairwise_features,vicreg,parameter_count,verification_run_id,val_latent_mse,val_latent_cosine,test_latent_mse,test_latent_cosine,val_action_contrast_acc,random_init_cosine,shuffled_target_cosine\n"
             .to_string();
     for row in &ctx.ablation_rows {
         ablation.push_str(&format!(
-            "{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             csv_escape(row["ablation_id"].as_str().unwrap_or("")),
-            csv_escape(row["domain"].as_str().unwrap_or("")),
+            csv_escape(row["domain_run_label"].as_str().unwrap_or("")),
+            csv_escape(row["panel"].as_str().unwrap_or("")),
+            row["panel_slots"].as_u64().unwrap_or(0),
+            row["input_dim"].as_u64().unwrap_or(0),
+            row["target_dim"].as_u64().unwrap_or(0),
+            row["latent_dim"].as_u64().unwrap_or(0),
+            row["action_dim"].as_u64().unwrap_or(0),
+            row["action_conditioning"].as_bool().unwrap_or(false),
+            row["pairwise_features"].as_bool().unwrap_or(false),
+            row["vicreg"].as_bool().unwrap_or(false),
+            row["parameter_count"].as_f64().unwrap_or(f64::NAN),
             csv_escape(row["source_verification_run_id"].as_str().unwrap_or("")),
             row["metrics"]["val_latent_mse"]
                 .as_f64()
@@ -4160,9 +5045,89 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
             row["metrics"]["test_latent_cosine"]
                 .as_f64()
                 .unwrap_or(f64::NAN),
+            row["metrics"]["val_action_contrast_acc"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["random_init_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["metrics"]["shuffled_target_cosine"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
         ));
     }
     write_text_file(&ctx.paper_tables_dir.join("table_ablation.csv"), &ablation)?;
+
+    let mut coverage = "domain,verification_run_id,events,panels,trajectories,dataset_shards,training_runs,artifacts,predictions,plan_traces,guard_decisions,surprises,verification_status\n".to_string();
+    for (domain, report) in &ctx.domain_reports {
+        coverage.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            csv_escape(domain),
+            csv_escape(report["verification_run_id"].as_str().unwrap_or("")),
+            report["after_counts"][CF_DJ_RAW_EVENTS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_LATENT_PANELS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_TRAJECTORIES]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_DATASET_SHARDS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_TRAINING_RUNS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_MODEL_ARTIFACTS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_PREDICTIONS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_PLAN_TRACES]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_GUARD_DECISIONS]
+                .as_u64()
+                .unwrap_or(0),
+            report["after_counts"][CF_DJ_SURPRISE_EVENTS]
+                .as_u64()
+                .unwrap_or(0),
+            csv_escape(report["status"].as_str().unwrap_or("")),
+        ));
+    }
+    write_text_file(
+        &ctx.paper_tables_dir
+            .join("table_domain_runtime_coverage.csv"),
+        &coverage,
+    )?;
+
+    let mut feasibility =
+        "run_label,command_count,total_elapsed_ms,artifact_hash_rows,edge_case_rows,ablation_rows,rocksdb_root,artifact_root,evidence_root\n"
+            .to_string();
+    let total_elapsed_ms = ctx
+        .command_rows
+        .iter()
+        .map(|row| row["elapsed_ms"].as_u64().unwrap_or(0))
+        .sum::<u64>();
+    feasibility.push_str(&format!(
+        "{},{},{},{},{},{},{},{},{}\n",
+        csv_escape(&ctx.run_id),
+        ctx.command_rows.len(),
+        total_elapsed_ms,
+        ctx.artifact_rows.len(),
+        ctx.edge_rows.len(),
+        ctx.ablation_rows.len(),
+        csv_escape(&ctx.db_root.display().to_string()),
+        csv_escape(&ctx.artifact_root.display().to_string()),
+        csv_escape(&ctx.fsv_evidence_root.display().to_string()),
+    ));
+    write_text_file(
+        &ctx.paper_tables_dir
+            .join("table_single_gpu_feasibility.csv"),
+        &feasibility,
+    )?;
 
     let mut audit = "domain,verification_run_id,db_path,evidence_dir,dj_verification_runs,dj_model_artifacts,dj_predictions,dj_plan_traces,dj_guard_decisions\n".to_string();
     for (domain, report) in &ctx.domain_reports {
@@ -4244,25 +5209,18 @@ fn write_plot_manifest(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
             })
             .collect::<Vec<_>>(),
     )?;
-    let base_career = ctx
-        .training_rows
-        .iter()
-        .find(|row| row["domain"] == "career_taxonomy")
-        .and_then(|row| row["metrics"]["val_latent_mse"].as_f64())
-        .unwrap_or(0.0);
-    let no_vicreg = ctx
-        .ablation_rows
-        .iter()
-        .find(|row| row["ablation_id"] == "career_taxonomy_no_vicreg")
-        .and_then(|row| row["metrics"]["val_latent_mse"].as_f64())
-        .unwrap_or(0.0);
     write_metric_bar_svg(
         &ablation_plot,
         "Career validation latent MSE ablation",
-        vec![
-            ("career_base".to_string(), base_career),
-            ("career_no_vicreg".to_string(), no_vicreg),
-        ],
+        ctx.ablation_rows
+            .iter()
+            .map(|row| {
+                (
+                    row["ablation_id"].as_str().unwrap_or("").to_string(),
+                    row["metrics"]["val_latent_mse"].as_f64().unwrap_or(0.0),
+                )
+            })
+            .collect::<Vec<_>>(),
     )?;
     write_json_file(
         &ctx.plots_dir.join("plot_manifest.json"),
@@ -4422,6 +5380,15 @@ fn read_json_file(path: &Path) -> DynamicJepaResult<Value> {
             format!("failed to parse {}: {err}", path.display()),
             "fix the JSON evidence source before rerunning research smoke",
         )
+    })
+}
+
+fn read_text_file(path: &Path, field: &str) -> DynamicJepaResult<String> {
+    fs::read_to_string(path).map_err(|err| DynamicJepaError::Storage {
+        operation: "research_smoke.read_text_file".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to read {}: {err}", path.display()),
+        remediation: format!("inspect {field}; required text evidence must exist"),
     })
 }
 
@@ -4646,61 +5613,92 @@ impl VerificationDomain {
         }
     }
 
-    fn expected_happy_counts(self, surprise_count: u64) -> BTreeMap<String, u64> {
-        let mut counts = BTreeMap::from([
+    fn expected_happy_counts(
+        self,
+        domain_pack: &DomainPack,
+        edge_fixtures: &[(&'static str, PathBuf, EdgeExpectation)],
+        surprise_count: u64,
+    ) -> DynamicJepaResult<BTreeMap<String, u64>> {
+        let event_count = required_verification_count(
+            domain_pack.verification_policy.expected_event_count,
+            "expected_event_count",
+        )?;
+        let panel_count = required_verification_count(
+            domain_pack.verification_policy.expected_panel_count,
+            "expected_panel_count",
+        )?;
+        let trajectory_count = required_verification_count(
+            domain_pack.verification_policy.expected_trajectory_count,
+            "expected_trajectory_count",
+        )?;
+        let candidate_count = match &domain_pack.planner_policy.candidate_actions {
+            CandidateActionConfig::EnumeratedDeltas { deltas } => deltas.len() as u64,
+            CandidateActionConfig::EnumeratedMoves { moves } => moves.len() as u64,
+        };
+        let edge_raw_delta = sum_edge_delta(edge_fixtures, |edge| edge.raw_delta)?;
+        let edge_adapter_delta = sum_edge_delta(edge_fixtures, |edge| edge.adapter_delta)?;
+        let counts = BTreeMap::from([
             (CF_DJ_DOMAIN_PACKS.to_string(), 1),
             (CF_DJ_DOMAIN_PACK_BY_NAME_VERSION.to_string(), 1),
             (CF_DJ_ADAPTER_REGISTRY.to_string(), 1),
             (CF_DJ_DATASET_SHARDS.to_string(), 3),
             (CF_DJ_MODEL_ARTIFACTS.to_string(), 1),
             (CF_DJ_PLAN_TRACES.to_string(), 1),
-            (CF_DJ_PREDICTIONS.to_string(), 6),
+            (CF_DJ_PREDICTIONS.to_string(), candidate_count + 1),
             (CF_DJ_SKILL_POLICIES.to_string(), 1),
-            (CF_DJ_GUARD_DECISIONS.to_string(), 5),
+            (CF_DJ_GUARD_DECISIONS.to_string(), candidate_count),
             (CF_DJ_SURPRISE_EVENTS.to_string(), surprise_count),
             (CF_DJ_TRAINING_RUNS.to_string(), 1),
             (CF_DJ_VERIFICATION_RUNS.to_string(), 1),
+            (
+                CF_DJ_INSTRUMENT_REGISTRY.to_string(),
+                domain_pack.instrument_specs.len() as u64,
+            ),
+            (CF_DJ_RAW_EVENTS.to_string(), event_count + edge_raw_delta),
+            (
+                CF_DJ_ADAPTER_RUNS.to_string(),
+                event_count + edge_adapter_delta,
+            ),
+            (CF_DJ_NORMALIZED_STATES.to_string(), panel_count),
+            (CF_DJ_ACTIONS.to_string(), event_count + candidate_count),
+            (CF_DJ_OUTCOMES.to_string(), panel_count),
+            (CF_DJ_TRANSITIONS.to_string(), panel_count),
+            (
+                CF_DJ_INSTRUMENT_READINGS.to_string(),
+                panel_count * domain_pack.instrument_specs.len() as u64,
+            ),
+            (CF_DJ_LATENT_PANELS.to_string(), panel_count),
+            (CF_DJ_TRAJECTORIES.to_string(), trajectory_count),
         ]);
-        match self {
-            Self::CounterWorld => {
-                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 2);
-                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 62);
-                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 62);
-                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 60);
-                counts.insert(CF_DJ_ACTIONS.to_string(), 65);
-                counts.insert(CF_DJ_OUTCOMES.to_string(), 60);
-                counts.insert(CF_DJ_TRANSITIONS.to_string(), 60);
-                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 120);
-                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 60);
-                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1);
-            }
-            Self::Gridworld => {
-                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 3);
-                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 8002);
-                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 8002);
-                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 8000);
-                counts.insert(CF_DJ_ACTIONS.to_string(), 8005);
-                counts.insert(CF_DJ_OUTCOMES.to_string(), 8000);
-                counts.insert(CF_DJ_TRANSITIONS.to_string(), 8000);
-                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 24000);
-                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 8000);
-                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1000);
-            }
-            Self::CareerTaxonomy => {
-                counts.insert(CF_DJ_INSTRUMENT_REGISTRY.to_string(), 10);
-                counts.insert(CF_DJ_RAW_EVENTS.to_string(), 19);
-                counts.insert(CF_DJ_ADAPTER_RUNS.to_string(), 19);
-                counts.insert(CF_DJ_NORMALIZED_STATES.to_string(), 15);
-                counts.insert(CF_DJ_ACTIONS.to_string(), 20);
-                counts.insert(CF_DJ_OUTCOMES.to_string(), 15);
-                counts.insert(CF_DJ_TRANSITIONS.to_string(), 15);
-                counts.insert(CF_DJ_INSTRUMENT_READINGS.to_string(), 150);
-                counts.insert(CF_DJ_LATENT_PANELS.to_string(), 15);
-                counts.insert(CF_DJ_TRAJECTORIES.to_string(), 1);
-            }
-        }
-        counts
+        Ok(counts)
     }
+}
+
+fn required_verification_count(value: Option<u64>, field: &str) -> DynamicJepaResult<u64> {
+    value.ok_or_else(|| {
+        DynamicJepaError::validation(
+            format!("domain_pack.verification_policy.{field}"),
+            format!("{field} is required by bundled verification"),
+            "declare exact expected counts in the domain pack verification policy",
+        )
+    })
+}
+
+fn sum_edge_delta(
+    edge_fixtures: &[(&'static str, PathBuf, EdgeExpectation)],
+    extract: impl Fn(EdgeExpectation) -> i64,
+) -> DynamicJepaResult<u64> {
+    edge_fixtures.iter().try_fold(0u64, |acc, (_, _, edge)| {
+        let delta = extract(*edge);
+        if delta < 0 {
+            return Err(DynamicJepaError::validation(
+                "verification.edge_delta",
+                format!("edge delta cannot be negative: {delta}"),
+                "edge expectations must only add failed/audit evidence rows",
+            ));
+        }
+        Ok(acc + delta as u64)
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -5005,6 +6003,7 @@ impl VerificationContext {
 
 fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepaResult<Value> {
     let domain_path = ctx.domain.domain_pack_path(&ctx.fixtures_root);
+    let parsed_domain_pack = parse_domain_pack_file(&domain_path)?;
     let corpus_path = ctx
         .domain
         .corpus_path(&ctx.fixtures_root, &ctx.evidence_dir)?;
@@ -5130,11 +6129,10 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         }),
         ctx,
     )?;
-    let expected_panel_count = match ctx.domain {
-        VerificationDomain::CounterWorld => 60,
-        VerificationDomain::Gridworld => 8000,
-        VerificationDomain::CareerTaxonomy => 15,
-    };
+    let expected_panel_count = required_verification_count(
+        parsed_domain_pack.verification_policy.expected_panel_count,
+        "expected_panel_count",
+    )?;
     assert_json_u64(
         ctx,
         &panels["summary"]["materialized"],
@@ -5157,11 +6155,12 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         }),
         ctx,
     )?;
-    let expected_trajectory_count = match ctx.domain {
-        VerificationDomain::CounterWorld => 1,
-        VerificationDomain::Gridworld => 1000,
-        VerificationDomain::CareerTaxonomy => 1,
-    };
+    let expected_trajectory_count = required_verification_count(
+        parsed_domain_pack
+            .verification_policy
+            .expected_trajectory_count,
+        "expected_trajectory_count",
+    )?;
     assert_json_u64(
         ctx,
         &trajectories["summary"]["trajectory_count"],
@@ -5175,7 +6174,8 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
 
     let (dataset_id, train_shard_id, val_shard_id, split_counts) =
         compile_all_splits_for_verification(ctx)?;
-    assert_split_counts(ctx, &split_counts)?;
+    let expected_splits = expected_split_counts(&parsed_domain_pack.verification_policy)?;
+    assert_split_counts(ctx, &split_counts, &expected_splits)?;
 
     let train = run_ok_step(
         "train",
@@ -5456,7 +6456,10 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         }),
         ctx,
     )?;
-    let mut expected_counts = ctx.domain.expected_happy_counts(surprise_count);
+    let edge_fixtures = ctx.domain.edge_fixtures(&ctx.fixtures_root);
+    let mut expected_counts =
+        ctx.domain
+            .expected_happy_counts(&parsed_domain_pack, &edge_fixtures, surprise_count)?;
     expected_counts.insert(
         CF_DJ_AUDIT_LOG.to_string(),
         pre_verification_counts["counts"][CF_DJ_AUDIT_LOG]
@@ -5467,10 +6470,8 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     assert_counts_before_verification(ctx, &pre_verification_counts, &expected_counts)?;
     ctx.expected
         .insert("final_counts".to_string(), json!(expected_counts));
-    ctx.expected.insert(
-        "split_counts".to_string(),
-        json!(expected_split_counts(ctx.domain)),
-    );
+    ctx.expected
+        .insert("split_counts".to_string(), json!(expected_splits));
     ctx.actual
         .insert("split_counts".to_string(), json!(split_counts));
 
@@ -5685,9 +6686,9 @@ fn run_ok_step(
 fn assert_split_counts(
     ctx: &VerificationContext,
     split_counts: &BTreeMap<String, u64>,
+    expected: &BTreeMap<String, u64>,
 ) -> DynamicJepaResult<()> {
-    let expected = expected_split_counts(ctx.domain);
-    if split_counts != &expected {
+    if split_counts != expected {
         return Err(ctx.fail(format!(
             "split counts mismatch expected={expected:?} actual={split_counts:?}"
         )));
@@ -5695,24 +6696,64 @@ fn assert_split_counts(
     Ok(())
 }
 
-fn expected_split_counts(domain: VerificationDomain) -> BTreeMap<String, u64> {
-    match domain {
-        VerificationDomain::CounterWorld => BTreeMap::from([
-            ("train".to_string(), 41),
-            ("val".to_string(), 12),
-            ("test".to_string(), 6),
-        ]),
-        VerificationDomain::Gridworld => BTreeMap::from([
-            ("train".to_string(), 4977),
-            ("val".to_string(), 1330),
-            ("test".to_string(), 693),
-        ]),
-        VerificationDomain::CareerTaxonomy => BTreeMap::from([
-            ("train".to_string(), 9),
-            ("val".to_string(), 3),
-            ("test".to_string(), 2),
-        ]),
+fn expected_split_counts(policy: &VerificationPolicy) -> DynamicJepaResult<BTreeMap<String, u64>> {
+    let train = exact_policy_count(
+        policy.expected_train_rows_min,
+        policy.expected_train_rows_max,
+        "expected_train_rows",
+    )?;
+    let val = exact_policy_count(
+        policy.expected_val_rows_min,
+        policy.expected_val_rows_max,
+        "expected_val_rows",
+    )?;
+    let test = exact_policy_count(
+        policy.expected_test_rows_min,
+        policy.expected_test_rows_max,
+        "expected_test_rows",
+    )?;
+    let total = train + val + test;
+    if let Some(expected_total) = policy.expected_dataset_row_count {
+        if expected_total != total {
+            return Err(DynamicJepaError::validation(
+                "domain_pack.verification_policy.expected_dataset_row_count",
+                format!(
+                    "expected_dataset_row_count={expected_total} but exact split total is {total}"
+                ),
+                "make dataset and split count declarations internally consistent",
+            ));
+        }
     }
+    Ok(BTreeMap::from([
+        ("train".to_string(), train),
+        ("val".to_string(), val),
+        ("test".to_string(), test),
+    ]))
+}
+
+fn exact_policy_count(min: Option<u64>, max: Option<u64>, field: &str) -> DynamicJepaResult<u64> {
+    let min = min.ok_or_else(|| {
+        DynamicJepaError::validation(
+            format!("domain_pack.verification_policy.{field}_min"),
+            format!("{field}_min is required by bundled verification"),
+            "declare exact split counts in the domain pack verification policy",
+        )
+    })?;
+    let max = max.ok_or_else(|| {
+        DynamicJepaError::validation(
+            format!("domain_pack.verification_policy.{field}_max"),
+            format!("{field}_max is required by bundled verification"),
+            "declare exact split counts in the domain pack verification policy",
+        )
+    })?;
+    if min != max {
+        return Err(DynamicJepaError::validation(
+            format!("domain_pack.verification_policy.{field}"),
+            format!("bundled verification requires exact counts but saw min={min} max={max}"),
+            "set min and max to the deterministic expected row count for this fixture",
+        ));
+    }
+    Ok(min)
 }
 
 fn assert_training_metrics(ctx: &VerificationContext, train: &Value) -> DynamicJepaResult<()> {
