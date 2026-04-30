@@ -787,6 +787,7 @@ dependencies = [
  "criterion",
  "futures",
  "parquet",
+ "rocksdb",
  "serde",
  "serde_json",
  "serial_test",

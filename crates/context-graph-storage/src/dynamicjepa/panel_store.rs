@@ -1,13 +1,48 @@
 use context_graph_core::dynamicjepa::{
-    DynamicJepaResult, EventId, InstrumentId, InstrumentReading, LatentPanel, PanelId,
+    DynamicJepaRecord, DynamicJepaResult, EventId, InstrumentId, InstrumentReading, LatentPanel,
+    PanelId,
 };
-use rocksdb::DB;
+use rocksdb::{WriteBatch, DB};
 
-use crate::dynamicjepa::column_families::{CF_DJ_INSTRUMENT_READINGS, CF_DJ_LATENT_PANELS};
-use crate::dynamicjepa::common::{
-    count_cf, get_record, list_prefix_records, list_records, put_record,
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::column_families::{
+    CF_DJ_AUDIT_LOG, CF_DJ_INSTRUMENT_READINGS, CF_DJ_LATENT_PANELS,
 };
-use crate::dynamicjepa::keys::instrument_reading_key;
+use crate::dynamicjepa::common::{
+    cf, count_cf, get_record, list_prefix_records, list_records, put_record, write_batch,
+};
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::{audit_key, instrument_reading_key};
+
+pub fn put_panel_with_readings_batch(
+    db: &DB,
+    readings: &[InstrumentReading],
+    panel: &LatentPanel,
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    panel.validate_record()?;
+    audit.validate()?;
+    let mut batch = WriteBatch::default();
+    for reading in readings {
+        reading.validate_record()?;
+        batch.put_cf(
+            cf(db, CF_DJ_INSTRUMENT_READINGS)?,
+            instrument_reading_key(reading.event_id, &reading.instrument_id),
+            encode_record(reading)?,
+        );
+    }
+    batch.put_cf(
+        cf(db, CF_DJ_LATENT_PANELS)?,
+        panel.panel_id.into_bytes(),
+        encode_record(panel)?,
+    );
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_panel_with_readings_batch")
+}
 
 pub fn put_instrument_reading(db: &DB, record: &InstrumentReading) -> DynamicJepaResult<()> {
     put_record(

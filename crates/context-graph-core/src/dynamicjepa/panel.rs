@@ -116,6 +116,9 @@ impl Validate for LatentPanel {
             .zip(self.slot_vectors.iter())
             .enumerate()
         {
+            if !self.slot_masks[idx] && vector.is_empty() {
+                continue;
+            }
             if vector.len() != slot.dim {
                 return Err(DynamicJepaError::PanelShapeMismatch {
                     domain_pack_id: self.header.domain_pack_id.to_string(),

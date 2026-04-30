@@ -72,7 +72,7 @@ enum Commands {
         #[command(subcommand)]
         action: commands::divergence::DivergenceCommands,
     },
-    /// DynamicJEPA domain registry and source-of-truth inspection commands
+    /// DynamicJEPA domain registry, adapter, panel, and source-of-truth commands
     #[command(name = "dynamicjepa")]
     DynamicJepa {
         #[command(subcommand)]

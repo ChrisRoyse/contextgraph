@@ -42,6 +42,7 @@ anyhow = "1.0"
 # UUIDs for node ID parsing (TASK-HOOKS-011)
 uuid = "1.0"
 sha2 = "0.10"
+rocksdb = "0.22"
 
 # Logging
 tracing = { workspace = true }

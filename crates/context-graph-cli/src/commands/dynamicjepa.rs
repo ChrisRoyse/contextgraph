@@ -1,35 +1,52 @@
-//! DynamicJEPA CLI phase 3: domain-pack registry and physical inspection.
+//! DynamicJEPA CLI: domain-pack registry, physical inspection, and Phase 4
+//! adapter/panel materialization.
 //!
 //! These commands intentionally stop at Phase 3 scope. Mutating commands write
 //! to the real RocksDB DynamicJEPA column families, then immediately read the
 //! source-of-truth rows back through separate storage inspection paths.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
-    ActionSchema, AdapterId, AdapterSpec, CandidateActionConfig, DatasetPolicy, DjRecordHeader,
-    DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EntitySchema,
-    FieldKind, FieldSpec, InstrumentId, InstrumentKind, InstrumentSpec, InstrumentValidation,
-    InvariantSpec, Normalization, ObjectiveSpec, OutcomeSchema, PlannerPolicy, StateSchema,
-    TimeEncoding, TimeSchema, VerificationPolicy, DOMAIN_PACK_RECORD_VERSION,
+    ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
+    AdapterSpec, CandidateActionConfig, DatasetPolicy, DjRecordHeader, DomainPack, DomainPackId,
+    DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind,
+    FieldSpec, FieldValue, InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec,
+    InstrumentValidation, InvariantSpec, LatentPanel, Normalization, NormalizedAction,
+    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
+    PanelSlot, PanelSlotKind, PayloadFormat, PlannerPolicy, RawDomainEvent, ReadingStatus,
+    SourceKind, StateId, StateSchema, StateTransition, TimeEncoding, TimeSchema, TransitionId,
+    VerificationPolicy, ADAPTER_RUN_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION,
+    INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
+    NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
+    NORMALIZED_STATE_RECORD_VERSION, RAW_DOMAIN_EVENT_RECORD_VERSION,
+    STATE_TRANSITION_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
-    CF_DJ_ADAPTER_REGISTRY, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS, CF_DJ_DOMAIN_PACK_BY_NAME_VERSION,
-    CF_DJ_INSTRUMENT_REGISTRY, DJ_CF_NAMES,
+    CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_DOMAIN_PACKS,
+    CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_INSTRUMENT_READINGS, CF_DJ_INSTRUMENT_REGISTRY,
+    CF_DJ_LATENT_PANELS, CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_RAW_EVENTS,
+    CF_DJ_TRANSITIONS, DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_registry_key, name_version_key, uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
-    get_adapter_spec, get_domain_pack, get_domain_pack_by_storage_id, get_instrument_spec,
-    inspect_cf, list_domain_packs, put_domain_pack, snapshot_dj_counts,
+    get_action, get_adapter_run, get_adapter_spec, get_domain_pack, get_domain_pack_by_storage_id,
+    get_instrument_spec, get_latent_panel, get_normalized_state, get_outcome, get_raw_event,
+    get_transition, inspect_cf, list_adapter_runs, list_domain_packs,
+    list_instrument_readings_for_event, list_latent_panels, list_transitions,
+    put_adapter_run_failure_batch, put_adapter_run_success_batch, put_audit_record,
+    put_domain_pack, put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
+    snapshot_dj_counts,
 };
+use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tracing::{error, info};
@@ -47,6 +64,16 @@ pub enum DynamicJepaCommands {
     InspectCounts(InspectCountsArgs),
     /// Decode rows from one DynamicJEPA column family.
     InspectCf(InspectCfArgs),
+    /// Ingest a JSONL fixture and run its registered adapter.
+    IngestEvent(IngestEventArgs),
+    /// Run the registered adapter for one already persisted raw event.
+    RunAdapter(RunAdapterArgs),
+    /// Materialize one latent panel or every pending panel for a domain.
+    MaterializePanel(MaterializePanelArgs),
+    /// Read one latent panel, optionally with its instrument readings.
+    GetPanel(GetPanelArgs),
+    /// List instrument readings for one event.
+    ListInstrumentReadings(ListInstrumentReadingsArgs),
 }
 
 impl DynamicJepaCommands {
@@ -57,6 +84,11 @@ impl DynamicJepaCommands {
             Self::GetDomain(_) => "dynamicjepa_get_domain",
             Self::InspectCounts(_) => "dynamicjepa_inspect_counts",
             Self::InspectCf(_) => "dynamicjepa_inspect_cf",
+            Self::IngestEvent(_) => "dynamicjepa_ingest_event",
+            Self::RunAdapter(_) => "dynamicjepa_run_adapter",
+            Self::MaterializePanel(_) => "dynamicjepa_materialize_panel",
+            Self::GetPanel(_) => "dynamicjepa_get_panel",
+            Self::ListInstrumentReadings(_) => "dynamicjepa_list_instrument_readings",
         }
     }
 }
@@ -148,6 +180,101 @@ pub struct InspectCfArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct IngestEventArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id, for example counter_world.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered adapter id. Phase 4 supports json_event.
+    #[arg(long)]
+    pub adapter: String,
+
+    /// JSONL fixture file to ingest.
+    #[arg(long)]
+    pub file: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RunAdapterArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Raw event id whose started adapter run should be completed.
+    #[arg(long = "event-id")]
+    pub event_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct MaterializePanelArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Materialize a single transition id.
+    #[arg(long = "transition-id", conflicts_with = "all_pending")]
+    pub transition_id: Option<String>,
+
+    /// Materialize every transition without a panel for the domain.
+    #[arg(long = "all-pending", conflicts_with = "transition_id")]
+    pub all_pending: bool,
+
+    /// Domain id required with --all-pending.
+    #[arg(long)]
+    pub domain: Option<String>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetPanelArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Panel id to read.
+    #[arg(long = "panel-id")]
+    pub panel_id: String,
+
+    /// Include instrument reading rows linked by the panel.
+    #[arg(long = "include-readings")]
+    pub include_readings: bool,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ListInstrumentReadingsArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Event id whose readings should be read from dj_instrument_readings.
+    #[arg(long = "event-id")]
+    pub event_id: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -204,6 +331,11 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::GetDomain(args) => get_domain(args),
         DynamicJepaCommands::InspectCounts(args) => inspect_counts(args),
         DynamicJepaCommands::InspectCf(args) => inspect_column_family(args),
+        DynamicJepaCommands::IngestEvent(args) => ingest_event(args),
+        DynamicJepaCommands::RunAdapter(args) => run_adapter_command(args),
+        DynamicJepaCommands::MaterializePanel(args) => materialize_panel_command(args),
+        DynamicJepaCommands::GetPanel(args) => get_panel_command(args),
+        DynamicJepaCommands::ListInstrumentReadings(args) => list_instrument_readings_command(args),
     }
 }
 
@@ -508,6 +640,2193 @@ fn inspect_column_family(args: InspectCfArgs) -> DynamicJepaResult<CommandOutcom
         }),
         exit_code: 0,
     })
+}
+
+fn ingest_event(args: IngestEventArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = phase4_ingest_cfs();
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "ingest-event.db")?;
+    let file_path = canonical_existing_path(&args.file, "ingest-event.file")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let domain_id = DomainPackId::new(args.domain.clone())?;
+    let adapter_id = AdapterId::new(args.adapter.clone())?;
+    let mut created = IngestCreatedIds::default();
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let domain_pack = get_domain_pack(db, &domain_id, "1.0.0")?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let adapter = domain_pack
+            .adapter_specs
+            .iter()
+            .find(|spec| spec.adapter_id == adapter_id)
+            .ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "ingest-event.adapter",
+                    format!(
+                        "adapter {} is not registered for domain {}",
+                        adapter_id, domain_pack.id
+                    ),
+                    "register the domain pack with the requested adapter before ingestion",
+                )
+            })?
+            .clone();
+        ingest_jsonl_fixture(
+            db,
+            &domain_pack,
+            &adapter,
+            &args.file,
+            &file_path,
+            &mut created,
+        )?;
+        verify_ingest_created_ids(db, &created)?;
+        Ok(json!({
+            "created_ids": created,
+            "decoded_records": phase4_ingest_decoded_records(db)?,
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_ingest_event",
+                "status": "ok",
+                "db_path": db_path,
+                "input_file": file_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => {
+            let mut value = error_value(
+                "dynamicjepa_ingest_event",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts.clone()),
+                Some(after_counts.clone()),
+                &err,
+            );
+            enrich_phase4_error_value(
+                &mut value,
+                &before_counts,
+                &after_counts,
+                json!(created),
+                phase4_ingest_decoded_records(db)?,
+            )?;
+            Ok(CommandOutcome {
+                value,
+                exit_code: 1,
+            })
+        }
+    }
+}
+
+fn run_adapter_command(args: RunAdapterArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = phase4_ingest_cfs();
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "run-adapter.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let event_id = parse_event_id(&args.event_id, "run-adapter.event_id")?;
+    let mut created = IngestCreatedIds::default();
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        run_adapter_for_event(db, event_id, &mut created)?;
+        verify_ingest_created_ids(db, &created)?;
+        Ok(json!({
+            "created_ids": created,
+            "decoded_records": phase4_ingest_decoded_records(db)?,
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_run_adapter",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => {
+            let mut value = error_value(
+                "dynamicjepa_run_adapter",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts.clone()),
+                Some(after_counts.clone()),
+                &err,
+            );
+            enrich_phase4_error_value(
+                &mut value,
+                &before_counts,
+                &after_counts,
+                json!(created),
+                phase4_ingest_decoded_records(db)?,
+            )?;
+            Ok(CommandOutcome {
+                value,
+                exit_code: 1,
+            })
+        }
+    }
+}
+
+fn materialize_panel_command(args: MaterializePanelArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_TRANSITIONS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_ACTIONS,
+        CF_DJ_OUTCOMES,
+        CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "materialize-panel.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let mut created = PanelCreatedIds::default();
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        if args.all_pending {
+            let domain_raw = args.domain.as_ref().ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "materialize-panel.domain",
+                    "--domain is required with --all-pending",
+                    "provide the registered domain id whose pending transitions should be scanned",
+                )
+            })?;
+            let domain_id = DomainPackId::new(domain_raw.clone())?;
+            let domain_pack = get_domain_pack(db, &domain_id, "1.0.0")?.ok_or_else(|| {
+                DynamicJepaError::DomainPackNotFound {
+                    id: domain_id.to_string(),
+                }
+            })?;
+            let transitions = list_transitions(db, 1_000_000, 0)?;
+            let mut skipped = 0u64;
+            for transition in transitions
+                .into_iter()
+                .filter(|transition| transition.header.domain_pack_id == domain_pack.id)
+            {
+                if panel_for_transition(db, &transition)?.is_some() {
+                    skipped += 1;
+                    continue;
+                }
+                let evidence = materialize_one_panel(db, &domain_pack, transition)?;
+                created.push(evidence);
+            }
+            Ok(json!({
+                "created_ids": created,
+                "summary": {
+                    "materialized": created.panel_ids.len(),
+                    "skipped_existing": skipped,
+                },
+                "decoded_records": phase4_panel_decoded_records(db)?,
+            }))
+        } else {
+            let transition_raw = args.transition_id.as_ref().ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "materialize-panel.transition_id",
+                    "either --transition-id or --all-pending must be provided",
+                    "choose one materialization mode explicitly",
+                )
+            })?;
+            let transition_id =
+                parse_transition_id(transition_raw, "materialize-panel.transition_id")?;
+            let transition = get_transition(db, transition_id)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_TRANSITIONS.to_string(),
+                    key: transition_id.into_bytes().to_vec(),
+                }
+            })?;
+            if panel_for_transition(db, &transition)?.is_some() {
+                return Err(DynamicJepaError::validation(
+                    "materialize-panel.transition_id",
+                    format!("transition {transition_id} already has a latent panel"),
+                    "use --all-pending to skip existing panels or wipe the demo DB before rebuilding",
+                ));
+            }
+            let domain_pack = get_domain_pack(
+                db,
+                &transition.header.domain_pack_id,
+                &transition.header.domain_pack_version,
+            )?
+            .ok_or_else(|| DynamicJepaError::DomainPackNotFound {
+                id: transition.header.domain_pack_id.to_string(),
+            })?;
+            let evidence = materialize_one_panel(db, &domain_pack, transition)?;
+            created.push(evidence);
+            Ok(json!({
+                "created_ids": created,
+                "summary": {
+                    "materialized": created.panel_ids.len(),
+                    "skipped_existing": 0,
+                },
+                "decoded_records": phase4_panel_decoded_records(db)?,
+            }))
+        }
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_materialize_panel",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => {
+            let mut value = error_value(
+                "dynamicjepa_materialize_panel",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts.clone()),
+                Some(after_counts.clone()),
+                &err,
+            );
+            enrich_phase4_error_value(
+                &mut value,
+                &before_counts,
+                &after_counts,
+                json!(created),
+                phase4_panel_decoded_records(db)?,
+            )?;
+            Ok(CommandOutcome {
+                value,
+                exit_code: 1,
+            })
+        }
+    }
+}
+
+fn get_panel_command(args: GetPanelArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-panel.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let panel_id = parse_panel_id(&args.panel_id, "get-panel.panel_id")?;
+    let panel = get_latent_panel(db, panel_id)?;
+    match panel {
+        Some(panel) => {
+            let readings = if args.include_readings {
+                list_instrument_readings_for_event(db, panel.event_id)?
+            } else {
+                Vec::new()
+            };
+            Ok(CommandOutcome {
+                value: json!({
+                    "operation": "dynamicjepa_get_panel",
+                    "status": "ok",
+                    "db_path": db_path,
+                    "source_of_truth": [CF_DJ_LATENT_PANELS, CF_DJ_INSTRUMENT_READINGS],
+                    "counts": counts,
+                    "decoded_records": {
+                        "panel": panel,
+                        "instrument_readings": readings,
+                    },
+                }),
+                exit_code: 0,
+            })
+        }
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_panel",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_LATENT_PANELS],
+                "counts": counts,
+                "queried": {"panel_id": args.panel_id},
+                "remediation": "materialize the panel from a persisted transition before reading it",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn list_instrument_readings_command(
+    args: ListInstrumentReadingsArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "list-instrument-readings.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let event_id = parse_event_id(&args.event_id, "list-instrument-readings.event_id")?;
+    let readings = list_instrument_readings_for_event(db, event_id)?;
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_list_instrument_readings",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": [CF_DJ_INSTRUMENT_READINGS],
+            "counts": counts,
+            "queried": {"event_id": args.event_id},
+            "decoded_records": {
+                "instrument_readings": readings,
+            },
+        }),
+        exit_code: 0,
+    })
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+struct IngestCreatedIds {
+    raw_event_ids: Vec<String>,
+    adapter_run_ids: Vec<String>,
+    state_ids: Vec<String>,
+    action_ids: Vec<String>,
+    outcome_ids: Vec<String>,
+    transition_ids: Vec<String>,
+    failed_adapter_run_ids: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+struct PanelCreatedIds {
+    panel_ids: Vec<String>,
+    event_ids: Vec<String>,
+    transition_ids: Vec<String>,
+    instrument_reading_ids: Vec<String>,
+}
+
+impl PanelCreatedIds {
+    fn push(&mut self, evidence: MaterializedPanelEvidence) {
+        self.panel_ids.push(evidence.panel_id);
+        self.event_ids.push(evidence.event_id);
+        self.transition_ids.push(evidence.transition_id);
+        self.instrument_reading_ids
+            .extend(evidence.instrument_reading_ids);
+    }
+}
+
+struct MaterializedPanelEvidence {
+    panel_id: String,
+    event_id: String,
+    transition_id: String,
+    instrument_reading_ids: Vec<String>,
+}
+
+#[derive(Debug)]
+struct AdapterLineError {
+    message: String,
+    field_path: String,
+    expected_kind: String,
+    actual_kind: String,
+}
+
+#[derive(Debug)]
+struct AdaptedLine {
+    state_fields: BTreeMap<String, FieldValue>,
+    action_fields: BTreeMap<String, FieldValue>,
+    outcome_fields: BTreeMap<String, FieldValue>,
+    time_fields: BTreeMap<String, FieldValue>,
+}
+
+fn phase4_ingest_cfs() -> [&'static str; 7] {
+    [
+        CF_DJ_RAW_EVENTS,
+        CF_DJ_ADAPTER_RUNS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_ACTIONS,
+        CF_DJ_OUTCOMES,
+        CF_DJ_TRANSITIONS,
+        CF_DJ_AUDIT_LOG,
+    ]
+}
+
+fn ingest_jsonl_fixture(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    adapter: &AdapterSpec,
+    source_file: &Path,
+    source_uri: &str,
+    created: &mut IngestCreatedIds,
+) -> DynamicJepaResult<()> {
+    if adapter.kind != "json_event" {
+        return Err(DynamicJepaError::validation(
+            "ingest-event.adapter.kind",
+            format!("unsupported adapter kind {:?}", adapter.kind),
+            "Phase 4 supports json_event only",
+        ));
+    }
+    let bytes = fs::read(source_file).map_err(|err| {
+        DynamicJepaError::validation(
+            "ingest-event.file",
+            format!(
+                "failed to read JSONL fixture {}: {err}",
+                source_file.display()
+            ),
+            "provide an existing JSONL fixture file",
+        )
+    })?;
+    if bytes.is_empty() {
+        let err = DynamicJepaError::AdapterFailed {
+            adapter_id: adapter.adapter_id.to_string(),
+            event_id: Uuid::nil(),
+            message: "empty input file".to_string(),
+            field_path: String::new(),
+        };
+        let audit = build_audit(
+            "ingest_event",
+            AuditStatus::Failed {
+                error_code: err.code().to_string(),
+            },
+            vec![source_uri.to_string()],
+            Vec::new(),
+            vec![CF_DJ_AUDIT_LOG.to_string()],
+            Vec::new(),
+        )?;
+        put_audit_record(db, &audit)?;
+        return Err(err);
+    }
+
+    let run_id = Uuid::new_v4();
+    let mut offset = 0u64;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        let line_offset = offset;
+        offset += line.len() as u64;
+        process_fixture_line(
+            db,
+            domain_pack,
+            adapter,
+            source_uri,
+            line_offset,
+            line,
+            run_id,
+            created,
+        )?;
+    }
+    Ok(())
+}
+
+fn process_fixture_line(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    adapter: &AdapterSpec,
+    source_uri: &str,
+    source_offset: u64,
+    line_bytes: &[u8],
+    run_id: Uuid,
+    created: &mut IngestCreatedIds,
+) -> DynamicJepaResult<()> {
+    let now = now_unix_ms()?;
+    let event_id = EventId::new_v4();
+    let adapter_run_id = Uuid::new_v4();
+    let mut raw_event = RawDomainEvent {
+        header: DjRecordHeader::new(
+            event_id.0,
+            RAW_DOMAIN_EVENT_RECORD_VERSION,
+            domain_pack.id.clone(),
+            domain_pack.version.clone(),
+            now,
+            None,
+        ),
+        event_id,
+        domain_pack_id: domain_pack.id.clone(),
+        adapter_id: adapter.adapter_id.clone(),
+        source_kind: SourceKind::JsonlFixture,
+        source_uri: source_uri.to_string(),
+        source_offset,
+        payload_format: PayloadFormat::Json,
+        payload_bytes: line_bytes.to_vec(),
+        payload_hash: sha256(line_bytes),
+        received_at_unix_ms: now,
+    };
+    raw_event.refresh_content_hash()?;
+    let mut started_run = AdapterRunRecord {
+        header: DjRecordHeader::new(
+            adapter_run_id,
+            ADAPTER_RUN_RECORD_VERSION,
+            domain_pack.id.clone(),
+            domain_pack.version.clone(),
+            now,
+            Some(run_id),
+        ),
+        adapter_run_id,
+        adapter_id: adapter.adapter_id.clone(),
+        domain_pack_id: domain_pack.id.clone(),
+        event_id,
+        started_at_unix_ms: now,
+        finished_at_unix_ms: None,
+        status: AdapterRunStatus::Started,
+        error_code: None,
+        error_message: None,
+        field_path: None,
+        expected_kind: None,
+        actual_kind: None,
+        output_state_id: None,
+        output_action_id: None,
+        output_outcome_id: None,
+        output_transition_id: None,
+    };
+    started_run.refresh_content_hash()?;
+    let ingest_audit = build_audit(
+        "ingest_raw_event",
+        AuditStatus::Ok,
+        vec![source_uri.to_string(), source_offset.to_string()],
+        vec![event_id.to_string(), adapter_run_id.to_string()],
+        vec![
+            CF_DJ_RAW_EVENTS.to_string(),
+            CF_DJ_ADAPTER_RUNS.to_string(),
+            CF_DJ_AUDIT_LOG.to_string(),
+        ],
+        vec![
+            raw_event.header.content_hash,
+            started_run.header.content_hash,
+        ],
+    )?;
+    put_raw_event_and_adapter_run_started(db, &raw_event, &started_run, &ingest_audit)?;
+    created.raw_event_ids.push(event_id.to_string());
+    created.adapter_run_ids.push(adapter_run_id.to_string());
+
+    match adapt_payload(domain_pack, adapter, line_bytes) {
+        Ok(adapted) => {
+            let state_id = StateId::new_v4();
+            let action_id = ActionId::new_v4();
+            let outcome_id = OutcomeId::new_v4();
+            let transition_id = TransitionId::new_v4();
+            let timestamp_ms = adapted_timestamp_ms(domain_pack, &adapted)?;
+            let mut state = NormalizedState {
+                header: DjRecordHeader::new(
+                    state_id.0,
+                    NORMALIZED_STATE_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                state_id,
+                fields: adapted.state_fields,
+                source_event_id: event_id,
+            };
+            state.refresh_content_hash()?;
+            let mut action = NormalizedAction {
+                header: DjRecordHeader::new(
+                    action_id.0,
+                    NORMALIZED_ACTION_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                action_id,
+                fields: adapted.action_fields,
+                source_event_id: event_id,
+                action_origin: ActionOrigin::Observed,
+            };
+            action.refresh_content_hash()?;
+            let mut outcome = NormalizedOutcome {
+                header: DjRecordHeader::new(
+                    outcome_id.0,
+                    NORMALIZED_OUTCOME_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                outcome_id,
+                fields: adapted.outcome_fields,
+                source_event_id: event_id,
+            };
+            outcome.refresh_content_hash()?;
+            let mut transition = StateTransition {
+                header: DjRecordHeader::new(
+                    transition_id.0,
+                    STATE_TRANSITION_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                transition_id,
+                prior_state: state_id,
+                action: action_id,
+                outcome: outcome_id,
+                next_state: state_id,
+                timestamp_ms,
+            };
+            transition.refresh_content_hash()?;
+            let mut completed_run = started_run.clone();
+            completed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            completed_run.status = AdapterRunStatus::Completed;
+            completed_run.output_state_id = Some(state_id);
+            completed_run.output_action_id = Some(action_id);
+            completed_run.output_outcome_id = Some(outcome_id);
+            completed_run.output_transition_id = Some(transition_id);
+            completed_run.refresh_content_hash()?;
+            let audit = build_audit(
+                "complete_adapter_run",
+                AuditStatus::Ok,
+                vec![event_id.to_string(), adapter_run_id.to_string()],
+                vec![
+                    state_id.to_string(),
+                    action_id.to_string(),
+                    outcome_id.to_string(),
+                    transition_id.to_string(),
+                ],
+                vec![
+                    CF_DJ_ADAPTER_RUNS.to_string(),
+                    CF_DJ_NORMALIZED_STATES.to_string(),
+                    CF_DJ_ACTIONS.to_string(),
+                    CF_DJ_OUTCOMES.to_string(),
+                    CF_DJ_TRANSITIONS.to_string(),
+                    CF_DJ_AUDIT_LOG.to_string(),
+                ],
+                vec![
+                    completed_run.header.content_hash,
+                    state.header.content_hash,
+                    action.header.content_hash,
+                    outcome.header.content_hash,
+                    transition.header.content_hash,
+                ],
+            )?;
+            put_adapter_run_success_batch(
+                db,
+                &completed_run,
+                &state,
+                &action,
+                &outcome,
+                &transition,
+                &audit,
+            )?;
+            created.state_ids.push(state_id.to_string());
+            created.action_ids.push(action_id.to_string());
+            created.outcome_ids.push(outcome_id.to_string());
+            created.transition_ids.push(transition_id.to_string());
+            Ok(())
+        }
+        Err(line_err) => {
+            let mut failed_run = started_run;
+            failed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            failed_run.status = AdapterRunStatus::Failed;
+            failed_run.error_code = Some("ADAPTER_FAILED".to_string());
+            failed_run.error_message = Some(line_err.message.clone());
+            failed_run.field_path = Some(line_err.field_path.clone());
+            failed_run.expected_kind = Some(line_err.expected_kind.clone());
+            failed_run.actual_kind = Some(line_err.actual_kind.clone());
+            failed_run.refresh_content_hash()?;
+            let audit = build_audit(
+                "complete_adapter_run",
+                AuditStatus::Failed {
+                    error_code: "ADAPTER_FAILED".to_string(),
+                },
+                vec![event_id.to_string(), adapter_run_id.to_string()],
+                vec![adapter_run_id.to_string()],
+                vec![CF_DJ_ADAPTER_RUNS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+                vec![failed_run.header.content_hash],
+            )?;
+            put_adapter_run_failure_batch(db, &failed_run, &audit)?;
+            created
+                .failed_adapter_run_ids
+                .push(adapter_run_id.to_string());
+            Err(DynamicJepaError::AdapterFailed {
+                adapter_id: adapter.adapter_id.to_string(),
+                event_id: event_id.0,
+                message: line_err.message,
+                field_path: line_err.field_path,
+            })
+        }
+    }
+}
+
+fn run_adapter_for_event(
+    db: &rocksdb::DB,
+    event_id: EventId,
+    created: &mut IngestCreatedIds,
+) -> DynamicJepaResult<()> {
+    let raw_event =
+        get_raw_event(db, event_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_RAW_EVENTS.to_string(),
+            key: event_id.into_bytes().to_vec(),
+        })?;
+    let domain_pack = get_domain_pack(
+        db,
+        &raw_event.header.domain_pack_id,
+        &raw_event.header.domain_pack_version,
+    )?
+    .ok_or_else(|| DynamicJepaError::DomainPackNotFound {
+        id: raw_event.header.domain_pack_id.to_string(),
+    })?;
+    let adapter = domain_pack
+        .adapter_specs
+        .iter()
+        .find(|spec| spec.adapter_id == raw_event.adapter_id)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "run-adapter.adapter",
+                format!(
+                    "adapter {} is not registered for domain {}",
+                    raw_event.adapter_id, domain_pack.id
+                ),
+                "inspect the domain pack adapter registry before running the adapter",
+            )
+        })?
+        .clone();
+    let runs = list_adapter_runs(db, 1_000_000, 0)?;
+    let matching: Vec<_> = runs
+        .into_iter()
+        .filter(|run| run.event_id == event_id)
+        .collect();
+    if matching.len() != 1 {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "expected exactly one adapter run for event {event_id}, found {}",
+                matching.len()
+            ),
+        });
+    }
+    let started_run = matching.into_iter().next().expect("len checked");
+    if started_run.status != AdapterRunStatus::Started {
+        return Err(DynamicJepaError::validation(
+            "run-adapter.event_id",
+            format!(
+                "adapter run {} for event {} is already {:?}",
+                started_run.adapter_run_id, event_id, started_run.status
+            ),
+            "run-adapter only completes a persisted Started row; use inspect-cf to read terminal rows",
+        ));
+    }
+    let run_id = started_run
+        .header
+        .source_run_id
+        .unwrap_or_else(Uuid::new_v4);
+    let source_uri = raw_event.source_uri.clone();
+    process_existing_raw_event(
+        db,
+        &domain_pack,
+        &adapter,
+        &raw_event,
+        started_run,
+        run_id,
+        &source_uri,
+        created,
+    )
+}
+
+fn process_existing_raw_event(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    adapter: &AdapterSpec,
+    raw_event: &RawDomainEvent,
+    started_run: AdapterRunRecord,
+    run_id: Uuid,
+    _source_uri: &str,
+    created: &mut IngestCreatedIds,
+) -> DynamicJepaResult<()> {
+    match adapt_payload(domain_pack, adapter, &raw_event.payload_bytes) {
+        Ok(adapted) => {
+            let state_id = StateId::new_v4();
+            let action_id = ActionId::new_v4();
+            let outcome_id = OutcomeId::new_v4();
+            let transition_id = TransitionId::new_v4();
+            let timestamp_ms = adapted_timestamp_ms(domain_pack, &adapted)?;
+            let mut state = NormalizedState {
+                header: DjRecordHeader::new(
+                    state_id.0,
+                    NORMALIZED_STATE_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                state_id,
+                fields: adapted.state_fields,
+                source_event_id: raw_event.event_id,
+            };
+            state.refresh_content_hash()?;
+            let mut action = NormalizedAction {
+                header: DjRecordHeader::new(
+                    action_id.0,
+                    NORMALIZED_ACTION_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                action_id,
+                fields: adapted.action_fields,
+                source_event_id: raw_event.event_id,
+                action_origin: ActionOrigin::Observed,
+            };
+            action.refresh_content_hash()?;
+            let mut outcome = NormalizedOutcome {
+                header: DjRecordHeader::new(
+                    outcome_id.0,
+                    NORMALIZED_OUTCOME_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                outcome_id,
+                fields: adapted.outcome_fields,
+                source_event_id: raw_event.event_id,
+            };
+            outcome.refresh_content_hash()?;
+            let mut transition = StateTransition {
+                header: DjRecordHeader::new(
+                    transition_id.0,
+                    STATE_TRANSITION_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    now_unix_ms()?,
+                    Some(run_id),
+                ),
+                transition_id,
+                prior_state: state_id,
+                action: action_id,
+                outcome: outcome_id,
+                next_state: state_id,
+                timestamp_ms,
+            };
+            transition.refresh_content_hash()?;
+            let mut completed_run = started_run;
+            completed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            completed_run.status = AdapterRunStatus::Completed;
+            completed_run.output_state_id = Some(state_id);
+            completed_run.output_action_id = Some(action_id);
+            completed_run.output_outcome_id = Some(outcome_id);
+            completed_run.output_transition_id = Some(transition_id);
+            completed_run.refresh_content_hash()?;
+            let audit = build_audit(
+                "complete_adapter_run",
+                AuditStatus::Ok,
+                vec![raw_event.event_id.to_string()],
+                vec![
+                    state_id.to_string(),
+                    action_id.to_string(),
+                    outcome_id.to_string(),
+                    transition_id.to_string(),
+                ],
+                vec![
+                    CF_DJ_ADAPTER_RUNS.to_string(),
+                    CF_DJ_NORMALIZED_STATES.to_string(),
+                    CF_DJ_ACTIONS.to_string(),
+                    CF_DJ_OUTCOMES.to_string(),
+                    CF_DJ_TRANSITIONS.to_string(),
+                    CF_DJ_AUDIT_LOG.to_string(),
+                ],
+                vec![
+                    completed_run.header.content_hash,
+                    state.header.content_hash,
+                    action.header.content_hash,
+                    outcome.header.content_hash,
+                    transition.header.content_hash,
+                ],
+            )?;
+            put_adapter_run_success_batch(
+                db,
+                &completed_run,
+                &state,
+                &action,
+                &outcome,
+                &transition,
+                &audit,
+            )?;
+            created.state_ids.push(state_id.to_string());
+            created.action_ids.push(action_id.to_string());
+            created.outcome_ids.push(outcome_id.to_string());
+            created.transition_ids.push(transition_id.to_string());
+            Ok(())
+        }
+        Err(line_err) => {
+            let mut failed_run = started_run;
+            failed_run.finished_at_unix_ms = Some(now_unix_ms()?);
+            failed_run.status = AdapterRunStatus::Failed;
+            failed_run.error_code = Some("ADAPTER_FAILED".to_string());
+            failed_run.error_message = Some(line_err.message.clone());
+            failed_run.field_path = Some(line_err.field_path.clone());
+            failed_run.expected_kind = Some(line_err.expected_kind.clone());
+            failed_run.actual_kind = Some(line_err.actual_kind.clone());
+            failed_run.refresh_content_hash()?;
+            let audit = build_audit(
+                "complete_adapter_run",
+                AuditStatus::Failed {
+                    error_code: "ADAPTER_FAILED".to_string(),
+                },
+                vec![raw_event.event_id.to_string()],
+                vec![failed_run.adapter_run_id.to_string()],
+                vec![CF_DJ_ADAPTER_RUNS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+                vec![failed_run.header.content_hash],
+            )?;
+            put_adapter_run_failure_batch(db, &failed_run, &audit)?;
+            created
+                .failed_adapter_run_ids
+                .push(failed_run.adapter_run_id.to_string());
+            Err(DynamicJepaError::AdapterFailed {
+                adapter_id: adapter.adapter_id.to_string(),
+                event_id: raw_event.event_id.0,
+                message: line_err.message,
+                field_path: line_err.field_path,
+            })
+        }
+    }
+}
+
+fn adapt_payload(
+    domain_pack: &DomainPack,
+    adapter: &AdapterSpec,
+    payload_bytes: &[u8],
+) -> Result<AdaptedLine, AdapterLineError> {
+    let trimmed = trim_jsonl_newline(payload_bytes);
+    let root: Value = serde_json::from_slice(trimmed).map_err(|err| AdapterLineError {
+        message: format!("json parse failed: {err}"),
+        field_path: String::new(),
+        expected_kind: "valid JSON object".to_string(),
+        actual_kind: "invalid_json".to_string(),
+    })?;
+    if !root.is_object() {
+        return Err(AdapterLineError {
+            message: "json_event payload must be a JSON object".to_string(),
+            field_path: "$".to_string(),
+            expected_kind: "object".to_string(),
+            actual_kind: actual_json_kind(&root),
+        });
+    }
+    reject_extra_json_fields(&root, adapter)?;
+
+    let mut state_fields = BTreeMap::new();
+    let mut action_fields = BTreeMap::new();
+    let mut outcome_fields = BTreeMap::new();
+    let mut time_fields = BTreeMap::new();
+
+    for target_path in ordered_adapter_targets(domain_pack, adapter) {
+        let source_path = adapter
+            .mapping
+            .get(&target_path)
+            .ok_or_else(|| AdapterLineError {
+                message: format!("adapter target path {target_path:?} disappeared during ordering"),
+                field_path: target_path.clone(),
+                expected_kind: "registered adapter mapping".to_string(),
+                actual_kind: "missing".to_string(),
+            })?;
+        let field_spec =
+            schema_field_for_path(domain_pack, &target_path).ok_or_else(|| AdapterLineError {
+                message: format!("adapter target path {target_path:?} is not declared in schemas"),
+                field_path: target_path.clone(),
+                expected_kind: "declared schema field".to_string(),
+                actual_kind: "undeclared".to_string(),
+            })?;
+        let value = resolve_json_path(&root, source_path).ok_or_else(|| AdapterLineError {
+            message: format!("JSON path {source_path:?} did not resolve for {target_path}"),
+            field_path: target_path.clone(),
+            expected_kind: expected_kind_name(&field_spec.kind),
+            actual_kind: "missing".to_string(),
+        })?;
+        let coerced = coerce_json_value(value, field_spec, &target_path)?;
+        let (scope, field_name) = target_path
+            .split_once('.')
+            .ok_or_else(|| AdapterLineError {
+                message: format!("adapter target path {target_path:?} is not dotted"),
+                field_path: target_path.clone(),
+                expected_kind: "scope.field".to_string(),
+                actual_kind: "invalid_path".to_string(),
+            })?;
+        match scope {
+            "state" => {
+                state_fields.insert(field_name.to_string(), coerced);
+            }
+            "action" => {
+                action_fields.insert(field_name.to_string(), coerced);
+            }
+            "outcome" => {
+                outcome_fields.insert(field_name.to_string(), coerced);
+            }
+            "time" => {
+                time_fields.insert(field_name.to_string(), coerced);
+            }
+            "entity" => {}
+            _ => {
+                return Err(AdapterLineError {
+                    message: format!("unsupported adapter target scope {scope:?}"),
+                    field_path: target_path.clone(),
+                    expected_kind: "state/action/outcome/time/entity".to_string(),
+                    actual_kind: scope.to_string(),
+                });
+            }
+        }
+    }
+
+    ensure_required_schema_fields(domain_pack, "state", &state_fields)?;
+    ensure_required_schema_fields(domain_pack, "action", &action_fields)?;
+    ensure_required_schema_fields(domain_pack, "outcome", &outcome_fields)?;
+    ensure_time_field(domain_pack, &time_fields)?;
+
+    Ok(AdaptedLine {
+        state_fields,
+        action_fields,
+        outcome_fields,
+        time_fields,
+    })
+}
+
+fn ordered_adapter_targets(domain_pack: &DomainPack, adapter: &AdapterSpec) -> Vec<String> {
+    let mut ordered = Vec::new();
+    for field in &domain_pack.state_schema.fields {
+        let path = format!("state.{}", field.name);
+        if adapter.mapping.contains_key(&path) {
+            ordered.push(path);
+        }
+    }
+    for field in &domain_pack.action_schema.fields {
+        let path = format!("action.{}", field.name);
+        if adapter.mapping.contains_key(&path) {
+            ordered.push(path);
+        }
+    }
+    for field in &domain_pack.outcome_schema.fields {
+        let path = format!("outcome.{}", field.name);
+        if adapter.mapping.contains_key(&path) {
+            ordered.push(path);
+        }
+    }
+    let time_path = format!("time.{}", domain_pack.time_schema.field.name);
+    if adapter.mapping.contains_key(&time_path) {
+        ordered.push(time_path);
+    }
+    for field in &domain_pack.entity_schema.fields {
+        let path = format!("entity.{}", field.name);
+        if adapter.mapping.contains_key(&path) {
+            ordered.push(path);
+        }
+    }
+    for key in adapter.mapping.keys() {
+        if !ordered.iter().any(|path| path == key) {
+            ordered.push(key.clone());
+        }
+    }
+    ordered
+}
+
+fn trim_jsonl_newline(bytes: &[u8]) -> &[u8] {
+    let mut end = bytes.len();
+    while end > 0 && matches!(bytes[end - 1], b'\n' | b'\r') {
+        end -= 1;
+    }
+    &bytes[..end]
+}
+
+fn reject_extra_json_fields(root: &Value, adapter: &AdapterSpec) -> Result<(), AdapterLineError> {
+    let expected: BTreeSet<String> = adapter.mapping.values().cloned().collect();
+    let mut observed = Vec::new();
+    collect_json_leaf_paths(root, "$", &mut observed);
+    for path in observed {
+        if !expected.contains(&path) {
+            return Err(AdapterLineError {
+                message: format!("unexpected JSON field {path} is not declared in adapter mapping"),
+                field_path: path,
+                expected_kind: "only declared adapter mapping JSON paths".to_string(),
+                actual_kind: "extra_field".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn collect_json_leaf_paths(value: &Value, path: &str, out: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            if map.is_empty() {
+                out.push(path.to_string());
+            }
+            for (key, child) in map {
+                collect_json_leaf_paths(child, &format!("{path}.{key}"), out);
+            }
+        }
+        Value::Array(_) => out.push(path.to_string()),
+        _ => out.push(path.to_string()),
+    }
+}
+
+fn resolve_json_path<'a>(root: &'a Value, path: &str) -> Option<&'a Value> {
+    if !path.starts_with("$.") || path.contains("[") || path.contains("..") {
+        return None;
+    }
+    let mut current = root;
+    for segment in path.trim_start_matches("$.").split('.') {
+        if segment.is_empty() {
+            return None;
+        }
+        current = current.get(segment)?;
+    }
+    Some(current)
+}
+
+fn schema_field_for_path<'a>(domain_pack: &'a DomainPack, path: &str) -> Option<&'a FieldSpec> {
+    let (scope, name) = path.split_once('.')?;
+    match scope {
+        "state" => domain_pack
+            .state_schema
+            .fields
+            .iter()
+            .find(|field| field.name == name),
+        "action" => domain_pack
+            .action_schema
+            .fields
+            .iter()
+            .find(|field| field.name == name),
+        "outcome" => domain_pack
+            .outcome_schema
+            .fields
+            .iter()
+            .find(|field| field.name == name),
+        "entity" => domain_pack
+            .entity_schema
+            .fields
+            .iter()
+            .find(|field| field.name == name),
+        "time" if domain_pack.time_schema.field.name == name => {
+            Some(&domain_pack.time_schema.field)
+        }
+        _ => None,
+    }
+}
+
+fn coerce_json_value(
+    value: &Value,
+    field: &FieldSpec,
+    field_path: &str,
+) -> Result<FieldValue, AdapterLineError> {
+    let coerced = match &field.kind {
+        FieldKind::I64 => {
+            let value = value
+                .as_i64()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            validate_numeric_bounds(value as f64, field, field_path)?;
+            FieldValue::I64(value)
+        }
+        FieldKind::UnixMs => {
+            let value = value
+                .as_i64()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            validate_numeric_bounds(value as f64, field, field_path)?;
+            FieldValue::UnixMs(value)
+        }
+        FieldKind::F64 => {
+            let value = value
+                .as_f64()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            validate_numeric_bounds(value, field, field_path)?;
+            FieldValue::F64(value)
+        }
+        FieldKind::Bool => {
+            let value = value
+                .as_bool()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            FieldValue::Bool(value)
+        }
+        FieldKind::String => {
+            let value = value
+                .as_str()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            FieldValue::String(value.to_string())
+        }
+        FieldKind::Categorical { variants } => {
+            let value = value
+                .as_str()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            if !variants.iter().any(|variant| variant == value) {
+                return Err(AdapterLineError {
+                    message: format!("value {value:?} is not a declared variant of {field_path}"),
+                    field_path: field_path.to_string(),
+                    expected_kind: expected_kind_name(&field.kind),
+                    actual_kind: actual_json_kind(&Value::String(value.to_string())),
+                });
+            }
+            FieldValue::Categorical {
+                variant: value.to_string(),
+            }
+        }
+        FieldKind::Vector { dim } => {
+            let array = value
+                .as_array()
+                .ok_or_else(|| type_error(value, field, field_path))?;
+            if array.len() != *dim {
+                return Err(AdapterLineError {
+                    message: format!(
+                        "vector field {field_path} expected dim {dim}, got {}",
+                        array.len()
+                    ),
+                    field_path: field_path.to_string(),
+                    expected_kind: format!("vector[{dim}]"),
+                    actual_kind: format!("vector[{}]", array.len()),
+                });
+            }
+            let mut out = Vec::with_capacity(*dim);
+            for (idx, item) in array.iter().enumerate() {
+                let value = item.as_f64().ok_or_else(|| AdapterLineError {
+                    message: format!("vector field {field_path}[{idx}] is not numeric"),
+                    field_path: format!("{field_path}[{idx}]"),
+                    expected_kind: "f64".to_string(),
+                    actual_kind: actual_json_kind(item),
+                })?;
+                out.push(value as f32);
+            }
+            FieldValue::Vector(out)
+        }
+    };
+    coerced
+        .validate(field_path)
+        .map_err(|err| AdapterLineError {
+            message: err.to_string(),
+            field_path: field_path.to_string(),
+            expected_kind: expected_kind_name(&field.kind),
+            actual_kind: field_value_kind(&coerced).to_string(),
+        })?;
+    Ok(coerced)
+}
+
+fn type_error(value: &Value, field: &FieldSpec, field_path: &str) -> AdapterLineError {
+    AdapterLineError {
+        message: format!(
+            "value at {field_path} has kind {}, expected {}",
+            actual_json_kind(value),
+            expected_kind_name(&field.kind)
+        ),
+        field_path: field_path.to_string(),
+        expected_kind: expected_kind_name(&field.kind),
+        actual_kind: actual_json_kind(value),
+    }
+}
+
+fn validate_numeric_bounds(
+    value: f64,
+    field: &FieldSpec,
+    field_path: &str,
+) -> Result<(), AdapterLineError> {
+    if let Some(min) = field.min {
+        if value < min {
+            return Err(AdapterLineError {
+                message: format!("value {value} is below min {min} for {field_path}"),
+                field_path: field_path.to_string(),
+                expected_kind: format!(">= {min}"),
+                actual_kind: "number".to_string(),
+            });
+        }
+    }
+    if let Some(max) = field.max {
+        if value > max {
+            return Err(AdapterLineError {
+                message: format!("value {value} exceeds max {max} for {field_path}"),
+                field_path: field_path.to_string(),
+                expected_kind: format!("<= {max}"),
+                actual_kind: "number".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn ensure_required_schema_fields(
+    domain_pack: &DomainPack,
+    scope: &str,
+    fields: &BTreeMap<String, FieldValue>,
+) -> Result<(), AdapterLineError> {
+    let schema_fields = match scope {
+        "state" => &domain_pack.state_schema.fields,
+        "action" => &domain_pack.action_schema.fields,
+        "outcome" => &domain_pack.outcome_schema.fields,
+        _ => return Ok(()),
+    };
+    for field in schema_fields.iter().filter(|field| field.required) {
+        if !fields.contains_key(&field.name) {
+            return Err(AdapterLineError {
+                message: format!("required field {scope}.{} was not produced", field.name),
+                field_path: format!("{scope}.{}", field.name),
+                expected_kind: expected_kind_name(&field.kind),
+                actual_kind: "missing".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn ensure_time_field(
+    domain_pack: &DomainPack,
+    fields: &BTreeMap<String, FieldValue>,
+) -> Result<(), AdapterLineError> {
+    let field = &domain_pack.time_schema.field;
+    if field.required && !fields.contains_key(&field.name) {
+        return Err(AdapterLineError {
+            message: format!("required field time.{} was not produced", field.name),
+            field_path: format!("time.{}", field.name),
+            expected_kind: expected_kind_name(&field.kind),
+            actual_kind: "missing".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn adapted_timestamp_ms(domain_pack: &DomainPack, adapted: &AdaptedLine) -> DynamicJepaResult<i64> {
+    let field = &domain_pack.time_schema.field;
+    let value =
+        adapted
+            .time_fields
+            .get(&field.name)
+            .ok_or_else(|| DynamicJepaError::AdapterFailed {
+                adapter_id: "json_event".to_string(),
+                event_id: Uuid::nil(),
+                message: format!("time field {} missing after adapter success", field.name),
+                field_path: format!("time.{}", field.name),
+            })?;
+    match value {
+        FieldValue::I64(value) | FieldValue::UnixMs(value) => Ok(*value),
+        other => Err(DynamicJepaError::AdapterFailed {
+            adapter_id: "json_event".to_string(),
+            event_id: Uuid::nil(),
+            message: format!(
+                "time field {} must be i64/unix_ms, got {}",
+                field.name,
+                field_value_kind(other)
+            ),
+            field_path: format!("time.{}", field.name),
+        }),
+    }
+}
+
+fn actual_json_kind(value: &Value) -> String {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(number) if number.as_i64().is_some() => "i64",
+        Value::Number(_) => "f64",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+    .to_string()
+}
+
+fn expected_kind_name(kind: &FieldKind) -> String {
+    match kind {
+        FieldKind::I64 => "i64".to_string(),
+        FieldKind::F64 => "f64".to_string(),
+        FieldKind::Bool => "bool".to_string(),
+        FieldKind::String => "string".to_string(),
+        FieldKind::UnixMs => "unix_ms".to_string(),
+        FieldKind::Categorical { variants } => format!("categorical{{{}}}", variants.join(",")),
+        FieldKind::Vector { dim } => format!("vector[{dim}]"),
+    }
+}
+
+fn field_value_kind(value: &FieldValue) -> &'static str {
+    match value {
+        FieldValue::I64(_) => "i64",
+        FieldValue::F64(_) => "f64",
+        FieldValue::Bool(_) => "bool",
+        FieldValue::String(_) => "string",
+        FieldValue::Categorical { .. } => "categorical",
+        FieldValue::Vector(_) => "vector",
+        FieldValue::UnixMs(_) => "unix_ms",
+    }
+}
+
+fn verify_ingest_created_ids(
+    db: &rocksdb::DB,
+    created: &IngestCreatedIds,
+) -> DynamicJepaResult<()> {
+    for id in &created.raw_event_ids {
+        let id = parse_event_id(id, "verify_ingest.raw_event_id")?;
+        get_raw_event(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_RAW_EVENTS.to_string(),
+            key: id.into_bytes().to_vec(),
+        })?;
+    }
+    for id in &created.adapter_run_ids {
+        let id = parse_uuid(id, "verify_ingest.adapter_run_id")?;
+        get_adapter_run(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ADAPTER_RUNS.to_string(),
+            key: id.as_bytes().to_vec(),
+        })?;
+    }
+    for id in &created.failed_adapter_run_ids {
+        let id = parse_uuid(id, "verify_ingest.failed_adapter_run_id")?;
+        let run =
+            get_adapter_run(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_ADAPTER_RUNS.to_string(),
+                key: id.as_bytes().to_vec(),
+            })?;
+        if run.status != AdapterRunStatus::Failed {
+            return Err(DynamicJepaError::StorageInvariantViolation {
+                message: format!("adapter run {id} was expected Failed, got {:?}", run.status),
+            });
+        }
+    }
+    for id in &created.state_ids {
+        let id = parse_state_id(id, "verify_ingest.state_id")?;
+        get_normalized_state(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: id.into_bytes().to_vec(),
+        })?;
+    }
+    for id in &created.action_ids {
+        let id = parse_action_id(id, "verify_ingest.action_id")?;
+        get_action(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ACTIONS.to_string(),
+            key: id.into_bytes().to_vec(),
+        })?;
+    }
+    for id in &created.outcome_ids {
+        let id = parse_outcome_id(id, "verify_ingest.outcome_id")?;
+        get_outcome(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_OUTCOMES.to_string(),
+            key: id.into_bytes().to_vec(),
+        })?;
+    }
+    for id in &created.transition_ids {
+        let id = parse_transition_id(id, "verify_ingest.transition_id")?;
+        get_transition(db, id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_TRANSITIONS.to_string(),
+            key: id.into_bytes().to_vec(),
+        })?;
+    }
+    Ok(())
+}
+
+fn materialize_one_panel(
+    db: &rocksdb::DB,
+    domain_pack: &DomainPack,
+    transition: StateTransition,
+) -> DynamicJepaResult<MaterializedPanelEvidence> {
+    let state = get_normalized_state(db, transition.prior_state)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_NORMALIZED_STATES.to_string(),
+            key: transition.prior_state.into_bytes().to_vec(),
+        }
+    })?;
+    let action = get_action(db, transition.action)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_ACTIONS.to_string(),
+            key: transition.action.into_bytes().to_vec(),
+        }
+    })?;
+    let outcome = get_outcome(db, transition.outcome)?.ok_or_else(|| {
+        DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_OUTCOMES.to_string(),
+            key: transition.outcome.into_bytes().to_vec(),
+        }
+    })?;
+
+    let mut readings = Vec::with_capacity(domain_pack.instrument_specs.len());
+    let mut reading_ids = Vec::with_capacity(domain_pack.instrument_specs.len());
+    let mut slots = Vec::with_capacity(domain_pack.instrument_specs.len());
+    let mut vectors = Vec::with_capacity(domain_pack.instrument_specs.len());
+    let mut masks = Vec::with_capacity(domain_pack.instrument_specs.len());
+    for spec in &domain_pack.instrument_specs {
+        let slot = panel_slot_for_spec(spec)?;
+        match execute_instrument(domain_pack, spec, &state, &action, &outcome, &transition) {
+            Ok(output) => {
+                let reading_id = Uuid::new_v4();
+                let mut reading = InstrumentReading {
+                    header: DjRecordHeader::new(
+                        reading_id,
+                        INSTRUMENT_READING_RECORD_VERSION,
+                        domain_pack.id.clone(),
+                        domain_pack.version.clone(),
+                        now_unix_ms()?,
+                        transition.header.source_run_id,
+                    ),
+                    reading_id,
+                    event_id: state.source_event_id,
+                    instrument_id: spec.instrument_id.clone(),
+                    instrument_hash: instrument_hash(spec),
+                    input_hash: output.input_hash,
+                    output_dense: output.values.clone(),
+                    status: ReadingStatus::Ok,
+                };
+                reading.refresh_content_hash()?;
+                reading_ids.push(reading_id);
+                slots.push(slot);
+                vectors.push(output.values);
+                masks.push(true);
+                readings.push(reading);
+            }
+            Err(err) if !spec.required => {
+                let reading_id = Uuid::new_v4();
+                let error_message = err.to_string();
+                let failure_hash = sha256(
+                    format!(
+                        "{}:{}:{error_message}",
+                        spec.instrument_id, state.source_event_id
+                    )
+                    .as_bytes(),
+                );
+                let mut reading = InstrumentReading {
+                    header: DjRecordHeader::new(
+                        reading_id,
+                        INSTRUMENT_READING_RECORD_VERSION,
+                        domain_pack.id.clone(),
+                        domain_pack.version.clone(),
+                        now_unix_ms()?,
+                        transition.header.source_run_id,
+                    ),
+                    reading_id,
+                    event_id: state.source_event_id,
+                    instrument_id: spec.instrument_id.clone(),
+                    instrument_hash: instrument_hash(spec),
+                    input_hash: failure_hash,
+                    output_dense: Vec::new(),
+                    status: ReadingStatus::Failed {
+                        error: error_message,
+                    },
+                };
+                reading.refresh_content_hash()?;
+                reading_ids.push(reading_id);
+                slots.push(slot);
+                vectors.push(Vec::new());
+                masks.push(false);
+                readings.push(reading);
+            }
+            Err(err) => {
+                let audit = build_audit(
+                    "materialize_panel",
+                    AuditStatus::Failed {
+                        error_code: err.code().to_string(),
+                    },
+                    vec![transition.transition_id.to_string()],
+                    Vec::new(),
+                    vec![CF_DJ_AUDIT_LOG.to_string()],
+                    Vec::new(),
+                )?;
+                put_audit_record(db, &audit)?;
+                return Err(err);
+            }
+        }
+    }
+
+    let panel_id = PanelId::new_v4();
+    let panel_hash = panel_hash(domain_pack, &reading_ids, &slots, &vectors)?;
+    let mut panel = LatentPanel {
+        header: DjRecordHeader::new(
+            panel_id.0,
+            LATENT_PANEL_RECORD_VERSION,
+            domain_pack.id.clone(),
+            domain_pack.version.clone(),
+            now_unix_ms()?,
+            transition.header.source_run_id,
+        ),
+        panel_id,
+        event_id: state.source_event_id,
+        state_id: state.state_id,
+        action_id: action.action_id,
+        outcome_id: Some(outcome.outcome_id),
+        instrument_reading_ids: reading_ids.clone(),
+        ordered_slots: slots,
+        slot_vectors: vectors,
+        slot_masks: masks,
+        panel_hash,
+        materializer_version: 1,
+    };
+    panel.refresh_content_hash()?;
+    let audit = build_audit(
+        "materialize_panel",
+        AuditStatus::Ok,
+        vec![transition.transition_id.to_string()],
+        std::iter::once(panel_id.to_string())
+            .chain(reading_ids.iter().map(Uuid::to_string))
+            .collect(),
+        vec![
+            CF_DJ_INSTRUMENT_READINGS.to_string(),
+            CF_DJ_LATENT_PANELS.to_string(),
+            CF_DJ_AUDIT_LOG.to_string(),
+        ],
+        std::iter::once(panel.header.content_hash)
+            .chain(readings.iter().map(|reading| reading.header.content_hash))
+            .collect(),
+    )?;
+    put_panel_with_readings_batch(db, &readings, &panel, &audit)?;
+
+    let stored_panel =
+        get_latent_panel(db, panel_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+            cf: CF_DJ_LATENT_PANELS.to_string(),
+            key: panel_id.into_bytes().to_vec(),
+        })?;
+    if stored_panel != panel {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!("latent panel readback mismatch for panel {panel_id}"),
+        });
+    }
+    let stored_readings = list_instrument_readings_for_event(db, state.source_event_id)?;
+    if stored_readings.len() != domain_pack.instrument_specs.len() {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "event {} expected {} instrument readings, found {}",
+                state.source_event_id,
+                domain_pack.instrument_specs.len(),
+                stored_readings.len()
+            ),
+        });
+    }
+    Ok(MaterializedPanelEvidence {
+        panel_id: panel_id.to_string(),
+        event_id: state.source_event_id.to_string(),
+        transition_id: transition.transition_id.to_string(),
+        instrument_reading_ids: reading_ids.iter().map(Uuid::to_string).collect(),
+    })
+}
+
+struct InstrumentOutput {
+    values: Vec<f32>,
+    input_hash: [u8; 32],
+}
+
+fn execute_instrument(
+    domain_pack: &DomainPack,
+    spec: &InstrumentSpec,
+    state: &NormalizedState,
+    action: &NormalizedAction,
+    outcome: &NormalizedOutcome,
+    transition: &StateTransition,
+) -> DynamicJepaResult<InstrumentOutput> {
+    let inputs = spec
+        .input_fields
+        .iter()
+        .map(|path| {
+            resolve_field_value(domain_pack, path, state, action, outcome, transition)
+                .map(|value| (path.clone(), value))
+        })
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    let input_hash = sha256(&serde_json::to_vec(&inputs).map_err(|err| {
+        DynamicJepaError::validation(
+            "instrument.input_hash",
+            format!("failed to serialize instrument inputs: {err}"),
+            "instrument inputs must be JSON serializable for deterministic hashing",
+        )
+    })?);
+    let values = match &spec.kind {
+        InstrumentKind::Scalar => {
+            if inputs.len() != 1 {
+                return Err(instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    "scalar instrument requires exactly one input field",
+                    spec.input_fields.join(","),
+                ));
+            }
+            let raw = numeric_field_value(&inputs[0].1).ok_or_else(|| {
+                instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    format!(
+                        "scalar input {} is {} not numeric",
+                        inputs[0].0,
+                        field_value_kind(&inputs[0].1)
+                    ),
+                    inputs[0].0.clone(),
+                )
+            })?;
+            validate_instrument_numeric(spec, raw, &inputs[0].0, state.source_event_id)?;
+            vec![normalize_value(raw, &spec.normalization)? as f32]
+        }
+        InstrumentKind::Categorical { variants } => {
+            if inputs.len() != 1 {
+                return Err(instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    "categorical instrument requires exactly one input field",
+                    spec.input_fields.join(","),
+                ));
+            }
+            let variant = match &inputs[0].1 {
+                FieldValue::Categorical { variant } | FieldValue::String(variant) => variant,
+                other => {
+                    return Err(instrument_failed(
+                        spec,
+                        state.source_event_id,
+                        format!(
+                            "categorical input {} is {} not categorical/string",
+                            inputs[0].0,
+                            field_value_kind(other)
+                        ),
+                        inputs[0].0.clone(),
+                    ));
+                }
+            };
+            let idx = variants
+                .iter()
+                .position(|item| item == variant)
+                .ok_or_else(|| {
+                    instrument_failed(
+                        spec,
+                        state.source_event_id,
+                        format!("variant {variant:?} is not declared"),
+                        inputs[0].0.clone(),
+                    )
+                })?;
+            onehot(variants.len(), idx)?
+        }
+        InstrumentKind::Onehot { dim } => {
+            let idx = compound_onehot_index(*dim, &inputs, spec, state.source_event_id)?;
+            onehot(*dim, idx)?
+        }
+        InstrumentKind::Time { encoding } => {
+            if inputs.len() != 1 {
+                return Err(instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    "time instrument requires exactly one input field",
+                    spec.input_fields.join(","),
+                ));
+            }
+            let raw = numeric_field_value(&inputs[0].1).ok_or_else(|| {
+                instrument_failed(
+                    spec,
+                    state.source_event_id,
+                    format!(
+                        "time input {} is {} not numeric",
+                        inputs[0].0,
+                        field_value_kind(&inputs[0].1)
+                    ),
+                    inputs[0].0.clone(),
+                )
+            })?;
+            validate_instrument_numeric(spec, raw, &inputs[0].0, state.source_event_id)?;
+            match encoding {
+                TimeEncoding::UnixSeconds => vec![(raw / 1000.0) as f32],
+                TimeEncoding::FractionalDayOfWeek => {
+                    let seconds_in_week = 7.0 * 24.0 * 3600.0;
+                    vec![((raw / 1000.0) % seconds_in_week / seconds_in_week) as f32]
+                }
+            }
+        }
+    };
+    let expected_dim = spec.output_shape.iter().product::<usize>();
+    if values.len() != expected_dim {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: domain_pack.id.to_string(),
+            expected: vec![expected_dim],
+            actual: vec![values.len()],
+        });
+    }
+    for (idx, value) in values.iter().enumerate() {
+        if !value.is_finite() {
+            return Err(instrument_failed(
+                spec,
+                state.source_event_id,
+                format!("output value {idx} is not finite: {value}"),
+                spec.input_fields.join(","),
+            ));
+        }
+    }
+    Ok(InstrumentOutput { values, input_hash })
+}
+
+fn resolve_field_value(
+    domain_pack: &DomainPack,
+    path: &str,
+    state: &NormalizedState,
+    action: &NormalizedAction,
+    outcome: &NormalizedOutcome,
+    transition: &StateTransition,
+) -> DynamicJepaResult<FieldValue> {
+    let (scope, name) = path.split_once('.').ok_or_else(|| {
+        DynamicJepaError::validation(
+            "instrument.input_fields",
+            format!("input field {path:?} is not dotted"),
+            "use state/action/outcome/time dotted instrument input fields",
+        )
+    })?;
+    let value = match scope {
+        "state" => state.fields.get(name).cloned(),
+        "action" => action.fields.get(name).cloned(),
+        "outcome" => outcome.fields.get(name).cloned(),
+        "time" if domain_pack.time_schema.field.name == name => {
+            match domain_pack.time_schema.field.kind {
+                FieldKind::UnixMs => Some(FieldValue::UnixMs(transition.timestamp_ms)),
+                _ => Some(FieldValue::I64(transition.timestamp_ms)),
+            }
+        }
+        _ => None,
+    };
+    value.ok_or_else(|| DynamicJepaError::InstrumentFailed {
+        instrument_id: "unknown".to_string(),
+        event_id: state.source_event_id.0,
+        message: format!("input field {path:?} missing from normalized records"),
+        field_path: path.to_string(),
+    })
+}
+
+fn numeric_field_value(value: &FieldValue) -> Option<f64> {
+    match value {
+        FieldValue::I64(value) | FieldValue::UnixMs(value) => Some(*value as f64),
+        FieldValue::F64(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn validate_instrument_numeric(
+    spec: &InstrumentSpec,
+    value: f64,
+    field_path: &str,
+    event_id: EventId,
+) -> DynamicJepaResult<()> {
+    if spec.validation.require_finite && !value.is_finite() {
+        return Err(instrument_failed(
+            spec,
+            event_id,
+            format!("numeric input {field_path} is not finite: {value}"),
+            field_path.to_string(),
+        ));
+    }
+    if spec.validation.reject_nan && value.is_nan() {
+        return Err(instrument_failed(
+            spec,
+            event_id,
+            format!("numeric input {field_path} is NaN"),
+            field_path.to_string(),
+        ));
+    }
+    if spec.validation.reject_inf && value.is_infinite() {
+        return Err(instrument_failed(
+            spec,
+            event_id,
+            format!("numeric input {field_path} is infinite"),
+            field_path.to_string(),
+        ));
+    }
+    if let Some(min) = spec.validation.min {
+        if value < min {
+            return Err(instrument_failed(
+                spec,
+                event_id,
+                format!("numeric input {field_path}={value} is below min {min}"),
+                field_path.to_string(),
+            ));
+        }
+    }
+    if let Some(max) = spec.validation.max {
+        if value > max {
+            return Err(instrument_failed(
+                spec,
+                event_id,
+                format!("numeric input {field_path}={value} exceeds max {max}"),
+                field_path.to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_value(value: f64, normalization: &Normalization) -> DynamicJepaResult<f64> {
+    match normalization {
+        Normalization::None => Ok(value),
+        Normalization::StandardScore { mean, std } => {
+            if *std <= 0.0 || !std.is_finite() {
+                return Err(DynamicJepaError::validation(
+                    "instrument.normalization.std",
+                    format!("std must be finite and > 0, got {std}"),
+                    "fix the registered domain pack normalization",
+                ));
+            }
+            Ok((value - *mean) / *std)
+        }
+    }
+}
+
+fn compound_onehot_index(
+    dim: usize,
+    inputs: &[(String, FieldValue)],
+    spec: &InstrumentSpec,
+    event_id: EventId,
+) -> DynamicJepaResult<usize> {
+    if inputs.len() == 1 {
+        let value = numeric_field_value(&inputs[0].1).ok_or_else(|| {
+            instrument_failed(
+                spec,
+                event_id,
+                format!("onehot input {} is not numeric", inputs[0].0),
+                inputs[0].0.clone(),
+            )
+        })?;
+        let idx = value as i64;
+        if idx < 0 || idx as usize >= dim || (idx as f64 - value).abs() > f64::EPSILON {
+            return Err(instrument_failed(
+                spec,
+                event_id,
+                format!("onehot index {value} is outside 0..{}", dim - 1),
+                inputs[0].0.clone(),
+            ));
+        }
+        return Ok(idx as usize);
+    }
+    if inputs.len() == 2 {
+        let side = (dim as f64).sqrt() as usize;
+        if side * side != dim {
+            return Err(instrument_failed(
+                spec,
+                event_id,
+                format!("compound two-field onehot dim {dim} is not a square"),
+                spec.input_fields.join(","),
+            ));
+        }
+        let x = numeric_field_value(&inputs[0].1).ok_or_else(|| {
+            instrument_failed(
+                spec,
+                event_id,
+                format!("onehot input {} is not numeric", inputs[0].0),
+                inputs[0].0.clone(),
+            )
+        })? as i64;
+        let y = numeric_field_value(&inputs[1].1).ok_or_else(|| {
+            instrument_failed(
+                spec,
+                event_id,
+                format!("onehot input {} is not numeric", inputs[1].0),
+                inputs[1].0.clone(),
+            )
+        })? as i64;
+        if x < 0 || y < 0 || x as usize >= side || y as usize >= side {
+            return Err(instrument_failed(
+                spec,
+                event_id,
+                format!(
+                    "compound onehot coordinate ({x},{y}) is outside 0..{}",
+                    side - 1
+                ),
+                spec.input_fields.join(","),
+            ));
+        }
+        return Ok(x as usize * side + y as usize);
+    }
+    Err(instrument_failed(
+        spec,
+        event_id,
+        format!(
+            "onehot instrument supports one index input or two coordinate inputs, got {}",
+            inputs.len()
+        ),
+        spec.input_fields.join(","),
+    ))
+}
+
+fn onehot(dim: usize, idx: usize) -> DynamicJepaResult<Vec<f32>> {
+    if idx >= dim {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: "onehot".to_string(),
+            expected: vec![dim],
+            actual: vec![idx + 1],
+        });
+    }
+    let mut values = vec![0.0f32; dim];
+    values[idx] = 1.0;
+    Ok(values)
+}
+
+fn instrument_failed(
+    spec: &InstrumentSpec,
+    event_id: EventId,
+    message: impl Into<String>,
+    field_path: impl Into<String>,
+) -> DynamicJepaError {
+    DynamicJepaError::InstrumentFailed {
+        instrument_id: spec.instrument_id.to_string(),
+        event_id: event_id.0,
+        message: message.into(),
+        field_path: field_path.into(),
+    }
+}
+
+fn panel_slot_for_spec(spec: &InstrumentSpec) -> DynamicJepaResult<PanelSlot> {
+    let first = spec.input_fields.first().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "InstrumentSpec.input_fields",
+            "instrument must have at least one input field",
+            "fix the registered domain pack instrument spec",
+        )
+    })?;
+    let kind = if first.starts_with("state.") {
+        PanelSlotKind::State
+    } else if first.starts_with("action.") {
+        PanelSlotKind::Action
+    } else if first.starts_with("outcome.") {
+        PanelSlotKind::Outcome
+    } else if first.starts_with("time.") {
+        PanelSlotKind::Time
+    } else {
+        return Err(DynamicJepaError::validation(
+            "InstrumentSpec.input_fields",
+            format!("unsupported panel slot input prefix in {first:?}"),
+            "use state/action/outcome/time input fields for Phase 4 panels",
+        ));
+    };
+    Ok(PanelSlot {
+        instrument_id: spec.instrument_id.clone(),
+        dim: spec.output_shape.iter().product(),
+        kind,
+    })
+}
+
+fn instrument_hash(spec: &InstrumentSpec) -> [u8; 16] {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(spec.instrument_id.as_str().as_bytes());
+    bytes.push(0);
+    bytes.push(spec.version);
+    bytes.push(0);
+    bytes.extend_from_slice(format!("{:?}", spec.output_shape).as_bytes());
+    context_graph_storage::dynamicjepa::keys::blake3_128(&bytes)
+}
+
+fn panel_hash(
+    domain_pack: &DomainPack,
+    reading_ids: &[Uuid],
+    slots: &[PanelSlot],
+    vectors: &[Vec<f32>],
+) -> DynamicJepaResult<[u8; 32]> {
+    let mut sorted_reading_ids = reading_ids.iter().map(Uuid::to_string).collect::<Vec<_>>();
+    sorted_reading_ids.sort();
+    let bytes = serde_json::to_vec(&json!({
+        "domain_pack_id": domain_pack.id.to_string(),
+        "reading_ids": sorted_reading_ids,
+        "ordered_slots": slots,
+        "slot_vectors": vectors,
+    }))
+    .map_err(|err| {
+        DynamicJepaError::validation(
+            "panel_hash",
+            format!("failed to serialize panel hash payload: {err}"),
+            "panel hash payload must remain JSON serializable",
+        )
+    })?;
+    Ok(sha256(&bytes))
+}
+
+fn panel_for_transition(
+    db: &rocksdb::DB,
+    transition: &StateTransition,
+) -> DynamicJepaResult<Option<LatentPanel>> {
+    Ok(list_latent_panels(db, 1_000_000, 0)?
+        .into_iter()
+        .find(|panel| {
+            panel.state_id == transition.prior_state
+                && panel.action_id == transition.action
+                && panel.outcome_id == Some(transition.outcome)
+        }))
+}
+
+fn phase4_ingest_decoded_records(db: &rocksdb::DB) -> DynamicJepaResult<Value> {
+    Ok(json!({
+        CF_DJ_RAW_EVENTS: inspect_cf(db, CF_DJ_RAW_EVENTS, 20, 0)?,
+        CF_DJ_ADAPTER_RUNS: inspect_cf(db, CF_DJ_ADAPTER_RUNS, 20, 0)?,
+        CF_DJ_NORMALIZED_STATES: inspect_cf(db, CF_DJ_NORMALIZED_STATES, 20, 0)?,
+        CF_DJ_ACTIONS: inspect_cf(db, CF_DJ_ACTIONS, 20, 0)?,
+        CF_DJ_OUTCOMES: inspect_cf(db, CF_DJ_OUTCOMES, 20, 0)?,
+        CF_DJ_TRANSITIONS: inspect_cf(db, CF_DJ_TRANSITIONS, 20, 0)?,
+        CF_DJ_AUDIT_LOG: inspect_cf(db, CF_DJ_AUDIT_LOG, 40, 0)?,
+    }))
+}
+
+fn phase4_panel_decoded_records(db: &rocksdb::DB) -> DynamicJepaResult<Value> {
+    Ok(json!({
+        CF_DJ_INSTRUMENT_READINGS: inspect_cf(db, CF_DJ_INSTRUMENT_READINGS, 40, 0)?,
+        CF_DJ_LATENT_PANELS: inspect_cf(db, CF_DJ_LATENT_PANELS, 40, 0)?,
+        CF_DJ_AUDIT_LOG: inspect_cf(db, CF_DJ_AUDIT_LOG, 80, 0)?,
+    }))
+}
+
+fn enrich_phase4_error_value(
+    value: &mut Value,
+    before_counts: &BTreeMap<String, u64>,
+    after_counts: &BTreeMap<String, u64>,
+    created_ids: Value,
+    decoded_records: Value,
+) -> DynamicJepaResult<()> {
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "count_delta".to_string(),
+            json!(count_delta(before_counts, after_counts)?),
+        );
+        object.insert("created_ids".to_string(), created_ids);
+        object.insert("decoded_records".to_string(), decoded_records);
+    }
+    Ok(())
+}
+
+fn build_audit(
+    operation: impl Into<String>,
+    status: AuditStatus,
+    input_ids: Vec<String>,
+    output_ids: Vec<String>,
+    cfs_touched: Vec<String>,
+    content_hashes: Vec<[u8; 32]>,
+) -> DynamicJepaResult<DjAuditRecord> {
+    let timestamp_unix_nanos = now_unix_ms()? as u64 * 1_000_000;
+    let record = DjAuditRecord {
+        audit_id: Uuid::new_v4(),
+        timestamp_unix_nanos,
+        operation: operation.into(),
+        actor: "cli".to_string(),
+        input_ids,
+        output_ids,
+        cfs_touched,
+        content_hashes,
+        status,
+        verification_run_id: None,
+    };
+    record.validate()?;
+    Ok(record)
+}
+
+fn parse_uuid(value: &str, field: &str) -> DynamicJepaResult<Uuid> {
+    Uuid::parse_str(value).map_err(|err| {
+        DynamicJepaError::validation(
+            field,
+            format!("invalid UUID {value:?}: {err}"),
+            "pass an id returned by a prior DynamicJEPA command or decoded source-of-truth row",
+        )
+    })
+}
+
+fn parse_event_id(value: &str, field: &str) -> DynamicJepaResult<EventId> {
+    Ok(EventId(parse_uuid(value, field)?))
+}
+
+fn parse_state_id(value: &str, field: &str) -> DynamicJepaResult<StateId> {
+    Ok(StateId(parse_uuid(value, field)?))
+}
+
+fn parse_action_id(value: &str, field: &str) -> DynamicJepaResult<ActionId> {
+    Ok(ActionId(parse_uuid(value, field)?))
+}
+
+fn parse_outcome_id(value: &str, field: &str) -> DynamicJepaResult<OutcomeId> {
+    Ok(OutcomeId(parse_uuid(value, field)?))
+}
+
+fn parse_transition_id(value: &str, field: &str) -> DynamicJepaResult<TransitionId> {
+    Ok(TransitionId(parse_uuid(value, field)?))
+}
+
+fn parse_panel_id(value: &str, field: &str) -> DynamicJepaResult<PanelId> {
+    Ok(PanelId(parse_uuid(value, field)?))
 }
 
 fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
@@ -949,6 +3268,26 @@ fn error_value(
         DynamicJepaError::SourceOfTruthMissing { cf, key } => {
             object.insert("cf".to_string(), json!(cf));
             object.insert("key_hex".to_string(), json!(hex_bytes(key)));
+        }
+        DynamicJepaError::AdapterFailed {
+            adapter_id,
+            event_id,
+            field_path,
+            ..
+        } => {
+            object.insert("adapter_id".to_string(), json!(adapter_id));
+            object.insert("event_id".to_string(), json!(event_id.to_string()));
+            object.insert("field_path".to_string(), json!(field_path));
+        }
+        DynamicJepaError::InstrumentFailed {
+            instrument_id,
+            event_id,
+            field_path,
+            ..
+        } => {
+            object.insert("instrument_id".to_string(), json!(instrument_id));
+            object.insert("event_id".to_string(), json!(event_id.to_string()));
+            object.insert("field_path".to_string(), json!(field_path));
         }
         DynamicJepaError::DomainPackVersionMismatch {
             id,
