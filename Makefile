@@ -21,7 +21,7 @@
 UV ?= uv
 CLIPCANNON_DIR ?= clipcannon
 PYTHON_DEV_EXTRA ?= --extra dev
-PYTHON_SMOKE_TESTS ?= tests/test_music_planner.py tests/test_audio_generation.py tests/test_change_classifier.py
+PYTHON_SMOKE_TESTS ?= tests/test_music_planner.py tests/test_audio_generation.py tests/test_change_classifier.py tests/voiceagent/test_config.py tests/voiceagent/test_chunker.py
 
 build: build-rust build-python
 

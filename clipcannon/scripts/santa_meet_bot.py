@@ -280,9 +280,10 @@ def log_gpu_state(label: str = "") -> None:
 _whisper_model = None
 _tts_adapter = None
 _ocr_client = None
+_xvfb = None
 
 
-def get_whisper():
+def get_whisper() -> object:
     """Get or load the Whisper model (singleton)."""
     global _whisper_model
     if _whisper_model is None:
@@ -298,7 +299,7 @@ def get_whisper():
     return _whisper_model
 
 
-def get_tts():
+def get_tts() -> object:
     """Get or load the TTS adapter (singleton)."""
     global _tts_adapter
     if _tts_adapter is None:
@@ -345,7 +346,7 @@ def release_models() -> None:
 # ---------------------------------------------------------------------------
 # OCR Provenance client
 # ---------------------------------------------------------------------------
-async def get_ocr_client():
+async def get_ocr_client() -> object | None:
     """Get or create the OCR Provenance client."""
     global _ocr_client
     if _ocr_client is None:
@@ -567,8 +568,9 @@ def _load_identity_embeddings() -> None:
 # ---------------------------------------------------------------------------
 # Browser launch
 # ---------------------------------------------------------------------------
-async def launch_browser():
+async def launch_browser() -> tuple[object | None, object | None, object | None]:
     """Launch Playwright browser and join the meeting."""
+    global _xvfb
     if not MEET_URL:
         logger.error("No meeting URL provided. Usage: python santa_meet_bot.py <URL>")
         return None, None, None
@@ -677,7 +679,8 @@ async def launch_browser():
                 const realSettings=realTrack.getSettings();
                 const realCaps=realTrack.getCapabilities?realTrack.getCapabilities():{};
                 const W=realSettings.width||1280, H=realSettings.height||720;
-                console.log('[AvatarCam] Real track:',realTrack.label,W+'x'+H,JSON.stringify(realSettings));
+                const settingsJson=JSON.stringify(realSettings);
+                console.log('[AvatarCam] Real track:',realTrack.label,W+'x'+H,settingsJson);
 
                 // Step 2: Canvas for rendering our frames
                 const oc=new OffscreenCanvas(W,H);
@@ -685,7 +688,8 @@ async def launch_browser():
 
                 // Step 3: Try Insertable Streams approach
                 let outTrack;
-                if(typeof MediaStreamTrackProcessor!=='undefined'&&typeof MediaStreamTrackGenerator!=='undefined'){
+                if(typeof MediaStreamTrackProcessor!=='undefined'
+                   &&typeof MediaStreamTrackGenerator!=='undefined'){
                     console.log('[AvatarCam] Using Insertable Streams (Processor→Generator)');
                     const proc=new MediaStreamTrackProcessor({track:realTrack});
                     const gen=new MediaStreamTrackGenerator({kind:'video'});
@@ -884,7 +888,7 @@ async def launch_browser():
 # ---------------------------------------------------------------------------
 # Audio capture + Reasoning Controller loop
 # ---------------------------------------------------------------------------
-async def audio_loop(page, stop) -> None:
+async def audio_loop(page: object, stop: asyncio.Event) -> None:
     """Continuous listening loop driven by the Reasoning Controller.
 
     The controller observes all speech, reasons about what to do,
@@ -926,12 +930,12 @@ async def audio_loop(page, stop) -> None:
     # --- Avatar rendering driven by controller commands ---
     _last_avatar_cmd = None
 
-    def handle_avatar_command(cmd) -> None:
+    def handle_avatar_command(cmd: object) -> None:
         """Receive command from reasoning controller — queue for rendering."""
         nonlocal _last_avatar_cmd
         _last_avatar_cmd = cmd
 
-    def handle_expression(intent: ActionIntent, awareness) -> None:
+    def handle_expression(intent: ActionIntent, awareness: object) -> None:
         if intent in (
             ActionIntent.RESPOND,
             ActionIntent.INTERJECT,
@@ -951,7 +955,7 @@ async def audio_loop(page, stop) -> None:
         import base64
         import math
 
-        FPS = 15  # 15fps JPEG updates, generator runs at 30fps
+        fps = 15  # 15fps JPEG updates, generator runs at 30fps
         frame_count = 0
 
         # Try loading the trained Gaussian renderer (real 3D video generation)
@@ -978,12 +982,12 @@ async def audio_loop(page, stop) -> None:
             "Video render: %s + %s at %dfps -> Insertable Streams",
             "Gaussian 3D" if use_gaussian else "FaceWarper 2D",
             "PhysicsFace" if has_physics else "manual blend",
-            FPS,
+            fps,
         )
 
         while not stop.is_set():
             frame_count += 1
-            t = frame_count / FPS
+            t = frame_count / fps
             cmd = _last_avatar_cmd
 
             # Build expression from PhysicsFaceEngine or controller commands
@@ -1055,7 +1059,7 @@ async def audio_loop(page, stop) -> None:
             with contextlib.suppress(Exception):
                 await page.evaluate("b64 => { window.__santaJpegB64 = b64; }", jpg_b64)
 
-            if frame_count % (FPS * 10) == 1:
+            if frame_count % (fps * 10) == 1:
                 logger.info(
                     "Video frame #%d (%dKB JPEG, jaw=%.2f)",
                     frame_count,
@@ -1063,7 +1067,7 @@ async def audio_loop(page, stop) -> None:
                     jaw_open,
                 )
 
-            await asyncio.sleep(1.0 / FPS)
+            await asyncio.sleep(1.0 / fps)
 
     # --- Create the reasoning controller ---
     controller = ReasoningController(
@@ -1092,8 +1096,8 @@ async def audio_loop(page, stop) -> None:
 
     buf = bytearray()
     window_start = time.time()
-    WINDOW_S = 2.0  # Transcribe every 2 seconds
-    MAX_BUF_BYTES = SAMPLE_RATE * 2 * 8
+    window_s = 2.0  # Transcribe every 2 seconds
+    max_buf_bytes = SAMPLE_RATE * 2 * 8
 
     while not stop.is_set():
         try:
@@ -1114,12 +1118,12 @@ async def audio_loop(page, stop) -> None:
 
         if chunk:
             buf.extend(chunk)
-            if len(buf) > MAX_BUF_BYTES:
-                buf = buf[-MAX_BUF_BYTES:]
+            if len(buf) > max_buf_bytes:
+                buf = buf[-max_buf_bytes:]
 
         # Transcribe on window boundary
         elapsed = time.time() - window_start
-        if elapsed >= WINDOW_S and len(buf) > MIN_SPEECH_BYTES:
+        if elapsed >= window_s and len(buf) > MIN_SPEECH_BYTES:
             window_start = time.time()
 
             # Normalize quiet PulseAudio audio
@@ -1167,7 +1171,21 @@ async def audio_loop(page, stop) -> None:
     await ingest_transcript(_transcript_segments, meeting_id)
 
 
-async def process(buf, history, page, meeting_id) -> None:
+def _is_addressed(text: str) -> bool:
+    """Return whether participant speech appears directed at the Santa clone."""
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in ("santa", "santa claus", "father christmas", "hey, santa", "hey santa")
+    )
+
+
+async def process(
+    buf: bytearray,
+    history: list[dict[str, str]],
+    page: object,
+    meeting_id: str,
+) -> None:
     """Process speech buffer: transcribe -> search -> respond -> speak.
 
     Catches all errors so the bot continues running even if one
@@ -1238,7 +1256,7 @@ async def process(buf, history, page, meeting_id) -> None:
         log_gpu_state("post-cycle")
 
 
-async def transcribe(audio):
+async def transcribe(audio: np.ndarray) -> str:
     """Transcribe audio using the singleton Whisper model."""
     model = get_whisper()
     # Disable Whisper's internal VAD — it filters out PulseAudio TCP's quiet audio.
@@ -1247,7 +1265,7 @@ async def transcribe(audio):
     return " ".join(s.text.strip() for s in segs).strip()
 
 
-async def respond(text, history):
+async def respond(text: str, history: list[dict[str, str]]) -> str:
     """Generate response using Ollama with fast turnaround."""
     import httpx
 
@@ -1335,7 +1353,7 @@ async def respond(text, history):
 # No post-join track replacement needed
 
 
-async def speak(page, text) -> None:
+async def speak(page: object, text: str) -> None:
     """Synthesize speech with prosody-matched refs, laugh clips, and inject to meeting."""
     global _laugh_idx
     import base64

@@ -191,7 +191,10 @@ def main():
         frame_paths = [line.strip() for line in f if line.strip()]
 
     total_frames = len(frame_paths)
-    print(f"[siglip-worker] {total_frames} frames, batch_size={batch_size}, device={device}", file=sys.stderr)
+    print(
+        f"[siglip-worker] {total_frames} frames, batch_size={batch_size}, device={device}",
+        file=sys.stderr,
+    )
 
     import torch
     from transformers import AutoModel, AutoProcessor
@@ -209,11 +212,17 @@ def main():
             model_id,
             torch_dtype=torch.float16,
         ).to(device)
-        print(f"[siglip-worker] Model loaded FP16 on {device} in {time.monotonic()-t0:.1f}s", file=sys.stderr)
+        print(
+            f"[siglip-worker] Model loaded FP16 on {device} in {time.monotonic()-t0:.1f}s",
+            file=sys.stderr,
+        )
     else:
         model = AutoModel.from_pretrained(model_id)
         device = "cpu"
-        print(f"[siglip-worker] Model loaded FP32 on CPU in {time.monotonic()-t0:.1f}s", file=sys.stderr)
+        print(
+            f"[siglip-worker] Model loaded FP32 on CPU in {time.monotonic()-t0:.1f}s",
+            file=sys.stderr,
+        )
 
     model.eval()
 
@@ -252,11 +261,16 @@ def main():
         all_embeddings.extend(embeddings.cpu().tolist())
 
         print(
-            f"[siglip-worker] Batch {batch_idx+1}/{total_batches} done ({len(all_embeddings)}/{total_frames} frames)",
+            f"[siglip-worker] Batch {batch_idx+1}/{total_batches} done "
+            f"({len(all_embeddings)}/{total_frames} frames)",
             file=sys.stderr,
         )
 
-    print(f"[siglip-worker] Complete: {len(all_embeddings)} embeddings in {time.monotonic()-t0:.1f}s", file=sys.stderr)
+    print(
+        f"[siglip-worker] Complete: {len(all_embeddings)} embeddings "
+        f"in {time.monotonic()-t0:.1f}s",
+        file=sys.stderr,
+    )
 
     # Output embeddings as JSON to stdout
     json.dump(all_embeddings, sys.stdout)
@@ -266,17 +280,17 @@ if __name__ == "__main__":
 """
 
     # Write frame paths to a temp file to avoid command-line length limits
-    tmp_frame_list = None
+    tmp_frame_list_path = None
     try:
-        tmp_frame_list = tempfile.NamedTemporaryFile(
+        with tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".txt",
             prefix="siglip_frames_",
             delete=False,
-        )
-        for fp in frame_paths:
-            tmp_frame_list.write(f"{fp}\n")
-        tmp_frame_list.close()
+        ) as tmp_frame_list:
+            tmp_frame_list_path = tmp_frame_list.name
+            for fp in frame_paths:
+                tmp_frame_list.write(f"{fp}\n")
 
         # Build environment for subprocess
         env = os.environ.copy()
@@ -296,7 +310,7 @@ if __name__ == "__main__":
                 "python3",
                 "-c",
                 worker_script,
-                tmp_frame_list.name,
+                tmp_frame_list_path,
                 device,
                 str(subprocess_batch_size),
                 SIGLIP_MODEL_ID,
@@ -333,9 +347,9 @@ if __name__ == "__main__":
 
     finally:
         # Clean up temp file
-        if tmp_frame_list is not None:
+        if tmp_frame_list_path is not None:
             with contextlib.suppress(OSError):
-                os.unlink(tmp_frame_list.name)
+                os.unlink(tmp_frame_list_path)
 
 
 def _detect_scenes(

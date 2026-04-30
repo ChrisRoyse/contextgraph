@@ -242,7 +242,8 @@ async def run_source_separation(
             subprocess_reason = f"subprocess exit 0 but output dir {demucs_result_dir} missing"
             success = False
     else:
-        subprocess_reason = f"rc={rc}; stderr tail:\n{subprocess_stderr[-1500:] if subprocess_stderr else '(empty)'}"
+        stderr_tail = subprocess_stderr[-1500:] if subprocess_stderr else "(empty)"
+        subprocess_reason = f"rc={rc}; stderr tail:\n{stderr_tail}"
         logger.error(
             "demucs subprocess failed (rc=%d); stderr tail:\n%s",
             rc,

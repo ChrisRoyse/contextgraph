@@ -225,7 +225,7 @@ ALL_VISEMES = [
 ]
 
 
-def load_cmu_dict():
+def load_cmu_dict() -> dict:
     """Load CMU pronunciation dictionary."""
     import nltk
     from nltk.corpus import cmudict
@@ -272,7 +272,7 @@ def build_frame_viseme_sequence(visemes: list, clip_start_ms: int, n_frames: int
     return sequence
 
 
-def load_precomputed_landmarks():
+def load_precomputed_landmarks() -> dict:
     """Load the precomputed face landmarks file.
 
     This is the single source of truth for face positions and mouth bboxes.
@@ -302,7 +302,7 @@ def load_precomputed_landmarks():
     }
 
 
-def get_landmarks_for_frame(landmarks: dict, ms: int):
+def get_landmarks_for_frame(landmarks: dict, ms: int) -> dict:
     """Look up the nearest landmark entry for a given timestamp (ms).
 
     Uses simple nearest-neighbor matching on the timestamp array.
@@ -425,7 +425,7 @@ def is_in_long_silence(center_ms: int, silence_gaps: list) -> bool:
     return False
 
 
-def build_labels():
+def build_labels() -> dict:
     """Main pipeline: create labeled clips from ClipCannon data."""
     log.info("=" * 70)
     log.info("  TELEOLOGICAL CONSTELLATION LABELING PIPELINE")
@@ -590,12 +590,12 @@ def build_labels():
 
     # Category breakdown
     by_category = {}
-    for l in labels:
-        by_category[l.clip_category] = by_category.get(l.clip_category, 0) + 1
+    for label in labels:
+        by_category[label.clip_category] = by_category.get(label.clip_category, 0) + 1
     log.info("Categories: %s", by_category)
 
     # Viseme diversity
-    diversity = [len(set(l.viseme_sequence)) for l in labels]
+    diversity = [len(set(label.viseme_sequence)) for label in labels]
     log.info(
         "Viseme diversity per clip: mean=%.1f max=%d",
         float(np.mean(diversity)),
@@ -603,7 +603,7 @@ def build_labels():
     )
 
     # Quality stats
-    scores = [l.mean_face_score for l in labels]
+    scores = [label.mean_face_score for label in labels]
     log.info(
         "Mean face score across clips: %.2f-%.2f (avg %.2f)",
         float(np.min(scores)),
@@ -619,7 +619,7 @@ def build_labels():
         "clip_duration_ms": CLIP_DURATION_MS,
         "target_fps": TARGET_FPS,
         "viseme_categories": ALL_VISEMES,
-        "clips": [asdict(l) for l in labels],
+        "clips": [asdict(label) for label in labels],
     }
 
     OUTPUT_LABELS.write_text(json.dumps(labels_dict, indent=2), encoding="utf-8")

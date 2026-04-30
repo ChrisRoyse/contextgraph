@@ -41,7 +41,7 @@ MARGIN_MS = 500  # Interviewer filtering margin
 # ============================================================
 
 
-def decode_validity(blob, chunk_size=1024):
+def decode_validity(blob: bytes, chunk_size: int = 1024) -> np.ndarray:
     """Decode sqlite-vec validity bitmap (LSB-first bit ordering)."""
     raw = np.frombuffer(blob, dtype=np.uint8)
     bits = np.zeros(chunk_size, dtype=np.uint8)
@@ -50,7 +50,12 @@ def decode_validity(blob, chunk_size=1024):
     return bits
 
 
-def extract_vec_table(conn, table_name, dim, ts_chunk_index=None):
+def extract_vec_table(
+    conn: sqlite3.Connection,
+    table_name: str,
+    dim: int,
+    ts_chunk_index: int | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
     """Extract vectors and timestamps from a sqlite-vec virtual table's backing stores.
 
     Args:
@@ -100,7 +105,7 @@ def extract_vec_table(conn, table_name, dim, ts_chunk_index=None):
 # ============================================================
 # Step 1: Extract DB embeddings
 # ============================================================
-def extract_db_embeddings():
+def extract_db_embeddings() -> dict[str, object]:
     """Extract all vector embeddings from the database."""
     conn = sqlite3.connect(DB_PATH)
 
@@ -190,7 +195,7 @@ def extract_db_embeddings():
 # ============================================================
 # Step 2: Compute sentence embeddings (MiniLM)
 # ============================================================
-def compute_sentence_embeddings(texts):
+def compute_sentence_embeddings(texts: list[str]) -> np.ndarray:
     """Compute sentence embeddings using all-MiniLM-L6-v2."""
     print("[6/8] Computing sent_emb (MiniLM 384d) from transcript texts...")
 
@@ -211,7 +216,7 @@ def compute_sentence_embeddings(texts):
 # ============================================================
 # Step 3: Compute ECAPA voice embeddings per prosody segment
 # ============================================================
-def compute_voice_embeddings(pro_segments):
+def compute_voice_embeddings(pro_segments: list[tuple[int, int]]) -> np.ndarray:
     """Compute ECAPA-TDNN speaker embeddings per prosody segment from vocals.wav."""
     print("[7/8] Computing voice_emb (ECAPA 192d) from audio per prosody segment...")
 
@@ -268,7 +273,7 @@ def compute_voice_embeddings(pro_segments):
 # ============================================================
 # Step 4: Load FLAME expression params
 # ============================================================
-def load_flame_params():
+def load_flame_params() -> tuple[np.ndarray, np.ndarray]:
     """Load FLAME expression parameters."""
     print("[8/8] Loading flame_exp (100d) from flame_params.npz...")
     flame = np.load(FLAME_PATH)
@@ -281,7 +286,7 @@ def load_flame_params():
 # ============================================================
 # Step 5: Interviewer filtering via speaker clustering
 # ============================================================
-def build_santa_mask(spk_emb, spk_ts):
+def build_santa_mask(spk_emb: np.ndarray, spk_ts: np.ndarray) -> list[tuple[int, int]]:
     """Cluster WavLM speaker embeddings into 2 speakers via k-means.
     Identify Santa as the dominant speaker (more segments = more speaking time).
     Return a list of (start_ms, end_ms) intervals for Santa's speech.
@@ -337,7 +342,11 @@ def build_santa_mask(spk_emb, spk_ts):
     return merged
 
 
-def filter_by_santa_intervals(data, ts, intervals):
+def filter_by_santa_intervals(
+    data: np.ndarray,
+    ts: np.ndarray,
+    intervals: list[tuple[int, int]],
+) -> tuple[np.ndarray, np.ndarray]:
     """Filter embeddings/data to only keep timestamps within Santa's intervals."""
     mask = np.zeros(len(ts), dtype=bool)
     for start, end in intervals:
@@ -345,7 +354,11 @@ def filter_by_santa_intervals(data, ts, intervals):
     return data[mask], ts[mask]
 
 
-def filter_flame_by_santa_intervals(flame_exp, flame_ts_float, intervals):
+def filter_flame_by_santa_intervals(
+    flame_exp: np.ndarray,
+    flame_ts_float: np.ndarray,
+    intervals: list[tuple[int, int]],
+) -> tuple[np.ndarray, np.ndarray]:
     """Filter FLAME params (float timestamps in seconds) by Santa intervals."""
     flame_ts_ms = (flame_ts_float * 1000).astype(np.int64)
     mask = np.zeros(len(flame_ts_ms), dtype=bool)

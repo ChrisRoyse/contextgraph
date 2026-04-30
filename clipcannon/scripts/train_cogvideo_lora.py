@@ -104,7 +104,7 @@ class SantaVideoDataset(Dataset):
     def __len__(self) -> int:
         return len(self.clip_dirs)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict[str, object]:
         clip_dir = self.clip_dirs[idx]
         frames = sorted(clip_dir.glob("*.jpg"))[: self.num_frames]
 

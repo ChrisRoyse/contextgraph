@@ -67,7 +67,10 @@ from peft import LoraConfig, get_peft_model
 #  Paths
 # ============================================================
 MODEL_PATH = "/home/cabdru/echomimic_v3/pretrained_weights/Wan2.1-Fun-V1.1-1.3B-InP"
-TRANSFORMER_PATH = "/home/cabdru/echomimic_v3/pretrained_weights/echomimicv3-flash-pro/diffusion_pytorch_model.safetensors"
+TRANSFORMER_PATH = (
+    "/home/cabdru/echomimic_v3/pretrained_weights/echomimicv3-flash-pro/"
+    "diffusion_pytorch_model.safetensors"
+)
 WAV2VEC_DIR = "/home/cabdru/echomimic_v3/pretrained_weights/chinese-wav2vec2-base"
 CONFIG_PATH = "/home/cabdru/echomimic_v3/config/config.yaml"
 
@@ -210,7 +213,7 @@ def extract_clip_frames_ffmpeg(
 # ============================================================
 
 
-def loudness_norm(audio, sr, target=-23.0):
+def loudness_norm(audio: np.ndarray, sr: int, target: float = -23.0) -> np.ndarray:
     import pyloudnorm as pyln
 
     meter = pyln.Meter(sr)
@@ -221,7 +224,12 @@ def loudness_norm(audio, sr, target=-23.0):
 
 
 def extract_audio_features(
-    vocals_path: Path, start_ms: int, wav2vec_model, feature_extractor, video_length: int, device
+    vocals_path: Path,
+    start_ms: int,
+    wav2vec_model: object,
+    feature_extractor: object,
+    video_length: int,
+    device: torch.device,
 ) -> torch.Tensor:
     """Extract Wav2Vec features for a clip."""
     start_s = start_ms / 1000.0
@@ -277,7 +285,7 @@ def compute_latent_mouth_mask(
     if n_frames == 0:
         return mask
 
-    def src_to_latent(bb_src):
+    def src_to_latent(bb_src: list[float]) -> tuple[int, int, int, int]:
         x1 = bb_src[0] * scale - x_off
         y1 = bb_src[1] * scale - y_off
         x2 = bb_src[2] * scale - x_off
@@ -298,11 +306,8 @@ def compute_latent_mouth_mask(
     # latent[k] for k>=1 comes from pixel frames [4k-3 : 4k+1]. We sample
     # the middle of each latent time step's pixel range.
     for t in range(latent_t):
-        if t == 0:
-            pix_idx = 0
-        else:
-            # pixel range [4t-3, 4t+1], take middle = 4t-1
-            pix_idx = min(n_frames - 1, max(0, 4 * t - 1))
+        # pixel range [4t-3, 4t+1], take middle = 4t-1
+        pix_idx = 0 if t == 0 else min(n_frames - 1, max(0, 4 * t - 1))
 
         fx1, fy1, fx2, fy2 = src_to_latent(face_bboxes[pix_idx])
         mx1, my1, mx2, my2 = src_to_latent(mouth_bboxes[pix_idx])
@@ -562,11 +567,13 @@ class VisemeWeightedDataset(Dataset):
     def __len__(self) -> int:
         return len(self.files)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> object:
         return torch.load(self.files[idx], weights_only=False, map_location="cpu")
 
 
-def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500) -> None:
+def train_lipsync(
+    steps: int = 3000, rank: int = 128, lr: float = 1e-4, save_every: int = 500
+) -> None:
     """Train lipsync LoRA with all fixes applied."""
     preflight_check()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -649,8 +656,8 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500) -> None:
     mouth_loss_accum = 0.0
     t0 = time.time()
 
-    for sample in loader:
-        if step >= steps:
+    for step, sample in enumerate(loader, start=1):
+        if step > steps:
             break
 
         latent = sample["latent"].to(device, dtype=torch.bfloat16)
@@ -710,7 +717,7 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500) -> None:
         loss_accum += loss.item()
         mouth_loss_accum += mouth_only_loss.item()
 
-        if (step + 1) % 2 == 0:
+        if step % 2 == 0:
             torch.nn.utils.clip_grad_norm_(
                 [p for p in transformer.parameters() if p.requires_grad], 1.0
             )
@@ -718,7 +725,6 @@ def train_lipsync(steps=3000, rank=128, lr=1e-4, save_every=500) -> None:
             lr_sched.step()
             optimizer.zero_grad()
 
-        step += 1
         if step % 25 == 0:
             avg = loss_accum / 25 * 2
             mouth_avg = mouth_loss_accum / 25

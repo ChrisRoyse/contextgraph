@@ -81,27 +81,26 @@ _KW: list[tuple[list[str], list[str], tuple[int, int], str, str]] = [
 
 def _default_sections(energy: str) -> list[MidiSection]:
     """Generate default sections based on energy level."""
-    S = MidiSection
     if energy == "low":
         return [
-            S("intro", 4, (30, 50)),
-            S("verse", 8, (40, 65)),
-            S("chorus", 8, (50, 70)),
-            S("outro", 4, (30, 50)),
+            MidiSection("intro", 4, (30, 50)),
+            MidiSection("verse", 8, (40, 65)),
+            MidiSection("chorus", 8, (50, 70)),
+            MidiSection("outro", 4, (30, 50)),
         ]
     if energy == "high":
         return [
-            S("intro", 4, (50, 75)),
-            S("verse", 8, (65, 90)),
-            S("chorus", 8, (80, 110)),
-            S("bridge", 4, (60, 85)),
-            S("outro", 4, (50, 75)),
+            MidiSection("intro", 4, (50, 75)),
+            MidiSection("verse", 8, (65, 90)),
+            MidiSection("chorus", 8, (80, 110)),
+            MidiSection("bridge", 4, (60, 85)),
+            MidiSection("outro", 4, (50, 75)),
         ]
     return [
-        S("intro", 4, (40, 60)),
-        S("verse", 8, (55, 75)),
-        S("chorus", 8, (65, 85)),
-        S("outro", 4, (40, 60)),
+        MidiSection("intro", 4, (40, 60)),
+        MidiSection("verse", 8, (55, 75)),
+        MidiSection("chorus", 8, (65, 85)),
+        MidiSection("outro", 4, (40, 60)),
     ]
 
 

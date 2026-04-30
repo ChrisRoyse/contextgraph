@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from clipcannon.audio.music_gen import MusicResult
+
 logger = logging.getLogger(__name__)
 
 _MUSICGEN_SR = 32000  # MusicGen native sample rate
@@ -191,15 +193,15 @@ async def generate_music_musicgen(
 
     try:
         from audiocraft.models import MusicGen  # type: ignore[import-untyped]
-    except ImportError:
+    except ImportError as exc:
         logger.error("audiocraft not installed. Install with: pip install audiocraft")
-        raise ImportError("audiocraft not installed. Install with: pip install audiocraft")
+        raise ImportError("audiocraft not installed. Install with: pip install audiocraft") from exc
 
     try:
         import torch  # type: ignore[import-untyped]
-    except ImportError:
+    except ImportError as exc:
         logger.error("PyTorch not installed. Required for MusicGen.")
-        raise ImportError("PyTorch not installed. Install with: pip install torch")
+        raise ImportError("PyTorch not installed. Install with: pip install torch") from exc
 
     import numpy as np
 

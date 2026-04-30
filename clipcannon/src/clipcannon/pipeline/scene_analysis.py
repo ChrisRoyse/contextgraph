@@ -19,6 +19,7 @@ import json
 import logging
 import sqlite3
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -457,10 +458,8 @@ def _ensure_scene_map_table(db_path: Path) -> None:
             "CREATE INDEX IF NOT EXISTS idx_scene_map_project ON scene_map(project_id, start_ms)"
         )
         # Migrate: add face_size_pct column if missing on existing tables
-        try:
+        with suppress(sqlite3.OperationalError):
             conn.execute("ALTER TABLE scene_map ADD COLUMN face_size_pct REAL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass  # Column already exists
         conn.commit()
     finally:
         conn.close()

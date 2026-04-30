@@ -6,7 +6,6 @@ test files.
 """
 
 import pytest
-import torch
 
 MODEL_PATH = (
     "/home/cabdru/.cache/huggingface/hub/"
@@ -18,6 +17,11 @@ MODEL_PATH = (
 @pytest.fixture(scope="session")
 def check_gpu():
     """Verify CUDA GPU is available. Fails the session early if not."""
+    try:
+        import torch
+    except ImportError:
+        pytest.fail("torch is required for GPU voiceagent tests. Install clipcannon[ml].")
+
     if not torch.cuda.is_available():
         pytest.fail("CUDA GPU required for voiceagent tests.")
 

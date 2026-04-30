@@ -162,11 +162,8 @@ def _aggregate_emotions(
     avg_valence = total_valence / len(rows)
     avg_arousal = total_arousal / len(rows)
 
-    if counts:
-        dominant = max(counts, key=counts.get)  # type: ignore[arg-type]
-    else:
-        # No dominant_emotion column -- classify from valence/arousal
-        dominant = ""  # Will be classified by _classify_mood
+    # Empty means _classify_mood will classify from valence/arousal.
+    dominant = max(counts, key=counts.get) if counts else ""  # type: ignore[arg-type]
 
     return dominant, avg_valence, avg_arousal
 
@@ -269,7 +266,8 @@ def _suggest_tempo(
         if not rows:
             rows = fetch_all(
                 conn,  # type: ignore[arg-type]
-                f"SELECT {bpm_col} AS bpm FROM beat_sections WHERE project_id = ? AND {bpm_col} > 0",
+                f"SELECT {bpm_col} AS bpm FROM beat_sections "
+                f"WHERE project_id = ? AND {bpm_col} > 0",
                 (project_id,),
             )
         if rows:

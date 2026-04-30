@@ -38,7 +38,10 @@ logger = logging.getLogger(__name__)
 
 OPERATION = "narrative_analysis"
 STAGE = "qwen3_8b"
-MODEL_DIR = "/home/cabdru/.clipcannon/models/qwen3-8b-hf/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218"
+MODEL_DIR = (
+    "/home/cabdru/.clipcannon/models/qwen3-8b-hf/models--Qwen--Qwen3-8B/snapshots/"
+    "b968826d9c46dd6066d109eabc6255188de91218"
+)
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS narrative_analysis (
@@ -78,16 +81,32 @@ TRANSCRIPT:
 Analyze and return this exact JSON structure:
 {{
   "story_beats": [
-    {{"start_text": "first few words...", "type": "hook|setup|argument|demo|result|cta", "summary": "one sentence description"}}
+    {{
+      "start_text": "first few words...",
+      "type": "hook|setup|argument|demo|result|cta",
+      "summary": "one sentence description"
+    }}
   ],
   "open_loops": [
-    {{"text": "the promise made", "opened_at": "first few words where promise is made", "closed_at": "first few words where promise is fulfilled or null if not fulfilled"}}
+    {{
+      "text": "the promise made",
+      "opened_at": "first few words where promise is made",
+      "closed_at": "first few words where promise is fulfilled or null if not fulfilled"
+    }}
   ],
   "chapter_boundaries": [
-    {{"transition_text": "words where topic changes", "from_topic": "previous topic", "to_topic": "new topic"}}
+    {{
+      "transition_text": "words where topic changes",
+      "from_topic": "previous topic",
+      "to_topic": "new topic"
+    }}
   ],
   "key_moments": [
-    {{"text": "the key statement", "type": "bold_claim|demonstration|proof|emotional_peak|call_to_action", "why_important": "one sentence"}}
+    {{
+      "text": "the key statement",
+      "type": "bold_claim|demonstration|proof|emotional_peak|call_to_action",
+      "why_important": "one sentence"
+    }}
   ],
   "narrative_summary": "2-3 sentence summary of the video's story arc"
 }}"""
@@ -111,7 +130,10 @@ if json_match:
         result = json.loads(json_match.group())
         print(json.dumps(result))
     except json.JSONDecodeError:
-        print(json.dumps({"error": "Failed to parse JSON from model response", "raw": response[:500]}))
+        print(json.dumps({
+            "error": "Failed to parse JSON from model response",
+            "raw": response[:500],
+        }))
 else:
     print(json.dumps({"error": "No JSON found in model response", "raw": response[:500]}))
 

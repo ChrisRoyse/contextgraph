@@ -409,7 +409,7 @@ class PipelineOrchestrator:
             )
             return result
 
-        except TimeoutError:
+        except TimeoutError as exc:
             elapsed_ms = int((time.monotonic() - start) * 1000)
             error_msg = f"Stage '{stage.name}' timed out after {stage.timeout_s}s"
             logger.error(error_msg)
@@ -427,7 +427,7 @@ class PipelineOrchestrator:
                     error_msg,
                     stage_name=stage.name,
                     operation=stage.operation,
-                )
+                ) from exc
 
             return StageResult(
                 success=False,

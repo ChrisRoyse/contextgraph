@@ -265,7 +265,12 @@ for idx, fp_str in enumerate(frame_list):
             if rh < 0.03: font_size = 'small'
             elif rh < 0.08: font_size = 'medium'
             else: font_size = 'large'
-        entries.append({{'text': text, 'confidence': str(round(conf, 3)), 'region': region, 'font_size': font_size}})
+        entries.append({{
+            'text': text,
+            'confidence': str(round(conf, 3)),
+            'region': region,
+            'font_size': font_size,
+        }})
 
     if curr_texts == prev_texts:
         continue
