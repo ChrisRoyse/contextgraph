@@ -2,7 +2,7 @@
 
 `counter_world` is the Occam's‑razor proof that the entire DynamicJEPA pipeline plumbs end‑to‑end. Three integer transitions, one scalar instrument, deterministic arithmetic, ground truth always equal to `state + action`. A correctly trained tiny JEPA reaches >0.99 cosine on the held‑out transition; a randomly initialized one cannot.
 
-Current Phase 4 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, and materialize into three panels through the real CLI and real RocksDB. Trajectory, dataset, training, prediction, planning, and bundled `verify-counter-world` remain later phases.
+Current Phase 5 status as of 2026-04-30: the checked-in TOML and three-event happy-path JSONL register, ingest, adapt, instrument, materialize into three panels, compile into one ordered trajectory, and support explicit binding through the real CLI and real RocksDB. Dataset, training, prediction, planning, and bundled `verify-counter-world` remain later phases.
 
 ## 1. File Locations
 

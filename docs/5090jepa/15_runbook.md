@@ -46,12 +46,13 @@ sha256sum configs/dynamicjepa/verification/gridworld_5x5_corpus.jsonl
 
 Record the hash; the test suite asserts it. If the hash drifts, revert the generator change.
 
-## 4. Current Phase 4 Registry/Adapter/Panel Run
+## 4. Current Phase 5 Registry/Adapter/Panel/Trajectory Run
 
-This is the implemented runbook today. It proves the Phase 3 and Phase 4
-surfaces: domain-pack registration, decoded CF inspection, strict validation,
-JSONL ingestion, adapter success/failure, instrument readings, latent panels,
-and physical RocksDB evidence. It intentionally does not call Phase 5+ commands.
+This is the implemented runbook today. It proves the Phase 3, Phase 4, and
+Phase 5 surfaces: domain-pack registration, decoded CF inspection, strict
+validation, JSONL ingestion, adapter success/failure, instrument readings,
+latent panels, deterministic bindings, trajectories, and physical RocksDB
+evidence. It intentionally does not call Phase 6+ commands.
 
 ```bash
 # Phase 3 registry regression run; Phase 4 depends on these rows.
@@ -206,6 +207,89 @@ The automated equivalent is:
 
 ```bash
 cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features -- --nocapture
+cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --all-features -- --nocapture
+```
+
+Phase 5 counter_world run:
+
+```bash
+export DJ_DB=/tmp/5090jepa-phase5-manual-cw
+rm -rf "$DJ_DB"
+mkdir -p tmp/5090jepa_evidence/phase5/manual_counter
+
+./target/debug/context-graph dynamicjepa register-domain --db "$DJ_DB" \
+  --file configs/dynamicjepa/domain_packs/counter_world.v1.toml --json
+
+./target/debug/context-graph dynamicjepa ingest-event --db "$DJ_DB" \
+  --domain counter_world --adapter json_event \
+  --file configs/dynamicjepa/verification/counter_world_happy_path.jsonl --json
+
+./target/debug/context-graph dynamicjepa materialize-panel --db "$DJ_DB" \
+  --all-pending --domain counter_world --json
+
+./target/debug/context-graph dynamicjepa compile-trajectories --db "$DJ_DB" \
+  --domain counter_world --policy by_domain_session --json
+
+./target/debug/context-graph dynamicjepa inspect-cf --db "$DJ_DB" \
+  --cf dj_trajectories --limit 10 --json
+```
+
+Expected Phase 5 counter_world counts after trajectory compile:
+
+```text
+dj_raw_events 3
+dj_transitions 3
+dj_latent_panels 3
+dj_trajectories 1
+dj_audit_log 11
+```
+
+To verify binding, copy a `key_hex` from `dj_raw_events` and one from
+`dj_trajectories`, then run:
+
+```bash
+./target/debug/context-graph dynamicjepa bind --db "$DJ_DB" \
+  --left-cf dj_raw_events --left-key <raw_event_key_hex> \
+  --right-cf dj_trajectories --right-key <trajectory_key_hex> \
+  --method explicit_mapping --json
+
+./target/debug/context-graph dynamicjepa inspect-cf --db "$DJ_DB" \
+  --cf dj_bindings --limit 10 --json
+```
+
+Expected binding counts after the bind command:
+
+```text
+dj_bindings 1
+dj_bindings_by_entity 1
+dj_audit_log 12
+```
+
+Phase 5 gridworld one-trajectory run mirrors the counter run with the first
+eight corpus rows. Expected counts after trajectory compile:
+
+```text
+dj_raw_events 8
+dj_transitions 8
+dj_latent_panels 8
+dj_trajectories 1
+dj_audit_log 26
+```
+
+Phase 5 edge cases to run before claiming the phase still works:
+
+- Unsupported trajectory policy fails and leaves `dj_trajectories` and `dj_audit_log` unchanged.
+- Duplicate trajectory compile fails and leaves `dj_trajectories` and `dj_audit_log` unchanged.
+- Missing binding evidence fails with `BINDING_EVIDENCE_MISSING` and leaves `dj_bindings`, `dj_bindings_by_entity`, and `dj_audit_log` unchanged.
+- Missing panel source fails with `SOURCE_OF_TRUTH_MISSING` and leaves `dj_trajectories` and `dj_audit_log` unchanged.
+
+Manual Phase 5 evidence lives in `tmp/5090jepa_evidence/phase5/manual/`.
+Independent physical check:
+
+```bash
+for cf in dj_raw_events dj_transitions dj_latent_panels dj_bindings dj_bindings_by_entity dj_trajectories dj_audit_log; do
+  /usr/bin/ldb --db="$DJ_DB" --column_family="$cf" dump --count_only | awk -v cf="$cf" '/Keys in range:/ {print cf, $4}'
+done
 ```
 
 ## 5. Future Phase 10 Counter_world Run

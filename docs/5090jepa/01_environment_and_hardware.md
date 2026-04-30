@@ -2,7 +2,7 @@
 
 The 5090jepa demo is targeted at exactly one machine. Before any phase you must verify the environment matches. If anything diverges from the values below, halt and resolve before writing code. No "should work" assumptions.
 
-Current implementation status as of the Phase 4 double-check on 2026-04-30: Phases 0-4 are implemented and FSV-verified. Phase 5 is next. The DynamicJEPA service crate and MCP tool surface remain future Phase 7/9 work.
+Current implementation status as of the Phase 5 double-check on 2026-04-30: Phases 0-5 are implemented and FSV-verified. Phase 6 is next. The DynamicJEPA service crate and MCP tool surface remain future Phase 7/9 work.
 
 ## 1. Operator Hardware (Verified)
 

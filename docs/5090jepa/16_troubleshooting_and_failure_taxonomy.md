@@ -2,7 +2,7 @@
 
 This file is a debugging reference. The first job when something fails is to identify the *category* of failure — that determines which evidence to gather and which fix to apply.
 
-Current implementation status as of the Phase 4 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings` are operational and covered by FSV. Later model/planning failures are specified here for future phases.
+Current implementation status as of the Phase 5 double-check on 2026-04-30: the failure modes through `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, `list-instrument-readings`, `bind`, and `compile-trajectories` are operational and covered by FSV. Later dataset/model/planning failures are specified here for future phases.
 
 ## 1. Categories
 

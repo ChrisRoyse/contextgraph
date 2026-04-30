@@ -1,14 +1,14 @@
 # 02 — Repository State Inventory
 
-This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 5. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
+This file is the anti‑hallucination anchor. Re‑run the audit in Section 3 before every remaining phase, starting with Phase 6. If anything below is wrong relative to the live tree, the live tree wins; update this file *before* writing code that depends on a stale fact.
 
 ## 1. Branch & Commit Snapshot (Phase 4 Double-Check: 2026-04-30)
 
 | Property | Value |
 | --- | --- |
 | Branch | `main` |
-| Latest commits at audit start | `3f59d0f5 docs(5090jepa): refresh Phase 3 verification audit, runbook, and FSV scope` → `5c907530 feat(dynamicjepa): add Phase 4 adapter/panel materialization CLI` |
-| Working tree at audit start | Clean after the Phase 4 implementation commit; current local changes are documentation refreshes for the Phase 4 double-check |
+| Latest commits at audit start | `5c907530 feat(dynamicjepa): add Phase 4 adapter/panel materialization CLI` → `7bc9d6e1 docs(5090jepa): refresh docs to reflect Phase 4 completion` |
+| Working tree at audit start | Clean before the Phase 5 implementation work |
 | `data/contextgraph_data` | Real RocksDB DB exists with operator data; **never** point demo runs at it |
 
 ## 2. Workspace Layout (Verified)
@@ -75,9 +75,9 @@ test -d configs/dynamicjepa              # Phase 0 input fixtures
 
 If those checks fail, the implementation phase has drifted. Read the live files before adding parallel work.
 
-## 4. Phase 2, Phase 3, And Phase 4 Verification Status (2026-04-30)
+## 4. Phase 2 Through Phase 5 Verification Status (2026-04-30)
 
-Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5+ trajectory/dataset/model/MCP work is still not present.
+Phase 2 is implemented and manually verified as the storage data plane. Phase 3 is implemented and manually verified as the CLI domain registry / inspection layer. Phase 4 is implemented and manually verified as the CLI `json_event` adapter, instrument execution, and latent panel materialization layer. Phase 5 is implemented and manually verified as the deterministic binding plus trajectory compiler layer. Phase 6+ dataset/model/MCP work is still not present.
 
 Source of truth verified:
 
@@ -160,6 +160,33 @@ Root-cause fixes made during the Phase 4 audit:
 - Optional failed panel slots are valid only with `mask=false` and an empty vector; required slots still require a present vector of the declared dimension.
 - Event and panel storage paths gained atomic batch helpers for raw+started, adapter success/failure, and readings+panel writes.
 
+Phase 5 source of truth verified:
+
+- Physical RocksDB DBs: `/tmp/5090jepa-phase5-manual-cw`, `/tmp/5090jepa-phase5-manual-gw`, and `/tmp/5090jepa-phase5-manual-missing-panel`.
+- Manual decoded evidence: `tmp/5090jepa_evidence/phase5/manual/`.
+- Automated CLI FSV evidence: `tmp/5090jepa_evidence/phase5/cli_phase5_fsv.json`.
+- Independent physical count read: `ldb --db <phase5-db> --column_family=<cf> dump --count_only`.
+
+Phase 5 verification results:
+
+- `cargo test -p context-graph-cli --test dynamicjepa_phase5_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-cli --test dynamicjepa_phase4_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-cli --test dynamicjepa_phase3_fsv --all-features -- --nocapture`: 1 passed, 0 failed.
+- `cargo test -p context-graph-core dynamicjepa --all-features`: 3 passed, 0 failed.
+- `cargo test -p context-graph-storage dynamicjepa --all-features`: 1 passed, 0 failed.
+- `cargo build -p context-graph-cli --release --all-features`: passed.
+- Manual counter_world happy path compiled one trajectory with three ordered transitions and three ordered panels; derived timestamp proof is `[1700000000000, 1700000001000, 1700000002000]`.
+- Manual counter_world explicit binding wrote `dj_bindings=1` and `dj_bindings_by_entity=1`; decoded binding evidence references the raw event key and trajectory key that were read from RocksDB.
+- Manual gridworld one-trajectory happy path compiled one trajectory with eight ordered transitions and eight ordered panels; derived timestamp proof is `[0,1,2,3,4,5,6,7]` and `entity_refs` carries the source `trajectory_id`.
+- Edge cases verified with before/after snapshots: unsupported trajectory policy, duplicate trajectory compile, missing binding evidence, and missing panel source. Each failed with a structured error and left the relevant primary/index/audit counts unchanged.
+- Independent `ldb dump --count_only` confirmed final manual counts: counter_world `dj_raw_events=3`, `dj_transitions=3`, `dj_latent_panels=3`, `dj_bindings=1`, `dj_bindings_by_entity=1`, `dj_trajectories=1`, `dj_audit_log=12`; gridworld `dj_raw_events=8`, `dj_transitions=8`, `dj_latent_panels=8`, `dj_trajectories=1`, `dj_audit_log=26`.
+
+Root-cause fixes made during the Phase 5 audit:
+
+- Binding and trajectory storage gained atomic `*_with_audit_batch` helpers, so the primary rows, secondary index rows, and audit rows are persisted together.
+- CLI binding validates and decodes both referenced source-of-truth rows before writing; missing evidence fails with `BINDING_EVIDENCE_MISSING` and no row writes.
+- Trajectory compilation groups gridworld by the registered entity mapping from raw event payloads while counter_world uses one domain-session group; every transition must have a decoded latent panel before a trajectory row is written.
+
 ## 5. Existing Surfaces You Will Reuse
 
 ### 5.1 Core (`crates/context-graph-core/src/`)
@@ -220,7 +247,7 @@ Tool registry surface:
 
 Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
 
-Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 5+ CLI subcommands remain unimplemented.
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 6+ CLI subcommands remain unimplemented.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

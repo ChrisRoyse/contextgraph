@@ -17,13 +17,13 @@ Secondary:
 
 Both are read independently of the operations that wrote them. Return values are not evidence.
 
-## 2. Current Implemented FSV Scope (Phase 4)
+## 2. Current Implemented FSV Scope (Phase 5)
 
-Phase 4 verifies domain-pack registration, JSONL event ingestion, adapter runs,
+Phase 5 verifies domain-pack registration, JSONL event ingestion, adapter runs,
 normalized state/action/outcome/transition rows, instrument readings, latent
-panels, and physical inspection. The full trajectory/model/harness protocol
-below remains binding for later phases, but the current completed
-source-of-truth surface is:
+panels, deterministic bindings, trajectory rows, and physical inspection. The
+full dataset/model/harness protocol below remains binding for later phases, but
+the current completed source-of-truth surface is:
 
 ```bash
 export DJ_DB=/tmp/5090jepa-phase4-fsv
@@ -34,9 +34,16 @@ context-graph dynamicjepa ingest-event --db "$DJ_DB" --domain counter_world --ad
 context-graph dynamicjepa materialize-panel --db "$DJ_DB" --all-pending --domain counter_world --json
 context-graph dynamicjepa get-panel --db "$DJ_DB" --panel-id <panel-id> --include-readings --json
 context-graph dynamicjepa list-instrument-readings --db "$DJ_DB" --event-id <event-id> --json
+context-graph dynamicjepa compile-trajectories --db "$DJ_DB" --domain counter_world --policy by_domain_session --json
+context-graph dynamicjepa get-trajectory --db "$DJ_DB" --id <trajectory-id> --json
+context-graph dynamicjepa list-trajectories --db "$DJ_DB" --domain counter_world --json
+context-graph dynamicjepa bind --db "$DJ_DB" --left-cf dj_raw_events --left-key <key_hex> --right-cf dj_trajectories --right-key <key_hex> --method explicit_mapping --json
+context-graph dynamicjepa list-bindings --db "$DJ_DB" --entity <key_hex> --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_raw_events --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_adapter_runs --limit 10 --json
 context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_latent_panels --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_trajectories --limit 10 --json
+context-graph dynamicjepa inspect-cf --db "$DJ_DB" --cf dj_bindings --limit 10 --json
 ```
 
 Expected Phase 4 counter_world happy-path counts after registration, ingest, and
@@ -91,10 +98,14 @@ Current evidence:
 - Manual gridworld evidence: `tmp/5090jepa_evidence/phase4/manual_gridworld/`, DB `/tmp/5090jepa-phase4-manual-gw`.
 - Automated CLI evidence: `tmp/5090jepa_evidence/phase4/cli_phase4_fsv.json`.
 - Independent physical proof: `ldb dump --count_only` was run against each touched CF and matched the decoded CLI evidence.
+- Manual Phase 5 evidence: `tmp/5090jepa_evidence/phase5/manual/`, DBs `/tmp/5090jepa-phase5-manual-cw`, `/tmp/5090jepa-phase5-manual-gw`, and `/tmp/5090jepa-phase5-manual-missing-panel`.
+- Automated Phase 5 CLI evidence: `tmp/5090jepa_evidence/phase5/cli_phase5_fsv.json`.
+- Phase 5 independent physical proof: `ldb dump --count_only` was run against `dj_raw_events`, `dj_transitions`, `dj_latent_panels`, `dj_bindings`, `dj_bindings_by_entity`, `dj_trajectories`, and `dj_audit_log` and matched the decoded CLI evidence.
 
 Phase 3 remains verified by `crates/context-graph-cli/tests/dynamicjepa_phase3_fsv.rs`
-and `tmp/5090jepa_evidence/phase3/doublecheck/`; it is now a prerequisite for
-the Phase 4 FSV rather than the current endpoint.
+and `tmp/5090jepa_evidence/phase3/doublecheck/`; Phase 4 remains verified by
+`crates/context-graph-cli/tests/dynamicjepa_phase4_fsv.rs`. Both are
+prerequisites for the Phase 5 FSV rather than the current endpoint.
 
 ## 3. Required Fixtures
 

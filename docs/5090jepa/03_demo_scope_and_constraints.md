@@ -2,9 +2,9 @@
 
 The full DynamicJEPA contract is large. The 5090jepa demo intentionally trims it to the smallest set of capabilities that *still proves the whole loop end‑to‑end on real hardware*. Every trim is justified.
 
-Current implementation state as of the Phase 4 double-check on 2026-04-30:
-Phases 0-4 are implemented and verified. Phase 5 is next. The full in-scope
-list below is still the demo target, not a claim that Phase 5+ behavior exists
+Current implementation state as of the Phase 5 double-check on 2026-04-30:
+Phases 0-5 are implemented and verified. Phase 6 is next. The full in-scope
+list below is still the demo target, not a claim that Phase 6+ behavior exists
 today.
 
 ## 1. In Scope (You Build This)

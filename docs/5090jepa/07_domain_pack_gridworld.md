@@ -2,7 +2,7 @@
 
 `gridworld_5x5` proves universality. The same pipeline that solves counter_world without code changes also handles a deterministic discrete-navigation domain whose state is a 2-D coordinate, action is one of five discrete moves, and outcome is the new coordinate after wall-clipping. A randomly initialized predictor cannot solve gridworld; a correctly trained tiny JEPA reaches ≥0.95 latent cosine on the held-out transitions.
 
-Current Phase 4 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, and materialize into eight panels through the real CLI and real RocksDB. Full 8000-event trajectory/dataset/model verification remains later phases.
+Current Phase 5 status as of 2026-04-30: the checked-in TOML and the first eight-event trajectory from the generated corpus register, ingest, adapt, instrument, materialize into eight panels, and compile into one ordered trajectory through the real CLI and real RocksDB. Full 8000-event dataset/model verification remains later phases.
 
 ## 1. World Definition
 
