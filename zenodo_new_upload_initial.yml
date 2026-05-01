@@ -1,0 +1,678 @@
+- generic [active] [ref=e1]:
+  - link "Skip to main" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e4]:
+    - navigation [ref=e7]:
+      - link "Zenodo home" [ref=e9] [cursor=pointer]:
+        - /url: /
+        - img "Zenodo home" [ref=e10]
+      - navigation "Menu" [ref=e11]:
+        - generic [ref=e15]:
+          - textbox "Search records..." [ref=e16]
+          - button "Search" [ref=e17] [cursor=pointer]:
+            - generic [ref=e18]: 
+        - link "Communities" [ref=e20] [cursor=pointer]:
+          - /url: /communities
+        - link "My dashboard" [ref=e22] [cursor=pointer]:
+          - /url: /me/uploads
+        - generic [ref=e23]:
+          - link "Requests" [ref=e25] [cursor=pointer]:
+            - /url: /me/requests
+            - generic [ref=e26]: 
+          - button "Quick create" [ref=e28] [cursor=pointer]:
+            - generic [ref=e29]: 
+            - generic [ref=e30]: 
+          - text:  
+          - generic [ref=e31] [cursor=pointer]:
+            - button "My account" [ref=e32]:
+              - generic [ref=e33]:
+                - generic [ref=e34]: 
+                - text: thenumberonellc@gmail.com
+              - generic [ref=e35]: 
+            - text:        
+          - text:        
+    - generic [ref=e37]:
+      - strong [ref=e38]: ⚠️ This is the Zenodo Sandbox instance, used for testing purposes ⚠️
+      - generic [ref=e39]:
+        - text: DOIs created in this instance are not real and will not resolve. You can find the production instance of Zenodo at
+        - link "zenodo.org" [ref=e40] [cursor=pointer]:
+          - /url: https://zenodo.org
+  - main [ref=e41]:
+    - generic [ref=e44]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: Select the community where you want to submit your record.
+        - button "Select a community" [ref=e49] [cursor=pointer]
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]:
+            - generic [ref=e54] [cursor=pointer]:
+              - text: Files
+              - generic [ref=e55]: 
+            - generic [ref=e58]:
+              - generic [ref=e60]:
+                - generic [ref=e61]: Storage available
+                - list [ref=e62]:
+                  - listitem [ref=e63]:
+                    - generic [ref=e64]: 0 out of 100 files
+                  - listitem [ref=e65]:
+                    - generic [ref=e66]: 0 bytes out of 50.00 GB
+              - button "Drag and drop files - or - Upload files" [ref=e69]:
+                - generic [ref=e72]:
+                  - generic [ref=e74]: Drag and drop files
+                  - generic [ref=e75]: "- or -"
+                  - button "Upload files" [ref=e77] [cursor=pointer]:
+                    - generic [ref=e78]: 
+                    - text: Upload files
+              - paragraph [ref=e82]:
+                - generic [ref=e83]: 
+                - text: File addition, removal or modification are not allowed after you have published your upload.
+          - generic [ref=e84]:
+            - generic [ref=e85] [cursor=pointer]:
+              - text: Basic information
+              - generic [ref=e86]: 
+            - generic [ref=e88]:
+              - generic [ref=e90]:
+                - generic [ref=e91]: 
+                - text: Digital Object Identifier *
+              - generic [ref=e92]:
+                - generic [ref=e93]: Do you already have a DOI for this upload?
+                - generic [ref=e95]:
+                  - radio "Yes, I already have one" [checked] [ref=e96] [cursor=pointer]
+                  - generic [ref=e97] [cursor=pointer]: Yes, I already have one
+                - generic [ref=e99]:
+                  - radio "No, I need one" [ref=e100] [cursor=pointer]
+                  - generic [ref=e101] [cursor=pointer]: No, I need one
+              - textbox "Copy/paste your existing DOI here..." [ref=e105]
+              - generic [ref=e106]: "A DOI allows your upload to be easily and unambiguously cited. Example: 10.1234/foo.bar"
+              - generic [ref=e107]:
+                - generic [ref=e108]:
+                  - generic [ref=e109]:
+                    - generic [ref=e110]: 
+                    - text: Resource type
+                  - text: "*"
+                - combobox "Resource type" [ref=e111] [cursor=pointer]:
+                  - textbox [ref=e112]
+                  - generic [ref=e113]: 
+                  - text:                                           
+              - generic [ref=e114]:
+                - generic [ref=e115]:
+                  - generic [ref=e116]: 
+                  - text: Title *
+                - textbox "Title *" [ref=e118]
+              - button "Add titles" [ref=e122] [cursor=pointer]:
+                - generic [ref=e123]: 
+                - text: Add titles
+              - generic [ref=e124]:
+                - generic [ref=e125]:
+                  - generic [ref=e126]: 
+                  - text: Publication date
+                - textbox "Publication date" [ref=e128]:
+                  - /placeholder: YYYY-MM-DD or YYYY-MM-DD/YYYY-MM-DD for intervals. MM and DD are optional.
+                  - text: 2026-05-01
+              - generic [ref=e129]: "In case your upload was already published elsewhere, please use the date of the first publication. Format: YYYY-MM-DD, YYYY-MM, or YYYY. For intervals use DATE/DATE, e.g. 1939/1945."
+              - generic [ref=e130]:
+                - generic [ref=e131]:
+                  - generic [ref=e132]: 
+                  - text: Authors/Creators *
+                - list
+                - button "Add author" [ref=e133] [cursor=pointer]:
+                  - generic [ref=e134]: 
+                  - text: Add author
+                - generic [ref=e135]: Use the Authors/Creators field for names that should appear in the citation. Use the Contributors field below for other names.
+              - generic [ref=e136]:
+                - generic [ref=e137]:
+                  - generic [ref=e138]: 
+                  - text: Description
+                - application [ref=e139]:
+                  - generic [ref=e140]:
+                    - group [ref=e142]:
+                      - group [ref=e143]:
+                        - toolbar [ref=e144]:
+                          - button "Block Paragraph" [ref=e145]:
+                            - generic [ref=e146]: Paragraph
+                            - img [ref=e148]
+                        - toolbar [ref=e150]:
+                          - button "Bold" [ref=e151]:
+                            - img [ref=e153]
+                          - button "Italic" [ref=e155]:
+                            - img [ref=e157]
+                          - button "Insert/edit code sample" [ref=e159]:
+                            - img [ref=e161]
+                          - button "Blockquote" [ref=e163]:
+                            - img [ref=e165]
+                          - button "Table" [ref=e167]:
+                            - img [ref=e169]
+                            - img [ref=e172]
+                        - toolbar [ref=e174]:
+                          - button "Bullet list" [ref=e175]:
+                            - img [ref=e177]
+                          - button "Numbered list" [ref=e179]:
+                            - img [ref=e181]
+                        - toolbar [ref=e183]:
+                          - button "Decrease indent" [disabled] [ref=e184]:
+                            - img [ref=e186]
+                          - button "Increase indent" [ref=e188]:
+                            - img [ref=e190]
+                        - toolbar [ref=e192]:
+                          - button "Insert/edit link" [ref=e193]:
+                            - img [ref=e195]
+                          - button "Insert/edit image" [ref=e197]:
+                            - img [ref=e199]
+                        - toolbar [ref=e201]:
+                          - button "Word count" [ref=e202]:
+                            - img [ref=e204]
+                        - toolbar [ref=e206]:
+                          - button "Undo" [disabled] [ref=e207]:
+                            - img [ref=e209]
+                          - button "Redo" [disabled] [ref=e211]:
+                            - img [ref=e213]
+                        - toolbar [ref=e215]:
+                          - button "Source code" [ref=e216]:
+                            - img [ref=e218]
+                        - toolbar [ref=e221]:
+                          - button "Preview math equations" [ref=e222]:
+                            - generic [ref=e223]: √x
+                    - iframe [ref=e226]:
+                      - generic "Rich Text Area. Press ALT-0 for help." [active] [ref=f10e1]:
+                        - paragraph [ref=f10e2]
+              - button "Add description" [ref=e230] [cursor=pointer]:
+                - generic [ref=e231]: 
+                - text: Add description
+              - generic [ref=e232]:
+                - generic [ref=e233]:
+                  - generic [ref=e234]: 
+                  - text: Licenses
+                - list [ref=e235]:
+                  - listitem [ref=e236]:
+                    - generic [ref=e237]:
+                      - button "Remove" [ref=e238] [cursor=pointer]
+                      - button "Edit" [ref=e239] [cursor=pointer]
+                    - generic [ref=e240]: 
+                    - generic [ref=e241]:
+                      - generic [ref=e242]: Creative Commons Attribution 4.0 International
+                      - text: The Creative Commons Attribution license allows re-distribution and re-use of a licensed work on the condition that the creator is appropriately credited.
+                      - link "Read more" [ref=e244] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/legalcode
+                - button "Add standard" [ref=e245] [cursor=pointer]:
+                  - generic [ref=e246]: 
+                  - text: Add standard
+                - button "Add custom" [ref=e247] [cursor=pointer]:
+                  - generic [ref=e248]: 
+                  - text: Add custom
+              - generic [ref=e249]:
+                - generic [ref=e250]:
+                  - generic [ref=e251]: 
+                  - text: Copyright
+                - textbox "Copyright" [ref=e253]:
+                  - /placeholder: Copyright (C) 2026 The Authors.
+              - generic [ref=e254]: A copyright statement describing the ownership of the uploaded resource.
+          - generic [ref=e255]:
+            - generic [ref=e256] [cursor=pointer]:
+              - text: Recommended information
+              - generic [ref=e257]: 
+            - generic [ref=e259]:
+              - generic [ref=e260]:
+                - generic [ref=e261]:
+                  - generic [ref=e262]: 
+                  - text: Contributors
+                - list
+                - button "Add contributor" [ref=e263] [cursor=pointer]:
+                  - generic [ref=e264]: 
+                  - text: Add contributor
+                - generic [ref=e265]: Contributors are not included in the citation, but are shown on the record page.
+              - generic [ref=e267]:
+                - generic [ref=e270]:
+                  - generic [ref=e271]: 
+                  - text: Keywords and subjects
+                - combobox [ref=e272]:
+                  - textbox "Keywords and subjects" [ref=e273]
+                  - alert [ref=e274]: Search for a subject by name
+                  - generic [ref=e275] [cursor=pointer]: 
+              - generic [ref=e276]:
+                - generic [ref=e278]:
+                  - generic [ref=e279]: 
+                  - text: Languages
+                - combobox [ref=e280]:
+                  - textbox "Languages" [ref=e281]
+                  - alert [ref=e282]: Search for a language by name (e.g "eng", "fr" or "Polish")
+                  - generic [ref=e283] [cursor=pointer]: 
+              - generic [ref=e284]:
+                - generic [ref=e285]:
+                  - generic [ref=e286]: 
+                  - text: Dates
+                - generic [ref=e287]: "Format: DATE or DATE/DATE where DATE is YYYY or YYYY-MM or YYYY-MM-DD."
+                - generic [ref=e289]:
+                  - generic [ref=e290]:
+                    - generic [ref=e291]: Date *
+                    - textbox "Date *" [ref=e293]:
+                      - /placeholder: YYYY-MM-DD or YYYY-MM-DD/YYYY-MM-DD
+                  - generic [ref=e294]:
+                    - generic [ref=e295]: Type *
+                    - combobox "Type" [ref=e296] [cursor=pointer]:
+                      - textbox [ref=e297]
+                      - generic [ref=e298]: 
+                  - generic [ref=e299]:
+                    - generic [ref=e300]: Description
+                    - textbox "Description" [ref=e302]
+                  - button "Remove field" [ref=e304] [cursor=pointer]:
+                    - generic [ref=e305]: 
+                - button "Add date" [ref=e308] [cursor=pointer]:
+                  - generic [ref=e309]: 
+                  - text: Add date
+              - generic [ref=e310]:
+                - generic [ref=e311]:
+                  - generic [ref=e312]: 
+                  - text: Version
+                - textbox "Version" [ref=e314]:
+                  - /placeholder: ""
+              - generic [ref=e316]:
+                - text: Mostly relevant for software and dataset uploads. A semantic version string is preferred see
+                - link "semver.org" [ref=e317] [cursor=pointer]:
+                  - /url: https://semver.org/
+                - text: ", but any version string is accepted."
+              - generic [ref=e318]:
+                - generic [ref=e319]:
+                  - generic [ref=e320]: 
+                  - text: Publisher
+                - textbox "Publisher" [ref=e322]: Zenodo
+              - generic [ref=e323]: The publisher is used to formulate the citation, so consider the prominence of the role.
+          - generic [ref=e324]:
+            - generic [ref=e325] [cursor=pointer]:
+              - text: Funding
+              - generic [ref=e326]: 
+            - generic [ref=e329]:
+              - generic [ref=e330]:
+                - generic [ref=e331]: 
+                - text: Awards/Grants
+              - list
+              - button "Add" [ref=e332] [cursor=pointer]:
+                - generic [ref=e333]: 
+                - text: Add
+              - button "Add custom" [ref=e334] [cursor=pointer]:
+                - generic [ref=e335]: 
+                - text: Add custom
+          - generic [ref=e336]:
+            - generic [ref=e337] [cursor=pointer]:
+              - text: Alternate identifiers
+              - generic [ref=e338]: 
+            - generic [ref=e341]:
+              - generic [ref=e342]:
+                - generic [ref=e343]: 
+                - text: Alternate identifiers
+              - generic [ref=e345]:
+                - generic [ref=e346]:
+                  - generic [ref=e347]: Identifier *
+                  - textbox "Identifier *" [ref=e349]
+                - generic [ref=e350]:
+                  - generic [ref=e351]: Scheme *
+                  - combobox "Scheme" [ref=e352] [cursor=pointer]:
+                    - textbox [ref=e353]
+                    - generic [ref=e354]: 
+                - button "Remove field" [ref=e356] [cursor=pointer]:
+                  - generic [ref=e357]: 
+              - button "Add identifier" [ref=e360] [cursor=pointer]:
+                - generic [ref=e361]: 
+                - text: Add identifier
+          - generic [ref=e362]:
+            - generic [ref=e363] [cursor=pointer]:
+              - text: Related works
+              - generic [ref=e364]: 
+            - generic [ref=e367]:
+              - generic [ref=e368]:
+                - generic [ref=e369]: 
+                - text: Related works
+              - generic [ref=e370]: Specify identifiers of related works. Supported identifiers include DOI, Handle, ARK, PURL, ISSN, ISBN, PubMed ID, PubMed Central ID, ADS Bibliographic Code, arXiv, Life Science Identifiers (LSID), EAN-13, ISTC, URNs, and URLs.
+              - generic [ref=e372]:
+                - generic [ref=e373]:
+                  - generic [ref=e374]: Relation *
+                  - combobox "Relation" [ref=e375] [cursor=pointer]:
+                    - textbox [ref=e376]
+                    - option "Select relation..." [ref=e377]
+                    - generic [ref=e378]: 
+                - generic [ref=e379]:
+                  - generic [ref=e380]: Identifier *
+                  - textbox "Identifier *" [ref=e382]
+                - generic [ref=e383]:
+                  - generic [ref=e384]: Scheme *
+                  - combobox "Scheme" [ref=e385] [cursor=pointer]:
+                    - textbox [ref=e386]
+                    - generic [ref=e387]: 
+                - generic [ref=e388]:
+                  - generic [ref=e389]: Resource type *
+                  - combobox "Resource type" [ref=e390] [cursor=pointer]:
+                    - textbox [ref=e391]
+                    - generic [ref=e392]: 
+                    - text:                                           
+                - button "Remove field" [ref=e394] [cursor=pointer]:
+                  - generic [ref=e395]: 
+              - button "Add related work" [ref=e398] [cursor=pointer]:
+                - generic [ref=e399]: 
+                - text: Add related work
+          - generic [ref=e400]:
+            - generic [ref=e401] [cursor=pointer]:
+              - text: References
+              - generic [ref=e402]: 
+            - generic [ref=e405]:
+              - generic [ref=e407]:
+                - generic [ref=e408]: 
+                - text: References
+              - generic [ref=e410]:
+                - generic [ref=e411]:
+                  - generic [ref=e412]: Reference string *
+                  - textbox "Reference string *" [ref=e414]
+                - button "Remove field" [ref=e416] [cursor=pointer]:
+                  - generic [ref=e417]: 
+              - button "Add reference" [ref=e420] [cursor=pointer]:
+                - generic [ref=e421]: 
+                - text: Add reference
+          - generic [ref=e422]:
+            - generic [ref=e423] [cursor=pointer]:
+              - text: Software
+              - generic [ref=e424]: 
+            - generic [ref=e426]:
+              - generic [ref=e427]:
+                - generic [ref=e428]:
+                  - generic [ref=e429]: 
+                  - text: Repository URL
+                - textbox "Repository URL" [ref=e431]
+              - generic [ref=e432]: URL or link where the code repository is hosted.
+              - generic [ref=e433]:
+                - generic [ref=e434]: 
+                - text: Programming language
+              - combobox [ref=e436]:
+                - textbox "Programming language" [ref=e437]
+                - alert [ref=e438]: e.g. Python ...
+                - generic [ref=e439] [cursor=pointer]: 
+              - generic [ref=e440]: Repository's programming language.
+              - generic [ref=e441]:
+                - generic [ref=e443]:
+                  - generic [ref=e444]: 
+                  - text: Development Status
+                - listbox "Development Status" [ref=e445] [cursor=pointer]:
+                  - option "Repository status" [ref=e446]
+                  - generic [ref=e447]: 
+              - generic [ref=e448]: Repository current status.
+          - generic [ref=e449]:
+            - generic [ref=e450] [cursor=pointer]:
+              - text: Publishing information
+              - generic [ref=e451]: 
+            - generic [ref=e453]:
+              - generic [ref=e454]:
+                - generic [ref=e455]: 
+                - text: Journal
+              - generic [ref=e457]:
+                - generic [ref=e458]:
+                  - generic [ref=e459]:
+                    - generic [ref=e460]: Title
+                    - textbox "Title" [ref=e462]:
+                      - /placeholder: ""
+                  - generic [ref=e463]: Title of the journal in which the article was published
+                - generic [ref=e464]:
+                  - generic [ref=e465]:
+                    - generic [ref=e466]: ISSN
+                    - textbox "ISSN" [ref=e468]:
+                      - /placeholder: e.g. 2077-9550
+                  - generic [ref=e469]: International Standard Serial Number
+                - generic [ref=e471]:
+                  - generic [ref=e472]: Volume
+                  - textbox "Volume" [ref=e474]:
+                    - /placeholder: e.g. 645
+                - generic [ref=e476]:
+                  - generic [ref=e477]: Issue
+                  - textbox "Issue" [ref=e479]:
+                    - /placeholder: e.g. 7
+                - generic [ref=e481]:
+                  - generic [ref=e482]: Page range or article number
+                  - textbox "Page range or article number" [ref=e484]:
+                    - /placeholder: e.g. 15-23 or A29
+              - generic [ref=e485]:
+                - generic [ref=e486]: 
+                - text: Imprint (Book, Report, or Conference proceedings)
+              - generic [ref=e488]:
+                - generic [ref=e489]:
+                  - generic [ref=e490]:
+                    - generic [ref=e491]: Book, report, or proceedings title
+                    - textbox "Book, report, or proceedings title" [ref=e493]:
+                      - /placeholder: ""
+                  - generic [ref=e494]: Title of the book, report, or proceedings which this upload is part of
+                - generic [ref=e495]:
+                  - generic [ref=e496]:
+                    - generic [ref=e497]: ISBN
+                    - textbox "ISBN" [ref=e499]:
+                      - /placeholder: e.g. 0-06-251587-X
+                  - generic [ref=e500]: International Standard Book Number
+                - generic [ref=e501]:
+                  - generic [ref=e502]:
+                    - generic [ref=e503]: Place
+                    - textbox "Place" [ref=e505]:
+                      - /placeholder: e.g. city, country
+                  - generic [ref=e506]: Place where the book or report was published
+                - generic [ref=e508]:
+                  - generic [ref=e509]: Pagination
+                  - textbox "Pagination" [ref=e511]:
+                    - /placeholder: e.g. 15-23 or 158
+                - generic [ref=e512]:
+                  - generic [ref=e513]:
+                    - generic [ref=e514]: Edition
+                    - textbox "Edition" [ref=e516]:
+                      - /placeholder: e.g. 3
+                  - generic [ref=e517]: The edition of the book
+              - generic [ref=e518]:
+                - generic [ref=e519]: 
+                - text: Thesis
+              - generic [ref=e521]:
+                - generic [ref=e523]:
+                  - generic [ref=e524]: Awarding university
+                  - textbox "Awarding university" [ref=e526]:
+                    - /placeholder: ""
+                - generic [ref=e528]:
+                  - generic [ref=e529]: Awarding department
+                  - textbox "Awarding department" [ref=e531]:
+                    - /placeholder: ""
+                - generic [ref=e532]:
+                  - generic [ref=e533]:
+                    - generic [ref=e534]: Thesis type
+                    - textbox "Thesis type" [ref=e536]:
+                      - /placeholder: PhD
+                  - generic [ref=e537]: The type of thesis (e.g. Masters, PhD, Engineers, Bachelors)
+                - generic [ref=e538]:
+                  - generic [ref=e539]:
+                    - generic [ref=e540]: Submission date
+                    - textbox "Submission date" [ref=e542]:
+                      - /placeholder: ""
+                  - generic [ref=e543]: Submission date in YYYY-MM-DD format.
+                - generic [ref=e544]:
+                  - generic [ref=e545]:
+                    - generic [ref=e546]: Defense date
+                    - textbox "Defense date" [ref=e548]:
+                      - /placeholder: ""
+                  - generic [ref=e549]: Defense date in YYYY-MM-DD format.
+          - generic [ref=e550]:
+            - generic [ref=e551] [cursor=pointer]:
+              - text: Conference
+              - generic [ref=e552]: 
+            - generic [ref=e555]:
+              - generic [ref=e557]:
+                - generic [ref=e558]: Title
+                - textbox "Title" [ref=e560]:
+                  - /placeholder: ""
+              - generic [ref=e562]:
+                - generic [ref=e563]: Acronym
+                - textbox "Acronym" [ref=e565]:
+                  - /placeholder: ""
+              - generic [ref=e566]:
+                - generic [ref=e567]:
+                  - generic [ref=e568]: Place
+                  - textbox "Place" [ref=e570]:
+                    - /placeholder: ""
+                - generic [ref=e571]: Location where the conference took place.
+              - generic [ref=e573]:
+                - generic [ref=e574]: Dates
+                - textbox "Dates" [ref=e576]:
+                  - /placeholder: e.g. 21-22 November 2022.
+              - generic [ref=e577]:
+                - generic [ref=e578]:
+                  - generic [ref=e579]: Session
+                  - textbox "Session" [ref=e581]:
+                    - /placeholder: e.g. VI
+                - generic [ref=e582]: Session within the conference.
+              - generic [ref=e583]:
+                - generic [ref=e584]:
+                  - generic [ref=e585]: Part
+                  - textbox "Part" [ref=e587]:
+                    - /placeholder: e.g. 1
+                - generic [ref=e588]: Part within the session.
+              - generic [ref=e590]:
+                - generic [ref=e591]: Website
+                - textbox "Website" [ref=e593]:
+                  - /placeholder: ""
+          - generic [ref=e594]:
+            - generic [ref=e595] [cursor=pointer]:
+              - text: Domain specific fields
+              - generic [ref=e596]: 
+            - button "Add field" [ref=e599] [cursor=pointer]:
+              - generic [ref=e600]: 
+              - text: Add field
+        - generic [ref=e603]:
+          - generic [ref=e604]:
+            - generic [ref=e608]:
+              - text: Draft
+              - generic [ref=e609]: 
+            - generic [ref=e611]:
+              - button "Save draft" [ref=e613] [cursor=pointer]:
+                - generic [ref=e614]: 
+                - text: Save draft
+              - button "Preview" [ref=e616] [cursor=pointer]:
+                - generic [ref=e617]: 
+                - text: Preview
+              - generic [ref=e618]:
+                - button "Publish" [disabled]:
+                  - generic: 
+                  - text: Publish
+              - generic [ref=e619]:
+                - button "Share" [disabled]:
+                  - generic: 
+                  - text: Share
+          - generic [ref=e621]:
+            - generic [ref=e624]:
+              - generic [ref=e625]: 
+              - text: Visibility*
+            - generic [ref=e626]:
+              - generic [ref=e627]:
+                - text: Files only
+                - generic [ref=e628]:
+                  - button "Public" [ref=e629] [cursor=pointer]
+                  - button "Restricted" [ref=e630] [cursor=pointer]
+              - generic [ref=e632]:
+                - generic [ref=e633]: 
+                - generic [ref=e634]:
+                  - generic [ref=e635]: Public
+                  - text: The record and files are publicly accessible.
+            - generic [ref=e638]: Options
+            - list [ref=e640]:
+              - listitem:
+                - generic:
+                  - generic:
+                    - checkbox "Apply an embargo" [disabled]
+                - generic:
+                  - generic:
+                    - text: Apply an embargo
+                    - generic: 
+                  - generic: Record or files protection must be restricted to apply an embargo.
+  - contentinfo [ref=e641]:
+    - generic [ref=e644]:
+      - generic [ref=e645]:
+        - heading "About" [level=2] [ref=e646]
+        - list [ref=e647]:
+          - listitem [ref=e648]:
+            - link "About" [ref=e649] [cursor=pointer]:
+              - /url: https://about.zenodo.org
+          - listitem [ref=e650]:
+            - link "Policies" [ref=e651] [cursor=pointer]:
+              - /url: https://about.zenodo.org/policies
+          - listitem [ref=e652]:
+            - link "Infrastructure" [ref=e653] [cursor=pointer]:
+              - /url: https://about.zenodo.org/infrastructure
+          - listitem [ref=e654]:
+            - link "Principles" [ref=e655] [cursor=pointer]:
+              - /url: https://about.zenodo.org/principles
+          - listitem [ref=e656]:
+            - link "Projects" [ref=e657] [cursor=pointer]:
+              - /url: https://about.zenodo.org/projects/
+          - listitem [ref=e658]:
+            - link "Roadmap" [ref=e659] [cursor=pointer]:
+              - /url: https://about.zenodo.org/roadmap/
+          - listitem [ref=e660]:
+            - link "Contact" [ref=e661] [cursor=pointer]:
+              - /url: https://about.zenodo.org/contact
+      - generic [ref=e662]:
+        - heading "Blog" [level=2] [ref=e663]
+        - list [ref=e664]:
+          - listitem [ref=e665]:
+            - link "Blog" [ref=e666] [cursor=pointer]:
+              - /url: https://blog.zenodo.org
+      - generic [ref=e667]:
+        - heading "Support" [level=2] [ref=e668]
+        - list [ref=e669]:
+          - listitem [ref=e670]:
+            - link "Help" [ref=e671] [cursor=pointer]:
+              - /url: https://help.zenodo.org/
+          - listitem [ref=e672]:
+            - link "FAQ" [ref=e673] [cursor=pointer]:
+              - /url: https://support.zenodo.org/help/
+      - generic [ref=e674]:
+        - heading "Developers" [level=2] [ref=e675]
+        - list [ref=e676]:
+          - listitem [ref=e677]:
+            - link "REST API" [ref=e678] [cursor=pointer]:
+              - /url: https://developers.zenodo.org
+          - listitem [ref=e679]:
+            - link "OAI-PMH" [ref=e680] [cursor=pointer]:
+              - /url: https://developers.zenodo.org#oai-pmh
+      - generic [ref=e681]:
+        - heading "Contribute" [level=2] [ref=e682]
+        - list [ref=e683]:
+          - listitem [ref=e684]:
+            - link "GitHub" [ref=e685] [cursor=pointer]:
+              - /url: https://github.com/zenodo/zenodo-rdm
+              - generic [ref=e686]: 
+              - text: GitHub
+          - listitem [ref=e687]:
+            - link "Donate" [ref=e688] [cursor=pointer]:
+              - /url: /donate
+              - generic [ref=e689]: 
+              - text: Donate
+      - generic [ref=e690]:
+        - heading "Funded by" [level=2] [ref=e691]
+        - list [ref=e692]:
+          - listitem [ref=e693]:
+            - link "CERN" [ref=e694] [cursor=pointer]:
+              - /url: https://home.cern
+          - listitem [ref=e695]:
+            - link "OpenAIRE" [ref=e696] [cursor=pointer]:
+              - /url: https://www.openaire.eu
+          - listitem [ref=e697]:
+            - link "European Commission" [ref=e698] [cursor=pointer]:
+              - /url: https://commission.europa.eu/index_en
+    - generic [ref=e701]:
+      - paragraph [ref=e703]:
+        - text: Powered by
+        - link "CERN Data Centre" [ref=e704] [cursor=pointer]:
+          - /url: https://home.cern/science/computing/data-centre
+        - text: "&"
+        - link "InvenioRDM" [ref=e705] [cursor=pointer]:
+          - /url: https://inveniordm.docs.cern.ch/
+      - list [ref=e707]:
+        - listitem [ref=e708]:
+          - link "Status" [ref=e709] [cursor=pointer]:
+            - /url: https://stats.uptimerobot.com/vlYOVuWgM/
+        - listitem [ref=e710]:
+          - link "Privacy policy" [ref=e711] [cursor=pointer]:
+            - /url: https://about.zenodo.org/privacy-policy
+        - listitem [ref=e712]:
+          - link "Cookie policy" [ref=e713] [cursor=pointer]:
+            - /url: https://about.zenodo.org/cookie-policy
+        - listitem [ref=e714]:
+          - link "Terms of Use" [ref=e715] [cursor=pointer]:
+            - /url: https://about.zenodo.org/terms
+  - text:  
