@@ -302,7 +302,17 @@ FAIR V-JEPA repository is the reference engineering implementation
 \cite{metafair2024vjepa}. LeCun's "A Path Towards Autonomous
 Machine Intelligence" frames the family as a step toward
 predictive systems that reason in abstract representation space
-\cite{lecun2022path}.
+\cite{lecun2022path}. Recent JEPA work continues to refine the
+training-stability and modality-coverage axes: LeWorldModel
+\cite{maes2026leworldmodel} demonstrates stable end-to-end
+JEPA training from raw pixels with a single regularizer, and
+VL-JEPA \cite{chen2026vljepa} extends the predictive-latent
+formulation to vision-language with parameter-efficiency gains
+over token-space objectives. The Dynamic / ME-JEPA contribution
+is orthogonal to both: it does not propose a new representation
+objective, and instead asks what infrastructure is required to
+make a complete JEPA runtime --- including data, training,
+planning, and provenance --- physically auditable end-to-end.
 
 The Dynamic / ME-JEPA architectural change is in \emph{how target
 representations are sourced}: instead of an exponential-moving-
@@ -1590,12 +1600,59 @@ local and self-hosted to keep evidence on disk; a reviewer
 without RTX 5090 access cannot run the full release-C gate.
 
 % ============================================================================
+\section{Code and Data Availability}
+\label{sec:code-data}
+
+The Dynamic / ME-JEPA Rust runtime is currently maintained as a
+private codebase. Reviewers and researchers requiring source-level
+access for verification or reproduction may request a time-bounded
+private grant by writing to the author at
+\texttt{chrisroyseai@gmail.com}; reasonable requests from
+established research institutions are accommodated.
+
+The canonical reproducible release is the Docker + Apptainer
+artifact described in \S\ref{sec:reproducibility} and \S B of the
+appendix: a single deterministic Docker tar
+(SHA-256 \sha{099f053\dots7d4cd80e}), a single Apptainer SIF
+(\sha{30b531c\dots f2825}), the verified release archive
+\code{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified.tar.gz}
+(\sha{8cccf49\dots43ecd}), and the per-seed bundles whose
+SHA-chained contents this paper's figures and tables are read
+directly from. The release archive is self-contained: a reviewer
+with an RTX 5090 host matching the environment fingerprint in
+\S\ref{sec:reproducibility} can reproduce every headline number
+from the artifact alone, without source-code access.
+
+The career-taxonomy data substrate
+(\S\ref{sec:career-benchmark}) derives from O*NET 30.2
+\cite{onet2026} under CC BY 4.0; the source ZIP SHA-256 and
+per-edge walk hash are recorded in every generated bundle and
+are therefore deterministically reproducible from the public
+source. A public companion implementation that demonstrates the
+same multi-embedder MCP-server architecture in the video
+understanding domain is available at
+\url{https://github.com/ChrisRoyse/clipcannon} (5 frozen
+embedders --- SigLIP-SO400M, Nomic Embed v1.5, Wav2Vec2-large,
+WavLM-base-plus-sv, ECAPA-TDNN --- BSL 1.1, converting to
+Apache 2.0 on 2030-03-31).
+
+The artifact itself is distributed under PolyForm
+Noncommercial 1.0.0; this license choice is intended to
+support reproducibility and academic verification while
+preserving commercial-licensing optionality, and is not
+intended to discourage research use.
+
+% ============================================================================
 \section{Acknowledgments}
 
+The author received no external funding for this work and
+declares no competing interests.
+
 The runtime builds on prior JEPA work
-\cite{assran2023ijepa,bardes2024vjepa} for the latent-prediction
-premise; on VICReg \cite{bardes2022vicreg} for the
-variance / covariance regularization; on World Models
+\cite{assran2023ijepa,bardes2024vjepa,maes2026leworldmodel,chen2026vljepa}
+for the latent-prediction premise; on VICReg
+\cite{bardes2022vicreg} for the variance / covariance
+regularization; on World Models
 \cite{ha2018worldmodels}, Dreamer \cite{hafner2023dreamerv3}, and
 MuZero \cite{schrittwieser2019muzero} for the planning-with-a-
 learned-model framing; and on Perceiver IO

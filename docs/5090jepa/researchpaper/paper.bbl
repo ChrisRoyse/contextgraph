@@ -26,6 +26,12 @@ Adrien Bardes, Jean Ponce, and Yann LeCun.
   self-supervised learning.
 \newblock {\em arXiv preprint arXiv:2105.04906}, 2022.
 
+\bibitem{chen2026vljepa}
+Delong Chen, others, and Yann LeCun.
+\newblock {VL-JEPA}: Joint embedding predictive architecture for
+  vision-language.
+\newblock {\em arXiv preprint arXiv:2512.10942}, 2026.
+
 \bibitem{docker2024bestpractices}
 {Docker, Inc.}
 \newblock Build best practices.
@@ -106,6 +112,13 @@ Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy
   Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe.
 \newblock Let's verify step by step.
 \newblock {\em arXiv preprint arXiv:2305.20050}, 2023.
+
+\bibitem{maes2026leworldmodel}
+Lucas Maes, Quentin Le~Lidec, Damien Scieur, Yann LeCun, and Randall
+  Balestriero.
+\newblock {LeWorldModel}: Stable end-to-end joint-embedding predictive
+  architecture from pixels.
+\newblock {\em arXiv preprint arXiv:2603.19312}, 2026.
 
 \bibitem{metafair2024vjepa}
 {Meta AI Research / FAIR}.
