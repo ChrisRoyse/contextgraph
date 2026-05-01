@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/5090jepa/local_ci_gate.sh <preflight|static|smoke-a|smoke-b|release-c>
+Usage: scripts/5090jepa/local_ci_gate.sh <preflight|static|smoke-a|smoke-b|release-c|release-d>
 
 Runs the DynamicJEPA CI gate on the local machine or a self-hosted runner.
 No GitHub-hosted runners, GitHub artifact uploads, remote caches, Codecov, or
@@ -23,7 +23,7 @@ fi
 
 TIER="${1:-smoke-a}"
 case "$TIER" in
-  preflight|static|smoke-a|smoke-b|release-c) ;;
+  preflight|static|smoke-a|smoke-b|release-c|release-d) ;;
   *)
     echo "LOCAL_CI_INVALID_TIER: unsupported tier '$TIER'" >&2
     usage >&2
@@ -149,12 +149,15 @@ precheck_tier_roots() {
       require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_seed42_b" "LOCAL_CI_PAPER_SMALL_ROOT_EXISTS"
       require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_hp_sweep_batch_size" "LOCAL_CI_HP_SWEEP_ROOT_EXISTS"
       ;;
-    release-c)
+    release-c|release-d)
       require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_release_bundle_paths.txt" "LOCAL_CI_RELEASE_BUNDLE_LIST_EXISTS"
       for seed in 42 43 44 45 46; do
         require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_seed${seed}" "LOCAL_CI_RELEASE_SEED_ROOT_EXISTS"
       done
       require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" "LOCAL_CI_RELEASE_AGGREGATE_ROOT_EXISTS"
+      if [[ "$TIER" == "release-d" ]]; then
+        require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_release_archive_v2" "LOCAL_CI_RELEASE_D_ARCHIVE_ROOT_EXISTS"
+      fi
       ;;
     preflight|static)
       ;;
@@ -408,6 +411,35 @@ run_release_matrix_and_aggregate() {
   test -s "$agg_root/plots/multiseed_paired_delta_forest.svg"
 }
 
+run_release_pairwise_mi_audit() {
+  local run_id="${RUN_ID_PREFIX}_paper_small_seed42"
+  local career_db="$RUN_ROOT/$run_id/dbs/${run_id}_career_taxonomy_rocksdb"
+  local agg_root="$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate"
+  local audit_root="$agg_root/pairwise_mi_audit_career_taxonomy"
+  require_file "$career_db/CURRENT" "LOCAL_CI_RELEASE_D_CAREER_DB_MISSING"
+  require_no_existing_path "$audit_root" "LOCAL_CI_RELEASE_D_MI_AUDIT_ROOT_EXISTS"
+  add_evidence "$audit_root"
+  log "release-d pairwise MI audit output=$audit_root"
+  CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa audit-pairwise-mi \
+    --db "$career_db" \
+    --domain career_taxonomy \
+    --sample-size 1000 \
+    --estimator ksg \
+    --ksg-k 5 \
+    --bootstrap-iters 1000 \
+    --seed 20260501 \
+    --output-dir "$audit_root" \
+    --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_pairwise_mi_audit.json"
+  add_evidence "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_pairwise_mi_audit.json"
+  test -s "$audit_root/pairwise_mi_matrix.csv"
+  test -s "$audit_root/paper_tables/table_pairwise_mi_summary.csv"
+  test -s "$audit_root/pairwise_mi_heatmap.svg"
+  test -s "$audit_root/pairwise_mi_audit.json"
+  jq -e '.status == "ok" and .summary.domain == "career_taxonomy"' "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_pairwise_mi_audit.json"
+  jq -e '.summary.n_eff_strict >= 9.0 and .summary.n_eff_strict <= 10.0' "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_pairwise_mi_audit.json"
+  jq -e '(.estimator.sample_size == 1000) and (.matrix | length == 45)' "$audit_root/pairwise_mi_audit.json"
+}
+
 case "$TIER" in
   preflight)
     preflight_cuda_and_data
@@ -484,6 +516,106 @@ case "$TIER" in
       --output "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run.json" \
       --json
     jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run.json"
+    ;;
+  release-d)
+    preflight_cuda_and_data
+    require_command docker
+    require_command singularity
+    require_file Dockerfile "LOCAL_CI_DOCKERFILE_MISSING"
+    require_file "reference/reference_release_v2.0.0.json" "LOCAL_CI_REFERENCE_V2_MISSING"
+    require_file "scripts/5090jepa/artifact_evaluation_dry_run.sh" "LOCAL_CI_ARTIFACT_EVALUATION_MISSING"
+    require_file "scripts/5090jepa/prepare_release_candidate_archive_v2.sh" "LOCAL_CI_RELEASE_D_ARCHIVE_SCRIPT_MISSING"
+    [[ -n "${APPTAINER_SIF:-}" ]] || {
+      echo "LOCAL_CI_RELEASE_D_APPTAINER_SIF_REQUIRED: set APPTAINER_SIF to a real v2 SIF path" >&2
+      exit 1
+    }
+    require_file "$APPTAINER_SIF" "LOCAL_CI_RELEASE_D_APPTAINER_SIF_MISSING"
+    test -x ./reproduce.sh || {
+      echo "LOCAL_CI_REPRODUCE_SCRIPT_MISSING: release-d requires executable reproduce.sh" >&2
+      exit 1
+    }
+    static_gate
+    build_dynamicjepa
+    run_release_matrix_and_aggregate
+    run_release_pairwise_mi_audit
+    ./reproduce.sh verify-aggregate \
+      --aggregate "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" \
+      --reference reference/reference_release_v2.0.0.json \
+      --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_reference_check.json"
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_release_d_reference_check.json"
+    export DOCKER_BUILDKIT=1
+    export SOURCE_DATE_EPOCH=1777600000
+    docker_tar_1="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_v2_1.tar"
+    docker_tar_2="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_v2_2.tar"
+    docker_sha_1="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_v2_1.sha256"
+    docker_sha_2="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_v2_2.sha256"
+    docker buildx build --progress=plain --platform linux/amd64 --provenance=false --sbom=false \
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+      --output "type=docker,rewrite-timestamp=true,dest=$docker_tar_1" .
+    docker buildx build --progress=plain --platform linux/amd64 --provenance=false --sbom=false --no-cache \
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+      --output "type=docker,rewrite-timestamp=true,dest=$docker_tar_2" .
+    sha256sum "$docker_tar_1" | tee "$docker_sha_1"
+    sha256sum "$docker_tar_2" | tee "$docker_sha_2"
+    cmp -s "$docker_tar_1" "$docker_tar_2" || {
+      echo "LOCAL_CI_DOCKER_IMAGE_TAR_DRIFT: deterministic Docker tar exports differ" >&2
+      exit 1
+    }
+    docker load -i "$docker_tar_1" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_load.txt"
+    loaded_image_id="$(awk '/Loaded image ID:/ {print $4}' "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_load.txt" | tail -n 1)"
+    [[ -n "$loaded_image_id" ]] || {
+      echo "LOCAL_CI_DOCKER_LOAD_IMAGE_ID_MISSING: docker load did not report an image ID" >&2
+      exit 1
+    }
+    aggregate_abs="$(realpath "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate")"
+    docker run --rm --gpus all \
+      -v "$aggregate_abs:/work/aggregate:ro" \
+      "$loaded_image_id" verify-aggregate \
+      --aggregate /work/aggregate \
+      --reference /workspace/reference/reference_release_v2.0.0.json \
+      --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json"
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json"
+    apptainer_tar_1="$RUN_ROOT/${RUN_ID_PREFIX}_apptainer_v2_1.tar"
+    apptainer_tar_2="$RUN_ROOT/${RUN_ID_PREFIX}_apptainer_v2_2.tar"
+    apptainer_sif_dir="$(dirname -- "$APPTAINER_SIF")"
+    apptainer_sif_base="$(basename -- "$APPTAINER_SIF")"
+    tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+      -cf "$apptainer_tar_1" -C "$apptainer_sif_dir" "$apptainer_sif_base"
+    tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+      -cf "$apptainer_tar_2" -C "$apptainer_sif_dir" "$apptainer_sif_base"
+    cmp -s "$apptainer_tar_1" "$apptainer_tar_2" || {
+      echo "LOCAL_CI_APPTAINER_TAR_DRIFT: deterministic Apptainer tar exports differ" >&2
+      exit 1
+    }
+    singularity inspect --json "$APPTAINER_SIF" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2_inspect.json"
+    singularity exec --nv --cleanenv --no-home \
+      -B "$aggregate_abs:/work/aggregate:ro" \
+      "$APPTAINER_SIF" \
+      /workspace/reproduce.sh verify-aggregate \
+      --aggregate /work/aggregate \
+      --reference /workspace/reference/reference_release_v2.0.0.json \
+      --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2_verify_aggregate.json"
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2_verify_aggregate.json"
+    scripts/5090jepa/artifact_evaluation_dry_run.sh \
+      --aggregate "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" \
+      --reference reference/reference_release_v2.0.0.json \
+      --output "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run_v2.json" \
+      --json
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run_v2.json"
+    STATUS="passed"
+    write_manifest 0
+    scripts/5090jepa/prepare_release_candidate_archive_v2.sh \
+      --release-id mejepa_5090_artifact_v2.0.0_rc1 \
+      --aggregate "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" \
+      --local-ci-manifest "$MANIFEST_PATH" \
+      --docker-tar-1 "$docker_tar_1" \
+      --docker-tar-2 "$docker_tar_2" \
+      --container-verify-json "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json" \
+      --reference reference/reference_release_v2.0.0.json \
+      --output-root "$RUN_ROOT/${RUN_ID_PREFIX}_release_archive_v2" \
+      --apptainer-sif "$APPTAINER_SIF" \
+      --require-apptainer \
+      --source-date-epoch "$SOURCE_DATE_EPOCH"
     ;;
 esac
 

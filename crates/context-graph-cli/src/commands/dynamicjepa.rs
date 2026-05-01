@@ -40,8 +40,9 @@ use context_graph_core::dynamicjepa::{
     THRESHOLD_CALIBRATION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_dynamicjepa::{
-    plan_next_action, predict_next_panel, record_surprise, train_dataset, verify_artifact_files,
-    TrainConfig,
+    bootstrap_ksg_1_ci, estimate_ksg_1, plan_next_action, predict_next_panel, record_surprise,
+    summarize_pairwise_mi, train_dataset, verify_artifact_files, PairwiseMiPairReport,
+    PairwiseMiSummary, TrainConfig, MI_AUDIT_MIN_SAMPLE_SIZE,
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
@@ -87,6 +88,7 @@ use zip::ZipArchive;
 
 const DYNAMICJEPA_BUNDLE_SCHEMA_VERSION: u32 = 2;
 const BUNDLE_SCHEMA_MANIFESTS: &[&str] = &["run_manifest.json", "aggregate_manifest.json"];
+const MI_AUDIT_MIN_DISTINCT_FOR_REDUNDANCY: usize = 3;
 
 #[derive(Subcommand, Debug)]
 pub enum DynamicJepaCommands {
@@ -150,6 +152,8 @@ pub enum DynamicJepaCommands {
     RecalibrateThreshold(RecalibrateThresholdArgs),
     /// Aggregate dj_audit_log signal_yield rows into MC-ratio paper evidence.
     ComputeMcRatio(ComputeMcRatioArgs),
+    /// Estimate pairwise mutual information across persisted instrument readings.
+    AuditPairwiseMi(AuditPairwiseMiArgs),
     /// Read a persisted DynamicJEPA prediction.
     GetPrediction(GetPredictionArgs),
     /// Read a persisted DynamicJEPA plan trace.
@@ -209,6 +213,7 @@ impl DynamicJepaCommands {
             Self::CalibrateThreshold(_) => "dynamicjepa_calibrate_threshold",
             Self::RecalibrateThreshold(_) => "dynamicjepa_recalibrate_threshold",
             Self::ComputeMcRatio(_) => "dynamicjepa_compute_mc_ratio",
+            Self::AuditPairwiseMi(_) => "dynamicjepa_audit_pairwise_mi",
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
@@ -910,6 +915,49 @@ pub struct ComputeMcRatioArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct AuditPairwiseMiArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Number of real persisted events to audit.
+    #[arg(long = "sample-size", default_value_t = 1000)]
+    pub sample_size: usize,
+
+    /// MI estimator. Phase 5 supports ksg only; mine fails closed until trained support lands.
+    #[arg(long, default_value = "ksg")]
+    pub estimator: String,
+
+    /// K nearest neighbours for the KSG-1 estimator.
+    #[arg(long = "ksg-k", default_value_t = 5)]
+    pub ksg_k: usize,
+
+    /// Deterministic nonparametric bootstrap iterations for confidence intervals.
+    #[arg(long = "bootstrap-iters", default_value_t = 1000)]
+    pub bootstrap_iters: usize,
+
+    /// Deterministic seed used for event selection and bootstrap resampling.
+    #[arg(long, default_value_t = 20260501)]
+    pub seed: u64,
+
+    /// Fresh output directory for pairwise_mi_* artifacts.
+    #[arg(long = "output-dir")]
+    pub output_dir: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
 pub struct GetPredictionArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
@@ -1317,6 +1365,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::CalibrateThreshold(args) => calibrate_threshold_command(args, false),
         DynamicJepaCommands::RecalibrateThreshold(args) => recalibrate_threshold_command(args),
         DynamicJepaCommands::ComputeMcRatio(args) => compute_mc_ratio_command(args),
+        DynamicJepaCommands::AuditPairwiseMi(args) => audit_pairwise_mi_command(args),
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
@@ -3938,6 +3987,714 @@ fn compute_mc_ratio_command(args: ComputeMcRatioArgs) -> DynamicJepaResult<Comma
             exit_code: 1,
         }),
     }
+}
+
+fn audit_pairwise_mi_command(args: AuditPairwiseMiArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_PAIRWISE_READINGS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_existing_store(&args.db, "dynamicjepa_audit_pairwise_mi")?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "audit-pairwise-mi.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let output_root = args.output_dir.clone();
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        if output_root.exists() {
+            return Err(DynamicJepaError::MiAuditOutputDirExists {
+                path: output_root.display().to_string(),
+            });
+        }
+        let estimator = args.estimator.to_ascii_lowercase();
+        match estimator.as_str() {
+            "ksg" => {}
+            "mine" => {
+                return Err(DynamicJepaError::MiAuditMineNonconvergent {
+                    message: "MINE is intentionally fail-closed in Phase 5; use --estimator ksg"
+                        .to_string(),
+                });
+            }
+            other => {
+                return Err(DynamicJepaError::validation(
+                    "audit_pairwise_mi.estimator",
+                    format!("unsupported estimator {other:?}"),
+                    "use --estimator ksg for the Phase 5 release-D audit",
+                ));
+            }
+        }
+
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        if domain.instrument_specs.len() < 2 {
+            return Err(DynamicJepaError::validation(
+                "audit_pairwise_mi.domain",
+                format!(
+                    "domain {} has {} instruments; pairwise MI requires at least two",
+                    domain.id,
+                    domain.instrument_specs.len()
+                ),
+                "register a domain pack with at least two instrument_specs",
+            ));
+        }
+
+        let sampled_states = select_pairwise_mi_sample_states(
+            db,
+            &domain,
+            args.sample_size,
+            args.seed,
+            MI_AUDIT_MIN_SAMPLE_SIZE,
+        )?;
+        let source = read_pairwise_mi_source_data(db, &domain, &sampled_states)?;
+        let degenerate_instruments = pairwise_mi_degenerate_instruments(&source);
+        let degenerate_ids = degenerate_instruments
+            .iter()
+            .filter_map(|item| item.get("instrument_id").and_then(Value::as_str))
+            .map(str::to_string)
+            .collect::<BTreeSet<_>>();
+        if domain
+            .instrument_specs
+            .len()
+            .saturating_sub(degenerate_ids.len())
+            < 2
+        {
+            return Err(DynamicJepaError::MiAuditDegenerateInput {
+                instrument_id: degenerate_ids
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+                reason: "fewer than two non-degenerate instruments remain after source-of-truth readback"
+                    .to_string(),
+            });
+        }
+        let mut rows = Vec::new();
+        let mut low_support_pairs = Vec::new();
+        for left_idx in 0..domain.instrument_specs.len() {
+            for right_idx in (left_idx + 1)..domain.instrument_specs.len() {
+                let left_spec = &domain.instrument_specs[left_idx];
+                let right_spec = &domain.instrument_specs[right_idx];
+                let left_id = left_spec.instrument_id.as_str();
+                let right_id = right_spec.instrument_id.as_str();
+                let xs = source.samples.get(left_id).ok_or_else(|| {
+                    DynamicJepaError::SourceOfTruthMissing {
+                        cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                        key: left_id.as_bytes().to_vec(),
+                    }
+                })?;
+                let ys = source.samples.get(right_id).ok_or_else(|| {
+                    DynamicJepaError::SourceOfTruthMissing {
+                        cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                        key: right_id.as_bytes().to_vec(),
+                    }
+                })?;
+                let left_degenerate = degenerate_ids.contains(left_id);
+                let right_degenerate = degenerate_ids.contains(right_id);
+                let left_distinct = pairwise_mi_distinct_row_count(xs);
+                let right_distinct = pairwise_mi_distinct_row_count(ys);
+                let low_support = left_distinct < MI_AUDIT_MIN_DISTINCT_FOR_REDUNDANCY
+                    || right_distinct < MI_AUDIT_MIN_DISTINCT_FOR_REDUNDANCY;
+                let (mi_nats, mi_bits, mi_normalised, bootstrap_low, bootstrap_high) =
+                    if left_degenerate || right_degenerate {
+                        (0.0, 0.0, 0.0, 0.0, 0.0)
+                    } else {
+                        let estimate = estimate_ksg_1(left_id, xs, right_id, ys, args.ksg_k)?;
+                        let (bootstrap_low, bootstrap_high) = bootstrap_ksg_1_ci(
+                            left_id,
+                            xs,
+                            right_id,
+                            ys,
+                            args.ksg_k,
+                            args.bootstrap_iters,
+                            pairwise_mi_pair_seed(args.seed, left_id, right_id),
+                        )?;
+                        (
+                            estimate.mi_nats,
+                            estimate.mi_bits,
+                            if low_support {
+                                0.0
+                            } else {
+                                estimate.mi_normalised
+                            },
+                            bootstrap_low,
+                            bootstrap_high,
+                        )
+                    };
+                if low_support {
+                    low_support_pairs.push(json!({
+                        "instrument_j": left_id,
+                        "instrument_k": right_id,
+                        "distinct_j": left_distinct,
+                        "distinct_k": right_distinct,
+                        "min_distinct_for_redundancy": MI_AUDIT_MIN_DISTINCT_FOR_REDUNDANCY,
+                        "mi_normalised_policy": "not_counted_as_redundant_low_support",
+                    }));
+                }
+                rows.push(PairwiseMiPairReport {
+                    instrument_j: left_id.to_string(),
+                    instrument_k: right_id.to_string(),
+                    instrument_j_name: left_id.to_string(),
+                    instrument_k_name: right_id.to_string(),
+                    d_j: source.dimensions[left_id],
+                    d_k: source.dimensions[right_id],
+                    n_audit: sampled_states.len(),
+                    estimator: "ksg".to_string(),
+                    ksg_k: args.ksg_k,
+                    mi_nats,
+                    mi_bits,
+                    mi_normalised,
+                    bootstrap_low,
+                    bootstrap_high,
+                });
+            }
+        }
+        let summary =
+            summarize_pairwise_mi(domain.id.to_string(), domain.instrument_specs.len(), &rows)?;
+        let matrix_path = output_root.join("pairwise_mi_matrix.csv");
+        let summary_path = output_root.join("paper_tables/table_pairwise_mi_summary.csv");
+        let heatmap_path = output_root.join("pairwise_mi_heatmap.svg");
+        let audit_json_path = output_root.join("pairwise_mi_audit.json");
+        let audit_payload = json!({
+            "schema_version": 1,
+            "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
+            "operation": "audit_pairwise_mi",
+            "source_of_truth": {
+                "rocksdb": source_cfs,
+                "event_selector": "sha256(seed,event_uuid)",
+                "event_uuid_count": source.event_ids.len(),
+                "instrument_readings": CF_DJ_INSTRUMENT_READINGS,
+                "pairwise_readings": CF_DJ_PAIRWISE_READINGS,
+            },
+            "domain": {
+                "id": domain.id.to_string(),
+                "version": domain.version.clone(),
+                "n_panel_slots": domain.instrument_specs.len(),
+            },
+            "estimator": {
+                "name": "ksg",
+                "ksg_variant": "KSG-1",
+                "ksg_k": args.ksg_k,
+                "sample_size": args.sample_size,
+                "bootstrap_iters": args.bootstrap_iters,
+                "seed": args.seed,
+            },
+            "sample_event_ids": source.event_ids.clone(),
+            "degenerate_instruments": degenerate_instruments.clone(),
+            "low_support_pairs": low_support_pairs.clone(),
+            "matrix": rows.clone(),
+            "summary": summary.clone(),
+        });
+        write_pairwise_mi_outputs(&output_root, &rows, &summary, &audit_payload)?;
+
+        let content_hashes = vec![
+            file_sha256(&matrix_path)?,
+            file_sha256(&summary_path)?,
+            file_sha256(&heatmap_path)?,
+            file_sha256(&audit_json_path)?,
+        ];
+        let mut audit = build_audit(
+            "audit_pairwise_mi",
+            AuditStatus::Ok,
+            std::iter::once(format!("domain:{}@{}", domain.id, domain.version))
+                .chain(source.event_ids.iter().cloned())
+                .collect(),
+            vec![
+                matrix_path.display().to_string(),
+                summary_path.display().to_string(),
+                heatmap_path.display().to_string(),
+                audit_json_path.display().to_string(),
+            ],
+            source_cfs.iter().map(|cf| (*cf).to_string()).collect(),
+            content_hashes,
+        )?;
+        let dimensions =
+            signal_yield_dimensions_for_domain_pack(&domain, candidate_action_count(&domain)?)?;
+        set_audit_signal_yield(
+            &mut audit,
+            signal_yield_for_operation("audit_pairwise_mi", dimensions)?,
+        )?;
+        put_audit_record(db, &audit)?;
+
+        let matrix_readback = read_ci_csv_table(&matrix_path, "pairwise_mi_matrix")?;
+        let summary_readback = read_ci_csv_table(&summary_path, "table_pairwise_mi_summary")?;
+        let audit_json_readback = read_json_file(&audit_json_path)?;
+        let heatmap_state = ci_path_state(&heatmap_path)?;
+        Ok(json!({
+            "created_files": {
+                "pairwise_mi_matrix": matrix_path,
+                "table_pairwise_mi_summary": summary_path,
+                "pairwise_mi_heatmap": heatmap_path,
+                "pairwise_mi_audit": audit_json_path,
+            },
+            "created_ids": {
+                "audit_id": audit.audit_id,
+            },
+            "summary": summary,
+            "decoded_records": {
+                "sample_event_ids": source.event_ids.clone(),
+                "degenerate_instruments": degenerate_instruments,
+                "low_support_pairs": low_support_pairs,
+                "sample_readback": source.sample_readback,
+                "pairwise_reading_rows_verified": source.pairwise_rows_verified,
+                "matrix_rows": matrix_readback.rows,
+                "summary_rows": summary_readback.rows,
+                "pairwise_mi_audit": audit_json_readback,
+                "pairwise_mi_heatmap": heatmap_state,
+                "audit_log_sample": inspect_cf(db, CF_DJ_AUDIT_LOG, 200, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_audit_pairwise_mi",
+                "status": "ok",
+                "db_path": db_path,
+                "output_root": output_root,
+                "source_of_truth": {
+                    "rocksdb": source_cfs,
+                    "files": [
+                        "pairwise_mi_matrix.csv",
+                        "paper_tables/table_pairwise_mi_summary.csv",
+                        "pairwise_mi_heatmap.svg",
+                        "pairwise_mi_audit.json"
+                    ]
+                },
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_files": value["created_files"].clone(),
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_audit_pairwise_mi",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+#[derive(Debug)]
+struct PairwiseMiSourceData {
+    event_ids: Vec<String>,
+    samples: BTreeMap<String, Vec<Vec<f32>>>,
+    dimensions: BTreeMap<String, usize>,
+    sample_readback: Vec<Value>,
+    pairwise_rows_verified: usize,
+}
+
+fn select_pairwise_mi_sample_states(
+    db: &rocksdb::DB,
+    domain: &DomainPack,
+    requested: usize,
+    seed: u64,
+    minimum: usize,
+) -> DynamicJepaResult<Vec<NormalizedState>> {
+    let mut states = list_normalized_states(db, 1_000_000, 0)?
+        .into_iter()
+        .filter(|state| state.header.domain_pack_id == domain.id)
+        .collect::<Vec<_>>();
+    let available = states.len();
+    if requested < minimum || available < requested {
+        return Err(DynamicJepaError::MiAuditSampleSizeTooSmall {
+            requested,
+            available,
+            minimum,
+        });
+    }
+    states.sort_by(|left, right| {
+        pairwise_mi_event_key(seed, left.source_event_id)
+            .cmp(&pairwise_mi_event_key(seed, right.source_event_id))
+            .then_with(|| left.source_event_id.cmp(&right.source_event_id))
+    });
+    states.truncate(requested);
+    states.sort_by(|left, right| left.source_event_id.cmp(&right.source_event_id));
+    Ok(states)
+}
+
+fn read_pairwise_mi_source_data(
+    db: &rocksdb::DB,
+    domain: &DomainPack,
+    states: &[NormalizedState],
+) -> DynamicJepaResult<PairwiseMiSourceData> {
+    let mut samples = BTreeMap::new();
+    let mut dimensions = BTreeMap::new();
+    for spec in &domain.instrument_specs {
+        let dim = spec.output_shape.iter().product::<usize>();
+        samples.insert(
+            spec.instrument_id.to_string(),
+            Vec::with_capacity(states.len()),
+        );
+        dimensions.insert(spec.instrument_id.to_string(), dim);
+    }
+    let specs_by_id = domain
+        .instrument_specs
+        .iter()
+        .map(|spec| (spec.instrument_id.as_str(), spec))
+        .collect::<BTreeMap<_, _>>();
+    let expected_pairwise_per_event = domain
+        .instrument_specs
+        .len()
+        .saturating_mul(domain.instrument_specs.len().saturating_sub(1))
+        / 2;
+    let mut event_ids = Vec::with_capacity(states.len());
+    let mut sample_readback = Vec::new();
+    let mut pairwise_rows_verified = 0usize;
+    for state in states {
+        let event_id = state.source_event_id;
+        event_ids.push(event_id.to_string());
+        let readings = list_instrument_readings_for_event(db, event_id)?;
+        let mut readings_by_id = BTreeMap::new();
+        for reading in &readings {
+            if readings_by_id
+                .insert(reading.instrument_id.as_str(), reading)
+                .is_some()
+            {
+                return Err(DynamicJepaError::StorageInvariantViolation {
+                    message: format!(
+                        "duplicate instrument reading for event {} instrument {}",
+                        event_id, reading.instrument_id
+                    ),
+                });
+            }
+        }
+        let mut event_instruments = Vec::new();
+        for spec in &domain.instrument_specs {
+            let reading = readings_by_id
+                .get(spec.instrument_id.as_str())
+                .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                    key: instrument_reading_key(event_id, &spec.instrument_id).to_vec(),
+                })?;
+            match &reading.status {
+                ReadingStatus::Ok => {}
+                ReadingStatus::Failed { error } => {
+                    return Err(DynamicJepaError::InstrumentFailed {
+                        instrument_id: spec.instrument_id.to_string(),
+                        event_id: event_id.as_uuid(),
+                        message: format!("persisted reading is failed: {error}"),
+                        field_path: "dj_instrument_readings.status".to_string(),
+                    });
+                }
+            }
+            let expected_hash = instrument_hash(spec);
+            if reading.instrument_hash != expected_hash {
+                return Err(DynamicJepaError::MiAuditInstrumentHashDrift {
+                    event_id: event_id.as_uuid(),
+                    instrument_id: spec.instrument_id.to_string(),
+                });
+            }
+            let expected_dim = dimensions[spec.instrument_id.as_str()];
+            if reading.output_dense.len() != expected_dim {
+                return Err(DynamicJepaError::PanelShapeMismatch {
+                    domain_pack_id: domain.id.to_string(),
+                    expected: vec![expected_dim],
+                    actual: vec![reading.output_dense.len()],
+                });
+            }
+            samples
+                .get_mut(spec.instrument_id.as_str())
+                .expect("sample matrices are initialized from domain instruments")
+                .push(reading.output_dense.clone());
+            event_instruments.push(json!({
+                "instrument_id": spec.instrument_id.to_string(),
+                "reading_id": reading.reading_id,
+                "dim": reading.output_dense.len(),
+                "instrument_hash": hex_bytes(&reading.instrument_hash),
+                "output_preview": reading.output_dense.iter().take(6).copied().collect::<Vec<_>>(),
+            }));
+        }
+        let pairwise_rows = list_pairwise_readings_for_event(db, event_id)?;
+        if pairwise_rows.len() != expected_pairwise_per_event {
+            return Err(DynamicJepaError::PairwiseRowCountMismatch {
+                event_id: event_id.as_uuid(),
+                expected: expected_pairwise_per_event as u64,
+                actual: pairwise_rows.len() as u64,
+            });
+        }
+        for pairwise in &pairwise_rows {
+            match &pairwise.validation_status {
+                ReadingStatus::Ok => {}
+                ReadingStatus::Failed { error } => {
+                    return Err(DynamicJepaError::InstrumentFailed {
+                        instrument_id: format!(
+                            "{}/{}",
+                            pairwise.instrument_j, pairwise.instrument_k
+                        ),
+                        event_id: event_id.as_uuid(),
+                        message: format!("persisted pairwise reading is failed: {error}"),
+                        field_path: "dj_pairwise_readings.validation_status".to_string(),
+                    });
+                }
+            }
+            let left_spec = specs_by_id
+                .get(pairwise.instrument_j.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_j.to_string(),
+                })?;
+            let right_spec = specs_by_id
+                .get(pairwise.instrument_k.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_k.to_string(),
+                })?;
+            if pairwise.instrument_j_artifact_hash != instrument_artifact_hash32(left_spec)? {
+                return Err(DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_j.to_string(),
+                });
+            }
+            if pairwise.instrument_k_artifact_hash != instrument_artifact_hash32(right_spec)? {
+                return Err(DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_k.to_string(),
+                });
+            }
+        }
+        pairwise_rows_verified += pairwise_rows.len();
+        if sample_readback.len() < 5 {
+            sample_readback.push(json!({
+                "event_id": event_id.to_string(),
+                "instrument_count": event_instruments.len(),
+                "pairwise_reading_count": pairwise_rows.len(),
+                "instruments": event_instruments,
+            }));
+        }
+    }
+    Ok(PairwiseMiSourceData {
+        event_ids,
+        samples,
+        dimensions,
+        sample_readback,
+        pairwise_rows_verified,
+    })
+}
+
+fn pairwise_mi_degenerate_instruments(source: &PairwiseMiSourceData) -> Vec<Value> {
+    source
+        .samples
+        .iter()
+        .filter_map(|(instrument_id, samples)| {
+            let distinct_count = pairwise_mi_distinct_row_count(samples);
+            (distinct_count < 2).then(|| {
+                json!({
+                    "instrument_id": instrument_id,
+                    "distinct_row_count": distinct_count,
+                    "sample_count": samples.len(),
+                    "mi_policy": "exact_zero_with_all_pairs",
+                })
+            })
+        })
+        .collect()
+}
+
+fn pairwise_mi_distinct_row_count(samples: &[Vec<f32>]) -> usize {
+    samples
+        .iter()
+        .map(|row| row.iter().map(|value| value.to_bits()).collect::<Vec<_>>())
+        .collect::<BTreeSet<_>>()
+        .len()
+}
+
+fn pairwise_mi_event_key(seed: u64, event_id: EventId) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.to_be_bytes());
+    hasher.update(event_id.as_uuid().as_bytes());
+    hasher.finalize().into()
+}
+
+fn pairwise_mi_pair_seed(seed: u64, left_id: &str, right_id: &str) -> u64 {
+    let mut hasher = Sha256::new();
+    hasher.update(seed.to_be_bytes());
+    hasher.update(left_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(right_id.as_bytes());
+    let digest: [u8; 32] = hasher.finalize().into();
+    u64::from_be_bytes([
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7],
+    ])
+}
+
+fn write_pairwise_mi_outputs(
+    output_root: &Path,
+    rows: &[PairwiseMiPairReport],
+    summary: &PairwiseMiSummary,
+    audit_payload: &Value,
+) -> DynamicJepaResult<()> {
+    fs::create_dir_all(output_root).map_err(|err| DynamicJepaError::Storage {
+        operation: "audit_pairwise_mi.create_output_root".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", output_root.display()),
+        remediation: "use a writable fresh --output-dir".to_string(),
+    })?;
+    let paper_tables = output_root.join("paper_tables");
+    fs::create_dir_all(&paper_tables).map_err(|err| DynamicJepaError::Storage {
+        operation: "audit_pairwise_mi.create_paper_tables".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", paper_tables.display()),
+        remediation: "use a writable fresh --output-dir".to_string(),
+    })?;
+    write_text_file(
+        &output_root.join("pairwise_mi_matrix.csv"),
+        &pairwise_mi_matrix_csv(rows),
+    )?;
+    write_text_file(
+        &paper_tables.join("table_pairwise_mi_summary.csv"),
+        &pairwise_mi_summary_csv(summary),
+    )?;
+    write_pairwise_mi_heatmap_svg(&output_root.join("pairwise_mi_heatmap.svg"), rows)?;
+    write_json_file(&output_root.join("pairwise_mi_audit.json"), audit_payload)?;
+    Ok(())
+}
+
+fn pairwise_mi_matrix_csv(rows: &[PairwiseMiPairReport]) -> String {
+    let mut csv = "instrument_j,instrument_k,instrument_j_name,instrument_k_name,d_j,d_k,n_audit,estimator,ksg_k,mi_nats,mi_bits,mi_normalised,bootstrap_low,bootstrap_high\n".to_string();
+    for row in rows {
+        csv.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{:.12},{:.12},{:.12},{:.12},{:.12}\n",
+            csv_escape(&row.instrument_j),
+            csv_escape(&row.instrument_k),
+            csv_escape(&row.instrument_j_name),
+            csv_escape(&row.instrument_k_name),
+            row.d_j,
+            row.d_k,
+            row.n_audit,
+            csv_escape(&row.estimator),
+            row.ksg_k,
+            row.mi_nats,
+            row.mi_bits,
+            row.mi_normalised,
+            row.bootstrap_low,
+            row.bootstrap_high,
+        ));
+    }
+    csv
+}
+
+fn pairwise_mi_summary_csv(summary: &PairwiseMiSummary) -> String {
+    let mut csv = "domain,n_panel_slots,n_pairs,mean_mi_nats,median_mi_nats,p10_mi_nats,p90_mi_nats,n_redundant_pairs_loose,n_redundant_pairs_strict,n_eff_loose,n_eff_strict\n".to_string();
+    csv.push_str(&format!(
+        "{},{},{},{:.12},{:.12},{:.12},{:.12},{},{},{:.1},{:.1}\n",
+        csv_escape(&summary.domain),
+        summary.n_panel_slots,
+        summary.n_pairs,
+        summary.mean_mi_nats,
+        summary.median_mi_nats,
+        summary.p10_mi_nats,
+        summary.p90_mi_nats,
+        summary.n_redundant_pairs_loose,
+        summary.n_redundant_pairs_strict,
+        summary.n_eff_loose,
+        summary.n_eff_strict,
+    ));
+    csv
+}
+
+fn write_pairwise_mi_heatmap_svg(
+    path: &Path,
+    rows: &[PairwiseMiPairReport],
+) -> DynamicJepaResult<()> {
+    let mut instruments = BTreeSet::new();
+    for row in rows {
+        instruments.insert(row.instrument_j.clone());
+        instruments.insert(row.instrument_k.clone());
+    }
+    let instruments = instruments.into_iter().collect::<Vec<_>>();
+    let n = instruments.len();
+    let cell = 54.0f64;
+    let left = 160.0f64;
+    let top = 92.0f64;
+    let width = left + cell * n as f64 + 40.0;
+    let height = top + cell * n as f64 + 56.0;
+    let mut values = BTreeMap::new();
+    for row in rows {
+        values.insert(
+            (row.instrument_j.clone(), row.instrument_k.clone()),
+            row.mi_normalised,
+        );
+        values.insert(
+            (row.instrument_k.clone(), row.instrument_j.clone()),
+            row.mi_normalised,
+        );
+    }
+    let mut body = String::new();
+    for (idx, instrument) in instruments.iter().enumerate() {
+        let x = left + idx as f64 * cell + cell / 2.0;
+        body.push_str(&format!(
+            r#"<text x="{x:.1}" y="68" text-anchor="middle" font-size="11" transform="rotate(-35 {x:.1} 68)">{}</text>"#,
+            xml_escape(instrument)
+        ));
+        let y = top + idx as f64 * cell + cell / 2.0 + 4.0;
+        body.push_str(&format!(
+            r#"<text x="150" y="{y:.1}" text-anchor="end" font-size="11">{}</text>"#,
+            xml_escape(instrument)
+        ));
+    }
+    for row_idx in 0..n {
+        for col_idx in 0..n {
+            let x = left + col_idx as f64 * cell;
+            let y = top + row_idx as f64 * cell;
+            let value = if row_idx == col_idx {
+                1.0
+            } else {
+                *values
+                    .get(&(instruments[row_idx].clone(), instruments[col_idx].clone()))
+                    .unwrap_or(&0.0)
+            };
+            let fill = pairwise_mi_heat_color(value);
+            body.push_str(&format!(
+                r##"<rect x="{x:.1}" y="{y:.1}" width="{cell:.1}" height="{cell:.1}" fill="{fill}" stroke="#2f3a45" stroke-width="1"/>"##
+            ));
+            body.push_str(&format!(
+                r##"<text x="{:.1}" y="{:.1}" text-anchor="middle" font-size="11" fill="#111827">{:.2}</text>"##,
+                x + cell / 2.0,
+                y + cell / 2.0 + 4.0,
+                value
+            ));
+        }
+    }
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}">
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="24" y="34" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#111827">Pairwise MI Normalised Heatmap</text>
+<g font-family="Arial, sans-serif" fill="#1f2937">
+{body}
+</g>
+</svg>
+"##
+    );
+    write_text_file(path, &svg)
+}
+
+fn pairwise_mi_heat_color(value: f64) -> String {
+    let clamped = value.clamp(0.0, 1.0);
+    let red = (244.0 - 64.0 * clamped).round() as u8;
+    let green = (247.0 - 150.0 * clamped).round() as u8;
+    let blue = (251.0 - 180.0 * clamped).round() as u8;
+    format!("#{red:02x}{green:02x}{blue:02x}")
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -7559,6 +8316,31 @@ fn check_release_aggregate_reference_command(
             }
         }
     }
+    let mut pairwise_mi_audit_results = Vec::new();
+    if let Some(audits) = reference
+        .get("pairwise_mi_audits")
+        .and_then(Value::as_array)
+    {
+        for audit_spec in audits {
+            match check_release_pairwise_mi_reference(&args.aggregate, audit_spec) {
+                Ok(result) => {
+                    diffs.extend(result.diffs);
+                    pairwise_mi_audit_results.push(result.readback);
+                }
+                Err(CiReferenceCheckFailure { code, message }) => {
+                    return Ok(ci_reference_error(
+                        operation,
+                        code,
+                        message,
+                        "inspect the pairwise MI audit files and checked-in release reference before rerunning release-D",
+                        source_of_truth,
+                        before_state,
+                        None,
+                    ));
+                }
+            }
+        }
+    }
 
     let after_state = json!({
         "aggregate": ci_path_state(&args.aggregate)?,
@@ -7572,6 +8354,7 @@ fn check_release_aggregate_reference_command(
         "after_state": after_state,
         "comparison": {
             "table_results": table_results,
+            "pairwise_mi_audit_results": pairwise_mi_audit_results,
             "diff_count": diffs.len(),
             "diffs": diffs,
         },
@@ -7607,6 +8390,244 @@ fn check_release_aggregate_reference_command(
         value: output,
         exit_code: 1,
     })
+}
+
+#[derive(Debug)]
+struct PairwiseMiAuditReferenceCheck {
+    readback: Value,
+    diffs: Vec<Value>,
+}
+
+fn check_release_pairwise_mi_reference(
+    aggregate_root: &Path,
+    audit_spec: &Value,
+) -> Result<PairwiseMiAuditReferenceCheck, CiReferenceCheckFailure> {
+    let domain = audit_spec
+        .get("domain")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new("SCHEMA", "pairwise_mi_audits entry is missing domain")
+        })?;
+    let audit_root_rel = audit_spec
+        .get("path")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("pairwise_mi_audit_{domain}"));
+    let audit_root = aggregate_root.join(&audit_root_rel);
+    let summary_rel = audit_spec
+        .get("summary_path")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{audit_root_rel}/paper_tables/table_pairwise_mi_summary.csv"));
+    let matrix_rel = audit_spec
+        .get("matrix_path")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{audit_root_rel}/pairwise_mi_matrix.csv"));
+    let heatmap_rel = audit_spec
+        .get("heatmap_path")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{audit_root_rel}/pairwise_mi_heatmap.svg"));
+    let audit_json_rel = audit_spec
+        .get("audit_json_path")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{audit_root_rel}/pairwise_mi_audit.json"));
+
+    let required_paths = [&summary_rel, &matrix_rel, &heatmap_rel, &audit_json_rel];
+    let mut diffs = Vec::new();
+    let mut file_states = Vec::new();
+    for relative in required_paths {
+        let state = ci_path_state(&aggregate_root.join(relative))
+            .map_err(|err| CiReferenceCheckFailure::new("AGGREGATE_INCOMPLETE", err.to_string()))?;
+        if !ci_path_state_is_non_empty_file(&state) {
+            diffs.push(json!({
+                "type": "pairwise_mi_file_missing_or_empty",
+                "domain": domain,
+                "path": relative,
+                "state": state,
+            }));
+        }
+        file_states.push(state);
+    }
+    let summary_table = read_ci_csv_table(
+        &aggregate_root.join(&summary_rel),
+        "table_pairwise_mi_summary",
+    )
+    .map_err(|err| CiReferenceCheckFailure::new("AGGREGATE_INCOMPLETE", err.to_string()))?;
+    let matrix_table =
+        read_ci_csv_table(&aggregate_root.join(&matrix_rel), "pairwise_mi_matrix")
+            .map_err(|err| CiReferenceCheckFailure::new("AGGREGATE_INCOMPLETE", err.to_string()))?;
+    let audit_json = read_json_file(&aggregate_root.join(&audit_json_rel))
+        .map_err(|err| CiReferenceCheckFailure::new("AGGREGATE_INCOMPLETE", err.to_string()))?;
+    let Some(summary_row) = summary_table
+        .rows
+        .iter()
+        .find(|row| row.get("domain").is_some_and(|value| value == domain))
+    else {
+        return Err(CiReferenceCheckFailure::new(
+            "AGGREGATE_INCOMPLETE",
+            format!("pairwise MI summary row for domain {domain} is missing"),
+        ));
+    };
+    let n_eff_strict =
+        parse_pairwise_mi_csv_f64(summary_row, "n_eff_strict", "table_pairwise_mi_summary")?;
+    let n_eff_loose =
+        parse_pairwise_mi_csv_f64(summary_row, "n_eff_loose", "table_pairwise_mi_summary")?;
+    let n_panel_slots =
+        parse_pairwise_mi_csv_f64(summary_row, "n_panel_slots", "table_pairwise_mi_summary")?;
+    let n_pairs = parse_pairwise_mi_csv_f64(summary_row, "n_pairs", "table_pairwise_mi_summary")?;
+    let expected = audit_spec.get("expected").unwrap_or(&Value::Null);
+    compare_optional_pairwise_mi_bound(
+        &mut diffs,
+        domain,
+        "n_eff_strict",
+        n_eff_strict,
+        expected.get("n_eff_strict_min"),
+        expected.get("n_eff_strict_max"),
+    );
+    compare_optional_pairwise_mi_bound(
+        &mut diffs,
+        domain,
+        "n_eff_loose",
+        n_eff_loose,
+        expected.get("n_eff_loose_min"),
+        expected.get("n_eff_loose_max"),
+    );
+    compare_optional_pairwise_mi_exact(
+        &mut diffs,
+        domain,
+        "n_panel_slots",
+        n_panel_slots,
+        expected.get("n_panel_slots"),
+    );
+    compare_optional_pairwise_mi_exact(
+        &mut diffs,
+        domain,
+        "n_pairs",
+        n_pairs,
+        expected.get("n_pairs"),
+    );
+    if matrix_table.rows.len() != n_pairs as usize {
+        diffs.push(json!({
+            "type": "pairwise_mi_matrix_row_count_mismatch",
+            "domain": domain,
+            "actual": matrix_table.rows.len(),
+            "summary_n_pairs": n_pairs,
+        }));
+    }
+    if let Some(sample_size) = expected.get("sample_size").and_then(Value::as_u64) {
+        let actual = audit_json
+            .pointer("/estimator/sample_size")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        if actual != sample_size {
+            diffs.push(json!({
+                "type": "pairwise_mi_sample_size_mismatch",
+                "domain": domain,
+                "actual": actual,
+                "reference": sample_size,
+            }));
+        }
+    }
+    if !audit_root.is_dir() {
+        diffs.push(json!({
+            "type": "pairwise_mi_audit_root_missing",
+            "domain": domain,
+            "path": audit_root.display().to_string(),
+        }));
+    }
+    Ok(PairwiseMiAuditReferenceCheck {
+        readback: json!({
+            "domain": domain,
+            "audit_root": audit_root_rel,
+            "summary_path": summary_rel,
+            "matrix_path": matrix_rel,
+            "heatmap_path": heatmap_rel,
+            "audit_json_path": audit_json_rel,
+            "n_eff_strict": n_eff_strict,
+            "n_eff_loose": n_eff_loose,
+            "n_panel_slots": n_panel_slots,
+            "n_pairs": n_pairs,
+            "matrix_rows": matrix_table.rows.len(),
+            "file_states": file_states,
+        }),
+        diffs,
+    })
+}
+
+fn parse_pairwise_mi_csv_f64(
+    row: &BTreeMap<String, String>,
+    column: &str,
+    table: &str,
+) -> Result<f64, CiReferenceCheckFailure> {
+    row.get(column)
+        .ok_or_else(|| {
+            CiReferenceCheckFailure::new(
+                "AGGREGATE_INCOMPLETE",
+                format!("{table} is missing column {column}"),
+            )
+        })?
+        .parse::<f64>()
+        .map_err(|err| {
+            CiReferenceCheckFailure::new(
+                "AGGREGATE_INCOMPLETE",
+                format!("{table}.{column} failed numeric parse: {err}"),
+            )
+        })
+}
+
+fn compare_optional_pairwise_mi_bound(
+    diffs: &mut Vec<Value>,
+    domain: &str,
+    field: &str,
+    actual: f64,
+    min_value: Option<&Value>,
+    max_value: Option<&Value>,
+) {
+    if let Some(minimum) = min_value.and_then(Value::as_f64) {
+        if actual < minimum {
+            diffs.push(json!({
+                "type": "pairwise_mi_bound_mismatch",
+                "domain": domain,
+                "field": field,
+                "actual": actual,
+                "minimum": minimum,
+            }));
+        }
+    }
+    if let Some(maximum) = max_value.and_then(Value::as_f64) {
+        if actual > maximum {
+            diffs.push(json!({
+                "type": "pairwise_mi_bound_mismatch",
+                "domain": domain,
+                "field": field,
+                "actual": actual,
+                "maximum": maximum,
+            }));
+        }
+    }
+}
+
+fn compare_optional_pairwise_mi_exact(
+    diffs: &mut Vec<Value>,
+    domain: &str,
+    field: &str,
+    actual: f64,
+    expected: Option<&Value>,
+) {
+    if let Some(expected) = expected.and_then(Value::as_f64) {
+        if (actual - expected).abs() > f64::EPSILON {
+            diffs.push(json!({
+                "type": "pairwise_mi_exact_mismatch",
+                "domain": domain,
+                "field": field,
+                "actual": actual,
+                "reference": expected,
+            }));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -9294,7 +10315,7 @@ impl ResearchSmokeContext {
                     "artifact_root": self.artifact_root,
                     "evidence_root": self.fsv_evidence_root,
                 },
-                "summary": summary,
+                "summary": summary.clone(),
             }),
             exit_code: 0,
         })

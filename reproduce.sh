@@ -5,6 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage:
   ./reproduce.sh verify-aggregate --aggregate PATH --reference reference/reference_release_v1.0.0.json [--json]
+  ./reproduce.sh verify-aggregate --aggregate PATH --reference reference/reference_release_v2.0.0.json [--json]
   ./reproduce.sh paper_small_1k --seeds 42,43,44,45,46 --run-root PATH --reference reference/reference_release_v1.0.0.json --onet-text-zip PATH [--json]
 
 This script uses real O*NET data and existing DynamicJEPA commands. It never

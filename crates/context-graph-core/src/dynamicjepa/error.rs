@@ -243,6 +243,34 @@ pub enum DynamicJepaError {
         n_events: u64,
         remediation: String,
     },
+    #[error("pairwise MI audit sample size too small: requested={requested} available={available} minimum={minimum}")]
+    MiAuditSampleSizeTooSmall {
+        requested: usize,
+        available: usize,
+        minimum: usize,
+    },
+    #[error("pairwise MI audit degenerate input: instrument={instrument_id} reason={reason}")]
+    MiAuditDegenerateInput {
+        instrument_id: String,
+        reason: String,
+    },
+    #[error("pairwise MI audit bootstrap degenerate: pair={instrument_j}/{instrument_k} bootstrap_iters={bootstrap_iters}")]
+    MiAuditBootstrapDegenerate {
+        instrument_j: String,
+        instrument_k: String,
+        bootstrap_iters: usize,
+    },
+    #[error("pairwise MI audit MINE estimator did not converge: {message}")]
+    MiAuditMineNonconvergent { message: String },
+    #[error("pairwise MI audit output directory already exists: {path}")]
+    MiAuditOutputDirExists { path: String },
+    #[error(
+        "pairwise MI audit instrument hash drift: event={event_id} instrument={instrument_id}"
+    )]
+    MiAuditInstrumentHashDrift {
+        event_id: Uuid,
+        instrument_id: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -336,6 +364,12 @@ impl DynamicJepaError {
             Self::SignalYieldUnknownOperation { .. } => "SIGNAL_YIELD_UNKNOWN_OPERATION",
             Self::SignalYieldTableDrift { .. } => "SIGNAL_YIELD_TABLE_DRIFT",
             Self::SignalYieldEventCountMismatch { .. } => "SIGNAL_YIELD_EVENT_COUNT_MISMATCH",
+            Self::MiAuditSampleSizeTooSmall { .. } => "MI_AUDIT_SAMPLE_SIZE_TOO_SMALL",
+            Self::MiAuditDegenerateInput { .. } => "MI_AUDIT_DEGENERATE_INPUT",
+            Self::MiAuditBootstrapDegenerate { .. } => "MI_AUDIT_BOOTSTRAP_DEGENERATE",
+            Self::MiAuditMineNonconvergent { .. } => "MI_AUDIT_MINE_NONCONVERGENT",
+            Self::MiAuditOutputDirExists { .. } => "MI_AUDIT_OUTPUT_DIR_EXISTS",
+            Self::MiAuditInstrumentHashDrift { .. } => "MI_AUDIT_INSTRUMENT_HASH_DRIFT",
         }
     }
 }

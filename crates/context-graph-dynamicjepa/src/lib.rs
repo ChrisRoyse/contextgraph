@@ -7,10 +7,12 @@
 
 pub mod artifact;
 pub mod config;
+pub mod mi_audit;
 pub mod model;
 pub mod service;
 
 pub use artifact::*;
 pub use config::*;
+pub use mi_audit::*;
 pub use model::*;
 pub use service::*;
