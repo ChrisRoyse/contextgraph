@@ -1,6 +1,6 @@
-# 9. Discussion
+# 10. Discussion
 
-## 9.1 What Dynamic/ME-JEPA Demonstrates
+## 10.1 What Dynamic/ME-JEPA Demonstrates
 
 The runtime is a domain-portable JEPA system in which:
 
@@ -30,7 +30,18 @@ The runtime is a domain-portable JEPA system in which:
   (§6) and *did not mutate the filesystem* unless a real bundle was
   being created.
 
-## 9.2 Failure Modes Observed and Fixed
+- **Each bundle is itself a structured training-data artifact.** §7
+  develops the argument that bundles constitute a new training-data
+  class — *audited execution traces with cryptographic provenance* —
+  distinct from web text, pure model-generated synthetic data, and
+  rejection-sampled chain-of-thought. The deterministic walk records
+  + verifier readbacks dominate the bytes, while the small model-
+  output slice is paired in the same record with the deterministic
+  observed next-state and the random-init / shuffled-target baselines,
+  reducing the recursion-with-replacement collapse hazard documented
+  by Shumailov et al. [2024].
+
+## 10.2 Failure Modes Observed and Fixed
 
 We document failure modes openly because they are part of the
 artifact's evidence chain. Each was found through FSV and persisted
@@ -98,9 +109,9 @@ as a failed bundle:
     `singularity exec --nv --cleanenv --no-home ... verify-aggregate`
     *before* it will include a supplied SIF.
 
-# 10. Limitations
+# 11. Limitations
 
-## 10.1 Modeling Limitations
+## 11.1 Modeling Limitations
 
 - **Model size.** All trained models in this paper are tiny: 480
   (counter\_world), 16{,}960 (gridworld\_5x5), and 15{,}344 (career
@@ -127,7 +138,7 @@ as a failed bundle:
   across releases or platforms is not guaranteed; the release reference
   uses tolerance-based comparison rather than byte equality of weights.
 
-## 10.2 Statistical Limitations
+## 11.2 Statistical Limitations
 
 - **n = 5 seeds.** The paired sign-flip permutation test floor at
   $n=5$ is $p = 2/32 = 0.0625$, which sits above the conventional
