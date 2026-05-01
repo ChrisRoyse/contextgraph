@@ -25,6 +25,8 @@ class.
 
 ## Status table
 
+### Design and planning docs (10–17)
+
 | Doc | Title | Status | Blocks |
 | --- | --- | --- | --- |
 | `00_master_index.md` | This file | drafted | — |
@@ -46,6 +48,19 @@ class.
 | `16_paper_v1_1_outline.md` | How the manuscript updates | drafted | — |
 | `17_acceptance_criteria.md` | Per-phase + release-gate criteria | drafted | 13 |
 
+### Implementation execution docs (20–27)
+
+| Doc | Title | Status | Audience |
+| --- | --- | --- | --- |
+| `20_implementation_plan_overview.md` | Per-PR critical path, commit-message templates | drafted | implementer |
+| `21_storage_implementation.md` | File-level diffs for RocksDB CFs, descriptors | drafted | PR 1, 4 |
+| `22_core_records_implementation.md` | Typed records, ID wrappers, serde | drafted | PR 2 |
+| `23_audit_log_implementation.md` | Signal-yield instrumentation + lookup table | drafted | PR 3, 12 |
+| `24_cli_subcommands_implementation.md` | The six new subcommands + MCP tools | drafted | PRs 6, 7, 8, 9, 12, 14 |
+| `25_fsv_harnesses_implementation.md` | FSV-9..12 algorithms + edge-case fixtures | drafted | PRs 10, 11, 13 |
+| `26_mi_audit_implementation.md` | KSG estimator + audit-pairwise-mi command | drafted | PR 14 |
+| `27_first_commit_checklist.md` | Literal first-PR runbook (Day 1) | drafted | implementer |
+
 ## Read order
 
 For implementers in a hurry:
@@ -55,10 +70,16 @@ For implementers in a hurry:
 4. `17_acceptance_criteria.md` (done)
 
 For the deep dive, read in numeric order. `04`–`12` are the design specs;
-`13`–`17` are the operational planning docs.
+`13`–`17` are the operational planning docs; `20`–`27` are the
+implementation execution docs (with literal file diffs, code stubs,
+and per-PR runbooks).
 
 For reviewers / external readers: `01` + `02` + `03` + `16` give the
 research-paper view in roughly 1{,}000 lines.
+
+For an implementer starting Day 1: `27` is the literal runbook;
+`20` is the per-PR map; `21`–`26` are the per-area design + diff
+combinations referenced from each PR.
 
 ## Naming conventions
 
