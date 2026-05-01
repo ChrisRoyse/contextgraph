@@ -720,7 +720,7 @@ impl Handlers {
             id,
             DynamicJepaCommands::InspectCounts(InspectCountsArgs {
                 db: req.db_path,
-                allow_missing: false,
+                allow_missing: true,
                 json: true,
             }),
         )

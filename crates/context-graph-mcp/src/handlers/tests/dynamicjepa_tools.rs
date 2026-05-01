@@ -251,7 +251,7 @@ fn assert_dynamicjepa_tools_listed() {
         .filter(|tool| tool.name.starts_with("dynamicjepa_"))
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(dynamic_names.len(), 27);
+    assert_eq!(dynamic_names.len(), 32);
     for name in [
         tool_names::DYNAMICJEPA_REGISTER_DOMAIN_PACK,
         tool_names::DYNAMICJEPA_LIST_DOMAIN_PACKS,
@@ -968,7 +968,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
             .as_array()
             .expect("dynamic source of truth")
             .len(),
-        25
+        28
     );
     evidence.push(json!({"step": "capability_matrix_dynamicjepa_runtime", "output": capability}));
     drop(capability_handlers);
