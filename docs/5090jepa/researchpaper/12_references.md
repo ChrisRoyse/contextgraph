@@ -1,7 +1,7 @@
 # References
 
 Every URL in this list was retrieved and verified during paper
-preparation. We omit any reference whose URL we could not validate;
+preparation. I omit any reference whose URL I could not validate;
 the working title and authorship of each external work were
 re-confirmed from the cited URL during retrieval.
 

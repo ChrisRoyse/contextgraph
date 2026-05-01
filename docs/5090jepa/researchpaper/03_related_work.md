@@ -1,6 +1,6 @@
 # 2. Related Work
 
-We anchor this work in four lines of literature.
+This paper anchors its argument in four lines of literature.
 
 ## 2.1 Joint-Embedding Predictive Architectures
 
@@ -40,7 +40,7 @@ World Models [Ha & Schmidhuber, 2018] (compressed spatial-temporal
 representation feeding a controller); the Dreamer line including
 DreamerV3 [Hafner et al., 2023] (one configuration generalizing across
 many tasks); and MuZero [Schrittwieser et al., 2019] (planning with a
-learned model rather than a given dynamics function). We use the
+learned model rather than a given dynamics function). I use the
 imagined-rollout idea conceptually for the candidate-action planner
 (§3.4) but constrain rollouts to one step in the present runtime; H>1
 multi-step rollouts are an explicit deferred axis (§10–§11, App.).
@@ -52,7 +52,7 @@ Gato [Reed et al., 2022] demonstrated multi-modal multi-task multi-embodiment
 attention-based architecture handles arbitrary structured I/O. ME-JEPA
 borrows neither of these as engineering, but inherits the design
 constraint they imposed on the field: a *general-purpose* latent runtime
-must not hard-code modality. The domain-pack abstraction (§3.1) is our
+must not hard-code modality. The domain-pack abstraction (§3.1) is the
 answer: each domain ships a TOML manifest declaring state schema, action
 schema, instruments, and panel slots, and the runtime carries no
 domain-specific branches.
@@ -81,7 +81,7 @@ reproducibility ladder — pinned base image digest, deterministic
 build, deterministic tar export, container DOI — follows Docker
 reproducible-build guidance [Docker, 2025] and Apptainer SIF-from-
 docker-archive guidance [Apptainer, 2025]. PyTorch's reproducibility
-notes [PyTorch, 2026] are relevant because we inherit the same caveat:
+notes [PyTorch, 2026] are relevant because this work inherits the same caveat:
 exact GPU result reproducibility across releases or platforms is *not*
 guaranteed; cross-run comparisons therefore use structural + tolerance
 checks, not byte-equal model-file diffs (§6, §9).

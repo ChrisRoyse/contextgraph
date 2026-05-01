@@ -8,7 +8,7 @@ CC BY 4.0.
 ## 4.1 Source
 
 The single source ZIP is the official O\*NET 30.2 text database from
-the O\*NET Resource Center, which we fetched once and verified by
+the O\*NET Resource Center, which I fetched once and verified by
 SHA-256:
 
 | Field | Value |
@@ -123,7 +123,7 @@ see §6.2 and
 
 ## 4.5 Reusability
 
-The benchmark is the smallest reproducible occupational substrate we
+The benchmark is the smallest reproducible occupational substrate I
 could build that requires only the public O\*NET ZIP and a recorded
 SHA-256. Future work can register an additional domain pack (App. A)
 without changing the runtime, the FSV harness, or the reproducibility

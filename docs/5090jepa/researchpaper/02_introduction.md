@@ -11,7 +11,7 @@ control [Ha & Schmidhuber, 2018; Hafner et al., 2023; Schrittwieser et
 al., 2019].
 
 This paper is *not* a representational-quality contribution to that
-line. We accept the JEPA premise and ask a different, systems-level
+line. I accept the JEPA premise and ask a different, systems-level
 question: **what would it take to make a complete latent world-model
 runtime—data ingest, panel materialization, action-conditioned training,
 planning, surprise recording, and artifact provenance—physically
@@ -57,7 +57,7 @@ The answer matters because:
    agentic, audit-aware, and process-supervised models. §7 develops
    this argument in detail.
 
-We present **Dynamic/ME-JEPA**, a Rust runtime that meets these
+I present **Dynamic/ME-JEPA**, a Rust runtime that meets these
 constraints on a single RTX 5090. The runtime is invoked as one binary
 (`context-graph dynamicjepa …`) with subcommands for domain-pack
 registration, event ingest, panel materialization, dataset compilation,
@@ -74,7 +74,7 @@ SHA-256 hash chains (§9).
 
 1. **Domain-pack abstraction.** A TOML domain pack is the only thing a
    new domain ships. The runtime reuses storage, training, planning,
-   and FSV verbatim (§3.1, App. A). We instantiate three domains:
+   and FSV verbatim (§3.1, App. A). I instantiate three domains:
    `counter_world` (sanity), `gridworld_5x5` (compositional next-state
    prediction), and `career_taxonomy.v1` (the new public-taxonomy
    benchmark).
@@ -97,7 +97,7 @@ SHA-256 hash chains (§9).
    tiny-model-output slice paired with deterministic observed targets
    plus random-init / shuffled-target baselines, and an independent
    verifier slice. Counterfactual ablations and failed runs are
-   persisted as first-class records. We give the taxonomy, the per-
+   persisted as first-class records. I give the taxonomy, the per-
    bundle anatomy of training signal, the model-collapse hazard
    analysis, and the use cases for which the data class is appropriate
    (and inappropriate).

@@ -75,7 +75,7 @@ The contributions, in order:
    slice (FSV evidence, edge-case typed errors, ablation rows) emitted
    through a separate code path. The class is structurally distinct
    from web text, pure model-generated synthetic data, and rejection-
-   sampled chain-of-thought, and we argue it carries lower model-collapse
+   sampled chain-of-thought, and I argue it carries lower model-collapse
    hazard than the latter under documented use patterns. §7.
 
 5. **Statistically reported, multi-seed paper-small results on the RTX

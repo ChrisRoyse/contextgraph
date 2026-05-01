@@ -43,7 +43,7 @@ The runtime is a domain-portable JEPA system in which:
 
 ## 10.2 Failure Modes Observed and Fixed
 
-We document failure modes openly because they are part of the
+Failure modes are documented openly because they are part of the
 artifact's evidence chain. Each was found through FSV and persisted
 as a failed bundle:
 
@@ -134,7 +134,7 @@ as a failed bundle:
 
 - **Single hardware platform.** All numbers come from one RTX 5090
   host (sm\_120, CUDA 13.2, Rust 1.95). PyTorch's reproducibility
-  guidance [PyTorch, 2026] reminds us that exact GPU-bit reproducibility
+  guidance [PyTorch, 2026] reminds the reader that exact GPU-bit reproducibility
   across releases or platforms is not guaranteed; the release reference
   uses tolerance-based comparison rather than byte equality of weights.
 
@@ -142,10 +142,10 @@ as a failed bundle:
 
 - **n = 5 seeds.** The paired sign-flip permutation test floor at
   $n=5$ is $p = 2/32 = 0.0625$, which sits above the conventional
-  $\alpha = 0.05$ threshold. We therefore report deltas with BCa CI
+  $\alpha = 0.05$ threshold. I therefore report deltas with BCa CI
   and explicit sign-flip $p$ rather than as "significantly different".
   A sample-size increase to $n=6$ would lower the floor to $p =
-  0.03125$ and resolve the threshold; we have not done this in v1.0.
+  0.03125$ and resolve the threshold; this has not been done in v1.0.
 
 - **A0/A2/A3/A4/A5 stddev = 0 across seeds.** This is the deliberate
   consequence of the protocol's choice to fix the ablation training

@@ -3,7 +3,7 @@
 This section enumerates the experimental matrix. Numerical results are
 reported in §8 and read directly from CSVs in
 `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate/paper_tables/`.
-We follow the project's seeded-and-aggregated protocol: every paper-cited
+This paper follows the project's seeded-and-aggregated protocol: every paper-cited
 number is derived from at least five real O\*NET-backed seeds {42, 43,
 44, 45, 46}, run as `paper_small_1k`, then aggregated through
 `dynamicjepa multiseed-aggregate` with `--min-passed 5` and BCa
@@ -125,7 +125,7 @@ A0→A3 comparison on `val_latent_cosine` (read from
 A0_taxonomy_only_action_vicreg, A3_taxonomy_skill_transition_no_action_vicreg`,
 field `sign_flip_p` = 0.0625, mean delta = -0.185489665803). Per
 [smokedoc 15](../smokedocs/15_multiseed_completion_and_statistical_reporting.md)
-we therefore report the A3 collapse as **directionally significant in
+I therefore report the A3 collapse as **directionally significant in
 the predicted direction with sign-flip $p = 0.0625$ and BCa CI for the
 delta entirely below zero** rather than as "significantly different"
 in the strict sense; the n=5 sample bound forbids the latter.
@@ -168,7 +168,7 @@ fits in ~2 hours of wall time on this host.
 
 **VRAM.** The 32~GiB RTX 5090 is far above the working set; the
 trainer's working set never exceeds ~8~GiB during career-taxonomy
-training. We do not report an empirical peak-VRAM table because the
+This paper does not report an empirical peak-VRAM table because the
 trainer is not memory-bound at this model size; the headline numbers
 in §8 are instead time- and quality-bound.
 

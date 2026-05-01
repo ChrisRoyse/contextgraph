@@ -1,0 +1,1777 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+% --- Page geometry ----------------------------------------------------------
+\usepackage[letterpaper,margin=0.75in,columnsep=0.28in,top=0.85in,bottom=0.95in]{geometry}
+
+% --- Encoding & fonts -------------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% --- Common packages --------------------------------------------------------
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{caption}
+\usepackage{amsmath,amssymb}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{authblk}
+\usepackage{titlesec}
+\usepackage{abstract}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
+
+% --- Tighter section spacing ------------------------------------------------
+\titlespacing*{\section}{0pt}{1.4ex plus .5ex minus .2ex}{0.6ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus .4ex minus .2ex}{0.5ex plus .2ex}
+\titleformat*{\section}{\large\bfseries}
+\titleformat*{\subsection}{\normalsize\bfseries}
+\titleformat*{\subsubsection}{\normalsize\itshape}
+
+% --- Tighter list spacing ---------------------------------------------------
+\setlist{itemsep=2pt,topsep=3pt,parsep=0pt}
+
+% --- Caption styling --------------------------------------------------------
+\captionsetup{font=small,labelfont=bf,skip=4pt}
+
+% --- Big-picture callout box ------------------------------------------------
+\newtcolorbox{takeaway}[1][]{
+  enhanced, breakable, sharp corners=south,
+  colback=blue!4!white, colframe=blue!50!black,
+  boxrule=0.6pt, left=6pt, right=6pt, top=4pt, bottom=4pt,
+  fonttitle=\bfseries, title={Takeaway}, #1
+}
+
+% --- Inline code and small numerals -----------------------------------------
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\sha}[1]{\texttt{\footnotesize #1}}
+
+% --- Title block ------------------------------------------------------------
+\title{\bfseries\Large
+  Dynamic / ME-JEPA: An Audited, Domain-Portable World-Model Runtime
+  on a Single RTX 5090\\[2pt]
+  \large with a New Class of Training Data
+}
+
+\author[1]{Chris Royse\thanks{Independent researcher.
+  Correspondence: \texttt{chrisroyseai@gmail.com}.
+  Repository: \url{https://github.com/ChrisRoyse/contextgraph}.
+  Status: local Docker + Singularity (SIF) release candidate
+  \texttt{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified}.}}
+\affil[1]{ }
+\date{May 2026}
+
+% ============================================================================
+\begin{document}
+
+% --- Banner: title + abstract span the full page width ---------------------
+\twocolumn[
+  \maketitle
+  \begin{onecolabstract}
+  \noindent
+  Joint-embedding predictive architectures (JEPA) learn to predict
+  latent representations of the future instead of reconstructing
+  pixels or tokens. Most JEPA work focuses on representational
+  quality on natural images or video. This paper takes a different
+  angle: \emph{what does it take to make every step of a JEPA
+  runtime --- data ingest, panel materialization, action-conditioned
+  training, planning, surprise recording, and artifact provenance ---
+  physically auditable on a single commodity GPU?}\par\vspace{3pt}\noindent
+  %
+  Dynamic / ME-JEPA is one Rust binary that does all of it. A new
+  domain ships only as a TOML manifest. Every operation writes typed
+  rows into 25 RocksDB column families plus an append-only audit log,
+  and a structurally separate verifier reads everything back. The
+  same code path runs three domains: \texttt{counter\_world}
+  (480 trainable parameters), \texttt{gridworld\_5x5} (16{,}960), and
+  a new public-taxonomy career benchmark
+  \texttt{career\_taxonomy.v1} (15{,}344) that walks the related-
+  occupation graph of O*NET 30.2 starting from Software Developers
+  \texttt{15-1252.00}. Five seeds of \texttt{paper\_small\_1k}
+  (1{,}000 events each) on an RTX 5090 give career validation cosine
+  0.905~$\pm$~0.044 (BCa 95\% CI 0.861--0.931), test cosine
+  0.868~$\pm$~0.068, and validation action-contrast accuracy
+  0.960~$\pm$~0.043. The negative-action ablation A3 collapses to
+  validation cosine 0.790, exactly as the design predicts and the
+  verifier confirms.\par\vspace{3pt}\noindent
+  %
+  The second contribution is conceptual. Each immutable bundle
+  produced by the runtime is itself a structured training-data
+  artifact. Most of its bytes are deterministic functions of a
+  public source ZIP; the small model-output slice is paired with the
+  observed next-state and with random-init / shuffled-target
+  baselines in the same record; counterfactual ablations and failed
+  runs are persisted as first-class records. This paper argues that
+  bundles form a new class of training data --- \emph{audited
+  execution traces with cryptographic provenance} --- distinct from
+  web text, pure model-generated synthetic data, and rejection-
+  sampled chain-of-thought, with a substantially lower
+  recursion-replacement collapse hazard. The reproducibility
+  artifact is a local Docker + Singularity (SIF) release candidate
+  with deterministic Docker tar SHA-256 \sha{099f053\dots7d4cd80e},
+  SIF SHA-256 \sha{30b531c\dots f2825}, archive SHA-256
+  \sha{8cccf49\dots43ecd}.
+
+  \vspace{4pt}
+  \noindent\textbf{Keywords.} JEPA, world models, auditable ML,
+  reproducibility, training data, model collapse, process
+  supervision, RTX 5090.
+  \end{onecolabstract}
+  \vspace{12pt}
+]
+\saythanks
+
+% ============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Imagine that someone hands you a paper claiming a new latent
+world-model trains on a single GPU and beats baselines on a career-
+domain task. You want to reproduce it. You go through the motions:
+download the model weights, find the dataset (somewhere), spin up
+a few-machine cluster, hope your CUDA versions match, and then
+realize that the path from raw event $\to$ training row $\to$
+predictor weights $\to$ planning trace $\to$ verified output is not
+written down anywhere as a single deterministic pipeline. You can
+\emph{rerun} the model. You cannot \emph{prove} the entire pipeline
+behaves the way the paper says it does.
+
+That gap is the motivation for this work.
+
+This paper is \textbf{not} a representational-quality contribution
+to the JEPA family. The premise of latent prediction is taken as
+established \cite{assran2023ijepa,bardes2024vjepa,lecun2022path}.
+The question is one level up:
+\begin{quote}
+\itshape
+What would it take to make a complete latent world-model runtime ---
+data ingest, multi-instrument latent panel materialization,
+action-conditioned training, planning, surprise recording, and
+artifact provenance --- physically auditable end-to-end on a single
+commodity GPU?
+\end{quote}
+
+\textbf{Dynamic / ME-JEPA} is one Rust binary that answers it.
+Twenty-nine subcommands compose into one immutable bundle per run.
+A new domain ships as a TOML manifest. Twenty-five typed RocksDB
+column families plus an append-only audit log capture every
+persistent state. A structurally separate verifier code path reads
+everything back. Three domains are instantiated by domain pack
+alone, including a new public-taxonomy career benchmark grounded in
+O*NET 30.2 \cite{onet2026}. Five seeds with bias-corrected and
+accelerated bootstrap confidence intervals
+\cite{efron2020automatic} and paired sign-flip permutation tests
+give the headline numbers in \S\ref{sec:results}. A
+deterministically built Docker + Singularity (SIF) artifact ships
+with full SHA-256 chains in \S\ref{sec:repro}.
+
+The second contribution is conceptual. After running the system,
+each immutable bundle is itself a small structured corpus. The
+deterministic walk over O*NET, the materialized panels, the audit
+log, the typed edge-case rows, the ablation rows, and the failed-
+run records make a bundle a candidate \emph{training-data artifact}
+in its own right. \S\ref{sec:training-data} argues that bundles
+form a new class of training data and that this class carries lower
+recursion-replacement collapse hazard \cite{shumailov2024nature}
+than typical synthetic data because most of the bytes are
+deterministic functions of a public source rather than model
+outputs.
+
+\subsection{Why a Domain-Portable Runtime}
+
+The dominant pattern in JEPA papers is a representational claim
+backed by a custom training stack. Useful for the claim. Hard to
+extend. Each new domain rebuilds the audit and provenance
+infrastructure from scratch, if it builds them at all. The
+domain-pack abstraction in \S\ref{sec:method} makes that
+infrastructure once and reuses it everywhere a TOML manifest can
+be written.
+
+\subsection{Why a Public-Taxonomy Career Benchmark}
+
+The career-domain has the property that data pipelines benefit from
+provenance recorded inline, even when the model is small. O*NET
+30.2 is the canonical public occupation taxonomy in the United
+States, distributed under CC BY 4.0 with explicit attribution
+requirements. Constructing a benchmark that walks O*NET's related-
+occupation graph deterministically gives a substrate where every
+generated transition can be traced back to a public source row by
+SHA-256 hash. Section~\ref{sec:bench} specifies the benchmark.
+
+\subsection{Why Single-GPU Feasibility}
+
+Restricting compute to a single host does two useful things at
+once. It removes the "hidden cluster" reproduction barrier that
+makes most public ML results expensive to verify, and it forces
+training-budget honesty: a five-seed paper-small ladder plus
+container build plus container verify plus manual edge-case audits
+fits in roughly two hours of wall time on the RTX 5090 used here.
+
+\subsection{Contributions}
+
+In order:
+\begin{enumerate}
+  \item \textbf{A domain-pack-driven JEPA runtime.} One Rust binary
+        runs three domains by TOML manifest alone, with no domain-
+        specific code branches (\S\ref{sec:method}, App.~A).
+  \item \textbf{The \texttt{career\_taxonomy.v1} public benchmark.}
+        Generated deterministically from O*NET 30.2 starting from
+        \texttt{15-1252.00}, with per-edge walk hashes and an
+        archive preflight (\S\ref{sec:bench}).
+  \item \textbf{A strict full-state verification protocol.} Every
+        claim in \S\ref{sec:results} has a corresponding RocksDB
+        row, file SHA-256, and decoded readback through a separate
+        code path (\S\ref{sec:fsv}).
+  \item \textbf{A new training-data class: audited execution traces
+        with cryptographic provenance.} Bundles are structured
+        corpora of deterministic-from-source records, tiny-model
+        outputs paired with observed targets, and independent
+        verifier readbacks. Counterfactual ablations and failed
+        runs are first-class records (\S\ref{sec:training-data}).
+  \item \textbf{Multi-seed paper-small results with BCa CI and
+        paired permutation tests.} Five-seed career validation
+        cosine $0.905 \pm 0.044$ with BCa 95\% CI \([0.861, 0.931]\);
+        every cited number reads from a CSV in the verified release
+        bundle (\S\ref{sec:results}).
+  \item \textbf{A reproducibility artifact.} Local Docker + SIF
+        release candidate with full hash chain
+        (\S\ref{sec:repro}).
+\end{enumerate}
+
+\subsection{Scope}
+
+The trained models are deliberately small: $480$, $16{,}960$, and
+$15{,}344$ trainable parameters. The point is not "small model
+beats large model"; it is that every stage of a portable JEPA
+system can be physically verified on commodity hardware, and that
+this verification produces a structured corpus as a side effect.
+
+% ============================================================================
+\section{Related Work}
+\label{sec:related}
+
+This work sits at the intersection of four lines of literature.
+
+\subsection{Joint-Embedding Predictive Architectures}
+
+I-JEPA \cite{assran2023ijepa} predicts the representations of
+target image blocks from a context block, in a self-distilled
+latent space. V-JEPA \cite{bardes2024vjepa} extends the idea to
+video by feature prediction, with downstream evaluations showing
+that latent prediction recovers strong representations without
+reconstruction, negatives, or text supervision. The official Meta /
+FAIR V-JEPA repository is the reference engineering implementation
+\cite{metafair2024vjepa}. LeCun's "A Path Towards Autonomous
+Machine Intelligence" frames the family as a step toward
+predictive systems that reason in abstract representation space
+\cite{lecun2022path}.
+
+The Dynamic / ME-JEPA architectural change is in \emph{how target
+representations are sourced}: instead of an exponential-moving-
+average target encoder, ME-JEPA uses a panel of frozen, externally-
+defined per-domain instruments declared by the domain pack
+(\S\ref{sec:method}). The narrower claim is that external frozen
+targets eliminate target-encoder collapse but \emph{do not}
+eliminate predictor degeneracy --- so VICReg-style diagnostics
+\cite{bardes2022vicreg} and explicit ablations are still required.
+
+Self-supervised pre-cursors that inform the regularization choices:
+BYOL \cite{grill2020byol} (asymmetric online/target with
+stop-gradient as collapse mitigation) and Contrastive Predictive
+Coding \cite{vandenoord2019cpc} (latent forecast objective).
+
+\subsection{World Models and Latent Planning}
+
+The planning, surprise, and guard plane is informed by World Models
+\cite{ha2018worldmodels}, the Dreamer line including DreamerV3
+\cite{hafner2023dreamerv3}, and MuZero \cite{schrittwieser2019muzero}.
+The imagined-rollout idea conceptually informs the candidate-action
+planner (\S\ref{sec:method}), but rollouts are constrained to one
+step in the present runtime; multi-step ($H{>}1$) rollouts are an
+explicit deferred axis (\S\ref{sec:limits}).
+
+\subsection{Generalist and Multi-Modal Architectures}
+
+Gato \cite{reed2022gato} demonstrated multi-modal multi-task multi-
+embodiment tokenized policies; Perceiver IO
+\cite{jaegle2022perceiverio} showed that one attention-based
+architecture handles arbitrary structured inputs and outputs.
+Dynamic / ME-JEPA borrows neither as engineering, but inherits the
+constraint they imposed: a general-purpose latent runtime must not
+hard-code modality. The domain-pack abstraction is the answer.
+
+\subsection{Career and Occupational Taxonomies}
+
+The U.S. Department of Labor and Employment Training
+Administration's O*NET database \cite{onet2026} is the canonical
+public occupation taxonomy used here, currently at release 30.2,
+distributed under CC BY 4.0. The European Skills, Competences,
+Qualifications and Occupations classification (ESCO)
+\cite{esco2025} is the EU counterpart and a planned cross-walk
+replication source. Recent career-trajectory dataset papers ---
+KARRIEREWEGE \cite{senger2024karrierewege} and JobHop
+\cite{johary2025jobhop} --- are relevant as future extensions; the
+only ingested source in the present runtime is O*NET 30.2.
+
+\subsection{Auditable ML Systems}
+
+The runtime's evidence-bundle design is informed by MLflow Tracking
+\cite{mlflow2024} (run, experiment, artifact, metric lineage). The
+reproducibility ladder --- pinned base image digest, deterministic
+build, deterministic tar export, container DOI --- follows
+Docker reproducible-build guidance \cite{docker2025reproducible} and
+Apptainer SIF-from-docker-archive guidance
+\cite{apptainer2025buildsif}. PyTorch's reproducibility notes
+\cite{pytorch2026reproducibility} are inherited as a caveat: exact
+GPU result reproducibility across releases or platforms is not
+guaranteed; cross-run comparisons therefore use structural plus
+tolerance checks, not byte-equal model-file diffs.
+
+\subsection{Synthetic Data, Model Collapse, Process Supervision}
+
+Recent work establishes a non-trivial taxonomy of training-data
+classes and their effect on model quality under recursive
+training. Shumailov et al.\ introduced \emph{model collapse}:
+training generative models on recursively generated data leads to
+irreversible loss of distribution tails and eventual convergence to
+a degenerate distribution \cite{shumailov2023curse,
+shumailov2024nature}. Gerstgrasser et al.\
+\cite{gerstgrasser2024accumulate} subsequently showed that
+\emph{accumulating} real and synthetic data avoids the collapse
+pattern that \emph{replacement} triggers --- distinguishing the
+dangerous recursion-with-replacement case from the safer
+accumulation case.
+
+In parallel, the highest-quality synthetic reasoning corpora have
+moved away from pure LLM generation toward verifier-grounded data:
+process supervision and the PRM800K dataset of step-level labels
+\cite{lightman2023verify}; code-execution-grounded supervision
+\cite{jung2025codeexec}; SYNTHETIC-1
+\cite{primeintellect2025synthetic1} (1.4M verified reasoning
+traces); and Enigmata \cite{seed2025enigmata}.
+Section~\ref{sec:training-data} extends this taxonomy with a class
+of training data the Dynamic / ME-JEPA runtime produces by
+construction.
+
+% ============================================================================
+\section{The Dynamic / ME-JEPA Runtime}
+\label{sec:method}
+
+The runtime is a single Rust binary, \code{context-graph}, with
+the DynamicJEPA subcommand surface listed in
+\S\ref{sec:method:cli}. The core abstraction is a typed transition
+over a multi-instrument latent panel:
+\begin{equation*}
+  (s_t,\, a_t,\, c_t,\, g_t)\ \longrightarrow\ \hat{s}_{t+1}
+\end{equation*}
+where $s_t$ is the panel-encoded state, $a_t$ is a typed action,
+$c_t$ is contextual scaffolding, and $g_t$ is an optional goal
+panel. The target $s_{t+1}$ is the panel produced by frozen,
+externally-defined instruments declared by the domain pack; the
+trainable predictor $P_\psi$ produces $\hat{s}_{t+1}$.
+
+\subsection{Domain Packs}
+
+A domain pack is a strict TOML manifest registering a domain into
+the DynamicJEPA RocksDB column families. Required fields:
+\code{[domain]}, \code{[time]}, repeated \code{[[state.fields]]},
+\code{[[action.fields]]}, \code{[[outcome.fields]]}, and
+\code{[[entity.fields]]}. Field kinds are
+\code{categorical\{variants\}}, \code{i64\{min,max\}},
+\code{f64\{min,max\}}, \code{vector\{dim,min,max\}}, \code{string},
+and \code{bool}. Validation is strict: out-of-range values, missing
+required fields, undeclared categorical variants, and vector
+dimension mismatches each produce typed errors with field paths.
+There is no fallback or coercion.
+
+Three domain packs ship with the artifact:
+\code{counter\_world.v1} (480 trainable parameters; sanity domain),
+\code{gridworld\_5x5.v1} (16{,}960 parameters; compositional
+next-state prediction), and \code{career\_taxonomy.v1} (15{,}344
+parameters at the headline panel; defined in \S\ref{sec:bench}).
+The full \code{career\_taxonomy.v1} TOML is reproduced in
+Appendix~\ref{app:domainpack}.
+
+\subsection{Storage: 25 Typed Column Families plus Audit Log}
+
+DynamicJEPA stores data in a dedicated RocksDB instance with 25
+column families, all prefixed \code{dj\_*}: domain packs,
+instrument and adapter registries, raw events, normalized states,
+actions, outcomes, transitions, adapter runs, instrument readings,
+latent panels, bindings, trajectories, dataset shards, training
+runs, model artifacts, predictions, skill policies, plan traces,
+guard decisions, surprise events, verification runs, and the
+append-only audit log.
+
+Every mutating subcommand writes one or more CFs and \emph{always}
+writes a corresponding \code{dj\_audit\_log} row. Reading a CF back
+is a separate code path (\code{inspect-counts}, \code{inspect-cf},
+\code{get-*}) that opens the database read-only and re-decodes the
+bytes. This keeps the writer from being the verifier. Read-only
+opens were hardened during smoke-B FSV so they cannot accidentally
+create or repair a missing database.
+
+For a 1{,}000-event career bundle, the persisted CF row counts
+(verified by independent \code{inspect-counts} on every release-C
+seed bundle) are:
+
+\begin{center}\small
+\begin{tabular}{lr}
+\toprule
+\code{dj\_raw\_events} & 1{,}004 \\
+\code{dj\_adapter\_runs} & 1{,}004 \\
+\code{dj\_normalized\_states} & 1{,}000 \\
+\code{dj\_instrument\_readings} & 10{,}000 \\
+\code{dj\_latent\_panels} & 1{,}000 \\
+\code{dj\_transitions} & 1{,}000 \\
+\code{dj\_outcomes} & 1{,}000 \\
+\code{dj\_dataset\_shards} & 3 \\
+\code{dj\_training\_runs} & 1 \\
+\code{dj\_model\_artifacts} & 1 \\
+\code{dj\_predictions} & 6 \\
+\code{dj\_plan\_traces} & 1 \\
+\code{dj\_guard\_decisions} & 5 \\
+\code{dj\_verification\_runs} & 1 \\
+\code{dj\_audit\_log} & 3{,}019 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The four-row delta between \code{dj\_raw\_events} and
+\code{dj\_normalized\_states} corresponds to four edge-case events
+(missing source manifest, invalid action, wrong skill-vector
+dimension, out-of-bounds job zone) that are intentionally rejected
+by the adapter.
+
+\subsection{Multi-Instrument Latent Panel}
+
+For each declared event, the runtime materializes a
+\code{LatentPanel} whose slots are the outputs of declared
+\emph{instruments}. An instrument is a frozen function from a typed
+event to a structured feature output (a vector, scalar, one-hot, or
+pairwise feature). Career-taxonomy uses ten instruments at A1: the
+occupation-cluster one-hot, the job-zone scalar, the skill vector,
+the action-kind one-hot, the action-effort scalar, the outcome
+cluster one-hot, the next skill vector, plus three pairwise
+features. The A2 panel adds a transition-distance instrument
+(11 slots, input dim 31, target dim 31, latent dim 24); A4 adds
+occupation-move-pair pairwise features (12 slots, input dim 51,
+target dim 51, latent dim 24, 16{,}688 parameters).
+
+The full ablation panel matrix is in Table~\ref{tab:ablation-panels}.
+
+\begin{table*}[t]
+\caption{Ablation panel matrix for \texttt{career\_taxonomy.v1}.
+  All numbers read from
+  \texttt{paper\_tables/table\_ablation\_multiseed.csv}. ``Action''
+  = action conditioning; ``Pairwise'' = pairwise interaction features
+  in the panel; ``VICReg'' = variance/covariance regularization
+  weights non-zero.}
+\label{tab:ablation-panels}
+\centering\small
+\begin{tabular}{lcccccrrrr}
+\toprule
+\bf Ablation & \bf Panel & \bf Action & \bf Pairwise & \bf VICReg & & \bf Slots & \bf Input dim & \bf Latent dim & \bf Params \\
+\midrule
+A0 & taxonomy only            & yes & no  & yes && 8  & 22 & 24 & 14{,}832 \\
+A1 & + skill vector           & yes & no  & yes && 10 & 30 & 24 & 15{,}344 \\
+A2 & + transition distance    & yes & no  & yes && 11 & 31 & 24 & 15{,}408 \\
+A3 & A2, action removed       & no  & no  & yes && 11 & 31 & 24 & 15{,}408 \\
+A4 & A2 + pairwise            & yes & yes & yes && 12 & 51 & 24 & 16{,}688 \\
+A5 & A2, no VICReg            & yes & no  & no  && 11 & 31 & 24 & 15{,}408 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Predictor and Objective}
+
+The predictor $P_\psi$ is an MLP over the input-panel
+representation producing the predicted target panel,
+$\hat{s}_{t+1} = P_\psi(s_t, a_t)$. Training minimizes a composite
+loss
+\begin{align*}
+L_{\text{total}} =\ &
+  \alpha L_{\text{panel}} + \beta L_{\text{pairwise}}
++ \gamma L_{\text{action}} \\
+& + \delta L_{\text{constellation}} + \varepsilon L_{\text{anti-pole}}\\
+& + \zeta L_{\text{uncertainty}} + \eta L_{\text{invariant}}
+\end{align*}
+implemented inside \code{context-graph-dynamicjepa::train\_dataset}
+with weights persisted as part of the model-artifact config so a
+reviewer can read them back from \code{dj\_model\_artifacts}. For
+the present paper-small results the dominant terms are
+$L_{\text{panel}}$ (per-slot MSE/cosine to the frozen target panel)
+and $L_{\text{action}}$ (action-conditioning regularizer);
+$L_{\text{pairwise}}$ is active only in A4.
+
+\subsection{Planning, Guard, and Surprise}
+
+\code{dynamicjepa plan} enumerates the five candidate actions
+(\code{skill\_gain\_adjacent}, \code{skill\_gain\_high\_demand},
+\code{role\_move\_near}, \code{experience\_gain},
+\code{noop}), runs $P_\psi$ on each, evaluates a constellation /
+anti-pole guard, and writes one \code{dj\_plan\_traces} row plus
+five \code{dj\_predictions} and five \code{dj\_guard\_decisions}
+rows. The selected action is the one whose guarded utility
+maximizes the domain-pack-declared scalar.
+\code{dynamicjepa record-surprise} compares an observed outcome to
+the corresponding prediction; if the surprise exceeds the threshold
+a \code{dj\_surprise\_events} row is persisted.
+
+\subsection{Subcommand Surface}
+\label{sec:method:cli}
+
+The DynamicJEPA subcommand surface is exactly 29 commands, grouped
+in Table~\ref{tab:cli}. The headline command for paper experiments
+is \code{research-smoke}, which composes domain registration,
+ingest, panel materialization, trajectory and dataset compilation,
+training, prediction, planning, ablation runs, edge-case
+verification, artifact hashing, paper-table generation, and FSV
+evidence emission into one immutable bundle.
+
+\begin{table}[t]
+\caption{The 29 DynamicJEPA CLI subcommands.}
+\label{tab:cli}
+\centering\footnotesize
+\begin{tabular}{p{0.4\linewidth}p{0.5\linewidth}}
+\toprule
+\bf Group & \bf Subcommands \\
+\midrule
+Domain pack & \code{register-domain}, \code{list-domains},
+                \code{get-domain} \\
+Inspection & \code{inspect-counts}, \code{inspect-cf} \\
+Ingest \& adapt & \code{ingest-event}, \code{run-adapter} \\
+Panel & \code{materialize-panel}, \code{get-panel},
+                \code{list-instrument-readings},
+                \code{bind}, \code{list-bindings} \\
+Trajectory \& dataset & \code{compile-trajectories},
+                \code{get-trajectory}, \code{list-trajectories},
+                \code{compile-dataset}, \code{get-dataset-shard},
+                \code{inspect-dataset} \\
+Train, predict, plan & \code{train}, \code{get-training-run},
+                \code{get-artifact}, \code{predict}, \code{plan},
+                \code{record-surprise}, \code{get-prediction},
+                \code{get-plan-trace}, \code{get-surprise} \\
+Verify per domain & \code{verify-counter-world},
+                \code{verify-gridworld},
+                \code{verify-career-taxonomy} \\
+Research bundle & \code{research-smoke}, \code{hp-sweep},
+                \code{multiseed-aggregate} \\
+Reference & \code{capture-reference}, \code{check-reference},
+                \code{check-release-aggregate-reference} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Hardware}
+\label{sec:method:hw}
+
+All experiments run on a single host: an NVIDIA GeForce RTX 5090
+(compute capability 12.0, driver 596.21, 32{,}607~MiB VRAM, CUDA
+13.2 V13.2.78), an AMD Ryzen 9 9950X3D 16-core CPU with 30 logical
+threads and 110~GiB of RAM, on Linux 6.6.87.2 (WSL2). The Rust
+toolchain is rustc 1.95.0 / cargo 1.95.0. The file
+\code{docs2/systemspecs.md}, hashed into every research-smoke
+bundle as
+\sha{acdc549a5913c59f46376414c08373a8363d646fd3c36d1fc6289a193c0e1205},
+records this environment so reviewers can verify the host
+description against the bundle.
+
+% ============================================================================
+\section{The \code{career\_taxonomy.v1} Public-Taxonomy Benchmark}
+\label{sec:bench}
+
+\code{career\_taxonomy.v1} is a public benchmark for action-
+conditioned latent transition prediction over occupational data.
+The benchmark is deterministically generated from the O*NET 30.2
+text database under CC BY 4.0.
+
+\subsection{Source}
+
+The single source is the official O*NET 30.2 text database from
+the O*NET Resource Center, fetched once and verified by SHA-256
+\sha{b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741}.
+The runtime preflights this archive on every research-smoke run
+and fails closed if any of these invariants fail:
+\begin{itemize}
+\item archive entry count = 42, file count = 41;
+\item root prefix = \code{db\_30\_2\_text/};
+\item release marker text "O*NET 30.2 Database" present;
+\item license marker "Creative Commons Attribution 4.0
+      International License" present;
+\item per-file row counts: \code{Occupation Data.txt} = 1{,}016,
+      \code{Job Zones.txt} = 923, \code{Skills.txt} = 62{,}580,
+      \code{Related Occupations.txt} = 18{,}460;
+\item per-file required header columns present;
+\item no archive member path may escape the archive root.
+\end{itemize}
+Persisted preflight evidence lives at
+\code{onet\_source\_preflight.json} inside every bundle.
+
+\subsection{Walk Generator}
+
+\code{research-smoke --onet-text-zip ...} reads the four required
+files, selects the core computer-occupation related-occupation
+graph starting at O*NET-SOC \code{15-1252.00} Software Developers,
+and walks until the requested number of career events is reached.
+Of the 1{,}016 source occupations, 218 are selected; of the
+related-occupation edges, 330 are selected. For 1{,}000-event
+paper-small runs the generator emits 1{,}000 events; the same
+seed-set produces five different deterministic walks under the
+same selected edge set. Each generated event's \code{source\_hash}
+is bound to the source-ZIP SHA-256, and each transition is
+recorded with a per-edge hash in
+\code{career\_taxonomy\_onet\_walk.csv} (1{,}001 lines: header plus
+1{,}000 transitions). The first generated rows anchor to Software
+Developers \code{15-1252.00} and Database Architects
+\code{15-1243.00}.
+
+\subsection{Schema}
+
+State has six required fields: \code{occupation\_cluster}
+(categorical: \emph{software, data, systems, management}),
+\code{job\_zone} (i64, $1{\le}x{\le}5$), \code{skill\_vector}
+(vector[4], $0.0{\le}x_i{\le}1.0$), \code{experience\_years}
+(f64, $0.0{\le}x{\le}40.0$), \code{wage\_band} (categorical:
+\emph{low, mid, high}), and \code{step\_index} (time, i64).
+
+Action is one categorical field \code{move} taking values
+\emph{skill\_gain\_adjacent, skill\_gain\_high\_demand,
+role\_move\_near, experience\_gain, noop}.
+
+Outcome has four required fields: \code{next\_occupation\_cluster},
+\code{next\_job\_zone}, \code{next\_skill\_vector}, and
+\code{mobility\_label} (\emph{same, near\_transition,
+far\_transition}).
+
+The full TOML is reproduced in Appendix~\ref{app:domainpack}. The
+schema choices are deliberately small (4-D skill vector, 4-cluster
+occupation, 5-action discrete space) so the entire ablation matrix
+fits in a 1{,}000-event paper-small bundle in well under one hour.
+
+\subsection{Splits, Provenance, Edge Cases}
+
+The 1{,}000 generated transitions are deterministically split into
+train = 699, val = 200, test = 100 (read from
+\code{db\_counts\_after.json} plus the \code{dj\_dataset\_shards}
+decoded readback). Splits are persisted in
+\code{dj\_dataset\_shards} with leakage checks; no trajectory or
+transition appears in more than one shard.
+
+Eleven edge-case rows are generated per bundle and verified
+against expected before/after deltas:
+\begin{center}\footnotesize
+\begin{tabular}{lcccccc}
+\toprule
+\bf Edge & \bf Raw & \bf Adp. & \bf State & \bf Trans. & \bf Audit \\
+\midrule
+empty input              & 0 & 0 & 0 & 0 & 1 \\
+missing source manifest  & 1 & 1 & 0 & 0 & 2 \\
+invalid action           & 1 & 1 & 0 & 0 & 2 \\
+wrong skill-vector dim   & 1 & 1 & 0 & 0 & 2 \\
+out-of-bounds job zone   & 1 & 1 & 0 & 0 & 2 \\
+\bottomrule
+\end{tabular}
+\end{center}
+plus six CLI-level edge cases (bad ZIP path, missing
+\code{--onet-text-zip} for paper purpose, custom event count
+without ZIP, unsafe ZIP member path, incomplete ZIP file count,
+too-small \code{--career-event-count}).
+
+\subsection{Reusability}
+
+The benchmark is the smallest reproducible occupational substrate
+that requires only the public O*NET ZIP and a recorded SHA-256.
+Future work can register an additional domain pack (App.~A) without
+changing the runtime, the FSV harness, or the reproducibility
+chain.
+
+% ============================================================================
+\section{Experiments}
+\label{sec:exp}
+
+This section enumerates the experimental matrix. Numerical results
+are in \S\ref{sec:results} and read directly from CSVs in the
+verified release bundle. Every paper-cited number is derived from
+five real O*NET-backed seeds $\{42, 43, 44, 45, 46\}$, each run as
+\code{paper\_small\_1k} (1{,}000 career events) and aggregated
+through \code{dynamicjepa multiseed-aggregate} with
+\code{--min-passed 5} and BCa bootstrap (10{,}000 iterations,
+seed \code{20260430}, confidence 0.95).
+
+\subsection{Experiment A --- Runtime Universality}
+
+Does the same runtime, storage, trainer, and FSV harness handle
+three unrelated domains by domain pack alone, with no domain-
+specific code branches? Domains:
+\code{counter\_world.v1} (480 params),
+\code{gridworld\_5x5.v1} (16{,}960 params),
+\code{career\_taxonomy.v1} (15{,}344 params at A1). Pass requires
+that all three domains produce a \code{dj\_verification\_runs} row
+with status \code{passed}; that the same five artifact files are
+persisted in \code{dj\_model\_artifacts} for each; that all
+artifact registry hashes equal recomputed file hashes; and that
+the same \code{research-smoke} command produces all three.
+
+\subsection{Experiment B --- Career Next-State Prediction}
+
+Does the trained predictor beat random-init and shuffled-target
+baselines on \code{career\_taxonomy.v1}? Headline metrics in
+Table~\ref{tab:pred-metrics}.
+
+\subsection{Experiment C --- Action-Conditioned Planning}
+
+Do different candidate actions produce different predicted next-
+state panels, and do guard decisions vary with predicted utility?
+\code{research-smoke} runs \code{dynamicjepa plan} on a chosen
+state with the five candidate actions; five \code{dj\_predictions}
+and five \code{dj\_guard\_decisions} rows are persisted; one
+\code{dj\_plan\_traces} row records the full search.
+
+\subsection{Experiment D --- Ablation Matrix}
+
+Six ablations A0--A5 (Table~\ref{tab:ablation-panels}). A3 is the
+negative control for action conditioning: it persists
+\code{model.predictor.ignore\_action=true} in the config; training
+and inference \emph{zero} the action vector rather than inventing
+a fallback path. The ablation effective seed is the source-fixture
+control seed unless \code{--career-ablation-training-seed} is
+explicitly supplied, preventing main-seed variation from polluting
+ablation comparisons.
+
+\subsection{Experiment E --- Auditability and Failure Behavior}
+
+Does the system fail closed and leave usable diagnostics for every
+named edge case? Section~\ref{sec:fsv} catalogs the data-side and
+infrastructure-side edges (eleven per career bundle, six aggregate-
+level, seven release-level). All emitted typed error codes; none
+mutated the output filesystem unless a real bundle was being
+created.
+
+\subsection{Experiment F --- Single-GPU Feasibility}
+
+Smoke (120 events) wall time is 169{,}132~ms ($\sim$169~s) for a
+full run with 78 commands, 9 verification domains, 11 edge cases,
+and 6 ablations. A complete five-seed release-C gate (paper-small
+seeds + aggregate + container build + container verify + manual
+edges) fits in roughly two hours.
+
+% ============================================================================
+\section{Full-State Verification}
+\label{sec:fsv}
+
+Full-state verification (FSV) is the central methodological
+contribution: every claim in \S\ref{sec:results} is paired with a
+physical readback from a \emph{different} code path than the one
+that wrote it, and every edge case is verified to fail closed
+without mutating the filesystem.
+
+\subsection{The FSV Rule}
+
+For every operation:
+\begin{enumerate}[leftmargin=1.2em]
+\item Define the source of truth (RocksDB CF rows, file paths,
+      table rows).
+\item Print before counts and state.
+\item Execute the trigger command.
+\item Re-read the source of truth through a separate code path
+      (\code{inspect-counts}, \code{inspect-cf}, \code{get-*},
+      file SHA-256 recomputation).
+\item Decode and verify expected values.
+\item Run at least three edge cases.
+\item Print after counts and state.
+\item Write a dated evidence report.
+\end{enumerate}
+
+The rule is enforced at three levels: the integration test
+\code{dynamicjepa\_research\_smoke\_fsv.rs} (real CLI binary, real
+RocksDB, real O*NET ZIP, real CUDA training); the
+\code{local\_ci\_gate.sh} script for tier A/B/C runs; and manual
+edge-FSV log files under
+\code{tmp/mejepa\_local\_ci\_runs/<run\_id>\_manual\_fsv/} with
+before / after state printed to disk.
+
+\subsection{The Eight Harnesses}
+
+FSV-1 through FSV-8 cover the runtime's stages: domain pack
+registration; instrument registration; event $\to$ panel; binding
+and trajectory; predictor dataset; predictor training; planning
+and skill execution; guard and surprise. Each has a corresponding
+test in \code{crates/context-graph-cli/tests/dynamicjepa\_phase\{3,4,5,6,7,8\}\_fsv.rs}.
+The full integration suite passes at \textbf{10 passed, 0 failed,
+190.92~s} on the final release-C rerun.
+
+\subsection{Edge-Case Catalog}
+
+Eleven data-shape and CLI-shape edge-case rows per career bundle
+(\S\ref{sec:bench}); six aggregate-level edges (existing output
+root, count mismatch, duplicate seed, missing required seed, zero
+matched bundles, empty seed-failures table); seven release-level
+edges (invalid reference kind, missing aggregate path, numeric
+drift, existing release output dir, missing Docker tar,
+\code{--require-apptainer} without SIF, invalid-SIF-content). All
+were manually triggered and produced typed error codes
+(\code{VALIDATION}, \code{SCHEMA},
+\code{RELEASE\_REFERENCE\_MISMATCH},
+\code{RELEASE\_ARCHIVE\_APPTAINER\_INSPECT\_FAILED}, etc.) without
+mutating the output filesystem.
+
+\subsection{Read-Only Inspection Hardening}
+
+A subtle defect was found during smoke-B FSV: \code{inspect-counts}
+and \code{inspect-cf} previously used the standard writer/open
+path, which would \emph{create} a missing RocksDB directory rather
+than fail. A read-only inspection tool that creates the source of
+truth makes FSV unsound. Fix: the
+\code{TeleologicalStoreConfig.create\_missing\_column\_families}
+flag was added; the inspection commands now open existing stores
+only. A hidden \code{--allow-missing} flag exists for explicit
+before-state reads on a not-yet-created database, returning
+\code{db\_exists=false} with zero counts and not creating the
+directory.
+
+\subsection{Hash Reference for the Bundle}
+
+The release-C aggregate bundle is the reference for
+\S\ref{sec:results}. Critical SHA-256s in
+Table~\ref{tab:aggregate-hashes}. A reviewer can recompute these
+locally from the bundle directory and check equality.
+
+\begin{table}[t]
+\caption{Aggregate bundle file hashes.}
+\label{tab:aggregate-hashes}
+\centering\scriptsize
+\begin{tabular}{p{0.46\linewidth}p{0.46\linewidth}}
+\toprule
+\bf File & \bf SHA-256 \\
+\midrule
+\code{aggregate\_manifest.json} &
+\sha{734a698c\dots 8670e0} \\
+\code{aggregate\_fsv\_report.json} &
+\sha{9b1bc096\dots b6a9b6} \\
+\code{table\_prediction\_metrics\_multiseed.csv} &
+\sha{6bd81ee3\dots a99702608e7} \\
+\code{table\_ablation\_multiseed.csv} &
+\sha{1934260c\dots 5e5936c6a9} \\
+\code{table\_paired\_ablation\_tests.csv} &
+\sha{26218e97\dots 39189f22a6dd88d80} \\
+\code{table\_seed\_failures.csv} &
+\sha{8c4e8bfb\dots 5ec52d53} \\
+\code{multiseed\_val\_mse\_box.svg} &
+\sha{69db6c4d\dots 23ed77c} \\
+\code{multiseed\_paired\_delta\_forest.svg} &
+\sha{79f8050a\dots b04e4} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Bundles as a Training-Data Class}
+\label{sec:training-data}
+
+Up to here this paper has been a verification result. This section
+makes a separate claim: the bundles produced by the runtime are not
+just a verification artifact. They are also a structured training-
+data artifact in their own right, and the class is genuinely new.
+
+\begin{takeaway}
+A bundle is mostly deterministic-from-public-source bytes plus an
+independent verifier readback. Only a small slice is model-
+generated, and that slice is paired with the deterministic observed
+target in the same record. Counterfactual ablations and failed runs
+are first-class records. The result is a class of training data
+distinct from web text, pure synthetic LLM output, and rejection-
+sampled chain-of-thought, with substantially lower recursion-
+replacement collapse risk.
+\end{takeaway}
+
+\subsection{The Synthetic-Data Taxonomy}
+
+The current consensus on training-data quality and model-collapse
+risk has four operative categories.
+\begin{enumerate}[leftmargin=1.2em]
+\item \textbf{Real source data} --- text, images, audio, structured
+      records captured from human or natural processes. The
+      substrate against which collapse is measured.
+\item \textbf{Pure model-generated synthetic data} --- outputs of
+      a generative model fed back as training data with no external
+      validator. Shumailov et al.\
+      \cite{shumailov2023curse,shumailov2024nature} showed that
+      this pattern, under recursive replacement, irreversibly
+      removes distribution tails.
+\item \textbf{Verifier-grounded synthetic data} --- model outputs
+      filtered by an external validator (math checker, unit test,
+      physics envelope, step-level human label). Process
+      supervision and the PRM800K corpus
+      \cite{lightman2023verify}, code-execution-grounded
+      supervision \cite{jung2025codeexec}, SYNTHETIC-1
+      \cite{primeintellect2025synthetic1}, and Enigmata
+      \cite{seed2025enigmata} sit here.
+\item \textbf{Process-trace data anchored to a deterministic system
+      over real source} --- execution traces, code-execution-
+      grounded supervision, world-model rollouts, and other
+      settings where the bytes of the dataset are deterministic
+      functions of a real source plus a runtime, with model outputs
+      forming only a small slice of the record and paired with
+      independent verification.
+\end{enumerate}
+
+The collapse-vs-retain distinction matters: Gerstgrasser et al.\
+\cite{gerstgrasser2024accumulate} showed that even with the same
+generators, accumulating synthetic data alongside real data avoids
+the collapse Shumailov demonstrated for replacement. The pattern
+that breaks generative models is not "synthetic" per se; it is
+recursive replacement of real distributions by model-induced
+distributions.
+
+\subsection{Anatomy of a Bundle as Training Signal}
+
+A research-smoke career bundle decomposes into three byte-slices
+with very different provenance.
+
+\textbf{Slice 1 --- Deterministic-from-public-source.}
+Generated by walking the O*NET 30.2 related-occupation graph from
+\code{15-1252.00} under a fixed seed. These records are
+deterministic functions of \linebreak (\code{source\_zip\_sha256},
+\code{walk\_seed}, \code{domain\_pack\_hash}):
+\code{dj\_raw\_events}, \code{dj\_normalized\_states},
+\code{dj\_actions}, \code{dj\_outcomes}, \code{dj\_transitions}
+(1{,}004 / 1{,}000 / 1{,}005 / 1{,}000 / 1{,}000 rows for a 1K-event
+career bundle); \code{dj\_instrument\_readings} (10{,}000 rows);
+\code{dj\_latent\_panels} (1{,}000 rows); \code{dj\_trajectories},
+\code{dj\_dataset\_shards} (with leakage checks). A reviewer can
+reproduce these byte-for-byte from the public ZIP and the published
+walk seed. This slice carries \emph{no} model outputs.
+
+\textbf{Slice 2 --- Tiny-model outputs paired with observed
+targets.} For each plan invocation: \code{dj\_predictions} (6 rows
+per bundle); \code{dj\_plan\_traces} (1 row, candidate set,
+predictions per candidate, guard decisions, utility scores,
+selected action, model artifact SHA-256);
+\code{dj\_guard\_decisions} (5 rows); \code{dj\_surprise\_events}
+(0 or 1 row when observed-vs-predicted delta exceeds threshold).
+These \emph{are} model outputs from the 15{,}344-parameter
+predictor. Crucially, every prediction lives in the same record as
+the deterministic observed next-state from Slice 1, plus the
+\code{random\_init\_cosine} and \code{shuffled\_target\_cosine}
+baselines tabulated in \S\ref{sec:results}.
+
+\textbf{Slice 3 --- Independent verifier readbacks.}
+Persisted through a code path structurally separate from the
+writer: \code{dj\_verification\_runs} (1 row per domain);
+\code{dj\_audit\_log} ($\sim$3{,}019 rows for a 1K career bundle);
+\code{paper\_tables/table\_edge\_cases.csv} (11 typed
+\code{(scenario, error\_code, field\_path, remediation)} records);
+\code{paper\_tables/table\_ablation*.csv} (6 ablation rows + paired
+tests); \code{artifact\_hashes.json} (registry-vs-recomputed file
+hashes); \code{onet\_source\_preflight.json} (per-bundle source-ZIP
+integrity).
+
+By byte count, Slice 1 $\gg$ Slice 3 $>$ Slice 2 in a typical
+career bundle. Predictions, plans, and guards account for tens of
+rows; the deterministic walk records and audit log account for
+thousands.
+
+\subsection{Properties Relative to Existing Classes}
+
+Table~\ref{tab:tdc-comparison} compares ME-JEPA bundles to the
+nearest existing classes. The line item \emph{ME-JEPA bundles
+$\neq$ rejection-sampled CoT} is the most counter-intuitive.
+Rejection sampling \emph{throws away} the negative samples; the
+data the next-generation model sees is the validator-passing slice
+only, which is precisely how the distribution narrows over
+iterations even with a validator. ME-JEPA bundles persist the
+failures (the seed-43 / seed-45 ablation failures, the rc1
+missing-binary release-candidate failure, the A3 negative-control
+ablation that deliberately collapses to validation cosine 0.790).
+Failures are not noise; they are the tail of the distribution
+preserved by construction.
+
+\begin{table*}[t]
+\caption{Properties of ME-JEPA bundles relative to existing
+  training-data classes.}
+\label{tab:tdc-comparison}
+\centering\footnotesize
+\begin{tabular}{lcccccc}
+\toprule
+\bf Property & \bf Web text & \bf Pure synthetic CoT & \bf SYNTHETIC-1 / PRM800K & \bf Code-exec traces & \bf World-model rollouts & \bf ME-JEPA bundles \\
+\midrule
+Anchored to real source                  & yes  & no  & partial   & yes (program) & indirect & \bf yes (O*NET ZIP) \\
+Cryptographic provenance to source       & rare & no  & no        & rare           & no       & \bf yes, every record \\
+External verifier per step               & no   & no  & yes       & yes            & no       & \bf yes (FSV) \\
+Counterfactuals as first-class records   & no   & sometimes & no  & no             & sometimes & \bf yes (A0--A5) \\
+Failed runs preserved                    & n/a  & usually no & no & no             & no        & \bf yes, by policy \\
+Typed schema on every row                & no   & no  & partial   & yes            & yes       & \bf yes (TOML) \\
+Recursion-replacement risk               & n/a  & high & medium-low & low          & medium    & \bf low \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Collapse-Hazard Analysis}
+
+For the dangerous sense of model collapse --- the
+Shumailov / Curse-of-Recursion phenomenon in which recursively
+generated content displaces real source data and the resulting
+model loses distribution tails --- ME-JEPA bundles have a
+substantially lower hazard than typical synthetic data. Three
+reasons.
+
+\textbf{Reason 1: Most of the bytes are not model-generated.}
+Slice 1 is a deterministic function of the public O*NET ZIP plus
+a fixed walk seed. Slice 3 is a separate verifier's readback. Only
+Slice 2 is model-generated, and Slice 2 is small. Adding the bundle
+to a real-data corpus is closer to \emph{adding a structured
+reference dataset} than to \emph{recursive synthesis}.
+
+\textbf{Reason 2: Accumulation, not replacement.} The intended use
+is to \emph{accumulate} bundle data alongside existing corpora.
+Per Gerstgrasser et al.\ \cite{gerstgrasser2024accumulate},
+accumulation does not collapse even with the same generators that
+cause collapse under replacement.
+
+\textbf{Reason 3: Tails are explicitly preserved.} The defining
+symptom of model collapse is loss of distribution tails. Bundles
+preserve tails by three structural mechanisms: failed bundles are
+preserved alongside passed runs; eleven edge-case rows per bundle
+are typed tail-of-distribution training examples by construction;
+and the A3 negative-control ablation forces a low-cosine tail row
+into every bundle.
+
+The remaining collapse-hazard slice is Slice 2. Mitigation: every
+prediction row is paired with the deterministic observed-next-state
+from Slice 1 and the random-init / shuffled-target baselines, so
+the natural supervised signal is
+\code{(state, observed-next-state)}, with predictions and guards
+available as auxiliary process-supervision targets rather than
+primary labels.
+
+\subsection{What This Data Class Is Useful For}
+
+Ranked by where it would be worth investing first:
+
+\begin{enumerate}[leftmargin=1.2em]
+\item \textbf{Agentic / tool-use models that operate the runtime.}
+      Plan traces are exactly what an agent needs to learn the
+      \emph{predict $\to$ guard $\to$ act $\to$ log $\to$ audit}
+      loop on a typed action space.
+\item \textbf{Process-supervised reasoning anchored to a verifier.}
+      Lightman-style step-by-step supervision
+      \cite{lightman2023verify}, but where the verifier is a
+      separate code path that physically re-reads the source of
+      truth rather than an LLM-judge.
+\item \textbf{Audit / FSV-style reasoning.} Teaching a model to
+      always emit before / after counts, cite a SHA-256, and verify
+      via a structurally separate path. This pattern is rare in
+      current training corpora and would be valuable for any system
+      that needs to operate on regulated or auditable data.
+\item \textbf{Error-typing and remediation.} The 11 edge-case rows
+      plus 6 aggregate-level edges plus 7 release-level edges form
+      a small, high-quality corpus of \code{(scenario, typed-error,
+      field-path, remediation-string)} quadruples. Almost no public
+      dataset has this shape.
+\item \textbf{Schema and domain-pack composability.} TOML domain
+      packs $\to$ typed records $\to$ typed errors form a high-
+      quality corpus for training models that read schemas and
+      emit valid records.
+\item \textbf{World-model imagination data, scoped.} Plan traces
+      are MuZero / Dreamer-style imagined-rollout data on a typed
+      action space.
+\item \textbf{Code-execution-grounded supervision over a domain
+      runtime.} In the spirit of \cite{jung2025codeexec}, but
+      grounding supervision in runtime operation rather than
+      program execution.
+\end{enumerate}
+
+\subsection{What This Data Class Is \emph{Not} Useful For}
+
+A bundle teaches the runtime's behavior on a bounded slice of
+O*NET, not "careers." Specifically: not for general world
+knowledge (218 selected occupations, 4 clusters, 5 actions); not
+for continuous-time or fine-grained temporal dynamics (events are
+step-indexed integers); not for modalities outside the declared
+instruments (no images, audio, or text-token sequences); not for
+open-ended generation (everything is typed). A model trained
+naively on a bundle as if it were a general-purpose text corpus
+will pick up the schema and the runtime's habits, which is
+sometimes useful and sometimes not.
+
+\subsection{Naming the Class}
+
+The proposed working name is \emph{audited execution traces with
+cryptographic provenance} (or \emph{audited execution traces} for
+short). The defining properties:
+\begin{quote}\itshape
+Most of the bytes are deterministic functions of a public source
+plus a runtime; the small model-output slice is paired in the same
+record with an independent verifier readback; counterfactuals and
+failures are persisted; every record carries a SHA-256 chain back
+to the source.
+\end{quote}
+The closest existing class is code-execution-grounded supervision
+\cite{jung2025codeexec}. ME-JEPA bundles generalize that idea from
+program execution to typed domain-pack runtime execution and add
+three properties code-execution traces do not routinely carry:
+cryptographic provenance to a public source ZIP, independent
+verifier readback as a separate record class, and typed
+counterfactual ablations as first-class records.
+
+\subsection{Recommendations for Downstream Training}
+
+If a future system uses bundles as part of its training corpus, the
+following pattern reduces the risk of importing the runtime's
+biases while preserving the data class's strengths:
+
+\begin{enumerate}[leftmargin=1.2em]
+\item \textbf{Treat Slice 1 and Slice 3 as primary signal.} They
+      are the largest, lowest-risk, highest-provenance portion of
+      the bundle.
+\item \textbf{Treat Slice 2 as process-supervision targets paired
+      with the observed next-state}, not as primary labels. The
+      supervised label for next-state is the deterministic observed
+      next-state from the same record; predictions and guards are
+      auxiliary targets used for process-reward modeling
+      \cite{lightman2023verify}.
+\item \textbf{Keep failed bundles in the corpus.} They are
+      precisely the tail-preserving slice that prevents
+      distribution narrowing under the Shumailov pattern.
+\item \textbf{Mix with real corpora rather than replacing.} Per
+      \cite{gerstgrasser2024accumulate}, accumulation avoids the
+      collapse pattern that replacement triggers.
+\item \textbf{Bound the claim to the runtime's competence.} A model
+      trained on bundle data has learned the runtime's behavior on
+      the benchmark's declared schemas. It has not learned the
+      world the schemas approximate.
+\end{enumerate}
+
+The result is a downstream model that has learned to operate the
+audit-aware runtime: predict, plan, guard, log, verify, fail
+closed, and emit typed errors with field paths --- a skill set
+orthogonal to general world knowledge and currently under-
+represented in public training corpora.
+
+% ============================================================================
+\section{Results}
+\label{sec:results}
+
+All numbers in this section read directly from CSVs in
+\code{tmp/mejepa\_local\_ci\_runs/20260501T\_release\_c\_gate\_v2\_paper\_small\_multiseed\_aggregate/paper\_tables/}.
+Hand-typed numbers are intentionally absent.
+
+\subsection{Headline Multi-Seed Prediction Metrics}
+
+Five seeds $\{42, 43, 44, 45, 46\}$ of \code{paper\_small\_1k}.
+BCa bootstrap: 10{,}000 iterations, seed \code{20260430},
+confidence 0.95. Career-taxonomy headline:
+\begin{itemize}
+\item Validation cosine $= 0.905 \pm 0.044$, BCa 95\% CI
+      \([0.861, 0.931]\).
+\item Test cosine $= 0.868 \pm 0.068$, BCa 95\% CI \([0.806, 0.912]\).
+\item Validation action-contrast accuracy
+      $= 0.960 \pm 0.043$, BCa 95\% CI \([0.916, 0.982]\).
+\item Random-init cosine $= 0.107 \pm 0.255$, BCa 95\% CI
+      \([-0.063, 0.370]\).
+\item Shuffled-target cosine $= 0.770 \pm 0.107$, BCa 95\% CI
+      \([0.671, 0.838]\).
+\end{itemize}
+
+The trained predictor's BCa lower bound for validation cosine
+$(0.861)$ exceeds the shuffled-target's BCa upper bound
+$(0.838)$ by $0.023$ --- the BCa CIs do not overlap. Random-init's
+BCa upper $(0.370)$ is far below the trained model's BCa lower
+$(0.861)$; this is a clean positive-versus-random comparison.
+
+For the two sanity domains: \code{counter\_world} reaches
+validation / test cosine $0.99963$ / $0.99916$ at 480 trainable
+parameters; \code{gridworld\_5x5} reaches $0.99473$ / $0.99472$ at
+16{,}960 parameters with very tight BCa intervals
+(stddev $< 0.0003$ on cosine).
+
+Table~\ref{tab:pred-metrics} reproduces the relevant rows of
+\code{table\_prediction\_metrics\_multiseed.csv}.
+
+\begin{table*}[t]
+\caption{Multi-seed prediction metrics across three domains.
+  Source:
+  \texttt{paper\_tables/table\_prediction\_metrics\_multiseed.csv}.
+  N=5 seeds; BCa bootstrap 10{,}000 iters, seed
+  \texttt{20260430}, confidence 0.95.}
+\label{tab:pred-metrics}
+\centering\footnotesize
+\begin{tabular}{llrrrrrr}
+\toprule
+\bf Domain & \bf Metric & \bf Mean & \bf Stddev & \bf BCa Low & \bf BCa High & \bf Min & \bf Max \\
+\midrule
+career\_taxonomy & val\_latent\_mse        & 0.15221 & 0.01027 & 0.14463 & 0.16088 & 0.14072 & 0.16601 \\
+career\_taxonomy & val\_latent\_cosine     & 0.90487 & 0.04364 & 0.86150 & 0.93113 & 0.83555 & 0.94767 \\
+career\_taxonomy & test\_latent\_mse       & 0.26847 & 0.07205 & 0.22411 & 0.34576 & 0.20173 & 0.38497 \\
+career\_taxonomy & test\_latent\_cosine    & 0.86764 & 0.06766 & 0.80630 & 0.91214 & 0.77014 & 0.93346 \\
+career\_taxonomy & val\_action\_contrast   & 0.96000 & 0.04345 & 0.91600 & 0.98200 & 0.89500 & 1.00000 \\
+career\_taxonomy & random\_init\_cosine    & 0.10703 & 0.25516 & -0.06326 & 0.37000 & -0.15406 & 0.51009 \\
+career\_taxonomy & shuffled\_target\_cosine& 0.77046 & 0.10672 & 0.67072 & 0.83775 & 0.61607 & 0.88490 \\
+\midrule
+counter\_world   & val\_latent\_cosine     & 0.99963 & 0.00000 & 0.99963 & 0.99963 & 0.99963 & 0.99963 \\
+counter\_world   & test\_latent\_cosine    & 0.99916 & 0.00000 & 0.99916 & 0.99916 & 0.99916 & 0.99916 \\
+counter\_world   & shuffled\_target\_cosine& 0.95389 & 0.00000 & 0.95389 & 0.95389 & 0.95389 & 0.95389 \\
+\midrule
+gridworld\_5x5   & val\_latent\_cosine     & 0.99473 & 0.00025 & 0.99457 & 0.99497 & 0.99451 & 0.99512 \\
+gridworld\_5x5   & test\_latent\_cosine    & 0.99472 & 0.00021 & 0.99459 & 0.99495 & 0.99455 & 0.99507 \\
+gridworld\_5x5   & shuffled\_target\_cosine& 0.77882 & 0.01142 & 0.77001 & 0.78734 & 0.76625 & 0.79514 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Multi-Seed Ablation Table}
+
+Table~\ref{tab:ablation-results} shows career-taxonomy A0--A5
+across the five main career seeds. The ablation training seed is
+fixed at the source-fixture control seed for A0, A2, A3, A4, A5
+(only A1 varies the main career training seed); cross-seed std for
+those rows is therefore zero by design, and the across-ablations
+comparison is the informative one.
+
+\begin{table*}[t]
+\caption{Multi-seed ablation table (career\_taxonomy). Source:
+  \texttt{paper\_tables/table\_ablation\_multiseed.csv}.
+  ``Val cos.'' = validation cosine; ``Test cos.'' = test cosine;
+  ``Val ACA'' = validation action-contrast accuracy.}
+\label{tab:ablation-results}
+\centering\small
+\begin{tabular}{lrrrrr}
+\toprule
+\bf Ablation & \bf Params & \bf Val cos.\ (mean$\pm$std) & \bf Test cos.\ (mean$\pm$std) & \bf Val ACA \\
+\midrule
+A0 (taxonomy only)             & 14{,}832 & $0.97557 \pm 0$        & $0.96301 \pm 0$        & $1.000 \pm 0$ \\
+A1 (+ skill vector)            & 15{,}344 & $0.90487 \pm 0.04364$  & $0.86764 \pm 0.06766$  & $0.960 \pm 0.04345$ \\
+A2 (+ transition dist.)        & 15{,}408 & $0.95071 \pm 0$        & $0.89696 \pm 0$        & $1.000 \pm 0$ \\
+A3 (A2, action removed)        & 15{,}408 & $0.79008 \pm 0$        & $0.65359 \pm 0$        & $0.985 \pm 0$ \\
+A4 (A2 + pairwise)             & 16{,}688 & $0.94159 \pm 0$        & $0.92688 \pm 0$        & $1.000 \pm 0$ \\
+A5 (A2, no VICReg)             & 15{,}408 & $0.91483 \pm 0$        & $0.81635 \pm 0$        & $1.000 \pm 0$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\textbf{A3 (action removed) is the predicted negative control.}
+Validation cosine collapses from A2's $0.951$ to A3's $0.790$;
+test cosine collapses from $0.897$ to $0.654$. A3 still passes its
+gate because the floor target was deliberately set to $0.50$ for
+the no-action ablation, not because the cosine is high.
+
+\textbf{A0 (taxonomy only) achieves the highest validation cosine.}
+This is unintuitive at first glance but consistent with the
+diagnostic that the bare taxonomy panel is the easiest-to-fit
+target manifold (small, low-dim, mostly categorical). Adding the
+skill vector (A1) reduces validation cosine because the 4-D
+continuous skill vector is harder to predict than one-hot
+occupation cluster. A1 is the headline panel because the test-set
+generalization gap (test cosine $= 0.868$) is the most relevant
+downstream signal.
+
+\textbf{A4 (pairwise features added) improves test cosine} from
+A2's $0.897$ to $0.927$ --- the largest test-set gain in the
+matrix --- at the cost of $1{,}280$ additional parameters
+($16{,}688$ vs $15{,}408$).
+
+\textbf{A5 (VICReg removed) does not collapse} validation cosine
+($0.915$ vs A2's $0.951$) but loses $0.080$ on test cosine
+($0.816$ vs A2's $0.897$). The pattern is the predicted one: no
+variance / covariance regularization $\Rightarrow$ predictor
+degeneracy in the generalization gap.
+
+\subsection{Paired Sign-Flip Permutation Tests}
+
+Source:
+\code{paper\_tables/table\_paired\_ablation\_tests.csv}.
+Baseline = A0; $n=5$; full sign-flip enumeration over $2^5=32$
+sign assignments. The smallest possible two-sided $p$ at $n=5$ is
+$2/32 = 0.0625$, which sits above the conventional
+$\alpha=0.05$ threshold.
+Per the protocol, deltas are reported with BCa CI and explicit
+sign-flip $p$ rather than as "significantly different".
+
+The economically meaningful comparison --- A3 vs A0 on validation
+cosine --- has mean delta $-0.18549$, BCa CI identically
+\([-0.18549, -0.18549]\), sign-flip $p = 0.0625$. The largest delta
+in the matrix and the one most directly tied to the design
+hypothesis (action conditioning matters).
+
+\subsection{Single-GPU Feasibility}
+
+Smoke (120 events): wall time $169$~s, $78$ commands, $9$
+verification domains, $11$ edge cases, $6$ ablations. Paper-small
+(1{,}000 events): per-seed runs bounded by training; the
+integration FSV suite passes in $190.92$~s. Release-C gate
+(5 seeds + aggregate + container build + container verify + manual
+edges): $\sim$2 hours wall time. Peak VRAM is far below the
+RTX~5090's $32$~GiB --- the trainer's working set never exceeds
+$\sim$8~GiB during career-taxonomy training. Headline numbers are
+time- and quality-bound, not memory-bound.
+
+\subsection{Failed Runs as Evidence}
+
+The project preserves rather than deletes failed bundles, so each
+fixed defect remains traceable. Examples:
+\code{20260430T\_paper\_small\_1k\_seed45\_v2} (original seed-45
+A3 ablation gate failure, before
+\code{--career-ablation-training-seed} separation);
+\code{20260430T\_paper\_small\_1k\_multiseed\_42\_46\_v3} (first
+all-pass aggregate attempt that failed because empty
+\code{table\_seed\_failures.csv} was rejected by a generic CSV
+reader);
+\code{20260501T\_local\_smoke\_b\_free\_gate\_v3\_hp\_sweep\_batch\_size}
+(120-event HP sweep proxy that failed at
+\code{batch\_size=32} A2);
+\code{mejepa\_5090\_artifact\_v1.0.0\_rc1} (release-candidate v1
+missing a packaged verifier binary). All preserved intentionally
+as part of the artifact's evidence chain.
+
+% ============================================================================
+\section{Reproducibility Artifact}
+\label{sec:repro}
+
+The reproducibility artifact is the canonical mechanism for a third
+party to regenerate \S\ref{sec:results}'s numbers from a clean
+machine. As of 2026-05-01, the artifact is at the local Docker +
+Singularity (SIF) release-candidate stage.
+
+\subsection{The Reviewer Path}
+
+\begin{tcolorbox}[colback=gray!7,colframe=gray!50,boxrule=0.4pt,
+  left=4pt,right=4pt,top=3pt,bottom=3pt]
+\begin{verbatim}
+tar -xf mejepa_5090_artifact_v1.0.0_rc5_sif_verified.tar.gz
+cd mejepa_5090_artifact_v1.0.0_rc5_sif_verified
+singularity exec --nv --cleanenv --no-home \
+  -B "$(pwd)/bundles/.../aggregate:/work/aggregate:ro" \
+  container/contextgraph-mejepa.sif \
+  /workspace/reproduce.sh verify-aggregate \
+    --aggregate /work/aggregate \
+    --reference /workspace/reference/...json \
+    --json
+\end{verbatim}
+\end{tcolorbox}
+
+The Docker invocation is identical except for
+\code{docker load -i container/contextgraph-mejepa.docker.tar}
+followed by \code{docker run --gpus all ... verify-aggregate}.
+Either invocation should print:
+\code{\{ status: ok, diff\_count: 0, manifest: passed,
+fsv: passed, passed\_count: 5,
+rows: \{ ablation\_multiseed\_rows: 78,
+paired\_ablation\_test\_rows: 35,
+prediction\_multiseed\_rows: 33,
+seed\_failure\_rows: 0 \} \}}.
+
+\subsection{Container Strategy}
+
+Two images, same content, two formats. The Docker image is built
+on \code{nvidia/cuda:13.2.0-devel-ubuntu24.04} pinned by digest
+\sha{sha256:d266e59b88c295bc5fa0e4cef9064eaff84939381b09e2c3d76a5532a303e42d}.
+Determinism is checked with two consecutive
+\code{docker buildx build} exports using \code{SOURCE\_DATE\_EPOCH}
+and \code{type=docker,rewrite-timestamp=true}; both exports must
+hash to the same SHA-256. Observed:
+\sha{099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e}
+for both \code{image\_1.tar} and \code{image\_2.tar}.
+
+The Apptainer SIF is built from the Docker tar via the
+\code{docker-archive} bootstrap agent
+\cite{apptainer2025buildsif} and run with
+\code{--cleanenv --no-home --nv}. Resulting SIF: $3.62$~GiB,
+SHA-256
+\sha{30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825}.
+The packager refuses to include a supplied SIF unless
+\code{singularity inspect}, \code{singularity sif list}, and
+\code{singularity exec ... verify-aggregate} all pass.
+
+\subsection{Build Determinism}
+
+Every Rust dependency is pinned by \code{Cargo.lock}; the CUDA
+base image is pinned by digest, not tag; the binary is built on
+the verified host and copied in (no
+\code{apt update \&\& apt install} inside the Dockerfile); two
+consecutive exports must be byte-identical. There is no claim of
+byte-equality across hosts or sm versions: per
+\cite{pytorch2026reproducibility}, GPU training can produce small
+numeric differences across releases, platforms, or even reruns on
+the same host. The release reference therefore uses a
+structural-plus-numeric-tolerance schema; cross-run model-weight
+bytes are diagnostic evidence, not the pass/fail criterion.
+
+\subsection{Artifact Layout}
+
+The release-candidate archive layout (top-level, abridged):
+\code{README.md}, \code{CITATION.cff}, \code{LICENSE} (PolyForm
+Noncommercial 1.0.0), \code{THIRD\_PARTY\_LICENSES/ONET.md},
+\code{bin/context-graph}
+(\sha{41560d160acdaade55f16153678db373c33127ce7a12b4eb5a418d30e86ec0eb}),
+\code{container/} (Docker tar + SIF + manifest),
+\code{bundles/} (per-seed runs and the aggregate), \code{paper\_tables\_reference/} (the exact CSVs cited in
+\S\ref{sec:results}), \code{reference\_hashes.json},
+\code{reference\_release\_v1.0.0.json}, \code{reproduce.sh},
+\code{manifests/} (LDD readback, SIF inspect, SIF verify),
+\code{release\_manifest.json}, \code{archive\_file\_hashes.json},
+\code{build\_report.json}, \code{CHANGELOG.md}.
+
+Top-level archive hash:
+\sha{8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd}
+for \code{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified.tar.gz}.
+
+\subsection{Reviewer Reproducibility Mapping}
+
+Standard reproducibility-checklist questions are pre-filled from
+bundle paths: code release (\code{bin/context-graph} +
+\code{container/...sif} + \code{container/...docker.tar});
+hardware (\code{bundles/<seed>/hardware.json}); software
+(\code{environment.json}); seeds (\code{run\_manifest.json});
+hyperparameters (\code{training\_metrics.json}); datasets +
+licenses (\code{data\_manifest.json}); compute budget
+(\code{run\_manifest.json}); limitations (\S\ref{sec:limits}).
+
+% ============================================================================
+\section{Discussion}
+\label{sec:disc}
+
+\subsection{What Dynamic / ME-JEPA Demonstrates}
+
+\begin{itemize}
+\item One Rust binary provides the entire surface; new domains
+      ship as TOML.
+\item Twenty-five RocksDB column families plus an append-only
+      audit log capture every persistent state; readbacks are a
+      separate code path.
+\item Action-conditioned latent prediction is verifiable end-to-
+      end on a single RTX 5090 in under two hours of wall time.
+\item Multi-seed BCa CIs and paired sign-flip permutation tests
+      are reported uniformly; every paper-cited number reads from
+      a CSV in the aggregate bundle, not a hand-typed cell.
+\item The runtime fails closed across every named edge case
+      without mutating the filesystem (\S\ref{sec:fsv}).
+\item Each immutable bundle is itself a structured training-data
+      artifact (\S\ref{sec:training-data}). The deterministic
+      walk records and verifier readbacks dominate the bytes;
+      the small model-output slice is paired in the same record
+      with deterministic observed targets and the random-init /
+      shuffled-target baselines.
+\end{itemize}
+
+\subsection{Failure Modes Observed and Fixed}
+
+Each was found through FSV and persisted as a failed bundle.
+\begin{enumerate}[leftmargin=1.2em]
+\item Seed-45 / Seed-46 A3 ablation gate failure before
+      \code{--career-ablation-training-seed} separation. Fix:
+      ablations stay on the source-fixture control seed unless
+      explicitly overridden.
+\item All-pass aggregate read failure because the empty
+      \code{table\_seed\_failures.csv} was rejected by a generic
+      CSV reader. Fix: allow empty rows only for that table.
+\item Inspection commands silently creating missing RocksDB
+      paths. Fix: read-only opens via
+      \code{create\_missing\_column\_families = false}; hidden
+      \code{--allow-missing} flag for explicit before-state
+      reads.
+\item HP sweep \code{batch\_size=32} proxy failure at 120 events.
+      Fix: HP sweeps use the verified 1K real-O*NET scale and
+      scale epochs across batch-size cells.
+\item Ruby host verifier inside CUDA container. Fix: verifier
+      moved into the compiled Rust CLI
+      (\code{check-release-aggregate-reference}).
+\item Container determinism failure on Docker iidfile compare.
+      Fix: gate compares full deterministic Docker tar exports.
+\item Container \code{libcuda.so.1} load failure without
+      \code{--gpus all}. Fix: release-C runs container
+      verification under the NVIDIA container runtime with
+      \code{--gpus all}.
+\item Stale release reference. Fix: reference recaptured from a
+      preserved passed five-seed aggregate.
+\item Initial release-candidate (rc1) missing a packaged verifier
+      binary. Fix: packager requires \code{CONTEXT\_GRAPH\_BIN}
+      and copies it into \code{bin/context-graph} with a
+      recorded \code{manifests/context\_graph\_ldd.txt} dynamic-
+      link readback.
+\item SIF passed without runtime verification. Fix: packager
+      requires \code{singularity inspect --json}, \code{sif list},
+      and \code{exec --nv --cleanenv --no-home ... verify-aggregate}.
+\end{enumerate}
+
+% ============================================================================
+\section{Limitations}
+\label{sec:limits}
+
+\subsection{Modeling}
+
+All trained models are tiny: $480$, $16{,}960$, and $15{,}344$
+trainable parameters. They are sufficient to demonstrate the
+runtime and the FSV protocol but are not state-of-the-art for any
+task. Only $H{=}1$ action-conditioned prediction is trained;
+multi-step rollouts are a deferred axis. The runtime is latent-
+only; top-k occupation prediction and skill-vector reconstruction
+require a decoder that is also a deferred axis. All numbers come
+from one RTX 5090 host; per
+\cite{pytorch2026reproducibility} exact GPU bit-reproducibility
+across releases or platforms is not guaranteed, so cross-run
+comparisons use tolerance-based comparison.
+
+\subsection{Statistical}
+
+The paired sign-flip permutation test floor at $n=5$ is
+$p = 2/32 = 0.0625$, above the conventional $\alpha=0.05$
+threshold. Deltas are therefore reported with BCa CI and explicit
+sign-flip $p$ rather than as "significantly different". A sample-
+size increase to $n=6$ would lower the floor to $p = 0.03125$ and
+resolve the threshold.
+
+The cross-seed standard deviation for A0, A2, A3, A4, A5 is zero
+because the protocol fixes the ablation training seed at the
+source-fixture control seed (only A1 varies the main career
+seed). The cross-seed variance reported for those rows is
+therefore non-informative about generalization; the
+across-ablations comparison is the informative one.
+
+A0--A5 are each compared against A0; A$_i$ vs A$_j$ for
+$i,j \neq 0$ are not multiple-tested. The paper-safe consequence
+is that no claim is made of "A$_i$ significantly outperforms
+A$_j$" for $i,j \neq 0$.
+
+\subsection{Data}
+
+O*NET's coverage reflects U.S. occupational structure; ESCO
+cross-walk replication is a deferred axis. The current generator
+restricts to core computer occupations rooted at Software
+Developers \code{15-1252.00}; this is sufficient for the runtime
+contribution but is not coverage-balanced across O*NET's
+$1{,}016$ occupations or across O*NET's job-zone distribution.
+
+\subsection{Reproducibility}
+
+The release reference is host-specific: rerunning it on a
+different sm\_120 / driver / \code{Cargo.lock} may produce a
+slightly different reference hash and is correctly rejected by
+the gate. Cross-host portability is future work. The CI gate is
+local and self-hosted to keep evidence on disk; a reviewer
+without RTX 5090 access cannot run the full release-C gate.
+
+% ============================================================================
+\section{Acknowledgments}
+
+The runtime builds on prior JEPA work
+\cite{assran2023ijepa,bardes2024vjepa} for the latent-prediction
+premise; on VICReg \cite{bardes2022vicreg} for the
+variance / covariance regularization; on World Models
+\cite{ha2018worldmodels}, Dreamer \cite{hafner2023dreamerv3}, and
+MuZero \cite{schrittwieser2019muzero} for the planning-with-a-
+learned-model framing; and on Perceiver IO
+\cite{jaegle2022perceiverio} and Gato \cite{reed2022gato} for the
+generality argument. The career-taxonomy substrate uses O*NET 30.2
+\cite{onet2026} under CC BY 4.0; ESCO \cite{esco2025} is a planned
+cross-walk source. The training-data analysis in
+\S\ref{sec:training-data} builds on Shumailov et al.\
+\cite{shumailov2023curse, shumailov2024nature} for the model-
+collapse phenomenon, Gerstgrasser et al.\
+\cite{gerstgrasser2024accumulate} for the accumulation-versus-
+replacement distinction, Lightman et al.\
+\cite{lightman2023verify} for process supervision, Jung et al.\
+\cite{jung2025codeexec} for code-execution-grounded supervision,
+and the SYNTHETIC-1 \cite{primeintellect2025synthetic1} and
+Enigmata \cite{seed2025enigmata} corpora as reference points. The
+reproducibility chain follows Docker reproducible-build guidance
+\cite{docker2025reproducible, docker2024bestpractices}, Apptainer
+SIF documentation \cite{apptainer2025buildsif}, and MLflow
+Tracking \cite{mlflow2024} artifact-lineage patterns. Statistical
+reporting follows BCa bootstrap \cite{efron2020automatic} and the
+PyTorch reproducibility caveats \cite{pytorch2026reproducibility}.
+
+% ============================================================================
+\bibliographystyle{plain}
+\bibliography{references}
+
+% ============================================================================
+\appendix
+\onecolumn
+\section*{Appendix}
+
+\subsection*{A. Domain Pack: \texttt{career\_taxonomy.v1}}
+\label{app:domainpack}
+
+The full \code{career\_taxonomy.v1} TOML, verbatim from
+\code{configs/dynamicjepa/domain\_packs/career\_taxonomy.v1.toml}:
+\begin{tcolorbox}[colback=gray!4,colframe=gray!40,boxrule=0.4pt,
+  left=3pt,right=3pt,top=2pt,bottom=2pt]
+{\footnotesize
+\begin{verbatim}
+[domain]
+id = "career_taxonomy"
+version = "1.0.0"
+title = "Career Taxonomy - Public Occupational Transition Smoke Benchmark"
+schema_version = 1
+
+[time]
+field = { name = "step_index", kind = "i64", required = true, min = 0, max = 1000000 }
+
+[[state.fields]]
+name = "occupation_cluster"
+kind = { type = "categorical", variants = ["software", "data", "systems", "management"] }
+required = true
+
+[[state.fields]]
+name = "job_zone"
+kind = { type = "i64" }
+required = true
+min = 1
+max = 5
+
+[[state.fields]]
+name = "skill_vector"
+kind = { type = "vector", dim = 4 }
+required = true
+min = 0.0
+max = 1.0
+
+[[state.fields]]
+name = "experience_years"
+kind = { type = "f64" }
+required = true
+min = 0.0
+max = 40.0
+
+[[state.fields]]
+name = "wage_band"
+kind = { type = "categorical", variants = ["low", "mid", "high"] }
+required = true
+
+[[action.fields]]
+name = "move"
+kind = { type = "categorical", variants =
+  ["skill_gain_adjacent", "skill_gain_high_demand",
+   "role_move_near", "experience_gain", "noop"] }
+required = true
+
+[[outcome.fields]]
+name = "next_occupation_cluster"
+kind = { type = "categorical", variants =
+  ["software", "data", "systems", "management"] }
+required = true
+
+[[outcome.fields]]
+name = "next_job_zone"
+kind = { type = "i64" }
+required = true
+min = 1
+max = 5
+
+[[outcome.fields]]
+name = "next_skill_vector"
+kind = { type = "vector", dim = 4 }
+required = true
+min = 0.0
+max = 1.0
+
+[[outcome.fields]]
+name = "mobility_label"
+kind = { type = "categorical", variants =
+  ["same", "near_transition", "far_transition"] }
+required = true
+
+[[entity.fields]]
+name = "trajectory_id"
+kind = { type = "string" }
+required = true
+
+[[entity.fields]]
+name = "source_dataset"
+kind = { type = "string" }
+required = true
+\end{verbatim}
+}
+\end{tcolorbox}
+
+\subsection*{B. Hash Reference}
+
+\begin{itemize}\small
+\item O*NET 30.2 source ZIP\\
+  \sha{b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741}
+\item Aggregate \code{aggregate\_manifest.json}\\
+  \sha{734a698c7ed946c292cf9005c4083f7205a2a37b271037870418103eb68670e0}
+\item Aggregate \code{aggregate\_fsv\_report.json}\\
+  \sha{9b1bc096c850fbd87d44447f53d33da58c35cd4337292ffbde82f63cc6b6a9b6}
+\item \code{table\_prediction\_metrics\_multiseed.csv}\\
+  \sha{6bd81ee3b53b90c495263378c492a7fed2b123cbcfd5007ee0a14a99702608e7}
+\item \code{table\_ablation\_multiseed.csv}\\
+  \sha{1934260ce6d0a39b6d04d0c857e097ff3d19c3e407fca6b00760548e5936c6a9}
+\item \code{table\_paired\_ablation\_tests.csv}\\
+  \sha{26218e9705c2170b25a7251f51234a4fb18b02eed9ab92339189f22a6dd88d80}
+\item \code{table\_seed\_failures.csv}\\
+  \sha{8c4e8bfb875f646993fb453e8e35203faca6fd99c41373ed8ef1ed455ec52d53}
+\item Docker tar (deterministic, two-of-two)\\
+  \sha{099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e}
+\item Apptainer SIF\\
+  \sha{30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825}
+\item CUDA base image (pinned by digest)\\
+  \sha{sha256:d266e59b88c295bc5fa0e4cef9064eaff84939381b09e2c3d76a5532a303e42d}
+\item Release archive
+  \code{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified.tar.gz}\\
+  \sha{8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd}
+\item \code{bin/context-graph}\\
+  \sha{41560d160acdaade55f16153678db373c33127ce7a12b4eb5a418d30e86ec0eb}
+\item Host environment fingerprint
+  (\code{docs2/systemspecs.md})\\
+  \sha{acdc549a5913c59f46376414c08373a8363d646fd3c36d1fc6289a193c0e1205}
+\end{itemize}
+
+\subsection*{C. Glossary}
+
+\textbf{JEPA.} Joint-Embedding Predictive Architecture. Predicts
+target representations rather than reconstructing observations.
+
+\textbf{ME-JEPA.} Multi-Embedder JEPA. Targets are produced by a
+panel of frozen, externally-defined per-domain instruments.
+
+\textbf{Dynamic / ME-JEPA.} The runtime in this paper. Adds
+domain packs, source-of-truth storage, full-state verification,
+and audited planning / surprise.
+
+\textbf{Domain pack.} A TOML manifest declaring state schema,
+action schema, instruments, and panel slots; the only thing a new
+domain ships.
+
+\textbf{FSV.} Full-State Verification. Every operation has a
+separate read path that re-reads the source of truth.
+
+\textbf{CF.} RocksDB column family. The runtime uses 25
+DynamicJEPA-prefixed CFs plus the audit log.
+
+\textbf{BCa bootstrap.} Bias-corrected and accelerated bootstrap
+confidence interval. 10{,}000 iterations, seed \code{20260430},
+confidence 0.95.
+
+\textbf{Sign-flip permutation test.} Paired-sample non-parametric
+test with two-sided $p$ obtained by enumerating all $2^n$ sign
+assignments ($p = 0.0625$ floor at $n=5$).
+
+\textbf{Audited execution traces.} The training-data class
+introduced in \S\ref{sec:training-data}. Most bytes are
+deterministic functions of a public source plus a runtime; the
+small model-output slice is paired with deterministic observed
+targets and external baselines; counterfactuals and failures are
+persisted; every record carries a SHA-256 chain back to source.
+
+\textbf{Slice 1 / Slice 2 / Slice 3.} The three byte-slices of a
+bundle for training-data purposes (\S\ref{sec:training-data}):
+deterministic-from-source, tiny-model-output paired with observed
+targets, and independent verifier readbacks, respectively.
+
+\textbf{Model collapse.} The Shumailov-et-al.\ phenomenon in which
+recursively-replaced model-generated training data causes
+irreversible loss of distribution tails.
+
+\textbf{Process supervision.} Per-step labels for reasoning
+chains, as opposed to outcome-only labels.
+
+\textbf{Release candidate (rc5).} The current local Docker + SIF
+release-candidate archive.
+
+\end{document}

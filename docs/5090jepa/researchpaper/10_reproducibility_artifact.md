@@ -116,7 +116,7 @@ singularity build \
 - The release manifest records the resulting Docker image digest +
   Apptainer SIF SHA-256.
 
-We make *no* claim of byte-equality across hosts or sm versions.
+There is no claim of byte-equality across hosts or sm versions.
 Per [PyTorch, 2026] and observed RTX 5090 behavior, GPU training can
 produce small numeric differences across releases, platforms, or even
 re-runs on the same host. The release reference therefore uses a

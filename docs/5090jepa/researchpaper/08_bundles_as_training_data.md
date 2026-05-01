@@ -5,7 +5,7 @@ verification artifact for §8. They are also a structured training-data
 artifact in their own right. This section argues that the bundle
 constitutes a *new class* of training data, distinct from web text,
 LLM-generated synthetic data, and rejection-sampled chain-of-thought
-corpora. We give the taxonomy, the per-bundle anatomy of training
+corpora. I give the taxonomy, the per-bundle anatomy of training
 signal, the model-collapse hazard analysis, and the use cases for
 which the data class is appropriate (and inappropriate).
 
@@ -186,7 +186,7 @@ as auxiliary process-supervision targets rather than primary labels.
 ## 7.5 What This Data Class Is Useful For
 
 These are the training settings for which bundles are a high-value
-signal, ordered by what we'd expect to invest in first:
+signal, ordered by what I would expect to invest in first:
 
 1. **Agentic / tool-use models that operate the runtime.** The plan
    trace is the canonical record an agent needs to learn the
@@ -260,7 +260,7 @@ world knowledge would be a category mistake.
 
 ## 7.7 Naming the Class
 
-We propose **"audited execution traces"** (alternatively
+I propose **"audited execution traces"** (alternatively
 **"verifier-grounded process-trace data with cryptographic
 provenance"**) as the working name for this class of training data.
 The defining properties, restated tightly:

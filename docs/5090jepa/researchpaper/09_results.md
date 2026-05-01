@@ -2,7 +2,7 @@
 
 All numbers in this section are read directly from CSVs in
 `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate/paper_tables/`.
-We reproduce the relevant rows verbatim. Hand-typed numbers are
+This paper reproduces the relevant rows verbatim. Hand-typed numbers are
 intentionally absent from the manuscript per the project's
 "hand-typed numbers in paper = desk-reject risk" rule
 ([smokedoc 19](../smokedocs/19_paper_drafting_figures_and_supplementary.md)).
@@ -51,9 +51,9 @@ shows mild seed dependence in latent MSE.)
   [0.861, 0.931]**, n = 5 seeds. The shuffled-target baseline
   validation cosine is 0.770 ± 0.107, BCa upper 0.838. The trained
   predictor's BCa lower 0.861 exceeds the shuffled-target's BCa upper
-  0.838 by 0.023 — i.e., the BCa CIs do not overlap (under our
+  0.838 by 0.023 — i.e., the BCa CIs do not overlap (under the
   protocol, this is the necessary condition before claiming the
-  trained predictor "beats" the shuffled-target baseline; we report
+  trained predictor "beats" the shuffled-target baseline; I report
   the comparison conservatively).
 
 - **Career-taxonomy random-init cosine** has BCa 95% CI [-0.063,
@@ -154,7 +154,7 @@ fixed-ablation-seed protocol described in §5.4.)
 The paired sign-flip $p$-value is **0.0625 for all five comparisons** —
 the floor at $n = 5$. Per the project's protocol
 ([smokedoc 15](../smokedocs/15_multiseed_completion_and_statistical_reporting.md))
-we therefore report the deltas as *directional with a BCa CI entirely
+I therefore report the deltas as *directional with a BCa CI entirely
 on one side of zero* but not as "significantly different at
 $\alpha = 0.05$ in the strict sense" — the n=5 sample bound forbids
 the latter. A sample-size increase to $n=6$ would lower the floor to
@@ -268,5 +268,5 @@ fixed defect remains traceable. Preserved failure evidence:
   packager now requires `CONTEXT_GRAPH_BIN` and copies it into
   `bin/context-graph` with recorded `manifests/context_graph_ldd.txt`.
 
-We retain all failed bundles intentionally; they are part of the
+All failed bundles are retained intentionally; they are part of the
 artifact's evidence chain.
