@@ -110,7 +110,7 @@ expected before/after deltas:
 | Edge | Raw Δ | Adapter Δ | State Δ | Transition Δ | Audit Δ |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | empty input | 0 | 0 | 0 | 0 | 1 |
-| missing source license | 1 | 1 | 0 | 0 | 2 |
+| missing source manifest | 1 | 1 | 0 | 0 | 2 |
 | invalid action | 1 | 1 | 0 | 0 | 2 |
 | wrong skill-vector dimension | 1 | 1 | 0 | 0 | 2 |
 | out-of-bounds job zone | 1 | 1 | 0 | 0 | 2 |
@@ -121,30 +121,11 @@ without ZIP, unsafe ZIP member path, and incomplete ZIP file count;
 see §6.2 and
 [reports/20260430_onet_zip_preflight_fsv.md](../smokedocs/reports/20260430_onet_zip_preflight_fsv.md)).
 
-## 4.5 Why a Public-Taxonomy Benchmark and Not a Real-Person Dataset?
+## 4.5 Reusability
 
-We deliberately reject loading a real-person career trajectory dataset
-into the present artifact, even where a public dataset with permissive
-license exists (e.g. JobHop [Johary et al., 2025]; KARRIEREWEGE [Senger
-et al., 2024]). The reasons:
-
-1. **Audit-first scope.** The contribution of this paper is the
-   *runtime* and the *FSV protocol* on a substrate that any reviewer
-   can rebuild from the public ZIP and the published source-ZIP
-   SHA-256. Real-person data—even when public—introduces consent,
-   re-identification, and jurisdictional questions that the present
-   artifact does not yet have privacy gates for.
-
-2. **Future Phase 12 separation.** The design plan explicitly defers
-   real subject-level data to a Phase 12 with privacy/consent FSV
-   ([smokedocs/25_privacy_gate_real_data_phase12.md](../smokedocs/25_privacy_gate_real_data_phase12.md)).
-   Mixing the two in v1.0 would muddle the evidence chain.
-
-3. **Paper-safety language.** Calling this a "career-taxonomy
-   benchmark" rather than "ME-JEPA on real career trajectories" is
-   non-negotiable per the project's source-of-truth document
-   ([smokedocs/01_research_thesis_and_claims.md](../smokedocs/01_research_thesis_and_claims.md)).
-
-The benchmark is therefore reusable as a *smallest reproducible career
-substrate* for future work that needs to share an FSV-friendly base
-before attempting real-data extensions.
+The benchmark is the smallest reproducible occupational substrate we
+could build that requires only the public O\*NET ZIP and a recorded
+SHA-256. Future work can register an additional domain pack (App. A)
+without changing the runtime, the FSV harness, or the reproducibility
+chain. ESCO replication and an O\*NET ↔ ISCO crosswalk are deferred
+axes ([smokedoc 18](../smokedocs/18_esco_crosswalk_and_replication_study.md)).

@@ -62,8 +62,10 @@ the final release-C rerun
 ## 6.3 The Eleven Edge Cases per Career Bundle
 
 Every research-smoke career bundle persists 11 edge-case rows in
-`paper_tables/table_edge_cases.csv`. The five data-shape edges are
-reproduced in §4.4. The remaining six are CLI- and infrastructure-shape:
+`paper_tables/table_edge_cases.csv`. The five data-shape edges
+(empty input, missing source manifest, invalid action, wrong
+skill-vector dimension, out-of-bounds job zone) are reproduced in §4.4.
+The remaining six are CLI- and infrastructure-shape:
 
 | Edge | Expected error | Bundle effect |
 | --- | --- | --- |

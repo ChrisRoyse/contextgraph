@@ -3,8 +3,7 @@
 The reproducibility artifact is the canonical mechanism by which a
 third party regenerates §7's numbers from a clean machine. As of
 2026-05-01 the artifact is at the **local Docker + Singularity (SIF)
-release-candidate** stage; Zenodo DOI publication is the only
-remaining final-release blocker.
+release-candidate** stage.
 
 ## 8.1 The Reviewer Path
 
@@ -191,69 +190,18 @@ rc5 release candidate; cross-checked with the SIF FSV report and the
 build report
 [reports/20260501_sif_release_candidate_fsv.md](../smokedocs/reports/20260501_sif_release_candidate_fsv.md).)
 
-## 8.5 Remaining Blocker: Zenodo DOI
+## 8.5 Reviewer Reproducibility Mapping
 
-`release_manifest.json` lists exactly one remaining final-release
-blocker:
-
-```json
-"blockers": ["zenodo_doi_not_published"]
-```
-
-Publication requires (a) a Zenodo access token, (b) a deliberate
-publish action, (c) verification that the DOI resolves. None were
-performed during the rc5 build because no Zenodo token was available
-in this environment. The Zenodo deposit/publish surface exists
-[Zenodo, 2025] and the project's release script has the explicit
-sequence (`make zenodo`, `make paper-supp`, `make arxiv`) defined in
-[smokedoc 20](../smokedocs/20_reproducibility_artifact_and_release.md).
-This remains the single gating step from "release candidate" to
-"ACM Available + Functional + Reusable" badging
-[ACM, 2020].
-
-## 8.6 ACM Artifact Badging Mapping
-
-| Badge | Criterion | Status / How met |
-| --- | --- | --- |
-| Artifacts Available | Permanently archived, DOI, not personal page or GitHub-only | **Pending Zenodo publish.** Local archive SHA-256 frozen. |
-| Artifacts Evaluated — Functional | Documented, consistent, complete, exercisable | **Met.** README, container, bundle layout match paper; one-command verify (`./reproduce.sh verify-aggregate`) returns `diff_count: 0`. |
-| Artifacts Evaluated — Reusable | Exceeds minimal functionality, well-documented for repurposing | **Met.** Domain-pack abstraction lets reviewers add a new domain via TOML; smokedocs 00–25 document the runtime; `.toml` schemas in `configs/dynamicjepa/domain_packs/` are the only files a new domain ships. |
-
-## 8.7 NeurIPS Reproducibility Checklist Mapping
+The artifact pre-fills the standard reproducibility-checklist questions
+from bundle paths:
 
 | Question | Bundle path / Source |
 | --- | --- |
-| Code released? | release archive `bin/context-graph` and `container/contextgraph-mejepa.{sif,docker.tar}`; pending Zenodo DOI |
+| Code released? | release archive `bin/context-graph` and `container/contextgraph-mejepa.{sif,docker.tar}` |
 | Hardware listed? | `bundles/<seed>/hardware.json` per bundle |
 | Software listed? | `bundles/<seed>/environment.json` per bundle |
 | Random seeds? | `bundles/<seed>/run_manifest.json` (`career_training_seed`, `career_ablation_training_seed_effective`, `career_ablation_training_seed_origin`) |
 | Hyperparameters? | `bundles/<seed>/training_metrics.json` and persisted in `dj_model_artifacts` config |
-| Datasets + licenses? | `bundles/<seed>/data_manifest.json` + `THIRD_PARTY_LICENSES/ONET.md` |
+| Datasets + licenses? | `bundles/<seed>/data_manifest.json` |
 | Computational budget? | `bundles/<seed>/run_manifest.json` (`updated_at_unix_ms - created_at_unix_ms`) and §5.6 |
-| Limitations? | §10 and [smokedoc 11](../smokedocs/11_risks_open_questions_and_decisions.md) |
-| Broader impact? | §11 and [smokedoc 21](../smokedocs/21_compliance_ethics_broader_impact.md) |
-| Risks of misuse? | §11 (dual-use disclosure) |
-
-The checklist is a *filing chore* and not a research task per
-[NeurIPS, 2024]; the answers are pre-filled from the bundle paths
-above so a reviewer can spot-check any one of them.
-
-## 8.8 NIST AI RMF Mapping (Condensed)
-
-The full mapping is in
-[smokedoc 21](../smokedocs/21_compliance_ethics_broader_impact.md).
-For the artifact specifically:
-
-- **GOVERN** — Maintainer named in `CITATION.cff`; policies in
-  `LICENSE` and `LICENSING.md`; explicit single-author research
-  artifact.
-- **MAP** — Categorization "research demonstrator, public-taxonomy
-  benchmark"; intended-use list verbatim in §11.2; risk register in
-  §11.4.
-- **MEASURE** — Metrics for trustworthiness in §7 + collapse
-  diagnostics in `paper_tables/table_collapse_diagnostics.csv`;
-  multi-seed aggregate evidence in §7; FSV protocol §6.
-- **MANAGE** — Risk responses prioritized §11.4; incident disclosure
-  via failed-bundle preservation policy + worked seed-43 example
-  ([reports/20260430_seed43_failure_analysis.md](../smokedocs/reports/20260430_seed43_failure_analysis.md));
-  continuous monitoring via the doc-23 free local CI gate.
+| Limitations? | §10 |

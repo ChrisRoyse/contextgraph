@@ -172,16 +172,14 @@ training. We do not report an empirical peak-VRAM table because the
 trainer is not memory-bound at this model size; the headline numbers
 in §7 are instead time- and quality-bound.
 
-## 5.7 What We Do *Not* Run
+## 5.7 Deferred Axes
 
-Excluded as out of scope at the headline level (and motivated in §10):
+Excluded from the headline matrix and called out as future work in §10:
 
-- a top-k occupation decoder head (§9 lists this as a deferred axis
-  documented in [smokedoc 16](../smokedocs/16_decoder_head_and_topk_metrics.md));
-- multi-step rollouts $H>1$ (deferred axis,
-  [smokedoc 24](../smokedocs/24_multistep_rollout_and_planning_horizon.md));
-- ESCO replication and O\*NET↔ISCO crosswalk (deferred,
-  [smokedoc 18](../smokedocs/18_esco_crosswalk_and_replication_study.md));
-- real subject-level career data (deferred to Phase 12,
-  [smokedoc 25](../smokedocs/25_privacy_gate_real_data_phase12.md));
-- fairness-across-protected-classes evaluation (out of scope, §11).
+- a top-k occupation decoder head with reconstruction metrics
+  ([smokedoc 16](../smokedocs/16_decoder_head_and_topk_metrics.md));
+- multi-step rollouts $H>1$, direct vs. autoregressive
+  ([smokedoc 24](../smokedocs/24_multistep_rollout_and_planning_horizon.md));
+- ESCO replication and O\*NET ↔ ISCO crosswalk
+  ([smokedoc 18](../smokedocs/18_esco_crosswalk_and_replication_study.md));
+- larger model scales beyond paper-small (1{,}000 events).
