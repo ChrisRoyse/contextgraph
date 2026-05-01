@@ -402,16 +402,18 @@ reference_json_sha="$(sha_file "$reference")"
 apptainer_status="not_included"
 apptainer_sha=""
 apptainer_size="0"
+release_stage="local_docker_release_candidate"
 if [[ -n "$apptainer_sif" ]]; then
   apptainer_status="included"
   apptainer_sha="$(sha_file "$apptainer_sif")"
   apptainer_size="$(size_file "$apptainer_sif")"
+  release_stage="local_docker_sif_release_candidate"
 fi
 
 jq -n \
   --arg operation "dynamicjepa_release_candidate_archive" \
   --arg release_id "$release_id" \
-  --arg release_stage "local_docker_release_candidate" \
+  --arg release_stage "$release_stage" \
   --arg aggregate "$aggregate" \
   --arg selected_full_bundle "$full_bundle_path" \
   --arg reference "$reference" \
@@ -473,7 +475,7 @@ jq -n \
     },
     blockers: (
       if $apptainer_status == "included"
-      then []
+      then ["zenodo_doi_not_published"]
       else ["apptainer_sif_not_included_on_this_host", "zenodo_doi_not_published"]
       end
     )
@@ -483,8 +485,11 @@ jq -n \
   --arg docker_tar "container/contextgraph-mejepa.docker.tar" \
   --arg docker_tar_sha256 "$docker_sha_1" \
   --arg dockerfile_sha256 "$(sha_file Dockerfile)" \
+  --arg apptainer_status "$apptainer_status" \
+  --arg apptainer_sha256 "$apptainer_sha" \
   --arg cuda_image "$cuda_image" \
   --argjson docker_tar_size_bytes "$(size_file "$docker_tar_1")" \
+  --argjson apptainer_size_bytes "$apptainer_size" \
   --slurpfile container_verify "$container_verify_json" \
   '{
     docker: {
@@ -494,6 +499,12 @@ jq -n \
       dockerfile_sha256: $dockerfile_sha256,
       cuda_image: $cuda_image,
       verification: $container_verify[0]
+    },
+    apptainer: {
+      status: $apptainer_status,
+      archive_path: (if $apptainer_status == "included" then "container/contextgraph-mejepa.sif" else null end),
+      archive_sha256: (if $apptainer_sha256 == "" then null else $apptainer_sha256 end),
+      archive_size_bytes: (if $apptainer_size_bytes == 0 then null else $apptainer_size_bytes end)
     }
   }' > "$artifact_dir/container/container_manifest.json"
 

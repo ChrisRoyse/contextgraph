@@ -106,6 +106,16 @@ RELEASE_ID ?= mejepa_5090_artifact_v1.0.0
 RELEASE_OUTPUT_ROOT ?= tmp/mejepa_release_artifacts
 RELEASE_REFERENCE ?= reference/reference_release_v1.0.0.json
 RELEASE_FULL_BUNDLE_SEED ?= 42
+RELEASE_REQUIRE_APPTAINER ?= 0
+RELEASE_APPTAINER_SIF ?=
+
+RELEASE_APPTAINER_ARGS :=
+ifneq ($(strip $(RELEASE_APPTAINER_SIF)),)
+RELEASE_APPTAINER_ARGS += --apptainer-sif "$(RELEASE_APPTAINER_SIF)"
+endif
+ifeq ($(RELEASE_REQUIRE_APPTAINER),1)
+RELEASE_APPTAINER_ARGS += --require-apptainer
+endif
 
 release-candidate-archive:
 	@test -n "$(RELEASE_AGGREGATE)" || { echo "RELEASE_AGGREGATE is required"; exit 1; }
@@ -122,4 +132,5 @@ release-candidate-archive:
 	  --container-verify-json "$(RELEASE_CONTAINER_VERIFY_JSON)" \
 	  --reference "$(RELEASE_REFERENCE)" \
 	  --output-root "$(RELEASE_OUTPUT_ROOT)" \
-	  --full-bundle-seed "$(RELEASE_FULL_BUNDLE_SEED)"
+	  --full-bundle-seed "$(RELEASE_FULL_BUNDLE_SEED)" \
+	  $(RELEASE_APPTAINER_ARGS)
