@@ -194,7 +194,7 @@ pub fn train_dataset(
         completed.header.created_at_unix_ms = finished_at;
         completed.refresh_content_hash()?;
         let completion_audit = build_audit(
-        "register_artifact",
+            "register_artifact",
             AuditStatus::Ok,
             vec![training_run_id.to_string(), dataset_id.to_string()],
             vec![artifact_id.to_string()],
@@ -795,7 +795,10 @@ pub fn record_surprise(
     )?;
     set_audit_signal_yield(
         &mut audit,
-        signal_yield_for_operation("record_surprise", signal_yield_dimensions_for_domain(&domain, 0)?)?,
+        signal_yield_for_operation(
+            "record_surprise",
+            signal_yield_dimensions_for_domain(&domain, 0)?,
+        )?,
     )?;
     put_surprise_event_with_audit_batch(db, &record, &audit)?;
     let stored = get_surprise_event(db, surprise_event_id)?.ok_or_else(|| {
@@ -2469,16 +2472,12 @@ fn active_constellation_modalities(domain: &DomainPack) -> DynamicJepaResult<u32
     };
     let mut max_modalities = 0usize;
     if let Some(global) = &config.global {
-        max_modalities = max_modalities.max(constellation_modality_count(
-            domain,
-            &global.modalities,
-        ));
+        max_modalities =
+            max_modalities.max(constellation_modality_count(domain, &global.modalities));
     }
     for subject in &config.subjects {
-        max_modalities = max_modalities.max(constellation_modality_count(
-            domain,
-            &subject.modalities,
-        ));
+        max_modalities =
+            max_modalities.max(constellation_modality_count(domain, &subject.modalities));
     }
     u32::try_from(max_modalities).map_err(|_| {
         DynamicJepaError::validation(

@@ -2131,7 +2131,10 @@ fn bind_command(args: BindArgs) -> DynamicJepaResult<CommandOutcome> {
         )?;
         set_audit_signal_yield(
             &mut audit,
-            signal_yield_for_operation("bind", signal_yield_dimensions_for_domain_pack_counts(0, 0, 0))?,
+            signal_yield_for_operation(
+                "bind",
+                signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+            )?,
         )?;
         put_binding_with_audit_batch(db, &record, &audit)?;
 
@@ -3994,7 +3997,10 @@ struct McRatioStageAccumulator {
     total_signal_yield: u64,
 }
 
-fn compute_mc_ratio_report(db: &rocksdb::DB, domain: &DomainPack) -> DynamicJepaResult<McRatioReport> {
+fn compute_mc_ratio_report(
+    db: &rocksdb::DB,
+    domain: &DomainPack,
+) -> DynamicJepaResult<McRatioReport> {
     let n_events = list_normalized_states(db, 1_000_000, 0)?
         .into_iter()
         .filter(|state| state.header.domain_pack_id == domain.id)
@@ -14275,10 +14281,8 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     };
 
     let fsv12_signal_yield = verify_signal_yield_for_domain(ctx, &parsed_domain_pack)?;
-    ctx.decoded.insert(
-        "fsv12_signal_yield_audit".to_string(),
-        fsv12_signal_yield,
-    );
+    ctx.decoded
+        .insert("fsv12_signal_yield_audit".to_string(), fsv12_signal_yield);
 
     let pre_verification_counts = run_ok_step(
         "pre_verification_counts",
@@ -18563,16 +18567,12 @@ fn active_constellation_modalities(domain: &DomainPack) -> DynamicJepaResult<u32
     };
     let mut max_modalities = 0usize;
     if let Some(global) = &config.global {
-        max_modalities = max_modalities.max(constellation_modality_count(
-            domain,
-            &global.modalities,
-        ));
+        max_modalities =
+            max_modalities.max(constellation_modality_count(domain, &global.modalities));
     }
     for subject in &config.subjects {
-        max_modalities = max_modalities.max(constellation_modality_count(
-            domain,
-            &subject.modalities,
-        ));
+        max_modalities =
+            max_modalities.max(constellation_modality_count(domain, &subject.modalities));
     }
     u32::try_from(max_modalities).map_err(|_| {
         DynamicJepaError::validation(
