@@ -144,6 +144,7 @@ mlruns/
 lightning_logs/
 checkpoints/
 tmp/
+.tmp/
 
 # Rust benchmark and debug artifacts
 criterion/
