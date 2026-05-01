@@ -130,7 +130,9 @@ pub enum DynamicJepaError {
         kind: String,
         message: String,
     },
-    #[error("pairwise asymmetric ordering: instrument_j={instrument_j} instrument_k={instrument_k}")]
+    #[error(
+        "pairwise asymmetric ordering: instrument_j={instrument_j} instrument_k={instrument_k}"
+    )]
     PairwiseAsymmetricOrdering {
         instrument_j: String,
         instrument_k: String,
@@ -141,13 +143,17 @@ pub enum DynamicJepaError {
         expected: u64,
         actual: u64,
     },
-    #[error("pairwise cosine drift: pairwise_id={pairwise_id} expected={expected} actual={actual}")]
+    #[error(
+        "pairwise cosine drift: pairwise_id={pairwise_id} expected={expected} actual={actual}"
+    )]
     PairwiseCosineDrift {
         pairwise_id: Uuid,
         expected: f32,
         actual: f32,
     },
-    #[error("pairwise instrument hash drift: pairwise_id={pairwise_id} instrument={instrument_id}")]
+    #[error(
+        "pairwise instrument hash drift: pairwise_id={pairwise_id} instrument={instrument_id}"
+    )]
     PairwiseInstrumentHashDrift {
         pairwise_id: Uuid,
         instrument_id: String,
@@ -184,7 +190,9 @@ pub enum DynamicJepaError {
     },
     #[error("constellation subject field undeclared: subject={subject_id} field={field}")]
     ConstellationSubjectFieldUndeclared { subject_id: String, field: String },
-    #[error("constellation subject value undeclared: subject={subject_id} field={field} value={value}")]
+    #[error(
+        "constellation subject value undeclared: subject={subject_id} field={field} value={value}"
+    )]
     ConstellationSubjectValueUndeclared {
         subject_id: String,
         field: String,
@@ -201,7 +209,9 @@ pub enum DynamicJepaError {
         subject_id: String,
         modality_id: String,
     },
-    #[error("guard threshold missing: domain={domain_id} subject={subject_id} modality={modality_id}")]
+    #[error(
+        "guard threshold missing: domain={domain_id} subject={subject_id} modality={modality_id}"
+    )]
     GuardThresholdMissing {
         domain_id: String,
         subject_id: String,

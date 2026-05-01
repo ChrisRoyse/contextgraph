@@ -222,6 +222,73 @@ pub fn definitions() -> Vec<ToolDefinition> {
             &["dbPath", "predictionId", "observedOutcomeId", "observedPanelId"],
         ),
         tool(
+            tool_names::DYNAMICJEPA_BUILD_CONSTELLATION,
+            "Build immutable DynamicJEPA constellation centroids from persisted instrument readings.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                string_default("subject", "global", "Subject id, or global."),
+                string_optional("sourceEventSelector", "Reference selector such as first:30 or all."),
+                string_optional("builtByRunId", "Optional build/verification run UUID."),
+            ]),
+            &["dbPath", "domain"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_LIST_CONSTELLATIONS,
+            "List persisted DynamicJEPA constellation centroids.",
+            props(&[
+                db_path(),
+                string_optional("domain", "Optional domain id filter."),
+                string_optional("subject", "Optional subject id filter."),
+                limit(),
+                offset(),
+            ]),
+            &["dbPath"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_GET_CONSTELLATION,
+            "Read one DynamicJEPA constellation centroid.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                string_default("subject", "global", "Subject id, or global."),
+                string_prop("modality", "Instrument id or 1-based modality ordinal."),
+            ]),
+            &["dbPath", "domain", "modality"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_CALIBRATE_THRESHOLD,
+            "Calibrate DynamicJEPA G_tau thresholds from a disjoint held-out event set.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                string_default("subject", "global", "Subject id, or global."),
+                string_default("modality", "all", "Instrument id, 1-based ordinal, or all."),
+                string_optional("calibrationEventSelector", "Held-out selector such as last:30."),
+                integer_optional("percentile", "Override percentile in [0,100]."),
+            ]),
+            &["dbPath", "domain"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_RECALIBRATE_THRESHOLD,
+            "Supersede an existing DynamicJEPA G_tau threshold calibration.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                string_default("subject", "global", "Subject id, or global."),
+                string_default("modality", "all", "Instrument id, 1-based ordinal, or all."),
+                string_optional("calibrationEventSelector", "Held-out selector such as last:30."),
+                string_prop("supersedes", "Prior threshold calibration UUID."),
+                string_prop("reason", "Operator-visible recalibration reason."),
+                integer_optional("percentile", "Override percentile in [0,100]."),
+            ]),
+            &["dbPath", "domain", "supersedes", "reason"],
+        ),
+        tool(
             tool_names::DYNAMICJEPA_GET_PREDICTION,
             "Read one persisted DynamicJEPA prediction.",
             props(&[db_path(), string_prop("id", "Prediction UUID.")]),
@@ -351,6 +418,13 @@ fn integer_min(
     (
         name,
         json!({"type": "integer", "minimum": minimum, "description": description}),
+    )
+}
+
+fn integer_optional(name: &'static str, description: &'static str) -> (&'static str, Value) {
+    (
+        name,
+        json!({"type": "integer", "minimum": 0, "maximum": 100, "description": description}),
     )
 }
 

@@ -5,12 +5,14 @@ use serde_json::{json, Value};
 use tracing::{error, info};
 
 use context_graph_cli::commands::dynamicjepa::{
-    run_dynamicjepa_command, BindArgs, CompileDatasetArgs, CompileTrajectoriesArgs,
-    DynamicJepaCommands, GetArtifactArgs, GetDatasetShardArgs, GetDomainArgs, GetPanelArgs,
-    GetPlanTraceArgs, GetPredictionArgs, GetSurpriseArgs, GetTrainingRunArgs, GetTrajectoryArgs,
-    IngestEventArgs, InspectCfArgs, InspectCountsArgs, InspectDatasetArgs, ListBindingsArgs,
+    run_dynamicjepa_command, BindArgs, BuildConstellationArgs, CalibrateThresholdArgs,
+    CompileDatasetArgs, CompileTrajectoriesArgs, DynamicJepaCommands, GetArtifactArgs,
+    GetConstellationArgs, GetDatasetShardArgs, GetDomainArgs, GetPanelArgs, GetPlanTraceArgs,
+    GetPredictionArgs, GetSurpriseArgs, GetTrainingRunArgs, GetTrajectoryArgs, IngestEventArgs,
+    InspectCfArgs, InspectCountsArgs, InspectDatasetArgs, ListBindingsArgs, ListConstellationsArgs,
     ListDomainsArgs, ListInstrumentReadingsArgs, ListTrajectoriesArgs, MaterializePanelArgs,
-    PlanArgs, PredictArgs, RecordSurpriseArgs, RegisterDomainArgs, RunAdapterArgs, TrainArgs,
+    PlanArgs, PredictArgs, RecalibrateThresholdArgs, RecordSurpriseArgs, RegisterDomainArgs,
+    RunAdapterArgs, TrainArgs,
 };
 
 use crate::handlers::Handlers;
@@ -506,6 +508,133 @@ impl Handlers {
                 prediction_id: req.prediction_id,
                 observed_outcome_id: req.observed_outcome_id,
                 observed_panel_id: req.observed_panel_id,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_build_constellation(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: BuildConstellationRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_build_constellation", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::BuildConstellation(BuildConstellationArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                subject: req.subject,
+                source_event_selector: req.source_event_selector,
+                built_by_run_id: req.built_by_run_id,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_list_constellations(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: ListConstellationsRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_list_constellations", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::ListConstellations(ListConstellationsArgs {
+                db: req.db_path,
+                domain: req.domain,
+                subject: req.subject,
+                limit: req.limit,
+                offset: req.offset,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_get_constellation(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: GetConstellationRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_get_constellation", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::GetConstellation(GetConstellationArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                subject: req.subject,
+                modality: req.modality,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_calibrate_threshold(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: CalibrateThresholdRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_calibrate_threshold", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::CalibrateThreshold(CalibrateThresholdArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                subject: req.subject,
+                modality: req.modality,
+                calibration_event_selector: req.calibration_event_selector,
+                percentile: req.percentile,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_recalibrate_threshold(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: RecalibrateThresholdRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_recalibrate_threshold", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::RecalibrateThreshold(RecalibrateThresholdArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                subject: req.subject,
+                modality: req.modality,
+                calibration_event_selector: req.calibration_event_selector,
+                supersedes: req.supersedes,
+                reason: req.reason,
+                percentile: req.percentile,
                 json: true,
             }),
         )

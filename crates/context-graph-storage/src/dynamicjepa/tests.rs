@@ -473,6 +473,7 @@ fn phase0_counter_domain_pack() -> DomainPack {
             guards: parsed.planner_policy.guards,
             surprise_threshold: parsed.planner_policy.surprise_threshold,
         },
+        constellation: None,
         verification_policy: VerificationPolicy {
             required_cfs: parsed.verification_policy.required_cfs,
             expected_event_count: parsed.verification_policy.expected_event_count,

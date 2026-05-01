@@ -20,6 +20,14 @@ fn default_domain_version() -> String {
     "1.0.0".to_string()
 }
 
+fn default_subject_global() -> String {
+    "global".to_string()
+}
+
+fn default_modality_all() -> String {
+    "all".to_string()
+}
+
 fn default_trajectory_policy() -> String {
     "by_domain_session".to_string()
 }
@@ -261,6 +269,75 @@ pub(crate) struct RecordSurpriseRequest {
     pub prediction_id: String,
     pub observed_outcome_id: String,
     pub observed_panel_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BuildConstellationRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    #[serde(default = "default_subject_global")]
+    pub subject: String,
+    pub source_event_selector: Option<String>,
+    pub built_by_run_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ListConstellationsRequest {
+    pub db_path: PathBuf,
+    pub domain: Option<String>,
+    pub subject: Option<String>,
+    #[serde(default = "default_limit_100")]
+    pub limit: usize,
+    #[serde(default = "default_zero")]
+    pub offset: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct GetConstellationRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    #[serde(default = "default_subject_global")]
+    pub subject: String,
+    pub modality: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CalibrateThresholdRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    #[serde(default = "default_subject_global")]
+    pub subject: String,
+    #[serde(default = "default_modality_all")]
+    pub modality: String,
+    pub calibration_event_selector: Option<String>,
+    pub percentile: Option<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RecalibrateThresholdRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    #[serde(default = "default_subject_global")]
+    pub subject: String,
+    #[serde(default = "default_modality_all")]
+    pub modality: String,
+    pub calibration_event_selector: Option<String>,
+    pub supersedes: Option<String>,
+    pub reason: Option<String>,
+    pub percentile: Option<u8>,
 }
 
 #[derive(Debug, Deserialize)]

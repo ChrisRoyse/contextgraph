@@ -315,6 +315,16 @@ pub const DYNAMICJEPA_PREDICT: &str = "dynamicjepa_predict";
 pub const DYNAMICJEPA_PLAN: &str = "dynamicjepa_plan";
 /// Compare predicted and observed outcomes and persist surprise when needed.
 pub const DYNAMICJEPA_RECORD_SURPRISE: &str = "dynamicjepa_record_surprise";
+/// Build immutable DynamicJEPA constellation centroids.
+pub const DYNAMICJEPA_BUILD_CONSTELLATION: &str = "dynamicjepa_build_constellation";
+/// List DynamicJEPA constellation centroids.
+pub const DYNAMICJEPA_LIST_CONSTELLATIONS: &str = "dynamicjepa_list_constellations";
+/// Read one DynamicJEPA constellation centroid.
+pub const DYNAMICJEPA_GET_CONSTELLATION: &str = "dynamicjepa_get_constellation";
+/// Calibrate DynamicJEPA G_tau thresholds.
+pub const DYNAMICJEPA_CALIBRATE_THRESHOLD: &str = "dynamicjepa_calibrate_threshold";
+/// Supersede a DynamicJEPA G_tau threshold calibration.
+pub const DYNAMICJEPA_RECALIBRATE_THRESHOLD: &str = "dynamicjepa_recalibrate_threshold";
 /// Read one persisted prediction.
 pub const DYNAMICJEPA_GET_PREDICTION: &str = "dynamicjepa_get_prediction";
 /// Read one persisted plan trace.

@@ -150,11 +150,7 @@ impl Validate for InstrumentSpec {
         if !self.pair_kinds.contains(&PairKindName::Cosine) {
             return Err(DynamicJepaError::PairwiseCosineKindMissing {
                 instrument_id: self.instrument_id.to_string(),
-                pair_kinds: self
-                    .pair_kinds
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
+                pair_kinds: self.pair_kinds.iter().map(ToString::to_string).collect(),
             });
         }
         let mut seen = BTreeSet::new();

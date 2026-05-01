@@ -413,10 +413,7 @@ impl DomainPack {
             .map(|field| &field.kind)
     }
 
-    fn validate_constellation_config(
-        &self,
-        config: &ConstellationConfig,
-    ) -> DynamicJepaResult<()> {
+    fn validate_constellation_config(&self, config: &ConstellationConfig) -> DynamicJepaResult<()> {
         if config.global.is_none() && config.subjects.is_empty() {
             return Err(DynamicJepaError::validation(
                 "DomainPack.constellation",

@@ -6,11 +6,12 @@ use crate::config::TrainConfig;
 use crate::model::{train_tiny_jepa, TrainExample};
 use candle_core::{Device, Tensor};
 use context_graph_core::dynamicjepa::{
-    ActionId, ActionOrigin, ArtifactStatus, CandidateActionConfig, DatasetId, DatasetShardRecord,
-    DjRecordHeader, DomainPack, DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EventId,
-    FieldKind, FieldSpec, FieldValue, GuardDecision, GuardDecisionId, GuardDecisionRecord,
-    InstrumentKind, InstrumentSpec, LatentPanel, ModelArtifactId, ModelArtifactRecord,
-    Normalization, NormalizedAction, OutcomeId, PanelId, PanelSlotKind, PlanTraceId,
+    ActionId, ActionOrigin, ArtifactStatus, CandidateActionConfig, ConstellationId,
+    ConstellationModalities, DatasetId, DatasetShardRecord, DjRecordHeader, DomainPack,
+    DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EventId, FieldKind, FieldSpec,
+    FieldValue, GuardDecision, GuardDecisionId, GuardDecisionRecord, InstrumentId, InstrumentKind,
+    InstrumentSpec, LatentPanel, ModelArtifactId, ModelArtifactRecord, Normalization,
+    NormalizedAction, NormalizedState, OutcomeId, PanelId, PanelSlotKind, PlanTraceId,
     PlanTraceRecord, PlanTraceStatus, PredictionId, PredictionRecord, SkillId, SkillPolicyRecord,
     SkillStrategy, SurpriseEventId, SurpriseEventRecord, SurpriseKind, TrainingRunId,
     TrainingRunRecord, TrainingRunStatus, GUARD_DECISION_RECORD_VERSION,
@@ -23,11 +24,13 @@ use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_OUTCOMES, CF_DJ_PLAN_TRACES,
     CF_DJ_PREDICTIONS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS,
 };
+use context_graph_storage::dynamicjepa::keys::domain_pack_storage_uuid;
 use context_graph_storage::dynamicjepa::{
-    get_action, get_domain_pack, get_guard_decision, get_latent_panel, get_model_artifact,
-    get_normalized_state, get_outcome, get_plan_trace, get_prediction, get_skill_policy,
-    get_surprise_event, get_training_run, list_dataset_shards, put_model_artifact_completion_batch,
-    put_plan_batch, put_prediction_with_audit_batch, put_surprise_event_with_audit_batch,
+    get_action, get_constellation, get_domain_pack, get_guard_decision, get_latent_panel,
+    get_model_artifact, get_normalized_state, get_outcome, get_plan_trace, get_prediction,
+    get_skill_policy, get_surprise_event, get_threshold_calibration, get_training_run,
+    list_dataset_shards, put_model_artifact_completion_batch, put_plan_batch,
+    put_prediction_with_audit_batch, put_surprise_event_with_audit_batch,
     put_training_run_with_audit_batch, AuditStatus, DjAuditRecord,
 };
 use rocksdb::DB;
@@ -474,26 +477,39 @@ pub fn plan_next_action(
         };
         prediction.refresh_content_hash()?;
         let predicted_state = predicted_state_after_action(&domain, &source_state, action)?;
+        let utility = utility_score(&domain, &predicted_state, uncertainty)?;
         for guard_id in &domain.planner_policy.guards {
             guard_decisions.push(build_guard_decision(
+                db,
                 &domain,
+                &panel,
+                &source_state,
+                action,
                 plan_trace_id,
                 guard_id,
                 action.action_id,
                 prediction.prediction_id,
                 &predicted_state,
+                utility,
             )?);
         }
-        utility_scores.push(utility_score(&domain, &predicted_state, uncertainty)?);
+        utility_scores.push(utility);
         predictions.push(prediction);
     }
 
-    let selected_action_id = select_allowed_action(
+    let accepted_action_id = select_allowed_action(
         &actions,
         &guard_decisions,
         &utility_scores,
         &domain.planner_policy.guards,
     );
+    let no_accepted_candidate = accepted_action_id.is_none();
+    let selected_action_id = accepted_action_id.or_else(|| {
+        domain
+            .constellation
+            .as_ref()
+            .and_then(|_| select_highest_score_action(&actions, &utility_scores))
+    });
     let status = if selected_action_id.is_some() {
         PlanTraceStatus::Selected
     } else {
@@ -526,8 +542,10 @@ pub fn plan_next_action(
             .collect(),
         utility_scores,
         selected_action_id,
-        no_accepted_candidate: selected_action_id.is_none(),
-        constellation_uuid_used: None,
+        no_accepted_candidate,
+        constellation_uuid_used: guard_decisions
+            .iter()
+            .find_map(|guard| guard.constellation_uuid),
         status,
         created_at_unix_ms: created_at,
     };
@@ -1325,21 +1343,26 @@ fn check_min_max(
 }
 
 fn build_guard_decision(
+    db: &DB,
     domain: &DomainPack,
+    panel: &LatentPanel,
+    source_state: &NormalizedState,
+    action: &NormalizedAction,
     plan_trace_id: PlanTraceId,
     guard_id: &str,
     action_id: ActionId,
     prediction_id: PredictionId,
     predicted_state: &BTreeMap<String, f64>,
+    utility_score: f32,
 ) -> DynamicJepaResult<GuardDecisionRecord> {
     if guard_id != "bounds_check" {
         return Err(DynamicJepaError::validation(
             "PlannerPolicy.guards",
             format!("unsupported guard {guard_id:?}"),
-            "Phase 8 demo supports bounds_check only",
+            "Phase 3 guard upgrade supports bounds_check with optional G_tau only",
         ));
     }
-    let mut decision = GuardDecision::Allow;
+    let mut utility_decision = GuardDecision::Allow;
     let mut thresholds = BTreeMap::new();
     for field in &domain.state_schema.fields {
         let Some(value) = predicted_state.get(&field.name) else {
@@ -1350,7 +1373,7 @@ fn build_guard_decision(
         if let Some(min) = effective_min {
             thresholds.insert(format!("min.{}", field.name), min);
             if *value < min {
-                decision = GuardDecision::Reject {
+                utility_decision = GuardDecision::Reject {
                     reason_code: "STATE_BELOW_MIN".to_string(),
                     reason_message: format!(
                         "predicted state {}={} is below declared min {}",
@@ -1363,7 +1386,7 @@ fn build_guard_decision(
         if let Some(max) = effective_max {
             thresholds.insert(format!("max.{}", field.name), max);
             if *value > max {
-                decision = GuardDecision::Reject {
+                utility_decision = GuardDecision::Reject {
                     reason_code: "STATE_ABOVE_MAX".to_string(),
                     reason_message: format!(
                         "predicted state {}={} exceeds declared max {}",
@@ -1372,6 +1395,17 @@ fn build_guard_decision(
                 };
                 break;
             }
+        }
+    }
+    let gtau = evaluate_gtau_guard(db, domain, panel, source_state, action, guard_id)?;
+    let gtau_decision = gtau.as_ref().map(|evidence| evidence.decision.clone());
+    let decision = combined_guard_decision(&utility_decision, gtau_decision.as_ref());
+    if let Some(evidence) = &gtau {
+        for (modality, cosine) in &evidence.cosines {
+            thresholds.insert(format!("gtau.cosine.{modality}"), *cosine as f64);
+        }
+        for (modality, tau) in &evidence.taus {
+            thresholds.insert(format!("gtau.tau.{modality}"), *tau as f64);
         }
     }
     let now = now_unix_ms()?;
@@ -1393,19 +1427,283 @@ fn build_guard_decision(
         evidence_refs: vec![
             format!("prediction:{prediction_id}"),
             format!("action:{action_id}"),
+            format!("source_panel:{}", panel.panel_id),
         ],
         threshold_values: thresholds,
-        utility_score: None,
-        utility_decision: None,
-        gtau_decision: None,
-        constellation_uuid: None,
-        cosine_to_centroid_per_modality: None,
-        tau_per_modality: None,
-        gtau_failed_modalities: None,
+        utility_score: Some(utility_score),
+        utility_decision: Some(utility_decision),
+        gtau_decision,
+        constellation_uuid: gtau.as_ref().and_then(|evidence| evidence.constellation_id),
+        cosine_to_centroid_per_modality: gtau.as_ref().map(|evidence| evidence.cosines.clone()),
+        tau_per_modality: gtau.as_ref().map(|evidence| evidence.taus.clone()),
+        gtau_failed_modalities: gtau.as_ref().map(|evidence| evidence.failed.clone()),
         created_at_unix_ms: now,
     };
     record.refresh_content_hash()?;
     Ok(record)
+}
+
+#[derive(Debug)]
+struct GtauEvidence {
+    decision: GuardDecision,
+    constellation_id: Option<ConstellationId>,
+    cosines: BTreeMap<InstrumentId, f32>,
+    taus: BTreeMap<InstrumentId, f32>,
+    failed: Vec<InstrumentId>,
+}
+
+fn evaluate_gtau_guard(
+    db: &DB,
+    domain: &DomainPack,
+    panel: &LatentPanel,
+    source_state: &NormalizedState,
+    action: &NormalizedAction,
+    guard_id: &str,
+) -> DynamicJepaResult<Option<GtauEvidence>> {
+    let Some(config) = &domain.constellation else {
+        return Ok(None);
+    };
+    let target = select_gtau_target(domain, config, source_state)?;
+    let domain_uuid = domain_pack_storage_uuid(&domain.id, &domain.version);
+    let mut cosines = BTreeMap::new();
+    let mut taus = BTreeMap::new();
+    let mut failed = Vec::new();
+    let mut first_constellation = None;
+    for modality in &target.modalities {
+        let constellation =
+            get_constellation(db, domain_uuid, &target.subject_id, modality.ordinal)?.ok_or_else(
+                || DynamicJepaError::GuardConstellationMissing {
+                    domain_id: domain.id.to_string(),
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                },
+            )?;
+        let expected_hash = instrument_artifact_hash32(&modality.spec)?;
+        if constellation.instrument_artifact_hash != expected_hash {
+            return Err(DynamicJepaError::GuardInstrumentHashDrift {
+                guard_id: guard_id.to_string(),
+                modality_id: modality.spec.instrument_id.to_string(),
+            });
+        }
+        let threshold =
+            get_threshold_calibration(db, domain_uuid, &target.subject_id, modality.ordinal, 0)?
+                .ok_or_else(|| DynamicJepaError::GuardThresholdMissing {
+                    domain_id: domain.id.to_string(),
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                })?;
+        let vector = candidate_modality_vector(domain, panel, action, &modality.spec)?;
+        if vector.len() != constellation.centroid.len() {
+            return Err(DynamicJepaError::PanelShapeMismatch {
+                domain_pack_id: domain.id.to_string(),
+                expected: vec![constellation.centroid.len()],
+                actual: vec![vector.len()],
+            });
+        }
+        let norm = l2_norm_f32(&vector);
+        if norm < 1.0e-6 {
+            return Err(DynamicJepaError::validation(
+                "G_tau.modality_vector",
+                format!(
+                    "candidate vector for modality {} has zero norm",
+                    modality.spec.instrument_id
+                ),
+                "inspect the panel/action source rows before planning",
+            ));
+        }
+        let normalized = normalize_f32_exact(&vector, norm)?;
+        let cosine = cosine_f32_exact(
+            &normalized,
+            &constellation.centroid,
+            "G_tau.cosine_to_centroid",
+        )?;
+        cosines.insert(modality.spec.instrument_id.clone(), cosine);
+        taus.insert(modality.spec.instrument_id.clone(), threshold.tau);
+        first_constellation.get_or_insert(constellation.constellation_id);
+        if cosine < threshold.tau {
+            failed.push(modality.spec.instrument_id.clone());
+        }
+    }
+    let decision = if failed.is_empty() {
+        GuardDecision::Allow
+    } else {
+        GuardDecision::Reject {
+            reason_code: "GTAU_FAILED".to_string(),
+            reason_message: format!(
+                "candidate fell below G_tau threshold for modalities {:?}",
+                failed.iter().map(ToString::to_string).collect::<Vec<_>>()
+            ),
+        }
+    };
+    Ok(Some(GtauEvidence {
+        decision,
+        constellation_id: first_constellation,
+        cosines,
+        taus,
+        failed,
+    }))
+}
+
+#[derive(Debug)]
+struct GtauTarget {
+    subject_id: String,
+    modalities: Vec<GtauModality>,
+}
+
+#[derive(Debug)]
+struct GtauModality {
+    ordinal: u32,
+    spec: InstrumentSpec,
+}
+
+fn select_gtau_target(
+    domain: &DomainPack,
+    config: &context_graph_core::dynamicjepa::ConstellationConfig,
+    source_state: &NormalizedState,
+) -> DynamicJepaResult<GtauTarget> {
+    for subject in &config.subjects {
+        if state_subject_matches(source_state, &subject.field, &subject.value) {
+            return Ok(GtauTarget {
+                subject_id: subject.id.clone(),
+                modalities: gtau_modalities(domain, &subject.modalities)?,
+            });
+        }
+    }
+    let global =
+        config
+            .global
+            .as_ref()
+            .ok_or_else(|| DynamicJepaError::GuardConstellationMissing {
+                domain_id: domain.id.to_string(),
+                subject_id: "global".to_string(),
+                modality_id: "all".to_string(),
+            })?;
+    Ok(GtauTarget {
+        subject_id: "global".to_string(),
+        modalities: gtau_modalities(domain, &global.modalities)?,
+    })
+}
+
+fn gtau_modalities(
+    domain: &DomainPack,
+    modalities: &ConstellationModalities,
+) -> DynamicJepaResult<Vec<GtauModality>> {
+    match modalities {
+        ConstellationModalities::All => Ok(domain
+            .instrument_specs
+            .iter()
+            .enumerate()
+            .map(|(idx, spec)| GtauModality {
+                ordinal: (idx + 1) as u32,
+                spec: spec.clone(),
+            })
+            .collect()),
+        ConstellationModalities::List(ids) => ids
+            .iter()
+            .map(|id| {
+                let (idx, spec) = domain
+                    .instrument_specs
+                    .iter()
+                    .enumerate()
+                    .find(|(_, spec)| spec.instrument_id == *id)
+                    .ok_or_else(|| DynamicJepaError::GuardConstellationMissing {
+                        domain_id: domain.id.to_string(),
+                        subject_id: "unknown".to_string(),
+                        modality_id: id.to_string(),
+                    })?;
+                Ok(GtauModality {
+                    ordinal: (idx + 1) as u32,
+                    spec: spec.clone(),
+                })
+            })
+            .collect(),
+    }
+}
+
+fn state_subject_matches(state: &NormalizedState, field: &str, value: &str) -> bool {
+    match state.fields.get(field) {
+        Some(FieldValue::String(actual)) => actual == value,
+        Some(FieldValue::Categorical { variant }) => variant == value,
+        Some(FieldValue::I64(actual)) => actual.to_string() == value,
+        Some(FieldValue::F64(actual)) => actual.to_string() == value,
+        Some(FieldValue::Bool(actual)) => actual.to_string() == value,
+        Some(FieldValue::UnixMs(actual)) => actual.to_string() == value,
+        Some(FieldValue::Vector(_)) | None => false,
+    }
+}
+
+fn candidate_modality_vector(
+    domain: &DomainPack,
+    panel: &LatentPanel,
+    action: &NormalizedAction,
+    spec: &InstrumentSpec,
+) -> DynamicJepaResult<Vec<f32>> {
+    let idx = panel
+        .ordered_slots
+        .iter()
+        .position(|slot| slot.instrument_id == spec.instrument_id)
+        .ok_or_else(|| DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: domain.id.to_string(),
+            expected: vec![spec.output_shape.iter().product()],
+            actual: vec![0],
+        })?;
+    let slot = &panel.ordered_slots[idx];
+    if !panel.slot_masks[idx] {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: domain.id.to_string(),
+            expected: vec![slot.dim],
+            actual: vec![0],
+        });
+    }
+    let vector = if matches!(slot.kind, PanelSlotKind::Action) {
+        action_instrument_vector(spec, action, domain)?
+    } else {
+        panel.slot_vectors[idx].clone()
+    };
+    let expected_dim = spec.output_shape.iter().product::<usize>();
+    if vector.len() != expected_dim || vector.len() != slot.dim {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: domain.id.to_string(),
+            expected: vec![expected_dim, slot.dim],
+            actual: vec![vector.len()],
+        });
+    }
+    Ok(vector)
+}
+
+fn combined_guard_decision(
+    utility_decision: &GuardDecision,
+    gtau_decision: Option<&GuardDecision>,
+) -> GuardDecision {
+    match (utility_decision, gtau_decision) {
+        (GuardDecision::Allow, None | Some(GuardDecision::Allow)) => GuardDecision::Allow,
+        (GuardDecision::Reject { .. }, Some(GuardDecision::Reject { .. })) => {
+            GuardDecision::Reject {
+                reason_code: "UTILITY_AND_GTAU_FAILED".to_string(),
+                reason_message: "bounds/utility and G_tau both rejected the candidate".to_string(),
+            }
+        }
+        (
+            GuardDecision::Reject {
+                reason_code,
+                reason_message,
+            },
+            _,
+        ) => GuardDecision::Reject {
+            reason_code: reason_code.clone(),
+            reason_message: reason_message.clone(),
+        },
+        (
+            GuardDecision::Allow,
+            Some(GuardDecision::Reject {
+                reason_code,
+                reason_message,
+            }),
+        ) => GuardDecision::Reject {
+            reason_code: reason_code.clone(),
+            reason_message: reason_message.clone(),
+        },
+    }
 }
 
 fn effective_state_bounds(domain: &DomainPack, field: &FieldSpec) -> (Option<f64>, Option<f64>) {
@@ -1627,6 +1925,19 @@ fn select_allowed_action(
     selected
 }
 
+fn select_highest_score_action(actions: &[NormalizedAction], scores: &[f32]) -> Option<ActionId> {
+    let mut selected = None;
+    let mut selected_score = f32::NEG_INFINITY;
+    for (idx, action) in actions.iter().enumerate() {
+        let score = scores.get(idx).copied().unwrap_or(f32::NEG_INFINITY);
+        if score > selected_score {
+            selected = Some(action.action_id);
+            selected_score = score;
+        }
+    }
+    selected
+}
+
 fn numeric_field_value(value: &FieldValue) -> Option<f64> {
     match value {
         FieldValue::I64(value) | FieldValue::UnixMs(value) => Some(*value as f64),
@@ -1673,6 +1984,79 @@ fn vector_norm(values: &[f32]) -> f32 {
     values.iter().map(|value| value * value).sum::<f32>().sqrt()
 }
 
+fn l2_norm_f32(values: &[f32]) -> f32 {
+    values.iter().map(|value| value * value).sum::<f32>().sqrt()
+}
+
+fn normalize_f32_exact(values: &[f32], norm: f32) -> DynamicJepaResult<Vec<f32>> {
+    if norm < 1.0e-12 || !norm.is_finite() {
+        return Err(DynamicJepaError::validation(
+            "G_tau.normalize.norm",
+            format!("norm must be finite and non-zero, got {norm}"),
+            "drop or investigate zero-norm vectors before planning",
+        ));
+    }
+    values
+        .iter()
+        .enumerate()
+        .map(|(idx, value)| {
+            let normalized = *value / norm;
+            if normalized.is_finite() {
+                Ok(normalized)
+            } else {
+                Err(DynamicJepaError::validation(
+                    format!("G_tau.normalize[{idx}]"),
+                    "normalization produced a non-finite value",
+                    "inspect panel/action source vectors for numeric overflow",
+                ))
+            }
+        })
+        .collect()
+}
+
+fn cosine_f32_exact(lhs: &[f32], rhs: &[f32], field: &str) -> DynamicJepaResult<f32> {
+    if lhs.len() != rhs.len() {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: field.to_string(),
+            expected: vec![lhs.len()],
+            actual: vec![rhs.len()],
+        });
+    }
+    if lhs.is_empty() {
+        return Err(DynamicJepaError::validation(
+            field,
+            "cosine requires non-empty equal-dimension vectors",
+            "use persisted instrument vectors with declared output shapes",
+        ));
+    }
+    let mut dot = 0.0f64;
+    let mut ln = 0.0f64;
+    let mut rn = 0.0f64;
+    for (left, right) in lhs.iter().zip(rhs.iter()) {
+        let left = *left as f64;
+        let right = *right as f64;
+        dot += left * right;
+        ln += left * left;
+        rn += right * right;
+    }
+    if ln < 1.0e-12 || rn < 1.0e-12 {
+        return Err(DynamicJepaError::validation(
+            field,
+            "cosine input has zero norm",
+            "drop or investigate zero-norm vectors before planning",
+        ));
+    }
+    let value = dot / (ln.sqrt() * rn.sqrt());
+    if !value.is_finite() || value.abs() > 1.0001 {
+        return Err(DynamicJepaError::validation(
+            field,
+            format!("computed cosine is outside [-1,1]: {value}"),
+            "inspect panel/action source vectors for non-finite values",
+        ));
+    }
+    Ok(value.clamp(-1.0, 1.0) as f32)
+}
+
 fn cosine_f32(lhs: &[f32], rhs: &[f32]) -> f32 {
     let mut dot = 0.0f32;
     let mut ln = 0.0f32;
@@ -1688,6 +2072,17 @@ fn cosine_f32(lhs: &[f32], rhs: &[f32]) -> f32 {
     } else {
         (dot / denom).clamp(-1.0, 1.0)
     }
+}
+
+fn instrument_artifact_hash32(spec: &InstrumentSpec) -> DynamicJepaResult<[u8; 32]> {
+    let bytes = serde_json::to_vec(spec).map_err(|err| {
+        DynamicJepaError::validation(
+            "InstrumentSpec.artifact_hash",
+            format!("failed to serialize instrument spec for hash: {err}"),
+            "instrument specs must remain JSON serializable for G_tau hash provenance",
+        )
+    })?;
+    Ok(sha256(&bytes))
 }
 
 fn l2_distance(lhs: &[f32], rhs: &[f32]) -> f32 {

@@ -275,6 +275,11 @@ fn assert_dynamicjepa_tools_listed() {
         tool_names::DYNAMICJEPA_PREDICT,
         tool_names::DYNAMICJEPA_PLAN,
         tool_names::DYNAMICJEPA_RECORD_SURPRISE,
+        tool_names::DYNAMICJEPA_BUILD_CONSTELLATION,
+        tool_names::DYNAMICJEPA_LIST_CONSTELLATIONS,
+        tool_names::DYNAMICJEPA_GET_CONSTELLATION,
+        tool_names::DYNAMICJEPA_CALIBRATE_THRESHOLD,
+        tool_names::DYNAMICJEPA_RECALIBRATE_THRESHOLD,
         tool_names::DYNAMICJEPA_GET_PREDICTION,
         tool_names::DYNAMICJEPA_GET_PLAN_TRACE,
         tool_names::DYNAMICJEPA_GET_SURPRISE,
@@ -1014,7 +1019,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
                 "evidence_file": evidence_dir.join("mcp_phase9_fsv.json")
             },
             "tool_count": {
-                "dynamicjepa_tools": 27,
+                "dynamicjepa_tools": 32,
                 "total_tools": get_tool_definitions().len()
             },
             "evidence": evidence

@@ -1,6 +1,4 @@
-use context_graph_core::dynamicjepa::{
-    DynamicJepaRecord, DynamicJepaResult, ThresholdCalibration,
-};
+use context_graph_core::dynamicjepa::{DynamicJepaRecord, DynamicJepaResult, ThresholdCalibration};
 use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 

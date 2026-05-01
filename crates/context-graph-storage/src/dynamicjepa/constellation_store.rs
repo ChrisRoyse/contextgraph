@@ -5,8 +5,8 @@ use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 
 use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
-use crate::dynamicjepa::column_families::CF_DJ_CONSTELLATIONS;
 use crate::dynamicjepa::column_families::CF_DJ_AUDIT_LOG;
+use crate::dynamicjepa::column_families::CF_DJ_CONSTELLATIONS;
 use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
 use crate::dynamicjepa::encode::{encode_plain, encode_record};
 use crate::dynamicjepa::keys::{audit_key, constellation_key};

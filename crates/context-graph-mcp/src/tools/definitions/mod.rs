@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(constellation::definitions().len(), 6);
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);
-        assert_eq!(dynamicjepa::definitions().len(), 27);
+        assert_eq!(dynamicjepa::definitions().len(), 32);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {
