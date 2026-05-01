@@ -1,0 +1,35 @@
+name: CI Local Free Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contextgraph-local-free-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CUDA_COMPUTE_CAP: "120"
+  CUDA_HOME: /usr/local/cuda-13.2
+  ONET_TEXT_ZIP: tmp/onet_probe/db_30_2_text.zip
+  MEJEPA_CI_RUN_ROOT: tmp/mejepa_local_ci_runs
+
+jobs:
+  local-free-static:
+    name: Local Free Static Gate
+    runs-on: [self-hosted, linux, x64, dynamicjepa-ci]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run local free static gate
+        run: scripts/5090jepa/local_ci_gate.sh static

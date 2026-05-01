@@ -4,6 +4,7 @@ benchmark_results/
 .github/*
 !.github/workflows/
 .github/workflows/*
+!.github/workflows/ci.yml
 !.github/workflows/ci_smoke_*.yml
 
 # Rust build artifacts

@@ -11,6 +11,7 @@ on:
       - "Dockerfile"
       - "docs/5090jepa/smokedocs/**"
       - "reference/**"
+      - "scripts/5090jepa/local_ci_gate.sh"
   push:
     branches: [main, develop]
     paths:
@@ -21,6 +22,7 @@ on:
       - "Dockerfile"
       - "docs/5090jepa/smokedocs/**"
       - "reference/**"
+      - "scripts/5090jepa/local_ci_gate.sh"
   workflow_dispatch:
 
 permissions:
@@ -36,90 +38,16 @@ env:
   CUDA_COMPUTE_CAP: "120"
   CUDA_HOME: /usr/local/cuda-13.2
   ONET_TEXT_ZIP: tmp/onet_probe/db_30_2_text.zip
-  RUN_ROOT: tmp/mejepa_ci_runs
+  MEJEPA_CI_RUN_ROOT: tmp/mejepa_local_ci_runs
 
 jobs:
   smoke-a:
-    name: Tier A Reference Smoke
+    name: Tier A Local Free Smoke
     runs-on: [self-hosted, linux, x64, dynamicjepa-ci]
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
-        with:
-          components: clippy
-
-      - name: Preflight real data and tools
-        run: |
-          set -euo pipefail
-          command -v jq
-          test -f "$ONET_TEXT_ZIP" || {
-            echo "::error::O*NET text ZIP missing at $ONET_TEXT_ZIP; CI does not use mock data"
-            exit 1
-          }
-          test -d configs/dynamicjepa
-          test -f reference/reference_smoke_hashes.json
-          test -f reference/tolerances.json
-
-      - name: Cargo check
-        run: cargo check -p context-graph-cli --all-features
-
-      - name: Clippy deny warnings
-        run: cargo clippy -p context-graph-cli --all-targets --all-features -- -D warnings
-
-      - name: DynamicJEPA FSV integration test
-        run: cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv --all-features -- --nocapture
-
-      - name: Build CLI
-        run: cargo build -p context-graph-cli --bin context-graph --all-features
-
-      - name: Run real O*NET smoke bundle
-        run: |
-          set -euo pipefail
-          RUN_ID="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_smoke_a"
-          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          rm -rf "$RUN_ROOT/$RUN_ID"
-          ./target/debug/context-graph dynamicjepa research-smoke \
-            --run-id "$RUN_ID" \
-            --run-root "$RUN_ROOT" \
-            --fixtures-root configs/dynamicjepa \
-            --purpose smoke \
-            --career-event-count 120 \
-            --career-training-seed 42 \
-            --career-ablation-training-seed 42 \
-            --onet-text-zip "$ONET_TEXT_ZIP" \
-            --system-specs docs2/systemspecs.md \
-            --json | tee "$RUN_ROOT/${RUN_ID}_research_smoke.json"
-
-      - name: Inspect persisted source of truth
-        run: |
-          set -euo pipefail
-          BUNDLE="$RUN_ROOT/$RUN_ID"
-          jq -e '.status == "passed"' "$BUNDLE/run_manifest.json"
-          jq -e '.status == "passed"' "$BUNDLE/fsv_report.json"
-          ./target/debug/context-graph dynamicjepa inspect-counts \
-            --db "$BUNDLE/dbs/${RUN_ID}_career_taxonomy_rocksdb" \
-            --json | tee "$BUNDLE/ci_inspect_counts_career_taxonomy.json"
-          jq -e '.counts.dj_verification_runs >= 1 and .counts.dj_model_artifacts >= 1' \
-            "$BUNDLE/ci_inspect_counts_career_taxonomy.json"
-
-      - name: Check smoke reference drift
-        run: |
-          set -euo pipefail
-          ./target/debug/context-graph dynamicjepa check-reference \
-            --bundle "$RUN_ROOT/$RUN_ID" \
-            --reference reference/reference_smoke_hashes.json \
-            --tolerances reference/tolerances.json \
-            --json | tee "$RUN_ROOT/${RUN_ID}_reference_check.json"
-
-      - name: Upload smoke bundle evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dynamicjepa-smoke-a-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            tmp/mejepa_ci_runs/
-          retention-days: 14
+      - name: Run local free Tier A gate
+        run: scripts/5090jepa/local_ci_gate.sh smoke-a
