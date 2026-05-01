@@ -1,10 +1,22 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 #[repr(transparent)]
 pub struct PairKindBitset(pub u8);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PairKindName {
+    Cosine,
+    RankDisagreement,
+    ModalityContradiction,
+    SparseDenseMismatch,
+    TemporalSurprise,
+    CausalDirectionDisagreement,
+    SafetyProximity,
+}
 
 impl PairKindBitset {
     pub const COSINE_AGREEMENT: u8 = 0b0000_0001;
@@ -73,5 +85,73 @@ impl PairKindBitset {
             ));
         }
         Ok(())
+    }
+}
+
+impl PairKindName {
+    pub fn as_toml_str(self) -> &'static str {
+        match self {
+            Self::Cosine => "cosine",
+            Self::RankDisagreement => "rank_disagreement",
+            Self::ModalityContradiction => "modality_contradiction",
+            Self::SparseDenseMismatch => "sparse_dense_mismatch",
+            Self::TemporalSurprise => "temporal_surprise",
+            Self::CausalDirectionDisagreement => "causal_direction_disagreement",
+            Self::SafetyProximity => "safety_proximity",
+        }
+    }
+
+    pub fn bit(self) -> u8 {
+        match self {
+            Self::Cosine => PairKindBitset::COSINE_AGREEMENT,
+            Self::RankDisagreement => PairKindBitset::RANK_DISAGREEMENT,
+            Self::ModalityContradiction => PairKindBitset::MODALITY_CONTRADICTION,
+            Self::SparseDenseMismatch => PairKindBitset::SPARSE_DENSE_MISMATCH,
+            Self::TemporalSurprise => PairKindBitset::TEMPORAL_SURPRISE,
+            Self::CausalDirectionDisagreement => PairKindBitset::CAUSAL_DIRECTION,
+            Self::SafetyProximity => PairKindBitset::SAFETY_PROXIMITY,
+        }
+    }
+
+    pub fn parse(value: &str) -> DynamicJepaResult<Self> {
+        match value {
+            "cosine" => Ok(Self::Cosine),
+            "rank_disagreement" => Ok(Self::RankDisagreement),
+            "modality_contradiction" => Ok(Self::ModalityContradiction),
+            "sparse_dense_mismatch" => Ok(Self::SparseDenseMismatch),
+            "temporal_surprise" => Ok(Self::TemporalSurprise),
+            "causal_direction_disagreement" => Ok(Self::CausalDirectionDisagreement),
+            "safety_proximity" => Ok(Self::SafetyProximity),
+            other => Err(DynamicJepaError::validation(
+                "InstrumentSpec.pair_kinds",
+                format!("unsupported pair kind {other:?}"),
+                "use one of: cosine, rank_disagreement, modality_contradiction, sparse_dense_mismatch, temporal_surprise, causal_direction_disagreement, safety_proximity",
+            )),
+        }
+    }
+}
+
+impl Serialize for PairKindName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_toml_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for PairKindName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+impl fmt::Display for PairKindName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_toml_str())
     }
 }

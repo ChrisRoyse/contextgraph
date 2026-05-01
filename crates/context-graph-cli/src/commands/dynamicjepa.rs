@@ -22,14 +22,15 @@ use context_graph_core::dynamicjepa::{
     DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue,
     InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation,
     InvariantSpec, LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
-    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PanelId,
-    PanelSlot, PanelSlotKind, PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId,
-    RawDomainEvent, ReadingStatus, ShapeSummary, SkillId, SourceKind, StateId, StateSchema,
-    StateTransition, SurpriseEventId, TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId,
-    TrajectoryRecord, TransitionId, Validate, VerificationPolicy, VerificationRunId,
-    VerificationRunRecord, VerificationStatus, ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION,
-    DATASET_SHARD_RECORD_VERSION, DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION,
-    LATENT_PANEL_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION,
+    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PairKindBitset,
+    PairKindName, PairwiseReading, PairwiseReadingId, PanelId, PanelSlot, PanelSlotKind,
+    PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId, RawDomainEvent, ReadingStatus,
+    ShapeSummary, SkillId, SourceKind, StateId, StateSchema, StateTransition, SurpriseEventId,
+    TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId, TrajectoryRecord, TransitionId,
+    Validate, VerificationPolicy, VerificationRunId, VerificationRunRecord, VerificationStatus,
+    ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
+    DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
+    NORMALIZED_ACTION_RECORD_VERSION, PAIRWISE_READING_RECORD_VERSION,
     NORMALIZED_OUTCOME_RECORD_VERSION, NORMALIZED_STATE_RECORD_VERSION,
     RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
@@ -41,10 +42,11 @@ use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
     CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
     CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS,
-    CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS, CF_DJ_NORMALIZED_STATES,
-    CF_DJ_OUTCOMES, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES,
-    CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS,
-    CF_DJ_VERIFICATION_RUNS, DJ_CF_NAMES,
+    CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS,
+    CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES,
+    CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS,
+    CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, CF_DJ_VERIFICATION_RUNS,
+    DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
     adapter_registry_key, instrument_reading_key, instrument_registry_key, name_version_key,
@@ -57,13 +59,17 @@ use context_graph_storage::dynamicjepa::{
     get_normalized_state, get_outcome, get_plan_trace, get_prediction, get_raw_event,
     get_surprise_event, get_training_run, get_trajectory, get_transition, get_verification_run,
     inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings, list_dataset_shards,
-    list_domain_packs, list_instrument_readings_for_event, list_latent_panels, list_trajectories,
-    list_transitions, put_adapter_run_failure_batch, put_adapter_run_success_batch,
+    list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
+    list_pairwise_readings_for_event, list_trajectories, list_transitions,
+    put_adapter_run_failure_batch, put_adapter_run_success_batch,
     put_audit_record, put_binding_with_audit_batch, put_dataset_shard_with_audit_batch,
-    put_domain_pack, put_panel_with_readings_batch, put_raw_event_and_adapter_run_started,
-    put_trajectory_with_audit_batch, put_verification_run_with_audit_batch, snapshot_dj_counts,
+    put_domain_pack, put_panel_with_readings_and_pairwise_batch,
+    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch,
+    put_verification_run_with_audit_batch, snapshot_dj_counts,
 };
-use context_graph_storage::dynamicjepa::{AuditStatus, DjAuditRecord};
+use context_graph_storage::dynamicjepa::{
+    signal_yield_for_operation, AuditStatus, DjAuditRecord, SignalYieldDimensions,
+};
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -1586,6 +1592,7 @@ fn materialize_panel_command(args: MaterializePanelArgs) -> DynamicJepaResult<Co
         CF_DJ_ACTIONS,
         CF_DJ_OUTCOMES,
         CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_PAIRWISE_READINGS,
         CF_DJ_LATENT_PANELS,
         CF_DJ_AUDIT_LOG,
     ];
@@ -1751,11 +1758,12 @@ fn get_panel_command(args: GetPanelArgs) -> DynamicJepaResult<CommandOutcome> {
                     "operation": "dynamicjepa_get_panel",
                     "status": "ok",
                     "db_path": db_path,
-                    "source_of_truth": [CF_DJ_LATENT_PANELS, CF_DJ_INSTRUMENT_READINGS],
+                    "source_of_truth": [CF_DJ_LATENT_PANELS, CF_DJ_INSTRUMENT_READINGS, CF_DJ_PAIRWISE_READINGS],
                     "counts": counts,
                     "decoded_records": {
                         "panel": panel,
                         "instrument_readings": readings,
+                        "pairwise_readings": list_pairwise_readings_for_event(db, panel.event_id)?,
                     },
                 }),
                 exit_code: 0,
@@ -16400,6 +16408,7 @@ fn phase4_ingest_decoded_records(db: &rocksdb::DB) -> DynamicJepaResult<Value> {
 fn phase4_panel_decoded_records(db: &rocksdb::DB) -> DynamicJepaResult<Value> {
     Ok(json!({
         CF_DJ_INSTRUMENT_READINGS: inspect_cf(db, CF_DJ_INSTRUMENT_READINGS, 40, 0)?,
+        CF_DJ_PAIRWISE_READINGS: inspect_cf(db, CF_DJ_PAIRWISE_READINGS, 40, 0)?,
         CF_DJ_LATENT_PANELS: inspect_cf(db, CF_DJ_LATENT_PANELS, 40, 0)?,
         CF_DJ_AUDIT_LOG: inspect_cf(db, CF_DJ_AUDIT_LOG, 80, 0)?,
     }))

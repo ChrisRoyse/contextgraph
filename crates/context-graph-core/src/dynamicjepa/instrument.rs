@@ -1,8 +1,10 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
 use crate::dynamicjepa::ids::{EventId, InstrumentId};
+use crate::dynamicjepa::pair_kinds::PairKindName;
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::{ensure_finite, Validate};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub const INSTRUMENT_READING_RECORD_VERSION: u8 = 1;
@@ -16,6 +18,8 @@ pub struct InstrumentSpec {
     pub normalization: Normalization,
     pub required: bool,
     pub model_ref: Option<String>,
+    #[serde(default)]
+    pub pair_kinds: Vec<PairKindName>,
     pub version: u8,
     pub validation: InstrumentValidation,
 }
@@ -140,6 +144,29 @@ impl Validate for InstrumentSpec {
                     "InstrumentSpec.validation",
                     format!("min {min} exceeds max {max}"),
                     "fix instrument validation bounds",
+                ));
+            }
+        }
+        if !self.pair_kinds.contains(&PairKindName::Cosine) {
+            return Err(DynamicJepaError::PairwiseCosineKindMissing {
+                instrument_id: self.instrument_id.to_string(),
+                pair_kinds: self
+                    .pair_kinds
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            });
+        }
+        let mut seen = BTreeSet::new();
+        for kind in &self.pair_kinds {
+            if !seen.insert(*kind) {
+                return Err(DynamicJepaError::validation(
+                    "InstrumentSpec.pair_kinds",
+                    format!(
+                        "duplicate pair kind {:?} for instrument {}",
+                        kind, self.instrument_id
+                    ),
+                    "declare each pair kind at most once per instrument",
                 ));
             }
         }

@@ -118,6 +118,40 @@ pub enum DynamicJepaError {
         found: u32,
         manifest_path: String,
     },
+    #[error("pairwise cosine kind missing: instrument={instrument_id} pair_kinds={pair_kinds:?}")]
+    PairwiseCosineKindMissing {
+        instrument_id: String,
+        pair_kinds: Vec<String>,
+    },
+    #[error("unsupported pairwise kind {kind} for pair {instrument_j}/{instrument_k}: {message}")]
+    PairwiseUnsupportedKind {
+        instrument_j: String,
+        instrument_k: String,
+        kind: String,
+        message: String,
+    },
+    #[error("pairwise asymmetric ordering: instrument_j={instrument_j} instrument_k={instrument_k}")]
+    PairwiseAsymmetricOrdering {
+        instrument_j: String,
+        instrument_k: String,
+    },
+    #[error("pairwise row count mismatch: event={event_id} expected={expected} actual={actual}")]
+    PairwiseRowCountMismatch {
+        event_id: Uuid,
+        expected: u64,
+        actual: u64,
+    },
+    #[error("pairwise cosine drift: pairwise_id={pairwise_id} expected={expected} actual={actual}")]
+    PairwiseCosineDrift {
+        pairwise_id: Uuid,
+        expected: f32,
+        actual: f32,
+    },
+    #[error("pairwise instrument hash drift: pairwise_id={pairwise_id} instrument={instrument_id}")]
+    PairwiseInstrumentHashDrift {
+        pairwise_id: Uuid,
+        instrument_id: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -182,6 +216,12 @@ impl DynamicJepaError {
             Self::SchemaValidationFailed { .. } => "SCHEMA_VALIDATION_FAILED",
             Self::AdapterFailed { .. } => "ADAPTER_FAILED",
             Self::BundleSchemaVersionMismatch { .. } => "BUNDLE_SCHEMA_VERSION_MISMATCH",
+            Self::PairwiseCosineKindMissing { .. } => "PAIRWISE_COSINE_KIND_MISSING",
+            Self::PairwiseUnsupportedKind { .. } => "PAIRWISE_UNSUPPORTED_KIND",
+            Self::PairwiseAsymmetricOrdering { .. } => "PAIRWISE_ASYMMETRIC_ORDERING",
+            Self::PairwiseRowCountMismatch { .. } => "PAIRWISE_ROW_COUNT_MISMATCH",
+            Self::PairwiseCosineDrift { .. } => "PAIRWISE_COSINE_DRIFT",
+            Self::PairwiseInstrumentHashDrift { .. } => "PAIRWISE_INSTRUMENT_HASH_DRIFT",
         }
     }
 }

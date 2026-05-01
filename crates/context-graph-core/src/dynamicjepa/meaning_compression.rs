@@ -114,14 +114,17 @@ impl Validate for PairwiseReading {
         self.event_id.validate()?;
         self.instrument_j.validate()?;
         self.instrument_k.validate()?;
-        if self.instrument_j >= self.instrument_k {
+        if self.instrument_j == self.instrument_k {
+            return Err(DynamicJepaError::PairwiseAsymmetricOrdering {
+                instrument_j: self.instrument_j.to_string(),
+                instrument_k: self.instrument_k.to_string(),
+            });
+        }
+        if matches!(self.validation_status, ReadingStatus::Failed { .. }) {
             return Err(DynamicJepaError::validation(
                 "PairwiseReading.instrument_order",
-                format!(
-                    "instrument_j {} must sort before instrument_k {}",
-                    self.instrument_j, self.instrument_k
-                ),
-                "canonicalize every pair as j < k before writing dj_pairwise_readings",
+                "failed pairwise readings are not persisted in v2 compute-on-write",
+                "fix the underlying pairwise computation and rerun materialization",
             ));
         }
         ensure_nonzero_hash(
@@ -508,12 +511,12 @@ mod tests {
     }
 
     #[test]
-    fn pairwise_reading_rejects_inverted_ordering() {
+    fn pairwise_reading_rejects_duplicate_instruments() {
         let record = PairwiseReading {
             header: header(uuid(1), PAIRWISE_READING_RECORD_VERSION),
             pairwise_id: PairwiseReadingId(uuid(2)),
             event_id: EventId(uuid(3)),
-            instrument_j: InstrumentId::new("beta_sensor").unwrap(),
+            instrument_j: InstrumentId::new("alpha_sensor").unwrap(),
             instrument_k: InstrumentId::new("alpha_sensor").unwrap(),
             instrument_j_artifact_hash: [1; 32],
             instrument_k_artifact_hash: [2; 32],

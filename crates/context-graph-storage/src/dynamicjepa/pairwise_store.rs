@@ -80,11 +80,10 @@ fn validate_pairwise_key_parts(
 
 fn validate_numeric_pair_order(instrument_j: u32, instrument_k: u32) -> DynamicJepaResult<()> {
     if instrument_j >= instrument_k {
-        return Err(DynamicJepaError::validation(
-            "pairwise_reading_key.instrument_order",
-            format!("instrument_j {instrument_j} must be less than instrument_k {instrument_k}"),
-            "canonicalize every pair as j < k before writing dj_pairwise_readings",
-        ));
+        return Err(DynamicJepaError::PairwiseAsymmetricOrdering {
+            instrument_j: instrument_j.to_string(),
+            instrument_k: instrument_k.to_string(),
+        });
     }
     Ok(())
 }
