@@ -160,7 +160,7 @@ as a failed bundle:
   This is a deliberate design decision documented in
   [smokedoc 15](../smokedocs/15_multiseed_completion_and_statistical_reporting.md).
 
-## 10.3 Data Limitations
+## 11.3 Data Limitations
 
 - **U.S.-centric occupation taxonomy.** O\*NET's coverage reflects
   U.S. occupational structure; cross-national replication on ESCO
@@ -173,7 +173,7 @@ as a failed bundle:
   is not coverage-balanced across O\*NET's 1{,}016 occupations or
   across O\*NET's job-zone distribution.
 
-## 10.4 Reproducibility Limitations
+## 11.4 Reproducibility Limitations
 
 - **Release reference is host-specific.** Re-running the release
   reference on a different sm\_120 / different driver / different
@@ -187,7 +187,7 @@ as a failed bundle:
   cannot run release-C; the artifact requires the documented
   hardware.
 
-## 10.5 Acknowledgments
+## 11.5 Acknowledgments
 
 The runtime builds on prior JEPA work [Assran et al., 2023; Bardes et
 al., 2024] for the latent-prediction premise; on VICReg [Bardes et al.,
