@@ -299,6 +299,19 @@ The full findings and FSV evidence are recorded in:
 docs/5090jepa/smokedocs/reports/20260501_release_c_repro_artifact_fsv.md
 ```
 
+Latest local release-candidate archive proof:
+
+```text
+release id: mejepa_5090_artifact_v1.0.0_rc2
+artifact dir: tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc2
+archive: tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc2.tar.gz
+archive SHA-256: eaa3c8cf72524a1e3746bb17d6cf4deb453f2e632a6404f4281efd03b854e85f
+embedded verifier SHA-256: 41560d160acdaade55f16153678db373c33127ce7a12b4eb5a418d30e86ec0eb
+docker tar SHA-256: 099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e
+packaged verify-aggregate: passed with diff_count=0
+blocked final-release items: Apptainer SIF not included, Zenodo DOI not published
+```
+
 ## Acceptance
 
 This work is accepted when:

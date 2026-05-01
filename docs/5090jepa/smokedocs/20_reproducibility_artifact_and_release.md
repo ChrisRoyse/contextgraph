@@ -83,8 +83,10 @@ One Zenodo record, one DOI:
 mejepa_5090_artifact_v1.0.0/
   README.md                    # one-page reproduction instructions
   CITATION.cff                 # how to cite
-  LICENSE                      # MIT or Apache-2.0 for code
+  LICENSE                      # PolyForm Noncommercial 1.0.0 for root code
   THIRD_PARTY_LICENSES/        # bundled license texts (O*NET CC-BY, etc.)
+  bin/
+    context-graph              # local verifier binary for aggregate checks
   container/
     contextgraph-mejepa.sif    # Apptainer image
     container_manifest.json    # digest, build date, base image digest
@@ -206,7 +208,8 @@ hash and is rejected.
 
 ## License + Attribution
 
-- Code: dual-license MIT + Apache-2.0 (industry standard for Rust crates).
+- Code: PolyForm Noncommercial License 1.0.0 at the repository root unless a
+  subtree has a more specific license boundary in `LICENSING.md`.
 - Bundle data (generated walks, paper tables): CC-BY-4.0.
 - Third-party data (O*NET, ESCO, BLS crosswalk) retain their original
   licenses; full text bundled in `THIRD_PARTY_LICENSES/`.
@@ -245,6 +248,22 @@ Verified on 2026-05-01:
   `099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e`.
 - Latest release reference SHA-256:
   `f5212d7fbf1da4df0f2dbbf6e520d4a97bc520f3e8d9a4dba1c113b73dd5c614`.
+- `scripts/5090jepa/prepare_release_candidate_archive.sh` builds a local,
+  no-upload release-candidate archive from preserved release-C evidence and
+  fails closed if the aggregate, FSV report, Docker tars, container verifier,
+  selected full seed bundle, reference, citation, or license files are invalid.
+- Latest local release-candidate archive:
+  `tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc2.tar.gz`.
+  Archive SHA-256:
+  `eaa3c8cf72524a1e3746bb17d6cf4deb453f2e632a6404f4281efd03b854e85f`.
+- The rc2 archive embeds `bin/context-graph`, records its dynamic-link
+  readback in `manifests/context_graph_ldd.txt`, and passes packaged
+  `CONTEXT_GRAPH_BIN=bin/context-graph ./reproduce.sh verify-aggregate`.
+- Apptainer/Singularity is not installed on the current host. The script can
+  include a supplied `.sif` and can be forced to fail with
+  `--require-apptainer`, but it does not synthesize or fake an HPC image.
+- Zenodo upload/DOI publication has not been performed from this environment.
+  The release-candidate archive is local evidence, not the final DOI artifact.
 
 ## Acceptance
 
