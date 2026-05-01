@@ -17,22 +17,26 @@ use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
     ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
     AdapterSpec, ArtifactHashCheck, BindingId, BindingKind, BindingMethod, BindingRecord,
-    BindingRef, CandidateActionConfig, DatasetId, DatasetPolicy, DatasetShardId,
-    DatasetShardRecord, DjJsonValue, DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError,
-    DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue,
-    InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation,
-    InvariantSpec, LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
-    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PairKindBitset,
-    PairKindName, PairwiseReading, PairwiseReadingId, PanelId, PanelSlot, PanelSlotKind,
-    PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId, RawDomainEvent, ReadingStatus,
-    ShapeSummary, SkillId, SourceKind, StateId, StateSchema, StateTransition, SurpriseEventId,
-    TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId, TrajectoryRecord, TransitionId,
-    Validate, VerificationPolicy, VerificationRunId, VerificationRunRecord, VerificationStatus,
-    ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
+    BindingRef, CandidateActionConfig, ConstellationCentroid, ConstellationConfig,
+    ConstellationGlobalSpec, ConstellationId, ConstellationModalities, ConstellationSubjectSpec,
+    DatasetId, DatasetPolicy, DatasetShardId, DatasetShardRecord, DjJsonValue, DjRecordHeader,
+    DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord, DynamicJepaResult,
+    EntitySchema, EventId, FieldKind, FieldSpec, FieldValue, InstrumentId, InstrumentKind,
+    InstrumentReading, InstrumentSpec, InstrumentValidation, InvariantSpec, LatentPanel,
+    LeakageReport, ModelArtifactId, Normalization, NormalizedAction, NormalizedOutcome,
+    NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PairKindBitset, PairKindName,
+    PairwiseReading, PairwiseReadingId, PanelId, PanelSlot, PanelSlotKind, PayloadFormat,
+    PlanTraceId, PlannerPolicy, PredictionId, RawDomainEvent, ReadingStatus, ShapeSummary,
+    SkillId, SourceKind, StateId, StateSchema, StateTransition, SurpriseEventId,
+    ThresholdCalibration, ThresholdCalibrationId, TimeEncoding, TimeSchema, TrainingRunId,
+    TrajectoryId, TrajectoryRecord, TransitionId, Validate, VerificationPolicy,
+    VerificationRunId, VerificationRunRecord, VerificationStatus, ADAPTER_RUN_RECORD_VERSION,
+    BINDING_RECORD_VERSION, CONSTELLATION_CENTROID_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
     DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
-    NORMALIZED_ACTION_RECORD_VERSION, PAIRWISE_READING_RECORD_VERSION,
-    NORMALIZED_OUTCOME_RECORD_VERSION, NORMALIZED_STATE_RECORD_VERSION,
-    RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
+    NORMALIZED_ACTION_RECORD_VERSION, NORMALIZED_OUTCOME_RECORD_VERSION,
+    NORMALIZED_STATE_RECORD_VERSION, PAIRWISE_READING_RECORD_VERSION,
+    RAW_DOMAIN_EVENT_RECORD_VERSION, STATE_TRANSITION_RECORD_VERSION,
+    THRESHOLD_CALIBRATION_RECORD_VERSION, TRAJECTORY_RECORD_VERSION,
 };
 use context_graph_dynamicjepa::{
     plan_next_action, predict_next_panel, record_surprise, train_dataset, verify_artifact_files,
@@ -40,31 +44,34 @@ use context_graph_dynamicjepa::{
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
-    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
+    CF_DJ_BINDINGS_BY_ENTITY, CF_DJ_CONSTELLATIONS, CF_DJ_DATASET_SHARDS, CF_DJ_DOMAIN_PACKS,
     CF_DJ_DOMAIN_PACK_BY_NAME_VERSION, CF_DJ_GUARD_DECISIONS, CF_DJ_INSTRUMENT_READINGS,
     CF_DJ_INSTRUMENT_REGISTRY, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS,
     CF_DJ_NORMALIZED_STATES, CF_DJ_OUTCOMES, CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES,
     CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS,
-    CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS, CF_DJ_VERIFICATION_RUNS,
+    CF_DJ_THRESHOLD_CALIBRATIONS, CF_DJ_TRAINING_RUNS, CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS,
+    CF_DJ_VERIFICATION_RUNS,
     DJ_CF_NAMES,
 };
 use context_graph_storage::dynamicjepa::keys::{
-    adapter_registry_key, instrument_reading_key, instrument_registry_key, name_version_key,
-    uuid_key,
+    adapter_registry_key, domain_pack_storage_uuid, instrument_reading_key,
+    instrument_registry_key, name_version_key, uuid_key,
 };
 use context_graph_storage::dynamicjepa::{
     binding_entity_index_exists, get_action, get_adapter_run, get_adapter_spec, get_binding,
-    get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id, get_guard_decision,
-    get_instrument_reading, get_instrument_spec, get_latent_panel, get_model_artifact,
-    get_normalized_state, get_outcome, get_plan_trace, get_prediction, get_raw_event,
-    get_surprise_event, get_training_run, get_trajectory, get_transition, get_verification_run,
-    inspect_cf, inspect_cf_key, list_adapter_runs, list_bindings, list_dataset_shards,
+    get_constellation, get_dataset_shard, get_domain_pack, get_domain_pack_by_storage_id,
+    get_guard_decision, get_instrument_reading, get_instrument_spec, get_latent_panel,
+    get_model_artifact, get_normalized_state, get_outcome, get_plan_trace, get_prediction,
+    get_raw_event, get_surprise_event, get_threshold_calibration, get_training_run,
+    get_trajectory, get_transition, get_verification_run, inspect_cf, inspect_cf_key,
+    list_adapter_runs, list_audit_records, list_bindings, list_constellations, list_dataset_shards,
     list_domain_packs, list_instrument_readings_for_event, list_latent_panels,
-    list_pairwise_readings_for_event, list_trajectories, list_transitions,
-    put_adapter_run_failure_batch, put_adapter_run_success_batch,
-    put_audit_record, put_binding_with_audit_batch, put_dataset_shard_with_audit_batch,
-    put_domain_pack, put_panel_with_readings_and_pairwise_batch,
-    put_raw_event_and_adapter_run_started, put_trajectory_with_audit_batch,
+    list_normalized_states, list_pairwise_readings_for_event, list_threshold_calibrations,
+    list_trajectories, list_transitions, put_adapter_run_failure_batch,
+    put_adapter_run_success_batch, put_audit_record, put_binding_with_audit_batch,
+    put_constellations_with_audit_batch, put_dataset_shard_with_audit_batch, put_domain_pack,
+    put_panel_with_readings_and_pairwise_batch, put_raw_event_and_adapter_run_started,
+    put_threshold_calibrations_with_audit_batch, put_trajectory_with_audit_batch,
     put_verification_run_with_audit_batch, snapshot_dj_counts,
 };
 use context_graph_storage::dynamicjepa::{
@@ -131,6 +138,16 @@ pub enum DynamicJepaCommands {
     Plan(PlanArgs),
     /// Compare a prediction with an observed outcome/panel and persist surprise when threshold is breached.
     RecordSurprise(RecordSurpriseArgs),
+    /// Build immutable constellation centroids from persisted instrument readings.
+    BuildConstellation(BuildConstellationArgs),
+    /// List persisted constellation centroids.
+    ListConstellations(ListConstellationsArgs),
+    /// Read one persisted constellation centroid.
+    GetConstellation(GetConstellationArgs),
+    /// Calibrate G_tau thresholds from a disjoint held-out event set.
+    CalibrateThreshold(CalibrateThresholdArgs),
+    /// Supersede an existing G_tau threshold calibration.
+    RecalibrateThreshold(RecalibrateThresholdArgs),
     /// Read a persisted DynamicJEPA prediction.
     GetPrediction(GetPredictionArgs),
     /// Read a persisted DynamicJEPA plan trace.
@@ -184,6 +201,11 @@ impl DynamicJepaCommands {
             Self::Predict(_) => "dynamicjepa_predict",
             Self::Plan(_) => "dynamicjepa_plan",
             Self::RecordSurprise(_) => "dynamicjepa_record_surprise",
+            Self::BuildConstellation(_) => "dynamicjepa_build_constellation",
+            Self::ListConstellations(_) => "dynamicjepa_list_constellations",
+            Self::GetConstellation(_) => "dynamicjepa_get_constellation",
+            Self::CalibrateThreshold(_) => "dynamicjepa_calibrate_threshold",
+            Self::RecalibrateThreshold(_) => "dynamicjepa_recalibrate_threshold",
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
@@ -699,6 +721,169 @@ pub struct RecordSurpriseArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct BuildConstellationArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Subject id from [[constellation.subjects]], or global.
+    #[arg(long, default_value = "global")]
+    pub subject: String,
+
+    /// Event selector for the reference set, for example first:30 or last:50.
+    #[arg(long = "source-event-selector")]
+    pub source_event_selector: Option<String>,
+
+    /// Optional verification/build run UUID to stamp on centroid rows.
+    #[arg(long = "built-by-run-id")]
+    pub built_by_run_id: Option<String>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ListConstellationsArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Optional domain pack id filter.
+    #[arg(long)]
+    pub domain: Option<String>,
+
+    /// Optional subject id filter.
+    #[arg(long)]
+    pub subject: Option<String>,
+
+    /// Maximum decoded rows to return.
+    #[arg(long, default_value_t = 100)]
+    pub limit: usize,
+
+    /// Number of decoded rows to skip after filtering.
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct GetConstellationArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Subject id from [[constellation.subjects]], or global.
+    #[arg(long, default_value = "global")]
+    pub subject: String,
+
+    /// Instrument id or 1-based modality ordinal.
+    #[arg(long)]
+    pub modality: String,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct CalibrateThresholdArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Subject id from [[constellation.subjects]], or global.
+    #[arg(long, default_value = "global")]
+    pub subject: String,
+
+    /// Instrument id, 1-based modality ordinal, or all configured modalities.
+    #[arg(long, default_value = "all")]
+    pub modality: String,
+
+    /// Held-out event selector, for example last:30.
+    #[arg(long = "calibration-event-selector")]
+    pub calibration_event_selector: Option<String>,
+
+    /// Override percentile. When omitted, the domain pack constellation spec is used.
+    #[arg(long)]
+    pub percentile: Option<u8>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RecalibrateThresholdArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Subject id from [[constellation.subjects]], or global.
+    #[arg(long, default_value = "global")]
+    pub subject: String,
+
+    /// Instrument id, 1-based modality ordinal, or all configured modalities.
+    #[arg(long, default_value = "all")]
+    pub modality: String,
+
+    /// Held-out event selector, for example last:30.
+    #[arg(long = "calibration-event-selector")]
+    pub calibration_event_selector: Option<String>,
+
+    /// Calibration UUID being superseded. Required for recalibration.
+    #[arg(long)]
+    pub supersedes: Option<String>,
+
+    /// Operator-visible recalibration reason. Required for recalibration.
+    #[arg(long)]
+    pub reason: Option<String>,
+
+    /// Override percentile. When omitted, the prior/domain spec percentile is used.
+    #[arg(long)]
+    pub percentile: Option<u8>,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
 pub struct GetPredictionArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
@@ -1100,6 +1285,11 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::Predict(args) => predict_command(args),
         DynamicJepaCommands::Plan(args) => plan_command(args),
         DynamicJepaCommands::RecordSurprise(args) => record_surprise_command(args),
+        DynamicJepaCommands::BuildConstellation(args) => build_constellation_command(args),
+        DynamicJepaCommands::ListConstellations(args) => list_constellations_command(args),
+        DynamicJepaCommands::GetConstellation(args) => get_constellation_command(args),
+        DynamicJepaCommands::CalibrateThreshold(args) => calibrate_threshold_command(args, false),
+        DynamicJepaCommands::RecalibrateThreshold(args) => recalibrate_threshold_command(args),
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
@@ -17183,6 +17373,13 @@ fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
         Some(Uuid::new_v4()),
     );
     let candidate_actions = candidate_actions_from_toml(parsed.planner_policy.candidate_actions)?;
+    let instrument_specs = parsed
+        .instruments
+        .into_iter()
+        .enumerate()
+        .map(|(idx, spec)| instrument_from_toml(spec, idx))
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
+    let constellation = constellation_from_toml(parsed.constellation)?;
     let mut pack = DomainPack {
         header,
         id: domain_id,
@@ -17204,12 +17401,7 @@ fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
         time_schema: TimeSchema {
             field: field_spec_from_toml(parsed.time.field, "time.field")?,
         },
-        instrument_specs: parsed
-            .instruments
-            .into_iter()
-            .enumerate()
-            .map(|(idx, spec)| instrument_from_toml(spec, idx))
-            .collect::<DynamicJepaResult<Vec<_>>>()?,
+        instrument_specs,
         adapter_specs: parsed
             .adapters
             .into_iter()
@@ -17249,6 +17441,7 @@ fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
             guards: parsed.planner_policy.guards,
             surprise_threshold: parsed.planner_policy.surprise_threshold,
         },
+        constellation,
         verification_policy: VerificationPolicy {
             required_cfs: parsed.verification_policy.required_cfs,
             expected_event_count: parsed.verification_policy.expected_event_count,
@@ -17459,6 +17652,67 @@ fn candidate_actions_from_toml(
         (None, None) => Err(toml_validation_error(
             "planner_policy.candidate_actions",
             "enumerated candidate actions require deltas or moves",
+        )),
+    }
+}
+
+fn constellation_from_toml(
+    value: Option<ConstellationToml>,
+) -> DynamicJepaResult<Option<ConstellationConfig>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    Ok(Some(ConstellationConfig {
+        global: value
+            .global
+            .map(|global| -> DynamicJepaResult<ConstellationGlobalSpec> {
+                Ok(ConstellationGlobalSpec {
+                    modalities: modalities_from_toml(
+                        global.modalities,
+                        "constellation.global.modalities",
+                    )?,
+                    require_loo_min: global.require_loo_min,
+                    calibration_percentile: global.calibration_percentile,
+                    calibration_set_size: global.calibration_set_size,
+                })
+            })
+            .transpose()?,
+        subjects: value
+            .subjects
+            .into_iter()
+            .map(|subject| -> DynamicJepaResult<ConstellationSubjectSpec> {
+                Ok(ConstellationSubjectSpec {
+                    id: subject.id,
+                    field: subject.field,
+                    value: subject.value,
+                    modalities: modalities_from_toml(
+                        subject.modalities,
+                        "constellation.subjects.modalities",
+                    )?,
+                    require_loo_min: subject.require_loo_min,
+                    calibration_percentile: subject.calibration_percentile,
+                    calibration_set_size: subject.calibration_set_size,
+                })
+            })
+            .collect::<DynamicJepaResult<Vec<_>>>()?,
+    }))
+}
+
+fn modalities_from_toml(
+    value: ModalitiesToml,
+    field: &str,
+) -> DynamicJepaResult<ConstellationModalities> {
+    match value {
+        ModalitiesToml::Name(name) if name == "all" => Ok(ConstellationModalities::All),
+        ModalitiesToml::Name(name) => Err(toml_validation_error(
+            field,
+            format!("unsupported modalities string {name:?}; use \"all\" or a list of instrument ids"),
+        )),
+        ModalitiesToml::List(values) => Ok(ConstellationModalities::List(
+            values
+                .into_iter()
+                .map(InstrumentId::new)
+                .collect::<DynamicJepaResult<Vec<_>>>()?,
         )),
     }
 }
@@ -17882,6 +18136,7 @@ struct DomainPackToml {
     invariants: Vec<InvariantToml>,
     dataset_policy: DatasetPolicyToml,
     planner_policy: PlannerPolicyToml,
+    constellation: Option<ConstellationToml>,
     verification_policy: VerificationPolicyToml,
 }
 
@@ -18020,6 +18275,42 @@ struct CandidateActionsToml {
     kind: String,
     deltas: Option<Vec<i64>>,
     moves: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConstellationToml {
+    global: Option<ConstellationGlobalToml>,
+    #[serde(default)]
+    subjects: Vec<ConstellationSubjectToml>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConstellationGlobalToml {
+    modalities: ModalitiesToml,
+    require_loo_min: f32,
+    calibration_percentile: u8,
+    calibration_set_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConstellationSubjectToml {
+    id: String,
+    field: String,
+    value: String,
+    modalities: ModalitiesToml,
+    require_loo_min: f32,
+    calibration_percentile: u8,
+    calibration_set_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ModalitiesToml {
+    Name(String),
+    List(Vec<String>),
 }
 
 #[derive(Debug, Deserialize)]

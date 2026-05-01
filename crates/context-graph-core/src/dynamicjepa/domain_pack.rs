@@ -1,6 +1,6 @@
 use crate::dynamicjepa::adapter::AdapterSpec;
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use crate::dynamicjepa::ids::DomainPackId;
+use crate::dynamicjepa::ids::{validate_string_id, DomainPackId, InstrumentId};
 use crate::dynamicjepa::instrument::InstrumentSpec;
 use crate::dynamicjepa::record_header::{validate_semver, DjRecordHeader};
 use crate::dynamicjepa::schema::{
@@ -30,6 +30,8 @@ pub struct DomainPack {
     pub invariants: Vec<InvariantSpec>,
     pub dataset_policy: DatasetPolicy,
     pub planner_policy: PlannerPolicy,
+    #[serde(default)]
+    pub constellation: Option<ConstellationConfig>,
     pub verification_policy: VerificationPolicy,
     pub source_hash: [u8; 32],
 }
@@ -87,6 +89,37 @@ pub struct VerificationPolicy {
     pub expected_val_rows_max: Option<u64>,
     pub expected_test_rows_min: Option<u64>,
     pub expected_test_rows_max: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConstellationConfig {
+    pub global: Option<ConstellationGlobalSpec>,
+    pub subjects: Vec<ConstellationSubjectSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConstellationGlobalSpec {
+    pub modalities: ConstellationModalities,
+    pub require_loo_min: f32,
+    pub calibration_percentile: u8,
+    pub calibration_set_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConstellationSubjectSpec {
+    pub id: String,
+    pub field: String,
+    pub value: String,
+    pub modalities: ConstellationModalities,
+    pub require_loo_min: f32,
+    pub calibration_percentile: u8,
+    pub calibration_set_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConstellationModalities {
+    All,
+    List(Vec<InstrumentId>),
 }
 
 impl Validate for ObjectiveSpec {
@@ -342,6 +375,9 @@ impl Validate for DomainPack {
         }
         self.dataset_policy.validate()?;
         self.planner_policy.validate()?;
+        if let Some(constellation) = &self.constellation {
+            self.validate_constellation_config(constellation)?;
+        }
         self.verification_policy.validate()
     }
 }
@@ -376,6 +412,146 @@ impl DomainPack {
             .find(|field| field.name == name)
             .map(|field| &field.kind)
     }
+
+    fn validate_constellation_config(
+        &self,
+        config: &ConstellationConfig,
+    ) -> DynamicJepaResult<()> {
+        if config.global.is_none() && config.subjects.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "DomainPack.constellation",
+                "constellation config must declare a global spec or at least one subject spec",
+                "remove the empty table or declare [constellation.global] / [[constellation.subjects]]",
+            ));
+        }
+        if let Some(global) = &config.global {
+            validate_constellation_common(
+                &global.modalities,
+                global.require_loo_min,
+                global.calibration_percentile,
+                global.calibration_set_size,
+                &self.instrument_specs,
+                "DomainPack.constellation.global",
+            )?;
+        }
+        ensure_no_duplicates(
+            config.subjects.iter().map(|subject| subject.id.as_str()),
+            "DomainPack.constellation.subjects.id",
+        )?;
+        for subject in &config.subjects {
+            validate_string_id(&subject.id, "DomainPack.constellation.subjects.id")?;
+            let field = self
+                .state_schema
+                .fields
+                .iter()
+                .find(|field| field.name == subject.field)
+                .ok_or_else(|| DynamicJepaError::ConstellationSubjectFieldUndeclared {
+                    subject_id: subject.id.clone(),
+                    field: subject.field.clone(),
+                })?;
+            match &field.kind {
+                FieldKind::Categorical { variants } => {
+                    if !variants.iter().any(|variant| variant == &subject.value) {
+                        return Err(DynamicJepaError::ConstellationSubjectValueUndeclared {
+                            subject_id: subject.id.clone(),
+                            field: subject.field.clone(),
+                            value: subject.value.clone(),
+                        });
+                    }
+                }
+                FieldKind::String => {
+                    if subject.value.trim().is_empty() {
+                        return Err(DynamicJepaError::ConstellationSubjectValueUndeclared {
+                            subject_id: subject.id.clone(),
+                            field: subject.field.clone(),
+                            value: subject.value.clone(),
+                        });
+                    }
+                }
+                _ => {
+                    return Err(DynamicJepaError::ConstellationSubjectValueUndeclared {
+                        subject_id: subject.id.clone(),
+                        field: subject.field.clone(),
+                        value: subject.value.clone(),
+                    });
+                }
+            }
+            validate_constellation_common(
+                &subject.modalities,
+                subject.require_loo_min,
+                subject.calibration_percentile,
+                subject.calibration_set_size,
+                &self.instrument_specs,
+                "DomainPack.constellation.subjects",
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_constellation_common(
+    modalities: &ConstellationModalities,
+    require_loo_min: f32,
+    calibration_percentile: u8,
+    calibration_set_size: u32,
+    instruments: &[InstrumentSpec],
+    field: &str,
+) -> DynamicJepaResult<()> {
+    if !require_loo_min.is_finite() || !(0.0..=1.0).contains(&require_loo_min) {
+        return Err(DynamicJepaError::validation(
+            format!("{field}.require_loo_min"),
+            format!("require_loo_min must be finite in [0,1], got {require_loo_min}"),
+            "choose a bounded cosine stability threshold",
+        ));
+    }
+    if calibration_percentile > 100 {
+        return Err(DynamicJepaError::validation(
+            format!("{field}.calibration_percentile"),
+            format!("calibration_percentile must be in [0,100], got {calibration_percentile}"),
+            "choose a valid percentile",
+        ));
+    }
+    if calibration_set_size == 0 {
+        return Err(DynamicJepaError::validation(
+            format!("{field}.calibration_set_size"),
+            "calibration_set_size must be positive",
+            "calibrate thresholds from at least one held-out event",
+        ));
+    }
+    match modalities {
+        ConstellationModalities::All => {
+            if instruments.is_empty() {
+                return Err(DynamicJepaError::validation(
+                    format!("{field}.modalities"),
+                    "modalities=\"all\" requires at least one instrument",
+                    "declare instruments before enabling constellation guards",
+                ));
+            }
+        }
+        ConstellationModalities::List(ids) => {
+            if ids.is_empty() {
+                return Err(DynamicJepaError::validation(
+                    format!("{field}.modalities"),
+                    "modalities list must not be empty",
+                    "use \"all\" or list concrete instrument ids",
+                ));
+            }
+            ensure_no_duplicates(ids.iter().map(InstrumentId::as_str), field)?;
+            for id in ids {
+                if !instruments
+                    .iter()
+                    .any(|instrument| instrument.instrument_id == *id)
+                {
+                    return Err(DynamicJepaError::validation(
+                        format!("{field}.modalities"),
+                        format!("modality {id} is not declared in instrument_specs"),
+                        "list only registered instrument ids",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 crate::impl_dynamic_jepa_record!(DomainPack, DOMAIN_PACK_RECORD_VERSION, "DomainPack");

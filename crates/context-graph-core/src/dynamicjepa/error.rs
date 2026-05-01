@@ -152,6 +152,72 @@ pub enum DynamicJepaError {
         pairwise_id: Uuid,
         instrument_id: String,
     },
+    #[error("constellation reference set too small: subject={subject_id} actual={actual} minimum={minimum}")]
+    ConstellationReferenceSetTooSmall {
+        subject_id: String,
+        actual: usize,
+        minimum: usize,
+    },
+    #[error("constellation zero-norm majority: subject={subject_id} modality={modality_id} dropped={dropped} reference_set_count={reference_set_count}")]
+    ConstellationZeroNormMajority {
+        subject_id: String,
+        modality_id: String,
+        dropped: u32,
+        reference_set_count: u32,
+    },
+    #[error("constellation leave-one-out stability below threshold: subject={subject_id} modality={modality_id} loo={loo_stability} required={required}")]
+    ConstellationLooBelowThreshold {
+        subject_id: String,
+        modality_id: String,
+        loo_stability: f32,
+        required: f32,
+    },
+    #[error("constellation instrument hash mismatch: constellation={constellation_id} modality={modality_id}")]
+    ConstellationInstrumentHashMismatch {
+        constellation_id: Uuid,
+        modality_id: String,
+    },
+    #[error("calibration set is not disjoint: subject={subject_id} overlap_count={overlap_count}")]
+    CalibrationSetNotDisjoint {
+        subject_id: String,
+        overlap_count: usize,
+    },
+    #[error("constellation subject field undeclared: subject={subject_id} field={field}")]
+    ConstellationSubjectFieldUndeclared { subject_id: String, field: String },
+    #[error("constellation subject value undeclared: subject={subject_id} field={field} value={value}")]
+    ConstellationSubjectValueUndeclared {
+        subject_id: String,
+        field: String,
+        value: String,
+    },
+    #[error("calibration supersession required: subject={subject_id} modality={modality_id}")]
+    CalibrationSupersessionRequired {
+        subject_id: String,
+        modality_id: String,
+    },
+    #[error("guard constellation missing: domain={domain_id} subject={subject_id} modality={modality_id}")]
+    GuardConstellationMissing {
+        domain_id: String,
+        subject_id: String,
+        modality_id: String,
+    },
+    #[error("guard threshold missing: domain={domain_id} subject={subject_id} modality={modality_id}")]
+    GuardThresholdMissing {
+        domain_id: String,
+        subject_id: String,
+        modality_id: String,
+    },
+    #[error("guard instrument hash drift: guard={guard_id} modality={modality_id}")]
+    GuardInstrumentHashDrift {
+        guard_id: String,
+        modality_id: String,
+    },
+    #[error("guard threshold duplicated: domain={domain_id} subject={subject_id} modality={modality_id}")]
+    GuardThresholdDuplicated {
+        domain_id: String,
+        subject_id: String,
+        modality_id: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -222,6 +288,26 @@ impl DynamicJepaError {
             Self::PairwiseRowCountMismatch { .. } => "PAIRWISE_ROW_COUNT_MISMATCH",
             Self::PairwiseCosineDrift { .. } => "PAIRWISE_COSINE_DRIFT",
             Self::PairwiseInstrumentHashDrift { .. } => "PAIRWISE_INSTRUMENT_HASH_DRIFT",
+            Self::ConstellationReferenceSetTooSmall { .. } => {
+                "CONSTELLATION_REFERENCE_SET_TOO_SMALL"
+            }
+            Self::ConstellationZeroNormMajority { .. } => "CONSTELLATION_ZERO_NORM_MAJORITY",
+            Self::ConstellationLooBelowThreshold { .. } => "CONSTELLATION_LOO_BELOW_THRESHOLD",
+            Self::ConstellationInstrumentHashMismatch { .. } => {
+                "CONSTELLATION_INSTRUMENT_HASH_MISMATCH"
+            }
+            Self::CalibrationSetNotDisjoint { .. } => "CALIBRATION_SET_NOT_DISJOINT",
+            Self::ConstellationSubjectFieldUndeclared { .. } => {
+                "CONSTELLATION_SUBJECT_FIELD_UNDECLARED"
+            }
+            Self::ConstellationSubjectValueUndeclared { .. } => {
+                "CONSTELLATION_SUBJECT_VALUE_UNDECLARED"
+            }
+            Self::CalibrationSupersessionRequired { .. } => "CALIBRATION_SUPERSESSION_REQUIRED",
+            Self::GuardConstellationMissing { .. } => "GUARD_CONSTELLATION_MISSING",
+            Self::GuardThresholdMissing { .. } => "GUARD_THRESHOLD_MISSING",
+            Self::GuardInstrumentHashDrift { .. } => "GUARD_INSTRUMENT_HASH_DRIFT",
+            Self::GuardThresholdDuplicated { .. } => "GUARD_THRESHOLD_DUPLICATED",
         }
     }
 }

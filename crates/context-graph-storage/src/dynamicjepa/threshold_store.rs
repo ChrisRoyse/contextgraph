@@ -1,10 +1,15 @@
-use context_graph_core::dynamicjepa::{DynamicJepaResult, ThresholdCalibration};
-use rocksdb::DB;
+use context_graph_core::dynamicjepa::{
+    DynamicJepaRecord, DynamicJepaResult, ThresholdCalibration,
+};
+use rocksdb::{WriteBatch, DB};
 use uuid::Uuid;
 
+use crate::dynamicjepa::audit::{DjAuditRecord, DJ_AUDIT_RECORD_VERSION};
+use crate::dynamicjepa::column_families::CF_DJ_AUDIT_LOG;
 use crate::dynamicjepa::column_families::CF_DJ_THRESHOLD_CALIBRATIONS;
-use crate::dynamicjepa::common::{count_cf, get_record, list_records, put_record};
-use crate::dynamicjepa::keys::threshold_calibration_key;
+use crate::dynamicjepa::common::{cf, count_cf, get_record, list_records, put_record, write_batch};
+use crate::dynamicjepa::encode::{encode_plain, encode_record};
+use crate::dynamicjepa::keys::{audit_key, threshold_calibration_key};
 
 pub fn put_threshold_calibration(
     db: &DB,
@@ -34,6 +39,32 @@ pub fn get_threshold_calibration(
         CF_DJ_THRESHOLD_CALIBRATIONS,
         threshold_calibration_key(&domain_uuid, subject_id, modality_id, supersede_seq),
     )
+}
+
+pub fn put_threshold_calibrations_with_audit_batch(
+    db: &DB,
+    records: &[(Uuid, String, u32, u32, ThresholdCalibration)],
+    audit: &DjAuditRecord,
+) -> DynamicJepaResult<()> {
+    for (_, _, _, _, record) in records {
+        record.validate_record()?;
+    }
+    audit.validate()?;
+
+    let mut batch = WriteBatch::default();
+    for (domain_uuid, subject_id, modality_id, supersede_seq, record) in records {
+        batch.put_cf(
+            cf(db, CF_DJ_THRESHOLD_CALIBRATIONS)?,
+            threshold_calibration_key(domain_uuid, subject_id, *modality_id, *supersede_seq),
+            encode_record(record)?,
+        );
+    }
+    batch.put_cf(
+        cf(db, CF_DJ_AUDIT_LOG)?,
+        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+    );
+    write_batch(db, batch, "put_threshold_calibrations_with_audit_batch")
 }
 
 pub fn list_threshold_calibrations(

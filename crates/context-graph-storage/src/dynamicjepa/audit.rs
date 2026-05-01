@@ -128,6 +128,7 @@ pub fn signal_yield_for_operation(
         "verify_artifact_files" => Ok(0),
         "build_constellation" => Ok(0),
         "calibrate_threshold" => Ok(0),
+        "recalibrate_threshold" => Ok(0),
         "audit_pairwise_mi" => Ok(0),
         "register_domain_pack" => Ok(0),
         "bind" => Ok(1),
