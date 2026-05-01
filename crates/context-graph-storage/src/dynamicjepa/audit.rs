@@ -97,7 +97,10 @@ pub fn signal_yield_for_operation(
             Ok(pairs)
         }
         "compile_transition" => Ok(2),
+        "compile_trajectories" => Ok(0),
+        "compile_dataset" => Ok(0),
         "train_predictor" => Ok(0),
+        "register_artifact" => Ok(0),
         "predict" => n.checked_add(m).ok_or_else(|| {
             DynamicJepaError::validation(
                 "SignalYieldDimensions.predict",
@@ -126,19 +129,22 @@ pub fn signal_yield_for_operation(
         }
         "record_surprise" => Ok(1),
         "verify_artifact_files" => Ok(0),
+        "verify_counter_world" => Ok(0),
+        "verify_gridworld" => Ok(0),
+        "verify_career_taxonomy" => Ok(0),
+        "research_smoke" => Ok(0),
         "build_constellation" => Ok(0),
         "calibrate_threshold" => Ok(0),
         "recalibrate_threshold" => Ok(0),
         "audit_pairwise_mi" => Ok(0),
+        "compute_mc_ratio" => Ok(0),
+        "inspect_counts" => Ok(0),
+        "inspect_cf" => Ok(0),
         "register_domain_pack" => Ok(0),
         "bind" => Ok(1),
-        "compile_dataset" => Ok(0),
-        "compile_trajectory" => Ok(0),
         "verification_run" => Ok(0),
-        other => Err(DynamicJepaError::validation(
-            "DjAuditRecord.operation",
-            format!("unknown signal-yield operation kind {other:?}"),
-            "add the operation to signal_yield_for_operation before writing audit rows",
-        )),
+        other => Err(DynamicJepaError::SignalYieldUnknownOperation {
+            operation: other.to_string(),
+        }),
     }
 }

@@ -31,7 +31,8 @@ use context_graph_storage::dynamicjepa::{
     get_skill_policy, get_surprise_event, get_threshold_calibration, get_training_run,
     list_dataset_shards, put_model_artifact_completion_batch, put_plan_batch,
     put_prediction_with_audit_batch, put_surprise_event_with_audit_batch,
-    put_training_run_with_audit_batch, AuditStatus, DjAuditRecord,
+    put_training_run_with_audit_batch, signal_yield_for_operation, AuditStatus, DjAuditRecord,
+    SignalYieldDimensions,
 };
 use rocksdb::DB;
 use serde::Serialize;
@@ -128,7 +129,7 @@ pub fn train_dataset(
     };
     started.refresh_content_hash()?;
     let start_audit = build_audit(
-        "start_training_run",
+        "train_predictor",
         AuditStatus::Ok,
         vec![dataset_id.to_string()],
         vec![training_run_id.to_string()],
@@ -193,7 +194,7 @@ pub fn train_dataset(
         completed.header.created_at_unix_ms = finished_at;
         completed.refresh_content_hash()?;
         let completion_audit = build_audit(
-            "register_model_artifact",
+        "register_artifact",
             AuditStatus::Ok,
             vec![training_run_id.to_string(), dataset_id.to_string()],
             vec![artifact_id.to_string()],
@@ -274,7 +275,7 @@ pub fn train_dataset(
             };
             failed.refresh_content_hash()?;
             let failed_audit = build_audit(
-                "training_run_failed",
+                "train_predictor",
                 AuditStatus::Failed {
                     error_code: err.code().to_string(),
                 },
@@ -361,8 +362,8 @@ pub fn predict_next_panel(
         created_at_unix_ms: created_at,
     };
     record.refresh_content_hash()?;
-    let audit = build_audit(
-        "run_prediction",
+    let mut audit = build_audit(
+        "predict",
         AuditStatus::Ok,
         vec![
             artifact_id.to_string(),
@@ -372,6 +373,10 @@ pub fn predict_next_panel(
         vec![prediction_id.to_string()],
         vec![CF_DJ_PREDICTIONS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
         vec![record.header.content_hash],
+    )?;
+    set_audit_signal_yield(
+        &mut audit,
+        signal_yield_for_operation("predict", signal_yield_dimensions_for_domain(&domain, 0)?)?,
     )?;
     put_prediction_with_audit_batch(db, &record, &audit)?;
     let stored = get_prediction(db, prediction_id)?.ok_or_else(|| {
@@ -575,8 +580,8 @@ pub fn plan_next_action(
             .map(|guard| guard.header.content_hash),
     );
     content_hashes.push(trace.header.content_hash);
-    let audit = build_audit(
-        "run_plan",
+    let mut audit = build_audit(
+        "plan",
         AuditStatus::Ok,
         vec![
             artifact_id.to_string(),
@@ -586,6 +591,13 @@ pub fn plan_next_action(
         vec![plan_trace_id.to_string()],
         touched,
         content_hashes,
+    )?;
+    set_audit_signal_yield(
+        &mut audit,
+        signal_yield_for_operation(
+            "plan",
+            signal_yield_dimensions_for_domain(&domain, actions.len() as u32)?,
+        )?,
     )?;
     put_plan_batch(
         db,
@@ -766,7 +778,7 @@ pub fn record_surprise(
         created_at_unix_ms: created_at,
     };
     record.refresh_content_hash()?;
-    let audit = build_audit(
+    let mut audit = build_audit(
         "record_surprise",
         AuditStatus::Ok,
         vec![
@@ -780,6 +792,10 @@ pub fn record_surprise(
             CF_DJ_AUDIT_LOG.to_string(),
         ],
         vec![record.header.content_hash],
+    )?;
+    set_audit_signal_yield(
+        &mut audit,
+        signal_yield_for_operation("record_surprise", signal_yield_dimensions_for_domain(&domain, 0)?)?,
     )?;
     put_surprise_event_with_audit_batch(db, &record, &audit)?;
     let stored = get_surprise_event(db, surprise_event_id)?.ok_or_else(|| {
@@ -2423,6 +2439,64 @@ fn build_audit(
     };
     record.validate()?;
     Ok(record)
+}
+
+fn set_audit_signal_yield(audit: &mut DjAuditRecord, signal_yield: u32) -> DynamicJepaResult<()> {
+    audit.signal_yield = signal_yield;
+    audit.validate()
+}
+
+fn signal_yield_dimensions_for_domain(
+    domain: &DomainPack,
+    k_candidates: u32,
+) -> DynamicJepaResult<SignalYieldDimensions> {
+    Ok(SignalYieldDimensions {
+        n_panel_slots: u32::try_from(domain.instrument_specs.len()).map_err(|_| {
+            DynamicJepaError::validation(
+                "SignalYieldDimensions.n_panel_slots",
+                "domain instrument count exceeds u32 signal-yield capacity",
+                "reduce the domain pack instrument count before planning or prediction",
+            )
+        })?,
+        n_active_modalities: active_constellation_modalities(domain)?,
+        k_candidates,
+    })
+}
+
+fn active_constellation_modalities(domain: &DomainPack) -> DynamicJepaResult<u32> {
+    let Some(config) = &domain.constellation else {
+        return Ok(0);
+    };
+    let mut max_modalities = 0usize;
+    if let Some(global) = &config.global {
+        max_modalities = max_modalities.max(constellation_modality_count(
+            domain,
+            &global.modalities,
+        ));
+    }
+    for subject in &config.subjects {
+        max_modalities = max_modalities.max(constellation_modality_count(
+            domain,
+            &subject.modalities,
+        ));
+    }
+    u32::try_from(max_modalities).map_err(|_| {
+        DynamicJepaError::validation(
+            "SignalYieldDimensions.n_active_modalities",
+            "active constellation modality count exceeds u32 signal-yield capacity",
+            "reduce the domain pack constellation modality count",
+        )
+    })
+}
+
+fn constellation_modality_count(
+    domain: &DomainPack,
+    modalities: &ConstellationModalities,
+) -> usize {
+    match modalities {
+        ConstellationModalities::All => domain.instrument_specs.len(),
+        ConstellationModalities::List(ids) => ids.len(),
+    }
 }
 
 fn now_unix_ms() -> DynamicJepaResult<i64> {

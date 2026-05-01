@@ -52,12 +52,41 @@ pub fn put_adapter_run_success_batch(
     transition: &StateTransition,
     audit: &DjAuditRecord,
 ) -> DynamicJepaResult<()> {
+    put_adapter_run_success_with_audits_batch(
+        db,
+        adapter_run,
+        state,
+        action,
+        outcome,
+        transition,
+        std::slice::from_ref(audit),
+    )
+}
+
+pub fn put_adapter_run_success_with_audits_batch(
+    db: &DB,
+    adapter_run: &AdapterRunRecord,
+    state: &NormalizedState,
+    action: &NormalizedAction,
+    outcome: &NormalizedOutcome,
+    transition: &StateTransition,
+    audits: &[DjAuditRecord],
+) -> DynamicJepaResult<()> {
     adapter_run.validate_record()?;
     state.validate_record()?;
     action.validate_record()?;
     outcome.validate_record()?;
     transition.validate_record()?;
-    audit.validate()?;
+    if audits.is_empty() {
+        return Err(context_graph_core::dynamicjepa::DynamicJepaError::validation(
+            "DjAuditRecord",
+            "adapter success batch requires at least one audit row",
+            "write run_adapter_success and compile_transition audit provenance with the same RocksDB batch",
+        ));
+    }
+    for audit in audits {
+        audit.validate()?;
+    }
     let mut batch = WriteBatch::default();
     batch.put_cf(
         cf(db, CF_DJ_ADAPTER_RUNS)?,
@@ -84,11 +113,13 @@ pub fn put_adapter_run_success_batch(
         transition.transition_id.into_bytes(),
         encode_record(transition)?,
     );
-    batch.put_cf(
-        cf(db, CF_DJ_AUDIT_LOG)?,
-        audit_key(audit.timestamp_unix_nanos, audit.audit_id),
-        encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
-    );
+    for audit in audits {
+        batch.put_cf(
+            cf(db, CF_DJ_AUDIT_LOG)?,
+            audit_key(audit.timestamp_unix_nanos, audit.audit_id),
+            encode_plain(audit, DJ_AUDIT_RECORD_VERSION, "DjAuditRecord")?,
+        );
+    }
     write_batch(db, batch, "put_adapter_run_success_batch")
 }
 

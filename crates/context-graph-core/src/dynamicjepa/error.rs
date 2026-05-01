@@ -228,6 +228,21 @@ pub enum DynamicJepaError {
         subject_id: String,
         modality_id: String,
     },
+    #[error("signal-yield unknown operation: operation={operation}")]
+    SignalYieldUnknownOperation { operation: String },
+    #[error("signal-yield table drift: audit={audit_id} operation={operation} expected={expected} actual={actual}")]
+    SignalYieldTableDrift {
+        audit_id: Uuid,
+        operation: String,
+        expected: u32,
+        actual: u32,
+    },
+    #[error("signal-yield event count mismatch: domain={domain_id} n_events={n_events} remediation={remediation}")]
+    SignalYieldEventCountMismatch {
+        domain_id: String,
+        n_events: u64,
+        remediation: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -318,6 +333,9 @@ impl DynamicJepaError {
             Self::GuardThresholdMissing { .. } => "GUARD_THRESHOLD_MISSING",
             Self::GuardInstrumentHashDrift { .. } => "GUARD_INSTRUMENT_HASH_DRIFT",
             Self::GuardThresholdDuplicated { .. } => "GUARD_THRESHOLD_DUPLICATED",
+            Self::SignalYieldUnknownOperation { .. } => "SIGNAL_YIELD_UNKNOWN_OPERATION",
+            Self::SignalYieldTableDrift { .. } => "SIGNAL_YIELD_TABLE_DRIFT",
+            Self::SignalYieldEventCountMismatch { .. } => "SIGNAL_YIELD_EVENT_COUNT_MISMATCH",
         }
     }
 }

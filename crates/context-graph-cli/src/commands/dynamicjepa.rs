@@ -67,7 +67,7 @@ use context_graph_storage::dynamicjepa::{
     list_audit_records, list_bindings, list_constellations, list_dataset_shards, list_domain_packs,
     list_instrument_readings_for_event, list_latent_panels, list_normalized_states,
     list_pairwise_readings_for_event, list_threshold_calibrations, list_trajectories,
-    list_transitions, put_adapter_run_failure_batch, put_adapter_run_success_batch,
+    list_transitions, put_adapter_run_failure_batch, put_adapter_run_success_with_audits_batch,
     put_audit_record, put_binding_with_audit_batch, put_constellations_with_audit_batch,
     put_dataset_shard_with_audit_batch, put_domain_pack,
     put_panel_with_readings_and_pairwise_batch, put_raw_event_and_adapter_run_started,
@@ -148,6 +148,8 @@ pub enum DynamicJepaCommands {
     CalibrateThreshold(CalibrateThresholdArgs),
     /// Supersede an existing G_tau threshold calibration.
     RecalibrateThreshold(RecalibrateThresholdArgs),
+    /// Aggregate dj_audit_log signal_yield rows into MC-ratio paper evidence.
+    ComputeMcRatio(ComputeMcRatioArgs),
     /// Read a persisted DynamicJEPA prediction.
     GetPrediction(GetPredictionArgs),
     /// Read a persisted DynamicJEPA plan trace.
@@ -206,6 +208,7 @@ impl DynamicJepaCommands {
             Self::GetConstellation(_) => "dynamicjepa_get_constellation",
             Self::CalibrateThreshold(_) => "dynamicjepa_calibrate_threshold",
             Self::RecalibrateThreshold(_) => "dynamicjepa_recalibrate_threshold",
+            Self::ComputeMcRatio(_) => "dynamicjepa_compute_mc_ratio",
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
@@ -884,6 +887,29 @@ pub struct RecalibrateThresholdArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct ComputeMcRatioArgs {
+    /// Path to the RocksDB data directory.
+    #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
+    pub db: PathBuf,
+
+    /// Registered domain pack id.
+    #[arg(long)]
+    pub domain: String,
+
+    /// Registered domain pack version.
+    #[arg(long = "domain-version", default_value = "1.0.0")]
+    pub domain_version: String,
+
+    /// Output directory. The command writes table_mc_ratio.csv and plot evidence under this root.
+    #[arg(long = "output-dir")]
+    pub output_dir: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
 pub struct GetPredictionArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
@@ -1290,6 +1316,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::GetConstellation(args) => get_constellation_command(args),
         DynamicJepaCommands::CalibrateThreshold(args) => calibrate_threshold_command(args, false),
         DynamicJepaCommands::RecalibrateThreshold(args) => recalibrate_threshold_command(args),
+        DynamicJepaCommands::ComputeMcRatio(args) => compute_mc_ratio_command(args),
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
@@ -2079,8 +2106,8 @@ fn bind_command(args: BindArgs) -> DynamicJepaResult<CommandOutcome> {
             version: 1,
         };
         record.refresh_content_hash()?;
-        let audit = build_audit(
-            "create_binding",
+        let mut audit = build_audit(
+            "bind",
             AuditStatus::Ok,
             vec![
                 format!(
@@ -2101,6 +2128,10 @@ fn bind_command(args: BindArgs) -> DynamicJepaResult<CommandOutcome> {
                 CF_DJ_AUDIT_LOG.to_string(),
             ],
             vec![record.header.content_hash],
+        )?;
+        set_audit_signal_yield(
+            &mut audit,
+            signal_yield_for_operation("bind", signal_yield_dimensions_for_domain_pack_counts(0, 0, 0))?,
         )?;
         put_binding_with_audit_batch(db, &record, &audit)?;
 
@@ -2315,7 +2346,7 @@ fn compile_trajectories_command(
             let record =
                 build_trajectory_record(&domain_pack, &args.policy, &group_key, group, run_id)?;
             let audit = build_audit(
-                "compile_trajectory",
+                "compile_trajectories",
                 AuditStatus::Ok,
                 record
                     .ordered_transition_ids
@@ -2603,7 +2634,7 @@ fn compile_dataset_command(args: CompileDatasetArgs) -> DynamicJepaResult<Comman
         verify_dataset_shard_sources(db, &compiled)?;
 
         let audit = build_audit(
-            "compile_dataset_shard",
+            "compile_dataset",
             AuditStatus::Ok,
             compiled
                 .source_trajectory_ids
@@ -3820,6 +3851,440 @@ fn recalibrate_threshold_command(
     }
 }
 
+fn compute_mc_ratio_command(args: ComputeMcRatioArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_AUDIT_LOG,
+        CF_DJ_PLAN_TRACES,
+    ];
+    let store = open_existing_store(&args.db, "dynamicjepa_compute_mc_ratio")?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "compute-mc-ratio.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+    let output_root = args.output_dir;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let report = compute_mc_ratio_report(db, &domain)?;
+        write_mc_ratio_outputs(&output_root, &[report.clone()])?;
+
+        let table_path = output_root.join("paper_tables/table_mc_ratio.csv");
+        let breakdown_path = output_root.join("mc_ratio_per_stage.json");
+        let plot_path = output_root.join("plots/signal_density_per_event_distribution.svg");
+        let table_readback = read_ci_csv_table(&table_path, "table_mc_ratio")?;
+        let breakdown_readback = read_json_file(&breakdown_path)?;
+        let plot_state = ci_path_state(&plot_path)?;
+        Ok(json!({
+            "created_files": {
+                "table_mc_ratio": table_path,
+                "mc_ratio_per_stage": breakdown_path,
+                "signal_density_plot": plot_path,
+            },
+            "summary": report.row,
+            "decoded_records": {
+                "audit_breakdown": report.breakdown,
+                "table_mc_ratio_rows": table_readback.rows,
+                "mc_ratio_per_stage": breakdown_readback,
+                "signal_density_plot": plot_state,
+                "audit_log_sample": inspect_cf(db, CF_DJ_AUDIT_LOG, 200, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_compute_mc_ratio",
+                "status": "ok",
+                "db_path": db_path,
+                "output_root": output_root,
+                "source_of_truth": {
+                    "rocksdb": source_cfs,
+                    "files": [
+                        "paper_tables/table_mc_ratio.csv",
+                        "mc_ratio_per_stage.json",
+                        "plots/signal_density_per_event_distribution.svg"
+                    ]
+                },
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_files": value["created_files"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_compute_mc_ratio",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct McRatioReport {
+    row: McRatioRow,
+    breakdown: McRatioBreakdown,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct McRatioRow {
+    domain: String,
+    n_panel_slots: u32,
+    s1_per_event_constructive: u64,
+    s2_per_plan_constructive: u64,
+    s3_per_bundle: u64,
+    n_events: u64,
+    total_signals: u64,
+    mc_ratio_constructive: f64,
+    mc_ratio_measured: f64,
+    n_eff_loose: String,
+    n_eff_strict: String,
+    verdict: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct McRatioBreakdown {
+    domain: String,
+    dimensions: SignalYieldDimensionsJson,
+    audit_row_count: u64,
+    total_signals: u64,
+    stage_rows: Vec<McRatioStageRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SignalYieldDimensionsJson {
+    n_panel_slots: u32,
+    n_active_modalities: u32,
+    k_candidates: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct McRatioStageRow {
+    operation: String,
+    audit_rows: u64,
+    ok_rows: u64,
+    failed_rows: u64,
+    expected_signal_yield_per_ok_row: u32,
+    total_signal_yield: u64,
+}
+
+#[derive(Debug, Default)]
+struct McRatioStageAccumulator {
+    audit_rows: u64,
+    ok_rows: u64,
+    failed_rows: u64,
+    expected_signal_yield_per_ok_row: u32,
+    total_signal_yield: u64,
+}
+
+fn compute_mc_ratio_report(db: &rocksdb::DB, domain: &DomainPack) -> DynamicJepaResult<McRatioReport> {
+    let n_events = list_normalized_states(db, 1_000_000, 0)?
+        .into_iter()
+        .filter(|state| state.header.domain_pack_id == domain.id)
+        .count() as u64;
+    if n_events == 0 {
+        return Err(DynamicJepaError::SignalYieldEventCountMismatch {
+            domain_id: domain.id.to_string(),
+            n_events,
+            remediation: "run ingest-event successfully before computing MC ratio".to_string(),
+        });
+    }
+
+    let k_candidates = candidate_action_count(domain)?;
+    let dimensions = signal_yield_dimensions_for_domain_pack(domain, k_candidates)?;
+    let audits = list_all_audit_records(db)?;
+    let mut stages: BTreeMap<String, McRatioStageAccumulator> = BTreeMap::new();
+    for audit in &audits {
+        let expected_per_ok_row = signal_yield_for_operation(&audit.operation, dimensions)?;
+        let expected = match &audit.status {
+            AuditStatus::Ok => expected_per_ok_row,
+            AuditStatus::Failed { .. } => 0,
+        };
+        if audit.signal_yield != expected {
+            return Err(DynamicJepaError::SignalYieldTableDrift {
+                audit_id: audit.audit_id,
+                operation: audit.operation.clone(),
+                expected,
+                actual: audit.signal_yield,
+            });
+        }
+        let entry = stages.entry(audit.operation.clone()).or_default();
+        entry.audit_rows += 1;
+        match &audit.status {
+            AuditStatus::Ok => entry.ok_rows += 1,
+            AuditStatus::Failed { .. } => entry.failed_rows += 1,
+        }
+        entry.expected_signal_yield_per_ok_row = expected_per_ok_row;
+        entry.total_signal_yield += u64::from(audit.signal_yield);
+    }
+
+    let stage_rows = stages
+        .into_iter()
+        .map(|(operation, item)| McRatioStageRow {
+            operation,
+            audit_rows: item.audit_rows,
+            ok_rows: item.ok_rows,
+            failed_rows: item.failed_rows,
+            expected_signal_yield_per_ok_row: item.expected_signal_yield_per_ok_row,
+            total_signal_yield: item.total_signal_yield,
+        })
+        .collect::<Vec<_>>();
+    let total_signals = stage_rows
+        .iter()
+        .map(|row| row.total_signal_yield)
+        .sum::<u64>();
+    let s3_per_bundle = stage_rows
+        .iter()
+        .filter(|row| row.expected_signal_yield_per_ok_row == 0)
+        .map(|row| row.audit_rows)
+        .sum::<u64>();
+    let n = u64::from(dimensions.n_panel_slots);
+    let s1_per_event_constructive = n
+        .checked_mul(n)
+        .and_then(|value| value.checked_add(n))
+        .and_then(|value| value.checked_add(4))
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compute_mc_ratio.s1_constructive",
+                "constructive S1 formula overflowed u64",
+                "reduce the domain pack panel slot count",
+            )
+        })?;
+    let s2_per_plan_constructive = u64::from(k_candidates)
+        .checked_mul(u64::from(
+            dimensions
+                .n_panel_slots
+                .checked_add(dimensions.n_active_modalities)
+                .and_then(|value| value.checked_add(1))
+                .ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "compute_mc_ratio.s2_constructive",
+                        "constructive S2 formula overflowed u32",
+                        "reduce panel/action dimensions before computing MC ratio",
+                    )
+                })?,
+        ))
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compute_mc_ratio.s2_constructive",
+                "constructive S2 formula overflowed u64",
+                "reduce candidate action count before computing MC ratio",
+            )
+        })?;
+    let plan_rows = stage_rows
+        .iter()
+        .find(|row| row.operation == "plan")
+        .map(|row| row.ok_rows)
+        .unwrap_or(0);
+    let constructive_total = n_events
+        .checked_mul(s1_per_event_constructive)
+        .and_then(|value| value.checked_add(plan_rows.saturating_mul(s2_per_plan_constructive)))
+        .and_then(|value| value.checked_add(s3_per_bundle))
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compute_mc_ratio.constructive_total",
+                "constructive total signal formula overflowed u64",
+                "reduce bundle size before computing MC ratio",
+            )
+        })?;
+    let row = McRatioRow {
+        domain: domain.id.to_string(),
+        n_panel_slots: dimensions.n_panel_slots,
+        s1_per_event_constructive,
+        s2_per_plan_constructive,
+        s3_per_bundle,
+        n_events,
+        total_signals,
+        mc_ratio_constructive: constructive_total as f64 / n_events as f64,
+        mc_ratio_measured: total_signals as f64 / n_events as f64,
+        n_eff_loose: "nan".to_string(),
+        n_eff_strict: "nan".to_string(),
+        verdict: "PENDING_AUDIT".to_string(),
+    };
+    let breakdown = McRatioBreakdown {
+        domain: domain.id.to_string(),
+        dimensions: SignalYieldDimensionsJson {
+            n_panel_slots: dimensions.n_panel_slots,
+            n_active_modalities: dimensions.n_active_modalities,
+            k_candidates: dimensions.k_candidates,
+        },
+        audit_row_count: audits.len() as u64,
+        total_signals,
+        stage_rows,
+    };
+    Ok(McRatioReport { row, breakdown })
+}
+
+fn list_all_audit_records(db: &rocksdb::DB) -> DynamicJepaResult<Vec<DjAuditRecord>> {
+    let mut rows = Vec::new();
+    let mut offset = 0usize;
+    let page = 10_000usize;
+    loop {
+        let mut next = list_audit_records(db, page, offset)?;
+        let len = next.len();
+        rows.append(&mut next);
+        if len < page {
+            break;
+        }
+        offset = offset.checked_add(page).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "compute_mc_ratio.audit_offset",
+                "audit pagination offset overflowed",
+                "split the bundle before aggregating MC ratio",
+            )
+        })?;
+    }
+    Ok(rows)
+}
+
+fn candidate_action_count(domain: &DomainPack) -> DynamicJepaResult<u32> {
+    let count = match &domain.planner_policy.candidate_actions {
+        CandidateActionConfig::EnumeratedDeltas { deltas } => deltas.len(),
+        CandidateActionConfig::EnumeratedMoves { moves } => moves.len(),
+    };
+    u32::try_from(count).map_err(|_| {
+        DynamicJepaError::validation(
+            "DomainPack.planner_policy.candidate_actions",
+            "candidate action count exceeds u32 signal-yield capacity",
+            "reduce candidate actions before MC-ratio aggregation",
+        )
+    })
+}
+
+fn write_mc_ratio_outputs(output_root: &Path, reports: &[McRatioReport]) -> DynamicJepaResult<()> {
+    if reports.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "compute_mc_ratio.reports",
+            "cannot write MC-ratio outputs with zero domain reports",
+            "compute at least one domain MC-ratio report before writing paper tables",
+        ));
+    }
+    let paper_tables = output_root.join("paper_tables");
+    let plots = output_root.join("plots");
+    fs::create_dir_all(&paper_tables).map_err(|err| DynamicJepaError::Storage {
+        operation: "compute_mc_ratio.create_paper_tables".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", paper_tables.display()),
+        remediation: "use a writable --output-dir".to_string(),
+    })?;
+    fs::create_dir_all(&plots).map_err(|err| DynamicJepaError::Storage {
+        operation: "compute_mc_ratio.create_plots".to_string(),
+        cf: "filesystem".to_string(),
+        message: format!("failed to create {}: {err}", plots.display()),
+        remediation: "use a writable --output-dir".to_string(),
+    })?;
+    write_text_file(
+        &paper_tables.join("table_mc_ratio.csv"),
+        &mc_ratio_csv(reports),
+    )?;
+    write_json_file(
+        &output_root.join("mc_ratio_per_stage.json"),
+        &json!({
+            "schema_version": 1,
+            "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
+            "source_of_truth": "dj_audit_log.signal_yield",
+            "reports": reports.iter().map(|report| &report.breakdown).collect::<Vec<_>>(),
+        }),
+    )?;
+    write_signal_density_svg(
+        &plots.join("signal_density_per_event_distribution.svg"),
+        reports,
+    )?;
+    Ok(())
+}
+
+fn mc_ratio_csv(reports: &[McRatioReport]) -> String {
+    let mut csv = "domain,n_panel_slots,s1_per_event_constructive,s2_per_plan_constructive,s3_per_bundle,n_events,total_signals,mc_ratio_constructive,mc_ratio_measured,n_eff_loose,n_eff_strict,verdict\n".to_string();
+    for report in reports {
+        let row = &report.row;
+        csv.push_str(&format!(
+            "{},{},{},{},{},{},{},{:.12},{:.12},{},{},{}\n",
+            csv_escape(&row.domain),
+            row.n_panel_slots,
+            row.s1_per_event_constructive,
+            row.s2_per_plan_constructive,
+            row.s3_per_bundle,
+            row.n_events,
+            row.total_signals,
+            row.mc_ratio_constructive,
+            row.mc_ratio_measured,
+            row.n_eff_loose,
+            row.n_eff_strict,
+            csv_escape(&row.verdict),
+        ));
+    }
+    csv
+}
+
+fn write_signal_density_svg(path: &Path, reports: &[McRatioReport]) -> DynamicJepaResult<()> {
+    let mut bars = String::new();
+    let width = 920.0f64;
+    let left = 250.0f64;
+    let top = 48.0f64;
+    let row_height = 28.0f64;
+    let max_density = reports
+        .iter()
+        .flat_map(|report| {
+            report.breakdown.stage_rows.iter().map(move |stage| {
+                stage.total_signal_yield as f64 / report.row.n_events.max(1) as f64
+            })
+        })
+        .fold(0.0f64, f64::max)
+        .max(1.0);
+    let mut y = top;
+    for report in reports {
+        bars.push_str(&format!(
+            r##"<text x="24" y="{:.0}" font-size="13" font-family="Arial, sans-serif" fill="#111827" font-weight="700">{}</text>"##,
+            y,
+            xml_escape(&report.row.domain)
+        ));
+        y += 22.0;
+        for stage in &report.breakdown.stage_rows {
+            let density = stage.total_signal_yield as f64 / report.row.n_events as f64;
+            let bar_width = (density / max_density) * (width - left - 48.0);
+            bars.push_str(&format!(
+                r##"<text x="36" y="{:.0}" font-size="11" font-family="Arial, sans-serif" fill="#374151">{}</text><rect x="{left:.0}" y="{:.0}" width="{:.1}" height="16" fill="#2563eb"/><text x="{:.1}" y="{:.0}" font-size="11" font-family="Arial, sans-serif" fill="#111827">{:.3}</text>"##,
+                y + 13.0,
+                xml_escape(&stage.operation),
+                y,
+                bar_width,
+                left + bar_width + 8.0,
+                y + 13.0,
+                density
+            ));
+            y += row_height;
+        }
+        y += 10.0;
+    }
+    let height = y + 24.0;
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0}" height="{height:.0}" viewBox="0 0 {width:.0} {height:.0}">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="24" y="26" font-size="18" font-family="Arial, sans-serif" fill="#111827" font-weight="700">Signal yield per event by audit operation</text>
+{bars}
+</svg>
+"##
+    );
+    write_text_file(path, &svg)
+}
+
 fn get_prediction_command(args: GetPredictionArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
     let store = open_store(&args.db)?;
@@ -4953,14 +5418,17 @@ const MULTISEED_CHILD_REQUIRED_FILES: &[&str] = &[
     "artifact_hashes.json",
     "paper_tables/table_prediction_metrics.csv",
     "paper_tables/table_ablation.csv",
+    "paper_tables/table_mc_ratio.csv",
     "plots/plot_manifest.json",
     "plots/prediction_val_mse.svg",
     "plots/career_ablation_val_mse.svg",
+    "plots/signal_density_per_event_distribution.svg",
 ];
 const MULTISEED_OUTPUT_REQUIRED_FILES: &[&str] = &[
     "aggregate_manifest.json",
     "paper_tables/table_prediction_metrics_multiseed.csv",
     "paper_tables/table_ablation_multiseed.csv",
+    "paper_tables/table_mc_ratio_multiseed.csv",
     "paper_tables/table_paired_ablation_tests.csv",
     "paper_tables/table_seed_failures.csv",
     "plots/multiseed_val_mse_box.svg",
@@ -4995,6 +5463,7 @@ const MULTISEED_ABLATION_AGGREGATE_METRICS: &[&str] = &[
     "random_init_cosine",
     "shuffled_target_cosine",
 ];
+const MULTISEED_MC_RATIO_METRICS: &[&str] = &["total_signals", "mc_ratio_measured"];
 const MULTISEED_PAIRED_METRICS: &[&str] = &[
     "val_latent_mse",
     "val_latent_cosine",
@@ -5021,6 +5490,7 @@ struct MultiseedBundle {
     failure_message: Option<String>,
     prediction_table: Option<CiCsvTable>,
     ablation_table: Option<CiCsvTable>,
+    mc_ratio_table: Option<CiCsvTable>,
 }
 
 impl MultiseedBundle {
@@ -5140,6 +5610,15 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
         args.bootstrap_seed ^ 0xA61A_7100_0000_0001,
         args.confidence,
     )?;
+    let mc_ratio = aggregate_multiseed_table(
+        "table_mc_ratio",
+        "domain",
+        MULTISEED_MC_RATIO_METRICS,
+        &passed,
+        args.bootstrap_iters,
+        args.bootstrap_seed ^ 0x4D43_5241_5449_4F31,
+        args.confidence,
+    )?;
     let paired_tests = aggregate_multiseed_paired_tests(
         &passed,
         &ablation.key_order,
@@ -5182,6 +5661,12 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
             .output_root
             .join("paper_tables/table_ablation_multiseed.csv"),
         &ablation.csv,
+    )?;
+    write_text_file(
+        &args
+            .output_root
+            .join("paper_tables/table_mc_ratio_multiseed.csv"),
+        &mc_ratio.csv,
     )?;
     write_text_file(
         &args
@@ -5244,6 +5729,11 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
                 "source_headers": ablation.headers,
                 "keys": ablation.key_order,
             },
+            "table_mc_ratio_multiseed": {
+                "row_count": mc_ratio.row_count,
+                "source_headers": mc_ratio.headers,
+                "keys": mc_ratio.key_order,
+            },
             "table_paired_ablation_tests": {
                 "row_count": paired_tests.len(),
                 "baseline_ablation_id": MULTISEED_BASELINE_ABLATION_ID,
@@ -5275,6 +5765,7 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
         "readback_checks": {
             "prediction_multiseed_rows": prediction.row_count,
             "ablation_multiseed_rows": ablation.row_count,
+            "mc_ratio_multiseed_rows": mc_ratio.row_count,
             "paired_ablation_test_rows": paired_tests.len(),
             "seed_failure_rows": bundles.iter().filter(|bundle| !bundle.passed()).count(),
         },
@@ -5304,6 +5795,12 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
             .join("paper_tables/table_paired_ablation_tests.csv"),
         "table_paired_ablation_tests",
     )?;
+    let mc_ratio_readback = read_ci_csv_table(
+        &args
+            .output_root
+            .join("paper_tables/table_mc_ratio_multiseed.csv"),
+        "table_mc_ratio_multiseed",
+    )?;
     let seed_failures_readback = read_ci_csv_table_allow_empty(
         &args
             .output_root
@@ -5316,6 +5813,7 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
         "aggregate_fsv_report": ci_path_state(&args.output_root.join("aggregate_fsv_report.json"))?,
         "prediction_multiseed_table": ci_path_state(&args.output_root.join("paper_tables/table_prediction_metrics_multiseed.csv"))?,
         "ablation_multiseed_table": ci_path_state(&args.output_root.join("paper_tables/table_ablation_multiseed.csv"))?,
+        "mc_ratio_multiseed_table": ci_path_state(&args.output_root.join("paper_tables/table_mc_ratio_multiseed.csv"))?,
         "paired_ablation_tests_table": ci_path_state(&args.output_root.join("paper_tables/table_paired_ablation_tests.csv"))?,
         "seed_failures_table": ci_path_state(&args.output_root.join("paper_tables/table_seed_failures.csv"))?,
         "plots": [
@@ -5340,6 +5838,7 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
             "readback_row_counts": {
                 "table_prediction_metrics_multiseed": prediction_readback.rows.len(),
                 "table_ablation_multiseed": ablation_readback.rows.len(),
+                "table_mc_ratio_multiseed": mc_ratio_readback.rows.len(),
                 "table_paired_ablation_tests": paired_readback.rows.len(),
                 "table_seed_failures": seed_failures_readback.rows.len(),
             },
@@ -5575,7 +6074,7 @@ fn read_multiseed_bundle(
         ));
     }
 
-    let (prediction_table, ablation_table) = if passed {
+    let (prediction_table, ablation_table, mc_ratio_table) = if passed {
         validate_multiseed_child_required_files(&canonical_path)?;
         (
             Some(read_ci_csv_table(
@@ -5586,9 +6085,13 @@ fn read_multiseed_bundle(
                 &canonical_path.join("paper_tables/table_ablation.csv"),
                 "table_ablation",
             )?),
+            Some(read_ci_csv_table(
+                &canonical_path.join("paper_tables/table_mc_ratio.csv"),
+                "table_mc_ratio",
+            )?),
         )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     Ok(MultiseedBundle {
@@ -5605,6 +6108,7 @@ fn read_multiseed_bundle(
         failure_message,
         prediction_table,
         ablation_table,
+        mc_ratio_table,
     })
 }
 
@@ -5861,6 +6365,7 @@ fn multiseed_table_for_bundle<'a>(
     match table_name {
         "table_prediction_metrics" => bundle.prediction_table.as_ref(),
         "table_ablation" => bundle.ablation_table.as_ref(),
+        "table_mc_ratio" => bundle.mc_ratio_table.as_ref(),
         _ => None,
     }
     .ok_or_else(|| {
@@ -12306,7 +12811,35 @@ fn write_paper_tables(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
         &ctx.paper_tables_dir.join("table_data_sources.csv"),
         &sources,
     )?;
+    let mc_reports = compute_research_mc_ratio_reports(ctx)?;
+    write_mc_ratio_outputs(&ctx.run_dir, &mc_reports)?;
     Ok(())
+}
+
+fn compute_research_mc_ratio_reports(
+    ctx: &ResearchSmokeContext,
+) -> DynamicJepaResult<Vec<McRatioReport>> {
+    let mut reports = Vec::new();
+    for row in &ctx.training_rows {
+        let domain_raw = row["domain"].as_str().ok_or_else(|| {
+            DynamicJepaError::validation(
+                "research_smoke.mc_ratio.domain",
+                "training row missing domain",
+                "collect domain evidence before writing MC-ratio tables",
+            )
+        })?;
+        let db_path = path_value(&row["db_path"], "training_rows.db_path")?;
+        let store = open_existing_store(&db_path, "research_smoke_compute_mc_ratio")?;
+        let db = store.dynamicjepa_db();
+        let domain_id = DomainPackId::new(domain_raw.to_string())?;
+        let domain = get_domain_pack(db, &domain_id, "1.0.0")?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        reports.push(compute_mc_ratio_report(db, &domain)?);
+    }
+    Ok(reports)
 }
 
 fn write_collapse_diagnostics_table(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
@@ -12464,6 +12997,9 @@ fn value_to_f64_cell(raw: &Value, field: &str) -> DynamicJepaResult<String> {
 fn write_plot_manifest(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
     let prediction_plot = ctx.plots_dir.join("prediction_val_mse.svg");
     let ablation_plot = ctx.plots_dir.join("career_ablation_val_mse.svg");
+    let signal_density_plot = ctx
+        .plots_dir
+        .join("signal_density_per_event_distribution.svg");
     write_metric_bar_svg(
         &prediction_plot,
         "Validation latent MSE by domain",
@@ -12504,6 +13040,11 @@ fn write_plot_manifest(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
                     "id": "career_ablation_val_mse",
                     "source_table": ctx.paper_tables_dir.join("table_ablation.csv"),
                     "output": ablation_plot
+                },
+                {
+                    "id": "signal_density_per_event_distribution",
+                    "source_table": ctx.paper_tables_dir.join("table_mc_ratio.csv"),
+                    "output": signal_density_plot
                 }
             ]
         }),
@@ -12765,6 +13306,14 @@ impl VerificationDomain {
             Self::CounterWorld => "dynamicjepa_verify_counter_world",
             Self::Gridworld => "dynamicjepa_verify_gridworld",
             Self::CareerTaxonomy => "dynamicjepa_verify_career_taxonomy",
+        }
+    }
+
+    fn audit_operation(self) -> &'static str {
+        match self {
+            Self::CounterWorld => "verify_counter_world",
+            Self::Gridworld => "verify_gridworld",
+            Self::CareerTaxonomy => "verify_career_taxonomy",
         }
     }
 
@@ -13167,7 +13716,7 @@ impl VerificationContext {
             },
         };
         let audit = build_audit(
-            self.domain.operation(),
+            self.domain.audit_operation(),
             audit_status,
             self.commands.clone(),
             vec![self.verification_run_id.to_string()],
@@ -13724,6 +14273,12 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
     } else {
         0
     };
+
+    let fsv12_signal_yield = verify_signal_yield_for_domain(ctx, &parsed_domain_pack)?;
+    ctx.decoded.insert(
+        "fsv12_signal_yield_audit".to_string(),
+        fsv12_signal_yield,
+    );
 
     let pre_verification_counts = run_ok_step(
         "pre_verification_counts",
@@ -15732,7 +16287,7 @@ fn ingest_jsonl_fixture(
             message: "empty input file".to_string(),
             field_path: String::new(),
         };
-        let audit = build_audit(
+        let mut audit = build_audit(
             "ingest_event",
             AuditStatus::Failed {
                 error_code: err.code().to_string(),
@@ -15742,6 +16297,7 @@ fn ingest_jsonl_fixture(
             vec![CF_DJ_AUDIT_LOG.to_string()],
             Vec::new(),
         )?;
+        set_audit_signal_yield(&mut audit, 0)?;
         put_audit_record(db, &audit)?;
         return Err(err);
     }
@@ -15838,8 +16394,8 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
         output_transition_id: None,
     };
     started_run.refresh_content_hash()?;
-    let ingest_audit = build_audit(
-        "ingest_raw_event",
+    let mut ingest_audit = build_audit(
+        "ingest_event",
         AuditStatus::Ok,
         vec![source_uri.to_string(), source_offset.to_string()],
         vec![event_id.to_string(), adapter_run_id.to_string()],
@@ -15852,6 +16408,13 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
             raw_event.header.content_hash,
             started_run.header.content_hash,
         ],
+    )?;
+    set_audit_signal_yield(
+        &mut ingest_audit,
+        signal_yield_for_operation(
+            "ingest_event",
+            signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+        )?,
     )?;
     put_raw_event_and_adapter_run_started(db, &raw_event, &started_run, &ingest_audit)?;
     created.raw_event_ids.push(event_id.to_string());
@@ -15934,8 +16497,8 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
             completed_run.output_outcome_id = Some(outcome_id);
             completed_run.output_transition_id = Some(transition_id);
             completed_run.refresh_content_hash()?;
-            let audit = build_audit(
-                "complete_adapter_run",
+            let mut audit = build_audit(
+                "run_adapter_success",
                 AuditStatus::Ok,
                 vec![event_id.to_string(), adapter_run_id.to_string()],
                 vec![
@@ -15960,14 +16523,41 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
                     transition.header.content_hash,
                 ],
             )?;
-            put_adapter_run_success_batch(
+            set_audit_signal_yield(
+                &mut audit,
+                signal_yield_for_operation(
+                    "run_adapter_success",
+                    signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+                )?,
+            )?;
+            let mut transition_audit = build_audit(
+                "compile_transition",
+                AuditStatus::Ok,
+                vec![
+                    event_id.to_string(),
+                    state_id.to_string(),
+                    action_id.to_string(),
+                    outcome_id.to_string(),
+                ],
+                vec![transition_id.to_string()],
+                vec![CF_DJ_TRANSITIONS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+                vec![transition.header.content_hash],
+            )?;
+            set_audit_signal_yield(
+                &mut transition_audit,
+                signal_yield_for_operation(
+                    "compile_transition",
+                    signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+                )?,
+            )?;
+            put_adapter_run_success_with_audits_batch(
                 db,
                 &completed_run,
                 &state,
                 &action,
                 &outcome,
                 &transition,
-                &audit,
+                &[audit, transition_audit],
             )?;
             created.state_ids.push(state_id.to_string());
             created.action_ids.push(action_id.to_string());
@@ -15987,8 +16577,8 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
             failed_run.expected_kind = Some(line_err.expected_kind.clone());
             failed_run.actual_kind = Some(line_err.actual_kind.clone());
             failed_run.refresh_content_hash()?;
-            let audit = build_audit(
-                "complete_adapter_run",
+            let mut audit = build_audit(
+                "run_adapter_failure",
                 AuditStatus::Failed {
                     error_code: "ADAPTER_FAILED".to_string(),
                 },
@@ -15997,6 +16587,7 @@ fn process_fixture_line(request: FixtureLineRequest<'_>) -> DynamicJepaResult<()
                 vec![CF_DJ_ADAPTER_RUNS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
                 vec![failed_run.header.content_hash],
             )?;
+            set_audit_signal_yield(&mut audit, 0)?;
             put_adapter_run_failure_batch(db, &failed_run, &audit)?;
             created
                 .failed_adapter_run_ids
@@ -16169,8 +16760,8 @@ fn process_existing_raw_event(
             completed_run.output_outcome_id = Some(outcome_id);
             completed_run.output_transition_id = Some(transition_id);
             completed_run.refresh_content_hash()?;
-            let audit = build_audit(
-                "complete_adapter_run",
+            let mut audit = build_audit(
+                "run_adapter_success",
                 AuditStatus::Ok,
                 vec![raw_event.event_id.to_string()],
                 vec![
@@ -16195,14 +16786,41 @@ fn process_existing_raw_event(
                     transition.header.content_hash,
                 ],
             )?;
-            put_adapter_run_success_batch(
+            set_audit_signal_yield(
+                &mut audit,
+                signal_yield_for_operation(
+                    "run_adapter_success",
+                    signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+                )?,
+            )?;
+            let mut transition_audit = build_audit(
+                "compile_transition",
+                AuditStatus::Ok,
+                vec![
+                    raw_event.event_id.to_string(),
+                    state_id.to_string(),
+                    action_id.to_string(),
+                    outcome_id.to_string(),
+                ],
+                vec![transition_id.to_string()],
+                vec![CF_DJ_TRANSITIONS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+                vec![transition.header.content_hash],
+            )?;
+            set_audit_signal_yield(
+                &mut transition_audit,
+                signal_yield_for_operation(
+                    "compile_transition",
+                    signal_yield_dimensions_for_domain_pack_counts(0, 0, 0),
+                )?,
+            )?;
+            put_adapter_run_success_with_audits_batch(
                 db,
                 &completed_run,
                 &state,
                 &action,
                 &outcome,
                 &transition,
-                &audit,
+                &[audit, transition_audit],
             )?;
             created.state_ids.push(state_id.to_string());
             created.action_ids.push(action_id.to_string());
@@ -16222,8 +16840,8 @@ fn process_existing_raw_event(
             failed_run.expected_kind = Some(line_err.expected_kind.clone());
             failed_run.actual_kind = Some(line_err.actual_kind.clone());
             failed_run.refresh_content_hash()?;
-            let audit = build_audit(
-                "complete_adapter_run",
+            let mut audit = build_audit(
+                "run_adapter_failure",
                 AuditStatus::Failed {
                     error_code: "ADAPTER_FAILED".to_string(),
                 },
@@ -16232,6 +16850,7 @@ fn process_existing_raw_event(
                 vec![CF_DJ_ADAPTER_RUNS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
                 vec![failed_run.header.content_hash],
             )?;
+            set_audit_signal_yield(&mut audit, 0)?;
             put_adapter_run_failure_batch(db, &failed_run, &audit)?;
             created
                 .failed_adapter_run_ids
@@ -17195,6 +17814,56 @@ fn reject_unsupported_emitted_pair_kinds(
     Ok(())
 }
 
+fn verify_signal_yield_for_domain(
+    ctx: &VerificationContext,
+    domain_pack: &DomainPack,
+) -> DynamicJepaResult<Value> {
+    let started_at_unix_ms = now_unix_ms()?;
+    let store = open_existing_store(&ctx.db, "verify_signal_yield_audit")?;
+    let db = store.dynamicjepa_db();
+    let pre_state = snapshot_dj_counts(db)?;
+    let report = compute_mc_ratio_report(db, domain_pack)?;
+    let post_state = snapshot_dj_counts(db)?;
+    let ended_at_unix_ms = now_unix_ms()?;
+    let evidence = json!({
+        "fsv_id": "FSV-12",
+        "fsv_check": "signal_yield_audit",
+        "schema_version": 1,
+        "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
+        "started_at_unix_ms": started_at_unix_ms,
+        "ended_at_unix_ms": ended_at_unix_ms,
+        "domain": domain_pack.id.to_string(),
+        "source_of_truth": [CF_DJ_AUDIT_LOG, CF_DJ_NORMALIZED_STATES],
+        "pre_state": pre_state,
+        "post_state": post_state,
+        "checks": [
+            {
+                "name": "operation_lookup_known",
+                "passed": report.breakdown.stage_rows.len(),
+                "failed": 0
+            },
+            {
+                "name": "signal_yield_matches_lookup",
+                "passed": report.breakdown.audit_row_count,
+                "failed": 0
+            },
+            {
+                "name": "mc_ratio_computed_from_audit_log",
+                "passed": 1,
+                "failed": 0
+            }
+        ],
+        "row": report.row,
+        "breakdown": report.breakdown,
+        "status": "passed",
+    });
+    write_json_file(
+        &ctx.evidence_dir.join("fsv12_signal_yield_audit.json"),
+        &evidence,
+    )?;
+    Ok(evidence)
+}
+
 fn both_declare_pair_kind(
     left: &InstrumentSpec,
     right: &InstrumentSpec,
@@ -17857,6 +18526,71 @@ fn build_audit(
 fn set_audit_signal_yield(audit: &mut DjAuditRecord, signal_yield: u32) -> DynamicJepaResult<()> {
     audit.signal_yield = signal_yield;
     audit.validate()
+}
+
+fn signal_yield_dimensions_for_domain_pack(
+    domain: &DomainPack,
+    k_candidates: u32,
+) -> DynamicJepaResult<SignalYieldDimensions> {
+    Ok(SignalYieldDimensions {
+        n_panel_slots: u32::try_from(domain.instrument_specs.len()).map_err(|_| {
+            DynamicJepaError::validation(
+                "SignalYieldDimensions.n_panel_slots",
+                "domain instrument count exceeds u32 signal-yield capacity",
+                "reduce the domain pack instrument count before audit aggregation",
+            )
+        })?,
+        n_active_modalities: active_constellation_modalities(domain)?,
+        k_candidates,
+    })
+}
+
+fn signal_yield_dimensions_for_domain_pack_counts(
+    n_panel_slots: u32,
+    n_active_modalities: u32,
+    k_candidates: u32,
+) -> SignalYieldDimensions {
+    SignalYieldDimensions {
+        n_panel_slots,
+        n_active_modalities,
+        k_candidates,
+    }
+}
+
+fn active_constellation_modalities(domain: &DomainPack) -> DynamicJepaResult<u32> {
+    let Some(config) = &domain.constellation else {
+        return Ok(0);
+    };
+    let mut max_modalities = 0usize;
+    if let Some(global) = &config.global {
+        max_modalities = max_modalities.max(constellation_modality_count(
+            domain,
+            &global.modalities,
+        ));
+    }
+    for subject in &config.subjects {
+        max_modalities = max_modalities.max(constellation_modality_count(
+            domain,
+            &subject.modalities,
+        ));
+    }
+    u32::try_from(max_modalities).map_err(|_| {
+        DynamicJepaError::validation(
+            "SignalYieldDimensions.n_active_modalities",
+            "active constellation modality count exceeds u32 signal-yield capacity",
+            "reduce the domain pack constellation modality count",
+        )
+    })
+}
+
+fn constellation_modality_count(
+    domain: &DomainPack,
+    modalities: &ConstellationModalities,
+) -> usize {
+    match modalities {
+        ConstellationModalities::All => domain.instrument_specs.len(),
+        ConstellationModalities::List(ids) => ids.len(),
+    }
 }
 
 #[derive(Debug, Clone)]
