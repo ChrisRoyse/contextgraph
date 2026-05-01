@@ -35,6 +35,7 @@ async fn test_full_storage_pipeline_real_data() {
         max_open_files: 500,
         enable_wal: true,
         create_if_missing: true,
+        create_missing_column_families: true,
         gc_retention_secs: 7 * 24 * 3600,
     };
     let store = RocksDbTeleologicalStore::open_with_config(temp_dir.path(), config)

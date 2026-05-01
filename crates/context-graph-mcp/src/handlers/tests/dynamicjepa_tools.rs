@@ -237,6 +237,7 @@ fn seed_started_adapter_run(db_path: &Path) -> String {
         ],
         status: AuditStatus::Ok,
         verification_run_id: None,
+        signal_yield: 0,
     };
     put_raw_event_and_adapter_run_started(db, &raw_event, &adapter_run, &audit)
         .expect("persist seeded started adapter run");

@@ -52,8 +52,8 @@ use super::types::{TeleologicalStoreConfig, TeleologicalStoreError, Teleological
 /// RocksDB-backed storage for TeleologicalFingerprints.
 ///
 /// Implements the `TeleologicalMemoryStore` trait with persistent storage
-/// across 98 column families (11 base + 41 teleological + 14 quantized
-/// + 5 code + 2 causal + 25 DynamicJEPA).
+/// across 101 column families (11 base + 41 teleological + 14 quantized
+/// + 5 code + 2 causal + 28 DynamicJEPA).
 ///
 /// # Thread Safety
 ///
@@ -134,7 +134,7 @@ pub struct RocksDbTeleologicalStore {
 impl RocksDbTeleologicalStore {
     /// Open a teleological store at the specified path with default configuration.
     ///
-    /// Creates the database and all 98 column families if they don't exist.
+    /// Creates the database and all 101 column families if they don't exist.
     /// Existing RocksDB LOCK files are inspected for diagnostics only and are
     /// never removed by the store opener.
     pub fn open<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<Self> {
@@ -159,6 +159,7 @@ impl RocksDbTeleologicalStore {
         // its lock protocol and will fail the open if another process owns it.
         if path_buf.exists() {
             Self::inspect_rocksdb_lock(&path_buf)?;
+            Self::assert_existing_dynamicjepa_column_families(&path_buf)?;
 
             // NOTE: We let RocksDB detect corruption during open rather than pre-checking.
             // RocksDB knows exactly which files it needs, avoiding false positives.
@@ -362,6 +363,35 @@ impl RocksDbTeleologicalStore {
         store.verify_consistency(raw_fp_count);
 
         Ok(store)
+    }
+
+    fn assert_existing_dynamicjepa_column_families(path: &Path) -> TeleologicalStoreResult<()> {
+        if !path.join("CURRENT").exists() {
+            return Ok(());
+        }
+        let opts = Options::default();
+        let existing =
+            DB::list_cf(&opts, path).map_err(|err| TeleologicalStoreError::OpenFailed {
+                path: path.display().to_string(),
+                message: format!("failed to list RocksDB column families before open: {err}"),
+            })?;
+        let existing = existing.iter().map(String::as_str).collect::<Vec<_>>();
+        let missing = DJ_CF_NAMES
+            .iter()
+            .copied()
+            .filter(|name| !existing.contains(name))
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(TeleologicalStoreError::OpenFailed {
+                path: path.display().to_string(),
+                message: format!(
+                    "existing RocksDB is missing DynamicJEPA v2 column families: {}; expected {} DynamicJEPA CFs. Rebuild the DB from a v2 bundle instead of relying on create_missing_column_families.",
+                    missing.join(", "),
+                    DJ_CF_NAMES.len()
+                ),
+            });
+        }
+        Ok(())
     }
 
     /// Verify data consistency across column families and indexes.

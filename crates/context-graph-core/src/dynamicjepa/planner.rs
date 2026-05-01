@@ -1,14 +1,14 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
 use crate::dynamicjepa::ids::{
-    ActionId, DomainPackId, ModelArtifactId, OutcomeId, PanelId, PlanTraceId, PredictionId,
-    SkillId, SurpriseEventId,
+    ActionId, ConstellationId, DomainPackId, ModelArtifactId, OutcomeId, PanelId, PlanTraceId,
+    PredictionId, SkillId, SurpriseEventId,
 };
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::Validate;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const PLAN_TRACE_RECORD_VERSION: u8 = 1;
+pub const PLAN_TRACE_RECORD_VERSION: u8 = 2;
 pub const SURPRISE_EVENT_RECORD_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -25,6 +25,10 @@ pub struct PlanTraceRecord {
     pub guard_decision_ids: Vec<Uuid>,
     pub utility_scores: Vec<f32>,
     pub selected_action_id: Option<ActionId>,
+    #[serde(default)]
+    pub no_accepted_candidate: bool,
+    #[serde(default)]
+    pub constellation_uuid_used: Option<ConstellationId>,
     pub status: PlanTraceStatus,
     pub created_at_unix_ms: i64,
 }
@@ -118,6 +122,9 @@ impl Validate for PlanTraceRecord {
                     "select only from the persisted candidate set",
                 ));
             }
+        }
+        if let Some(constellation_id) = self.constellation_uuid_used {
+            constellation_id.validate()?;
         }
         if matches!(self.status, PlanTraceStatus::Selected) && self.selected_action_id.is_none() {
             return Err(DynamicJepaError::validation(

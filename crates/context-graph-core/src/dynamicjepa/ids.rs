@@ -163,3 +163,6 @@ uuid_id!(PlanTraceId);
 uuid_id!(GuardDecisionId);
 uuid_id!(SurpriseEventId);
 uuid_id!(VerificationRunId);
+uuid_id!(PairwiseReadingId);
+uuid_id!(ConstellationId);
+uuid_id!(ThresholdCalibrationId);

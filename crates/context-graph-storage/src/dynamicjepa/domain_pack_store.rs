@@ -66,6 +66,7 @@ pub fn put_domain_pack(db: &DB, record: &DomainPack) -> DynamicJepaResult<Uuid> 
         content_hashes: vec![record.header.content_hash],
         status: AuditStatus::Ok,
         verification_run_id: None,
+        signal_yield: 0,
     };
     audit.validate()?;
     batch.put_cf(

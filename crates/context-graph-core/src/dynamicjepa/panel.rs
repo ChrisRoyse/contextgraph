@@ -1,11 +1,13 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use crate::dynamicjepa::ids::{ActionId, EventId, InstrumentId, OutcomeId, PanelId, StateId};
+use crate::dynamicjepa::ids::{
+    ActionId, EventId, InstrumentId, OutcomeId, PairwiseReadingId, PanelId, StateId,
+};
 use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::{ensure_finite, ensure_no_duplicates, Validate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const LATENT_PANEL_RECORD_VERSION: u8 = 1;
+pub const LATENT_PANEL_RECORD_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LatentPanel {
@@ -16,6 +18,8 @@ pub struct LatentPanel {
     pub action_id: ActionId,
     pub outcome_id: Option<OutcomeId>,
     pub instrument_reading_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub pairwise_reading_ids: Vec<PairwiseReadingId>,
     pub ordered_slots: Vec<PanelSlot>,
     pub slot_vectors: Vec<Vec<f32>>,
     pub slot_masks: Vec<bool>,
@@ -100,6 +104,9 @@ impl Validate for LatentPanel {
                     "write persisted InstrumentReading ids",
                 ));
             }
+        }
+        for id in &self.pairwise_reading_ids {
+            id.validate()?;
         }
         for slot in &self.ordered_slots {
             slot.validate()?;

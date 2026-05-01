@@ -633,6 +633,7 @@ fn sample_records() -> (DomainPack, Samples) {
         action_id,
         outcome_id: Some(outcome_id),
         instrument_reading_ids: vec![reading_counter_id, reading_delta_id],
+        pairwise_reading_ids: Vec::new(),
         ordered_slots: vec![
             PanelSlot {
                 instrument_id: InstrumentId::new("counter_scalar").unwrap(),
@@ -781,6 +782,13 @@ fn sample_records() -> (DomainPack, Samples) {
         decision: GuardDecision::Allow,
         evidence_refs: vec!["state.counter <= 1024".to_string()],
         threshold_values: BTreeMap::from([("max_counter".to_string(), 1024.0)]),
+        utility_score: None,
+        utility_decision: None,
+        gtau_decision: None,
+        constellation_uuid: None,
+        cosine_to_centroid_per_modality: None,
+        tau_per_modality: None,
+        gtau_failed_modalities: None,
         created_at_unix_ms: TS0 + 13,
     });
 
@@ -797,6 +805,8 @@ fn sample_records() -> (DomainPack, Samples) {
         guard_decision_ids: vec![guard_id.0],
         utility_scores: vec![0.99],
         selected_action_id: Some(action_id),
+        no_accepted_candidate: false,
+        constellation_uuid_used: None,
         status: PlanTraceStatus::Selected,
         created_at_unix_ms: TS0 + 14,
     });
@@ -854,6 +864,9 @@ fn expected_happy_counts() -> BTreeMap<String, u64> {
         (CF_DJ_ADAPTER_RUNS.to_string(), 1),
         (CF_DJ_INSTRUMENT_READINGS.to_string(), 2),
         (CF_DJ_LATENT_PANELS.to_string(), 1),
+        (CF_DJ_PAIRWISE_READINGS.to_string(), 0),
+        (CF_DJ_CONSTELLATIONS.to_string(), 0),
+        (CF_DJ_THRESHOLD_CALIBRATIONS.to_string(), 0),
         (CF_DJ_BINDINGS.to_string(), 1),
         (CF_DJ_BINDINGS_BY_ENTITY.to_string(), 1),
         (CF_DJ_TRAJECTORIES.to_string(), 1),
@@ -878,6 +891,135 @@ fn flush_dj_cfs(db: &DB) {
         )
         .expect("flush DynamicJEPA CF to physical RocksDB files");
     }
+}
+
+#[test]
+fn dynamicjepa_phase1_meaning_compression_storage_fsv() {
+    let evidence_root = root_dir().join("tmp/upgradeplancombine/phase1/storage_records_fsv");
+    if evidence_root.exists() {
+        fs::remove_dir_all(&evidence_root).expect("clear stale Phase 1 storage evidence");
+    }
+    fs::create_dir_all(&evidence_root).expect("create Phase 1 storage evidence root");
+
+    let db_path = evidence_root.join("rocksdb");
+    let store =
+        crate::teleological::RocksDbTeleologicalStore::open(&db_path).expect("open Phase 1 DB");
+    let db = store.dynamicjepa_db();
+    let before_counts = snapshot_dj_counts(db).expect("snapshot before counts");
+
+    let event_id = EventId(uuid(8001));
+    let domain_uuid = uuid(8002);
+    let pairwise = seal(PairwiseReading {
+        header: header(uuid(8003), PAIRWISE_READING_RECORD_VERSION),
+        pairwise_id: PairwiseReadingId(uuid(8004)),
+        event_id,
+        instrument_j: InstrumentId::new("alpha_sensor").unwrap(),
+        instrument_k: InstrumentId::new("beta_sensor").unwrap(),
+        instrument_j_artifact_hash: hash32(11),
+        instrument_k_artifact_hash: hash32(12),
+        kinds_emitted: PairKindBitset(PairKindBitset::COSINE_AGREEMENT),
+        cosine_agreement: 0.5,
+        rank_disagreement: None,
+        modality_contradiction: None,
+        sparse_dense_mismatch: None,
+        temporal_surprise: None,
+        causal_direction_disagreement: None,
+        safety_proximity: None,
+        created_at_unix_ms: TS0 as u64,
+        validation_status: ReadingStatus::Ok,
+    });
+    put_pairwise_reading(db, event_id.as_uuid(), 1, 2, &pairwise).expect("put pairwise reading");
+
+    let constellation = seal(ConstellationCentroid {
+        header: header(uuid(8005), CONSTELLATION_CENTROID_RECORD_VERSION),
+        constellation_id: ConstellationId(uuid(8006)),
+        domain_pack_id: domain_id(),
+        subject_id: "subject.alpha".to_string(),
+        modality_id: InstrumentId::new("alpha_sensor").unwrap(),
+        centroid: vec![1.0, 0.0],
+        instrument_artifact_hash: hash32(13),
+        reference_set_count: 5,
+        kept_count: 5,
+        dropped_zero_norm: 0,
+        loo_stability: 0.9,
+        calibration_percentile: 10,
+        calibration_set_size: 5,
+        built_at_unix_ms: TS0 as u64,
+        built_by_run_id: Some(uuid(8007)),
+    });
+    put_constellation(db, domain_uuid, "subject.alpha", 1, &constellation)
+        .expect("put constellation");
+
+    let threshold = seal(ThresholdCalibration {
+        header: header(uuid(8008), THRESHOLD_CALIBRATION_RECORD_VERSION),
+        calibration_id: ThresholdCalibrationId(uuid(8009)),
+        domain_pack_id: domain_id(),
+        subject_id: "subject.alpha".to_string(),
+        modality_id: InstrumentId::new("alpha_sensor").unwrap(),
+        tau: 0.7,
+        percentile: 10,
+        calibration_set_count: 5,
+        calibration_event_uuids_sample: vec![event_id],
+        calibration_set_disjoint_proof: true,
+        calibration_min: 0.1,
+        calibration_max: 0.9,
+        calibration_p10: 0.2,
+        supersede_seq: 0,
+        supersedes_uuid: None,
+        reason: None,
+        calibrated_at_unix_ms: TS0 as u64,
+    });
+    put_threshold_calibration(db, domain_uuid, "subject.alpha", 1, 0, &threshold)
+        .expect("put threshold calibration");
+
+    flush_dj_cfs(db);
+    let after_counts = snapshot_dj_counts(db).expect("snapshot after counts");
+    assert_eq!(after_counts[CF_DJ_PAIRWISE_READINGS], 1);
+    assert_eq!(after_counts[CF_DJ_CONSTELLATIONS], 1);
+    assert_eq!(after_counts[CF_DJ_THRESHOLD_CALIBRATIONS], 1);
+
+    let pairwise_rows = inspect_cf(db, CF_DJ_PAIRWISE_READINGS, 10, 0).expect("inspect pairwise");
+    let constellation_rows =
+        inspect_cf(db, CF_DJ_CONSTELLATIONS, 10, 0).expect("inspect constellation");
+    let threshold_rows =
+        inspect_cf(db, CF_DJ_THRESHOLD_CALIBRATIONS, 10, 0).expect("inspect threshold");
+    assert_eq!(pairwise_rows.len(), 1);
+    assert_eq!(constellation_rows.len(), 1);
+    assert_eq!(threshold_rows.len(), 1);
+    assert_eq!(
+        pairwise_rows[0]["decoded"]["pairwise_id"],
+        pairwise.pairwise_id.to_string()
+    );
+    assert_eq!(
+        constellation_rows[0]["decoded"]["constellation_id"],
+        constellation.constellation_id.to_string()
+    );
+    assert_eq!(
+        threshold_rows[0]["decoded"]["calibration_id"],
+        threshold.calibration_id.to_string()
+    );
+
+    let evidence = json!({
+        "operation": "dynamicjepa_phase1_meaning_compression_storage_fsv",
+        "status": "ok",
+        "source_of_truth": {
+            "type": "physical RocksDB column families",
+            "path": db_path.display().to_string(),
+            "column_families": [
+                CF_DJ_PAIRWISE_READINGS,
+                CF_DJ_CONSTELLATIONS,
+                CF_DJ_THRESHOLD_CALIBRATIONS,
+            ],
+        },
+        "before_counts": before_counts,
+        "after_counts": after_counts,
+        "decoded_records": {
+            "dj_pairwise_readings": pairwise_rows,
+            "dj_constellations": constellation_rows,
+            "dj_threshold_calibrations": threshold_rows,
+        }
+    });
+    println!("{}", serde_json::to_string_pretty(&evidence).unwrap());
 }
 
 fn db_state(db: &DB) -> serde_json::Value {
@@ -973,8 +1115,8 @@ fn verification_record(
 
 #[test]
 fn dynamicjepa_phase2_storage_full_state_verification() {
-    assert_eq!(DJ_CF_COUNT, 25);
-    assert_eq!(DJ_CF_NAMES.iter().collect::<BTreeSet<_>>().len(), 25);
+    assert_eq!(DJ_CF_COUNT, 28);
+    assert_eq!(DJ_CF_NAMES.iter().collect::<BTreeSet<_>>().len(), 28);
 
     let evidence_root = root_dir().join("tmp/5090jepa_evidence/phase2/storage_fsv");
     if evidence_root.exists() {
@@ -1028,6 +1170,7 @@ fn dynamicjepa_phase2_storage_full_state_verification() {
         content_hashes: vec![samples.surprise.header.content_hash],
         status: AuditStatus::Ok,
         verification_run_id: None,
+        signal_yield: 0,
     };
     put_audit_record(db, &manual_audit).expect("put manual audit record");
 

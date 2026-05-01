@@ -1,12 +1,12 @@
 use crate::dynamicjepa::error::{DynamicJepaError, DynamicJepaResult};
-use crate::dynamicjepa::ids::{ActionId, GuardDecisionId};
+use crate::dynamicjepa::ids::{ActionId, ConstellationId, GuardDecisionId, InstrumentId};
 use crate::dynamicjepa::record_header::DjRecordHeader;
-use crate::dynamicjepa::validation::Validate;
+use crate::dynamicjepa::validation::{ensure_finite, Validate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-pub const GUARD_DECISION_RECORD_VERSION: u8 = 1;
+pub const GUARD_DECISION_RECORD_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GuardDecisionRecord {
@@ -18,6 +18,20 @@ pub struct GuardDecisionRecord {
     pub decision: GuardDecision,
     pub evidence_refs: Vec<String>,
     pub threshold_values: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub utility_score: Option<f32>,
+    #[serde(default)]
+    pub utility_decision: Option<GuardDecision>,
+    #[serde(default)]
+    pub gtau_decision: Option<GuardDecision>,
+    #[serde(default)]
+    pub constellation_uuid: Option<ConstellationId>,
+    #[serde(default)]
+    pub cosine_to_centroid_per_modality: Option<BTreeMap<InstrumentId, f32>>,
+    #[serde(default)]
+    pub tau_per_modality: Option<BTreeMap<InstrumentId, f32>>,
+    #[serde(default)]
+    pub gtau_failed_modalities: Option<Vec<InstrumentId>>,
     pub created_at_unix_ms: i64,
 }
 
@@ -70,6 +84,33 @@ impl Validate for GuardDecisionRecord {
                 ));
             }
         }
+        if let Some(score) = self.utility_score {
+            ensure_finite(score, "GuardDecisionRecord.utility_score")?;
+        }
+        if let Some(decision) = &self.utility_decision {
+            validate_guard_decision(decision, "GuardDecisionRecord.utility_decision")?;
+        }
+        if let Some(decision) = &self.gtau_decision {
+            validate_guard_decision(decision, "GuardDecisionRecord.gtau_decision")?;
+        }
+        if let Some(id) = self.constellation_uuid {
+            id.validate()?;
+        }
+        if let Some(cosines) = &self.cosine_to_centroid_per_modality {
+            validate_modality_score_map(
+                cosines,
+                "GuardDecisionRecord.cosine_to_centroid_per_modality",
+                true,
+            )?;
+        }
+        if let Some(taus) = &self.tau_per_modality {
+            validate_modality_score_map(taus, "GuardDecisionRecord.tau_per_modality", false)?;
+        }
+        if let Some(failed) = &self.gtau_failed_modalities {
+            for id in failed {
+                id.validate()?;
+            }
+        }
         if self.created_at_unix_ms < 0 {
             return Err(DynamicJepaError::validation(
                 "GuardDecisionRecord.created_at_unix_ms",
@@ -79,6 +120,49 @@ impl Validate for GuardDecisionRecord {
         }
         Ok(())
     }
+}
+
+fn validate_guard_decision(decision: &GuardDecision, field: &str) -> DynamicJepaResult<()> {
+    if let GuardDecision::Reject {
+        reason_code,
+        reason_message,
+    } = decision
+    {
+        if reason_code.trim().is_empty() || reason_message.trim().is_empty() {
+            return Err(DynamicJepaError::validation(
+                field,
+                "reject decisions must include reason_code and reason_message",
+                "write operator-visible guard rejection details",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_modality_score_map(
+    values: &BTreeMap<InstrumentId, f32>,
+    field: &str,
+    enforce_cosine_range: bool,
+) -> DynamicJepaResult<()> {
+    if values.is_empty() {
+        return Err(DynamicJepaError::validation(
+            field,
+            "modality score map must not be empty when present",
+            "write None or at least one modality score",
+        ));
+    }
+    for (instrument_id, value) in values {
+        instrument_id.validate()?;
+        ensure_finite(*value, &format!("{field}.{instrument_id}"))?;
+        if enforce_cosine_range && !(-1.0..=1.0).contains(value) {
+            return Err(DynamicJepaError::validation(
+                field,
+                format!("cosine score for {instrument_id} must be in [-1,1], got {value}"),
+                "store normalized cosine-to-centroid scores",
+            ));
+        }
+    }
+    Ok(())
 }
 
 crate::impl_dynamic_jepa_record!(

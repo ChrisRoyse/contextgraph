@@ -4,7 +4,7 @@ use context_graph_core::dynamicjepa::{DynamicJepaError, DynamicJepaResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const DJ_AUDIT_RECORD_VERSION: u8 = 1;
+pub const DJ_AUDIT_RECORD_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DjAuditRecord {
@@ -18,6 +18,7 @@ pub struct DjAuditRecord {
     pub content_hashes: Vec<[u8; 32]>,
     pub status: AuditStatus,
     pub verification_run_id: Option<Uuid>,
+    pub signal_yield: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,5 +56,88 @@ impl DjAuditRecord {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SignalYieldDimensions {
+    pub n_panel_slots: u32,
+    pub n_active_modalities: u32,
+    pub k_candidates: u32,
+}
+
+pub fn signal_yield_for_operation(
+    operation_kind: &str,
+    dimensions: SignalYieldDimensions,
+) -> DynamicJepaResult<u32> {
+    let n = dimensions.n_panel_slots;
+    let m = dimensions.n_active_modalities;
+    let k = dimensions.k_candidates;
+    match operation_kind {
+        "ingest_event" => Ok(1),
+        "run_adapter_success" => Ok(1),
+        "run_adapter_failure" => Ok(0),
+        "materialize_panel" => Ok(n),
+        "materialize_pairwise" => {
+            let pairs =
+                n.checked_mul(n.checked_sub(1).ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "SignalYieldDimensions.n_panel_slots",
+                        "n_panel_slots underflow while computing pairwise signal yield",
+                        "use a valid panel slot count before writing signal yield",
+                    )
+                })?)
+                .ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "SignalYieldDimensions.n_panel_slots",
+                        "n_panel_slots overflow while computing pairwise signal yield",
+                        "use realistic bounded panel dimensions",
+                    )
+                })? / 2;
+            Ok(pairs)
+        }
+        "compile_transition" => Ok(2),
+        "train_predictor" => Ok(0),
+        "predict" => n.checked_add(m).ok_or_else(|| {
+            DynamicJepaError::validation(
+                "SignalYieldDimensions.predict",
+                "panel slot and modality counts overflowed signal yield",
+                "use realistic bounded panel dimensions",
+            )
+        }),
+        "plan" => {
+            let per_candidate = n
+                .checked_add(m)
+                .and_then(|value| value.checked_add(1))
+                .ok_or_else(|| {
+                    DynamicJepaError::validation(
+                        "SignalYieldDimensions.plan",
+                        "plan per-candidate signal count overflowed",
+                        "use realistic bounded panel dimensions",
+                    )
+                })?;
+            k.checked_mul(per_candidate).ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "SignalYieldDimensions.plan",
+                    "k_candidates overflowed plan signal yield",
+                    "use realistic bounded planning dimensions",
+                )
+            })
+        }
+        "record_surprise" => Ok(1),
+        "verify_artifact_files" => Ok(0),
+        "build_constellation" => Ok(0),
+        "calibrate_threshold" => Ok(0),
+        "audit_pairwise_mi" => Ok(0),
+        "register_domain_pack" => Ok(0),
+        "bind" => Ok(1),
+        "compile_dataset" => Ok(0),
+        "compile_trajectory" => Ok(0),
+        "verification_run" => Ok(0),
+        other => Err(DynamicJepaError::validation(
+            "DjAuditRecord.operation",
+            format!("unknown signal-yield operation kind {other:?}"),
+            "add the operation to signal_yield_for_operation before writing audit rows",
+        )),
     }
 }

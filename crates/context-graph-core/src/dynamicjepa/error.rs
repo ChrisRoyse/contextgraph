@@ -112,6 +112,12 @@ pub enum DynamicJepaError {
         message: String,
         field_path: String,
     },
+    #[error("bundle schema version mismatch: expected={expected} found={found} manifest={manifest_path}")]
+    BundleSchemaVersionMismatch {
+        expected: u32,
+        found: u32,
+        manifest_path: String,
+    },
 }
 
 impl DynamicJepaError {
@@ -175,6 +181,7 @@ impl DynamicJepaError {
             Self::DomainPackVersionMismatch { .. } => "DOMAIN_PACK_VERSION_MISMATCH",
             Self::SchemaValidationFailed { .. } => "SCHEMA_VALIDATION_FAILED",
             Self::AdapterFailed { .. } => "ADAPTER_FAILED",
+            Self::BundleSchemaVersionMismatch { .. } => "BUNDLE_SCHEMA_VERSION_MISMATCH",
         }
     }
 }

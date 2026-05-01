@@ -18,6 +18,9 @@ pub const CF_DJ_ADAPTER_RUNS: &str = "dj_adapter_runs";
 
 pub const CF_DJ_INSTRUMENT_READINGS: &str = "dj_instrument_readings";
 pub const CF_DJ_LATENT_PANELS: &str = "dj_latent_panels";
+pub const CF_DJ_PAIRWISE_READINGS: &str = "dj_pairwise_readings";
+pub const CF_DJ_CONSTELLATIONS: &str = "dj_constellations";
+pub const CF_DJ_THRESHOLD_CALIBRATIONS: &str = "dj_threshold_calibrations";
 
 pub const CF_DJ_BINDINGS: &str = "dj_bindings";
 pub const CF_DJ_BINDINGS_BY_ENTITY: &str = "dj_bindings_by_entity";
@@ -50,6 +53,9 @@ pub const DJ_CF_NAMES: &[&str] = &[
     CF_DJ_ADAPTER_RUNS,
     CF_DJ_INSTRUMENT_READINGS,
     CF_DJ_LATENT_PANELS,
+    CF_DJ_PAIRWISE_READINGS,
+    CF_DJ_CONSTELLATIONS,
+    CF_DJ_THRESHOLD_CALIBRATIONS,
     CF_DJ_BINDINGS,
     CF_DJ_BINDINGS_BY_ENTITY,
     CF_DJ_TRAJECTORIES,
@@ -144,6 +150,15 @@ pub fn dj_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
             dj_composite_index_cf_options(cache),
         ),
         ColumnFamilyDescriptor::new(CF_DJ_LATENT_PANELS, dj_large_blob_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_DJ_PAIRWISE_READINGS,
+            dj_append_only_cf_options(cache, Some(16)),
+        ),
+        ColumnFamilyDescriptor::new(CF_DJ_CONSTELLATIONS, dj_composite_index_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_DJ_THRESHOLD_CALIBRATIONS,
+            dj_composite_index_cf_options(cache),
+        ),
         ColumnFamilyDescriptor::new(CF_DJ_BINDINGS, dj_uuid_point_cf_options(cache)),
         ColumnFamilyDescriptor::new(
             CF_DJ_BINDINGS_BY_ENTITY,

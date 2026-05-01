@@ -735,6 +735,7 @@ fn sample_records() -> (DomainPack, Samples) {
         action_id,
         outcome_id: Some(outcome_id),
         instrument_reading_ids: vec![reading_counter_id, reading_delta_id],
+        pairwise_reading_ids: Vec::new(),
         ordered_slots: vec![
             PanelSlot {
                 instrument_id: InstrumentId::new("counter_scalar").unwrap(),
@@ -883,6 +884,13 @@ fn sample_records() -> (DomainPack, Samples) {
         decision: GuardDecision::Allow,
         evidence_refs: vec!["state.counter <= 1024".to_string()],
         threshold_values: BTreeMap::from([("max_counter".to_string(), 1024.0)]),
+        utility_score: None,
+        utility_decision: None,
+        gtau_decision: None,
+        constellation_uuid: None,
+        cosine_to_centroid_per_modality: None,
+        tau_per_modality: None,
+        gtau_failed_modalities: None,
         created_at_unix_ms: TS0 + 13,
     });
 
@@ -899,6 +907,8 @@ fn sample_records() -> (DomainPack, Samples) {
         guard_decision_ids: vec![guard_id.0],
         utility_scores: vec![0.99],
         selected_action_id: Some(action_id),
+        no_accepted_candidate: false,
+        constellation_uuid_used: None,
         status: PlanTraceStatus::Selected,
         created_at_unix_ms: TS0 + 14,
     });

@@ -526,6 +526,8 @@ pub fn plan_next_action(
             .collect(),
         utility_scores,
         selected_action_id,
+        no_accepted_candidate: selected_action_id.is_none(),
+        constellation_uuid_used: None,
         status,
         created_at_unix_ms: created_at,
     };
@@ -1393,6 +1395,13 @@ fn build_guard_decision(
             format!("action:{action_id}"),
         ],
         threshold_values: thresholds,
+        utility_score: None,
+        utility_decision: None,
+        gtau_decision: None,
+        constellation_uuid: None,
+        cosine_to_centroid_per_modality: None,
+        tau_per_modality: None,
+        gtau_failed_modalities: None,
         created_at_unix_ms: now,
     };
     record.refresh_content_hash()?;
@@ -2015,6 +2024,7 @@ fn build_audit(
         content_hashes,
         status,
         verification_run_id: None,
+        signal_yield: 0,
     };
     record.validate()?;
     Ok(record)

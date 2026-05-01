@@ -72,6 +72,9 @@ use tracing::{error, info};
 use uuid::Uuid;
 use zip::ZipArchive;
 
+const DYNAMICJEPA_BUNDLE_SCHEMA_VERSION: u32 = 2;
+const BUNDLE_SCHEMA_MANIFESTS: &[&str] = &["run_manifest.json", "aggregate_manifest.json"];
+
 #[derive(Subcommand, Debug)]
 pub enum DynamicJepaCommands {
     /// Register a strict TOML domain pack into DynamicJEPA RocksDB CFs.
@@ -4378,6 +4381,7 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
     write_multiseed_plot_manifest(&args.output_root)?;
 
     let manifest = json!({
+        "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
         "schema_version": MULTISEED_AGGREGATE_SCHEMA_VERSION,
         "status": "passed",
         "created_at_unix_ms": now_unix_ms()?,
@@ -4686,6 +4690,7 @@ fn read_multiseed_bundle(
     let run_manifest_path = canonical_path.join("run_manifest.json");
     let fsv_report_path = canonical_path.join("fsv_report.json");
     let run_manifest = read_json_file(&run_manifest_path)?;
+    validate_bundle_schema_manifest(&run_manifest_path, &run_manifest)?;
     let fsv_report = read_json_file(&fsv_report_path)?;
     let run_id = required_json_string(&run_manifest, "run_id", "run_manifest.json")?;
     let status = required_json_string(&run_manifest, "status", "run_manifest.json")?;
@@ -6086,6 +6091,7 @@ fn check_release_aggregate_reference_command(
             ));
         }
     };
+    validate_bundle_schema_manifest(&manifest_path, &manifest)?;
     let fsv = match read_ci_json_for_check(&fsv_path) {
         Ok(value) => value,
         Err(message) => {
@@ -6697,6 +6703,7 @@ type CiTableWithKeys = (Vec<String>, CiTableRows);
 fn capture_ci_reference_value(reference_id: &str, bundle: &Path) -> DynamicJepaResult<Value> {
     let bundle_path = canonical_existing_path(bundle, "ci-reference.bundle")?;
     let run_manifest = read_json_file(&bundle.join("run_manifest.json"))?;
+    validate_bundle_schema_manifest(&bundle.join("run_manifest.json"), &run_manifest)?;
     let fsv_report = read_json_file(&bundle.join("fsv_report.json"))?;
     require_json_status(&run_manifest, "passed", "run_manifest.json")?;
     require_json_status(&fsv_report, "passed", "fsv_report.json")?;
@@ -7763,6 +7770,7 @@ impl ResearchSmokeContext {
         write_json_file(
             &self.run_dir.join("run_manifest.json"),
             &json!({
+                "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
                 "run_id": self.run_id,
                 "created_at_unix_ms": self.created_at_unix_ms,
                 "updated_at_unix_ms": now_unix_ms()?,
@@ -15832,6 +15840,7 @@ fn materialize_one_panel(
         action_id: action.action_id,
         outcome_id: Some(outcome.outcome_id),
         instrument_reading_ids: reading_ids.clone(),
+        pairwise_reading_ids: Vec::new(),
         ordered_slots: slots,
         slot_vectors: vectors,
         slot_masks: masks,
@@ -16434,6 +16443,7 @@ fn build_audit(
         content_hashes,
         status,
         verification_run_id: None,
+        signal_yield: 0,
     };
     record.validate()?;
     Ok(record)
@@ -16884,6 +16894,7 @@ fn reject_env_substitution(value: &toml::Value, path: &str) -> DynamicJepaResult
 }
 
 fn open_store(path: &Path) -> DynamicJepaResult<RocksDbTeleologicalStore> {
+    validate_bundle_schema_for_db_path(path)?;
     RocksDbTeleologicalStore::open_with_config(path, TeleologicalStoreConfig::default()).map_err(
         |err| DynamicJepaError::Storage {
             operation: "open_dynamicjepa_db".to_string(),
@@ -16898,6 +16909,7 @@ fn open_existing_store(
     path: &Path,
     operation: &str,
 ) -> DynamicJepaResult<RocksDbTeleologicalStore> {
+    validate_bundle_schema_for_db_path(path)?;
     if !path.exists() {
         return Err(DynamicJepaError::validation(
             format!("{operation}.db"),
@@ -16918,6 +16930,46 @@ fn open_existing_store(
             remediation: "verify the DB path is a complete existing source-of-truth RocksDB and no active process owns the RocksDB lock".to_string(),
         }
     })
+}
+
+fn validate_bundle_schema_for_db_path(db_path: &Path) -> DynamicJepaResult<()> {
+    for ancestor in db_path.ancestors().take(8) {
+        let manifests = BUNDLE_SCHEMA_MANIFESTS
+            .iter()
+            .map(|name| ancestor.join(name))
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        if manifests.is_empty() {
+            continue;
+        }
+        for manifest_path in manifests {
+            let manifest = read_json_file(&manifest_path)?;
+            validate_bundle_schema_manifest(&manifest_path, &manifest)?;
+        }
+        return Ok(());
+    }
+    Ok(())
+}
+
+fn validate_bundle_schema_manifest(
+    manifest_path: &Path,
+    manifest: &Value,
+) -> DynamicJepaResult<()> {
+    let found = match manifest.get("bundle_schema_version") {
+        Some(value) => value
+            .as_u64()
+            .and_then(|raw| u32::try_from(raw).ok())
+            .unwrap_or(0),
+        None => 1,
+    };
+    if found != DYNAMICJEPA_BUNDLE_SCHEMA_VERSION {
+        return Err(DynamicJepaError::BundleSchemaVersionMismatch {
+            expected: DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
+            found,
+            manifest_path: manifest_path.display().to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn canonical_existing_path(path: &Path, field: &str) -> DynamicJepaResult<String> {
@@ -17113,6 +17165,18 @@ fn error_value(
             object.insert("expected".to_string(), json!(expected));
             object.insert("actual".to_string(), json!(actual));
         }
+        DynamicJepaError::BundleSchemaVersionMismatch {
+            expected,
+            found,
+            manifest_path,
+        } => {
+            object.insert(
+                "expected_bundle_schema_version".to_string(),
+                json!(expected),
+            );
+            object.insert("found_bundle_schema_version".to_string(), json!(found));
+            object.insert("manifest_path".to_string(), json!(manifest_path));
+        }
         _ => {}
     }
     Value::Object(object)
@@ -17158,6 +17222,10 @@ fn remediation(err: &DynamicJepaError) -> Option<String> {
         ),
         DynamicJepaError::GuardRejected { .. } => Some(
             "inspect dj_guard_decisions for the rejected action and choose a candidate within the registered bounds"
+                .to_string(),
+        ),
+        DynamicJepaError::BundleSchemaVersionMismatch { .. } => Some(
+            "rebuild the DynamicJEPA bundle with the v2 binary; v1 manifests are rejected before RocksDB is opened"
                 .to_string(),
         ),
         _ => None,
