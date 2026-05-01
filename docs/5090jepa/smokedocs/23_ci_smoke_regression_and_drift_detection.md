@@ -41,19 +41,17 @@ What it does:
 - `cargo check --all-features`;
 - `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings);
 - `cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv
-  --all-features -- --nocapture` (the existing 3-test suite);
+  --all-features -- --nocapture` (the current 10-test FSV suite);
 - `dynamicjepa research-smoke --purpose smoke --career-event-count 120`
-  against the committed O*NET ZIP fixture (or a tiny synthetic fixture if
-  size limits prohibit committing the real ZIP).
+  against the verified O*NET 30.2 text ZIP.
 
 Pass requires: zero failed tests, zero clippy warnings, smoke bundle status
 `passed`, and a curated subset of bundle hashes match the committed
 `reference_smoke_hashes.json`.
 
-Hardware: GitHub Actions GPU runner OR self-hosted RTX-class runner. If none
-available, **CPU mode skips the training step** and the hash assertion is
-relaxed to "structure only" (file presence, not content). This is documented
-explicitly so reviewers know the per-PR tier does not exercise CUDA.
+Hardware: GitHub Actions GPU runner or self-hosted RTX-class runner. If the
+runner cannot provide CUDA for the real training gate, the workflow fails; it
+does not silently replace the run with CPU-only or structure-only evidence.
 
 ### Tier B — Nightly (≤2 hours)
 
@@ -62,10 +60,11 @@ Runs on a schedule (UTC 03:00).
 What it does:
 
 - Tier A in full;
-- `dynamicjepa research-smoke --purpose paper_small_1k --seeds 42`
+- `dynamicjepa research-smoke --purpose paper_small --career-event-count 1000
+  --career-training-seed 42`
   (one-seed paper-small);
 - a 4-cell HP sweep (per doc 22);
-- multi-seed aggregator dry run with seed 42 only;
+- paper-small same-seed reproducibility check for seed 42;
 - comparison against last week's baseline: per-table cell-level diff with a
   tolerance budget (`val cosine` ±0.005, `val MSE` ±0.005, `top-1 acc`
   ±0.02).
@@ -80,6 +79,8 @@ What it does:
 
 - Tier B in full;
 - multi-seed paper_small with all 5 seeds;
+- `dynamicjepa multiseed-aggregate` over the 5 seed bundles with
+  `--min-passed 5`;
 - container reproducibility check (build twice, compare digest);
 - `reproduce.sh` end-to-end against the published reference hash;
 - artifact-evaluation dry run.
@@ -175,8 +176,8 @@ This makes drift visible in the paper, not buried.
 
 ## Edge Cases (Fail-Closed)
 
-- Tier A on a CPU-only runner: explicitly skip CUDA assertions; record the
-  skip in the build log; do not falsely claim CUDA pass.
+- Tier A on a CPU-only runner: fail with a runner-capability error; do not
+  falsely claim CUDA pass or substitute structure-only evidence.
 - Tier B times out before completion: fail with `TIMEOUT`; do not record
   partial bundle as a new reference candidate.
 - Reference file corrupted (JSON parse error): fail with
@@ -201,6 +202,38 @@ Tier B failure opens a GitHub issue assigned to the maintainer with:
 - the suspected commit (last touch in the affected files).
 
 No silent failure. No "investigate later". Drift is a same-day issue.
+
+## Implementation Status 2026-04-30
+
+- Tier B no longer only checks for `dynamicjepa hp-sweep` in CLI help. The
+  workflow now executes a reduced real O*NET HP sweep:
+  `batch_size` values `16,32` across career seeds `42,43`.
+- The sweep writes an immutable bundle under
+  `tmp/mejepa_ci_runs/ci_<run>_<attempt>_hp_sweep_batch_size`, then reads back
+  `sweep_manifest.json`, `sweep_fsv_report.json`,
+  `paper_tables/table_hp_sensitivity.csv`,
+  `paper_tables/table_collapse_diagnostics.csv`, and
+  `plots/collapse_diagnostic_f5.svg`.
+- Local FSV proof bundle:
+  `tmp/mejepa_research_runs/20260430T_hp_sweep_smoke_batch16_v2`.
+- The root cause fixed during integration was a self-referential FSV hash list:
+  the writer required `sweep_fsv_report.json` before writing it. The FSV report
+  is now written and separately read back, while its required-file hash list
+  covers the manifest, tables, and plots.
+- Tier B and Tier C no longer remove pre-existing bundle directories with
+  `rm -rf`. They explicitly fail if a generated run root already exists, so
+  immutable bundle evidence is never overwritten by CI setup.
+- Tier C no longer only checks for `multiseed-aggregate` in help text. It runs
+  five real O*NET paper-small seeds (`42,43,44,45,46`), preserves any failed
+  seed bundles, then requires a five-pass aggregate before release gates can
+  continue.
+- Local Tier C proof aggregate:
+  `tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v4`.
+  It has `passed_count=5`, `failed_count=0`, prediction rows `33`, ablation rows
+  `78`, paired-test rows `35`, and seed-failure rows `0`.
+- The five-pass aggregate exposed an all-passed edge case:
+  `table_seed_failures.csv` correctly has only a header when no child bundles
+  fail. The aggregate readback now allows empty rows only for this table.
 
 ## Acceptance
 

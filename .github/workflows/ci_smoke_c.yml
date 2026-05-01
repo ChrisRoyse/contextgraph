@@ -59,9 +59,17 @@ jobs:
       - name: Multi-seed paper-small release matrix
         run: |
           set -euo pipefail
+          mkdir -p "$RUN_ROOT"
+          : > "$RUN_ROOT/release_bundle_paths.txt"
+          failed=0
           for seed in 42 43 44 45 46; do
             RUN_ID="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_seed${seed}"
-            rm -rf "$RUN_ROOT/$RUN_ID"
+            if [ -e "$RUN_ROOT/$RUN_ID" ]; then
+              echo "::error::RELEASE_SEED_ROOT_EXISTS: refusing to overwrite $RUN_ROOT/$RUN_ID"
+              failed=1
+              continue
+            fi
+            set +e
             ./target/debug/context-graph dynamicjepa research-smoke \
               --run-id "$RUN_ID" \
               --run-root "$RUN_ROOT" \
@@ -72,8 +80,24 @@ jobs:
               --onet-text-zip "$ONET_TEXT_ZIP" \
               --system-specs docs2/systemspecs.md \
               --json | tee "$RUN_ROOT/${RUN_ID}_research_smoke.json"
-            jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/run_manifest.json"
-            jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/fsv_report.json"
+            smoke_status=${PIPESTATUS[0]}
+            set -e
+            printf '%s\n' "$RUN_ROOT/$RUN_ID" >> "$RUN_ROOT/release_bundle_paths.txt"
+            if [ "$smoke_status" -ne 0 ]; then
+              echo "::error::RELEASE_SEED_FAILED: seed $seed research-smoke exited $smoke_status; bundle preserved at $RUN_ROOT/$RUN_ID"
+              failed=1
+              continue
+            fi
+            if ! jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/run_manifest.json"; then
+              echo "::error::RELEASE_SEED_MANIFEST_NOT_PASSED: seed $seed run_manifest did not pass"
+              failed=1
+              continue
+            fi
+            if ! jq -e '.status == "passed"' "$RUN_ROOT/$RUN_ID/fsv_report.json"; then
+              echo "::error::RELEASE_SEED_FSV_NOT_PASSED: seed $seed fsv_report did not pass"
+              failed=1
+              continue
+            fi
             ./target/debug/context-graph dynamicjepa inspect-counts \
               --db "$RUN_ROOT/$RUN_ID/dbs/${RUN_ID}_career_taxonomy_rocksdb" \
               --json | tee "$RUN_ROOT/$RUN_ID/ci_inspect_counts_career_taxonomy.json"
@@ -83,14 +107,48 @@ jobs:
               --tolerances reference/tolerances.json \
               --json | tee "$RUN_ROOT/${RUN_ID}_release_reference_check.json"
           done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::RELEASE_MATRIX_FAILED: at least one seed failed; all attempted bundles are preserved under $RUN_ROOT"
+            exit 1
+          fi
 
       - name: Multi-seed aggregate gate
         run: |
           set -euo pipefail
-          if ! ./target/debug/context-graph dynamicjepa --help | grep -q 'multiseed-aggregate'; then
-            echo "::error::DOC15_MULTISEED_AGGREGATE_NOT_IMPLEMENTED: release Tier C requires dynamicjepa multiseed-aggregate"
+          mapfile -t bundles < "$RUN_ROOT/release_bundle_paths.txt"
+          if [ "${#bundles[@]}" -ne 5 ]; then
+            echo "::error::RELEASE_AGGREGATE_BUNDLE_COUNT: expected 5 release bundles, got ${#bundles[@]}"
             exit 1
           fi
+          bundle_args=()
+          for bundle in "${bundles[@]}"; do
+            bundle_args+=(--bundle "$bundle")
+          done
+          AGG_ROOT="$RUN_ROOT/ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_multiseed_aggregate"
+          if [ -e "$AGG_ROOT" ]; then
+            echo "::error::RELEASE_AGGREGATE_ROOT_EXISTS: refusing to overwrite $AGG_ROOT"
+            exit 1
+          fi
+          ./target/debug/context-graph dynamicjepa multiseed-aggregate \
+            "${bundle_args[@]}" \
+            --output-root "$AGG_ROOT" \
+            --expected-bundle-count 5 \
+            --min-passed 5 \
+            --expected-purpose paper_small \
+            --expected-career-event-count 1000 \
+            --required-career-training-seeds 42,43,44,45,46 \
+            --bootstrap-iters 10000 \
+            --bootstrap-seed 20260430 \
+            --json | tee "$RUN_ROOT/release_multiseed_aggregate.json"
+          jq -e '.status == "passed"' "$AGG_ROOT/aggregate_manifest.json"
+          jq -e '.status == "passed"' "$AGG_ROOT/aggregate_fsv_report.json"
+          jq -e '.readback_checks.prediction_multiseed_rows > 0' "$AGG_ROOT/aggregate_fsv_report.json"
+          jq -e '.readback_checks.ablation_multiseed_rows > 0' "$AGG_ROOT/aggregate_fsv_report.json"
+          test -s "$AGG_ROOT/paper_tables/table_prediction_metrics_multiseed.csv"
+          test -s "$AGG_ROOT/paper_tables/table_ablation_multiseed.csv"
+          test -s "$AGG_ROOT/paper_tables/table_paired_ablation_tests.csv"
+          test -s "$AGG_ROOT/plots/multiseed_val_mse_box.svg"
+          test -s "$AGG_ROOT/plots/multiseed_paired_delta_forest.svg"
 
       - name: Container reproducibility check
         run: |

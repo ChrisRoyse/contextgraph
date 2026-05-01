@@ -60,7 +60,10 @@ jobs:
           set -euo pipefail
           SMOKE_RUN_ID="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_smoke_b_tier_a"
           echo "SMOKE_RUN_ID=$SMOKE_RUN_ID" >> "$GITHUB_ENV"
-          rm -rf "$RUN_ROOT/$SMOKE_RUN_ID"
+          if [ -e "$RUN_ROOT/$SMOKE_RUN_ID" ]; then
+            echo "::error::TIER_B_SMOKE_ROOT_EXISTS: refusing to overwrite $RUN_ROOT/$SMOKE_RUN_ID"
+            exit 1
+          fi
           ./target/debug/context-graph dynamicjepa research-smoke \
             --run-id "$SMOKE_RUN_ID" \
             --run-root "$RUN_ROOT" \
@@ -85,7 +88,12 @@ jobs:
           PAPER_RUN_ID_B="ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_paper_small_seed42_b"
           echo "PAPER_RUN_ID_A=$PAPER_RUN_ID_A" >> "$GITHUB_ENV"
           echo "PAPER_RUN_ID_B=$PAPER_RUN_ID_B" >> "$GITHUB_ENV"
-          rm -rf "$RUN_ROOT/$PAPER_RUN_ID_A" "$RUN_ROOT/$PAPER_RUN_ID_B"
+          for run_id in "$PAPER_RUN_ID_A" "$PAPER_RUN_ID_B"; do
+            if [ -e "$RUN_ROOT/$run_id" ]; then
+              echo "::error::TIER_B_PAPER_ROOT_EXISTS: refusing to overwrite $RUN_ROOT/$run_id"
+              exit 1
+            fi
+          done
           for run_id in "$PAPER_RUN_ID_A" "$PAPER_RUN_ID_B"; do
             ./target/debug/context-graph dynamicjepa research-smoke \
               --run-id "$run_id" \
@@ -134,6 +142,26 @@ jobs:
             echo "::error::DOC23_HP_SWEEP_NOT_IMPLEMENTED: dynamicjepa hp-sweep from smokedoc 22 is required before Tier B can pass"
             exit 1
           fi
+          HP_SWEEP_ROOT="$RUN_ROOT/ci_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}_hp_sweep_batch_size"
+          echo "HP_SWEEP_ROOT=$HP_SWEEP_ROOT" >> "$GITHUB_ENV"
+          ./target/debug/context-graph dynamicjepa hp-sweep \
+            --base-config configs/dynamicjepa/verification/career_taxonomy_train_config.json \
+            --sweep-axis batch_size \
+            --sweep-values 16,32 \
+            --output-root "$HP_SWEEP_ROOT" \
+            --fixtures-root configs/dynamicjepa \
+            --purpose smoke \
+            --career-event-count 120 \
+            --career-training-seeds 42,43 \
+            --onet-text-zip "$ONET_TEXT_ZIP" \
+            --system-specs docs2/systemspecs.md \
+            --json | tee "$RUN_ROOT/hp_sweep_batch_size.json"
+          jq -e '.status == "passed"' "$HP_SWEEP_ROOT/sweep_manifest.json"
+          jq -e '.status == "passed"' "$HP_SWEEP_ROOT/sweep_fsv_report.json"
+          jq -e '.readback_checks.cell_count == 4' "$HP_SWEEP_ROOT/sweep_fsv_report.json"
+          test -s "$HP_SWEEP_ROOT/paper_tables/table_hp_sensitivity.csv"
+          test -s "$HP_SWEEP_ROOT/paper_tables/table_collapse_diagnostics.csv"
+          test -s "$HP_SWEEP_ROOT/plots/collapse_diagnostic_f5.svg"
 
       - name: Upload nightly evidence
         if: always()

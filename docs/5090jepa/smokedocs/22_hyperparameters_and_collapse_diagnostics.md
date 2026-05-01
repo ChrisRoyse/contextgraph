@@ -192,6 +192,26 @@ A reduced 4-cell sweep (one axis, two values × two seeds) runs nightly. It is
 **not** the headline sweep; it just catches regressions in the diagnostics
 themselves (e.g. a code change that breaks effective-rank computation).
 
+Implementation status as of 2026-04-30:
+
+- `dynamicjepa hp-sweep` is implemented for `lr`, `latent_dim`, and
+  `batch_size`.
+- Each cell is a full immutable `research-smoke` bundle under `cells/`; HP
+  overrides are written into the generated O*NET train config and read back
+  from the persisted artifact `config.json`.
+- `table_collapse_diagnostics.csv`, `table_hp_sensitivity.csv`,
+  `hp_sensitivity.svg`, and `collapse_diagnostic_f5.svg` are generated and
+  hashed in `sweep_fsv_report.json`.
+- Real smoke-scale FSV bundle:
+  `tmp/mejepa_research_runs/20260430T_hp_sweep_smoke_batch16_v2`.
+  Centerpoint: `batch_size=16`, `lr=0.001`, `latent_dim=24`, `seed=42`,
+  val cosine `0.8776115717741934`, effective-rank ratio
+  `0.10463224596920466`, alignment `0.25158559765665167`, uniformity
+  `-0.32215603716030655`.
+- The full paper-med sensitivity claim still requires the planned 12-cell
+  sweep. The current bundle is the implementation/CI validation run, not the
+  final paper sensitivity evidence.
+
 ## Edge Cases (Fail-Closed)
 
 - Sweep axis unknown to the schema: typed `VALIDATION` error.

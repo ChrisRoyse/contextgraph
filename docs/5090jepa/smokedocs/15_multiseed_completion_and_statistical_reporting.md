@@ -59,21 +59,33 @@ paper_tables/
   table_seed_failures.csv                    # failed seeds, error codes, gate, metric
 ```
 
-The new CLI command:
+The release aggregate command uses explicit immutable bundle paths rather than
+a broad glob, so a stale failed bundle cannot accidentally enter the paper
+source of truth:
 
 ```bash
 target/debug/context-graph dynamicjepa multiseed-aggregate \
-  --bundle-root tmp/mejepa_research_runs \
-  --bundle-glob '20260430T_paper_small_1k_seed*_v1' \
-  --output-root tmp/mejepa_research_runs/aggregate_paper_small_v1 \
+  --bundle tmp/mejepa_research_runs/20260430T_paper_small_1k_seed42_v2 \
+  --bundle tmp/mejepa_research_runs/20260430T_paper_small_1k_seed43_v2 \
+  --bundle tmp/mejepa_research_runs/20260430T_paper_small_1k_seed44_v1 \
+  --bundle tmp/mejepa_research_runs/20260430T_paper_small_1k_seed45_v3 \
+  --bundle tmp/mejepa_research_runs/20260430T_paper_small_1k_seed46_v2 \
+  --output-root tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v4 \
+  --expected-bundle-count 5 \
+  --min-passed 5 \
+  --expected-purpose paper_small \
+  --expected-career-event-count 1000 \
+  --required-career-training-seeds 42,43,44,45,46 \
   --bootstrap-iters 10000 \
+  --bootstrap-seed 20260430 \
   --confidence 0.95 \
   --json
 ```
 
 It must fail closed if:
 
-- fewer than 3 passed bundles match the glob;
+- fewer than the required `--min-passed` child bundles pass (`5` for the
+  paper-small release aggregate);
 - any bundle directory is missing `run_manifest.json` or `fsv_report.json`;
 - bundle metric schemas disagree (different column counts, different ablation
   IDs, different domain set);
@@ -115,7 +127,7 @@ delta and CI in parentheses.
 Each multi-seed aggregate run writes a new immutable bundle:
 
 ```text
-tmp/mejepa_research_runs/aggregate_paper_small_v1/
+tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v4/
   aggregate_manifest.json          # input bundle paths + sha256
   aggregate_fsv_report.json        # all 5 child manifest hashes; pass/fail per seed
   paper_tables/
@@ -154,8 +166,10 @@ Smokedoc 08 §Stage Sources Of Truth gains one row:
 
 Smokedoc 04 §Gate 10 (Reproducibility Details) gains:
 
-- Pass requires ≥3 passed seeds + BCa CI for every paper-cited metric +
-  paired permutation results for every ablation comparison cited in the paper.
+- Paper-small release pass requires all five required seeds + BCa CI for every
+  paper-cited metric + paired permutation results for every ablation comparison
+  cited in the paper. Exploratory aggregates may use a lower `--min-passed`
+  only if they are not cited as paper-release evidence.
 
 ## Promotion To Paper
 
@@ -184,9 +198,51 @@ desk-reject risk under NeurIPS reproducibility expectations.
 
 This work is done when:
 
-- 5 paper-small bundles exist (≥3 passed);
-- `aggregate_paper_small_v1/` exists with all four CSVs;
+- 5 paper-small bundles exist and all 5 required seeds pass;
+- `20260430T_paper_small_1k_multiseed_42_46_v4/` exists with all four CSVs;
 - `multiseed-aggregate` CLI fails closed on every edge case above;
-- the integration test in `crates/context-graph-cli/tests/` exercises real
-  child bundles and a synthetic missing-bundle case;
+- CI/manual FSV exercises real child bundles and fail-closed edge cases without
+  substituting mock happy-path data;
 - doc 13 is updated with the multi-seed evidence summary.
+
+## Implementation Status 2026-04-30
+
+The five-seed paper-small panel now passes with all required seeds:
+
+| Seed | Bundle | Status |
+| ---: | --- | --- |
+| 42 | `20260430T_paper_small_1k_seed42_v2` | passed |
+| 43 | `20260430T_paper_small_1k_seed43_v2` | passed |
+| 44 | `20260430T_paper_small_1k_seed44_v1` | passed |
+| 45 | `20260430T_paper_small_1k_seed45_v3` | passed |
+| 46 | `20260430T_paper_small_1k_seed46_v2` | passed |
+
+Final aggregate source of truth:
+
+- `tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v4`;
+- `aggregate_manifest.json`: `status=passed`, `passed_count=5`,
+  `failed_count=0`;
+- `aggregate_fsv_report.json`: `status=passed`, row readbacks
+  `prediction=33`, `ablation=78`, `paired=35`, `seed_failures=0`;
+- `table_seed_failures.csv` intentionally contains only the stable header when
+  all child bundles pass.
+
+Resolved root causes:
+
+- Seed45/seed46 old failures were not data-path failures. They were caused by
+  varying the A3 no-action ablation training seed with the main career seed.
+  The run manifest now records both requested and effective ablation seed; the
+  effective seed is the source fixture control seed unless
+  `--career-ablation-training-seed` is explicitly supplied.
+- The first five-pass aggregate attempt
+  `20260430T_paper_small_1k_multiseed_42_46_v3` failed after writing outputs
+  because the generic CSV readback rejected an empty `table_seed_failures.csv`.
+  The reader now allows empty rows only for that failure table.
+
+Manual edge FSV completed:
+
+| Edge | Expected | Observed |
+| --- | --- | --- |
+| existing aggregate output root | typed validation, no overwrite | root remained, file count stayed 0 |
+| expected bundle count mismatch | typed validation, no output | output root absent before/after |
+| duplicate passed seed | typed validation, no output | output root absent before/after |

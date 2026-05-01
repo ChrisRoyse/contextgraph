@@ -4362,7 +4362,7 @@ fn multiseed_aggregate_command(args: MultiseedAggregateArgs) -> DynamicJepaResul
             .join("paper_tables/table_paired_ablation_tests.csv"),
         "table_paired_ablation_tests",
     )?;
-    let seed_failures_readback = read_ci_csv_table(
+    let seed_failures_readback = read_ci_csv_table_allow_empty(
         &args
             .output_root
             .join("paper_tables/table_seed_failures.csv"),
@@ -6013,6 +6013,18 @@ fn ci_table_json(path: &str, key_columns: &[&str], table: CiCsvTable) -> Value {
 }
 
 fn read_ci_csv_table(path: &Path, table_name: &str) -> DynamicJepaResult<CiCsvTable> {
+    read_ci_csv_table_with_options(path, table_name, false)
+}
+
+fn read_ci_csv_table_allow_empty(path: &Path, table_name: &str) -> DynamicJepaResult<CiCsvTable> {
+    read_ci_csv_table_with_options(path, table_name, true)
+}
+
+fn read_ci_csv_table_with_options(
+    path: &Path,
+    table_name: &str,
+    allow_empty_rows: bool,
+) -> DynamicJepaResult<CiCsvTable> {
     let text = fs::read_to_string(path).map_err(|err| DynamicJepaError::Storage {
         operation: "ci_reference.read_csv".to_string(),
         cf: "filesystem".to_string(),
@@ -6073,7 +6085,7 @@ fn read_ci_csv_table(path: &Path, table_name: &str) -> DynamicJepaResult<CiCsvTa
                 .collect::<BTreeMap<_, _>>(),
         );
     }
-    if rows.is_empty() {
+    if rows.is_empty() && !allow_empty_rows {
         return Err(DynamicJepaError::validation(
             "ci_reference.csv",
             format!("{table_name} has no data rows"),
@@ -6751,6 +6763,8 @@ struct ResearchSmokeContext {
     career_event_count: u64,
     career_training_seed: Option<u64>,
     career_ablation_training_seed: Option<u64>,
+    career_ablation_training_seed_effective: Option<u64>,
+    career_ablation_training_seed_origin: String,
     hp_overrides: ResearchHyperparameterOverrides,
     hyperparameter_origin: Option<String>,
     system_specs: PathBuf,
@@ -6851,6 +6865,12 @@ impl ResearchSmokeContext {
             args.career_event_count,
             args.onet_text_zip.is_some(),
         )?;
+        let (career_ablation_training_seed_effective, career_ablation_training_seed_origin) =
+            resolve_career_ablation_seed_control(
+                &args.fixtures_root,
+                args.career_training_seed,
+                args.career_ablation_training_seed,
+            )?;
 
         let mut ctx = Self {
             run_id,
@@ -6865,6 +6885,8 @@ impl ResearchSmokeContext {
             career_event_count,
             career_training_seed: args.career_training_seed,
             career_ablation_training_seed: args.career_ablation_training_seed,
+            career_ablation_training_seed_effective,
+            career_ablation_training_seed_origin,
             hp_overrides,
             hyperparameter_origin: args.hyperparameter_origin,
             system_specs: args.system_specs,
@@ -6936,6 +6958,8 @@ impl ResearchSmokeContext {
                 "career_event_count": self.career_event_count,
                 "career_training_seed": self.career_training_seed,
                 "career_ablation_training_seed": self.career_ablation_training_seed,
+                "career_ablation_training_seed_effective": self.career_ablation_training_seed_effective,
+                "career_ablation_training_seed_origin": self.career_ablation_training_seed_origin,
                 "hyperparameters": self.hp_overrides.manifest_value(),
                 "hyperparameter_origin": self.hyperparameter_origin,
                 "system_specs": self.system_specs,
@@ -7427,6 +7451,34 @@ fn validate_research_career_training_seed(
         ));
     }
     Ok(())
+}
+
+fn resolve_career_ablation_seed_control(
+    fixtures_root: &Path,
+    career_seed: Option<u64>,
+    explicit_ablation_seed: Option<u64>,
+) -> DynamicJepaResult<(Option<u64>, String)> {
+    if let Some(seed) = explicit_ablation_seed {
+        return Ok((Some(seed), "explicit_cli".to_string()));
+    }
+    let checked_in_config = fixtures_root.join("verification/career_taxonomy_train_config.json");
+    let config = read_json_file(&checked_in_config)?;
+    let seed = config["seed"].as_u64().ok_or_else(|| {
+        DynamicJepaError::validation(
+            "research_smoke.career_ablation_training_seed",
+            format!(
+                "career train config {} is missing numeric seed",
+                checked_in_config.display()
+            ),
+            "restore verification/career_taxonomy_train_config.json with an explicit seed or pass --career-ablation-training-seed",
+        )
+    })?;
+    let origin = if career_seed.is_some() {
+        "source_fixture_control_separated_from_main_seed"
+    } else {
+        "source_fixture_control"
+    };
+    Ok((Some(seed), origin.to_string()))
 }
 
 fn validate_research_fixture_root(ctx: &ResearchSmokeContext) -> DynamicJepaResult<()> {
@@ -9377,27 +9429,7 @@ fn run_career_ablation_matrix(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
 }
 
 fn career_ablation_training_seed(ctx: &ResearchSmokeContext) -> DynamicJepaResult<Option<u64>> {
-    if let Some(seed) = ctx.career_ablation_training_seed {
-        return Ok(Some(seed));
-    }
-    if ctx.career_training_seed.is_none() {
-        return Ok(None);
-    }
-    let checked_in_config = ctx
-        .fixtures_root
-        .join("verification/career_taxonomy_train_config.json");
-    let config = read_json_file(&checked_in_config)?;
-    let seed = config["seed"].as_u64().ok_or_else(|| {
-        DynamicJepaError::validation(
-            "research_smoke.career_ablation_training_seed",
-            format!(
-                "checked-in career train config {} is missing numeric seed",
-                checked_in_config.display()
-            ),
-            "restore verification/career_taxonomy_train_config.json with an explicit seed or pass --career-ablation-training-seed",
-        )
-    })?;
-    Ok(Some(seed))
+    Ok(ctx.career_ablation_training_seed_effective)
 }
 
 fn materialize_career_ablation_fixtures(
@@ -12331,9 +12363,10 @@ fn assert_training_metrics(
                 )
             })?;
             let max_val_mse = configured_target.max(0.25);
-            if val_mse > max_val_mse || val_cosine < 0.70 {
+            let min_val_cosine = 0.70;
+            if val_mse > max_val_mse || val_cosine < min_val_cosine {
                 return Err(ctx.fail(format!(
-                    "career_taxonomy metrics outside smoke gate: val_latent_mse={val_mse} max_val_latent_mse={max_val_mse} val_latent_cosine={val_cosine}"
+                    "career_taxonomy metrics outside smoke gate: val_latent_mse={val_mse} max_val_latent_mse={max_val_mse} val_latent_cosine={val_cosine} min_val_latent_cosine={min_val_cosine}"
                 )));
             }
         }
