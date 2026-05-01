@@ -99,6 +99,7 @@ input_fields = ["state.occupation_cluster"]
 output_shape = [4]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -112,6 +113,7 @@ input_fields = ["state.job_zone"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 3.0, std = 2.0 }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -127,6 +129,7 @@ input_fields = ["state.skill_vector"]
 output_shape = [4]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -142,6 +145,7 @@ input_fields = ["state.experience_years"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 10.0, std = 10.0 }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -157,6 +161,7 @@ input_fields = ["state.wage_band"]
 output_shape = [3]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -170,6 +175,7 @@ input_fields = ["action.move"]
 output_shape = [5]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -183,6 +189,7 @@ input_fields = ["outcome.next_occupation_cluster"]
 output_shape = [4]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -196,6 +203,7 @@ input_fields = ["outcome.next_job_zone"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 3.0, std = 2.0 }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -211,6 +219,7 @@ input_fields = ["outcome.next_skill_vector"]
 output_shape = [4]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -226,6 +235,7 @@ input_fields = ["outcome.mobility_label"]
 output_shape = [3]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true

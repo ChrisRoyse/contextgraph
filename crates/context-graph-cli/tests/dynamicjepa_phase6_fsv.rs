@@ -236,6 +236,7 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
     );
     assert_eq!(count(&counter_phase5, "dj_trajectories"), 1);
     assert_eq!(count(&counter_phase5, "dj_latent_panels"), 3);
+    assert_eq!(count(&counter_phase5, "dj_pairwise_readings"), 3);
     evidence.push(json!({"step": "counter_phase5_happy", "output": counter_phase5}));
 
     let train = compile_dataset(&counter_db, "counter_world", "train");
@@ -496,6 +497,7 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
     let grid_phase5 = run_phase5_happy(&grid_db, &grid_domain, "gridworld_5x5", &grid_happy);
     assert_eq!(count(&grid_phase5, "dj_trajectories"), 1);
     assert_eq!(count(&grid_phase5, "dj_latent_panels"), 8);
+    assert_eq!(count(&grid_phase5, "dj_pairwise_readings"), 24);
     evidence.push(json!({"step": "grid_phase5_happy_one_trajectory", "output": grid_phase5}));
 
     let grid_train = compile_dataset(&grid_db, "gridworld_5x5", "train");

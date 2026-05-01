@@ -219,6 +219,7 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
         &counter_happy,
     );
     assert_eq!(count(&counter_materialize, "dj_latent_panels"), 3);
+    assert_eq!(count(&counter_materialize, "dj_pairwise_readings"), 3);
     evidence.push(json!({"step": "counter_phase4_happy", "output": counter_materialize}));
 
     let unsupported_policy_before = run_ok(&[
@@ -563,6 +564,7 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
 
     let grid_materialize = run_phase4_happy(&grid_db, &grid_domain, "gridworld_5x5", &grid_happy);
     assert_eq!(count(&grid_materialize, "dj_latent_panels"), 8);
+    assert_eq!(count(&grid_materialize, "dj_pairwise_readings"), 24);
     evidence.push(json!({"step": "grid_phase4_happy", "output": grid_materialize}));
 
     let grid_compile = run_ok(&[

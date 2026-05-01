@@ -38,6 +38,7 @@ input_fields = ["state.counter"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 0.0, std = 16.0 }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -53,6 +54,7 @@ input_fields = ["action.delta"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 0.0, std = 4.0 }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true

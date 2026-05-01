@@ -52,6 +52,7 @@ input_fields = ["state.x", "state.y"]
 output_shape = [25]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -65,6 +66,7 @@ input_fields = ["action.move"]
 output_shape = [5]
 normalization = { type = "none" }
 required = true
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true
@@ -78,6 +80,7 @@ input_fields = ["time.step_index"]
 output_shape = [1]
 normalization = { type = "standard_score", mean = 3.5, std = 2.0 }
 required = false
+pair_kinds = ["cosine"]
 version = 1
 [instruments.validation]
 require_finite = true

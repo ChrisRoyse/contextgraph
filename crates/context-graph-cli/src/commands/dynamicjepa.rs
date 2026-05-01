@@ -9917,6 +9917,7 @@ fn verify_domain_source_of_truth(
         CF_DJ_VERIFICATION_RUNS,
         CF_DJ_MODEL_ARTIFACTS,
         CF_DJ_TRAINING_RUNS,
+        CF_DJ_PAIRWISE_READINGS,
         CF_DJ_PLAN_TRACES,
         CF_DJ_GUARD_DECISIONS,
     ] {
@@ -11088,6 +11089,10 @@ fn transition_distance_instrument() -> toml::Value {
         normalization_table("none", None, None),
     );
     table.insert("required".to_string(), toml::Value::Boolean(true));
+    table.insert(
+        "pair_kinds".to_string(),
+        toml_string_array(&["cosine".to_string()]),
+    );
     table.insert("version".to_string(), toml::Value::Integer(1));
     table.insert(
         "validation".to_string(),
@@ -11120,6 +11125,10 @@ fn occupation_move_pair_instrument() -> toml::Value {
         normalization_table("none", None, None),
     );
     table.insert("required".to_string(), toml::Value::Boolean(true));
+    table.insert(
+        "pair_kinds".to_string(),
+        toml_string_array(&["cosine".to_string()]),
+    );
     table.insert("version".to_string(), toml::Value::Integer(1));
     table.insert("validation".to_string(), validation_table(None, None));
     toml::Value::Table(table)
@@ -12075,6 +12084,8 @@ impl VerificationDomain {
             CandidateActionConfig::EnumeratedDeltas { deltas } => deltas.len() as u64,
             CandidateActionConfig::EnumeratedMoves { moves } => moves.len() as u64,
         };
+        let instrument_count = domain_pack.instrument_specs.len() as u64;
+        let pairwise_per_panel = instrument_count.saturating_mul(instrument_count.saturating_sub(1)) / 2;
         let edge_raw_delta = sum_edge_delta(edge_fixtures, |edge| edge.raw_delta)?;
         let edge_adapter_delta = sum_edge_delta(edge_fixtures, |edge| edge.adapter_delta)?;
         let counts = BTreeMap::from([
@@ -12105,7 +12116,11 @@ impl VerificationDomain {
             (CF_DJ_TRANSITIONS.to_string(), panel_count),
             (
                 CF_DJ_INSTRUMENT_READINGS.to_string(),
-                panel_count * domain_pack.instrument_specs.len() as u64,
+                panel_count * instrument_count,
+            ),
+            (
+                CF_DJ_PAIRWISE_READINGS.to_string(),
+                panel_count * pairwise_per_panel,
             ),
             (CF_DJ_LATENT_PANELS.to_string(), panel_count),
             (CF_DJ_TRAJECTORIES.to_string(), trajectory_count),
@@ -12580,6 +12595,11 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         expected_panel_count,
         "materialized panel count",
     )?;
+    let fsv9_pairwise = verify_pairwise_integrity_for_domain(ctx, &parsed_domain_pack)?;
+    ctx.decoded.insert(
+        "fsv9_pairwise_readings_integrity".to_string(),
+        fsv9_pairwise,
+    );
 
     let trajectories = run_ok_step(
         "compile_trajectories",
@@ -13030,6 +13050,209 @@ fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()
                 CF_DJ_AUDIT_LOG: expectation.audit_delta,
             }
         }));
+    }
+    Ok(())
+}
+
+fn verify_pairwise_integrity_for_domain(
+    ctx: &VerificationContext,
+    domain_pack: &DomainPack,
+) -> DynamicJepaResult<Value> {
+    let started_at_unix_ms = now_unix_ms()?;
+    let store = open_existing_store(&ctx.db, "verify_pairwise_integrity")?;
+    let db = store.dynamicjepa_db();
+    let pre_state = snapshot_dj_counts(db)?;
+    let panels = list_latent_panels(db, 1_000_000, 0)?
+        .into_iter()
+        .filter(|panel| panel.header.domain_pack_id == domain_pack.id)
+        .collect::<Vec<_>>();
+    let instrument_specs = domain_pack
+        .instrument_specs
+        .iter()
+        .map(|spec| (spec.instrument_id.as_str(), spec))
+        .collect::<BTreeMap<_, _>>();
+    let expected_per_event = domain_pack
+        .instrument_specs
+        .len()
+        .saturating_mul(domain_pack.instrument_specs.len().saturating_sub(1))
+        / 2;
+    let mut pair_count_passed = 0u64;
+    let mut cosine_passed = 0u64;
+    let mut hash_passed = 0u64;
+    let mut bitset_passed = 0u64;
+    let mut sample_rows = Vec::new();
+    for panel in &panels {
+        let pairwise_rows = list_pairwise_readings_for_event(db, panel.event_id)?;
+        if pairwise_rows.len() != expected_per_event {
+            return Err(DynamicJepaError::PairwiseRowCountMismatch {
+                event_id: panel.event_id.as_uuid(),
+                expected: expected_per_event as u64,
+                actual: pairwise_rows.len() as u64,
+            });
+        }
+        pair_count_passed += 1;
+        let instrument_rows = list_instrument_readings_for_event(db, panel.event_id)?;
+        let readings_by_id = instrument_rows
+            .iter()
+            .filter(|reading| matches!(reading.status, ReadingStatus::Ok))
+            .map(|reading| (reading.instrument_id.as_str(), reading))
+            .collect::<BTreeMap<_, _>>();
+        for pairwise in pairwise_rows {
+            let left = readings_by_id
+                .get(pairwise.instrument_j.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                    key: instrument_reading_key(panel.event_id, &pairwise.instrument_j).to_vec(),
+                })?;
+            let right = readings_by_id
+                .get(pairwise.instrument_k.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_INSTRUMENT_READINGS.to_string(),
+                    key: instrument_reading_key(panel.event_id, &pairwise.instrument_k).to_vec(),
+                })?;
+            let recomputed = cosine_similarity_padded_eps(
+                &left.output_dense,
+                &right.output_dense,
+                "FSV-9.cosine_recompute",
+            )?;
+            if (recomputed - pairwise.cosine_agreement).abs() > 1.0e-4 {
+                return Err(DynamicJepaError::PairwiseCosineDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    expected: recomputed,
+                    actual: pairwise.cosine_agreement,
+                });
+            }
+            cosine_passed += 1;
+            let left_spec = instrument_specs
+                .get(pairwise.instrument_j.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_j.to_string(),
+                })?;
+            let right_spec = instrument_specs
+                .get(pairwise.instrument_k.as_str())
+                .copied()
+                .ok_or_else(|| DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_k.to_string(),
+                })?;
+            if pairwise.instrument_j_artifact_hash != instrument_artifact_hash32(left_spec)? {
+                return Err(DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_j.to_string(),
+                });
+            }
+            if pairwise.instrument_k_artifact_hash != instrument_artifact_hash32(right_spec)? {
+                return Err(DynamicJepaError::PairwiseInstrumentHashDrift {
+                    pairwise_id: pairwise.pairwise_id.as_uuid(),
+                    instrument_id: pairwise.instrument_k.to_string(),
+                });
+            }
+            hash_passed += 1;
+            verify_pairwise_bitset(left_spec, right_spec, &pairwise)?;
+            bitset_passed += 1;
+            if sample_rows.len() < 5 {
+                sample_rows.push(json!({
+                    "pairwise_id": pairwise.pairwise_id.to_string(),
+                    "event_id": pairwise.event_id.to_string(),
+                    "instrument_j": pairwise.instrument_j.to_string(),
+                    "instrument_k": pairwise.instrument_k.to_string(),
+                    "cosine_agreement": pairwise.cosine_agreement,
+                    "kinds_emitted": pairwise.kinds_emitted.iter_kinds().collect::<Vec<_>>(),
+                }));
+            }
+        }
+    }
+    let post_state = snapshot_dj_counts(db)?;
+    let ended_at_unix_ms = now_unix_ms()?;
+    let evidence = json!({
+        "fsv_id": "FSV-9",
+        "fsv_check": "pairwise_readings_integrity",
+        "schema_version": 1,
+        "bundle_schema_version": DYNAMICJEPA_BUNDLE_SCHEMA_VERSION,
+        "started_at_unix_ms": started_at_unix_ms,
+        "ended_at_unix_ms": ended_at_unix_ms,
+        "domain": domain_pack.id.to_string(),
+        "pre_state": pre_state,
+        "post_state": post_state,
+        "expected_pairwise_rows_per_event": expected_per_event,
+        "checks": [
+            {"name": "pair_count_per_event", "passed": pair_count_passed, "failed": 0},
+            {"name": "cosine_recompute_within_tolerance", "passed": cosine_passed, "failed": 0},
+            {"name": "instrument_hash_match", "passed": hash_passed, "failed": 0},
+            {"name": "kinds_emitted_bitset_consistent", "passed": bitset_passed, "failed": 0}
+        ],
+        "sample_rows": sample_rows,
+        "status": "passed",
+    });
+    write_json_file(
+        &ctx.evidence_dir
+            .join("fsv9_pairwise_readings_integrity.json"),
+        &evidence,
+    )?;
+    Ok(evidence)
+}
+
+fn verify_pairwise_bitset(
+    left: &InstrumentSpec,
+    right: &InstrumentSpec,
+    pairwise: &PairwiseReading,
+) -> DynamicJepaResult<()> {
+    pairwise.kinds_emitted.validate()?;
+    let rank_expected = both_declare_pair_kind(left, right, PairKindName::RankDisagreement);
+    if pairwise
+        .kinds_emitted
+        .has(PairKindBitset::RANK_DISAGREEMENT)
+        != rank_expected
+        || pairwise.rank_disagreement.is_some() != rank_expected
+    {
+        return Err(DynamicJepaError::validation(
+            "PairwiseReading.rank_disagreement",
+            format!(
+                "rank bit/value mismatch for pairwise row {}",
+                pairwise.pairwise_id
+            ),
+            "keep PairKindBitset and optional pair-kind fields consistent with the domain pack declaration",
+        ));
+    }
+    for (bit, present, field) in [
+        (
+            PairKindBitset::MODALITY_CONTRADICTION,
+            pairwise.modality_contradiction.is_some(),
+            "modality_contradiction",
+        ),
+        (
+            PairKindBitset::SPARSE_DENSE_MISMATCH,
+            pairwise.sparse_dense_mismatch.is_some(),
+            "sparse_dense_mismatch",
+        ),
+        (
+            PairKindBitset::TEMPORAL_SURPRISE,
+            pairwise.temporal_surprise.is_some(),
+            "temporal_surprise",
+        ),
+        (
+            PairKindBitset::CAUSAL_DIRECTION,
+            pairwise.causal_direction_disagreement.is_some(),
+            "causal_direction_disagreement",
+        ),
+        (
+            PairKindBitset::SAFETY_PROXIMITY,
+            pairwise.safety_proximity.is_some(),
+            "safety_proximity",
+        ),
+    ] {
+        if pairwise.kinds_emitted.has(bit) || present {
+            return Err(DynamicJepaError::PairwiseUnsupportedKind {
+                instrument_j: pairwise.instrument_j.to_string(),
+                instrument_k: pairwise.instrument_k.to_string(),
+                kind: field.to_string(),
+                message: "unsupported optional pair-kind was persisted".to_string(),
+            });
+        }
     }
     Ok(())
 }
@@ -15995,6 +16218,239 @@ fn materialize_one_panel(
     })
 }
 
+struct PairwiseSource<'a> {
+    spec: &'a InstrumentSpec,
+    reading: &'a InstrumentReading,
+    artifact_hash: [u8; 32],
+}
+
+fn compute_pairwise_readings(
+    domain_pack: &DomainPack,
+    readings: &[InstrumentReading],
+    source_run_id: Option<Uuid>,
+) -> DynamicJepaResult<Vec<PairwiseReading>> {
+    let mut readings_by_instrument = BTreeMap::new();
+    for reading in readings {
+        if readings_by_instrument
+            .insert(reading.instrument_id.as_str(), reading)
+            .is_some()
+        {
+            return Err(DynamicJepaError::validation(
+                "InstrumentReading.instrument_id",
+                format!("duplicate reading for instrument {}", reading.instrument_id),
+                "write one same-event instrument reading per domain-pack instrument",
+            ));
+        }
+    }
+
+    let mut successful = Vec::new();
+    for spec in &domain_pack.instrument_specs {
+        if !spec.pair_kinds.contains(&PairKindName::Cosine) {
+            return Err(DynamicJepaError::PairwiseCosineKindMissing {
+                instrument_id: spec.instrument_id.to_string(),
+                pair_kinds: spec.pair_kinds.iter().map(ToString::to_string).collect(),
+            });
+        }
+        let reading = readings_by_instrument
+            .get(spec.instrument_id.as_str())
+            .copied()
+            .ok_or_else(|| DynamicJepaError::validation(
+                "InstrumentReading.instrument_id",
+                format!(
+                    "panel materialization did not produce reading for instrument {}",
+                    spec.instrument_id
+                ),
+                "compute every domain-pack instrument before pairwise materialization",
+            ))?;
+        if matches!(reading.status, ReadingStatus::Ok) {
+            successful.push(PairwiseSource {
+                spec,
+                reading,
+                artifact_hash: instrument_artifact_hash32(spec)?,
+            });
+        }
+    }
+
+    let mut out = Vec::with_capacity(successful.len().saturating_mul(successful.len()) / 2);
+    let created_at_unix_ms = now_unix_ms()? as u64;
+    for j in 0..successful.len() {
+        for k in (j + 1)..successful.len() {
+            let left = &successful[j];
+            let right = &successful[k];
+            let mut kinds = PairKindBitset(PairKindBitset::COSINE_AGREEMENT);
+            let cosine = cosine_similarity_padded_eps(
+                &left.reading.output_dense,
+                &right.reading.output_dense,
+                "PairwiseReading.cosine_agreement",
+            )?;
+            let rank_disagreement = if both_declare_pair_kind(
+                left.spec,
+                right.spec,
+                PairKindName::RankDisagreement,
+            ) {
+                kinds.set(PairKindName::RankDisagreement.bit());
+                Some(rank_disagreement_padded(
+                    &left.reading.output_dense,
+                    &right.reading.output_dense,
+                )?)
+            } else {
+                None
+            };
+            reject_unsupported_emitted_pair_kinds(left.spec, right.spec)?;
+            let pairwise_id = PairwiseReadingId::new_v4();
+            let mut row = PairwiseReading {
+                header: DjRecordHeader::new(
+                    pairwise_id.0,
+                    PAIRWISE_READING_RECORD_VERSION,
+                    domain_pack.id.clone(),
+                    domain_pack.version.clone(),
+                    created_at_unix_ms as i64,
+                    source_run_id,
+                ),
+                pairwise_id,
+                event_id: left.reading.event_id,
+                instrument_j: left.spec.instrument_id.clone(),
+                instrument_k: right.spec.instrument_id.clone(),
+                instrument_j_artifact_hash: left.artifact_hash,
+                instrument_k_artifact_hash: right.artifact_hash,
+                kinds_emitted: kinds,
+                cosine_agreement: cosine,
+                rank_disagreement,
+                modality_contradiction: None,
+                sparse_dense_mismatch: None,
+                temporal_surprise: None,
+                causal_direction_disagreement: None,
+                safety_proximity: None,
+                created_at_unix_ms,
+                validation_status: ReadingStatus::Ok,
+            };
+            row.refresh_content_hash()?;
+            out.push(row);
+        }
+    }
+    Ok(out)
+}
+
+fn reject_unsupported_emitted_pair_kinds(
+    left: &InstrumentSpec,
+    right: &InstrumentSpec,
+) -> DynamicJepaResult<()> {
+    for kind in [
+        PairKindName::ModalityContradiction,
+        PairKindName::SparseDenseMismatch,
+        PairKindName::TemporalSurprise,
+        PairKindName::CausalDirectionDisagreement,
+        PairKindName::SafetyProximity,
+    ] {
+        if both_declare_pair_kind(left, right, kind) {
+            return Err(DynamicJepaError::PairwiseUnsupportedKind {
+                instrument_j: left.instrument_id.to_string(),
+                instrument_k: right.instrument_id.to_string(),
+                kind: kind.to_string(),
+                message: "the current strict TOML schema has no required metadata to compute this pair-kind deterministically".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn both_declare_pair_kind(
+    left: &InstrumentSpec,
+    right: &InstrumentSpec,
+    kind: PairKindName,
+) -> bool {
+    left.pair_kinds.contains(&kind) && right.pair_kinds.contains(&kind)
+}
+
+fn cosine_similarity_padded_eps(left: &[f32], right: &[f32], field: &str) -> DynamicJepaResult<f32> {
+    if left.is_empty() || right.is_empty() {
+        return Err(DynamicJepaError::validation(
+            field,
+            "cosine requires two non-empty dense vectors",
+            "persist pairwise rows only for successful instrument readings",
+        ));
+    }
+    let dim = left.len().max(right.len());
+    let mut dot = 0.0f64;
+    let mut left_norm_sq = 0.0f64;
+    let mut right_norm_sq = 0.0f64;
+    for idx in 0..dim {
+        let left_value = left.get(idx).copied().unwrap_or(0.0) as f64;
+        let right_value = right.get(idx).copied().unwrap_or(0.0) as f64;
+        dot += left_value * right_value;
+        left_norm_sq += left_value * left_value;
+        right_norm_sq += right_value * right_value;
+    }
+    let denom = left_norm_sq.sqrt().max(1.0e-8) * right_norm_sq.sqrt().max(1.0e-8);
+    let raw = dot / denom;
+    if !raw.is_finite() || raw.abs() > 1.0001 {
+        return Err(DynamicJepaError::validation(
+            field,
+            format!("computed cosine is outside [-1,1]: {raw}"),
+            "inspect instrument output vectors for non-finite values or numeric overflow",
+        ));
+    }
+    Ok(raw.clamp(-1.0, 1.0) as f32)
+}
+
+fn rank_disagreement_padded(left: &[f32], right: &[f32]) -> DynamicJepaResult<f32> {
+    if left.is_empty() || right.is_empty() {
+        return Err(DynamicJepaError::validation(
+            "PairwiseReading.rank_disagreement",
+            "rank disagreement requires two non-empty dense vectors",
+            "persist pairwise rows only for successful instrument readings",
+        ));
+    }
+    let dim = left.len().max(right.len());
+    if dim <= 1 {
+        return Ok(0.0);
+    }
+    let left_rank = dense_descending_ranks(left, dim);
+    let right_rank = dense_descending_ranks(right, dim);
+    let normalizer = (dim - 1) as f32;
+    let mean = left_rank
+        .iter()
+        .zip(right_rank.iter())
+        .map(|(lhs, rhs)| lhs.abs_diff(*rhs) as f32 / normalizer)
+        .sum::<f32>()
+        / dim as f32;
+    if !mean.is_finite() {
+        return Err(DynamicJepaError::validation(
+            "PairwiseReading.rank_disagreement",
+            "rank disagreement computation produced a non-finite value",
+            "inspect instrument output vectors before enabling rank_disagreement",
+        ));
+    }
+    Ok(mean)
+}
+
+fn dense_descending_ranks(values: &[f32], dim: usize) -> Vec<usize> {
+    let mut indexed = (0..dim)
+        .map(|idx| (idx, values.get(idx).copied().unwrap_or(0.0)))
+        .collect::<Vec<_>>();
+    indexed.sort_by(|(left_idx, left_value), (right_idx, right_value)| {
+        right_value
+            .total_cmp(left_value)
+            .then_with(|| left_idx.cmp(right_idx))
+    });
+    let mut ranks = vec![0usize; dim];
+    for (rank, (idx, _)) in indexed.into_iter().enumerate() {
+        ranks[idx] = rank;
+    }
+    ranks
+}
+
+fn instrument_artifact_hash32(spec: &InstrumentSpec) -> DynamicJepaResult<[u8; 32]> {
+    let bytes = serde_json::to_vec(spec).map_err(|err| {
+        DynamicJepaError::validation(
+            "InstrumentSpec.artifact_hash",
+            format!("failed to serialize instrument spec for hash: {err}"),
+            "instrument specs must remain JSON serializable for pairwise hash provenance",
+        )
+    })?;
+    Ok(sha256(&bytes))
+}
+
 struct InstrumentOutput {
     values: Vec<f32>,
     input_hash: [u8; 32],
@@ -16447,14 +16903,21 @@ fn instrument_hash(spec: &InstrumentSpec) -> [u8; 16] {
 fn panel_hash(
     domain_pack: &DomainPack,
     reading_ids: &[Uuid],
+    pairwise_reading_ids: &[PairwiseReadingId],
     slots: &[PanelSlot],
     vectors: &[Vec<f32>],
 ) -> DynamicJepaResult<[u8; 32]> {
     let mut sorted_reading_ids = reading_ids.iter().map(Uuid::to_string).collect::<Vec<_>>();
     sorted_reading_ids.sort();
+    let mut sorted_pairwise_ids = pairwise_reading_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    sorted_pairwise_ids.sort();
     let bytes = serde_json::to_vec(&json!({
         "domain_pack_id": domain_pack.id.to_string(),
         "reading_ids": sorted_reading_ids,
+        "pairwise_reading_ids": sorted_pairwise_ids,
         "ordered_slots": slots,
         "slot_vectors": vectors,
     }))
@@ -16544,6 +17007,11 @@ fn build_audit(
     };
     record.validate()?;
     Ok(record)
+}
+
+fn set_audit_signal_yield(audit: &mut DjAuditRecord, signal_yield: u32) -> DynamicJepaResult<()> {
+    audit.signal_yield = signal_yield;
+    audit.validate()
 }
 
 fn parse_uuid(value: &str, field: &str) -> DynamicJepaResult<Uuid> {
@@ -16786,8 +17254,19 @@ fn parse_domain_pack_file(path: &Path) -> DynamicJepaResult<DomainPack> {
 }
 
 fn instrument_from_toml(spec: InstrumentToml, idx: usize) -> DynamicJepaResult<InstrumentSpec> {
+    let instrument_id = InstrumentId::new(spec.id)?;
+    let pair_kinds = spec.pair_kinds.ok_or_else(|| {
+        DynamicJepaError::PairwiseCosineKindMissing {
+            instrument_id: instrument_id.to_string(),
+            pair_kinds: Vec::new(),
+        }
+    })?;
+    let pair_kinds = pair_kinds
+        .into_iter()
+        .map(|kind| PairKindName::parse(&kind))
+        .collect::<DynamicJepaResult<Vec<_>>>()?;
     Ok(InstrumentSpec {
-        instrument_id: InstrumentId::new(spec.id)?,
+        instrument_id,
         kind: instrument_kind_from_toml(spec.kind, &format!("instruments[{idx}].kind"))?,
         input_fields: spec.input_fields,
         output_shape: spec.output_shape,
@@ -16797,6 +17276,7 @@ fn instrument_from_toml(spec: InstrumentToml, idx: usize) -> DynamicJepaResult<I
         )?,
         required: spec.required,
         model_ref: spec.model_ref,
+        pair_kinds,
         version: spec.version,
         validation: InstrumentValidation {
             require_finite: spec.validation.require_finite,
@@ -17447,6 +17927,7 @@ struct InstrumentToml {
     normalization: NormalizationToml,
     required: bool,
     model_ref: Option<String>,
+    pair_kinds: Option<Vec<String>>,
     version: u8,
     validation: InstrumentValidationToml,
 }

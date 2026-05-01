@@ -185,6 +185,7 @@ struct InstrumentToml {
     normalization: NormalizationToml,
     required: bool,
     model_ref: Option<String>,
+    pair_kinds: Vec<String>,
     version: u8,
     validation: InstrumentValidationToml,
 }
@@ -485,6 +486,11 @@ fn domain_pack_from_phase0_toml(path: &Path, record_id: Uuid) -> DynamicJepaResu
                     )?,
                     required: spec.required,
                     model_ref: spec.model_ref,
+                    pair_kinds: spec
+                        .pair_kinds
+                        .into_iter()
+                        .map(|kind| PairKindName::parse(&kind))
+                        .collect::<DynamicJepaResult<Vec<_>>>()?,
                     version: spec.version,
                     validation: InstrumentValidation {
                         require_finite: spec.validation.require_finite,

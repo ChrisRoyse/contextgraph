@@ -231,6 +231,7 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
         "--json",
     ]);
     assert_eq!(count(&counter_materialize, "dj_instrument_readings"), 6);
+    assert_eq!(count(&counter_materialize, "dj_pairwise_readings"), 3);
     assert_eq!(count(&counter_materialize, "dj_latent_panels"), 3);
     assert_eq!(
         counter_materialize["summary"]["materialized"]
@@ -271,6 +272,13 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
             .expect("panel readings")
             .len(),
         2
+    );
+    assert_eq!(
+        get_panel["decoded_records"]["pairwise_readings"]
+            .as_array()
+            .expect("panel pairwise readings")
+            .len(),
+        1
     );
     evidence.push(json!({"step": "counter_get_panel", "output": get_panel}));
 
@@ -451,6 +459,7 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
         "--json",
     ]);
     assert_eq!(count(&grid_materialize, "dj_instrument_readings"), 24);
+    assert_eq!(count(&grid_materialize, "dj_pairwise_readings"), 24);
     assert_eq!(count(&grid_materialize, "dj_latent_panels"), 8);
     assert_eq!(
         grid_materialize["summary"]["materialized"]
@@ -580,6 +589,7 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
                     "dj_outcomes",
                     "dj_transitions",
                     "dj_instrument_readings",
+                    "dj_pairwise_readings",
                     "dj_latent_panels",
                     "dj_audit_log"
                 ],
