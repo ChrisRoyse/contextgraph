@@ -4,6 +4,8 @@
     "val_latent_mse": 0.005,
     "test_latent_cosine": 0.005,
     "test_latent_mse": 0.005,
+    "random_init_cosine": 0.005,
+    "shuffled_target_cosine": 0.05,
     "val_action_contrast_acc": 0.02
   },
   "table_ablation": {
@@ -11,6 +13,8 @@
     "val_latent_mse": 0.01,
     "test_latent_cosine": 0.01,
     "test_latent_mse": 0.01,
+    "random_init_cosine": 0.01,
+    "shuffled_target_cosine": 0.01,
     "val_action_contrast_acc": 0.02
   },
   "table_topk_occupation": {

@@ -2,247 +2,247 @@
 
 ## Goal
 
-Defend the artifact and the paper-headline numbers from silent drift. Every
-PR that touches the dynamicjepa runtime, every nightly build, and every
-release candidate must run a graded smoke program and assert the
-reference-bundle hash. Any drift fails CI before it reaches a reviewer.
+Defend the DynamicJEPA artifact and paper-demo numbers from silent drift with
+a free, local-first gate. The canonical gate is
+`scripts/5090jepa/local_ci_gate.sh`; GitHub workflow files are only thin
+self-hosted wrappers around that script.
 
-## Threats To Defend Against
+The gate must fail closed. It must not replace CUDA work with CPU-only work,
+must not use mock O*NET data, must not overwrite evidence bundles, and must not
+hide broken behavior behind tolerant tests.
 
-Concrete failure modes this CI catches:
+## Cost Boundary
 
-- A refactor changes a kernel call order; latents shift; effective rank
-  unchanged but val cosine drifts by 1%.
-- A dependency bump (candle, RocksDB, tokenizers) changes numerical precision;
-  artifact hash changes; reference-bundle hash mismatch.
-- A schema migration is added by accident (forbidden per CLAUDE.md and
-  smokedoc 11), changing CF count.
-- A non-deterministic insertion order is introduced; same-seed reproducibility
-  breaks.
-- A test asserts on a hardcoded number that has drifted (the `phases.rs` red
-  flag from project memory).
-- A bundle layout change goes out untested; reviewer reproduce path breaks.
+The CI gate is designed to be free:
 
-## Three CI Tiers
+- no GitHub-hosted runners;
+- no larger hosted runners;
+- no `actions/upload-artifact`;
+- no `actions/cache`;
+- no Codecov or other third-party reporting service;
+- no automatic issue creation or external API calls;
+- evidence stays on local disk under `tmp/mejepa_local_ci_runs`.
 
-### Tier A — Fast (per-PR, ≤10 minutes)
+GitHub's billing documentation says Actions usage is free for self-hosted
+runners, while hosted minutes, artifact storage, and cache storage can consume
+quota or be billed. This project therefore keeps DynamicJEPA evidence local and
+uses self-hosted runner labels only when GitHub is used as a trigger.
 
-Runs on every PR that touches:
+Reference: https://docs.github.com/en/billing/concepts/product-billing/github-actions
 
-- `crates/context-graph-dynamicjepa/**`
-- `crates/context-graph-cli/src/commands/dynamicjepa.rs`
-- `configs/dynamicjepa/**`
-- `Cargo.lock`
-- `Dockerfile`
-- `docs/5090jepa/smokedocs/**` if a generator script changed
+## Source Of Truth
 
-What it does:
-
-- `cargo check --all-features`;
-- `cargo clippy --all-targets --all-features -- -D warnings` (zero warnings);
-- `cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv
-  --all-features -- --nocapture` (the current 10-test FSV suite);
-- `dynamicjepa research-smoke --purpose smoke --career-event-count 120`
-  against the verified O*NET 30.2 text ZIP.
-
-Pass requires: zero failed tests, zero clippy warnings, smoke bundle status
-`passed`, and a curated subset of bundle hashes match the committed
-`reference_smoke_hashes.json`.
-
-Hardware: GitHub Actions GPU runner or self-hosted RTX-class runner. If the
-runner cannot provide CUDA for the real training gate, the workflow fails; it
-does not silently replace the run with CPU-only or structure-only evidence.
-
-### Tier B — Nightly (≤2 hours)
-
-Runs on a schedule (UTC 03:00).
-
-What it does:
-
-- Tier A in full;
-- `dynamicjepa research-smoke --purpose paper_small --career-event-count 1000
-  --career-training-seed 42`
-  (one-seed paper-small);
-- a 4-cell HP sweep (per doc 22);
-- paper-small same-seed reproducibility check for seed 42;
-- comparison against last week's baseline: per-table cell-level diff with a
-  tolerance budget (`val cosine` ±0.005, `val MSE` ±0.005, `top-1 acc`
-  ±0.02).
-
-Drift outside tolerance opens a CI alert and assigns the maintainer.
-
-### Tier C — Release (manual + automatic on tag)
-
-Runs on `git tag v*` or via manual workflow dispatch.
-
-What it does:
-
-- Tier B in full;
-- multi-seed paper_small with all 5 seeds;
-- `dynamicjepa multiseed-aggregate` over the 5 seed bundles with
-  `--min-passed 5`;
-- container reproducibility check (build twice, compare digest);
-- `reproduce.sh` end-to-end against the published reference hash;
-- artifact-evaluation dry run.
-
-Pass is required for any DOI release.
-
-## Reference Hash Files
-
-Three checked-in files, all small JSON:
+For every local gate run, the source of truth is the generated local evidence:
 
 ```text
-reference/
-  reference_smoke_hashes.json       # for tier A (fixture-based smoke)
-  reference_paper_small_v1.json     # for tier B nightly
-  reference_release_v1.0.0.json     # for tier C, frozen at release
+tmp/mejepa_local_ci_runs/<run_id>_local_ci_manifest.json
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/run_manifest.json
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/fsv_report.json
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/artifact_hashes.json
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/data_manifest.json
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/dbs/*_rocksdb/
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/paper_tables/*.csv
+tmp/mejepa_local_ci_runs/<run_id>_smoke_a/plots/*.svg
 ```
 
-The reference files are **immutable** per release. Updating them requires:
+Return values are not sufficient. The gate writes the bundle, then reads the
+bundle back with separate checks:
 
-- a PR labeled `bundle-bump`;
-- the PR body lists the cause (e.g. "candle 0.10.2 → 0.10.3, expected
-  numerical drift");
-- the new reference is generated by tier B in CI on the PR branch and the
-  resulting hash is committed in the same PR;
-- two reviewers approve.
+- `run_manifest.json` status must be `passed`;
+- `fsv_report.json` status must be `passed`;
+- career RocksDB must contain persisted rows for verification runs and model
+  artifacts;
+- `artifact_hashes.json` must show every registry hash equals the recomputed
+  file hash inside the bundle;
+- `check-reference` must report no structural drift and no out-of-tolerance
+  numeric drift;
+- tables and plots must exist on disk.
 
-This rule prevents a maintainer from silently chasing drift instead of
-investigating it.
+## Three Local Tiers
 
-## Drift Detection Logic
+### Tier A - `smoke-a`
 
-Tier B compares the new bundle to the reference. The diff report has three
-levels:
+Command:
 
-- **Bit-equal**: every CSV is byte-identical to reference. Pass.
-- **Within tolerance**: every numerical cell within configured tolerance.
-  Pass with a warning written to the build log.
-- **Out of tolerance**: at least one cell exceeds tolerance. Fail.
-
-The tolerance file is checked in as `reference/tolerances.json`:
-
-```json
-{
-  "table_prediction_metrics": {
-    "val_cosine": 0.005,
-    "val_mse": 0.005,
-    "test_cosine": 0.005,
-    "test_mse": 0.005
-  },
-  "table_ablation": {
-    "val_cosine": 0.01,
-    "val_mse": 0.01
-  },
-  "table_topk_occupation": {
-    "k_1_acc": 0.02,
-    "ece": 0.02
-  }
-}
+```bash
+LOCAL_CI_RUN_ID_PREFIX=<unique_id> scripts/5090jepa/local_ci_gate.sh smoke-a
 ```
 
-Tolerances are conservative; any drift that crosses them is an investigation
-opportunity, not a "well, ML is noisy" excuse.
+Runs:
 
-## Same-Seed Reproducibility Check
+- CUDA and O*NET preflight;
+- free-workflow scan;
+- `cargo fmt --all -- --check`;
+- `cargo check -p context-graph-cli --all-features`;
+- `cargo clippy -p context-graph-cli --all-targets --all-features -- -D warnings`;
+- workflow YAML parsing;
+- `cargo test -p context-graph-cli --test dynamicjepa_research_smoke_fsv
+  --all-features -- --nocapture`;
+- `dynamicjepa research-smoke --purpose smoke --career-event-count 120`
+  against the verified O*NET 30.2 text ZIP;
+- RocksDB `inspect-counts`;
+- artifact registry hash readback;
+- reference comparison against `reference/reference_smoke_hashes.json` using
+  `reference/tolerances.json`.
 
-Already implemented in research-smoke (career same-seed reproducibility gate).
-CI extends it: tier B runs the same seed twice in the same nightly job and
-asserts the **two child bundle hashes match exactly**, not just the metric
-deltas. Any byte-level non-determinism is a CI failure.
+Pass requires all static checks, the FSV integration suite, bundle generation,
+database readback, artifact hash readback, and reference comparison to pass.
 
-This is stricter than the current "same-seed deltas zero within 1e-6" rule and
-catches non-determinism that is hidden inside floats but visible in JSON
-hashes (e.g. iteration order of a HashMap).
+### Tier B - `smoke-b`
 
-## Manual Promotion Workflow
+Command:
 
-When a `bundle-bump` PR is merged:
+```bash
+LOCAL_CI_RUN_ID_PREFIX=<unique_id> scripts/5090jepa/local_ci_gate.sh smoke-b
+```
 
-1. Tier C runs against the new reference.
-2. The release manifest is updated with the new SHA.
-3. Zenodo deposit is updated (versioned DOI, not concept DOI replacement).
-4. The paper appendix's reference-hash table is regenerated.
-5. CHANGELOG.md gets a `Drift acknowledged` entry.
+Runs Tier A, then:
 
-This makes drift visible in the paper, not buried.
+- two real O*NET `paper_small` seed-42 runs with `--career-event-count 1000`;
+- per-bundle manifest, FSV, RocksDB, artifact-hash, and paper-small reference
+  checks;
+- same-seed cross-run reference comparison by capturing run A as a normalized
+  reference and checking run B against it with the same tolerance schema;
+- reduced real O*NET HP sweep for `batch_size=16,32` and seeds `42,43`.
 
-## What CI Does Not Do
+Same-seed comparison is table/structure/tolerance based. Exact CUDA model file
+bytes are not a pass/fail criterion because GPU training can produce small
+numeric differences even when seeds are fixed. PyTorch's reproducibility notes
+make the same general point: completely reproducible results are not guaranteed
+across releases, platforms, or CPU/GPU execution.
 
-- Does **not** run paper_full (50K+) — too long for any CI tier.
-- Does **not** make external API calls (Zenodo upload is manual).
-- Does **not** modify the production database in any environment.
-- Does **not** silently mask CUDA OOM as "warning"; OOM is a fail.
+Reference: https://docs.pytorch.org/docs/2.11/notes/randomness.html
 
-## Edge Cases (Fail-Closed)
+### Tier C - `release-c`
 
-- Tier A on a CPU-only runner: fail with a runner-capability error; do not
-  falsely claim CUDA pass or substitute structure-only evidence.
-- Tier B times out before completion: fail with `TIMEOUT`; do not record
-  partial bundle as a new reference candidate.
-- Reference file corrupted (JSON parse error): fail with
-  `REFERENCE_CORRUPTED` naming the file; do not run.
-- Drift report cannot find expected CSV in the new bundle: fail with
-  `BUNDLE_INCOMPLETE` listing the missing path.
+Command:
 
-## CI Provider
+```bash
+LOCAL_CI_RUN_ID_PREFIX=<unique_id> scripts/5090jepa/local_ci_gate.sh release-c
+```
 
-Use **GitHub Actions** for tier A. Tier B + tier C run on a self-hosted
-runner with the operator's RTX 5090. The self-hosted runner is registered to
-the repo, gated on the `dynamicjepa-ci` label, and uses the production
-container so CI matches reviewer reproduce path.
+Runs the release matrix:
 
-## Maintainer Pager
+- five real O*NET paper-small seeds: `42,43,44,45,46`;
+- preserved bundle list even if a seed fails;
+- `dynamicjepa multiseed-aggregate` with `--min-passed 5`;
+- release reference comparison;
+- container reproducibility and `reproduce.sh` checks when the release
+  prerequisites exist.
 
-Tier B failure opens a GitHub issue assigned to the maintainer with:
+Tier C is expected to be longer than Tier A and Tier B. It still keeps evidence
+local and free.
 
-- the failing tier;
-- the diff report;
-- the cell that crossed tolerance;
-- the suspected commit (last touch in the affected files).
+## Reference Files
 
-No silent failure. No "investigate later". Drift is a same-day issue.
+Checked-in reference files:
 
-## Implementation Status 2026-04-30
+```text
+reference/reference_smoke_hashes.json
+reference/reference_paper_small_v1.json
+reference/reference_release_v1.0.0.json
+reference/tolerances.json
+```
 
-- Tier B no longer only checks for `dynamicjepa hp-sweep` in CLI help. The
-  workflow now executes a reduced real O*NET HP sweep:
-  `batch_size` values `16,32` across career seeds `42,43`.
-- The sweep writes an immutable bundle under
-  `tmp/mejepa_ci_runs/ci_<run>_<attempt>_hp_sweep_batch_size`, then reads back
-  `sweep_manifest.json`, `sweep_fsv_report.json`,
-  `paper_tables/table_hp_sensitivity.csv`,
-  `paper_tables/table_collapse_diagnostics.csv`, and
-  `plots/collapse_diagnostic_f5.svg`.
-- Local FSV proof bundle:
-  `tmp/mejepa_research_runs/20260430T_hp_sweep_smoke_batch16_v2`.
-- The root cause fixed during integration was a self-referential FSV hash list:
-  the writer required `sweep_fsv_report.json` before writing it. The FSV report
-  is now written and separately read back, while its required-file hash list
-  covers the manifest, tables, and plots.
-- Tier B and Tier C no longer remove pre-existing bundle directories with
-  `rm -rf`. They explicitly fail if a generated run root already exists, so
-  immutable bundle evidence is never overwritten by CI setup.
-- Tier C no longer only checks for `multiseed-aggregate` in help text. It runs
-  five real O*NET paper-small seeds (`42,43,44,45,46`), preserves any failed
-  seed bundles, then requires a five-pass aggregate before release gates can
-  continue.
-- Local Tier C proof aggregate:
-  `tmp/mejepa_research_runs/20260430T_paper_small_1k_multiseed_42_46_v4`.
-  It has `passed_count=5`, `failed_count=0`, prediction rows `33`, ablation rows
-  `78`, paired-test rows `35`, and seed-failure rows `0`.
-- The five-pass aggregate exposed an all-passed edge case:
-  `table_seed_failures.csv` correctly has only a header when no child bundles
-  fail. The aggregate readback now allows empty rows only for this table.
+Reference updates require an explicit bundle-bump review. The new reference
+must be generated from a preserved bundle and committed with the code change
+that explains why drift is expected.
+
+## Drift Detection
+
+`dynamicjepa check-reference` compares bundle tables and required files against
+a reference:
+
+- `bit_equal`: table content is byte-identical where exact equality is expected;
+- `within_tolerance`: all recognized numeric metric deltas are within the
+  checked-in tolerance schema;
+- `out_of_tolerance`: at least one recognized metric exceeds tolerance and the
+  gate fails;
+- `REFERENCE_TOLERANCE_MISSING`: a known numeric metric column has no tolerance
+  entry and the gate fails;
+- structural drift: missing rows, missing columns, or unexpected non-numeric
+  changes fail.
+
+The tolerance file now covers all known numeric metrics emitted by
+`table_prediction_metrics.csv` and `table_ablation.csv`, including
+`random_init_cosine`, `shuffled_target_cosine`, and
+`val_action_contrast_acc`.
+
+## Artifact Integrity
+
+Artifact integrity means the bundle's artifact registry matches the physical
+files in that same bundle. The gate enforces:
+
+```bash
+jq -e '[.[].artifact_hashes[] | select(.equal != true)] | length == 0' \
+  <bundle>/artifact_hashes.json
+```
+
+Cross-run exact hashes for generated reports, manifests, and CUDA model files
+are diagnostic evidence, not the primary pass/fail rule. The primary regression
+rule is: no structural drift, no missing tolerance for numeric metrics, no
+out-of-tolerance numeric drift, and no in-bundle artifact hash mismatch.
+
+## Root Causes Fixed
+
+The current local gate fixes the issues found during integration:
+
+- stale smoke reference did not match the expanded smoke bundle rows;
+- `random_init_cosine` and `shuffled_target_cosine` were numeric metrics but
+  had no tolerance entries;
+- missing numeric tolerances now fail with `REFERENCE_TOLERANCE_MISSING`;
+- career negative sampling depended on run-local UUIDs, so same real data and
+  same seed could select different negative panels;
+- negative panel ordering and selection now use stable panel feature hashes and
+  outcome-signature hashes instead of run-local UUIDs;
+- Tier B no longer uses exact model artifact byte equality as the same-seed
+  CUDA pass/fail gate.
+
+## Edge Cases
+
+The local gate must fail closed for:
+
+- unsupported tier;
+- missing O*NET ZIP;
+- existing bundle path;
+- CPU-only runner;
+- corrupted reference JSON;
+- missing table or plot;
+- missing numeric tolerance;
+- artifact registry hash mismatch;
+- out-of-tolerance metric drift.
+
+Failure evidence must remain on disk when a bundle has already been created.
+The gate must never delete and recreate an evidence bundle for the same run id.
+
+## Current Verified Run
+
+Latest Tier A proof from this integration pass:
+
+```text
+run id: 20260430T_local_smoke_a_free_gate_v6
+manifest: tmp/mejepa_local_ci_runs/20260430T_local_smoke_a_free_gate_v6_local_ci_manifest.json
+bundle: tmp/mejepa_local_ci_runs/20260430T_local_smoke_a_free_gate_v6_smoke_a
+status: passed
+system specs SHA-256: acdc549a5913c59f46376414c08373a8363d646fd3c36d1fc6289a193c0e1205
+```
+
+The full findings and FSV evidence are recorded in:
+
+```text
+docs/5090jepa/smokedocs/reports/20260430_local_free_ci_gate_fsv.md
+```
 
 ## Acceptance
 
-This work is done when:
+This work is accepted when:
 
-- three workflow files exist (`.github/workflows/{ci_smoke_a,ci_smoke_b,
-  ci_smoke_c}.yml`);
-- the reference hash files exist with values from the current paper-small
-  v1 bundle;
-- a deliberate test PR (which intentionally bumps a number) demonstrates the
-  drift detection fires;
-- doc 09 §Iteration Policy is updated with a pointer to this CI doc.
+- `.github/workflows/{ci,ci_smoke_a,ci_smoke_b,ci_smoke_c}.yml` use only
+  self-hosted/local execution for DynamicJEPA;
+- the free-service workflow scan returns no matches;
+- `scripts/5090jepa/local_ci_gate.sh smoke-a` passes on the local RTX 5090;
+- the source-of-truth bundle is physically inspected after execution;
+- at least three fail-closed edge cases are manually verified with before and
+  after state;
+- reports are written under `docs/5090jepa/smokedocs/reports/`.

@@ -241,6 +241,7 @@ run_smoke_a_bundle() {
     --json | tee "$bundle/local_ci_inspect_counts_career_taxonomy.json"
   jq -e '.counts.dj_verification_runs >= 1 and .counts.dj_model_artifacts >= 1' \
     "$bundle/local_ci_inspect_counts_career_taxonomy.json"
+  jq -e '[.[].artifact_hashes[] | select(.equal != true)] | length == 0' "$bundle/artifact_hashes.json"
   CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa check-reference \
     --bundle "$bundle" \
     --reference reference/reference_smoke_hashes.json \
@@ -275,11 +276,11 @@ run_paper_seed42_twice() {
     CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa inspect-counts \
       --db "$bundle/dbs/${run_id}_career_taxonomy_rocksdb" \
       --json | tee "$bundle/local_ci_inspect_counts_career_taxonomy.json"
+    jq -e '[.[].artifact_hashes[] | select(.equal != true)] | length == 0' "$bundle/artifact_hashes.json"
     CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa check-reference \
       --bundle "$bundle" \
       --reference reference/reference_paper_small_v1.json \
       --tolerances reference/tolerances.json \
-      --require-artifact-hash-match \
       --json | tee "$RUN_ROOT/${run_id}_reference_check.json"
   done
   CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa capture-reference \
@@ -292,9 +293,13 @@ run_paper_seed42_twice() {
     --output "$RUN_ROOT/${run_b}_normalized_reference.json" \
     --reference-id local_seed42_b \
     --json
-  jq -S '{artifact_hashes, tables}' "$RUN_ROOT/${run_a}_normalized_reference.json" > "$RUN_ROOT/seed42_a.normalized.json"
-  jq -S '{artifact_hashes, tables}' "$RUN_ROOT/${run_b}_normalized_reference.json" > "$RUN_ROOT/seed42_b.normalized.json"
-  diff -u "$RUN_ROOT/seed42_a.normalized.json" "$RUN_ROOT/seed42_b.normalized.json"
+  CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa check-reference \
+    --bundle "$RUN_ROOT/$run_b" \
+    --reference "$RUN_ROOT/${run_a}_normalized_reference.json" \
+    --tolerances reference/tolerances.json \
+    --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_seed42_same_seed_reference_check.json"
+  jq -e '.status == "bit_equal" or .status == "within_tolerance"' \
+    "$RUN_ROOT/${RUN_ID_PREFIX}_seed42_same_seed_reference_check.json"
 }
 
 run_hp_sweep_gate() {

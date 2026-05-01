@@ -66,7 +66,7 @@ the 16-week roadmap.
 | `20_reproducibility_artifact_and_release.md` | Apptainer + Docker, Zenodo DOI, ACM artifact-badging packet |
 | `21_compliance_ethics_broader_impact.md` | NIST AI RMF mapping, O*NET attribution, dual-use disclosure |
 | `22_hyperparameters_and_collapse_diagnostics.md` | LR/latent-dim/batch sweeps + rank/alignment/uniformity/SIGReg-residual |
-| `23_ci_smoke_regression_and_drift_detection.md` | Per-PR / nightly / release CI tiers + reference-hash drift gating |
+| `23_ci_smoke_regression_and_drift_detection.md` | Free local/self-hosted CI tiers + FSV readback and drift gating |
 | `24_multistep_rollout_and_planning_horizon.md` | Optional v1.1 H>1 rollouts (direct vs autoregressive) |
 | `25_privacy_gate_real_data_phase12.md` | Post-v1.0 Phase 12 privacy gate (real subject-level data) |
 | `26_closed_loop_master_architecture.md` | **Monolith architecture**: one process, six layers, in-host Rust↔Python boundary |

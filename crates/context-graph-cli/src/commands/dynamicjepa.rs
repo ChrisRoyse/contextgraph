@@ -6463,6 +6463,11 @@ fn compare_ci_table(
                 if delta > 0.0 {
                     numeric_diffs.push(diff);
                 }
+            } else if ci_numeric_metric_column_requires_tolerance(table, column) {
+                return Err(CiReferenceCheckFailure::new(
+                    "REFERENCE_TOLERANCE_MISSING",
+                    format!("{table}.{column} is a numeric metric column but reference/tolerances.json has no tolerance"),
+                ));
             } else if reference_value != current_value {
                 structural_diffs.push(json!({
                     "table": table,
@@ -6588,6 +6593,20 @@ fn ci_tolerance(tolerances: &Value, table: &str, column: &str) -> Option<f64> {
 
 fn ci_ignored_column(table: &str, column: &str) -> bool {
     column == "verification_run_id" || (table == "table_edge_cases" && column == "evidence_file")
+}
+
+fn ci_numeric_metric_column_requires_tolerance(table: &str, column: &str) -> bool {
+    matches!(table, "table_prediction_metrics" | "table_ablation")
+        && matches!(
+            column,
+            "val_latent_cosine"
+                | "val_latent_mse"
+                | "test_latent_cosine"
+                | "test_latent_mse"
+                | "random_init_cosine"
+                | "shuffled_target_cosine"
+                | "val_action_contrast_acc"
+        )
 }
 
 fn compare_ci_artifact_hashes(
@@ -9220,6 +9239,14 @@ fn run_career_reproducibility(ctx: &mut ResearchSmokeContext) -> DynamicJepaResu
         "val_latent_cosine",
         "test_latent_mse",
         "test_latent_cosine",
+        "val_action_contrast_acc",
+        "test_action_contrast_acc",
+        "train_action_contrast_acc",
+        "random_init_cosine",
+        "shuffled_target_cosine",
+        "val_shuffled_target_cosine",
+        "test_shuffled_target_cosine",
+        "train_shuffled_target_cosine",
     ] {
         let lhs = base["metrics"][metric].as_f64().ok_or_else(|| {
             DynamicJepaError::VerificationFailed {
@@ -12667,6 +12694,7 @@ struct DatasetCandidateRow {
 struct NegativePoolEntry {
     panel: LatentPanel,
     outcome_signature: String,
+    stable_selection_hash: [u8; 32],
 }
 
 #[derive(Debug)]
@@ -13304,13 +13332,20 @@ fn build_negative_pool(
         .into_iter()
         .map(|panel| {
             let outcome_signature = panel_outcome_signature(db, &panel)?;
+            let stable_selection_hash =
+                stable_negative_panel_selection_hash(&panel, &outcome_signature)?;
             Ok(NegativePoolEntry {
                 panel,
                 outcome_signature,
+                stable_selection_hash,
             })
         })
         .collect::<DynamicJepaResult<Vec<_>>>()?;
-    pool.sort_by_key(|item| item.panel.panel_id);
+    pool.sort_by(|left, right| {
+        left.stable_selection_hash
+            .cmp(&right.stable_selection_hash)
+            .then_with(|| left.outcome_signature.cmp(&right.outcome_signature))
+    });
     Ok(pool)
 }
 
@@ -13450,13 +13485,18 @@ fn select_negative_panel_id(
             cf: CF_DJ_LATENT_PANELS.to_string(),
             key: row.target_panel.panel_id.into_bytes().to_vec(),
         })?;
-    let candidates = negative_pool
+    let mut candidates = negative_pool
         .iter()
         .filter(|entry| {
             entry.panel.panel_id != row.target_panel.panel_id
                 && entry.outcome_signature != target_signature
         })
         .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        left.stable_selection_hash
+            .cmp(&right.stable_selection_hash)
+            .then_with(|| left.outcome_signature.cmp(&right.outcome_signature))
+    });
     if candidates.len() < required as usize {
         return Err(DynamicJepaError::DatasetLeakageDetected {
             message: format!(
@@ -13470,16 +13510,64 @@ fn select_negative_panel_id(
             dataset_id: Uuid::nil(),
         });
     }
-    let seed = format!(
-        "{}:{}:{}:{}",
-        row.trajectory_id,
-        row.row_index_in_trajectory,
-        row.input_panel.panel_id,
-        row.target_panel.panel_id
-    );
-    let hash = context_graph_storage::dynamicjepa::keys::blake3_128(seed.as_bytes());
+    let input_panel_feature_hash = stable_panel_feature_hash(&row.input_panel)?;
+    let target_panel_feature_hash = stable_panel_feature_hash(&row.target_panel)?;
+    let seed = serde_json::to_vec(&json!({
+        "domain_pack_id": domain_pack.id.to_string(),
+        "domain_pack_version": &domain_pack.version,
+        "row_index_in_trajectory": row.row_index_in_trajectory,
+        "input_panel_feature_sha256": hex_bytes(&input_panel_feature_hash),
+        "target_panel_feature_sha256": hex_bytes(&target_panel_feature_hash),
+        "target_outcome_signature_sha256": hex_bytes(&sha256(target_signature.as_bytes())),
+    }))
+    .map_err(|err| {
+        DynamicJepaError::validation(
+            "compile-dataset.negative_sampling_seed",
+            format!("failed to serialize stable negative sampling seed: {err}"),
+            "negative sampling seed payload must remain JSON serializable",
+        )
+    })?;
+    let hash = context_graph_storage::dynamicjepa::keys::blake3_128(&seed);
     let idx = (u128::from_be_bytes(hash) % candidates.len() as u128) as usize;
     Ok(candidates[idx].panel.panel_id)
+}
+
+fn stable_panel_feature_hash(panel: &LatentPanel) -> DynamicJepaResult<[u8; 32]> {
+    let bytes = serde_json::to_vec(&json!({
+        "domain_pack_id": panel.header.domain_pack_id.to_string(),
+        "domain_pack_version": &panel.header.domain_pack_version,
+        "ordered_slots": &panel.ordered_slots,
+        "slot_vectors": &panel.slot_vectors,
+        "slot_masks": &panel.slot_masks,
+        "materializer_version": panel.materializer_version,
+    }))
+    .map_err(|err| {
+        DynamicJepaError::validation(
+            "compile-dataset.stable_panel_feature_hash",
+            format!("failed to serialize stable panel feature hash payload: {err}"),
+            "panel feature hash payload must exclude run-local UUIDs and remain JSON serializable",
+        )
+    })?;
+    Ok(sha256(&bytes))
+}
+
+fn stable_negative_panel_selection_hash(
+    panel: &LatentPanel,
+    outcome_signature: &str,
+) -> DynamicJepaResult<[u8; 32]> {
+    let feature_hash = stable_panel_feature_hash(panel)?;
+    let bytes = serde_json::to_vec(&json!({
+        "feature_sha256": hex_bytes(&feature_hash),
+        "outcome_signature_sha256": hex_bytes(&sha256(outcome_signature.as_bytes())),
+    }))
+    .map_err(|err| {
+        DynamicJepaError::validation(
+            "compile-dataset.stable_negative_panel_selection_hash",
+            format!("failed to serialize stable negative panel key: {err}"),
+            "negative panel ordering must exclude run-local UUIDs and remain JSON serializable",
+        )
+    })?;
+    Ok(sha256(&bytes))
 }
 
 fn verify_dataset_shard_sources(
