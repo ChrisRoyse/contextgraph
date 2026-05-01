@@ -13499,6 +13499,7 @@ struct PanelCreatedIds {
     event_ids: Vec<String>,
     transition_ids: Vec<String>,
     instrument_reading_ids: Vec<String>,
+    pairwise_reading_ids: Vec<String>,
 }
 
 impl PanelCreatedIds {
@@ -13508,6 +13509,8 @@ impl PanelCreatedIds {
         self.transition_ids.push(evidence.transition_id);
         self.instrument_reading_ids
             .extend(evidence.instrument_reading_ids);
+        self.pairwise_reading_ids
+            .extend(evidence.pairwise_reading_ids);
     }
 }
 
@@ -13516,6 +13519,7 @@ struct MaterializedPanelEvidence {
     event_id: String,
     transition_id: String,
     instrument_reading_ids: Vec<String>,
+    pairwise_reading_ids: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -15832,7 +15836,19 @@ fn materialize_one_panel(
     }
 
     let panel_id = PanelId::new_v4();
-    let panel_hash = panel_hash(domain_pack, &reading_ids, &slots, &vectors)?;
+    let mut pairwise_readings =
+        compute_pairwise_readings(domain_pack, &readings, transition.header.source_run_id)?;
+    let pairwise_reading_ids = pairwise_readings
+        .iter()
+        .map(|reading| reading.pairwise_id)
+        .collect::<Vec<_>>();
+    let panel_hash = panel_hash(
+        domain_pack,
+        &reading_ids,
+        &pairwise_reading_ids,
+        &slots,
+        &vectors,
+    )?;
     let mut panel = LatentPanel {
         header: DjRecordHeader::new(
             panel_id.0,
@@ -15848,7 +15864,7 @@ fn materialize_one_panel(
         action_id: action.action_id,
         outcome_id: Some(outcome.outcome_id),
         instrument_reading_ids: reading_ids.clone(),
-        pairwise_reading_ids: Vec::new(),
+        pairwise_reading_ids: pairwise_reading_ids.clone(),
         ordered_slots: slots,
         slot_vectors: vectors,
         slot_masks: masks,
@@ -15856,7 +15872,7 @@ fn materialize_one_panel(
         materializer_version: 1,
     };
     panel.refresh_content_hash()?;
-    let audit = build_audit(
+    let mut panel_audit = build_audit(
         "materialize_panel",
         AuditStatus::Ok,
         vec![transition.transition_id.to_string()],
@@ -15872,7 +15888,66 @@ fn materialize_one_panel(
             .chain(readings.iter().map(|reading| reading.header.content_hash))
             .collect(),
     )?;
-    put_panel_with_readings_batch(db, &readings, &panel, &audit)?;
+    set_audit_signal_yield(
+        &mut panel_audit,
+        signal_yield_for_operation(
+            "materialize_panel",
+            SignalYieldDimensions {
+                n_panel_slots: u32::try_from(readings.len()).map_err(|_| {
+                    DynamicJepaError::validation(
+                        "materialize_panel.instrument_count",
+                        "instrument count exceeds u32 signal-yield capacity",
+                        "reduce the domain pack instrument count",
+                    )
+                })?,
+                n_active_modalities: 0,
+                k_candidates: 0,
+            },
+        )?,
+    )?;
+    let pairwise_output_ids = pairwise_reading_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let mut pairwise_audit = build_audit(
+        "materialize_pairwise",
+        AuditStatus::Ok,
+        reading_ids.iter().map(Uuid::to_string).collect(),
+        pairwise_output_ids,
+        vec![CF_DJ_PAIRWISE_READINGS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+        pairwise_readings
+            .iter()
+            .map(|reading| reading.header.content_hash)
+            .collect(),
+    )?;
+    let successful_reading_count = readings
+        .iter()
+        .filter(|reading| matches!(reading.status, ReadingStatus::Ok))
+        .count();
+    set_audit_signal_yield(
+        &mut pairwise_audit,
+        signal_yield_for_operation(
+            "materialize_pairwise",
+            SignalYieldDimensions {
+                n_panel_slots: u32::try_from(successful_reading_count).map_err(|_| {
+                    DynamicJepaError::validation(
+                        "materialize_pairwise.successful_reading_count",
+                        "successful reading count exceeds u32 signal-yield capacity",
+                        "reduce the domain pack instrument count",
+                    )
+                })?,
+                n_active_modalities: 0,
+                k_candidates: 0,
+            },
+        )?,
+    )?;
+    put_panel_with_readings_and_pairwise_batch(
+        db,
+        &readings,
+        &pairwise_readings,
+        &panel,
+        &[panel_audit, pairwise_audit],
+    )?;
 
     let stored_panel =
         get_latent_panel(db, panel_id)?.ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
@@ -15899,11 +15974,24 @@ fn materialize_one_panel(
             });
         }
     }
+    let stored_pairwise = list_pairwise_readings_for_event(db, panel.event_id)?;
+    pairwise_readings.sort_by_key(|reading| reading.pairwise_id);
+    let mut stored_pairwise_sorted = stored_pairwise;
+    stored_pairwise_sorted.sort_by_key(|reading| reading.pairwise_id);
+    if stored_pairwise_sorted != pairwise_readings {
+        return Err(DynamicJepaError::StorageInvariantViolation {
+            message: format!(
+                "pairwise readings readback mismatch for event {}",
+                panel.event_id
+            ),
+        });
+    }
     Ok(MaterializedPanelEvidence {
         panel_id: panel_id.to_string(),
         event_id: state.source_event_id.to_string(),
         transition_id: transition.transition_id.to_string(),
         instrument_reading_ids: reading_ids.iter().map(Uuid::to_string).collect(),
+        pairwise_reading_ids: pairwise_reading_ids.iter().map(ToString::to_string).collect(),
     })
 }
 
