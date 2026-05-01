@@ -76,7 +76,7 @@ enum Commands {
     #[command(name = "dynamicjepa")]
     DynamicJepa {
         #[command(subcommand)]
-        action: commands::dynamicjepa::DynamicJepaCommands,
+        action: Box<commands::dynamicjepa::DynamicJepaCommands>,
     },
     /// Learning-as-UTL event commands
     Learning {
@@ -181,7 +181,7 @@ pub async fn main() {
             commands::divergence::handle_divergence_command(action).await
         }
         Commands::DynamicJepa { action } => {
-            commands::dynamicjepa::handle_dynamicjepa_command(action).await
+            commands::dynamicjepa::handle_dynamicjepa_command(*action).await
         }
         Commands::Learning { action } => commands::learning::handle_learning_command(action).await,
         Commands::Utl { action } => commands::utl::handle_utl_command(action).await,

@@ -44,6 +44,14 @@ tmp/mejepa_local_ci_runs/<run_id>_smoke_a/data_manifest.json
 tmp/mejepa_local_ci_runs/<run_id>_smoke_a/dbs/*_rocksdb/
 tmp/mejepa_local_ci_runs/<run_id>_smoke_a/paper_tables/*.csv
 tmp/mejepa_local_ci_runs/<run_id>_smoke_a/plots/*.svg
+tmp/mejepa_local_ci_runs/<run_id>_paper_small_seed42_{a,b}/
+tmp/mejepa_local_ci_runs/<run_id>_hp_sweep_batch_size/
+tmp/mejepa_local_ci_runs/<run_id>_hp_sweep_batch_size/sweep_manifest.json
+tmp/mejepa_local_ci_runs/<run_id>_hp_sweep_batch_size/sweep_fsv_report.json
+tmp/mejepa_local_ci_runs/<run_id>_paper_small_seed{42,43,44,45,46}/
+tmp/mejepa_local_ci_runs/<run_id>_paper_small_multiseed_aggregate/
+tmp/mejepa_local_ci_runs/<run_id>_docker_image_{1,2}.tar
+tmp/mejepa_local_ci_runs/<run_id>_docker_container_verify_aggregate.json
 ```
 
 Return values are not sufficient. The gate writes the bundle, then reads the
@@ -104,7 +112,8 @@ Runs Tier A, then:
   checks;
 - same-seed cross-run reference comparison by capturing run A as a normalized
   reference and checking run B against it with the same tolerance schema;
-- reduced real O*NET HP sweep for `batch_size=16,32` and seeds `42,43`.
+- reduced real O*NET HP sweep for `batch_size=16,32` and seeds `42,43`
+  at `--career-event-count 1000`.
 
 Same-seed comparison is table/structure/tolerance based. Exact CUDA model file
 bytes are not a pass/fail criterion because GPU training can produce small
@@ -113,6 +122,11 @@ make the same general point: completely reproducible results are not guaranteed
 across releases, platforms, or CPU/GPU execution.
 
 Reference: https://docs.pytorch.org/docs/2.11/notes/randomness.html
+
+The batch-size sweep preserves the base optimizer-step budget. With the current
+base config (`batch_size=16`, `epochs=1000`) and 1K O*NET career events,
+`batch_size=32` cells persist `epochs=2000`; the sweep manifest and generated
+tables include the requested and persisted epoch count.
 
 ### Tier C - `release-c`
 
@@ -127,9 +141,13 @@ Runs the release matrix:
 - five real O*NET paper-small seeds: `42,43,44,45,46`;
 - preserved bundle list even if a seed fails;
 - `dynamicjepa multiseed-aggregate` with `--min-passed 5`;
-- release reference comparison;
-- container reproducibility and `reproduce.sh` checks when the release
-  prerequisites exist.
+- release aggregate reference comparison with
+  `dynamicjepa check-release-aggregate-reference`;
+- deterministic Docker artifact export twice with `SOURCE_DATE_EPOCH` and
+  `rewrite-timestamp=true`;
+- container load + `docker run --gpus all ... verify-aggregate` against the
+  real aggregate source of truth;
+- local artifact-evaluation dry run.
 
 Tier C is expected to be longer than Tier A and Tier B. It still keeps evidence
 local and free.
@@ -198,6 +216,26 @@ The current local gate fixes the issues found during integration:
   outcome-signature hashes instead of run-local UUIDs;
 - Tier B no longer uses exact model artifact byte equality as the same-seed
   CUDA pass/fail gate.
+- read-only inspection commands no longer create missing RocksDB paths;
+  `inspect-counts` and `inspect-cf` open existing stores only, while the
+  internal smoke verifier uses explicit `--allow-missing` before-state reads;
+- the Tier B HP sweep no longer uses the 120-event proxy that failed the
+  `batch_size=32` transition ablation; it uses the verified 1K real O*NET
+  scale and records the scaled epoch budget in child bundles, sweep manifests,
+  and sweep tables;
+- the top-level CLI enum boxes the DynamicJEPA subcommand so `cargo clippy
+  --all-targets -D warnings` remains part of the free local gate.
+- release-C now has checked-in `Dockerfile` and executable `reproduce.sh`
+  artifacts and fails closed if either is missing;
+- `reproduce.sh verify-aggregate` now calls the compiled Rust verifier instead
+  of requiring Ruby inside the CUDA container;
+- Docker reproducibility is checked on deterministic tar exports because
+  local Docker daemon unpacking conflicts with BuildKit timestamp rewriting;
+- CUDA container verification uses `--gpus all`, which is required for the
+  host driver library (`libcuda.so.1`) to be mounted into the container;
+- the release reference was recaptured from a preserved passed five-seed
+  aggregate after the old reference was proven stale for the current
+  implementation's counter-world auxiliary action-contrast row.
 
 ## Edge Cases
 
@@ -218,12 +256,16 @@ The gate must never delete and recreate an evidence bundle for the same run id.
 
 ## Current Verified Run
 
-Latest Tier A proof from this integration pass:
+Latest Tier B proof from this integration pass:
 
 ```text
-run id: 20260430T_local_smoke_a_free_gate_v6
-manifest: tmp/mejepa_local_ci_runs/20260430T_local_smoke_a_free_gate_v6_local_ci_manifest.json
-bundle: tmp/mejepa_local_ci_runs/20260430T_local_smoke_a_free_gate_v6_smoke_a
+run id: 20260501T_local_smoke_b_free_gate_v5
+manifest: tmp/mejepa_local_ci_runs/20260501T_local_smoke_b_free_gate_v5_local_ci_manifest.json
+smoke bundle: tmp/mejepa_local_ci_runs/20260501T_local_smoke_b_free_gate_v5_smoke_a
+paper-small bundles:
+  tmp/mejepa_local_ci_runs/20260501T_local_smoke_b_free_gate_v5_paper_small_seed42_a
+  tmp/mejepa_local_ci_runs/20260501T_local_smoke_b_free_gate_v5_paper_small_seed42_b
+hp sweep bundle: tmp/mejepa_local_ci_runs/20260501T_local_smoke_b_free_gate_v5_hp_sweep_batch_size
 status: passed
 system specs SHA-256: acdc549a5913c59f46376414c08373a8363d646fd3c36d1fc6289a193c0e1205
 ```
@@ -231,7 +273,30 @@ system specs SHA-256: acdc549a5913c59f46376414c08373a8363d646fd3c36d1fc6289a193c
 The full findings and FSV evidence are recorded in:
 
 ```text
-docs/5090jepa/smokedocs/reports/20260430_local_free_ci_gate_fsv.md
+docs/5090jepa/smokedocs/reports/20260501_local_smoke_b_tier_fsv.md
+```
+
+Latest Tier C proof from this integration pass:
+
+```text
+run id: 20260501T_release_c_gate_v2
+manifest: tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_local_ci_manifest.json
+paper-small bundles:
+  tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed42
+  tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed43
+  tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed44
+  tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed45
+  tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed46
+aggregate: tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate
+status: passed
+docker artifact SHA-256: 099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e
+release reference SHA-256: f5212d7fbf1da4df0f2dbbf6e520d4a97bc520f3e8d9a4dba1c113b73dd5c614
+```
+
+The full findings and FSV evidence are recorded in:
+
+```text
+docs/5090jepa/smokedocs/reports/20260501_release_c_repro_artifact_fsv.md
 ```
 
 ## Acceptance
@@ -241,7 +306,7 @@ This work is accepted when:
 - `.github/workflows/{ci,ci_smoke_a,ci_smoke_b,ci_smoke_c}.yml` use only
   self-hosted/local execution for DynamicJEPA;
 - the free-service workflow scan returns no matches;
-- `scripts/5090jepa/local_ci_gate.sh smoke-a` passes on the local RTX 5090;
+- `scripts/5090jepa/local_ci_gate.sh smoke-b` passes on the local RTX 5090;
 - the source-of-truth bundle is physically inspected after execution;
 - at least three fail-closed edge cases are manually verified with before and
   after state;

@@ -21,10 +21,10 @@ docker run --gpus all \
   -v /path/to/onet:/data/onet:ro \
   -v /path/to/output:/work \
   <registry>/contextgraph-mejepa:<tag> \
-  reproduce paper_small_1k --seeds 42,43,44,45,46
+  paper_small_1k --seeds 42,43,44,45,46
 ```
 
-The `reproduce` subcommand wraps `dynamicjepa research-smoke` + the multi-seed
+The `paper_small_1k` mode wraps `dynamicjepa research-smoke` + the multi-seed
 aggregator (doc 15) and writes the full bundle to `/work`. After completion,
 the script prints the SHA-256 of `aggregate_manifest.json` and the reviewer
 checks it against the published reference hash.
@@ -40,11 +40,18 @@ Two images, same content, two formats:
 
 ### Docker (developer-facing)
 
-- Base: `nvidia/cuda:13.2.0-devel-ubuntu24.04`.
+- Base: `nvidia/cuda:13.2.0-devel-ubuntu24.04`, pinned by digest in the
+  checked-in `Dockerfile`.
 - Pinned: `rustc 1.95.0`, `cargo 1.95.0`, `candle-core` git hash from
   `Cargo.lock`.
-- Build via `Dockerfile` checked into the repo; reproducible builder with
-  multi-stage: stage 1 builds the binary, stage 2 is a slim runtime.
+- Current local release gate builds the Rust binary on the verified RTX 5090
+  host, then packages only `target/debug/context-graph`, `reproduce.sh`,
+  configs, docs, and checked-in references into the CUDA image. This avoids
+  unpinned package installation inside the image and keeps the runtime
+  dependency surface explicit.
+- Determinism is checked with two `docker buildx build` exports using
+  `SOURCE_DATE_EPOCH` and `type=docker,rewrite-timestamp=true`; the two tar
+  files must be byte-identical.
 - Tag scheme: `mejepa-paper-v1.0.0` matching the Zenodo DOI tag.
 
 ### Apptainer (HPC-facing, primary for paper artifact)
@@ -189,8 +196,8 @@ hash and is rejected.
 ## CI Integration (Coordinates With Doc 23)
 
 - On every tagged release, CI rebuilds the container from scratch and asserts
-  the container manifest digest is reproducible across two consecutive builds
-  (binary nondeterminism is a release-blocker).
+  the Docker artifact tar SHA-256 is reproducible across two consecutive
+  builds (binary nondeterminism is a release-blocker).
 - On every PR that touches `Cargo.lock` or `Dockerfile`, CI rebuilds the
   container and runs the smoke ladder gate 0-2 inside it.
 - A scheduled weekly job runs `reproduce.sh paper_small_1k --seeds 42` and
@@ -220,6 +227,24 @@ The O*NET non-endorsement clause is reproduced verbatim in the README.
   same machine: release script aborts; root-cause investigation required.
 - A reviewer's reproduce hash differs from the reference: the diff_report
   must name CSV cells, not just say "mismatch".
+
+## Current Local Implementation Status
+
+Verified on 2026-05-01:
+
+- `Dockerfile` exists and pins CUDA 13.2 Ubuntu 24.04 by digest:
+  `sha256:d266e59b88c295bc5fa0e4cef9064eaff84939381b09e2c3d76a5532a303e42d`.
+- `reproduce.sh verify-aggregate` uses the compiled `context-graph`
+  `dynamicjepa check-release-aggregate-reference` command, not a host-only
+  Ruby verifier.
+- The CUDA-linked binary requires the NVIDIA container runtime; release-C
+  runs container verification with `docker run --gpus all`.
+- Latest deterministic Docker artifact proof:
+  `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_docker_image_1.tar`
+  and `_image_2.tar` both hash to
+  `099f0535e9f4f5dc8e07d0afb550ef1e3197657b52ddc7561ef11304f89dd80e`.
+- Latest release reference SHA-256:
+  `f5212d7fbf1da4df0f2dbbf6e520d4a97bc520f3e8d9a4dba1c113b73dd5c614`.
 
 ## Acceptance
 

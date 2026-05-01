@@ -313,7 +313,7 @@ run_hp_sweep_gate() {
     --output-root "$hp_root" \
     --fixtures-root configs/dynamicjepa \
     --purpose smoke \
-    --career-event-count 120 \
+    --career-event-count 1000 \
     --career-training-seeds 42,43 \
     --onet-text-zip "$ONET_TEXT_ZIP" \
     --system-specs "$SYSTEM_SPECS" \
@@ -366,11 +366,9 @@ run_release_matrix_and_aggregate() {
     CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa inspect-counts \
       --db "$bundle/dbs/${run_id}_career_taxonomy_rocksdb" \
       --json | tee "$bundle/local_ci_inspect_counts_career_taxonomy.json"
-    CUDA_COMPUTE_CAP=120 ./target/debug/context-graph dynamicjepa check-reference \
-      --bundle "$bundle" \
-      --reference reference/reference_release_v1.0.0.json \
-      --tolerances reference/tolerances.json \
-      --json | tee "$RUN_ROOT/${run_id}_release_reference_check.json"
+    jq -e '.counts.dj_verification_runs >= 1 and .counts.dj_model_artifacts >= 1' \
+      "$bundle/local_ci_inspect_counts_career_taxonomy.json" || failed=1
+    jq -e '[.[].artifact_hashes[] | select(.equal != true)] | length == 0' "$bundle/artifact_hashes.json" || failed=1
   done
   if [[ "$failed" -ne 0 ]]; then
     echo "LOCAL_CI_RELEASE_MATRIX_FAILED: at least one seed failed; bundles preserved under $RUN_ROOT" >&2
@@ -435,21 +433,57 @@ case "$TIER" in
     preflight_cuda_and_data
     require_command docker
     require_file Dockerfile "LOCAL_CI_DOCKERFILE_MISSING"
-    static_gate
-    build_dynamicjepa
-    run_release_matrix_and_aggregate
-    docker build --iidfile "$RUN_ROOT/${RUN_ID_PREFIX}_docker_iid_1.txt" .
-    docker build --no-cache --iidfile "$RUN_ROOT/${RUN_ID_PREFIX}_docker_iid_2.txt" .
-    diff -u "$RUN_ROOT/${RUN_ID_PREFIX}_docker_iid_1.txt" "$RUN_ROOT/${RUN_ID_PREFIX}_docker_iid_2.txt"
+    require_file "scripts/5090jepa/artifact_evaluation_dry_run.sh" "LOCAL_CI_ARTIFACT_EVALUATION_MISSING"
     test -x ./reproduce.sh || {
       echo "LOCAL_CI_REPRODUCE_SCRIPT_MISSING: release-c requires executable reproduce.sh" >&2
       exit 1
     }
-    ./reproduce.sh --reference reference/reference_release_v1.0.0.json
-    if ! find . -maxdepth 3 -type f -name '*artifact*evaluation*' | grep -q .; then
-      echo "LOCAL_CI_ARTIFACT_EVALUATION_DRY_RUN_MISSING: release-c requires an artifact-evaluation dry-run entry point" >&2
+    static_gate
+    build_dynamicjepa
+    run_release_matrix_and_aggregate
+    ./reproduce.sh verify-aggregate \
+      --aggregate "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" \
+      --reference reference/reference_release_v1.0.0.json \
+      --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_release_reference_check.json"
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_release_reference_check.json"
+    export DOCKER_BUILDKIT=1
+    export SOURCE_DATE_EPOCH=1777600000
+    docker_tar_1="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_1.tar"
+    docker_tar_2="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_2.tar"
+    docker_sha_1="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_1.sha256"
+    docker_sha_2="$RUN_ROOT/${RUN_ID_PREFIX}_docker_image_2.sha256"
+    docker buildx build --progress=plain --platform linux/amd64 --provenance=false --sbom=false \
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+      --output "type=docker,rewrite-timestamp=true,dest=$docker_tar_1" .
+    docker buildx build --progress=plain --platform linux/amd64 --provenance=false --sbom=false --no-cache \
+      --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+      --output "type=docker,rewrite-timestamp=true,dest=$docker_tar_2" .
+    sha256sum "$docker_tar_1" | tee "$docker_sha_1"
+    sha256sum "$docker_tar_2" | tee "$docker_sha_2"
+    cmp -s "$docker_tar_1" "$docker_tar_2" || {
+      echo "LOCAL_CI_DOCKER_IMAGE_TAR_DRIFT: deterministic Docker tar exports differ" >&2
       exit 1
-    fi
+    }
+    docker load -i "$docker_tar_1" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_docker_load.txt"
+    loaded_image_id="$(awk '/Loaded image ID:/ {print $4}' "$RUN_ROOT/${RUN_ID_PREFIX}_docker_load.txt" | tail -n 1)"
+    [[ -n "$loaded_image_id" ]] || {
+      echo "LOCAL_CI_DOCKER_LOAD_IMAGE_ID_MISSING: docker load did not report an image ID" >&2
+      exit 1
+    }
+    aggregate_abs="$(realpath "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate")"
+    docker run --rm --gpus all \
+      -v "$aggregate_abs:/work/aggregate:ro" \
+      "$loaded_image_id" verify-aggregate \
+      --aggregate /work/aggregate \
+      --reference /workspace/reference/reference_release_v1.0.0.json \
+      --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_docker_container_verify_aggregate.json"
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_docker_container_verify_aggregate.json"
+    scripts/5090jepa/artifact_evaluation_dry_run.sh \
+      --aggregate "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" \
+      --reference reference/reference_release_v1.0.0.json \
+      --output "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run.json" \
+      --json
+    jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_artifact_evaluation_dry_run.json"
     ;;
 esac
 

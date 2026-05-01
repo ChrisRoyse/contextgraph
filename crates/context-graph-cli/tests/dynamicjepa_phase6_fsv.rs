@@ -222,6 +222,7 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
         "inspect-counts",
         "--db",
         &counter_db,
+        "--allow-missing",
         "--json",
     ]);
     assert_eq!(count(&counter_initial, "dj_dataset_shards"), 0);

@@ -144,6 +144,8 @@ pub enum DynamicJepaCommands {
     CaptureReference(CaptureReferenceArgs),
     /// Compare a research-smoke bundle against a checked-in CI reference.
     CheckReference(CheckReferenceArgs),
+    /// Compare a multi-seed release aggregate against the checked-in release reference.
+    CheckReleaseAggregateReference(CheckReleaseAggregateReferenceArgs),
 }
 
 impl DynamicJepaCommands {
@@ -184,6 +186,9 @@ impl DynamicJepaCommands {
             Self::MultiseedAggregate(_) => "dynamicjepa_multiseed_aggregate",
             Self::CaptureReference(_) => "dynamicjepa_capture_reference",
             Self::CheckReference(_) => "dynamicjepa_check_reference",
+            Self::CheckReleaseAggregateReference(_) => {
+                "dynamicjepa_check_release_aggregate_reference"
+            }
         }
     }
 }
@@ -246,6 +251,10 @@ pub struct InspectCountsArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
     pub db: PathBuf,
+
+    /// Return an explicit zero-count before-state when the DB path has not been created yet.
+    #[arg(long = "allow-missing", hide = true)]
+    pub allow_missing: bool,
 
     /// Emit one machine-readable JSON object.
     #[arg(long)]
@@ -812,6 +821,10 @@ pub struct ResearchSmokeArgs {
     #[arg(long = "hp-batch-size", hide = true)]
     pub hp_batch_size: Option<u64>,
 
+    /// Override generated O*NET career training epochs. Used by hp-sweep; never silently ignored.
+    #[arg(long = "hp-epochs", hide = true)]
+    pub hp_epochs: Option<u64>,
+
     /// Record the upstream sweep or promotion source for generated hyperparameters.
     #[arg(long = "hyperparameter-origin", hide = true)]
     pub hyperparameter_origin: Option<String>,
@@ -973,6 +986,21 @@ pub struct CheckReferenceArgs {
     pub json: bool,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CheckReleaseAggregateReferenceArgs {
+    /// Multi-seed aggregate bundle directory to compare.
+    #[arg(long = "aggregate")]
+    pub aggregate: PathBuf,
+
+    /// Checked-in release aggregate reference JSON file.
+    #[arg(long = "reference")]
+    pub reference: PathBuf,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub async fn handle_dynamicjepa_command(action: DynamicJepaCommands) -> i32 {
     let operation = action.operation();
     let outcome = run(action).await;
@@ -1074,6 +1102,9 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::MultiseedAggregate(args) => multiseed_aggregate_command(args),
         DynamicJepaCommands::CaptureReference(args) => capture_reference_command(args),
         DynamicJepaCommands::CheckReference(args) => check_reference_command(args),
+        DynamicJepaCommands::CheckReleaseAggregateReference(args) => {
+            check_release_aggregate_reference_command(args)
+        }
     }
 }
 
@@ -1266,7 +1297,7 @@ fn list_domains(args: ListDomainsArgs) -> DynamicJepaResult<CommandOutcome> {
             "request at least one row so the source-of-truth read has observable output",
         ));
     }
-    let store = open_store(&args.db)?;
+    let store = open_existing_store(&args.db, "dynamicjepa_list_domains")?;
     let db = store.dynamicjepa_db();
     let db_path = canonical_existing_path(&args.db, "list-domains.db")?;
     let counts = snapshot_dj_counts(db)?;
@@ -1330,7 +1361,22 @@ fn get_domain(args: GetDomainArgs) -> DynamicJepaResult<CommandOutcome> {
 
 fn inspect_counts(args: InspectCountsArgs) -> DynamicJepaResult<CommandOutcome> {
     let _json = args.json;
-    let store = open_store(&args.db)?;
+    if args.allow_missing && !args.db.exists() {
+        let counts = zero_dj_counts();
+        return Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_inspect_counts",
+                "status": "ok",
+                "db_path": args.db,
+                "db_exists": false,
+                "source_of_truth": DJ_CF_NAMES,
+                "counts": counts,
+                "after_counts": counts,
+            }),
+            exit_code: 0,
+        });
+    }
+    let store = open_existing_store(&args.db, "dynamicjepa_inspect_counts")?;
     let db = store.dynamicjepa_db();
     let db_path = canonical_existing_path(&args.db, "inspect-counts.db")?;
     let counts = snapshot_dj_counts(db)?;
@@ -1339,6 +1385,7 @@ fn inspect_counts(args: InspectCountsArgs) -> DynamicJepaResult<CommandOutcome> 
             "operation": "dynamicjepa_inspect_counts",
             "status": "ok",
             "db_path": db_path,
+            "db_exists": true,
             "source_of_truth": DJ_CF_NAMES,
             "counts": counts,
             "after_counts": counts,
@@ -1357,7 +1404,7 @@ fn inspect_column_family(args: InspectCfArgs) -> DynamicJepaResult<CommandOutcom
         ));
     }
     let cf_name = resolve_dynamic_cf_name(&args.cf)?;
-    let store = open_store(&args.db)?;
+    let store = open_existing_store(&args.db, "dynamicjepa_inspect_cf")?;
     let db = store.dynamicjepa_db();
     let db_path = canonical_existing_path(&args.db, "inspect-cf.db")?;
     let counts = snapshot_dj_counts(db)?;
@@ -3194,6 +3241,7 @@ struct HpSweepHyperparameters {
     lr: f64,
     latent_dim: u64,
     batch_size: u64,
+    epochs: u64,
 }
 
 impl HpSweepHyperparameters {
@@ -3202,10 +3250,16 @@ impl HpSweepHyperparameters {
             lr: config.optim.lr,
             latent_dim: config.model.encoder.out_dim as u64,
             batch_size: config.schedule.batch_size as u64,
+            epochs: config.schedule.epochs as u64,
         }
     }
 
-    fn with_swept_value(self, axis: HpSweepAxis, value: &HpSweepValue) -> DynamicJepaResult<Self> {
+    fn with_swept_value(
+        self,
+        axis: HpSweepAxis,
+        value: &HpSweepValue,
+        career_event_count: u64,
+    ) -> DynamicJepaResult<Self> {
         let mut next = self;
         match axis {
             HpSweepAxis::LearningRate => {
@@ -3243,6 +3297,12 @@ impl HpSweepHyperparameters {
                         "rerun with positive integer batch sizes",
                     )
                 })?;
+                next.epochs = scaled_epochs_for_batch_sweep(
+                    self.epochs,
+                    self.batch_size,
+                    next.batch_size,
+                    career_event_count,
+                )?;
             }
         }
         Ok(next)
@@ -3253,8 +3313,48 @@ impl HpSweepHyperparameters {
             "lr": self.lr,
             "latent_dim": self.latent_dim,
             "batch_size": self.batch_size,
+            "epochs": self.epochs,
         })
     }
+}
+
+fn scaled_epochs_for_batch_sweep(
+    base_epochs: u64,
+    base_batch_size: u64,
+    swept_batch_size: u64,
+    career_event_count: u64,
+) -> DynamicJepaResult<u64> {
+    if base_epochs == 0 || base_batch_size == 0 || swept_batch_size == 0 {
+        return Err(DynamicJepaError::validation(
+            "hp_sweep.training_budget",
+            format!(
+                "cannot scale epochs with base_epochs={base_epochs}, base_batch_size={base_batch_size}, swept_batch_size={swept_batch_size}"
+            ),
+            "use positive base epochs and batch-size sweep values",
+        ));
+    }
+    let split_counts = split_counts_for_row_count(career_event_count);
+    let train_rows = split_counts.get("train").copied().unwrap_or(0).max(1);
+    let base_steps_per_epoch = train_rows.div_ceil(base_batch_size);
+    let swept_steps_per_epoch = train_rows.div_ceil(swept_batch_size);
+    let target_steps = (base_epochs as u128)
+        .checked_mul(base_steps_per_epoch as u128)
+        .ok_or_else(|| {
+            DynamicJepaError::validation(
+                "hp_sweep.training_budget",
+                "optimizer-step budget overflowed while scaling batch-size sweep epochs",
+                "use a smaller base epoch count or narrower batch-size sweep values",
+            )
+        })?;
+    let scaled_epochs = target_steps.div_ceil(swept_steps_per_epoch as u128);
+    let scaled_epochs = u64::try_from(scaled_epochs).map_err(|_| {
+        DynamicJepaError::validation(
+            "hp_sweep.training_budget",
+            "scaled epoch count does not fit in u64",
+            "use a smaller base epoch count or narrower batch-size sweep values",
+        )
+    })?;
+    Ok(scaled_epochs.max(1))
 }
 
 fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
@@ -3335,7 +3435,7 @@ fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
     let mut cells = Vec::new();
     for seed in &seeds {
         for value in &values {
-            let hp = base_hp.with_swept_value(axis, value)?;
+            let hp = base_hp.with_swept_value(axis, value, career_event_count)?;
             let cell_id = format!("{}_{}_seed{}", axis.as_str(), value.safe, seed);
             validate_research_run_id(&cell_id)?;
             let cell_args = ResearchSmokeArgs {
@@ -3352,6 +3452,7 @@ fn hp_sweep_command(args: HpSweepArgs) -> DynamicJepaResult<CommandOutcome> {
                 hp_learning_rate: Some(hp.lr),
                 hp_latent_dim: Some(hp.latent_dim),
                 hp_batch_size: Some(hp.batch_size),
+                hp_epochs: Some(hp.epochs),
                 hyperparameter_origin: Some(format!(
                     "hp_sweep:{}:{}:{}",
                     args.output_root.display(),
@@ -3608,7 +3709,7 @@ fn read_hp_sweep_cell(
         })?;
     verify_hp_sweep_cell_hyperparameters(cell_id, &career["hyperparameters"], expected_hp)?;
     let career_db = path_value(&career["db_path"], "hp_sweep.cell.db_path")?;
-    let store = open_store(&career_db)?;
+    let store = open_existing_store(&career_db, "hp_sweep.read_cell_career_db")?;
     let db_counts = snapshot_dj_counts(store.dynamicjepa_db())?;
     if db_counts.get(CF_DJ_MODEL_ARTIFACTS).copied().unwrap_or(0) == 0 {
         return Err(DynamicJepaError::SourceOfTruthMissing {
@@ -3700,14 +3801,22 @@ fn verify_hp_sweep_cell_hyperparameters(
             "inspect the child training artifact config.json",
         )
     })?;
+    let actual_epochs = hp["epochs"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "hp_sweep.cell.hyperparameters.epochs",
+            format!("cell {cell_id} is missing numeric epochs hyperparameter"),
+            "inspect the child training artifact config.json",
+        )
+    })?;
     if (actual_lr - expected.lr).abs() > expected.lr.abs().max(1.0) * 1.0e-12
         || actual_latent != expected.latent_dim
         || actual_batch != expected.batch_size
+        || actual_epochs != expected.epochs
     {
         return Err(DynamicJepaError::StorageInvariantViolation {
             message: format!(
-                "cell {cell_id} persisted HPs do not match requested HPs: actual=({actual_lr},{actual_latent},{actual_batch}) expected=({},{},{})",
-                expected.lr, expected.latent_dim, expected.batch_size
+                "cell {cell_id} persisted HPs do not match requested HPs: actual=({actual_lr},{actual_latent},{actual_batch},{actual_epochs}) expected=({},{},{},{})",
+                expected.lr, expected.latent_dim, expected.batch_size, expected.epochs
             ),
         });
     }
@@ -3740,11 +3849,11 @@ fn metric_json_value(metrics: &Value, key: &str) -> DynamicJepaResult<Value> {
 }
 
 fn write_hp_sweep_tables(output_root: &Path, cells: &[Value]) -> DynamicJepaResult<()> {
-    let mut sensitivity = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,val_latent_cosine,val_latent_mse,test_latent_cosine,test_latent_mse,eff_rank_ratio,alignment,uniformity,latent_collapsed,career_db_path,run_dir\n".to_string();
-    let mut collapse = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,val_var_min,val_var_p25,val_var_median,val_var_p75,val_var_max,covar_frob,eff_rank,eff_rank_ratio,alignment,uniformity,sigreg_kl,sigreg_kl_clamped,latent_collapsed,val_latent_cosine,val_latent_mse\n".to_string();
+    let mut sensitivity = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,epochs,val_latent_cosine,val_latent_mse,test_latent_cosine,test_latent_mse,eff_rank_ratio,alignment,uniformity,latent_collapsed,career_db_path,run_dir\n".to_string();
+    let mut collapse = "cell_id,run_id,seed,sweep_axis,sweep_value,lr,latent_dim,batch_size,epochs,val_var_min,val_var_p25,val_var_median,val_var_p75,val_var_max,covar_frob,eff_rank,eff_rank_ratio,alignment,uniformity,sigreg_kl,sigreg_kl_clamped,latent_collapsed,val_latent_cosine,val_latent_mse\n".to_string();
     for cell in cells {
         sensitivity.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             csv_escape(cell["cell_id"].as_str().unwrap_or("")),
             csv_escape(cell["run_id"].as_str().unwrap_or("")),
             cell["seed"].as_u64().unwrap_or(0),
@@ -3753,6 +3862,7 @@ fn write_hp_sweep_tables(output_root: &Path, cells: &[Value]) -> DynamicJepaResu
             hp_cell_f64(cell, "lr")?,
             hp_cell_u64(cell, "latent_dim")?,
             hp_cell_u64(cell, "batch_size")?,
+            hp_cell_u64(cell, "epochs")?,
             metric_cell_from_cell(cell, "val_latent_cosine")?,
             metric_cell_from_cell(cell, "val_latent_mse")?,
             metric_cell_from_cell(cell, "test_latent_cosine")?,
@@ -3765,7 +3875,7 @@ fn write_hp_sweep_tables(output_root: &Path, cells: &[Value]) -> DynamicJepaResu
             csv_escape(cell["run_dir"].as_str().unwrap_or("")),
         ));
         collapse.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
             csv_escape(cell["cell_id"].as_str().unwrap_or("")),
             csv_escape(cell["run_id"].as_str().unwrap_or("")),
             cell["seed"].as_u64().unwrap_or(0),
@@ -3774,6 +3884,7 @@ fn write_hp_sweep_tables(output_root: &Path, cells: &[Value]) -> DynamicJepaResu
             hp_cell_f64(cell, "lr")?,
             hp_cell_u64(cell, "latent_dim")?,
             hp_cell_u64(cell, "batch_size")?,
+            hp_cell_u64(cell, "epochs")?,
             metric_cell_from_cell(cell, "collapse_val_var_min")?,
             metric_cell_from_cell(cell, "collapse_val_var_p25")?,
             metric_cell_from_cell(cell, "collapse_val_var_median")?,
@@ -5867,6 +5978,293 @@ fn check_reference_command(args: CheckReferenceArgs) -> DynamicJepaResult<Comman
     })
 }
 
+fn check_release_aggregate_reference_command(
+    args: CheckReleaseAggregateReferenceArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let operation = "dynamicjepa_check_release_aggregate_reference";
+    let manifest_path = args.aggregate.join("aggregate_manifest.json");
+    let fsv_path = args.aggregate.join("aggregate_fsv_report.json");
+    let source_of_truth = json!({
+        "aggregate": args.aggregate.display().to_string(),
+        "reference": args.reference.display().to_string(),
+        "aggregate_manifest": manifest_path.display().to_string(),
+        "aggregate_fsv_report": fsv_path.display().to_string(),
+        "paper_tables": args.aggregate.join("paper_tables").display().to_string(),
+    });
+    let before_state = json!({
+        "aggregate": ci_path_state(&args.aggregate)?,
+        "reference": ci_path_state(&args.reference)?,
+    });
+
+    if !args.aggregate.is_dir() {
+        return Ok(ci_reference_error(
+            operation,
+            "VALIDATION",
+            format!(
+                "aggregate path does not exist or is not a directory: {}",
+                args.aggregate.display()
+            ),
+            "run dynamicjepa multiseed-aggregate before checking the release reference",
+            source_of_truth,
+            before_state,
+            None,
+        ));
+    }
+    if !args.reference.is_file() {
+        return Ok(ci_reference_error(
+            operation,
+            "VALIDATION",
+            format!(
+                "reference path does not exist or is not a file: {}",
+                args.reference.display()
+            ),
+            "capture or restore reference/reference_release_v1.0.0.json",
+            source_of_truth,
+            before_state,
+            None,
+        ));
+    }
+
+    let reference = match read_ci_json_for_check(&args.reference) {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(ci_reference_error(
+                operation,
+                "SCHEMA",
+                message,
+                "restore a valid checked-in release aggregate reference JSON",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+    if reference.get("schema_version").and_then(Value::as_u64) != Some(1)
+        || reference.get("kind").and_then(Value::as_str)
+            != Some("dynamicjepa_release_aggregate_reference")
+    {
+        return Ok(ci_reference_error(
+            operation,
+            "SCHEMA",
+            format!(
+                "reference kind is {:?}, expected dynamicjepa_release_aggregate_reference with schema_version 1",
+                reference.get("kind")
+            ),
+            "regenerate the release reference from a passed multi-seed aggregate",
+            source_of_truth,
+            before_state,
+            None,
+        ));
+    }
+    let expected = match reference.get("expected").and_then(Value::as_object) {
+        Some(_) => reference.get("expected").unwrap(),
+        None => {
+            return Ok(ci_reference_error(
+                operation,
+                "SCHEMA",
+                "reference expected object missing",
+                "regenerate the release reference from a passed multi-seed aggregate",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+
+    let manifest = match read_ci_json_for_check(&manifest_path) {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(ci_reference_error(
+                operation,
+                "AGGREGATE_INCOMPLETE",
+                message,
+                "rerun dynamicjepa multiseed-aggregate and preserve the complete aggregate bundle",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+    let fsv = match read_ci_json_for_check(&fsv_path) {
+        Ok(value) => value,
+        Err(message) => {
+            return Ok(ci_reference_error(
+                operation,
+                "AGGREGATE_INCOMPLETE",
+                message,
+                "rerun dynamicjepa multiseed-aggregate and preserve the complete aggregate bundle",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        }
+    };
+
+    let mut diffs = Vec::new();
+    for (field, actual, reference_value) in [
+        (
+            "manifest.status",
+            ci_json_pointer_or_null(&manifest, "/status"),
+            ci_json_pointer_or_null(expected, "/status"),
+        ),
+        (
+            "manifest.passed_count",
+            ci_json_pointer_or_null(&manifest, "/passed_count"),
+            ci_json_pointer_or_null(expected, "/passed_count"),
+        ),
+        (
+            "manifest.failed_count",
+            ci_json_pointer_or_null(&manifest, "/failed_count"),
+            ci_json_pointer_or_null(expected, "/failed_count"),
+        ),
+        (
+            "manifest.selection.expected_bundle_count",
+            ci_json_pointer_or_null(&manifest, "/selection/expected_bundle_count"),
+            ci_json_pointer_or_null(expected, "/expected_bundle_count"),
+        ),
+        (
+            "manifest.selection.min_passed",
+            ci_json_pointer_or_null(&manifest, "/selection/min_passed"),
+            ci_json_pointer_or_null(expected, "/min_passed"),
+        ),
+        (
+            "manifest.selection.expected_purpose",
+            ci_json_pointer_or_null(&manifest, "/selection/expected_purpose"),
+            ci_json_pointer_or_null(expected, "/expected_purpose"),
+        ),
+        (
+            "manifest.selection.expected_career_event_count",
+            ci_json_pointer_or_null(&manifest, "/selection/expected_career_event_count"),
+            ci_json_pointer_or_null(expected, "/expected_career_event_count"),
+        ),
+        (
+            "manifest.selection.required_career_training_seeds",
+            ci_json_pointer_or_null(&manifest, "/selection/required_career_training_seeds"),
+            ci_json_pointer_or_null(expected, "/required_career_training_seeds"),
+        ),
+        (
+            "fsv.status",
+            ci_json_pointer_or_null(&fsv, "/status"),
+            ci_json_pointer_or_null(expected, "/status"),
+        ),
+        (
+            "fsv.readback_checks",
+            ci_json_pointer_or_null(&fsv, "/readback_checks"),
+            ci_json_pointer_or_null(expected, "/readback_checks"),
+        ),
+    ] {
+        if actual != reference_value {
+            diffs.push(json!({
+                "type": "field_mismatch",
+                "field": field,
+                "actual": actual,
+                "reference": reference_value,
+            }));
+        }
+    }
+
+    for relative in release_aggregate_required_files() {
+        let path = args.aggregate.join(relative);
+        let state = ci_path_state(&path)?;
+        if !ci_path_state_is_non_empty_file(&state) {
+            diffs.push(json!({
+                "type": "required_file_missing_or_empty",
+                "path": relative,
+                "state": state,
+            }));
+        }
+    }
+
+    let mut table_results = Vec::new();
+    for spec in RELEASE_AGGREGATE_TABLE_SPECS {
+        let Some(reference_table) = reference
+            .get("tables")
+            .and_then(Value::as_object)
+            .and_then(|tables| tables.get(spec.name))
+        else {
+            return Ok(ci_reference_error(
+                operation,
+                "SCHEMA",
+                format!("reference table {} missing", spec.name),
+                "regenerate the release reference from a passed multi-seed aggregate",
+                source_of_truth,
+                before_state,
+                None,
+            ));
+        };
+        match compare_release_aggregate_table(spec, &args.aggregate, reference_table) {
+            Ok(result) => {
+                diffs.extend(result.diffs);
+                table_results.push(json!({
+                    "table": spec.name,
+                    "actual_row_count": result.actual_row_count,
+                    "reference_row_count": result.reference_row_count,
+                }));
+            }
+            Err(CiReferenceCheckFailure { code, message }) => {
+                return Ok(ci_reference_error(
+                    operation,
+                    code,
+                    message,
+                    "inspect the aggregate paper tables and checked-in release reference before rerunning release-C",
+                    source_of_truth,
+                    before_state,
+                    None,
+                ));
+            }
+        }
+    }
+
+    let after_state = json!({
+        "aggregate": ci_path_state(&args.aggregate)?,
+        "reference": ci_path_state(&args.reference)?,
+    });
+    let mut output = json!({
+        "operation": operation,
+        "status": if diffs.is_empty() { "ok" } else { "error" },
+        "source_of_truth": source_of_truth,
+        "before_state": before_state,
+        "after_state": after_state,
+        "comparison": {
+            "table_results": table_results,
+            "diff_count": diffs.len(),
+            "diffs": diffs,
+        },
+        "readback": {
+            "manifest_status": manifest.get("status").cloned().unwrap_or(Value::Null),
+            "fsv_status": fsv.get("status").cloned().unwrap_or(Value::Null),
+            "passed_count": manifest.get("passed_count").cloned().unwrap_or(Value::Null),
+            "failed_count": manifest.get("failed_count").cloned().unwrap_or(Value::Null),
+            "readback_checks": fsv.get("readback_checks").cloned().unwrap_or(Value::Null),
+        }
+    });
+    if output["status"] == "ok" {
+        return Ok(CommandOutcome {
+            value: output,
+            exit_code: 0,
+        });
+    }
+    if let Some(object) = output.as_object_mut() {
+        object.insert(
+            "error_code".to_string(),
+            json!("RELEASE_REFERENCE_MISMATCH"),
+        );
+        object.insert(
+            "error_message".to_string(),
+            json!("release aggregate differs from checked-in aggregate reference"),
+        );
+        object.insert(
+            "remediation".to_string(),
+            json!("inspect comparison.diffs; fix the aggregate root cause or intentionally capture a new reference from a preserved passed aggregate"),
+        );
+    }
+    Ok(CommandOutcome {
+        value: output,
+        exit_code: 1,
+    })
+}
+
 #[derive(Debug)]
 struct CiReferenceCheckFailure {
     code: &'static str,
@@ -5879,6 +6277,411 @@ impl CiReferenceCheckFailure {
             code,
             message: message.into(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseAggregateTableSpec {
+    name: &'static str,
+    path: &'static str,
+    key_columns: &'static [&'static str],
+    exact_columns: &'static [&'static str],
+    numeric_columns: &'static [&'static str],
+    volatile_columns: &'static [&'static str],
+}
+
+#[derive(Debug)]
+struct ReleaseAggregateTableComparison {
+    actual_row_count: usize,
+    reference_row_count: usize,
+    diffs: Vec<Value>,
+}
+
+#[derive(Debug, Clone)]
+struct ReleaseAggregateNormalizedTable {
+    headers: Vec<String>,
+    rows: Vec<BTreeMap<String, String>>,
+}
+
+const RELEASE_AGGREGATE_EXACT_METRICS: &[&str] = &[
+    "train_rows",
+    "val_rows",
+    "test_rows",
+    "parameter_count",
+    "panel_slots",
+    "input_dim",
+    "target_dim",
+    "latent_dim",
+    "action_dim",
+];
+
+const RELEASE_AGGREGATE_TABLE_SPECS: &[ReleaseAggregateTableSpec] = &[
+    ReleaseAggregateTableSpec {
+        name: "table_prediction_metrics_multiseed",
+        path: "paper_tables/table_prediction_metrics_multiseed.csv",
+        key_columns: &["domain", "metric"],
+        exact_columns: &["domain", "metric", "n", "source_career_training_seeds"],
+        numeric_columns: &["mean", "std", "bca_lower", "bca_upper", "min", "max"],
+        volatile_columns: &["source_run_ids"],
+    },
+    ReleaseAggregateTableSpec {
+        name: "table_ablation_multiseed",
+        path: "paper_tables/table_ablation_multiseed.csv",
+        key_columns: &["ablation_id", "metric"],
+        exact_columns: &["ablation_id", "metric", "n", "source_career_training_seeds"],
+        numeric_columns: &["mean", "std", "bca_lower", "bca_upper", "min", "max"],
+        volatile_columns: &["source_run_ids"],
+    },
+    ReleaseAggregateTableSpec {
+        name: "table_paired_ablation_tests",
+        path: "paper_tables/table_paired_ablation_tests.csv",
+        key_columns: &["metric", "baseline_ablation_id", "comparison_ablation_id"],
+        exact_columns: &[
+            "metric",
+            "baseline_ablation_id",
+            "comparison_ablation_id",
+            "n",
+            "source_career_training_seeds",
+        ],
+        numeric_columns: &[
+            "mean_delta",
+            "std_delta",
+            "bca_lower",
+            "bca_upper",
+            "min_delta",
+            "max_delta",
+            "sign_flip_p",
+        ],
+        volatile_columns: &["source_run_ids"],
+    },
+    ReleaseAggregateTableSpec {
+        name: "table_seed_failures",
+        path: "paper_tables/table_seed_failures.csv",
+        key_columns: &["run_id"],
+        exact_columns: &[
+            "run_id",
+            "career_training_seed",
+            "status",
+            "error_code",
+            "error_message",
+            "bundle_path",
+        ],
+        numeric_columns: &[],
+        volatile_columns: &[],
+    },
+];
+
+fn release_aggregate_required_files() -> Vec<&'static str> {
+    let mut files = RELEASE_AGGREGATE_TABLE_SPECS
+        .iter()
+        .map(|spec| spec.path)
+        .collect::<Vec<_>>();
+    files.extend([
+        "aggregate_manifest.json",
+        "aggregate_fsv_report.json",
+        "plots/multiseed_val_mse_box.svg",
+        "plots/multiseed_paired_delta_forest.svg",
+        "plots/plot_manifest.json",
+    ]);
+    files
+}
+
+fn ci_json_pointer_or_null(value: &Value, pointer: &str) -> Value {
+    value.pointer(pointer).cloned().unwrap_or(Value::Null)
+}
+
+fn ci_path_state_is_non_empty_file(state: &Value) -> bool {
+    state.get("exists").and_then(Value::as_bool) == Some(true)
+        && state.get("kind").and_then(Value::as_str) == Some("file")
+        && state
+            .get("size_bytes")
+            .and_then(Value::as_u64)
+            .is_some_and(|size| size > 0)
+}
+
+fn compare_release_aggregate_table(
+    spec: &ReleaseAggregateTableSpec,
+    aggregate_root: &Path,
+    reference_table: &Value,
+) -> Result<ReleaseAggregateTableComparison, CiReferenceCheckFailure> {
+    let actual = normalize_release_aggregate_table(aggregate_root, spec)
+        .map_err(|err| CiReferenceCheckFailure::new("AGGREGATE_INCOMPLETE", err.to_string()))?;
+    let reference = reference_release_aggregate_table(spec, reference_table)?;
+    let mut diffs = Vec::new();
+
+    if actual.headers != reference.headers {
+        diffs.push(json!({
+            "type": "header_mismatch",
+            "table": spec.name,
+            "actual": actual.headers,
+            "reference": reference.headers,
+        }));
+    }
+
+    let actual_by_key = release_aggregate_index_rows(spec.name, spec.key_columns, &actual.rows)?;
+    let reference_by_key =
+        release_aggregate_index_rows(spec.name, spec.key_columns, &reference.rows)?;
+    for key in reference_by_key.keys() {
+        if !actual_by_key.contains_key(key) {
+            diffs.push(json!({
+                "type": "missing_row",
+                "table": spec.name,
+                "key": key,
+            }));
+        }
+    }
+    for key in actual_by_key.keys() {
+        if !reference_by_key.contains_key(key) {
+            diffs.push(json!({
+                "type": "extra_row",
+                "table": spec.name,
+                "key": key,
+            }));
+        }
+    }
+
+    for key in actual_by_key
+        .keys()
+        .filter(|key| reference_by_key.contains_key(*key))
+    {
+        let actual_row = actual_by_key.get(key).expect("key was filtered as present");
+        let reference_row = reference_by_key
+            .get(key)
+            .expect("key was filtered as present");
+        for column in spec.exact_columns {
+            if spec.volatile_columns.contains(column) {
+                continue;
+            }
+            if actual_row.get(*column) != reference_row.get(*column) {
+                diffs.push(json!({
+                    "type": "exact_column_mismatch",
+                    "table": spec.name,
+                    "key": key,
+                    "column": column,
+                    "actual": actual_row.get(*column),
+                    "reference": reference_row.get(*column),
+                }));
+            }
+        }
+        for column in spec.numeric_columns {
+            let Some(actual_cell) = actual_row.get(*column) else {
+                diffs.push(json!({
+                    "type": "numeric_parse_error",
+                    "table": spec.name,
+                    "key": key,
+                    "column": column,
+                    "message": "actual row is missing the numeric column",
+                }));
+                continue;
+            };
+            let Some(reference_cell) = reference_row.get(*column) else {
+                diffs.push(json!({
+                    "type": "numeric_parse_error",
+                    "table": spec.name,
+                    "key": key,
+                    "column": column,
+                    "message": "reference row is missing the numeric column",
+                }));
+                continue;
+            };
+            let actual_number = match actual_cell.parse::<f64>() {
+                Ok(value) => value,
+                Err(err) => {
+                    diffs.push(json!({
+                        "type": "numeric_parse_error",
+                        "table": spec.name,
+                        "key": key,
+                        "column": column,
+                        "message": format!("actual value parse failed: {err}"),
+                    }));
+                    continue;
+                }
+            };
+            let reference_number = match reference_cell.parse::<f64>() {
+                Ok(value) => value,
+                Err(err) => {
+                    diffs.push(json!({
+                        "type": "numeric_parse_error",
+                        "table": spec.name,
+                        "key": key,
+                        "column": column,
+                        "message": format!("reference value parse failed: {err}"),
+                    }));
+                    continue;
+                }
+            };
+            let tolerance = release_aggregate_numeric_tolerance(reference_row, column);
+            let delta = (actual_number - reference_number).abs();
+            if delta > tolerance {
+                diffs.push(json!({
+                    "type": "numeric_out_of_tolerance",
+                    "table": spec.name,
+                    "key": key,
+                    "column": column,
+                    "actual": actual_number,
+                    "reference": reference_number,
+                    "abs_delta": delta,
+                    "tolerance": tolerance,
+                }));
+            }
+        }
+    }
+
+    Ok(ReleaseAggregateTableComparison {
+        actual_row_count: actual.rows.len(),
+        reference_row_count: reference.rows.len(),
+        diffs,
+    })
+}
+
+fn normalize_release_aggregate_table(
+    aggregate_root: &Path,
+    spec: &ReleaseAggregateTableSpec,
+) -> DynamicJepaResult<ReleaseAggregateNormalizedTable> {
+    let table = read_ci_csv_table_with_options(
+        &aggregate_root.join(spec.path),
+        spec.name,
+        spec.name == "table_seed_failures",
+    )?;
+    let mut rows = table
+        .rows
+        .into_iter()
+        .map(|mut row| {
+            for column in spec.volatile_columns {
+                row.remove(*column);
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        let left_key =
+            release_aggregate_table_key(left, spec.key_columns).unwrap_or_else(|_| String::new());
+        let right_key =
+            release_aggregate_table_key(right, spec.key_columns).unwrap_or_else(|_| String::new());
+        left_key.cmp(&right_key)
+    });
+    Ok(ReleaseAggregateNormalizedTable {
+        headers: table.headers,
+        rows,
+    })
+}
+
+fn reference_release_aggregate_table(
+    spec: &ReleaseAggregateTableSpec,
+    value: &Value,
+) -> Result<ReleaseAggregateNormalizedTable, CiReferenceCheckFailure> {
+    let key_columns = ci_string_array(value, "key_columns").map_err(|message| {
+        CiReferenceCheckFailure::new(
+            "SCHEMA",
+            format!("{} key_columns invalid: {message}", spec.name),
+        )
+    })?;
+    let expected_key_columns = spec
+        .key_columns
+        .iter()
+        .map(|column| (*column).to_string())
+        .collect::<Vec<_>>();
+    if key_columns != expected_key_columns {
+        return Err(CiReferenceCheckFailure::new(
+            "SCHEMA",
+            format!(
+                "{} key_columns {:?}, expected {:?}",
+                spec.name, key_columns, expected_key_columns
+            ),
+        ));
+    }
+    let headers = ci_string_array(value, "headers").map_err(|message| {
+        CiReferenceCheckFailure::new(
+            "SCHEMA",
+            format!("{} headers invalid: {message}", spec.name),
+        )
+    })?;
+    let rows = value.get("rows").and_then(Value::as_array).ok_or_else(|| {
+        CiReferenceCheckFailure::new("SCHEMA", format!("{} rows missing", spec.name))
+    })?;
+    let mut normalized_rows = Vec::new();
+    for (idx, row) in rows.iter().enumerate() {
+        let object = row.as_object().ok_or_else(|| {
+            CiReferenceCheckFailure::new(
+                "SCHEMA",
+                format!("{} rows[{idx}] is not an object", spec.name),
+            )
+        })?;
+        let mut mapped = BTreeMap::new();
+        for (key, value) in object {
+            if spec.volatile_columns.contains(&key.as_str()) {
+                continue;
+            }
+            mapped.insert(
+                key.clone(),
+                ci_json_cell_to_string(value).ok_or_else(|| {
+                    CiReferenceCheckFailure::new(
+                        "SCHEMA",
+                        format!("{} rows[{idx}].{key} has unsupported JSON type", spec.name),
+                    )
+                })?,
+            );
+        }
+        normalized_rows.push(mapped);
+    }
+    normalized_rows.sort_by(|left, right| {
+        let left_key =
+            release_aggregate_table_key(left, spec.key_columns).unwrap_or_else(|_| String::new());
+        let right_key =
+            release_aggregate_table_key(right, spec.key_columns).unwrap_or_else(|_| String::new());
+        left_key.cmp(&right_key)
+    });
+    Ok(ReleaseAggregateNormalizedTable {
+        headers,
+        rows: normalized_rows,
+    })
+}
+
+fn release_aggregate_index_rows<'a>(
+    table: &str,
+    key_columns: &[&str],
+    rows: &'a [BTreeMap<String, String>],
+) -> Result<BTreeMap<String, &'a BTreeMap<String, String>>, CiReferenceCheckFailure> {
+    let mut out = BTreeMap::new();
+    for row in rows {
+        let key = release_aggregate_table_key(row, key_columns).map_err(|message| {
+            CiReferenceCheckFailure::new("SCHEMA", format!("{table} {message}"))
+        })?;
+        if out.insert(key.clone(), row).is_some() {
+            return Err(CiReferenceCheckFailure::new(
+                "SCHEMA",
+                format!("{table} has duplicate key {key}"),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn release_aggregate_table_key(
+    row: &BTreeMap<String, String>,
+    columns: &[&str],
+) -> Result<String, String> {
+    let mut parts = Vec::with_capacity(columns.len());
+    for column in columns {
+        parts.push(
+            row.get(*column)
+                .ok_or_else(|| format!("row missing key column {column}"))?
+                .as_str(),
+        );
+    }
+    Ok(parts.join("\u{1f}"))
+}
+
+fn release_aggregate_numeric_tolerance(row: &BTreeMap<String, String>, column: &str) -> f64 {
+    if row
+        .get("metric")
+        .is_some_and(|metric| RELEASE_AGGREGATE_EXACT_METRICS.contains(&metric.as_str()))
+    {
+        1.0e-12
+    } else if column == "sign_flip_p" {
+        0.15
+    } else {
+        0.10
     }
 }
 
@@ -7236,6 +8039,7 @@ fn run_research_smoke(ctx: &mut ResearchSmokeContext) -> DynamicJepaResult<Value
                 "inspect-counts".to_string(),
                 "--db".to_string(),
                 db.display().to_string(),
+                "--allow-missing".to_string(),
                 "--json".to_string(),
             ],
         )?;
@@ -7379,6 +8183,7 @@ struct ResearchHyperparameterOverrides {
     learning_rate: Option<f64>,
     latent_dim: Option<u64>,
     batch_size: Option<u64>,
+    epochs: Option<u64>,
 }
 
 impl ResearchHyperparameterOverrides {
@@ -7387,13 +8192,17 @@ impl ResearchHyperparameterOverrides {
             learning_rate: args.hp_learning_rate,
             latent_dim: args.hp_latent_dim,
             batch_size: args.hp_batch_size,
+            epochs: args.hp_epochs,
         };
         validate_research_hyperparameter_overrides(&overrides, args.onet_text_zip.is_some())?;
         Ok(overrides)
     }
 
     fn is_empty(&self) -> bool {
-        self.learning_rate.is_none() && self.latent_dim.is_none() && self.batch_size.is_none()
+        self.learning_rate.is_none()
+            && self.latent_dim.is_none()
+            && self.batch_size.is_none()
+            && self.epochs.is_none()
     }
 
     fn manifest_value(&self) -> Value {
@@ -7401,6 +8210,7 @@ impl ResearchHyperparameterOverrides {
             "learning_rate": self.learning_rate,
             "latent_dim": self.latent_dim,
             "batch_size": self.batch_size,
+            "epochs": self.epochs,
             "overridden": !self.is_empty(),
         })
     }
@@ -7444,6 +8254,15 @@ fn validate_research_hyperparameter_overrides(
                 "research_smoke.hp_batch_size",
                 "batch size must be positive",
                 "use a positive batch size",
+            ));
+        }
+    }
+    if let Some(epochs) = overrides.epochs {
+        if epochs == 0 {
+            return Err(DynamicJepaError::validation(
+                "research_smoke.hp_epochs",
+                "epochs must be positive",
+                "use a positive epoch count",
             ));
         }
     }
@@ -8725,6 +9544,10 @@ fn apply_research_hp_overrides(
         require_json_object_path(config, &["schedule"], field_prefix)?;
         config["schedule"]["batch_size"] = json!(batch_size);
     }
+    if let Some(epochs) = overrides.epochs {
+        require_json_object_path(config, &["schedule"], field_prefix)?;
+        config["schedule"]["epochs"] = json!(epochs);
+    }
     Ok(())
 }
 
@@ -9945,6 +10768,13 @@ fn training_hyperparameters_from_config(config: &Value) -> DynamicJepaResult<Val
             "inspect the generated or artifact config.json; HP tables require the exact persisted training hyperparameters",
         )
     })?;
+    let epochs = config["schedule"]["epochs"].as_u64().ok_or_else(|| {
+        DynamicJepaError::schema(
+            "train_config.schedule.epochs",
+            "training config is missing numeric schedule.epochs",
+            "inspect the generated or artifact config.json; HP tables require the exact persisted training hyperparameters",
+        )
+    })?;
     let seed = config["seed"].as_u64().ok_or_else(|| {
         DynamicJepaError::schema(
             "train_config.seed",
@@ -9956,6 +10786,7 @@ fn training_hyperparameters_from_config(config: &Value) -> DynamicJepaResult<Val
         "lr": lr,
         "latent_dim": latent_dim,
         "batch_size": batch_size,
+        "epochs": epochs,
         "seed": seed,
     }))
 }
@@ -11656,6 +12487,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         ),
         inspect_counts(InspectCountsArgs {
             db: ctx.db.clone(),
+            allow_missing: true,
             json: true,
         }),
         ctx,
@@ -12045,6 +12877,7 @@ fn run_phase10_domain_verification(ctx: &mut VerificationContext) -> DynamicJepa
         ),
         inspect_counts(InspectCountsArgs {
             db: ctx.db.clone(),
+            allow_missing: false,
             json: true,
         }),
         ctx,
@@ -12092,6 +12925,7 @@ fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()
     for (name, path, expectation) in ctx.domain.edge_fixtures(&ctx.fixtures_root) {
         let before = inspect_counts(InspectCountsArgs {
             db: ctx.db.clone(),
+            allow_missing: false,
             json: true,
         })?
         .value;
@@ -12122,6 +12956,7 @@ fn run_adapter_edge_cases(ctx: &mut VerificationContext) -> DynamicJepaResult<()
         }
         let after = inspect_counts(InspectCountsArgs {
             db: ctx.db.clone(),
+            allow_missing: false,
             json: true,
         })?
         .value;
@@ -16059,6 +16894,32 @@ fn open_store(path: &Path) -> DynamicJepaResult<RocksDbTeleologicalStore> {
     )
 }
 
+fn open_existing_store(
+    path: &Path,
+    operation: &str,
+) -> DynamicJepaResult<RocksDbTeleologicalStore> {
+    if !path.exists() {
+        return Err(DynamicJepaError::validation(
+            format!("{operation}.db"),
+            format!("DB path does not exist: {}", path.display()),
+            "run the command that creates the RocksDB source of truth before inspecting it; inspection never creates DB paths",
+        ));
+    }
+    let config = TeleologicalStoreConfig {
+        create_if_missing: false,
+        create_missing_column_families: false,
+        ..TeleologicalStoreConfig::default()
+    };
+    RocksDbTeleologicalStore::open_with_config(path, config).map_err(|err| {
+        DynamicJepaError::Storage {
+            operation: operation.to_string(),
+            cf: "rocksdb".to_string(),
+            message: format!("failed to open existing {}: {err}", path.display()),
+            remediation: "verify the DB path is a complete existing source-of-truth RocksDB and no active process owns the RocksDB lock".to_string(),
+        }
+    })
+}
+
 fn canonical_existing_path(path: &Path, field: &str) -> DynamicJepaResult<String> {
     fs::canonicalize(path)
         .map_err(|err| {
@@ -16083,6 +16944,13 @@ fn resolve_dynamic_cf_name(name: &str) -> DynamicJepaResult<&'static str> {
                 format!("use one of: {}", DJ_CF_NAMES.join(", ")),
             )
         })
+}
+
+fn zero_dj_counts() -> BTreeMap<String, u64> {
+    DJ_CF_NAMES
+        .iter()
+        .map(|cf| ((*cf).to_string(), 0_u64))
+        .collect()
 }
 
 fn count_delta(

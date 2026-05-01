@@ -131,7 +131,7 @@ fn run_phase6_counter_data(db: &str, root: &Path, fixture: &str) -> (String, Vec
         .to_string();
     let mut evidence = Vec::new();
     evidence.push(json!({"step": "initial_counts", "output": run_ok(&[
-        "dynamicjepa", "inspect-counts", "--db", db, "--json"
+        "dynamicjepa", "inspect-counts", "--db", db, "--allow-missing", "--json"
     ])}));
     evidence.push(json!({"step": "register_domain", "output": run_ok(&[
         "dynamicjepa", "register-domain", "--db", db, "--file", &counter_domain, "--json"
@@ -338,6 +338,7 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
         "inspect-counts",
         "--db",
         &missing_db,
+        "--allow-missing",
         "--json",
     ]);
     let missing_err = run_err(&[
@@ -358,6 +359,7 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
         "inspect-counts",
         "--db",
         &missing_db,
+        "--allow-missing",
         "--json",
     ]);
     assert_eq!(missing_err["error_code"], "SOURCE_OF_TRUTH_MISSING");

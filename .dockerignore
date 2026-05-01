@@ -1,0 +1,14 @@
+*
+!Dockerfile
+!.dockerignore
+!reproduce.sh
+!target/
+!target/debug/
+!target/debug/context-graph
+!configs/
+!configs/dynamicjepa/
+!configs/dynamicjepa/**
+!reference/
+!reference/**
+!docs2/
+!docs2/systemspecs.md

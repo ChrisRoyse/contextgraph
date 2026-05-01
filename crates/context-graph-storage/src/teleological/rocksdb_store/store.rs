@@ -171,7 +171,7 @@ impl RocksDbTeleologicalStore {
         // Create DB options
         let mut db_opts = Options::default();
         db_opts.create_if_missing(config.create_if_missing);
-        db_opts.create_missing_column_families(true);
+        db_opts.create_missing_column_families(config.create_missing_column_families);
         db_opts.set_max_open_files(config.max_open_files);
 
         // CORRUPTION-RESILIENCE: Enable paranoid checks for early corruption detection.

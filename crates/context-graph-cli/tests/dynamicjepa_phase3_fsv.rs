@@ -91,7 +91,14 @@ fn dynamicjepa_phase3_cli_fsv_real_rocksdb() {
 
     let mut evidence = Vec::new();
 
-    let initial = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    let initial = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        &db,
+        "--allow-missing",
+        "--json",
+    ]);
     assert_eq!(count(&initial, "dj_domain_packs"), 0);
     evidence.push(json!({"step": "initial_counts", "output": initial}));
 

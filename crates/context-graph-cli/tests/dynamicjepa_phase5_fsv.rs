@@ -206,6 +206,7 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
         "inspect-counts",
         "--db",
         &counter_db,
+        "--allow-missing",
         "--json",
     ]);
     assert_eq!(count(&counter_initial, "dj_trajectories"), 0);
@@ -549,7 +550,14 @@ fn dynamicjepa_phase5_cli_fsv_real_rocksdb() {
     );
     evidence.push(json!({"step": "edge_missing_panel_source", "before": missing_panel_before, "error": missing_panel_err, "after": missing_panel_after}));
 
-    let grid_initial = run_ok(&["dynamicjepa", "inspect-counts", "--db", &grid_db, "--json"]);
+    let grid_initial = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        &grid_db,
+        "--allow-missing",
+        "--json",
+    ]);
     assert_eq!(count(&grid_initial, "dj_trajectories"), 0);
     evidence.push(json!({"step": "grid_initial_counts", "output": grid_initial}));
 

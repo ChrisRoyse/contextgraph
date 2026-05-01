@@ -161,6 +161,8 @@ pub struct TeleologicalStoreConfig {
     pub enable_wal: bool,
     /// Create database if it doesn't exist (default: true).
     pub create_if_missing: bool,
+    /// Create missing column families if the database exists but is incomplete (default: true).
+    pub create_missing_column_families: bool,
     /// Soft-delete garbage collection retention period in seconds.
     /// Soft-deleted entries older than this are permanently hard-deleted by GC.
     /// Default: 7 days (604800 seconds). Set to 0 to GC immediately on next run.
@@ -174,6 +176,7 @@ impl Default for TeleologicalStoreConfig {
             max_open_files: 1000,
             enable_wal: true,
             create_if_missing: true,
+            create_missing_column_families: true,
             gc_retention_secs: 7 * 24 * 3600, // 7 days
         }
     }
