@@ -252,18 +252,22 @@ Verified on 2026-05-01:
   no-upload release-candidate archive from preserved release-C evidence and
   fails closed if the aggregate, FSV report, Docker tars, container verifier,
   selected full seed bundle, reference, citation, or license files are invalid.
-- Latest local release-candidate archive:
-  `tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc2.tar.gz`.
+- Latest local SIF-inclusive release-candidate archive:
+  `tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc5_sif_verified.tar.gz`.
   Archive SHA-256:
-  `eaa3c8cf72524a1e3746bb17d6cf4deb453f2e632a6404f4281efd03b854e85f`.
-- The rc2 archive embeds `bin/context-graph`, records its dynamic-link
+  `8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd`.
+- The rc5 archive embeds `bin/context-graph`, records its dynamic-link
   readback in `manifests/context_graph_ldd.txt`, and passes packaged
   `CONTEXT_GRAPH_BIN=bin/context-graph ./reproduce.sh verify-aggregate`.
-- Apptainer/Singularity is not installed on the current host. The script can
-  include a supplied `.sif` and can be forced to fail with
-  `--require-apptainer`, but it does not synthesize or fake an HPC image.
+- SingularityCE 4.1.1 is installed from Ubuntu 24.04 packages. The real SIF
+  artifact is included at `container/contextgraph-mejepa.sif`; its SHA-256 is
+  `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825`.
+- The packager requires `singularity inspect`, `singularity sif list`, and
+  `singularity exec --nv --cleanenv --no-home` aggregate verification before
+  it will include a supplied `.sif`.
 - Zenodo upload/DOI publication has not been performed from this environment.
-  The release-candidate archive is local evidence, not the final DOI artifact.
+  The release-candidate archive is local Docker+SIF evidence, not the final DOI
+  artifact.
 
 ## Acceptance
 

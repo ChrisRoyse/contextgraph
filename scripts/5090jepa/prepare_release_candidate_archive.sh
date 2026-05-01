@@ -194,6 +194,7 @@ require_cmd du
 require_cmd tar
 require_cmd gzip
 require_cmd ldd
+require_cmd realpath
 
 [[ -n "$release_id" ]] || die "RELEASE_ARCHIVE_RELEASE_ID_REQUIRED" "--release-id is required"
 [[ "$release_id" =~ ^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$ ]] ||
@@ -227,6 +228,7 @@ if [[ "$require_apptainer" == true && -z "$apptainer_sif" ]]; then
 fi
 if [[ -n "$apptainer_sif" ]]; then
   require_file "$apptainer_sif" "RELEASE_ARCHIVE_APPTAINER_SIF_MISSING"
+  require_cmd singularity
 fi
 
 if [[ -z "$source_date_epoch" ]]; then
@@ -257,9 +259,12 @@ grep -qx 'FROM ${CUDA_IMAGE}' Dockerfile ||
   die "RELEASE_ARCHIVE_DOCKER_FROM_NOT_ARG" "Dockerfile must use FROM \${CUDA_IMAGE}"
 
 tmp_reference_check="$(mktemp)"
+tmp_sif_inspect="$(mktemp)"
+tmp_sif_list="$(mktemp)"
+tmp_sif_verify="$(mktemp)"
 if ! ./reproduce.sh verify-aggregate --aggregate "$aggregate" --reference "$reference" --json > "$tmp_reference_check"; then
   cat "$tmp_reference_check" >&2
-  rm -f "$tmp_reference_check"
+  rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
   die "RELEASE_ARCHIVE_REFERENCE_CHECK_FAILED" "release aggregate does not match the checked-in reference"
 fi
 jq -e '.status == "ok" and .comparison.diff_count == 0' "$tmp_reference_check" >/dev/null ||
@@ -293,6 +298,32 @@ do
   require_file "$aggregate/paper_tables/$table" "RELEASE_ARCHIVE_AGGREGATE_TABLE_MISSING"
 done
 
+if [[ -n "$apptainer_sif" ]]; then
+  if ! singularity inspect --json "$apptainer_sif" > "$tmp_sif_inspect"; then
+    rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
+    die "RELEASE_ARCHIVE_APPTAINER_INSPECT_FAILED" "singularity inspect failed for '${apptainer_sif}'"
+  fi
+  if ! singularity sif list "$apptainer_sif" > "$tmp_sif_list"; then
+    rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
+    die "RELEASE_ARCHIVE_APPTAINER_SIF_LIST_FAILED" "singularity sif list failed for '${apptainer_sif}'"
+  fi
+  if ! singularity exec --nv --cleanenv --no-home \
+    -B "$(realpath "$aggregate"):/work/aggregate:ro" \
+    "$apptainer_sif" \
+    /workspace/reproduce.sh verify-aggregate \
+      --aggregate /work/aggregate \
+      --reference /workspace/reference/reference_release_v1.0.0.json \
+      --json > "$tmp_sif_verify"; then
+    cat "$tmp_sif_verify" >&2
+    rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
+    die "RELEASE_ARCHIVE_APPTAINER_VERIFY_FAILED" "SIF aggregate verification failed for '${apptainer_sif}'"
+  fi
+  if ! jq -e '.status == "ok" and .comparison.diff_count == 0 and .readback.manifest_status == "passed" and .readback.fsv_status == "passed"' "$tmp_sif_verify" >/dev/null; then
+    rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
+    die "RELEASE_ARCHIVE_APPTAINER_VERIFY_NOT_OK" "SIF verification JSON did not report status=ok, diff_count=0, and passed readback"
+  fi
+fi
+
 output_root="${output_root%/}"
 artifact_dir="$output_root/$release_id"
 archive_path="$output_root/$release_id.tar.gz"
@@ -317,6 +348,9 @@ cp -a "$container_verify_json" "$artifact_dir/manifests/docker_container_verify_
 cp -a "$tmp_reference_check" "$artifact_dir/manifests/release_reference_verify.json"
 if [[ -n "$apptainer_sif" ]]; then
   cp -a "$apptainer_sif" "$artifact_dir/container/contextgraph-mejepa.sif"
+  cp -a "$tmp_sif_inspect" "$artifact_dir/manifests/sif_inspect.json"
+  cp -a "$tmp_sif_list" "$artifact_dir/manifests/sif_list.txt"
+  cp -a "$tmp_sif_verify" "$artifact_dir/manifests/sif_verify_aggregate.json"
 fi
 
 if [[ -f THIRD_PARTY_LICENSES/ONET.md ]]; then
@@ -491,6 +525,7 @@ jq -n \
   --argjson docker_tar_size_bytes "$(size_file "$docker_tar_1")" \
   --argjson apptainer_size_bytes "$apptainer_size" \
   --slurpfile container_verify "$container_verify_json" \
+  --slurpfile sif_verify "$tmp_sif_verify" \
   '{
     docker: {
       archive_path: $docker_tar,
@@ -504,7 +539,8 @@ jq -n \
       status: $apptainer_status,
       archive_path: (if $apptainer_status == "included" then "container/contextgraph-mejepa.sif" else null end),
       archive_sha256: (if $apptainer_sha256 == "" then null else $apptainer_sha256 end),
-      archive_size_bytes: (if $apptainer_size_bytes == 0 then null else $apptainer_size_bytes end)
+      archive_size_bytes: (if $apptainer_size_bytes == 0 then null else $apptainer_size_bytes end),
+      verification: (if $apptainer_status == "included" then $sif_verify[0] else null end)
     }
   }' > "$artifact_dir/container/container_manifest.json"
 
@@ -575,4 +611,4 @@ jq -n \
     }
   }' | tee "$artifact_dir/build_report.json"
 
-rm -f "$tmp_reference_check"
+rm -f "$tmp_reference_check" "$tmp_sif_inspect" "$tmp_sif_list" "$tmp_sif_verify"
