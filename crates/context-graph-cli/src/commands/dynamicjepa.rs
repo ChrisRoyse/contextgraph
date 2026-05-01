@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
@@ -3180,6 +3181,624 @@ fn record_surprise_command(args: RecordSurpriseArgs) -> DynamicJepaResult<Comman
         Err(err) => Ok(CommandOutcome {
             value: error_value(
                 "dynamicjepa_record_surprise",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn build_constellation_command(args: BuildConstellationArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_CONSTELLATIONS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "build-constellation.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let target = resolve_constellation_target(&domain, &args.subject)?;
+        let all_matching = matching_constellation_states(db, &domain, &target)?;
+        let selector = match args.source_event_selector.as_deref() {
+            Some(raw) => parse_event_selector(raw, "build-constellation.source_event_selector")?,
+            None => default_reference_selector(all_matching.len(), target.calibration_set_size),
+        };
+        let reference_states = apply_event_selector(all_matching, selector);
+        if reference_states.len() < 5 {
+            return Err(DynamicJepaError::ConstellationReferenceSetTooSmall {
+                subject_id: target.subject_id.clone(),
+                actual: reference_states.len(),
+                minimum: 5,
+            });
+        }
+        let built_by_run_id = args
+            .built_by_run_id
+            .as_deref()
+            .map(|raw| parse_uuid(raw, "build-constellation.built_by_run_id"))
+            .transpose()?;
+        let now = now_unix_ms()?;
+        let domain_uuid = domain_pack_storage_uuid(&domain.id, &domain.version);
+        let mut writes = Vec::new();
+        for modality in &target.modalities {
+            let stats =
+                compute_constellation_stats(db, &reference_states, &modality.spec, &target)?;
+            if stats.loo_stability < target.require_loo_min {
+                return Err(DynamicJepaError::ConstellationLooBelowThreshold {
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                    loo_stability: stats.loo_stability,
+                    required: target.require_loo_min,
+                });
+            }
+            let constellation_id = ConstellationId::new_v4();
+            let mut record = ConstellationCentroid {
+                header: DjRecordHeader::new(
+                    constellation_id.0,
+                    CONSTELLATION_CENTROID_RECORD_VERSION,
+                    domain.id.clone(),
+                    domain.version.clone(),
+                    now,
+                    built_by_run_id,
+                ),
+                constellation_id,
+                domain_pack_id: domain.id.clone(),
+                subject_id: target.subject_id.clone(),
+                modality_id: modality.spec.instrument_id.clone(),
+                centroid: stats.centroid,
+                instrument_artifact_hash: instrument_artifact_hash32(&modality.spec)?,
+                reference_set_count: reference_states.len() as u32,
+                kept_count: stats.kept_count,
+                dropped_zero_norm: stats.dropped_zero_norm,
+                loo_stability: stats.loo_stability,
+                calibration_percentile: target.calibration_percentile,
+                calibration_set_size: target.calibration_set_size,
+                built_at_unix_ms: now as u64,
+                built_by_run_id,
+            };
+            record.refresh_content_hash()?;
+            writes.push((
+                domain_uuid,
+                target.subject_id.clone(),
+                modality.ordinal,
+                record,
+            ));
+        }
+
+        let mut audit = build_audit(
+            "build_constellation",
+            AuditStatus::Ok,
+            reference_states
+                .iter()
+                .map(|state| format!("reference_event:{}", state.source_event_id))
+                .collect(),
+            writes
+                .iter()
+                .map(|(_, _, _, record)| record.constellation_id.to_string())
+                .collect(),
+            vec![CF_DJ_CONSTELLATIONS.to_string(), CF_DJ_AUDIT_LOG.to_string()],
+            writes
+                .iter()
+                .map(|(_, _, _, record)| record.header.content_hash)
+                .collect(),
+        )?;
+        let signal_yield = signal_yield_for_operation(
+            "build_constellation",
+            SignalYieldDimensions {
+                n_panel_slots: target.modalities.len() as u32,
+                n_active_modalities: target.modalities.len() as u32,
+                k_candidates: 0,
+            },
+        )?;
+        set_audit_signal_yield(&mut audit, signal_yield)?;
+        put_constellations_with_audit_batch(db, &writes, &audit)?;
+
+        let mut stored = Vec::new();
+        for (domain_uuid, subject_id, ordinal, record) in &writes {
+            let row = get_constellation(db, *domain_uuid, subject_id, *ordinal)?.ok_or_else(|| {
+                DynamicJepaError::SourceOfTruthMissing {
+                    cf: CF_DJ_CONSTELLATIONS.to_string(),
+                    key: Vec::new(),
+                }
+            })?;
+            if row != *record {
+                return Err(DynamicJepaError::StorageInvariantViolation {
+                    message: format!(
+                        "constellation readback mismatch for {}",
+                        record.constellation_id
+                    ),
+                });
+            }
+            stored.push(row);
+        }
+
+        Ok(json!({
+            "created_ids": {
+                "constellation_ids": stored.iter().map(|row| row.constellation_id.to_string()).collect::<Vec<_>>(),
+                "audit_id": audit.audit_id.to_string(),
+            },
+            "summary": {
+                "subject_id": target.subject_id,
+                "selector": selector.to_string(),
+                "reference_set_count": reference_states.len(),
+                "modalities": stored.iter().map(|row| row.modality_id.to_string()).collect::<Vec<_>>(),
+                "loo_stability": stored.iter().map(|row| (row.modality_id.to_string(), row.loo_stability)).collect::<BTreeMap<_, _>>(),
+            },
+            "decoded_records": {
+                "constellations": stored,
+                "constellations_cf": inspect_cf(db, CF_DJ_CONSTELLATIONS, 100, 0)?,
+                "audit_log": inspect_cf(db, CF_DJ_AUDIT_LOG, 400, 0)?,
+            }
+        }))
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_build_constellation",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_build_constellation",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn list_constellations_command(args: ListConstellationsArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    if args.limit == 0 {
+        return Err(DynamicJepaError::validation(
+            "list-constellations.limit",
+            "--limit must be greater than zero",
+            "request at least one decoded row",
+        ));
+    }
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "list-constellations.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let domain_filter = args
+        .domain
+        .as_deref()
+        .map(DomainPackId::new)
+        .transpose()?;
+    let rows = list_constellations(db, 1_000_000, 0)?
+        .into_iter()
+        .filter(|row| {
+            domain_filter
+                .as_ref()
+                .map_or(true, |domain_id| &row.header.domain_pack_id == domain_id)
+        })
+        .filter(|row| {
+            args.subject
+                .as_ref()
+                .map_or(true, |subject| row.subject_id == *subject)
+        })
+        .skip(args.offset)
+        .take(args.limit)
+        .collect::<Vec<_>>();
+    Ok(CommandOutcome {
+        value: json!({
+            "operation": "dynamicjepa_list_constellations",
+            "status": "ok",
+            "db_path": db_path,
+            "source_of_truth": [CF_DJ_CONSTELLATIONS],
+            "counts": counts,
+            "limit": args.limit,
+            "offset": args.offset,
+            "decoded_records": {"constellations": rows},
+        }),
+        exit_code: 0,
+    })
+}
+
+fn get_constellation_command(args: GetConstellationArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "get-constellation.db")?;
+    let counts = snapshot_dj_counts(db)?;
+    let domain_id = DomainPackId::new(args.domain.clone())?;
+    let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+        DynamicJepaError::DomainPackNotFound {
+            id: domain_id.to_string(),
+        }
+    })?;
+    let modality = resolve_modality_ordinal(&domain, &args.modality, "get-constellation.modality")?;
+    let domain_uuid = domain_pack_storage_uuid(&domain.id, &domain.version);
+    let row = get_constellation(db, domain_uuid, &args.subject, modality.ordinal)?;
+    match row {
+        Some(record) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_constellation",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_CONSTELLATIONS],
+                "counts": counts,
+                "decoded_records": {"constellation": record},
+            }),
+            exit_code: 0,
+        }),
+        None => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_get_constellation",
+                "status": "not_found",
+                "db_path": db_path,
+                "source_of_truth": [CF_DJ_CONSTELLATIONS],
+                "counts": counts,
+                "queried": {"domain": args.domain, "subject": args.subject, "modality": args.modality},
+                "remediation": "run dynamicjepa build-constellation for this subject and modality",
+            }),
+            exit_code: 0,
+        }),
+    }
+}
+
+fn calibrate_threshold_command(
+    args: CalibrateThresholdArgs,
+    recalibrate: bool,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_CONSTELLATIONS,
+        CF_DJ_THRESHOLD_CALIBRATIONS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "calibrate-threshold.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let target = resolve_constellation_target(&domain, &args.subject)?;
+        let modalities = filter_target_modalities(
+            &domain,
+            &target,
+            &args.modality,
+            "calibrate-threshold.modality",
+        )?;
+        let all_matching = matching_constellation_states(db, &domain, &target)?;
+        let selector = match args.calibration_event_selector.as_deref() {
+            Some(raw) => parse_event_selector(raw, "calibrate-threshold.calibration_event_selector")?,
+            None => EventSelector::Last(target.calibration_set_size as usize),
+        };
+        let calibration_states = apply_event_selector(all_matching, selector);
+        if calibration_states.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "calibrate-threshold.calibration_event_selector",
+                "calibration selector returned no states",
+                "select a non-empty held-out event range",
+            ));
+        }
+        let domain_uuid = domain_pack_storage_uuid(&domain.id, &domain.version);
+        let mut writes = Vec::new();
+        let mut superseded = Vec::new();
+        for modality in modalities {
+            let constellation = get_constellation(
+                db,
+                domain_uuid,
+                &target.subject_id,
+                modality.ordinal,
+            )?
+            .ok_or_else(|| DynamicJepaError::GuardConstellationMissing {
+                domain_id: domain.id.to_string(),
+                subject_id: target.subject_id.clone(),
+                modality_id: modality.spec.instrument_id.to_string(),
+            })?;
+            if constellation.instrument_artifact_hash != instrument_artifact_hash32(&modality.spec)?
+            {
+                return Err(DynamicJepaError::ConstellationInstrumentHashMismatch {
+                    constellation_id: constellation.constellation_id.0,
+                    modality_id: modality.spec.instrument_id.to_string(),
+                });
+            }
+            let reference_events = reference_event_ids_for_constellation(db, constellation.constellation_id)?;
+            let calibration_events = calibration_states
+                .iter()
+                .map(|state| state.source_event_id.0)
+                .collect::<BTreeSet<_>>();
+            let overlap_count = calibration_events.intersection(&reference_events).count();
+            if overlap_count > 0 {
+                return Err(DynamicJepaError::CalibrationSetNotDisjoint {
+                    subject_id: target.subject_id.clone(),
+                    overlap_count,
+                });
+            }
+            let existing_zero =
+                get_threshold_calibration(db, domain_uuid, &target.subject_id, modality.ordinal, 0)?;
+            if existing_zero.is_some() && !recalibrate {
+                return Err(DynamicJepaError::CalibrationSupersessionRequired {
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                });
+            }
+            let (supersede_seq, supersedes_uuid, reason) = if recalibrate {
+                return Err(DynamicJepaError::CalibrationSupersessionRequired {
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                });
+            } else {
+                (0, None, None)
+            };
+            let percentile = args.percentile.unwrap_or(target.calibration_percentile);
+            let record = build_threshold_calibration_record(
+                db,
+                &domain,
+                &target,
+                &modality,
+                &constellation,
+                &calibration_states,
+                percentile,
+                supersede_seq,
+                supersedes_uuid,
+                reason,
+            )?;
+            superseded.push(supersedes_uuid.map(|id| id.to_string()));
+            writes.push((
+                domain_uuid,
+                target.subject_id.clone(),
+                modality.ordinal,
+                supersede_seq,
+                record,
+            ));
+        }
+        write_threshold_calibration_rows(
+            db,
+            "calibrate_threshold",
+            &target,
+            selector,
+            &calibration_states,
+            writes,
+            superseded,
+            &source_cfs,
+        )
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_calibrate_threshold",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_calibrate_threshold",
+                Some(db_path),
+                &source_cfs,
+                Some(before_counts),
+                Some(after_counts),
+                &err,
+            ),
+            exit_code: 1,
+        }),
+    }
+}
+
+fn recalibrate_threshold_command(args: RecalibrateThresholdArgs) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_NORMALIZED_STATES,
+        CF_DJ_INSTRUMENT_READINGS,
+        CF_DJ_CONSTELLATIONS,
+        CF_DJ_THRESHOLD_CALIBRATIONS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let store = open_store(&args.db)?;
+    let db = store.dynamicjepa_db();
+    let db_path = canonical_existing_path(&args.db, "recalibrate-threshold.db")?;
+    let before_counts = snapshot_dj_counts(db)?;
+
+    let result = (|| -> DynamicJepaResult<Value> {
+        let supersedes_raw = args.supersedes.as_deref().ok_or_else(|| {
+            DynamicJepaError::CalibrationSupersessionRequired {
+                subject_id: args.subject.clone(),
+                modality_id: args.modality.clone(),
+            }
+        })?;
+        let supersedes = parse_threshold_calibration_id(
+            supersedes_raw,
+            "recalibrate-threshold.supersedes",
+        )?;
+        let reason = args.reason.clone().filter(|value| !value.trim().is_empty()).ok_or_else(|| {
+            DynamicJepaError::CalibrationSupersessionRequired {
+                subject_id: args.subject.clone(),
+                modality_id: args.modality.clone(),
+            }
+        })?;
+        let domain_id = DomainPackId::new(args.domain.clone())?;
+        let domain = get_domain_pack(db, &domain_id, &args.domain_version)?.ok_or_else(|| {
+            DynamicJepaError::DomainPackNotFound {
+                id: domain_id.to_string(),
+            }
+        })?;
+        let target = resolve_constellation_target(&domain, &args.subject)?;
+        let modalities = filter_target_modalities(
+            &domain,
+            &target,
+            &args.modality,
+            "recalibrate-threshold.modality",
+        )?;
+        let all_matching = matching_constellation_states(db, &domain, &target)?;
+        let selector = match args.calibration_event_selector.as_deref() {
+            Some(raw) => parse_event_selector(raw, "recalibrate-threshold.calibration_event_selector")?,
+            None => EventSelector::Last(target.calibration_set_size as usize),
+        };
+        let calibration_states = apply_event_selector(all_matching, selector);
+        if calibration_states.is_empty() {
+            return Err(DynamicJepaError::validation(
+                "recalibrate-threshold.calibration_event_selector",
+                "calibration selector returned no states",
+                "select a non-empty held-out event range",
+            ));
+        }
+        let domain_uuid = domain_pack_storage_uuid(&domain.id, &domain.version);
+        let mut writes = Vec::new();
+        let mut superseded = Vec::new();
+        for modality in modalities {
+            let constellation =
+                get_constellation(db, domain_uuid, &target.subject_id, modality.ordinal)?
+                    .ok_or_else(|| DynamicJepaError::GuardConstellationMissing {
+                        domain_id: domain.id.to_string(),
+                        subject_id: target.subject_id.clone(),
+                        modality_id: modality.spec.instrument_id.to_string(),
+                    })?;
+            if constellation.instrument_artifact_hash != instrument_artifact_hash32(&modality.spec)?
+            {
+                return Err(DynamicJepaError::ConstellationInstrumentHashMismatch {
+                    constellation_id: constellation.constellation_id.0,
+                    modality_id: modality.spec.instrument_id.to_string(),
+                });
+            }
+            let reference_events = reference_event_ids_for_constellation(db, constellation.constellation_id)?;
+            let calibration_events = calibration_states
+                .iter()
+                .map(|state| state.source_event_id.0)
+                .collect::<BTreeSet<_>>();
+            let overlap_count = calibration_events.intersection(&reference_events).count();
+            if overlap_count > 0 {
+                return Err(DynamicJepaError::CalibrationSetNotDisjoint {
+                    subject_id: target.subject_id.clone(),
+                    overlap_count,
+                });
+            }
+            let prior_rows = list_threshold_calibrations(db, 1_000_000, 0)?
+                .into_iter()
+                .filter(|row| {
+                    row.header.domain_pack_id == domain.id
+                        && row.subject_id == target.subject_id
+                        && row.modality_id == modality.spec.instrument_id
+                })
+                .collect::<Vec<_>>();
+            let latest = prior_rows
+                .iter()
+                .max_by_key(|row| row.supersede_seq)
+                .ok_or_else(|| DynamicJepaError::GuardThresholdMissing {
+                    domain_id: domain.id.to_string(),
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                })?;
+            if latest.calibration_id != supersedes {
+                return Err(DynamicJepaError::CalibrationSupersessionRequired {
+                    subject_id: target.subject_id.clone(),
+                    modality_id: modality.spec.instrument_id.to_string(),
+                });
+            }
+            let percentile = args.percentile.unwrap_or(latest.percentile);
+            let supersede_seq = latest.supersede_seq.checked_add(1).ok_or_else(|| {
+                DynamicJepaError::validation(
+                    "recalibrate-threshold.supersede_seq",
+                    "supersede_seq overflowed u32",
+                    "start a fresh domain pack version before recalibrating again",
+                )
+            })?;
+            let record = build_threshold_calibration_record(
+                db,
+                &domain,
+                &target,
+                &modality,
+                &constellation,
+                &calibration_states,
+                percentile,
+                supersede_seq,
+                Some(supersedes),
+                Some(reason.clone()),
+            )?;
+            superseded.push(Some(supersedes.to_string()));
+            writes.push((
+                domain_uuid,
+                target.subject_id.clone(),
+                modality.ordinal,
+                supersede_seq,
+                record,
+            ));
+        }
+        write_threshold_calibration_rows(
+            db,
+            "recalibrate_threshold",
+            &target,
+            selector,
+            &calibration_states,
+            writes,
+            superseded,
+            &source_cfs,
+        )
+    })();
+
+    let after_counts = snapshot_dj_counts(db)?;
+    match result {
+        Ok(value) => Ok(CommandOutcome {
+            value: json!({
+                "operation": "dynamicjepa_recalibrate_threshold",
+                "status": "ok",
+                "db_path": db_path,
+                "source_of_truth": source_cfs,
+                "before_counts": before_counts,
+                "after_counts": after_counts,
+                "count_delta": count_delta(&before_counts, &after_counts)?,
+                "created_ids": value["created_ids"].clone(),
+                "summary": value["summary"].clone(),
+                "decoded_records": value["decoded_records"].clone(),
+            }),
+            exit_code: 0,
+        }),
+        Err(err) => Ok(CommandOutcome {
+            value: error_value(
+                "dynamicjepa_recalibrate_threshold",
                 Some(db_path),
                 &source_cfs,
                 Some(before_counts),
@@ -17288,6 +17907,13 @@ fn parse_plan_trace_id(value: &str, field: &str) -> DynamicJepaResult<PlanTraceI
 
 fn parse_surprise_event_id(value: &str, field: &str) -> DynamicJepaResult<SurpriseEventId> {
     Ok(SurpriseEventId(parse_uuid(value, field)?))
+}
+
+fn parse_threshold_calibration_id(
+    value: &str,
+    field: &str,
+) -> DynamicJepaResult<ThresholdCalibrationId> {
+    Ok(ThresholdCalibrationId(parse_uuid(value, field)?))
 }
 
 fn parse_hex_key(value: &str, field: &str) -> DynamicJepaResult<Vec<u8>> {
