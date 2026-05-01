@@ -86,6 +86,19 @@ fn write_first_gridworld_trajectory(root: &Path, temp: &Path) -> PathBuf {
     path
 }
 
+fn write_unsupported_pair_kind_domain(root: &Path, temp: &Path) -> PathBuf {
+    let domain =
+        fs::read_to_string(root.join("configs/dynamicjepa/domain_packs/counter_world.v1.toml"))
+            .expect("read counter domain pack");
+    let modified = domain.replace(
+        "pair_kinds = [\"cosine\"]",
+        "pair_kinds = [\"cosine\", \"modality_contradiction\"]",
+    );
+    let path = temp.join("counter_world_unsupported_pair_kind.v1.toml");
+    fs::write(&path, modified).expect("write unsupported pair-kind domain pack");
+    path
+}
+
 fn inspect_cf(db: &str, cf: &str, limit: &str) -> Value {
     run_ok(&[
         "dynamicjepa",
@@ -605,4 +618,85 @@ fn dynamicjepa_phase4_cli_fsv_real_rocksdb() {
         .expect("serialize evidence"),
     )
     .expect("write Phase 4 evidence log");
+}
+
+#[test]
+fn dynamicjepa_phase4_pairwise_unsupported_kind_fails_with_audit() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let root = repo_root();
+    let db_path = temp
+        .path()
+        .join("dynamicjepa_phase4_unsupported_pair_kind_rocksdb");
+    let db = db_path.display().to_string();
+    let domain = write_unsupported_pair_kind_domain(&root, temp.path())
+        .display()
+        .to_string();
+    let counter_happy = root
+        .join("configs/dynamicjepa/verification/counter_world_happy_path.jsonl")
+        .display()
+        .to_string();
+
+    let initial = run_ok(&[
+        "dynamicjepa",
+        "inspect-counts",
+        "--db",
+        &db,
+        "--allow-missing",
+        "--json",
+    ]);
+    assert_eq!(count(&initial, "dj_pairwise_readings"), 0);
+
+    run_ok(&[
+        "dynamicjepa",
+        "register-domain",
+        "--db",
+        &db,
+        "--file",
+        &domain,
+        "--json",
+    ]);
+    run_ok(&[
+        "dynamicjepa",
+        "ingest-event",
+        "--db",
+        &db,
+        "--domain",
+        "counter_world",
+        "--adapter",
+        "json_event",
+        "--file",
+        &counter_happy,
+        "--json",
+    ]);
+    let before = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+
+    let err = run_err(&[
+        "dynamicjepa",
+        "materialize-panel",
+        "--db",
+        &db,
+        "--all-pending",
+        "--domain",
+        "counter_world",
+        "--json",
+    ]);
+    assert_eq!(err["error_code"], "PAIRWISE_UNSUPPORTED_KIND");
+
+    let after = run_ok(&["dynamicjepa", "inspect-counts", "--db", &db, "--json"]);
+    assert_eq!(delta(&before, &after, "dj_latent_panels"), 0);
+    assert_eq!(delta(&before, &after, "dj_instrument_readings"), 0);
+    assert_eq!(delta(&before, &after, "dj_pairwise_readings"), 0);
+    assert_eq!(delta(&before, &after, "dj_audit_log"), 1);
+
+    let audit_rows = inspect_cf(&db, "dj_audit_log", "20");
+    let rows = audit_rows["decoded_records"]["rows"]
+        .as_array()
+        .expect("audit rows");
+    assert!(
+        rows.iter().any(|row| {
+            row["decoded"]["operation"] == "materialize_pairwise"
+                && row["decoded"]["status"]["Failed"]["error_code"] == "PAIRWISE_UNSUPPORTED_KIND"
+        }),
+        "expected persisted materialize_pairwise failure audit, got {audit_rows:#}"
+    );
 }

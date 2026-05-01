@@ -16060,7 +16060,23 @@ fn materialize_one_panel(
 
     let panel_id = PanelId::new_v4();
     let mut pairwise_readings =
-        compute_pairwise_readings(domain_pack, &readings, transition.header.source_run_id)?;
+        match compute_pairwise_readings(domain_pack, &readings, transition.header.source_run_id) {
+            Ok(rows) => rows,
+            Err(err) => {
+                let audit = build_audit(
+                    "materialize_pairwise",
+                    AuditStatus::Failed {
+                        error_code: err.code().to_string(),
+                    },
+                    vec![transition.transition_id.to_string()],
+                    Vec::new(),
+                    vec![CF_DJ_AUDIT_LOG.to_string()],
+                    Vec::new(),
+                )?;
+                put_audit_record(db, &audit)?;
+                return Err(err);
+            }
+        };
     let pairwise_reading_ids = pairwise_readings
         .iter()
         .map(|reading| reading.pairwise_id)
