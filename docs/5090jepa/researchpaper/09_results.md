@@ -239,10 +239,8 @@ of the Rust-only pipeline).
 
 ## 7.7 Failed Runs as Evidence
 
-Per
-[smokedoc 11](../smokedocs/11_risks_open_questions_and_decisions.md)
-and the project's "do not delete failed bundles" rule, the preserved
-failure evidence is:
+The project preserves rather than deletes failed bundles, so each
+fixed defect remains traceable. Preserved failure evidence:
 
 - `tmp/mejepa_research_runs/20260430T_paper_small_1k_seed45_v2`: the
   *original* seed-45 failure where `career_ablation_training_seed`

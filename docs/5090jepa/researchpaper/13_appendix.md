@@ -297,8 +297,8 @@ research-smoke bundle.)
   count, hardware/software fingerprint).
 - `fsv_report.json` — verification rows, artifact hash checks, edge
   cases.
-- `data_manifest.json` — source URLs, source ZIP SHA-256, allowed-use
-  field, license text, generated walk hash.
+- `data_manifest.json` — source URLs, source ZIP SHA-256, generated
+  walk hash, license attribution string.
 - `domain_pack_manifest.json` — registered domain packs and their
   hashes.
 - `environment.json` — `nvcc`, `nvidia-smi`, `rustc`, `cargo`, `uname`,

@@ -76,22 +76,55 @@ in the present runtime is O\*NET 30.2.
 ## 2.5 Auditable ML Systems
 
 The runtime's evidence-bundle design is informed by MLflow Tracking
-[MLflow, 2024] (run, experiment, artifact, metric lineage) and ACM
-Artifact Review and Badging [ACM, 2020] (Available / Functional /
-Reusable badge criteria). The reproducibility ladder—pinned base image
-digest, deterministic build, deterministic tar export, container DOI—
-follows Docker reproducible-build guidance [Docker, 2025] and Apptainer
-SIF-from-docker-archive guidance [Apptainer, 2025]. The ACM
-Reproducibility / Replicability community resources [ACM REP, 2025]
-provide the broader badge ecosystem context. PyTorch's reproducibility
+[MLflow, 2024] (run, experiment, artifact, metric lineage). The
+reproducibility ladder — pinned base image digest, deterministic
+build, deterministic tar export, container DOI — follows Docker
+reproducible-build guidance [Docker, 2025] and Apptainer SIF-from-
+docker-archive guidance [Apptainer, 2025]. PyTorch's reproducibility
 notes [PyTorch, 2026] are relevant because we inherit the same caveat:
 exact GPU result reproducibility across releases or platforms is *not*
 guaranteed; cross-run comparisons therefore use structural + tolerance
-checks, not byte-equal model-file diffs (§6, §8).
+checks, not byte-equal model-file diffs (§6, §9).
 
-## 2.6 Positioning
+## 2.6 Synthetic Data, Model Collapse, and Process Supervision
+
+Recent work establishes a non-trivial taxonomy of training-data
+classes and their effect on model quality under recursive training.
+Shumailov et al. [2023; 2024] introduced *model collapse*: training
+generative models on recursively generated data leads to irreversible
+loss of distribution tails and eventual convergence to a degenerate
+distribution. The result holds for VAEs, GMMs, and LLMs, and is the
+canonical reason for caution about LLM-only synthetic corpora.
+Gerstgrasser et al. [2024] subsequently showed that *accumulating*
+real and synthetic data avoids the collapse pattern that *replacement*
+triggers — distinguishing the dangerous recursion-with-replacement
+case from the safer accumulation case.
+
+In parallel, the highest-quality synthetic reasoning corpora have
+moved away from pure LLM generation toward *verifier-grounded* data.
+Lightman et al. [2023] introduced process supervision and released
+PRM800K, a corpus of 800{,}000 step-level human-feedback labels for
+mathematical reasoning. Jung et al. [2025] proposed code-execution-
+grounded supervision: extracting deterministic step-by-step traces
+from program execution and converting them into chain-of-thought
+supervision, exploiting the fact that program execution is verifiable,
+step-by-step, and causally linked to outcomes. Open-source verifier-
+grounded corpora such as SYNTHETIC-1 [Prime Intellect, 2025] (1.4M
+verified reasoning traces) and Enigmata [Seed, 2025] (synthetic
+verifiable puzzles) sit in this category.
+
+§7 extends this taxonomy with a class of training data that the
+ME-JEPA runtime produces by construction: *audited execution traces
+with cryptographic provenance*, in which the bulk of the bytes are
+deterministic functions of a public source rather than model outputs,
+the small model-output slice is paired with deterministic observed
+targets and external baselines, and counterfactual ablations and
+failed runs are persisted as first-class records.
+
+## 2.7 Positioning
 
 This is a *systems* contribution: a domain-portable JEPA runtime with
-end-to-end provenance and a public-taxonomy benchmark. It is not a
-representational-quality contribution to image or video JEPA, and it is
-not an evaluation of any large-scale foundation model.
+end-to-end provenance, a public-taxonomy benchmark, and a structured
+training-data corpus emitted as a side effect of every run. It is not
+a representational-quality contribution to image or video JEPA, and it
+is not an evaluation of any large-scale foundation model.

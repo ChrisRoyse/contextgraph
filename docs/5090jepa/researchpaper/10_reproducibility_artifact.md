@@ -132,7 +132,7 @@ mejepa_5090_artifact_v1.0.0_rc5_sif_verified/
   README.md                             one-page reproduce instructions
   CITATION.cff                          how to cite (PolyForm-Noncommercial-1.0.0)
   LICENSE                               PolyForm Noncommercial 1.0.0 for code
-  THIRD_PARTY_LICENSES/ONET.md          O*NET CC BY 4.0 + non-endorsement
+  THIRD_PARTY_LICENSES/ONET.md          O*NET CC BY 4.0 attribution
   bin/
     context-graph                       static-mostly Rust binary, sha256=41560d160…
   container/

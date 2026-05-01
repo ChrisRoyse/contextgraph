@@ -24,12 +24,7 @@ The answer matters because:
    licenses are restrictive, training is multi-node, and the path from
    raw event to predictor weights is rarely a single deterministic
    pipeline that a third party can re-run end-to-end and physically
-   verify. ACM artifact-evaluation badges (Available, Functional,
-   Reusable) explicitly require "documented, consistent, complete,
-   exercisable" artifacts with permanent retrieval [ACM, 2020]. The
-   NeurIPS Paper Checklist [NeurIPS, 2024] makes reproducibility a
-   first-class submission requirement (omission is desk-rejection).
-   Pineau et al. [2020] documented the gap.
+   verify. Pineau et al. [2020] documented the gap.
 
 2. **Occupational-domain ML benefits from row-level provenance.** Even
    when the *model* is small, the data pipeline benefits from having
@@ -42,9 +37,25 @@ The answer matters because:
 3. **Single-GPU feasibility is a publication-quality property.** A
    single RTX 5090 (sm\_120, 32~GiB VRAM, CUDA 13.2) running on commodity
    hardware is enough for a paper-small career benchmark with multiple
-   seeds, ablations, and audit edge cases (§7). Restricting compute to
+   seeds, ablations, and audit edge cases (§8). Restricting compute to
    one host removes "hidden cluster" reproduction barriers and forces
    training-budget honesty (Google, 2023).
+
+4. **The training-data wall is real, and synthetic-data quality is
+   non-uniform.** Shumailov et al. [2024] showed that recursively
+   training on model-generated data causes irreversible distribution-
+   tail loss. Gerstgrasser et al. [2024] showed that *accumulating*
+   real and synthetic data instead of *replacing* avoids the collapse
+   pattern. Process-supervised reasoning corpora [Lightman et al., 2023]
+   and code-execution-grounded supervision [Jung et al., 2025] are
+   currently the highest-quality synthetic-data classes precisely
+   because their model outputs are anchored to external verifiers. The
+   bundle this runtime produces inherits all of those properties and
+   adds cryptographic source provenance, structurally separate verifier
+   readbacks, and persisted counterfactual ablations — making each
+   bundle a reusable, structured training-data artifact for downstream
+   agentic, audit-aware, and process-supervised models. §7 develops
+   this argument in detail.
 
 We present **Dynamic/ME-JEPA**, a Rust runtime that meets these
 constraints on a single RTX 5090. The runtime is invoked as one binary
@@ -57,7 +68,7 @@ DynamicJEPA-prefixed RocksDB column families plus an append-only audit
 log (§3.2). The training engine uses Candle/CUDA on a Rust workspace
 pinned by `Cargo.lock`. The reproducibility artifact ships
 deterministically-built Docker and Apptainer (SIF) images with full
-SHA-256 hash chains (§8).
+SHA-256 hash chains (§9).
 
 ## 1.1 Contributions
 
@@ -80,19 +91,28 @@ SHA-256 hash chains (§8).
    plus 11 edge-case rows in `paper_tables/table_edge_cases.csv` per
    bundle.
 
-4. **Multi-seed paper-small results with BCa CI and paired permutation
-   tests.** §7 reports five-seed validation/test cosine, validation
+4. **Bundles as a new training-data class.** §7 introduces *audited
+   execution traces with cryptographic provenance*. Each bundle
+   decomposes into a deterministic-from-public-source slice, a small
+   tiny-model-output slice paired with deterministic observed targets
+   plus random-init / shuffled-target baselines, and an independent
+   verifier slice. Counterfactual ablations and failed runs are
+   persisted as first-class records. We give the taxonomy, the per-
+   bundle anatomy of training signal, the model-collapse hazard
+   analysis, and the use cases for which the data class is appropriate
+   (and inappropriate).
+
+5. **Multi-seed paper-small results with BCa CI and paired permutation
+   tests.** §8 reports five-seed validation/test cosine, validation
    action-contrast accuracy, random-init baseline, and shuffled-target
    baseline for `career_taxonomy`, plus paired tests of A1–A5 against
    A0. Hand-typed numbers are forbidden; every cited number is read
    from a CSV in the verified release-C aggregate bundle and the
    release-candidate archive.
 
-5. **Local reproducibility artifact.** §8 documents the deterministic
+6. **Local reproducibility artifact.** §9 documents the deterministic
    Docker + SIF build chain, the `reproduce.sh verify-aggregate`
-   command, and the artifact archive layout. The archive is a *release
-   candidate*; Zenodo DOI publication is the only remaining final-release
-   blocker (§8.5).
+   command, and the artifact archive layout.
 
 ## 1.2 Scope
 

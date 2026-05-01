@@ -28,10 +28,21 @@ Career-taxonomy validation cosine is $0.905 \pm 0.044$ across five seeds
 (BCa 95\% CI [0.861, 0.931]); test cosine is $0.868 \pm 0.068$ (BCa
 [0.806, 0.912]); validation action-contrast accuracy is $0.960 \pm
 0.043$. The action-removed ablation A3 collapses to validation cosine
-0.790, exactly as the runtime predicts and verifies. The reproducibility
-artifact is a local Docker + Singularity (SIF) release candidate with
-deterministic Docker tar SHA-256 `099f053…7d4cd80e`, SIF SHA-256
-`30b531c…f2825`, and archive SHA-256 `8cccf49…43ecd`. The contribution
-is a domain-portable JEPA runtime whose entire evidence chain — data,
-training, planning, and artifact provenance — is reproducible from a
-single binary on commodity hardware.
+0.790, exactly as the runtime predicts and verifies. Beyond the
+verification result, we argue that each immutable bundle constitutes a
+new training-data class — *audited execution traces with cryptographic
+provenance* — distinct from web text, pure model-generated synthetic
+data, and rejection-sampled chain-of-thought. The bulk of the bundle is
+a deterministic function of the public source ZIP rather than a model
+output; model outputs are paired in the same record with deterministic
+observed targets and random-init / shuffled-target baselines; and
+counterfactual ablations and failed runs are persisted as first-class
+records, preserving the distribution tails whose loss defines model
+collapse. The reproducibility artifact is a local Docker + Singularity
+(SIF) release candidate with deterministic Docker tar SHA-256
+`099f053…7d4cd80e`, SIF SHA-256 `30b531c…f2825`, and archive SHA-256
+`8cccf49…43ecd`. The contribution is a domain-portable JEPA runtime
+whose entire evidence chain — data, training, planning, and artifact
+provenance — is reproducible from a single binary on commodity hardware
+and is itself a structured corpus suitable for downstream agentic,
+process-supervised, and audit-aware training.

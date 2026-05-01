@@ -93,25 +93,11 @@ re-confirmed from the cited URL during retrieval.
 
 ## Reproducibility, Provenance, Build Determinism
 
-- **ACM.** (2020). *Artifact Review and Badging — Current.* (Three
-  badges: Artifacts Available; Artifacts Evaluated — Functional;
-  Artifacts Evaluated — Reusable.)
-  <https://www.acm.org/publications/policies/artifact-review-and-badging-current>
-
-- **ACM Reproducibility / Replicability Resources.** (2025).
-  <https://reproducibility.acm.org>
-
-- **NeurIPS.** (2024). *NeurIPS Paper Checklist Guidelines.*
-  <https://nips.cc/public/guides/PaperChecklist>
-
 - **Pineau, J., Vincent-Lamarre, P., Sinha, K., Larivière, V.,
   Beygelzimer, A., d'Alché-Buc, F., Fox, E., & Larochelle, H.** (2020).
   *Improving Reproducibility in Machine Learning Research (NeurIPS
   2019 Reproducibility Program Report).* arXiv:2003.12206.
   <https://arxiv.org/abs/2003.12206>
-
-- **NIST.** (2024). *AI Risk Management Framework Core (Section 5).*
-  <https://airc.nist.gov/airmf-resources/airmf/5-sec-core/>
 
 - **MLflow Project.** (2024). *MLflow Tracking documentation.*
   <https://mlflow.org/docs/latest/ml/tracking/>
@@ -161,7 +147,6 @@ each is a real file in the cited repository tree:
 - [`docs/5090jepa/smokedocs/15_multiseed_completion_and_statistical_reporting.md`](../smokedocs/15_multiseed_completion_and_statistical_reporting.md)
 - [`docs/5090jepa/smokedocs/19_paper_drafting_figures_and_supplementary.md`](../smokedocs/19_paper_drafting_figures_and_supplementary.md)
 - [`docs/5090jepa/smokedocs/20_reproducibility_artifact_and_release.md`](../smokedocs/20_reproducibility_artifact_and_release.md)
-- [`docs/5090jepa/smokedocs/21_compliance_ethics_broader_impact.md`](../smokedocs/21_compliance_ethics_broader_impact.md)
 - [`docs/5090jepa/smokedocs/23_ci_smoke_regression_and_drift_detection.md`](../smokedocs/23_ci_smoke_regression_and_drift_detection.md)
 - [`backupdocs/dynamicjepa/01_research_context.md`](../../../backupdocs/dynamicjepa/01_research_context.md)
 - [`backupdocs/dynamicjepa/02_core_thesis.md`](../../../backupdocs/dynamicjepa/02_core_thesis.md)
