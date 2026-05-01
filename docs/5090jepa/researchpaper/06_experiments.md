@@ -1,7 +1,7 @@
 # 5. Experiments
 
 This section enumerates the experimental matrix. Numerical results are
-reported in §7 and read directly from CSVs in
+reported in §8 and read directly from CSVs in
 `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate/paper_tables/`.
 We follow the project's seeded-and-aggregated protocol: every paper-cited
 number is derived from at least five real O\*NET-backed seeds {42, 43,
@@ -47,7 +47,7 @@ shuffled-target baselines on `career_taxonomy.v1`?
 
 **Acceptance.** The trained predictor passes if `val_latent_cosine`'s BCa
 lower bound exceeds `shuffled_target_cosine`'s BCa upper bound by a
-seed-paired margin (paired sign-flip permutation reported in §7) AND
+seed-paired margin (paired sign-flip permutation reported in §8) AND
 exceeds `random_init_cosine`'s BCa upper bound by the same margin.
 The two conditions are met for cosine but not for MSE because MSE is
 unbounded above and cosine is the directly comparable scale.
@@ -170,11 +170,11 @@ fits in ~2 hours of wall time on this host.
 trainer's working set never exceeds ~8~GiB during career-taxonomy
 training. We do not report an empirical peak-VRAM table because the
 trainer is not memory-bound at this model size; the headline numbers
-in §7 are instead time- and quality-bound.
+in §8 are instead time- and quality-bound.
 
 ## 5.7 Deferred Axes
 
-Excluded from the headline matrix and called out as future work in §10:
+Excluded from the headline matrix and called out as future work in §11:
 
 - a top-k occupation decoder head with reconstruction metrics
   ([smokedoc 16](../smokedocs/16_decoder_head_and_topk_metrics.md));

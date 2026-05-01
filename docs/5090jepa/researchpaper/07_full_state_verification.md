@@ -1,7 +1,7 @@
 # 6. Full-State Verification
 
 Full-state verification (FSV) is the project's central methodological
-contribution: every claim in §7 is paired with a physical readback
+contribution: every claim in §8 is paired with a physical readback
 from a *different* code path than the one that wrote it, and every
 edge case is verified to fail closed without mutating the filesystem.
 
@@ -149,7 +149,7 @@ strict `allow_missing=false`.
 
 ## 6.7 Reproducibility Hashes (Reference Bundle)
 
-The release-C aggregate bundle is the reference for §7. Its physical
+The release-C aggregate bundle is the reference for §8. Its physical
 hashes are:
 
 | File | SHA-256 |
@@ -166,4 +166,4 @@ hashes are:
 (These are the v4 promoted aggregate from the `20260430T` series. The
 release-C v2 aggregate has the same row counts, source-bundle
 SHA-256s, and BCa parameters; cross-aggregate consistency is verified
-in `aggregate_manifest.json` and reproduced in §7.)
+in `aggregate_manifest.json` and reproduced in §8.)

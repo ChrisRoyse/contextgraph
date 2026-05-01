@@ -203,7 +203,7 @@ The failed bundles are intentionally retained as evidence in
 
 ## E. Hash Reference
 
-Critical hashes for §7 and §8:
+Critical hashes for §8 and §9:
 
 ```text
 O*NET 30.2 source ZIP
@@ -260,7 +260,101 @@ Per-seed run manifests (release-C v2)
     61bbd8ccc602d1553e4fc14650e8f64497a7debaad46fd5f645f13d4be99c8a6
 ```
 
-## F. Glossary
+## F. Bundle as Training-Data Record Schema
+
+This appendix expands §7 by listing the per-record fields that a
+downstream training pipeline would consume. The fields are grouped by
+the three slices defined in §7.2.
+
+### F.1 Slice 1 — Deterministic-from-public-source records
+
+`dj_raw_events`: `event_id` (uuid), `domain_id`, `world_id`, `actor_ids`,
+`entity_ids`, `event_kind`, `payload_hash`, `source_metadata_id`,
+`adapter_version`, `validation_status`, `audit_id`. Per
+`crates/context-graph-core/src/dynamicjepa/...`. Recoverable from the
+public source ZIP plus walk seed.
+
+`dj_normalized_states`: `state_id`, `domain_id`, `entity_ids`,
+`event_window`, `latent_panel_id`, `created_at`, `audit_id`, plus the
+per-domain typed fields (`occupation_cluster`, `job_zone`,
+`skill_vector`, `experience_years`, `wage_band` for career-taxonomy).
+
+`dj_actions`, `dj_outcomes`, `dj_transitions`: typed actions and
+outcomes plus the `(state_t, action_t, outcome_t, state_{t+1})`
+transition row.
+
+`dj_instrument_readings`: per-event per-instrument output with shape,
+norm, hash, validation status.
+
+`dj_latent_panels`: the ten panel slots filled per event (career-
+taxonomy A1 panel).
+
+`dj_dataset_shards`: train/val/test splits with leakage checks.
+
+### F.2 Slice 2 — Tiny-model-output records (paired with observed targets)
+
+`dj_predictions`: `prediction_id`, `model_artifact_id`, `state_id`,
+`action_id`, `predicted_panel`, `model_artifact_sha256`. Each row's
+prediction is paired with the deterministic *observed* next-panel
+through the linked transition.
+
+`dj_plan_traces`: per-plan record with five candidate actions, five
+prediction rows, five guard decisions, utility scores, selected
+action, and the model artifact hash.
+
+`dj_guard_decisions`: per-candidate guard verdict.
+
+`dj_surprise_events`: rows emitted only when observed-vs-predicted
+delta exceeds threshold; carry the prediction id, observed panel, and
+delta.
+
+These rows are paired in the same record-set with the
+`random_init_cosine` and `shuffled_target_cosine` baseline columns
+from `paper_tables/table_prediction_metrics.csv`.
+
+### F.3 Slice 3 — Independent verifier records
+
+`dj_verification_runs`: one row per domain with the FSV harness's
+re-decoded state of every prior CF.
+
+`dj_audit_log`: chronological ledger; ~3{,}019 rows for a 1K career
+bundle. Each row: operation, before-counts, after-counts, hashes,
+typed status, optional remediation field.
+
+`paper_tables/table_edge_cases.csv`: 11 typed edge-case rows per
+career bundle.
+
+`paper_tables/table_ablation_multiseed.csv`,
+`paper_tables/table_paired_ablation_tests.csv`: counterfactual
+ablation rows.
+
+`artifact_hashes.json`: registry-vs-recomputed hash equality for every
+model artifact file.
+
+`onet_source_preflight.json`: per-bundle source-ZIP integrity evidence.
+
+### F.4 Suggested downstream-training labels
+
+For an agentic / process-supervision target:
+
+- **Primary label** for next-state prediction: the *observed*
+  next-panel from `dj_transitions` (Slice 1).
+- **Auxiliary label** for guard prediction: the recorded guard verdict
+  from `dj_guard_decisions` (Slice 2).
+- **Auxiliary label** for surprise emission: the recorded surprise
+  threshold breach from `dj_surprise_events` (Slice 2).
+- **Step-level supervision** signal: each `dj_audit_log` row's
+  `(before_counts, after_counts, typed_status)` triple is a
+  Lightman-style process-supervision label for the corresponding
+  command.
+- **Negative training examples**: each `paper_tables/table_edge_cases.csv`
+  row is a `(scenario, expected typed-error code, field path,
+  remediation)` quadruple.
+- **Counterfactual training examples**: each `dj_verification_runs`
+  row from A0–A5 is a verified counterfactual outcome for the same
+  underlying event stream.
+
+## G. Glossary
 
 - **JEPA** — Joint-Embedding Predictive Architecture. Predicts target
   representations rather than reconstructing observations.
@@ -284,6 +378,24 @@ Per-seed run manifests (release-C v2)
 - **Reference (release reference)** — A checked-in JSON specifying the
   expected aggregate hash chain and the numeric tolerance schema.
   Drift fails the gate.
+- **Audited execution traces** — The training-data class introduced in
+  §7. Most bytes are deterministic functions of a public source plus
+  a runtime; the small model-output slice is paired with deterministic
+  observed targets and external baselines; counterfactuals and
+  failures are persisted; every record carries a SHA-256 chain back
+  to source.
+- **Slice 1 / Slice 2 / Slice 3** — The three byte-slices of a bundle
+  for training-data purposes (§7.2): deterministic-from-source,
+  tiny-model-output paired with observed targets, and independent
+  verifier readbacks, respectively.
+- **Model collapse** — The Shumailov-et-al. phenomenon in which
+  recursively-replaced model-generated training data causes
+  irreversible loss of distribution tails [Shumailov et al., 2023;
+  2024]. Distinguished from the safer accumulation pattern by
+  Gerstgrasser et al. [2024].
+- **Process supervision** — Per-step labels for reasoning chains, as
+  opposed to outcome-only labels [Lightman et al., 2023]. Bundles
+  give per-step labels via the audit log + verifier readbacks.
 - **Release candidate (rc5)** — The current local Docker + SIF
   release-candidate archive; Zenodo DOI publication is the only
   remaining final-release blocker.
@@ -339,4 +451,4 @@ research-smoke bundle.)
 
 The aggregate bundle adds `aggregate_manifest.json`,
 `aggregate_fsv_report.json`, the four `*_multiseed.csv` files, and
-the two multiseed plots described in §6.7 and §7.6.
+the two multiseed plots described in §6.7 and §8.6.

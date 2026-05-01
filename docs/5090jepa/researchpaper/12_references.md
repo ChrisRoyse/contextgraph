@@ -102,6 +102,42 @@ re-confirmed from the cited URL during retrieval.
 - **MLflow Project.** (2024). *MLflow Tracking documentation.*
   <https://mlflow.org/docs/latest/ml/tracking/>
 
+## Synthetic Data, Model Collapse, Process Supervision
+
+- **Shumailov, I., Shumaylov, Z., Zhao, Y., Gal, Y., Papernot, N., &
+  Anderson, R.** (2023/2024). *The Curse of Recursion: Training on
+  Generated Data Makes Models Forget.* arXiv:2305.17493.
+  <https://arxiv.org/abs/2305.17493>
+
+- **Shumailov, I., Shumaylov, Z., Zhao, Y., Papernot, N., Anderson, R.,
+  & Gal, Y.** (2024). *AI models collapse when trained on recursively
+  generated data.* Nature 631, 755–759.
+  <https://www.nature.com/articles/s41586-024-07566-y>
+
+- **Gerstgrasser, M., Schaeffer, R., Dey, A., Rafailov, R., Sleight, H.,
+  Hughes, J., Korbak, T., Agrawal, R., Pai, D., Gromov, A., Roberts,
+  D. A., Yang, D., Donoho, D. L., & Koyejo, S.** (2024). *Is Model
+  Collapse Inevitable? Breaking the Curse of Recursion by Accumulating
+  Real and Synthetic Data.* arXiv:2404.01413.
+  <https://arxiv.org/abs/2404.01413>
+
+- **Lightman, H., Kosaraju, V., Burda, Y., Edwards, H., Baker, B.,
+  Lee, T., Leike, J., Schulman, J., Sutskever, I., & Cobbe, K.** (2023).
+  *Let's Verify Step by Step.* arXiv:2305.20050.
+  <https://arxiv.org/abs/2305.20050>
+
+- **Jung, D., Zhou, W., & Chen, M.** (2025). *Code Execution as
+  Grounded Supervision for LLM Reasoning.* EMNLP 2025; arXiv:2506.10343.
+  <https://arxiv.org/abs/2506.10343>
+
+- **Prime Intellect.** (2025). *SYNTHETIC-1: Scaling Distributed
+  Synthetic Data Generation for Verified Reasoning.*
+  <https://www.primeintellect.ai/blog/synthetic-1>
+
+- **Seed.** (2025). *Enigmata: Scaling Logical Reasoning in Large
+  Language Models with Synthetic Verifiable Puzzles.*
+  <https://seed-enigmata.github.io/>
+
 - **PyTorch.** (2026). *Reproducibility notes (v2.11).*
   <https://docs.pytorch.org/docs/2.11/notes/randomness.html>
 

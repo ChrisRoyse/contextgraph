@@ -91,7 +91,8 @@ Crucially, every prediction lives in the same record as the
 deterministic *observed* next-state from Slice 1, plus the
 `random_init_cosine` and `shuffled_target_cosine` baselines from §7.1
 — so the model output is paired with both ground truth and a
-calibration baseline at the row level.
+calibration baseline at the row level. The numerical values of these
+baselines for the released artifact are tabulated in §8.1.
 
 **Slice 3 — Independent verifier readbacks.** The runtime persists,
 through a code path structurally separate from the writer:
@@ -136,7 +137,7 @@ away* the negative samples. The data the next-generation model sees
 is the validator-passing slice only — which is precisely how the
 distribution narrows over iterations, even with a validator. ME-JEPA
 bundles persist the failures: the seed-43/seed-45 ablation failures
-(§9.7), the rc1 missing-binary release-candidate failure, the
+(§8.7), the rc1 missing-binary release-candidate failure, the
 A3 negative-control ablation that *deliberately* collapses to
 val cosine 0.790. These are not noise; they are the tail of the
 distribution preserved by construction.

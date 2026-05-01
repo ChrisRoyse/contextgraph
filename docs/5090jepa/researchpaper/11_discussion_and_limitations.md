@@ -197,9 +197,16 @@ al., 2024] for the latent-prediction premise; on VICReg [Bardes et al.,
 framing; and on Perceiver IO [Jaegle et al., 2022] and Gato [Reed et
 al., 2022] for the generality argument. The career-taxonomy substrate
 uses O\*NET 30.2 [USDOL/ETA, 2026] under CC BY 4.0; ESCO [European
-Commission, 2025] is a planned cross-walk source. The reproducibility
-chain follows Docker reproducible-build guidance [Docker, 2025; 2024],
-Apptainer SIF documentation [Apptainer, 2025], and MLflow Tracking
-[MLflow, 2024] artifact lineage patterns. Statistical reporting follows
-BCa bootstrap [Efron & Narasimhan, 2020] and PyTorch reproducibility
+Commission, 2025] is a planned cross-walk source. The training-data
+analysis in §7 builds on Shumailov et al. [2023; 2024] for the model
+collapse phenomenon, Gerstgrasser et al. [2024] for the accumulation-
+vs-replacement distinction, Lightman et al. [2023] for process
+supervision, Jung et al. [2025] for code-execution-grounded
+supervision, and the SYNTHETIC-1 [Prime Intellect, 2025] and Enigmata
+[Seed, 2025] open-source verifier-grounded reasoning corpora as
+reference points. The reproducibility chain follows Docker
+reproducible-build guidance [Docker, 2025; 2024], Apptainer SIF
+documentation [Apptainer, 2025], and MLflow Tracking [MLflow, 2024]
+artifact lineage patterns. Statistical reporting follows BCa
+bootstrap [Efron & Narasimhan, 2020] and PyTorch reproducibility
 caveats [PyTorch, 2026].

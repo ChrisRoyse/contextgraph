@@ -1,11 +1,11 @@
-# 8. Reproducibility Artifact
+# 9. Reproducibility Artifact
 
 The reproducibility artifact is the canonical mechanism by which a
-third party regenerates §7's numbers from a clean machine. As of
+third party regenerates §8's numbers from a clean machine. As of
 2026-05-01 the artifact is at the **local Docker + Singularity (SIF)
 release-candidate** stage.
 
-## 8.1 The Reviewer Path
+## 9.1 The Reviewer Path
 
 ```bash
 # 1. Pull (or import) the container from the artifact archive.
@@ -55,7 +55,7 @@ Either invocation should print, byte-for-byte:
 Source:
 [reports/20260501_sif_release_candidate_fsv.md](../smokedocs/reports/20260501_sif_release_candidate_fsv.md).)
 
-## 8.2 Container Strategy
+## 9.2 Container Strategy
 
 Two images, same content, two formats.
 
@@ -103,7 +103,7 @@ singularity build \
   these does not pass. Logs are at
   `tmp/mejepa_release_artifacts/manual_edge_fsv_final/edge_4_invalid_sif_preoutput_validation.log`.
 
-## 8.3 Build Determinism
+## 9.3 Build Determinism
 
 - Every Rust dep is pinned by `Cargo.lock` (workspace-level).
 - The CUDA base image is pinned by digest, not tag.
@@ -125,7 +125,7 @@ exact model-weight bytes are diagnostic evidence, not the pass/fail
 criterion (§6,
 [smokedoc 23](../smokedocs/23_ci_smoke_regression_and_drift_detection.md)).
 
-## 8.4 Artifact Layout
+## 9.4 Artifact Layout
 
 ```text
 mejepa_5090_artifact_v1.0.0_rc5_sif_verified/
@@ -162,7 +162,7 @@ mejepa_5090_artifact_v1.0.0_rc5_sif_verified/
       paper_tables/table_paired_ablation_tests.csv
       paper_tables/table_seed_failures.csv
       plots/*.svg
-  paper_tables_reference/                exact CSVs cited by §7
+  paper_tables_reference/                exact CSVs cited by §8
   reference_hashes.json                  SHA-256 of every file in archive
   reference_release_v1.0.0.json          checked-in numeric+structural reference
   reproduce.sh                           reviewer command
@@ -190,7 +190,7 @@ rc5 release candidate; cross-checked with the SIF FSV report and the
 build report
 [reports/20260501_sif_release_candidate_fsv.md](../smokedocs/reports/20260501_sif_release_candidate_fsv.md).)
 
-## 8.5 Reviewer Reproducibility Mapping
+## 9.5 Reviewer Reproducibility Mapping
 
 The artifact pre-fills the standard reproducibility-checklist questions
 from bundle paths:
@@ -204,4 +204,4 @@ from bundle paths:
 | Hyperparameters? | `bundles/<seed>/training_metrics.json` and persisted in `dj_model_artifacts` config |
 | Datasets + licenses? | `bundles/<seed>/data_manifest.json` |
 | Computational budget? | `bundles/<seed>/run_manifest.json` (`updated_at_unix_ms - created_at_unix_ms`) and §5.6 |
-| Limitations? | §10 |
+| Limitations? | §11 |

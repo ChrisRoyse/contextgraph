@@ -1,4 +1,4 @@
-# 7. Results
+# 8. Results
 
 All numbers in this section are read directly from CSVs in
 `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate/paper_tables/`.
@@ -7,7 +7,7 @@ intentionally absent from the manuscript per the project's
 "hand-typed numbers in paper = desk-reject risk" rule
 ([smokedoc 19](../smokedocs/19_paper_drafting_figures_and_supplementary.md)).
 
-## 7.1 Headline Multi-Seed Prediction Metrics
+## 8.1 Headline Multi-Seed Prediction Metrics
 
 Five seeds {42, 43, 44, 45, 46} of `paper_small_1k`. BCa bootstrap:
 10{,}000 iterations, seed `20260430`, confidence 0.95.
@@ -74,7 +74,7 @@ shows mild seed dependence in latent MSE.)
   (stddev < 0.0003 on cosine). This is the compositional next-state
   prediction sanity domain.
 
-## 7.2 Multi-Seed Ablation Table
+## 8.2 Multi-Seed Ablation Table
 
 Source: `paper_tables/table_ablation_multiseed.csv`.
 
@@ -130,7 +130,7 @@ A5 by design (only A1 varies the main career training seed).
   one: no VICReg ⇒ predictor degeneracy in the generalization gap, not
   in the validation curve.
 
-## 7.3 Paired Sign-Flip Permutation Tests
+## 8.3 Paired Sign-Flip Permutation Tests
 
 Source: `paper_tables/table_paired_ablation_tests.csv`. Baseline = A0;
 n = 5; full sign-flip enumeration over $2^5=32$ sign assignments
@@ -167,7 +167,7 @@ identically -0.18549, sign-flip $p = 0.0625$. This is the largest
 delta in the table and the one most directly tied to the design
 hypothesis (action conditioning matters).
 
-## 7.4 Domain Runtime Coverage
+## 8.4 Domain Runtime Coverage
 
 Source: per-bundle `db_counts_after.json` for any of the five seeds.
 The numbers below are identical across all five seeds for the
@@ -201,7 +201,7 @@ release-C seed42.**
 gridworld is train=4977, val=1330, test=693; counter\_world is
 train=41, val=12, test=6.)
 
-## 7.5 Single-GPU Feasibility
+## 8.5 Single-GPU Feasibility
 
 Source: per-bundle `run_manifest.json` and `command_log.jsonl`.
 
@@ -218,7 +218,7 @@ research-smoke career bundle.**
 `20260430T_onet30_demo_fsv_v12` bundle. Paper-small per-seed wall-time
 is bounded by training; the integration FSV suite passes in 190.92 s.)
 
-## 7.6 Plots
+## 8.6 Plots
 
 Two plots are auto-generated into the aggregate bundle and copied
 into the release-candidate archive's `paper_tables_reference/`
@@ -237,7 +237,7 @@ Plots are generated deterministically from CSVs; the rendering
 pipeline is locked by `Cargo.lock` (no Python in the rendering path
 of the Rust-only pipeline).
 
-## 7.7 Failed Runs as Evidence
+## 8.7 Failed Runs as Evidence
 
 The project preserves rather than deletes failed bundles, so each
 fixed defect remains traceable. Preserved failure evidence:

@@ -43,7 +43,7 @@ many tasks); and MuZero [Schrittwieser et al., 2019] (planning with a
 learned model rather than a given dynamics function). We use the
 imagined-rollout idea conceptually for the candidate-action planner
 (§3.4) but constrain rollouts to one step in the present runtime; H>1
-multi-step rollouts are an explicit deferred axis (§9, App.).
+multi-step rollouts are an explicit deferred axis (§10–§11, App.).
 
 ## 2.3 Generalist and Multi-Modal Architectures
 
