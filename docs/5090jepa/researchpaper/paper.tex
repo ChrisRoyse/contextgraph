@@ -20,7 +20,8 @@
 \usepackage{amsmath,amssymb}
 \usepackage{enumitem}
 \usepackage{url}
-\usepackage{authblk}
+\usepackage{seqsplit}
+\usepackage{fancyvrb}
 \usepackage{titlesec}
 \usepackage{abstract}
 \usepackage[colorlinks=true,linkcolor=black,citecolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
@@ -38,6 +39,31 @@
 % --- Caption styling --------------------------------------------------------
 \captionsetup{font=small,labelfont=bf,skip=4pt}
 
+% --- Title formatting tweaks (centered, no rule, tighter spacing) -----------
+\makeatletter
+\renewcommand{\@maketitle}{%
+  \newpage
+  \null
+  \begin{center}%
+  {\@title \par}%
+  \vspace{0.6em}%
+  {\@author \par}%
+  \vspace{0.4em}%
+  {\@date \par}%
+  \end{center}%
+  \par
+  \vspace{0.6em}%
+  \rule{\textwidth}{0.4pt}%
+  \vspace{0.2em}%
+}
+\makeatother
+
+% --- Abstract title smaller and tighter -------------------------------------
+\renewcommand{\abstractnamefont}{\normalfont\small\bfseries}
+\renewcommand{\abstracttextfont}{\normalfont\small}
+\setlength{\absleftindent}{0pt}
+\setlength{\absrightindent}{0pt}
+
 % --- Big-picture callout box ------------------------------------------------
 \newtcolorbox{takeaway}[1][]{
   enhanced, breakable, sharp corners=south,
@@ -48,22 +74,28 @@
 
 % --- Inline code and small numerals -----------------------------------------
 \newcommand{\code}[1]{\texttt{\small #1}}
-\newcommand{\sha}[1]{\texttt{\footnotesize #1}}
+\newcommand{\sha}[1]{\texttt{\footnotesize\seqsplit{#1}}}
+
+% --- Allow LaTeX to stretch to avoid overfull boxes -------------------------
+\setlength{\emergencystretch}{2.5em}
+\tolerance=1500
 
 % --- Title block ------------------------------------------------------------
-\title{\bfseries\Large
-  Dynamic / ME-JEPA: An Audited, Domain-Portable World-Model Runtime
-  on a Single RTX 5090\\[2pt]
-  \large with a New Class of Training Data
+\title{\vspace{-0.4em}\bfseries\Large
+  Dynamic / ME-JEPA\\[3pt]
+  \large An Audited, Domain-Portable World-Model Runtime\\
+  on a Single RTX 5090, with a New Class of Training Data
+  \vspace{0.2em}}
+
+\author{%
+  \normalsize Chris Royse\\[1pt]
+  \footnotesize Independent Researcher\quad\textbullet\quad
+  \texttt{chrisroyseai@gmail.com}%
 }
 
-\author[1]{Chris Royse\thanks{Independent researcher.
-  Correspondence: \texttt{chrisroyseai@gmail.com}.
-  Repository: \url{https://github.com/ChrisRoyse/contextgraph}.
-  Status: local Docker + Singularity (SIF) release candidate
-  \texttt{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified}.}}
-\affil[1]{ }
-\date{May 2026}
+\date{\footnotesize May 2026 \quad\textbullet\quad
+  Release candidate
+  \texttt{mejepa\_5090\_artifact\_v1.0.0\_rc5\_sif\_verified}}
 
 % ============================================================================
 \begin{document}
@@ -121,9 +153,10 @@
   reproducibility, training data, model collapse, process
   supervision, RTX 5090.
   \end{onecolabstract}
-  \vspace{12pt}
+  \vspace{6pt}
+  \rule{\textwidth}{0.4pt}
+  \vspace{8pt}
 ]
-\saythanks
 
 % ============================================================================
 \section{Introduction}
@@ -473,16 +506,16 @@ The full ablation panel matrix is in Table~\ref{tab:ablation-panels}.
   weights non-zero.}
 \label{tab:ablation-panels}
 \centering\small
-\begin{tabular}{lcccccrrrr}
+\begin{tabular}{@{}lccccrrrr@{}}
 \toprule
-\bf Ablation & \bf Panel & \bf Action & \bf Pairwise & \bf VICReg & & \bf Slots & \bf Input dim & \bf Latent dim & \bf Params \\
+\textbf{Ablation} & \textbf{Panel} & \textbf{Action} & \textbf{Pairwise} & \textbf{VICReg} & \textbf{Slots} & \textbf{Input dim} & \textbf{Latent dim} & \textbf{Params} \\
 \midrule
-A0 & taxonomy only            & yes & no  & yes && 8  & 22 & 24 & 14{,}832 \\
-A1 & + skill vector           & yes & no  & yes && 10 & 30 & 24 & 15{,}344 \\
-A2 & + transition distance    & yes & no  & yes && 11 & 31 & 24 & 15{,}408 \\
-A3 & A2, action removed       & no  & no  & yes && 11 & 31 & 24 & 15{,}408 \\
-A4 & A2 + pairwise            & yes & yes & yes && 12 & 51 & 24 & 16{,}688 \\
-A5 & A2, no VICReg            & yes & no  & no  && 11 & 31 & 24 & 15{,}408 \\
+A0 & taxonomy only            & yes & no  & yes & 8  & 22 & 24 & 14{,}832 \\
+A1 & + skill vector           & yes & no  & yes & 10 & 30 & 24 & 15{,}344 \\
+A2 & + transition distance    & yes & no  & yes & 11 & 31 & 24 & 15{,}408 \\
+A3 & A2, action removed       & no  & no  & yes & 11 & 31 & 24 & 15{,}408 \\
+A4 & A2 + pairwise            & yes & yes & yes & 12 & 51 & 24 & 16{,}688 \\
+A5 & A2, no VICReg            & yes & no  & no  & 11 & 31 & 24 & 15{,}408 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -500,8 +533,9 @@ L_{\text{total}} =\ &
 & + \delta L_{\text{constellation}} + \varepsilon L_{\text{anti-pole}}\\
 & + \zeta L_{\text{uncertainty}} + \eta L_{\text{invariant}}
 \end{align*}
-implemented inside \code{context-graph-dynamicjepa::train\_dataset}
-with weights persisted as part of the model-artifact config so a
+implemented inside the\linebreak \code{context-graph-dynamicjepa} crate's
+\code{train\_dataset} entrypoint, with weights persisted as part of
+the model-artifact config so a
 reviewer can read them back from \code{dj\_model\_artifacts}. For
 the present paper-small results the dominant terms are
 $L_{\text{panel}}$ (per-slot MSE/cosine to the frozen target panel)
@@ -539,7 +573,7 @@ evidence emission into one immutable bundle.
 \centering\footnotesize
 \begin{tabular}{p{0.4\linewidth}p{0.5\linewidth}}
 \toprule
-\bf Group & \bf Subcommands \\
+Group & Subcommands \\
 \midrule
 Domain pack & \code{register-domain}, \code{list-domains},
                 \code{get-domain} \\
@@ -561,8 +595,9 @@ Verify per domain & \code{verify-counter-world},
                 \code{verify-career-taxonomy} \\
 Research bundle & \code{research-smoke}, \code{hp-sweep},
                 \code{multiseed-aggregate} \\
-Reference & \code{capture-reference}, \code{check-reference},
-                \code{check-release-aggregate-reference} \\
+Reference & \code{capture-reference},
+                \code{check-reference},
+                \code{check-release-}\linebreak[1]\code{aggregate-reference} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -665,9 +700,10 @@ transition appears in more than one shard.
 Eleven edge-case rows are generated per bundle and verified
 against expected before/after deltas:
 \begin{center}\footnotesize
-\begin{tabular}{lcccccc}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-\bf Edge & \bf Raw & \bf Adp. & \bf State & \bf Trans. & \bf Audit \\
+\textbf{Edge case} & \textbf{Raw} & \textbf{Adp.} & \textbf{State} & \textbf{Trans.} & \textbf{Audit} \\
 \midrule
 empty input              & 0 & 0 & 0 & 0 & 1 \\
 missing source manifest  & 1 & 1 & 0 & 0 & 2 \\
@@ -801,7 +837,7 @@ FSV-1 through FSV-8 cover the runtime's stages: domain pack
 registration; instrument registration; event $\to$ panel; binding
 and trajectory; predictor dataset; predictor training; planning
 and skill execution; guard and surprise. Each has a corresponding
-test in \code{crates/context-graph-cli/tests/dynamicjepa\_phase\{3,4,5,6,7,8\}\_fsv.rs}.
+test in \code{crates/context-graph-cli/}\-\code{tests/dynamicjepa\_phase}\linebreak[1]\code{\{3,4,5,6,7,8\}\_fsv.rs}.
 The full integration suite passes at \textbf{10 passed, 0 failed,
 190.92~s} on the final release-C rerun.
 
@@ -827,9 +863,9 @@ and \code{inspect-cf} previously used the standard writer/open
 path, which would \emph{create} a missing RocksDB directory rather
 than fail. A read-only inspection tool that creates the source of
 truth makes FSV unsound. Fix: the
-\code{TeleologicalStoreConfig.create\_missing\_column\_families}
-flag was added; the inspection commands now open existing stores
-only. A hidden \code{--allow-missing} flag exists for explicit
+\code{TeleologicalStoreConfig}'s
+\code{create\_missing\_column\_families} flag was added; the
+inspection commands now open existing stores only. A hidden \code{--allow-missing} flag exists for explicit
 before-state reads on a not-yet-created database, returning
 \code{db\_exists=false} with zero counts and not creating the
 directory.
@@ -844,29 +880,22 @@ locally from the bundle directory and check equality.
 \begin{table}[t]
 \caption{Aggregate bundle file hashes.}
 \label{tab:aggregate-hashes}
-\centering\scriptsize
-\begin{tabular}{p{0.46\linewidth}p{0.46\linewidth}}
+\centering\footnotesize
+\renewcommand{\arraystretch}{1.15}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
 \toprule
-\bf File & \bf SHA-256 \\
+\textbf{File} & \textbf{SHA-256 (truncated)} \\
 \midrule
-\code{aggregate\_manifest.json} &
-\sha{734a698c\dots 8670e0} \\
-\code{aggregate\_fsv\_report.json} &
-\sha{9b1bc096\dots b6a9b6} \\
-\code{table\_prediction\_metrics\_multiseed.csv} &
-\sha{6bd81ee3\dots a99702608e7} \\
-\code{table\_ablation\_multiseed.csv} &
-\sha{1934260c\dots 5e5936c6a9} \\
-\code{table\_paired\_ablation\_tests.csv} &
-\sha{26218e97\dots 39189f22a6dd88d80} \\
-\code{table\_seed\_failures.csv} &
-\sha{8c4e8bfb\dots 5ec52d53} \\
-\code{multiseed\_val\_mse\_box.svg} &
-\sha{69db6c4d\dots 23ed77c} \\
-\code{multiseed\_paired\_delta\_forest.svg} &
-\sha{79f8050a\dots b04e4} \\
+\sha{aggregate\_manifest.json}             & \sha{734a698c\dots 8670e0} \\
+\sha{aggregate\_fsv\_report.json}          & \sha{9b1bc096\dots b6a9b6} \\
+\sha{table\_prediction\_metrics\dots.csv}  & \sha{6bd81ee3\dots 02608e7} \\
+\sha{table\_ablation\_multiseed.csv}       & \sha{1934260c\dots 936c6a9} \\
+\sha{table\_paired\_ablation\_tests.csv}   & \sha{26218e97\dots 88d80} \\
+\sha{table\_seed\_failures.csv}            & \sha{8c4e8bfb\dots 5ec52d53} \\
+\sha{multiseed\_val\_mse\_box.svg}         & \sha{69db6c4d\dots 23ed77c} \\
+\sha{multiseed\_paired\_delta\_forest.svg} & \sha{79f8050a\dots b04e4} \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 % ============================================================================
@@ -995,18 +1024,20 @@ preserved by construction.
 \caption{Properties of ME-JEPA bundles relative to existing
   training-data classes.}
 \label{tab:tdc-comparison}
-\centering\footnotesize
-\begin{tabular}{lcccccc}
+\centering\scriptsize
+\renewcommand{\arraystretch}{1.15}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.20\linewidth}cccccc@{}}
 \toprule
-\bf Property & \bf Web text & \bf Pure synthetic CoT & \bf SYNTHETIC-1 / PRM800K & \bf Code-exec traces & \bf World-model rollouts & \bf ME-JEPA bundles \\
+\textbf{Property} & \textbf{Web text} & \textbf{Pure synth.\ CoT} & \textbf{SYNTHETIC-1 / PRM800K} & \textbf{Code-exec traces} & \textbf{World-model rollouts} & \textbf{ME-JEPA bundles} \\
 \midrule
-Anchored to real source                  & yes  & no  & partial   & yes (program) & indirect & \bf yes (O*NET ZIP) \\
-Cryptographic provenance to source       & rare & no  & no        & rare           & no       & \bf yes, every record \\
-External verifier per step               & no   & no  & yes       & yes            & no       & \bf yes (FSV) \\
-Counterfactuals as first-class records   & no   & sometimes & no  & no             & sometimes & \bf yes (A0--A5) \\
-Failed runs preserved                    & n/a  & usually no & no & no             & no        & \bf yes, by policy \\
-Typed schema on every row                & no   & no  & partial   & yes            & yes       & \bf yes (TOML) \\
-Recursion-replacement risk               & n/a  & high & medium-low & low          & medium    & \bf low \\
+Anchored to real source              & yes  & no    & partial    & yes (program) & indirect  & \textbf{yes (O*NET ZIP)} \\
+Crypto.\ provenance                  & rare & no    & no         & rare          & no        & \textbf{yes, every row} \\
+Per-step verifier                    & no   & no    & yes        & yes           & no        & \textbf{yes (FSV)} \\
+Counterfactuals first-class          & no   & some. & no         & no            & some.     & \textbf{yes (A0--A5)} \\
+Failed runs preserved                & n/a  & no    & no         & no            & no        & \textbf{yes, by policy} \\
+Typed schema per row                 & no   & no    & partial    & yes           & yes       & \textbf{yes (TOML)} \\
+Recursion-replace risk               & n/a  & high  & med-low    & low           & medium    & \textbf{low} \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -1157,8 +1188,10 @@ represented in public training corpora.
 \section{Results}
 \label{sec:results}
 
-All numbers in this section read directly from CSVs in
-\code{tmp/mejepa\_local\_ci\_runs/20260501T\_release\_c\_gate\_v2\_paper\_small\_multiseed\_aggregate/paper\_tables/}.
+All numbers in this section read directly from CSVs in the
+multi-seed aggregate bundle's \code{paper\_tables/} directory
+(full path:
+\sha{tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_multiseed_aggregate/paper_tables/}).
 Hand-typed numbers are intentionally absent.
 
 \subsection{Headline Multi-Seed Prediction Metrics}
@@ -1203,7 +1236,7 @@ Table~\ref{tab:pred-metrics} reproduces the relevant rows of
 \centering\footnotesize
 \begin{tabular}{llrrrrrr}
 \toprule
-\bf Domain & \bf Metric & \bf Mean & \bf Stddev & \bf BCa Low & \bf BCa High & \bf Min & \bf Max \\
+Domain & Metric & Mean & Stddev & BCa Low & BCa High & Min & Max \\
 \midrule
 career\_taxonomy & val\_latent\_mse        & 0.15221 & 0.01027 & 0.14463 & 0.16088 & 0.14072 & 0.16601 \\
 career\_taxonomy & val\_latent\_cosine     & 0.90487 & 0.04364 & 0.86150 & 0.93113 & 0.83555 & 0.94767 \\
@@ -1242,7 +1275,7 @@ comparison is the informative one.
 \centering\small
 \begin{tabular}{lrrrrr}
 \toprule
-\bf Ablation & \bf Params & \bf Val cos.\ (mean$\pm$std) & \bf Test cos.\ (mean$\pm$std) & \bf Val ACA \\
+Ablation & Params & Val cos.\ (mean$\pm$std) & Test cos.\ (mean$\pm$std) & Val ACA \\
 \midrule
 A0 (taxonomy only)             & 14{,}832 & $0.97557 \pm 0$        & $0.96301 \pm 0$        & $1.000 \pm 0$ \\
 A1 (+ skill vector)            & 15{,}344 & $0.90487 \pm 0.04364$  & $0.86764 \pm 0.06766$  & $0.960 \pm 0.04345$ \\
@@ -1341,17 +1374,17 @@ Singularity (SIF) release-candidate stage.
 
 \begin{tcolorbox}[colback=gray!7,colframe=gray!50,boxrule=0.4pt,
   left=4pt,right=4pt,top=3pt,bottom=3pt]
-\begin{verbatim}
+\begin{Verbatim}[fontsize=\scriptsize,breaklines=true,breakanywhere=true]
 tar -xf mejepa_5090_artifact_v1.0.0_rc5_sif_verified.tar.gz
 cd mejepa_5090_artifact_v1.0.0_rc5_sif_verified
 singularity exec --nv --cleanenv --no-home \
-  -B "$(pwd)/bundles/.../aggregate:/work/aggregate:ro" \
+  -B "$PWD/bundles/.../aggregate:/work/agg:ro" \
   container/contextgraph-mejepa.sif \
   /workspace/reproduce.sh verify-aggregate \
-    --aggregate /work/aggregate \
-    --reference /workspace/reference/...json \
+    --aggregate /work/agg \
+    --reference /workspace/reference/release.json \
     --json
-\end{verbatim}
+\end{Verbatim}
 \end{tcolorbox}
 
 The Docker invocation is identical except for
