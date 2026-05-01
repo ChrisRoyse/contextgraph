@@ -31,14 +31,13 @@ The answer matters because:
    first-class submission requirement (omission is desk-rejection).
    Pineau et al. [2020] documented the gap.
 
-2. **Career- and recruiting-domain ML cannot be a representational claim
-   alone.** Even when the *model* is small, the data pipeline must be
-   provenance-tracked at the row level, because employment-AI is a
-   regulated category in multiple jurisdictions (EU AI Act Annex III;
-   NYC Local Law 144). Constructing a public-taxonomy benchmark from
-   O\*NET 30.2 [USDOL/ETA, 2026] under CC BY 4.0 with the verbatim
-   non-endorsement clause is the smallest reproducible substrate in this
-   domain that does not invoke licensed real-person data.
+2. **Occupational-domain ML benefits from row-level provenance.** Even
+   when the *model* is small, the data pipeline benefits from having
+   per-row source hashes and license attribution recorded inline.
+   Constructing a public-taxonomy benchmark from O\*NET 30.2
+   [USDOL/ETA, 2026] under CC BY 4.0 gives a small, fully reproducible
+   substrate in which every transition can be traced back to a public
+   source row.
 
 3. **Single-GPU feasibility is a publication-quality property.** A
    single RTX 5090 (sm\_120, 32~GiB VRAM, CUDA 13.2) running on commodity
@@ -95,23 +94,12 @@ SHA-256 hash chains (§8).
    candidate*; Zenodo DOI publication is the only remaining final-release
    blocker (§8.5).
 
-6. **Explicit non-claims and ethics surface.** §11 follows the NeurIPS
-   Paper Checklist and NIST AI RMF Core (GOVERN/MAP/MEASURE/MANAGE)
-   [NIST, 2024]. We do not claim hiring decision support, fairness across
-   protected classes, individual-level outcome prediction, or labor-market
-   regulatory validity. We make the dual-use disclosure of occupational
-   prediction technology explicit and we list intended-uses verbatim in
-   the README, the paper, and the artifact DOI page.
-
 ## 1.2 Scope
 
 Dynamic/ME-JEPA is a *runtime contribution* on a *public benchmark
 contribution*. The model is intentionally small: 480, 16{,}960, and
 15{,}344 trainable parameters in counter\_world, gridworld\_5x5, and
-career\_taxonomy respectively. We reject the framing of "small model
-beats large career model"—our point is orthogonal. We are showing that
-*every stage* of a domain-portable JEPA system can be physically verified
-on commodity hardware, and that a public-taxonomy career benchmark can
-be the first such substrate in this regulated domain. Larger models on
-licensed subject-level data are deferred to a future Phase 12 with
-explicit privacy gates.
+career\_taxonomy respectively. The point is not "small model beats large
+model" — it is that *every stage* of a domain-portable JEPA system can
+be physically verified on commodity hardware, and that a public-taxonomy
+benchmark can be the first such substrate.

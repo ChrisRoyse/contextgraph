@@ -1,5 +1,18 @@
 # 23 - CI Smoke Regression And Drift Detection
 
+## Reference Release Pinning (v1.0.0-rc5)
+
+The drift gate compares against the published reference release:
+
+- Zenodo DOI: [`10.5281/zenodo.19953951`](https://doi.org/10.5281/zenodo.19953951)
+- Release archive sha256: `8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd`
+- Docker Hub image: `leapable/contextgraph-mejepa@sha256:b4883b0ff6867348f96ec453fad452e5292ba187590a84c9fde7fba4fc9c362e`
+- Apptainer SIF sha256: `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825`
+
+`reference/reference_release_v1.0.0.json` is the canonical hash bundle the gate
+diffs against. It must not be regenerated as part of a routine CI run; it
+changes only when the release reference itself intentionally changes.
+
 ## Goal
 
 Defend the DynamicJEPA artifact and paper-demo numbers from silent drift with

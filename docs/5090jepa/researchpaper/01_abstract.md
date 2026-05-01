@@ -16,8 +16,7 @@ runtime on three domains via the same code path: `counter_world` (480
 trainable parameters), `gridworld_5x5` (16{,}960), and a new
 `career_taxonomy.v1` public-taxonomy benchmark (15{,}344). The career
 benchmark is deterministically generated from the O*NET 30.2 text
-database (Creative Commons Attribution 4.0; USDOL/ETA non-endorsement
-clause reproduced verbatim) starting at O\*NET-SOC `15-1252.00` Software
+database (CC BY 4.0) starting at O\*NET-SOC `15-1252.00` Software
 Developers and walking the core computer-occupation related-occupation
 graph; the source ZIP SHA-256 and per-edge walk hash are recorded in
 every generated bundle. On a single RTX 5090 (sm\_120, 32~GiB VRAM, CUDA
@@ -29,12 +28,10 @@ Career-taxonomy validation cosine is $0.905 \pm 0.044$ across five seeds
 (BCa 95\% CI [0.861, 0.931]); test cosine is $0.868 \pm 0.068$ (BCa
 [0.806, 0.912]); validation action-contrast accuracy is $0.960 \pm
 0.043$. The action-removed ablation A3 collapses to validation cosine
-0.790 (single-cell), exactly as the runtime predicts and verifies. The
-reproducibility artifact is a local Docker + Singularity (SIF) release
-candidate with deterministic Docker tar
-SHA-256 `099f053…7d4cd80e`, SIF SHA-256 `30b531c…f2825`, and archive
-SHA-256 `8cccf49…43ecd`; the only remaining final-release blocker is
-Zenodo DOI publication. We make no recruiting, hiring-decision,
-real-person, fairness, or labor-market validity claims; the contribution
-is a verifiable systems result on a public taxonomy benchmark, with
-domain-pack abstraction so future domains add no new audit primitives.
+0.790, exactly as the runtime predicts and verifies. The reproducibility
+artifact is a local Docker + Singularity (SIF) release candidate with
+deterministic Docker tar SHA-256 `099f053…7d4cd80e`, SIF SHA-256
+`30b531c…f2825`, and archive SHA-256 `8cccf49…43ecd`. The contribution
+is a domain-portable JEPA runtime whose entire evidence chain — data,
+training, planning, and artifact provenance — is reproducible from a
+single binary on commodity hardware.

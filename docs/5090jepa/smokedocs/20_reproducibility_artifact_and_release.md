@@ -1,5 +1,21 @@
 # 20 - Reproducibility Artifact And Release
 
+## Published Release (v1.0.0-rc5)
+
+| Asset | Identifier |
+| --- | --- |
+| Zenodo DOI | [`10.5281/zenodo.19953951`](https://doi.org/10.5281/zenodo.19953951) |
+| Zenodo record | https://zenodo.org/record/19953951 |
+| Release archive | `mejepa_5090_artifact_v1.0.0_rc5_sif_verified.tar.gz` (sha256 `8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd`) |
+| Docker Hub image | `leapable/contextgraph-mejepa:v1.0.0-rc5` |
+| Docker registry digest | `sha256:b4883b0ff6867348f96ec453fad452e5292ba187590a84c9fde7fba4fc9c362e` |
+| Apptainer SIF | sha256 `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825` |
+| License | PolyForm-Noncommercial-1.0.0 |
+
+The DOI is the citation source of truth. The Docker registry digest is immutable
+and is the citable reference for the runtime image; mutable tags must not be
+treated as the source of truth.
+
 ## Goal
 
 Package the system so an external reviewer with one RTX 5090 (or comparable

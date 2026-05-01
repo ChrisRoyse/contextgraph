@@ -1,11 +1,19 @@
 cff-version: 1.2.0
 title: "Context Graph DynamicJEPA RTX 5090 O*NET Artifact"
-message: "If you use this artifact, cite the archived release DOI once published."
+message: "If you use this artifact, please cite it using the DOI below."
 type: software
 authors:
   - family-names: "Royse"
     given-names: "Chris"
 license: "PolyForm-Noncommercial-1.0.0"
 repository-code: "https://github.com/ChrisRoyse/contextgraph"
-version: "1.0.0"
+url: "https://doi.org/10.5281/zenodo.19953951"
+version: "1.0.0-rc5"
 date-released: "2026-05-01"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.19953951"
+    description: "Zenodo archive of release candidate 5 (deterministic Docker + Apptainer SIF, multi-seed FSV evidence)."
+  - type: other
+    value: "docker.io/leapable/contextgraph-mejepa@sha256:b4883b0ff6867348f96ec453fad452e5292ba187590a84c9fde7fba4fc9c362e"
+    description: "Immutable Docker Hub image digest for v1.0.0-rc5."

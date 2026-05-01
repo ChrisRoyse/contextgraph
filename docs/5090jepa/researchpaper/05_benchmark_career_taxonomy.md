@@ -2,10 +2,8 @@
 
 `career_taxonomy.v1` is a public benchmark for action-conditioned
 latent transition prediction over occupational data. The benchmark is
-*deterministically generated from the O\*NET 30.2 text database* under
-CC BY 4.0 with the verbatim USDOL/ETA non-endorsement clause. It is
-*not* a real recruiting trajectory dataset; treating it as one is
-expressly prohibited by the artifact license (§11).
+deterministically generated from the O\*NET 30.2 text database under
+CC BY 4.0.
 
 ## 4.1 Source
 
@@ -54,16 +52,11 @@ hash in `career_taxonomy_onet_walk.csv`. The walk CSV has 1{,}001 lines
 to Software Developers `15-1252.00` and Database Architects
 `15-1243.00`.
 
-The full attribution boundary recorded in every generated bundle is:
-
-> "O\*NET 30.2 Database, Creative Commons Attribution 4.0 International
-> License (CC BY 4.0). Generated fixture modifies O\*NET database
-> information for a public taxonomy benchmark; USDOL/ETA has not
-> approved, endorsed, or tested these modifications."
-
-(Source:
+The license string recorded in every generated bundle's
+`data_manifest.json` includes the CC BY 4.0 attribution required by the
+O\*NET license terms. Source:
 `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2_paper_small_seed42/data_manifest.json`
-field `sources[0].license`.)
+field `sources[0].license`.
 
 ## 4.3 Schema
 

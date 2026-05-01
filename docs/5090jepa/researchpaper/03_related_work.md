@@ -62,22 +62,16 @@ domain-specific branches.
 The U.S. Department of Labor and Employment Training Administration's
 O\*NET database [USDOL/ETA, 2026] is the canonical public occupation
 taxonomy used here. The current release at the time of writing is
-O\*NET 30.2, distributed as text files under CC BY 4.0 with an explicit
-USDOL/ETA non-endorsement clause for modifications. The European
+O\*NET 30.2, distributed as text files under CC BY 4.0. The European
 Skills, Competences, Qualifications and Occupations (ESCO) classification
-[European Commission, 2025] is the EU counterpart; ESCO is referenced
-as a future cross-walk replication source (§9, App. E in the design
-plan).
+[European Commission, 2025] is the EU counterpart; ESCO is a planned
+cross-walk replication source.
 
 Two recent career-trajectory dataset papers are directly relevant as
-*future* extensions but not used in the present artifact: KARRIEREWEGE
-[Senger et al., 2024] (career path prediction over an ESCO taxonomy)
-and JobHop [Johary et al., 2025] (large-scale anonymized resume
-trajectories). We read both during construction of §4 to confirm that
-the career-trajectory benchmark space exists, but neither is loaded
-into the present run; the only ingested source is O\*NET 30.2. This
-distinction is paper-safety-critical: we make a *taxonomy walk*
-benchmark contribution, not a real-person trajectory contribution.
+future extensions: KARRIEREWEGE [Senger et al., 2024] (career path
+prediction over an ESCO taxonomy) and JobHop [Johary et al., 2025]
+(large-scale anonymized resume trajectories). The only ingested source
+in the present runtime is O\*NET 30.2.
 
 ## 2.5 Auditable ML Systems
 
@@ -95,14 +89,9 @@ exact GPU result reproducibility across releases or platforms is *not*
 guaranteed; cross-run comparisons therefore use structural + tolerance
 checks, not byte-equal model-file diffs (§6, §8).
 
-## 2.6 What This Paper Is Not
+## 2.6 Positioning
 
-This is not:
-
-- a representational-quality contribution to image or video JEPA;
-- a recruiting prediction or hiring-decision system;
-- an evaluation of any large-scale career foundation model;
-- a fairness contribution across protected classes;
-- a Phase 12 privacy-gated real-data study (deferred).
-
-§11 expands these non-claims with corresponding NIST AI RMF mappings.
+This is a *systems* contribution: a domain-portable JEPA runtime with
+end-to-end provenance and a public-taxonomy benchmark. It is not a
+representational-quality contribution to image or video JEPA, and it is
+not an evaluation of any large-scale foundation model.

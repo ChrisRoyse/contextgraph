@@ -7,15 +7,13 @@ Reproducibility Artifact.
 **Author.** Chris Royse (`chrisroyseai@gmail.com`).
 
 **Status as of 2026-05-01.** Local Docker + Singularity (SIF) release candidate
-`mejepa_5090_artifact_v1.0.0_rc5_sif_verified`; Zenodo DOI not yet
-published. All headline numbers and hashes in this manuscript are read back
-from `tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2*` and
+`mejepa_5090_artifact_v1.0.0_rc5_sif_verified`. All headline numbers and
+hashes in this manuscript are read back from
+`tmp/mejepa_local_ci_runs/20260501T_release_c_gate_v2*` and
 `tmp/mejepa_release_artifacts/mejepa_5090_artifact_v1.0.0_rc5_sif_verified*`
 on the verified RTX 5090 host described in §2.
 
-**Repository.** `https://github.com/ChrisRoyse/contextgraph` (this is a
-prepared release candidate in `CITATION.cff`; the public DOI on Zenodo has
-not yet been issued).
+**Repository.** `https://github.com/ChrisRoyse/contextgraph`
 
 **Reproduction.** The exhaustive layout of the manuscript is split across
 the files in this directory; this `00_main.md` file is the canonical entry
@@ -34,9 +32,9 @@ filesystem path:
 | `07_full_state_verification.md` | §6 Full-State Verification |
 | `08_results.md` | §7 Results |
 | `09_reproducibility_artifact.md` | §8 Reproducibility Artifact |
-| `10_discussion_limitations_ethics.md` | §9 Discussion, §10 Limitations, §11 Ethics & Broader Impact |
+| `10_discussion_limitations_ethics.md` | §9 Discussion, §10 Limitations |
 | `11_references.md` | References (verified URLs only) |
-| `12_appendix.md` | Appendix A–F: domain packs, FSV evidence, failed runs, hashes |
+| `12_appendix.md` | Appendix A–G: domain packs, FSV evidence, failed runs, hashes |
 
 The contributions, in order:
 
@@ -56,14 +54,13 @@ The contributions, in order:
    starting from O\*NET-SOC `15-1252.00` Software Developers and walking
    the core computer-occupation related-occupation graph. Every generated
    row records the source ZIP SHA-256
-   `b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741`, the
-   per-edge walk hash, and the CC BY 4.0 + USDOL/ETA non-endorsement
-   clause. §4.
+   `b5479271931796b838f7173dc0f673a9ec961b7833ac87168fd11e92e7453741` and
+   the per-edge walk hash. §4.
 
 3. **A strict full-state verification (FSV) protocol.** Every claim in §7
    has a corresponding RocksDB row, file SHA-256, and decoded readback
    physically separate from the command return code. Eleven edge cases
-   per career bundle prove the system fails closed on missing license
+   per career bundle prove the system fails closed on missing source
    manifest, invalid action, wrong skill-vector dimension, out-of-bounds
    job zone, and empty input. §6.
 
@@ -89,15 +86,7 @@ The contributions, in order:
    `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825`.
    The release-candidate archive has SHA-256
    `8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd`.
-   Zenodo DOI publication is the only remaining final-release blocker.
    §8.
-
-6. **Explicit, paper-safe non-claims.** This work does *not* claim
-   recruiting prediction validity, hiring decision support, real-person
-   trajectory modeling, fairness across protected classes, or compliance
-   with NYC Local Law 144 / EU AI Act Annex III. Phase 12 privacy gates
-   for licensed real subject-level data are deferred and explicitly
-   out of scope. §10, §11.
 
 The remainder of this manuscript is organized as the section files listed
 above. Numerical claims in §7 are auto-readable from
