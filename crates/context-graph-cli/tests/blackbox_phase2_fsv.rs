@@ -884,7 +884,7 @@ fn phase2_cmd_schema_invalid_argv_item_blocks_before_command_execution() {
 }
 
 #[test]
-fn phase2_schema_v3_init_wipes_v1_ledger_instead_of_migrating_silently() {
+fn phase2_current_schema_init_wipes_v1_ledger_instead_of_migrating_silently() {
     let temp = TempDir::new().expect("temp dir");
     let ledger = temp.path().join("blackbox.sqlite");
 
@@ -904,10 +904,10 @@ fn phase2_schema_v3_init_wipes_v1_ledger_instead_of_migrating_silently() {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 3);
+    assert_eq!(init["schema_version"], 4);
     assert_eq!(init["wiped_existing_ledger"], true);
 
-    let conn = Connection::open(&ledger).expect("open physical v3 ledger");
+    let conn = Connection::open(&ledger).expect("open physical current ledger");
     let version: String = conn
         .query_row(
             "SELECT value FROM blackbox_metadata WHERE key = 'schema_version'",
@@ -915,10 +915,10 @@ fn phase2_schema_v3_init_wipes_v1_ledger_instead_of_migrating_silently() {
             |row| row.get(0),
         )
         .expect("read schema version");
-    assert_eq!(version, "3");
+    assert_eq!(version, "4");
     let record_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM ledger_records", [], |row| row.get(0))
-        .expect("count physical v3 rows");
+        .expect("count physical current rows");
     assert_eq!(record_count, 0);
 
     let legacy_rows: i64 = conn

@@ -6,9 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 3;
+const LEDGER_SCHEMA_VERSION: i64 = 4;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -30,10 +30,16 @@ const FS_CONNECTOR_ID: &str = "fs_local_v1";
 const CMD_CONNECTOR_ID: &str = "cmd_local_v1";
 const GITHUB_CONNECTOR_ID: &str = "github_v1";
 const GHA_CONNECTOR_ID: &str = "gha_v1";
+const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
+const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
 const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
+const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
+const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
+const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
+const VERIFIED_GIT_APPLY_PATCH_VERIFIER: &str = "git_file_diff_matches_patch_v1";
 
 #[derive(Parser, Debug)]
 #[command(name = "blackbox")]
@@ -62,6 +68,21 @@ pub enum BlackboxCommands {
     Record {
         #[command(subcommand)]
         action: RecordCommands,
+    },
+    /// Evaluate and persist Phase 6 policy decisions.
+    Policy {
+        #[command(subcommand)]
+        action: PolicyCommands,
+    },
+    /// Run a Phase 6 MCP JSON-RPC stdio server.
+    Mcp {
+        #[command(subcommand)]
+        action: McpCommands,
+    },
+    /// Inspect Phase 6 API surface metadata.
+    Api {
+        #[command(subcommand)]
+        action: ApiCommands,
     },
     /// Verify a tool call against local source-of-truth systems.
     Verify(VerifyArgs),
@@ -113,6 +134,11 @@ pub struct ConnectorTestArgs {
 pub enum RecordCommands {
     /// Record a new agent run.
     Run(RecordRunArgs),
+    /// Record one agent reasoning/action step inside an existing run.
+    Step(RecordAgentStepArgs),
+    /// Record a model tool-choice decision inside an existing run.
+    #[command(name = "model-decision")]
+    ModelDecision(RecordModelDecisionArgs),
     /// Record a tool call for an existing run.
     #[command(name = "tool-call")]
     ToolCall(RecordToolCallArgs),
@@ -147,6 +173,76 @@ pub struct RecordRunArgs {
     /// Risk tier.
     #[arg(long, default_value = "medium")]
     pub risk_tier: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RecordAgentStepArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Step kind, for example model_decision or tool_execution.
+    #[arg(long, default_value = "agent_step")]
+    pub step_kind: String,
+
+    /// Human-readable step summary.
+    #[arg(long)]
+    pub summary: String,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Agent identifier.
+    #[arg(long, default_value = "agent_unknown")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RecordModelDecisionArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Tool selected by the model or adapter.
+    #[arg(long)]
+    pub tool_name: String,
+
+    /// Capability selected by the model or adapter.
+    #[arg(long)]
+    pub capability: String,
+
+    /// Confidence in [0,1].
+    #[arg(long, default_value_t = 1.0)]
+    pub confidence: f64,
+
+    /// JSON file containing redacted model/input context.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Agent identifier.
+    #[arg(long, default_value = "agent_unknown")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -215,6 +311,115 @@ pub struct VerifyArgs {
     pub model: Option<String>,
 }
 
+#[derive(Subcommand, Debug)]
+pub enum PolicyCommands {
+    /// Evaluate one tool action and persist the policy decision row.
+    Evaluate(PolicyEvaluateArgs),
+    /// List the shipped Phase 6 policy modes and capability registry.
+    Registry(PolicyRegistryArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct PolicyEvaluateArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Policy mode to apply.
+    #[arg(long, value_enum)]
+    pub mode: PolicyMode,
+
+    /// Tool name being authorized.
+    #[arg(long)]
+    pub tool: String,
+
+    /// Capability identifier being authorized.
+    #[arg(long)]
+    pub capability: String,
+
+    /// Existing run id, when the action belongs to a run.
+    #[arg(long)]
+    pub run_id: Option<String>,
+
+    /// Whether the action can mutate an external source of truth.
+    #[arg(long)]
+    pub mutating: bool,
+
+    /// Verifier id that will independently read source-of-truth state.
+    #[arg(long)]
+    pub verifier_id: Option<String>,
+
+    /// Source-of-truth scope string for audit and policy matching.
+    #[arg(long)]
+    pub source_scope: Option<String>,
+
+    /// Human approval id required by supervised mode.
+    #[arg(long)]
+    pub approval_id: Option<String>,
+
+    /// Human approver id required by supervised mode.
+    #[arg(long)]
+    pub approved_by: Option<String>,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Agent identifier.
+    #[arg(long, default_value = "agent_unknown")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct PolicyRegistryArgs {
+    /// SQLite ledger database path. When supplied, registry output also verifies the ledger.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum McpCommands {
+    /// Recorder MCP server: ledger recording and verifier tools over JSON-RPC stdio.
+    Recorder(McpServerArgs),
+    /// Gateway MCP server: verified mutating wrappers with policy enforcement.
+    Gateway(McpGatewayArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct McpServerArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct McpGatewayArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Policy mode enforced by gateway tools.
+    #[arg(long, default_value = "bounded_autonomous", value_enum)]
+    pub policy_mode: PolicyMode,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ApiCommands {
+    /// Print the Phase 6 HTTP API endpoint and schema surface.
+    Surface(ApiSurfaceArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ApiSurfaceArgs {
+    /// SQLite ledger database path. When supplied, output verifies the ledger first.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: Option<PathBuf>,
+}
+
 #[derive(Args, Debug)]
 pub struct ReplayArgs {
     /// SQLite ledger database path.
@@ -276,6 +481,29 @@ impl ToolExecutionStatus {
         match self {
             Self::Ok => "ok",
             Self::Failed => "failed",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum PolicyMode {
+    #[value(name = "observe_only")]
+    ObserveOnly,
+    #[value(name = "supervised")]
+    Supervised,
+    #[value(name = "bounded_autonomous")]
+    BoundedAutonomous,
+    #[value(name = "blocked")]
+    Blocked,
+}
+
+impl PolicyMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ObserveOnly => "observe_only",
+            Self::Supervised => "supervised",
+            Self::BoundedAutonomous => "bounded_autonomous",
             Self::Blocked => "blocked",
         }
     }
@@ -613,6 +841,13 @@ impl std::error::Error for BlackboxError {}
 type BbxResult<T> = Result<T, BlackboxError>;
 
 pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
+    match command {
+        BlackboxCommands::Mcp { action } => return handle_mcp_command(action).await,
+        other => return handle_blackbox_json_command(other).await,
+    }
+}
+
+async fn handle_blackbox_json_command(command: BlackboxCommands) -> i32 {
     match run_blackbox_command(command).await {
         Ok(output) => {
             println!(
@@ -640,7 +875,20 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         },
         BlackboxCommands::Record { action } => match action {
             RecordCommands::Run(args) => record_run(args),
+            RecordCommands::Step(args) => record_agent_step(args),
+            RecordCommands::ModelDecision(args) => record_model_decision(args),
             RecordCommands::ToolCall(args) => record_tool_call(args),
+        },
+        BlackboxCommands::Policy { action } => match action {
+            PolicyCommands::Evaluate(args) => policy_evaluate(args),
+            PolicyCommands::Registry(args) => policy_registry(args),
+        },
+        BlackboxCommands::Mcp { action: _ } => Err(BlackboxError::invalid(
+            "MCP server commands must be handled through the stdio server path",
+            "report this as a bug; handle_blackbox_command should intercept MCP commands",
+        )),
+        BlackboxCommands::Api { action } => match action {
+            ApiCommands::Surface(args) => api_surface(args),
         },
         BlackboxCommands::Verify(args) => verify_local(args).await,
         BlackboxCommands::Replay(args) => replay_run(args),
@@ -915,6 +1163,197 @@ fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
     }))
 }
 
+fn record_agent_step(args: RecordAgentStepArgs) -> BbxResult<Value> {
+    record_agent_step_from_parts(
+        &args.ledger,
+        &args.run_id,
+        &args.step_kind,
+        &args.summary,
+        &args.tenant,
+        &args.agent,
+        args.model.as_deref(),
+        json!({}),
+    )
+}
+
+fn record_agent_step_from_parts(
+    ledger: &Path,
+    run_id: &str,
+    step_kind: &str,
+    summary: &str,
+    tenant: &str,
+    agent: &str,
+    model: Option<&str>,
+    context: Value,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    require_non_empty_for_ledger(ledger, "--run-id", run_id)?;
+    require_non_empty_for_ledger(ledger, "--step-kind", step_kind)?;
+    require_non_empty_for_ledger(ledger, "--summary", summary)?;
+    require_non_empty_for_ledger(ledger, "--tenant", tenant)?;
+    require_non_empty_for_ledger(ledger, "--agent", agent)?;
+
+    let mut conn = open_initialized_ledger(ledger)?;
+    ensure_run_exists_for_tenant(&conn, ledger, run_id, tenant)?;
+    let step_id = prefixed_id("step");
+    let record_id = prefixed_id("bbx_rec");
+    let actor = actor_json(agent, model);
+    let payload = json!({
+        "record_kind": "agent_step",
+        "step_id": step_id,
+        "run_id": run_id,
+        "step_kind": step_kind,
+        "summary": summary,
+        "context": context,
+        "recorded_at": Utc::now().to_rfc3339(),
+    });
+    let append = append_record(
+        &mut conn,
+        ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "agent_step".to_string(),
+            tenant_id: tenant.to_string(),
+            run_id: Some(run_id.to_string()),
+            step_id: Some(step_id.clone()),
+            actor,
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox record step",
+        "record_id": record_id,
+        "record_kind": "agent_step",
+        "run_id": run_id,
+        "step_id": step_id,
+        "ledger_sequence": append.sequence,
+        "source_of_truth": source_of_truth(ledger),
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+    }))
+}
+
+fn record_model_decision(args: RecordModelDecisionArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    let input_text = fs::read_to_string(&args.input)
+        .map_err(|err| BlackboxError::io(&args.input, "read model decision input JSON", err))?;
+    let input_value: Value = serde_json::from_str(&input_text).map_err(|err| {
+        BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_INPUT_JSON_INVALID",
+            format!("model decision input is not valid JSON: {err}"),
+            Some(format!("file:{}", args.input.display())),
+            Some("$".to_string()),
+            "write valid JSON to the input file and retry",
+        )
+    })?;
+    record_model_decision_from_value(
+        &args.ledger,
+        &args.run_id,
+        &args.tool_name,
+        &args.capability,
+        args.confidence,
+        &input_value,
+        &args.tenant,
+        &args.agent,
+        args.model.as_deref(),
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_model_decision_from_value(
+    ledger: &Path,
+    run_id: &str,
+    tool_name: &str,
+    capability_id: &str,
+    confidence: f64,
+    input_value: &Value,
+    tenant: &str,
+    agent: &str,
+    model: Option<&str>,
+    linked_step_id: Option<&str>,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    require_non_empty_for_ledger(ledger, "--run-id", run_id)?;
+    require_non_empty_for_ledger(ledger, "--tool-name", tool_name)?;
+    require_non_empty_for_ledger(ledger, "--capability", capability_id)?;
+    require_non_empty_for_ledger(ledger, "--tenant", tenant)?;
+    require_non_empty_for_ledger(ledger, "--agent", agent)?;
+    if !(0.0..=1.0).contains(&confidence) {
+        return Err(BlackboxError::invalid_field_for_ledger(
+            ledger,
+            "--confidence",
+            format!("confidence must be in [0,1], got {confidence}"),
+            "pass a numeric confidence between 0.0 and 1.0",
+        ));
+    }
+    if !input_value.is_object() {
+        return Err(BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_INPUT_SCHEMA_INVALID",
+            "model decision input JSON must be an object",
+            Some(source_of_truth(ledger)),
+            Some("$.input".to_string()),
+            "wrap the model decision context in a JSON object",
+        ));
+    }
+
+    let mut conn = open_initialized_ledger(ledger)?;
+    ensure_run_exists_for_tenant(&conn, ledger, run_id, tenant)?;
+    let redacted = redact_tool_input(ledger, input_value)?;
+    let model_decision_id = prefixed_id("decision");
+    let step_id = linked_step_id
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| prefixed_id("step"));
+    let record_id = prefixed_id("bbx_rec");
+    let actor = actor_json(agent, model);
+    let payload = json!({
+        "record_kind": "model_decision",
+        "model_decision_id": model_decision_id,
+        "run_id": run_id,
+        "step_id": step_id,
+        "tool_choice": {
+            "tool_name": tool_name,
+            "capability_id": capability_id,
+        },
+        "confidence": confidence,
+        "policy_context": redacted.value.get("policy_context").cloned().unwrap_or(Value::Null),
+        "input_redacted": redacted.value,
+        "recorded_at": Utc::now().to_rfc3339(),
+    });
+    let append = append_record(
+        &mut conn,
+        ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "model_decision".to_string(),
+            tenant_id: tenant.to_string(),
+            run_id: Some(run_id.to_string()),
+            step_id: Some(step_id.clone()),
+            actor,
+            payload,
+            redaction: redacted.report,
+        },
+    )?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox record model-decision",
+        "record_id": record_id,
+        "record_kind": "model_decision",
+        "run_id": run_id,
+        "step_id": step_id,
+        "model_decision_id": model_decision_id,
+        "ledger_sequence": append.sequence,
+        "source_of_truth": source_of_truth(ledger),
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "redaction": append.redaction,
+    }))
+}
+
 fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
     validate_ledger_path(&args.ledger)?;
     require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
@@ -922,9 +1361,6 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
     require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
     require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
     require_non_empty_for_ledger(&args.ledger, "--capability", &args.capability)?;
-
-    let mut conn = open_initialized_ledger(&args.ledger)?;
-    ensure_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
 
     let input_text = fs::read_to_string(&args.input)
         .map_err(|err| BlackboxError::io(&args.input, "read tool input JSON", err))?;
@@ -949,44 +1385,94 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
         ));
     }
 
-    let redacted = redact_tool_input(&args.ledger, &input_value)?;
+    record_tool_call_from_value(
+        &args.ledger,
+        &args.run_id,
+        &args.tool,
+        &input_value,
+        &args.tenant,
+        &args.agent,
+        args.model.as_deref(),
+        &args.capability,
+        args.status,
+        args.external_request_id.as_deref(),
+        json!({
+            "policy_decision_id": null,
+            "mode": "local",
+            "approved_by": null,
+        }),
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_tool_call_from_value(
+    ledger: &Path,
+    run_id: &str,
+    tool_name: &str,
+    input_value: &Value,
+    tenant: &str,
+    agent: &str,
+    model: Option<&str>,
+    capability: &str,
+    status: ToolExecutionStatus,
+    external_request_id: Option<&str>,
+    authorization: Value,
+    step_id: Option<&str>,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    require_non_empty_for_ledger(ledger, "--run-id", run_id)?;
+    require_non_empty_for_ledger(ledger, "--tool", tool_name)?;
+    require_non_empty_for_ledger(ledger, "--tenant", tenant)?;
+    require_non_empty_for_ledger(ledger, "--agent", agent)?;
+    require_non_empty_for_ledger(ledger, "--capability", capability)?;
+    if !input_value.is_object() {
+        return Err(BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_INPUT_SCHEMA_INVALID",
+            "tool input JSON must be an object",
+            Some(source_of_truth(ledger)),
+            Some("$.input".to_string()),
+            "wrap the tool input in a JSON object so field-level redaction can be verified",
+        ));
+    }
+
+    let mut conn = open_initialized_ledger(ledger)?;
+    ensure_run_exists_for_tenant(&conn, ledger, run_id, tenant)?;
+    let redacted = redact_tool_input(ledger, input_value)?;
     let canonical_redacted = canonical_json_bytes(&redacted.value)?;
     let input_digest = sha256_hex(&canonical_redacted);
 
     let tool_call_id = prefixed_id("tool");
     let record_id = prefixed_id("bbx_rec");
     let now = Utc::now().to_rfc3339();
-    let actor = actor_json(&args.agent, args.model.as_deref());
+    let actor = actor_json(agent, model);
     let payload = json!({
         "record_kind": "tool_call",
         "tool_call_id": tool_call_id,
-        "run_id": args.run_id,
-        "tool_name": args.tool,
-        "capability_id": args.capability,
+        "run_id": run_id,
+        "tool_name": tool_name,
+        "capability_id": capability,
         "input_digest": input_digest,
         "input_redacted": redacted.value,
-        "authorization": {
-            "policy_decision_id": null,
-            "mode": "local",
-            "approved_by": null,
-        },
+        "authorization": authorization,
         "execution": {
             "started_at": now,
             "finished_at": now,
-            "status": args.status.as_str(),
-            "external_request_id": args.external_request_id,
+            "status": status.as_str(),
+            "external_request_id": external_request_id,
         },
     });
 
     let append = append_record(
         &mut conn,
-        &args.ledger,
+        ledger,
         NewRecord {
             record_id: record_id.clone(),
             record_kind: "tool_call".to_string(),
-            tenant_id: args.tenant,
-            run_id: Some(args.run_id.clone()),
-            step_id: None,
+            tenant_id: tenant.to_string(),
+            run_id: Some(run_id.to_string()),
+            step_id: step_id.map(ToOwned::to_owned),
             actor,
             payload,
             redaction: redacted.report,
@@ -997,15 +1483,1262 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
         "status": "ok",
         "record_id": record_id,
         "record_kind": "tool_call",
-        "run_id": args.run_id,
+        "run_id": run_id,
         "tool_call_id": tool_call_id,
         "ledger_sequence": append.sequence,
-        "source_of_truth": source_of_truth(&args.ledger),
+        "source_of_truth": source_of_truth(ledger),
         "payload_sha256": append.payload_sha256,
         "previous_record_sha256": append.previous_record_sha256,
         "run_chain_sha256": append.run_chain_sha256,
         "record_sha256": append.record_sha256,
         "redaction": append.redaction,
+    }))
+}
+
+fn policy_registry(args: PolicyRegistryArgs) -> BbxResult<Value> {
+    let ledger_source = if let Some(ledger) = args.ledger {
+        let conn = open_initialized_ledger(&ledger)?;
+        verify_ledger_integrity(&conn, &ledger)?;
+        Value::String(source_of_truth(&ledger))
+    } else {
+        Value::Null
+    };
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox policy registry",
+        "source_of_truth": ledger_source,
+        "policy_modes": policy_modes_json(),
+        "capabilities": capability_registry_json(),
+        "mcp_tools": mcp_tool_names(true),
+        "fail_closed": true,
+    }))
+}
+
+fn policy_evaluate(args: PolicyEvaluateArgs) -> BbxResult<Value> {
+    policy_evaluate_from_parts(PolicyEvaluateInput {
+        ledger: &args.ledger,
+        mode: args.mode,
+        run_id: args.run_id.as_deref(),
+        tool_name: &args.tool,
+        capability_id: &args.capability,
+        mutating: args.mutating,
+        verifier_id: args.verifier_id.as_deref(),
+        source_scope: args.source_scope.as_deref(),
+        approval_id: args.approval_id.as_deref(),
+        approved_by: args.approved_by.as_deref(),
+        tenant: &args.tenant,
+        agent: &args.agent,
+        model: args.model.as_deref(),
+    })
+}
+
+struct PolicyEvaluateInput<'a> {
+    ledger: &'a Path,
+    mode: PolicyMode,
+    run_id: Option<&'a str>,
+    tool_name: &'a str,
+    capability_id: &'a str,
+    mutating: bool,
+    verifier_id: Option<&'a str>,
+    source_scope: Option<&'a str>,
+    approval_id: Option<&'a str>,
+    approved_by: Option<&'a str>,
+    tenant: &'a str,
+    agent: &'a str,
+    model: Option<&'a str>,
+}
+
+fn policy_evaluate_from_parts(input: PolicyEvaluateInput<'_>) -> BbxResult<Value> {
+    validate_ledger_path(input.ledger)?;
+    require_non_empty_for_ledger(input.ledger, "--tool", input.tool_name)?;
+    require_non_empty_for_ledger(input.ledger, "--capability", input.capability_id)?;
+    require_non_empty_for_ledger(input.ledger, "--tenant", input.tenant)?;
+    require_non_empty_for_ledger(input.ledger, "--agent", input.agent)?;
+    if let Some(run_id) = input.run_id {
+        require_non_empty_for_ledger(input.ledger, "--run-id", run_id)?;
+    }
+
+    let mut conn = open_initialized_ledger(input.ledger)?;
+    if let Some(run_id) = input.run_id {
+        ensure_run_exists_for_tenant(&conn, input.ledger, run_id, input.tenant)?;
+    }
+
+    let capability = capability_by_id(input.capability_id);
+    let mut status = "allowed";
+    let mut error_code: Option<&'static str> = None;
+    let mut field_path: Option<String> = None;
+    let mut remediation: Option<&'static str> = None;
+    if input.mode == PolicyMode::Blocked {
+        status = "denied";
+        error_code = Some("POLICY_MODE_BLOCKED");
+        field_path = Some("policy.mode".to_string());
+        remediation = Some("choose a non-blocked policy mode after an explicit governance change");
+    } else if capability.is_none() {
+        status = "denied";
+        error_code = Some("POLICY_CAPABILITY_UNKNOWN");
+        field_path = Some("capability_id".to_string());
+        remediation =
+            Some("register the capability with verifier coverage before allowing the action");
+    } else if input.mutating
+        && input
+            .verifier_id
+            .filter(|id| !id.trim().is_empty())
+            .is_none()
+    {
+        status = "denied";
+        error_code = Some("POLICY_VERIFIER_REQUIRED");
+        field_path = Some("verifier_id".to_string());
+        remediation =
+            Some("attach an independent source-of-truth verifier to every mutating action");
+    } else if let Some(capability) = capability {
+        if input.mutating != capability.mutating {
+            status = "denied";
+            error_code = Some("POLICY_CAPABILITY_MUTATION_MISMATCH");
+            field_path = Some("mutating".to_string());
+            remediation = Some("use the capability definition's mutating flag exactly");
+        } else if input.mutating && input.verifier_id != Some(capability.verifier_id) {
+            status = "denied";
+            error_code = Some("POLICY_VERIFIER_MISMATCH");
+            field_path = Some("verifier_id".to_string());
+            remediation = Some("use the verifier registered for the requested mutating capability");
+        } else if input.mode == PolicyMode::Supervised
+            && (input
+                .approval_id
+                .filter(|value| !value.trim().is_empty())
+                .is_none()
+                || input
+                    .approved_by
+                    .filter(|value| !value.trim().is_empty())
+                    .is_none())
+        {
+            status = "denied";
+            error_code = Some("POLICY_APPROVAL_REQUIRED");
+            field_path = Some("approval".to_string());
+            remediation = Some("provide approval_id and approved_by for supervised actions");
+        }
+    }
+
+    let decision_id = prefixed_id("policy");
+    let record_id = prefixed_id("bbx_rec");
+    let actor = actor_json(input.agent, input.model);
+    let payload = json!({
+        "record_kind": "policy_decision",
+        "policy_decision_id": decision_id,
+        "run_id": input.run_id,
+        "mode": input.mode.as_str(),
+        "status": status,
+        "tool_name": input.tool_name,
+        "capability_id": input.capability_id,
+        "mutating": input.mutating,
+        "verifier_id": input.verifier_id,
+        "source_scope": input.source_scope,
+        "risk_tier": capability.map(|item| item.risk_tier).unwrap_or("unknown"),
+        "approval": {
+            "approval_id": input.approval_id,
+            "approved_by": input.approved_by,
+        },
+        "error_code": error_code,
+        "field_path": field_path,
+        "remediation": remediation,
+        "evaluated_at": Utc::now().to_rfc3339(),
+    });
+    let append = append_record(
+        &mut conn,
+        input.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "policy_decision".to_string(),
+            tenant_id: input.tenant.to_string(),
+            run_id: input.run_id.map(ToOwned::to_owned),
+            step_id: None,
+            actor,
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox policy evaluate",
+        "decision": status,
+        "allowed": status == "allowed",
+        "policy_decision_id": decision_id,
+        "record_id": record_id,
+        "record_kind": "policy_decision",
+        "ledger_sequence": append.sequence,
+        "source_of_truth": source_of_truth(input.ledger),
+        "mode": input.mode.as_str(),
+        "tool_name": input.tool_name,
+        "capability_id": input.capability_id,
+        "mutating": input.mutating,
+        "verifier_id": input.verifier_id,
+        "error_code": error_code,
+        "field_path": field_path,
+        "remediation": remediation,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+    }))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CapabilityDefinition {
+    capability_id: &'static str,
+    tool_name: &'static str,
+    mutating: bool,
+    verifier_id: &'static str,
+    risk_tier: &'static str,
+    source_kind: &'static str,
+}
+
+fn capability_registry() -> &'static [CapabilityDefinition] {
+    &[
+        CapabilityDefinition {
+            capability_id: "blackbox.run.record",
+            tool_name: "blackbox_start_run",
+            mutating: false,
+            verifier_id: "ledger_append_integrity_v1",
+            risk_tier: "low",
+            source_kind: SQLITE_CONNECTOR_ID,
+        },
+        CapabilityDefinition {
+            capability_id: "blackbox.tool.record",
+            tool_name: "blackbox_record_tool_call",
+            mutating: false,
+            verifier_id: "ledger_append_integrity_v1",
+            risk_tier: "low",
+            source_kind: SQLITE_CONNECTOR_ID,
+        },
+        CapabilityDefinition {
+            capability_id: "blackbox.policy.evaluate",
+            tool_name: "blackbox_policy_evaluate",
+            mutating: false,
+            verifier_id: "ledger_append_integrity_v1",
+            risk_tier: "medium",
+            source_kind: POLICY_CONNECTOR_ID,
+        },
+        CapabilityDefinition {
+            capability_id: VERIFIED_GIT_APPLY_PATCH_CAPABILITY,
+            tool_name: VERIFIED_GIT_APPLY_PATCH_TOOL,
+            mutating: true,
+            verifier_id: VERIFIED_GIT_APPLY_PATCH_VERIFIER,
+            risk_tier: "medium",
+            source_kind: GIT_CONNECTOR_ID,
+        },
+    ]
+}
+
+fn capability_by_id(capability_id: &str) -> Option<CapabilityDefinition> {
+    capability_registry()
+        .iter()
+        .copied()
+        .find(|item| item.capability_id == capability_id)
+}
+
+fn capability_registry_json() -> Value {
+    Value::Array(
+        capability_registry()
+            .iter()
+            .map(|item| {
+                json!({
+                    "capability_id": item.capability_id,
+                    "tool_name": item.tool_name,
+                    "mutating": item.mutating,
+                    "verifier_id": item.verifier_id,
+                    "risk_tier": item.risk_tier,
+                    "source_kind": item.source_kind,
+                    "fail_closed": true,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn policy_modes_json() -> Value {
+    json!([
+        { "mode": "observe_only", "blocks": false, "requires_approval": false },
+        { "mode": "supervised", "blocks": true, "requires_approval": true },
+        { "mode": "bounded_autonomous", "blocks": true, "requires_approval": false },
+        { "mode": "blocked", "blocks": true, "requires_approval": false }
+    ])
+}
+
+fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
+    let ledger_source = if let Some(ledger) = args.ledger {
+        let conn = open_initialized_ledger(&ledger)?;
+        verify_ledger_integrity(&conn, &ledger)?;
+        Value::String(source_of_truth(&ledger))
+    } else {
+        Value::Null
+    };
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox api surface",
+        "source_of_truth": ledger_source,
+        "format": "blackbox_http_api_surface_json_v1",
+        "endpoints": [
+            { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
+            { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
+            { "method": "POST", "path": "/v1/runs/{run_id}/steps", "ledger_record_kind": "agent_step" },
+            { "method": "POST", "path": "/v1/tool-calls", "ledger_record_kind": "tool_call" },
+            { "method": "POST", "path": "/v1/tool-calls/{tool_call_id}/verify", "ledger_record_kind": "verifier_result" },
+            { "method": "GET", "path": "/v1/tool-calls/{tool_call_id}/evidence", "ledger_record_kind": "evidence_packet" },
+            { "method": "POST", "path": "/v1/replay", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/exports/episodes", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/connectors", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/connectors/{connector_id}/test", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/policies", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/policies/evaluate", "ledger_record_kind": "policy_decision" }
+        ],
+        "policy_modes": policy_modes_json(),
+        "capabilities": capability_registry_json(),
+        "fail_closed": true,
+    }))
+}
+
+#[derive(Debug, Clone)]
+struct McpRuntime {
+    ledger: PathBuf,
+    gateway: bool,
+    policy_mode: PolicyMode,
+}
+
+async fn handle_mcp_command(action: McpCommands) -> i32 {
+    let runtime = match action {
+        McpCommands::Recorder(args) => McpRuntime {
+            ledger: args.ledger,
+            gateway: false,
+            policy_mode: PolicyMode::ObserveOnly,
+        },
+        McpCommands::Gateway(args) => McpRuntime {
+            ledger: args.ledger,
+            gateway: true,
+            policy_mode: args.policy_mode,
+        },
+    };
+    match run_mcp_stdio(runtime).await {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&err.to_json()).expect("JSON error serializes")
+            );
+            err.exit_code()
+        }
+    }
+}
+
+async fn run_mcp_stdio(runtime: McpRuntime) -> BbxResult<()> {
+    validate_ledger_path(&runtime.ledger)?;
+    let conn = open_initialized_ledger(&runtime.ledger)?;
+    verify_ledger_integrity(&conn, &runtime.ledger)?;
+    drop(conn);
+
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut writer = BufWriter::new(stdout.lock());
+    for line in stdin.lock().lines() {
+        let line = line.map_err(|err| {
+            BlackboxError::new_with_connector(
+                ErrorKind::Io,
+                "BBX_MCP_STDIN_READ_FAILED",
+                format!("failed to read MCP stdin line: {err}"),
+                Some(format!("stdio:{}", runtime.ledger.display())),
+                MCP_CONNECTOR_ID,
+                Some("stdin".to_string()),
+                "send newline-delimited UTF-8 JSON-RPC messages to the MCP server",
+            )
+        })?;
+        let response = handle_mcp_line(&runtime, &line).await?;
+        if let Some(response) = response {
+            serde_json::to_writer(&mut writer, &response).map_err(|err| {
+                BlackboxError::new_with_connector(
+                    ErrorKind::InvalidInput,
+                    "BBX_MCP_RESPONSE_SERIALIZE_FAILED",
+                    format!("failed to serialize MCP response: {err}"),
+                    Some(format!("stdio:{}", runtime.ledger.display())),
+                    MCP_CONNECTOR_ID,
+                    Some("stdout".to_string()),
+                    "report this as a bug; MCP responses must be serializable JSON-RPC objects",
+                )
+            })?;
+            writer
+                .write_all(b"\n")
+                .map_err(|err| BlackboxError::io(&runtime.ledger, "write MCP stdout", err))?;
+            writer
+                .flush()
+                .map_err(|err| BlackboxError::io(&runtime.ledger, "flush MCP stdout", err))?;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_mcp_line(runtime: &McpRuntime, line: &str) -> BbxResult<Option<Value>> {
+    if line.trim().is_empty() {
+        return Ok(Some(mcp_error_response(
+            Value::Null,
+            -32700,
+            "Parse error",
+            json!({ "error_code": "BBX_MCP_BLANK_MESSAGE" }),
+        )));
+    }
+    let value: Value = match serde_json::from_str(line) {
+        Ok(value) => value,
+        Err(err) => {
+            return Ok(Some(mcp_error_response(
+                Value::Null,
+                -32700,
+                "Parse error",
+                json!({ "error_code": "BBX_MCP_JSON_INVALID", "message": err.to_string() }),
+            )));
+        }
+    };
+    if let Some(items) = value.as_array() {
+        if items.is_empty() {
+            return Ok(Some(mcp_error_response(
+                Value::Null,
+                -32600,
+                "Invalid Request",
+                json!({ "error_code": "BBX_MCP_EMPTY_BATCH" }),
+            )));
+        }
+        let mut responses = Vec::new();
+        for item in items {
+            if let Some(response) = handle_mcp_request(runtime, item).await? {
+                responses.push(response);
+            }
+        }
+        if responses.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(Value::Array(responses)))
+        }
+    } else {
+        handle_mcp_request(runtime, &value).await
+    }
+}
+
+async fn handle_mcp_request(runtime: &McpRuntime, request: &Value) -> BbxResult<Option<Value>> {
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let notification = request.get("id").is_none();
+    let Some(object) = request.as_object() else {
+        return Ok(Some(mcp_error_response(
+            Value::Null,
+            -32600,
+            "Invalid Request",
+            json!({ "error_code": "BBX_MCP_REQUEST_NOT_OBJECT" }),
+        )));
+    };
+    if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Ok(Some(mcp_error_response(
+            id,
+            -32600,
+            "Invalid Request",
+            json!({ "error_code": "BBX_MCP_JSONRPC_VERSION_INVALID" }),
+        )));
+    }
+    let Some(method) = object.get("method").and_then(Value::as_str) else {
+        return Ok(Some(mcp_error_response(
+            id,
+            -32600,
+            "Invalid Request",
+            json!({ "error_code": "BBX_MCP_METHOD_MISSING" }),
+        )));
+    };
+
+    let response = match method {
+        "initialize" => mcp_success_response(
+            id.clone(),
+            json!({
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": { "tools": { "listChanged": false } },
+                "serverInfo": {
+                    "name": if runtime.gateway { "blackboxfix-gateway" } else { "blackboxfix-recorder" },
+                    "version": env!("CARGO_PKG_VERSION"),
+                }
+            }),
+        ),
+        "ping" => mcp_success_response(id.clone(), json!({})),
+        "tools/list" => mcp_success_response(
+            id.clone(),
+            json!({
+                "tools": mcp_tool_definitions(runtime.gateway),
+                "nextCursor": null,
+            }),
+        ),
+        "tools/call" => match execute_mcp_tool(runtime, object.get("params")).await {
+            Ok(result) => mcp_tool_response(id.clone(), result, false),
+            Err(err) => mcp_tool_response(id.clone(), err.to_json(), true),
+        },
+        _ => mcp_error_response(
+            id.clone(),
+            -32601,
+            "Method not found",
+            json!({ "error_code": "BBX_MCP_METHOD_NOT_FOUND", "method": method }),
+        ),
+    };
+    if notification {
+        Ok(None)
+    } else {
+        Ok(Some(response))
+    }
+}
+
+async fn execute_mcp_tool(runtime: &McpRuntime, params: Option<&Value>) -> BbxResult<Value> {
+    let params = params.and_then(Value::as_object).ok_or_else(|| {
+        mcp_schema_error(
+            "params",
+            "tools/call params must be an object with name and arguments",
+        )
+    })?;
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| mcp_schema_error("params.name", "tools/call name is required"))?;
+    let arguments = params
+        .get("arguments")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            mcp_schema_error("params.arguments", "tools/call arguments must be an object")
+        })?;
+
+    match name {
+        "blackbox_start_run" => mcp_start_run(runtime, arguments),
+        "blackbox_record_decision" => mcp_record_decision(runtime, arguments),
+        "blackbox_record_tool_call" => mcp_record_tool_call(runtime, arguments),
+        "blackbox_verify_tool_call" => mcp_verify_tool_call(runtime, arguments).await,
+        "blackbox_get_evidence" => mcp_get_evidence(runtime, arguments),
+        "blackbox_export_episodes" => mcp_export_episodes(runtime, arguments),
+        "blackbox_policy_evaluate" => mcp_policy_evaluate(runtime, arguments),
+        VERIFIED_GIT_APPLY_PATCH_TOOL if runtime.gateway => {
+            mcp_verified_git_apply_patch(runtime, arguments).await
+        }
+        _ => Err(mcp_schema_error(
+            "params.name",
+            format!("unknown MCP tool {name}"),
+        )),
+    }
+}
+
+fn mcp_success_response(id: Value, result: Value) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+fn mcp_error_response(id: Value, code: i64, message: &str, data: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message,
+            "data": data,
+        }
+    })
+}
+
+fn mcp_tool_response(id: Value, structured: Value, is_error: bool) -> Value {
+    let text = serde_json::to_string(&structured).expect("structured MCP tool result serializes");
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "content": [{ "type": "text", "text": text }],
+            "structuredContent": structured,
+            "isError": is_error,
+        }
+    })
+}
+
+fn mcp_schema_error(field_path: impl Into<String>, message: impl Into<String>) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        "BBX_MCP_SCHEMA_INVALID",
+        message,
+        Some("mcp_stdio:tools/call".to_string()),
+        MCP_CONNECTOR_ID,
+        Some(field_path.into()),
+        "send arguments that match the tool inputSchema advertised by tools/list",
+    )
+}
+
+fn mcp_required_string(args: &Map<String, Value>, field: &'static str) -> BbxResult<String> {
+    args.get(field)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| mcp_schema_error(field, format!("{field} is required")))
+}
+
+fn mcp_optional_string(
+    args: &Map<String, Value>,
+    field: &'static str,
+) -> BbxResult<Option<String>> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) if !value.trim().is_empty() => Ok(Some(value.clone())),
+        Some(Value::String(_)) => Err(mcp_schema_error(
+            field,
+            format!("{field} must not be empty"),
+        )),
+        Some(_) => Err(mcp_schema_error(field, format!("{field} must be a string"))),
+    }
+}
+
+fn mcp_optional_bool(
+    args: &Map<String, Value>,
+    field: &'static str,
+    default: bool,
+) -> BbxResult<bool> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(mcp_schema_error(
+            field,
+            format!("{field} must be a boolean"),
+        )),
+    }
+}
+
+fn mcp_optional_f64(
+    args: &Map<String, Value>,
+    field: &'static str,
+    default: f64,
+) -> BbxResult<f64> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::Number(value)) => value
+            .as_f64()
+            .ok_or_else(|| mcp_schema_error(field, format!("{field} must be finite"))),
+        Some(_) => Err(mcp_schema_error(field, format!("{field} must be a number"))),
+    }
+}
+
+fn mcp_object_arg(args: &Map<String, Value>, field: &'static str) -> BbxResult<Value> {
+    let value = args
+        .get(field)
+        .ok_or_else(|| mcp_schema_error(field, format!("{field} is required")))?;
+    if !value.is_object() {
+        return Err(mcp_schema_error(
+            field,
+            format!("{field} must be an object"),
+        ));
+    }
+    Ok(value.clone())
+}
+
+fn mcp_policy_mode(args: &Map<String, Value>, default: PolicyMode) -> BbxResult<PolicyMode> {
+    match args.get("mode") {
+        None | Some(Value::Null) => Ok(default),
+        Some(Value::String(value)) => match value.as_str() {
+            "observe_only" => Ok(PolicyMode::ObserveOnly),
+            "supervised" => Ok(PolicyMode::Supervised),
+            "bounded_autonomous" => Ok(PolicyMode::BoundedAutonomous),
+            "blocked" => Ok(PolicyMode::Blocked),
+            _ => Err(mcp_schema_error("mode", "unsupported policy mode")),
+        },
+        Some(_) => Err(mcp_schema_error("mode", "mode must be a string")),
+    }
+}
+
+fn mcp_tool_names(include_gateway: bool) -> Vec<String> {
+    let mut names = vec![
+        "blackbox_start_run".to_string(),
+        "blackbox_record_decision".to_string(),
+        "blackbox_record_tool_call".to_string(),
+        "blackbox_verify_tool_call".to_string(),
+        "blackbox_get_evidence".to_string(),
+        "blackbox_export_episodes".to_string(),
+        "blackbox_policy_evaluate".to_string(),
+    ];
+    if include_gateway {
+        names.push(VERIFIED_GIT_APPLY_PATCH_TOOL.to_string());
+    }
+    names
+}
+
+fn mcp_tool_definitions(include_gateway: bool) -> Vec<Value> {
+    let mut tools = vec![
+        mcp_tool_definition(
+            "blackbox_start_run",
+            "BlackBoxFix Start Run",
+            "Append an agent_run record to the BlackBoxFix ledger.",
+            json_object_schema(
+                &[
+                    ("task", "string"),
+                    ("agent", "string"),
+                    ("tenant", "string"),
+                    ("model", "string"),
+                    ("task_kind", "string"),
+                    ("risk_tier", "string"),
+                ],
+                &["task", "agent"],
+            ),
+        ),
+        mcp_tool_definition(
+            "blackbox_record_decision",
+            "BlackBoxFix Record Decision",
+            "Append agent_step and model_decision rows for a tool choice.",
+            json_object_schema(
+                &[
+                    ("run_id", "string"),
+                    ("tool_name", "string"),
+                    ("capability_id", "string"),
+                    ("input", "object"),
+                    ("summary", "string"),
+                    ("confidence", "number"),
+                    ("tenant", "string"),
+                    ("agent", "string"),
+                    ("model", "string"),
+                ],
+                &["run_id", "tool_name", "capability_id"],
+            ),
+        ),
+        mcp_tool_definition(
+            "blackbox_record_tool_call",
+            "BlackBoxFix Record Tool Call",
+            "Append a tool_call record without executing the external tool.",
+            json_object_schema(
+                &[
+                    ("run_id", "string"),
+                    ("tool_name", "string"),
+                    ("capability_id", "string"),
+                    ("input", "object"),
+                    ("status", "string"),
+                    ("tenant", "string"),
+                    ("agent", "string"),
+                    ("model", "string"),
+                ],
+                &["run_id", "tool_name", "capability_id", "input"],
+            ),
+        ),
+        mcp_tool_definition(
+            "blackbox_verify_tool_call",
+            "BlackBoxFix Verify Tool Call",
+            "Run a source-of-truth verifier and append expected/readback/verifier/evidence rows.",
+            json_object_schema(
+                &[
+                    ("spec", "object"),
+                    ("tenant", "string"),
+                    ("agent", "string"),
+                    ("model", "string"),
+                ],
+                &["spec"],
+            ),
+        ),
+        mcp_tool_definition(
+            "blackbox_get_evidence",
+            "BlackBoxFix Get Evidence",
+            "Read evidence_packet rows from the physical ledger.",
+            json_object_schema(
+                &[
+                    ("run_id", "string"),
+                    ("tool_call_id", "string"),
+                    ("evidence_packet_id", "string"),
+                ],
+                &[],
+            ),
+        ),
+        mcp_tool_definition(
+            "blackbox_export_episodes",
+            "BlackBoxFix Export Episodes",
+            "Export verified episodes.jsonl, manifest.json, and eval fixtures.",
+            json_object_schema(&[("out", "string"), ("force", "boolean")], &["out"]),
+        ),
+        mcp_tool_definition(
+            "blackbox_policy_evaluate",
+            "BlackBoxFix Policy Evaluate",
+            "Persist a policy_decision row for one proposed tool action.",
+            json_object_schema(
+                &[
+                    ("mode", "string"),
+                    ("run_id", "string"),
+                    ("tool_name", "string"),
+                    ("capability_id", "string"),
+                    ("mutating", "boolean"),
+                    ("verifier_id", "string"),
+                    ("source_scope", "string"),
+                    ("approval_id", "string"),
+                    ("approved_by", "string"),
+                    ("tenant", "string"),
+                    ("agent", "string"),
+                    ("model", "string"),
+                ],
+                &["tool_name", "capability_id", "mutating"],
+            ),
+        ),
+    ];
+    if include_gateway {
+        tools.push(mcp_tool_definition(
+            VERIFIED_GIT_APPLY_PATCH_TOOL,
+            "Verified Git Apply Patch",
+            "Apply a patch to a real Git repository, then verify the physical diff and persist evidence.",
+            json_object_schema(
+                &[
+                    ("run_id", "string"),
+                    ("repo", "string"),
+                    ("path", "string"),
+                    ("patch", "string"),
+                    ("tenant", "string"),
+                    ("agent", "string"),
+                    ("model", "string"),
+                    ("confidence", "number"),
+                    ("approval_id", "string"),
+                    ("approved_by", "string"),
+                ],
+                &["run_id", "repo", "path", "patch"],
+            ),
+        ));
+    }
+    tools
+}
+
+fn mcp_tool_definition(name: &str, title: &str, description: &str, input_schema: Value) -> Value {
+    json!({
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": input_schema,
+        "outputSchema": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "annotations": {
+            "readOnlyHint": name != VERIFIED_GIT_APPLY_PATCH_TOOL,
+            "destructiveHint": name == VERIFIED_GIT_APPLY_PATCH_TOOL,
+            "idempotentHint": false,
+            "openWorldHint": false
+        }
+    })
+}
+
+fn json_object_schema(properties: &[(&str, &str)], required: &[&str]) -> Value {
+    let props = properties
+        .iter()
+        .map(|(name, typ)| ((*name).to_string(), json!({ "type": typ })))
+        .collect::<Map<_, _>>();
+    json!({
+        "type": "object",
+        "properties": props,
+        "required": required,
+        "additionalProperties": false,
+    })
+}
+
+fn mcp_start_run(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let task = mcp_required_string(args, "task")?;
+    let agent = mcp_required_string(args, "agent")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    let task_kind =
+        mcp_optional_string(args, "task_kind")?.unwrap_or_else(|| "mcp_agent_task".to_string());
+    let risk_tier = mcp_optional_string(args, "risk_tier")?.unwrap_or_else(|| "medium".to_string());
+    record_run(RecordRunArgs {
+        ledger: runtime.ledger.clone(),
+        task,
+        agent,
+        tenant,
+        model,
+        task_kind,
+        risk_tier,
+    })
+}
+
+fn mcp_record_decision(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let run_id = mcp_required_string(args, "run_id")?;
+    let tool_name = mcp_required_string(args, "tool_name")?;
+    let capability_id = mcp_required_string(args, "capability_id")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let agent = mcp_optional_string(args, "agent")?.unwrap_or_else(|| "agent_unknown".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    let confidence = mcp_optional_f64(args, "confidence", 1.0)?;
+    let summary = mcp_optional_string(args, "summary")?
+        .unwrap_or_else(|| format!("model selected {tool_name}"));
+    let input = args
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| json!({ "tool_name": tool_name, "capability_id": capability_id }));
+    if !input.is_object() {
+        return Err(mcp_schema_error("input", "input must be an object"));
+    }
+    let step = record_agent_step_from_parts(
+        &runtime.ledger,
+        &run_id,
+        "model_decision",
+        &summary,
+        &tenant,
+        &agent,
+        model.as_deref(),
+        json!({ "mcp_tool": "blackbox_record_decision" }),
+    )?;
+    let step_id = step["step_id"]
+        .as_str()
+        .expect("record_agent_step output contains step_id");
+    let decision = record_model_decision_from_value(
+        &runtime.ledger,
+        &run_id,
+        &tool_name,
+        &capability_id,
+        confidence,
+        &input,
+        &tenant,
+        &agent,
+        model.as_deref(),
+        Some(step_id),
+    )?;
+    Ok(json!({
+        "status": "ok",
+        "agent_step": step,
+        "model_decision": decision,
+    }))
+}
+
+fn mcp_record_tool_call(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let run_id = mcp_required_string(args, "run_id")?;
+    let tool_name = mcp_required_string(args, "tool_name")?;
+    let capability_id = mcp_required_string(args, "capability_id")?;
+    let input = mcp_object_arg(args, "input")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let agent = mcp_optional_string(args, "agent")?.unwrap_or_else(|| "agent_unknown".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    let status = match mcp_optional_string(args, "status")?
+        .unwrap_or_else(|| "ok".to_string())
+        .as_str()
+    {
+        "ok" => ToolExecutionStatus::Ok,
+        "failed" => ToolExecutionStatus::Failed,
+        "blocked" => ToolExecutionStatus::Blocked,
+        _ => {
+            return Err(mcp_schema_error(
+                "status",
+                "status must be ok, failed, or blocked",
+            ))
+        }
+    };
+    record_tool_call_from_value(
+        &runtime.ledger,
+        &run_id,
+        &tool_name,
+        &input,
+        &tenant,
+        &agent,
+        model.as_deref(),
+        &capability_id,
+        status,
+        None,
+        json!({
+            "policy_decision_id": null,
+            "mode": "mcp_recorder",
+            "approved_by": null,
+        }),
+        None,
+    )
+}
+
+async fn mcp_verify_tool_call(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let spec = mcp_object_arg(args, "spec")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let agent =
+        mcp_optional_string(args, "agent")?.unwrap_or_else(|| "blackbox_verifier".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    verify_local_value(&runtime.ledger, &spec, &tenant, &agent, model.as_deref()).await
+}
+
+fn mcp_get_evidence(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let run_id = mcp_optional_string(args, "run_id")?;
+    let tool_call_id = mcp_optional_string(args, "tool_call_id")?;
+    let evidence_packet_id = mcp_optional_string(args, "evidence_packet_id")?;
+    get_evidence_packets(
+        &runtime.ledger,
+        run_id.as_deref(),
+        tool_call_id.as_deref(),
+        evidence_packet_id.as_deref(),
+    )
+}
+
+fn mcp_export_episodes(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let out = PathBuf::from(mcp_required_string(args, "out")?);
+    let force = mcp_optional_bool(args, "force", false)?;
+    export_episodes(ExportEpisodesArgs {
+        ledger: runtime.ledger.clone(),
+        out,
+        force,
+    })
+}
+
+fn mcp_policy_evaluate(runtime: &McpRuntime, args: &Map<String, Value>) -> BbxResult<Value> {
+    let mode = mcp_policy_mode(args, runtime.policy_mode)?;
+    let run_id = mcp_optional_string(args, "run_id")?;
+    let tool_name = mcp_required_string(args, "tool_name")?;
+    let capability_id = mcp_required_string(args, "capability_id")?;
+    let mutating = mcp_optional_bool(args, "mutating", false)?;
+    let verifier_id = mcp_optional_string(args, "verifier_id")?;
+    let source_scope = mcp_optional_string(args, "source_scope")?;
+    let approval_id = mcp_optional_string(args, "approval_id")?;
+    let approved_by = mcp_optional_string(args, "approved_by")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let agent = mcp_optional_string(args, "agent")?.unwrap_or_else(|| "agent_unknown".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    policy_evaluate_from_parts(PolicyEvaluateInput {
+        ledger: &runtime.ledger,
+        mode,
+        run_id: run_id.as_deref(),
+        tool_name: &tool_name,
+        capability_id: &capability_id,
+        mutating,
+        verifier_id: verifier_id.as_deref(),
+        source_scope: source_scope.as_deref(),
+        approval_id: approval_id.as_deref(),
+        approved_by: approved_by.as_deref(),
+        tenant: &tenant,
+        agent: &agent,
+        model: model.as_deref(),
+    })
+}
+
+async fn mcp_verified_git_apply_patch(
+    runtime: &McpRuntime,
+    args: &Map<String, Value>,
+) -> BbxResult<Value> {
+    let run_id = mcp_required_string(args, "run_id")?;
+    let repo = PathBuf::from(mcp_required_string(args, "repo")?);
+    let path = mcp_required_string(args, "path")?;
+    let patch = mcp_required_string(args, "patch")?;
+    let tenant = mcp_optional_string(args, "tenant")?.unwrap_or_else(|| "tenant_local".to_string());
+    let agent = mcp_optional_string(args, "agent")?.unwrap_or_else(|| "agent_unknown".to_string());
+    let model = mcp_optional_string(args, "model")?;
+    let confidence = mcp_optional_f64(args, "confidence", 1.0)?;
+    let approval_id = mcp_optional_string(args, "approval_id")?;
+    let approved_by = mcp_optional_string(args, "approved_by")?;
+    let source_scope = git_source_of_truth(&repo, &path);
+
+    let step = record_agent_step_from_parts(
+        &runtime.ledger,
+        &run_id,
+        "gateway_tool_execution",
+        "gateway accepted verified_git_apply_patch request",
+        &tenant,
+        &agent,
+        model.as_deref(),
+        json!({
+            "mcp_tool": VERIFIED_GIT_APPLY_PATCH_TOOL,
+            "source_scope": source_scope,
+        }),
+    )?;
+    let step_id = step["step_id"]
+        .as_str()
+        .expect("record_agent_step output contains step_id")
+        .to_string();
+    let model_decision = record_model_decision_from_value(
+        &runtime.ledger,
+        &run_id,
+        VERIFIED_GIT_APPLY_PATCH_TOOL,
+        VERIFIED_GIT_APPLY_PATCH_CAPABILITY,
+        confidence,
+        &json!({
+            "policy_context": {
+                "mode": runtime.policy_mode.as_str(),
+                "source_scope": source_scope,
+            },
+            "tool_input": {
+                "repo": repo.display().to_string(),
+                "path": path.clone(),
+                "patch_sha256": sha256_hex(patch.as_bytes()),
+            }
+        }),
+        &tenant,
+        &agent,
+        model.as_deref(),
+        Some(&step_id),
+    )?;
+    let policy = policy_evaluate_from_parts(PolicyEvaluateInput {
+        ledger: &runtime.ledger,
+        mode: runtime.policy_mode,
+        run_id: Some(&run_id),
+        tool_name: VERIFIED_GIT_APPLY_PATCH_TOOL,
+        capability_id: VERIFIED_GIT_APPLY_PATCH_CAPABILITY,
+        mutating: true,
+        verifier_id: Some(VERIFIED_GIT_APPLY_PATCH_VERIFIER),
+        source_scope: Some(&source_scope),
+        approval_id: approval_id.as_deref(),
+        approved_by: approved_by.as_deref(),
+        tenant: &tenant,
+        agent: &agent,
+        model: model.as_deref(),
+    })?;
+    if policy["allowed"].as_bool() != Some(true) {
+        return Err(BlackboxError::connector_blocked(
+            static_policy_error_code(policy["error_code"].as_str()),
+            POLICY_CONNECTOR_ID,
+            source_of_truth(&runtime.ledger),
+            "policy_decision.status",
+            format!(
+                "policy denied {} for capability {}",
+                VERIFIED_GIT_APPLY_PATCH_TOOL, VERIFIED_GIT_APPLY_PATCH_CAPABILITY
+            ),
+            policy["remediation"]
+                .as_str()
+                .unwrap_or("inspect the persisted policy_decision row and fix the policy inputs"),
+        ));
+    }
+
+    let pre_diff = run_git(&repo, &["diff", "--no-ext-diff", "--no-color", "--", &path])?;
+    if pre_diff.exit_code != 0 {
+        return Err(BlackboxError::connector_blocked(
+            "GATEWAY_GIT_PRESTATE_READ_FAILED",
+            GIT_CONNECTOR_ID,
+            source_scope.clone(),
+            "git.diff",
+            "failed to read pre-state git diff before applying patch",
+            "inspect git stderr and provide a valid repository/path before retrying",
+        ));
+    }
+    if !pre_diff.stdout.trim().is_empty() {
+        return Err(BlackboxError::connector_blocked(
+            "GATEWAY_GIT_PRESTATE_DIRTY",
+            GIT_CONNECTOR_ID,
+            source_scope.clone(),
+            "git.diff",
+            "target path already has uncommitted changes before gateway execution",
+            "start from a clean target path or split the prior change into its own verified action",
+        ));
+    }
+    let check = run_git_with_stdin(&repo, &["apply", "--check", "-"], &patch)?;
+    if check.exit_code != 0 {
+        return Err(BlackboxError::connector_blocked(
+            "GATEWAY_GIT_APPLY_CHECK_FAILED",
+            GIT_CONNECTOR_ID,
+            source_scope.clone(),
+            "patch",
+            format!("git apply --check failed: {}", check.stderr),
+            "provide a patch that applies cleanly to the current physical repository state",
+        ));
+    }
+
+    let tool_input = json!({
+        "repo": repo.display().to_string(),
+        "path": path.clone(),
+        "patch": patch.clone(),
+    });
+    let tool_call = record_tool_call_from_value(
+        &runtime.ledger,
+        &run_id,
+        VERIFIED_GIT_APPLY_PATCH_TOOL,
+        &tool_input,
+        &tenant,
+        &agent,
+        model.as_deref(),
+        VERIFIED_GIT_APPLY_PATCH_CAPABILITY,
+        ToolExecutionStatus::Ok,
+        None,
+        json!({
+            "policy_decision_id": policy["policy_decision_id"],
+            "policy_decision_sequence": policy["ledger_sequence"],
+            "mode": runtime.policy_mode.as_str(),
+            "approved_by": approved_by,
+        }),
+        Some(&step_id),
+    )?;
+    let tool_call_id = tool_call["tool_call_id"]
+        .as_str()
+        .expect("record_tool_call output contains tool_call_id")
+        .to_string();
+
+    let apply = run_git_with_stdin(&repo, &["apply", "-"], &patch)?;
+    let verifier_spec = json!({
+        "verifier_id": VERIFIED_GIT_APPLY_PATCH_VERIFIER,
+        "run_id": run_id,
+        "tool_call_id": tool_call_id,
+        "source": { "repo": repo.display().to_string() },
+        "expected": { "path": path, "patch": patch }
+    });
+    let verification = verify_local_value(
+        &runtime.ledger,
+        &verifier_spec,
+        &tenant,
+        &agent,
+        model.as_deref(),
+    )
+    .await;
+    let evidence =
+        get_evidence_packets(&runtime.ledger, Some(&run_id), Some(&tool_call_id), None).ok();
+    if apply.exit_code != 0 {
+        return Err(BlackboxError::connector_blocked(
+            "GATEWAY_GIT_APPLY_FAILED",
+            GIT_CONNECTOR_ID,
+            source_scope.clone(),
+            "git.apply",
+            format!("git apply failed after preflight: {}", apply.stderr),
+            "inspect the physical repository state; the verifier evidence row records the post-failure readback when available",
+        ));
+    }
+    let verification = verification?;
+    Ok(json!({
+        "status": "ok",
+        "command": VERIFIED_GIT_APPLY_PATCH_TOOL,
+        "source_of_truth": source_scope,
+        "agent_step": step,
+        "model_decision": model_decision,
+        "policy_decision": policy,
+        "tool_call": tool_call,
+        "verification": verification,
+        "evidence": evidence,
+    }))
+}
+
+fn static_policy_error_code(error_code: Option<&str>) -> &'static str {
+    match error_code {
+        Some("POLICY_MODE_BLOCKED") => "POLICY_MODE_BLOCKED",
+        Some("POLICY_CAPABILITY_UNKNOWN") => "POLICY_CAPABILITY_UNKNOWN",
+        Some("POLICY_VERIFIER_REQUIRED") => "POLICY_VERIFIER_REQUIRED",
+        Some("POLICY_CAPABILITY_MUTATION_MISMATCH") => "POLICY_CAPABILITY_MUTATION_MISMATCH",
+        Some("POLICY_VERIFIER_MISMATCH") => "POLICY_VERIFIER_MISMATCH",
+        Some("POLICY_APPROVAL_REQUIRED") => "POLICY_APPROVAL_REQUIRED",
+        _ => "POLICY_DENIED",
+    }
+}
+
+fn get_evidence_packets(
+    ledger: &Path,
+    run_id: Option<&str>,
+    tool_call_id: Option<&str>,
+    evidence_packet_id: Option<&str>,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    let conn = open_initialized_ledger(ledger)?;
+    let inspection = verify_ledger_integrity(&conn, ledger)?;
+    let packets = inspection
+        .records
+        .into_iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+        .filter(|record| {
+            run_id
+                .map(|expected| record.run_id.as_deref() == Some(expected))
+                .unwrap_or(true)
+        })
+        .filter(|record| {
+            tool_call_id
+                .map(|expected| {
+                    record.payload.get("tool_call_id").and_then(Value::as_str) == Some(expected)
+                })
+                .unwrap_or(true)
+        })
+        .filter(|record| {
+            evidence_packet_id
+                .map(|expected| {
+                    record
+                        .payload
+                        .get("evidence_packet_id")
+                        .and_then(Value::as_str)
+                        == Some(expected)
+                })
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox_get_evidence",
+        "source_of_truth": source_of_truth(ledger),
+        "count": packets.len(),
+        "evidence_packets": packets,
     }))
 }
 
@@ -1139,24 +2872,41 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
             "wrap the verifier spec in a JSON object",
         ));
     }
-    let redacted_spec = redact_tool_input(&args.ledger, &spec_value)?;
-    let spec = VerifySpec::parse(&args.ledger, &spec_value)?;
+    verify_local_value(
+        &args.ledger,
+        &spec_value,
+        &args.tenant,
+        &args.agent,
+        args.model.as_deref(),
+    )
+    .await
+}
 
-    let mut conn = open_initialized_ledger(&args.ledger)?;
+async fn verify_local_value(
+    ledger: &Path,
+    spec_value: &Value,
+    tenant: &str,
+    agent: &str,
+    model: Option<&str>,
+) -> BbxResult<Value> {
+    let redacted_spec = redact_tool_input(ledger, spec_value)?;
+    let spec = VerifySpec::parse(ledger, spec_value)?;
+
+    let mut conn = open_initialized_ledger(ledger)?;
     ensure_tool_call_exists_for_run_tenant(
         &conn,
-        &args.ledger,
+        ledger,
         &spec.run_id,
         &spec.tool_call_id,
-        &args.tenant,
+        tenant,
     )?;
 
     let run_id = spec.run_id.clone();
     let tool_call_id = spec.tool_call_id.clone();
     let verifier_id = spec.verifier_id.clone();
     let expected_value = spec.expected.clone();
-    let tenant_id = args.tenant.clone();
-    let actor = actor_json(&args.agent, args.model.as_deref());
+    let tenant_id = tenant.to_string();
+    let actor = actor_json(agent, model);
     let expected_delta_id = prefixed_id("expected");
     let expected_record_id = prefixed_id("bbx_rec");
     let expected_payload = json!({
@@ -1171,7 +2921,7 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     });
     let expected_append = append_record(
         &mut conn,
-        &args.ledger,
+        ledger,
         NewRecord {
             record_id: expected_record_id.clone(),
             record_kind: "expected_delta".to_string(),
@@ -1191,7 +2941,7 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         readback_record_id = Some(generated_readback_record_id.clone());
         Some(append_record(
             &mut conn,
-            &args.ledger,
+            ledger,
             NewRecord {
                 record_id: generated_readback_record_id,
                 record_kind: "readback_snapshot".to_string(),
@@ -1232,7 +2982,7 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     });
     let verifier_append = append_record(
         &mut conn,
-        &args.ledger,
+        ledger,
         NewRecord {
             record_id: verifier_record_id.clone(),
             record_kind: "verifier_result".to_string(),
@@ -1245,9 +2995,8 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         },
     )?;
 
-    let run_ref = ledger_record_ref_by_run(&conn, &args.ledger, &run_id, "run")?;
-    let tool_call_ref =
-        ledger_record_ref_by_tool_call(&conn, &args.ledger, &tool_call_id, "tool_call")?;
+    let run_ref = ledger_record_ref_by_run(&conn, ledger, &run_id, "run")?;
+    let tool_call_ref = ledger_record_ref_by_tool_call(&conn, ledger, &tool_call_id, "tool_call")?;
     let expected_ref = ledger_record_ref_json(
         "expected_delta",
         expected_append.sequence,
@@ -1325,7 +3074,7 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     let evidence_record_id = prefixed_id("bbx_rec");
     let evidence_append = append_record(
         &mut conn,
-        &args.ledger,
+        ledger,
         NewRecord {
             record_id: evidence_record_id,
             record_kind: "evidence_packet".to_string(),
@@ -1368,7 +3117,7 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         });
         Some(append_record(
             &mut conn,
-            &args.ledger,
+            ledger,
             NewRecord {
                 record_id: prefixed_id("bbx_rec"),
                 record_kind: "incident_packet".to_string(),
@@ -3167,7 +4916,7 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
                  SELECT RAISE(ABORT, 'ledger_records is append-only; deletes are forbidden');
              END;
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
-             VALUES ('schema_version', '3');
+             VALUES ('schema_version', '4');
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
              VALUES ('ledger_id', lower(hex(randomblob(16))));
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
@@ -4559,6 +6308,67 @@ fn run_git(repo: &Path, args: &[&str]) -> BbxResult<ProcessReadback> {
             format!("failed to execute git argv {:?}: {err}", command),
             "install Git and ensure the git executable is available on PATH",
         )
+    })
+}
+
+fn run_git_with_stdin(repo: &Path, args: &[&str], stdin_text: &str) -> BbxResult<ProcessReadback> {
+    let command = std::iter::once("git".to_string())
+        .chain(std::iter::once("-C".to_string()))
+        .chain(std::iter::once(repo.display().to_string()))
+        .chain(args.iter().map(|arg| (*arg).to_string()))
+        .collect::<Vec<_>>();
+    let mut child = Command::new(&command[0])
+        .args(&command[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| {
+            BlackboxError::connector_blocked(
+                "GIT_EXEC_FAILED",
+                GIT_CONNECTOR_ID,
+                git_source_of_truth(repo, "repository"),
+                "git.exec",
+                format!("failed to execute git argv {:?}: {err}", command),
+                "install Git and ensure the git executable is available on PATH",
+            )
+        })?;
+    {
+        let Some(mut stdin) = child.stdin.take() else {
+            return Err(BlackboxError::connector_blocked(
+                "GIT_STDIN_UNAVAILABLE",
+                GIT_CONNECTOR_ID,
+                git_source_of_truth(repo, "repository"),
+                "git.stdin",
+                "failed to open git stdin for patch input",
+                "inspect the local process environment and retry",
+            ));
+        };
+        stdin.write_all(stdin_text.as_bytes()).map_err(|err| {
+            BlackboxError::connector_blocked(
+                "GIT_STDIN_WRITE_FAILED",
+                GIT_CONNECTOR_ID,
+                git_source_of_truth(repo, "repository"),
+                "git.stdin",
+                format!("failed to write patch bytes to git stdin: {err}"),
+                "inspect local process pipes and retry",
+            )
+        })?;
+    }
+    let output = child.wait_with_output().map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GIT_EXEC_FAILED",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "git.exec",
+            format!("failed to wait for git argv {:?}: {err}", command),
+            "inspect local process execution and retry",
+        )
+    })?;
+    Ok(ProcessReadback {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
     })
 }
 

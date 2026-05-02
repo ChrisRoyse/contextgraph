@@ -29,8 +29,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 3` after Phase 4; old v1/v2
-    ledgers are wiped on init, never migrated in-place.
+    ledger schema is `LEDGER_SCHEMA_VERSION = 4` after Phase 6; old ledgers are
+    wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase2_fsv`).
@@ -40,8 +40,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_branch_head_matches_commit_v1`,
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
-  - Phase 3 added no new record kinds. Current ledgers run under schema v3
-    after Phase 4.
+  - Phase 3 added no new record kinds. Current ledgers run under schema v4
+    after Phase 6.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -49,7 +49,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Record kinds: `evidence_packet`, `incident_packet`.
   - Commands: `blackbox replay --ledger PATH --run-id RUN_ID` and
     `blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE`.
-  - Ledger schema: `LEDGER_SCHEMA_VERSION = 3`; v1/v2 ledgers are wiped on
+  - Ledger schema: `LEDGER_SCHEMA_VERSION = 4`; older ledgers are wiped on
     init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`
     (4/4 passing; run with
@@ -62,8 +62,21 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs`
     (4/4 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase5_export_fsv`).
-- **Phases 6–8**: NOT started. See `13_mvp_implementation_phases.md` for the
-  exact next-step order and `20`/`21`/`22`/`23`/`24`
+- **Phase 6 (MCP Gateway + Policy)**: COMPLETE and verified.
+  - Commands: `blackbox mcp recorder --ledger PATH`,
+    `blackbox mcp gateway --ledger PATH --policy-mode MODE`,
+    `blackbox policy evaluate`, `blackbox policy registry`, and
+    `blackbox api surface`.
+  - New record kinds under schema v4: `policy_decision`, `agent_step`,
+    `model_decision`.
+  - Gateway first workflow: `verified_git_apply_patch` applies a real Git patch
+    and returns verifier evidence from `git_file_diff_matches_patch_v1`.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase6_mcp_policy_fsv.rs`
+    (4/4 passing; run with
+    `cargo test --package context-graph-cli --test blackbox_phase6_mcp_policy_fsv`).
+- **Phases 7–8**: NOT started. See `13_mvp_implementation_phases.md` for the
+  exact next-step order and `20`/`21`/`22`/`23`/`24`/`25`
   state-and-invariant docs for the shipped baseline.
 
 ## Build And Test Quick Reference
@@ -87,6 +100,9 @@ cargo test --package context-graph-cli --test blackbox_phase4_fsv -- --nocapture
 # Phase 5 FSV tests (real SQLite ledger + real JSONL/manifest/eval files)
 cargo test --package context-graph-cli --test blackbox_phase5_export_fsv -- --nocapture
 
+# Phase 6 FSV tests (real MCP stdio + real SQLite + real Git patch gateway)
+cargo test --package context-graph-cli --test blackbox_phase6_mcp_policy_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -101,17 +117,17 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 4
+- `04_event_ledger_schema.md` — record contracts and the current Phase 6
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped Phase 2 connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped Phase 2 registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 5 CLI shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 6 MCP/policy shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–5 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–6 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -131,6 +147,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   incident packets, replay/export commands, tests, and manual FSV evidence.
 - `24_phase5_state_and_invariants.md` — shipped Phase 5 episode exporter,
   JSONL/manifest/eval artifacts, tests, and manual FSV evidence.
+- `25_phase6_state_and_invariants.md` — shipped Phase 6 MCP stdio gateway,
+  policy records, capability registry, tests, and manual FSV evidence.
 
 ## Build Doctrine
 
