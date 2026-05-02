@@ -36,7 +36,7 @@ writing a line of code:
 | 4 | Phase 3 + evidence/incident packet rows + exported evidence report file |
 | 5 | Phase 4 + exported `episodes.jsonl`, `manifest.json`, and `evals/` on disk |
 | 6 | Phase 5 + MCP tool registry contents + `policy_decision`, `agent_step`, `model_decision` rows + physical Git state for gateway mutations |
-| 7 | Phase 6 + dashboard API responses |
+| 7 | Phase 6 + dashboard bundle files (`index.html`, `manifest.json`, `api/*.json`) and dashboard API responses |
 | 8 | Phase 7 + SSO/SCIM directory state + tenant key store |
 
 If you cannot name the source of truth in one sentence, stop and design the

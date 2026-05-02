@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 6 Physical Schema (shipped)
+## Phase 7 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 4 in Phase 6
+  schema_version              INTEGER NOT NULL,   -- 4 in Phase 7
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-6 ship nine `record_kind` values. The remaining families are reserved
+Phases 1-7 ship nine `record_kind` values. The remaining families are reserved
 for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |

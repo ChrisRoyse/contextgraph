@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 5)
+## Concrete Layout (shipped through Phase 7)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -31,10 +31,12 @@ agent runtime
 | Hosted source readback | GitHub and GitHub Actions connectors | `github_v1`, `gha_v1` |
 | Evidence/replay/export | `evidence_packet`, `incident_packet`, JSON evidence, JSONL episodes, eval fixtures | `blackbox replay`, `blackbox export evidence`, `blackbox export episodes` |
 | MCP/policy gateway | JSON-RPC stdio MCP recorder/gateway, policy rows, capability registry | `blackbox mcp recorder`, `blackbox mcp gateway`, `blackbox policy ...` |
-| FSV harness | Phase 1-6 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Dashboard | Static dashboard bundle plus dashboard API JSON files over the verified ledger | `blackbox dashboard build`, `blackbox dashboard api` |
+| FSV harness | Phase 1-7 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-6 is **not yet implemented**. Do not assume dashboard,
-RBAC, or enterprise controls exist until their phase docs are marked complete.
+Anything outside Phases 1-7 is **not yet implemented**. Do not assume RBAC,
+SSO, SIEM export, hosted multi-tenant serving, or enterprise controls exist
+until their phase docs are marked complete.
 
 ## Components (target architecture)
 
@@ -140,6 +142,27 @@ test at `crates/context-graph-cli/tests/dynamicjepa_bundle_export_fsv.rs`.
 The Phase 5 exporter must follow the same shape: physical-row read,
 manifest with content hash, JSONL re-parsed line-by-line after write.
 
+### Dashboard (Phase 7)
+
+The shipped dashboard is a local static bundle backed by machine-readable API
+JSON files:
+
+- `index.html`;
+- `manifest.json`;
+- `api/summary.json`;
+- `api/runs.json`;
+- `api/evidence.json`;
+- `api/verifier-status.json`;
+- `api/errors.json`;
+- `api/exports.json`;
+- `api/timeline_<run_id>.json`.
+
+`blackbox dashboard build` verifies the SQLite hash chain, verifies
+`evidence_packet.record_refs[]`, writes every file to a temp directory, reads
+each JSON/HTML file back, records sha256/byte counts in the manifest, promotes
+the directory, then re-reads the final manifest and files before returning
+success.
+
 ## Deployment Patterns
 
 ### Local Developer Mode (Phase 1)
@@ -149,8 +172,8 @@ adoption.
 
 ### Team SaaS Mode (Phase 7)
 
-Hosted control plane: shared ledger, GitHub/CI/ticketing integrations,
-dashboard, team policy, eval exporter.
+Local team dashboard shipped in Phase 7 as a static bundle over the verified
+ledger. Hosted shared-ledger serving remains a later deployment concern.
 
 ### Enterprise Private Mode (Phase 8)
 
@@ -171,9 +194,10 @@ encryption keys, SSO/RBAC, long retention, SIEM export.
 
 Phase 1 implemented the local ledger/CLI recorder. Phase 2 implemented local
 source-of-truth readback and verification for Git, filesystem, and command
-artifacts. Policy/gateway pre-state orchestration shipped in Phase 6 for the
-local `verified_git_apply_patch` workflow; hosted GitHub/CI readback remains
-Phase 3.
+artifacts. Hosted GitHub/CI readback shipped in Phase 3. Policy/gateway
+pre-state orchestration shipped in Phase 6 for the local
+`verified_git_apply_patch` workflow. Phase 7 shipped dashboard read models and
+static UI artifacts over the verified ledger.
 
 ## Design Constraint
 

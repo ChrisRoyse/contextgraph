@@ -43,7 +43,7 @@ Mitigation:
 
 - explicitly mark unverified actions;
 - block unverified mutating actions in governed mode (Phase 6);
-- make source-of-truth coverage a dashboard metric (Phase 7).
+- make source-of-truth coverage a dashboard metric (shipped in Phase 7).
 
 ### Evidence Tampering
 
@@ -65,8 +65,9 @@ Mitigation:
 
 - `busy_timeout=5000`, `synchronous=FULL`, WAL journaling (already enabled);
 - recommend one writer per ledger file in Phase 1;
-- Phase 7 introduces a writer service with a single SQLite connection
-  (or moves to Postgres).
+- Phase 7 remains local and read-only for dashboard generation. A hosted
+  writer service with a single SQLite/Postgres write path per tenant remains
+  for the shared-ledger deployment.
 
 ## Product Risks
 

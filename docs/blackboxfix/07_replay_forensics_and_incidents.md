@@ -98,7 +98,7 @@ Later governed-mode phases may also create incidents when:
 
 ## Timeline View
 
-The UI (Phase 7) must show:
+The Phase 7 dashboard UI shows:
 
 - task request;
 - model decision;
@@ -110,8 +110,11 @@ The UI (Phase 7) must show:
 - score;
 - remediation.
 
-The timeline must support filters by: failed verifier, high risk, sensitive
-data touched, unapproved tool, source of truth, connector.
+The shipped timeline supports filters by record kind, status, risk tier, and
+source of truth. Connector and tool-specific drilldowns are exposed in
+`api/verifier-status.json`; sensitive-data and approval filters become richer
+once later phases add explicit data-classification and approval lifecycle
+records.
 
 ## Replay Output (shipped)
 

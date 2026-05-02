@@ -17,6 +17,7 @@ The mandatory operator-side protocol lives in
 | External systems under connector tests | readback matches expected delta |
 | Exported JSONL + manifest (Phase 5) | every line re-parses; sha256 matches manifest |
 | MCP tool registry + policy rows (Phase 6) | advertised tools match shipped schemas; governed decisions persist in `ledger_records` |
+| Dashboard bundle (Phase 7) | `index.html`, `manifest.json`, and `api/*.json` read back from disk; manifest sha256 entries match actual bytes |
 
 ## Test Levels
 
@@ -54,6 +55,8 @@ automated FSV (`tests/blackbox_phase2_fsv.rs`) against real SQLite ledgers,
 real Git repositories, real files, and real commands. Phase 6 adds
 `tests/blackbox_phase6_mcp_policy_fsv.rs`, which executes the real MCP stdio
 gateway against a real Git patch and then reads SQLite/Git state directly.
+Phase 7 adds `tests/blackbox_phase7_dashboard_fsv.rs`, which builds a real
+dashboard bundle and reads SQLite/dashboard files directly.
 
 ## Acceptance Criteria
 
@@ -143,6 +146,10 @@ Concretely, that means:
   a real Git patch, then independently reads `ledger_records` and `git diff`
   to prove `policy_decision`, `agent_step`, `model_decision`, `tool_call`,
   verifier, and `evidence_packet` rows exist only when expected.
+- Phase 7 FSV builds `index.html`, `manifest.json`, and `api/*.json` from a
+  real ledger with one passed run and one failed run, reads each file back
+  from disk, verifies manifest hashes against actual bytes, and checks every
+  dashboard evidence id exists in physical SQLite rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -154,10 +161,11 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6 inputs/outputs are enumerated
-in `23_phase4_state_and_invariants.md`,
-`24_phase5_state_and_invariants.md`, and
-`25_phase6_state_and_invariants.md`.
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7 inputs/outputs are
+enumerated in `23_phase4_state_and_invariants.md`,
+`24_phase5_state_and_invariants.md`,
+`25_phase6_state_and_invariants.md`, and
+`26_phase7_state_and_invariants.md`.
 
 A synthetic test must include:
 

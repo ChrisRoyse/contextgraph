@@ -3,11 +3,12 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 6 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
-decision rows, a capability registry, and a machine-readable HTTP API surface.
-SDKs and hosted HTTP serving are reserved for later phases.
+Phase 7 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+decision rows, a capability registry, a machine-readable HTTP API surface
+registry, and a static dashboard/API bundle. SDKs and hosted HTTP serving are
+reserved for later phases.
 
-## CLI (shipped Phase 6)
+## CLI (shipped Phase 7)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -60,6 +61,8 @@ blackbox inspect ledger        --ledger PATH
 blackbox replay                --ledger PATH --run-id RUN_ID
 blackbox export evidence       --ledger PATH --run-id RUN_ID --out FILE
 blackbox export episodes       --ledger PATH --out DIR [--force]
+blackbox dashboard build       --ledger PATH --out DIR [--force]
+blackbox dashboard api         --ledger PATH --view VIEW [--run-id RUN_ID]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
                                [--mutating] [--verifier-id VERIFIER]
@@ -167,11 +170,17 @@ returns the output directory, `episodes.jsonl`, `manifest.json`, `evals/`,
 row counts, split counts, JSONL sha256, ledger sequence range, and ledger tip
 after reading all files back from disk.
 
+`dashboard build` returns the dashboard directory, `index.html`,
+`manifest.json`, `api/`, run/evidence/incident counts, manifest sha256, and
+ledger tip after reading every generated file back from disk. `dashboard api`
+returns one dashboard read model (`summary`, `runs`, `timeline`, `evidence`,
+`verifiers`, `errors`, or `exports`) after verifying the source ledger.
+
 ## HTTP API Surface (Phase 6 shipped as registry)
 
 `blackbox api surface [--ledger PATH]` returns the HTTP endpoint registry below
 as JSON, after verifying the ledger when `--ledger` is supplied. A network HTTP
-server remains reserved for Phase 7+.
+server remains reserved for a later hosted deployment.
 
 ```text
 POST /v1/runs
@@ -186,6 +195,13 @@ GET  /v1/connectors
 POST /v1/connectors/{connector_id}/test
 GET  /v1/policies
 POST /v1/policies/evaluate
+GET  /v1/dashboard/summary
+GET  /v1/dashboard/runs
+GET  /v1/dashboard/runs/{run_id}/timeline
+GET  /v1/dashboard/evidence
+GET  /v1/dashboard/verifier-status
+GET  /v1/dashboard/errors
+GET  /v1/dashboard/exports
 ```
 
 Write endpoints return the created ledger ids. They must not claim the action
@@ -244,7 +260,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (Phase 7)
+## OpenTelemetry Export (reserved after Phase 7)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -255,16 +271,21 @@ OpenTelemetry is an export path, not the primary source of truth. Emit:
 
 The ledger remains authoritative.
 
+Phase 7 shipped local dashboard metrics only. OpenTelemetry emission remains a
+later export path.
+
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 4 in Phase 6).
+- Ledger records include `schema_version` (= 4 in Phase 7).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
   the ledger with `episode_schema_version = 1`.
 - Phase 6 bumps the ledger schema to 4 for `policy_decision`, `agent_step`,
   and `model_decision`.
+- Phase 7 does not bump the ledger schema. It writes dashboard artifacts
+  outside the ledger with `dashboard_schema_version = 1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -293,4 +314,7 @@ plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
 integration test, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs` (4 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs` (4 tests,
+PASS), `crates/context-graph-cli/tests/blackbox_phase6_mcp_policy_fsv.rs`
+(4 tests, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase7_dashboard_fsv.rs` (5 tests,
 PASS).

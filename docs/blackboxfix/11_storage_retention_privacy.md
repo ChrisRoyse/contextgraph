@@ -56,7 +56,9 @@ Query acceleration:
 - incident severity.
 
 Phase 1 already provides `idx_ledger_records_run_id` and
-`idx_ledger_records_kind`; richer indexes arrive when the dashboard lands.
+`idx_ledger_records_kind`. Phase 7 dashboard read models are built from a
+verified full ledger scan in local mode; richer persisted query indexes remain
+for the hosted/shared-ledger deployment.
 
 ## Hash Chaining
 

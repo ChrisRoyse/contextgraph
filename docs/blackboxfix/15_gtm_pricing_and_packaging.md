@@ -93,7 +93,7 @@ actual SQLite query / `git log` / GitHub API response — never a screenshot.
 Until each phase lands, do not promise:
 
 - live MCP gateway (Phase 6);
-- hosted dashboard (Phase 7);
+- local dashboard bundle (Phase 7) and hosted dashboard later;
 - enterprise SSO/RBAC/private deploy (Phase 8);
 - non-Git/non-GitHub connectors (Phase 3+).
 

@@ -6,7 +6,8 @@ hide the details.
 
 Phase 2 persists the first deterministic verifier score fields inside
 `verifier_result.score`: `correctness`, `risk`, and `confidence`. Policy,
-training value, and dashboard rollups remain later-phase work.
+training value, and richer lifecycle scoring remain later-phase work. Phase 7
+ships dashboard rollups from existing ledger fields.
 
 ## Score Dimensions
 
@@ -114,15 +115,21 @@ non-deterministic embeddings or random adjustments.
 
 ## Dashboard Metrics (Phase 7)
 
+Phase 7 ships these metrics through `blackbox dashboard build` and
+`blackbox dashboard api`:
+
 - verifier pass rate;
 - verifier failure rate by tool;
 - blocked action count;
-- mean time to remediation;
-- high-risk autonomous actions;
 - top error codes;
 - source-of-truth coverage (`% mutating tools with at least one verifier`);
-- evals generated from failures;
-- regression recurrence rate.
+
+The dashboard read models also expose verifier status by connector, agent,
+tenant, and tool; policy decision counts; unverified action count; evidence
+packet totals; incident totals; and export commands for evidence/episodes.
+Mean time to remediation, high-risk autonomous action trends, eval generation
+counts, and regression recurrence rate remain later aggregate metrics because
+they require additional lifecycle records.
 
 ## Avoid Black-Box Scoring
 

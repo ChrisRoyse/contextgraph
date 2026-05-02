@@ -259,19 +259,51 @@ expected patch SHA `c53f17a0f04b39466228cf0139f211e029beae6f1fd529b2dd2727a0b255
 
 ## Phase 7: Team Dashboard
 
+Status: **DONE** (2026-05-02).
+
 Deliverables:
 
-- run timeline UI;
-- evidence viewer;
-- verifier status dashboard;
-- error-code drilldown;
-- export UI.
+- run timeline UI shipped in `index.html` and `api/timeline_<run_id>.json`;
+- evidence viewer shipped in `api/evidence.json`;
+- verifier status dashboard shipped in `api/verifier-status.json`;
+- error-code drilldown shipped in `api/errors.json`;
+- export UI/read model shipped in `api/exports.json`.
 
 Exit criteria:
 
 - user can inspect a passed run and a failed run;
-- user can export evidence and episodes;
-- source-of-truth links are visible.
+- user can export evidence and episodes through the generated commands;
+- source-of-truth links are visible in HTML and dashboard API JSON.
+
+Commands:
+
+```bash
+blackbox dashboard build --ledger PATH --out DIR [--force]
+blackbox dashboard api --ledger PATH --view summary|runs|timeline|evidence|verifiers|errors|exports [--run-id RUN_ID]
+```
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase7_dashboard_fsv -- --nocapture
+```
+
+Current result: 5/5 passing. Coverage includes dashboard happy path over a
+physical ledger with one passed run and one failed run, manifest/file readback
+hash verification, existing-output fail-closed behavior, empty-ledger
+fail-closed behavior, hash-chain tamper blocking, and missing timeline run id
+blocking without ledger mutation.
+
+Manual FSV completed against `/tmp/bbx-phase7-manual-fsv.W4eqmG/fsv.log`.
+Happy-path source-of-truth readback: SQLite kind counts remained
+`agent_run=2`, `tool_call=2`, `expected_delta=2`, `readback_snapshot=2`,
+`verifier_result=2`, `evidence_packet=2`, `incident_packet=1` before and
+after dashboard build. The dashboard directory contained `index.html`,
+`manifest.json`, six top-level API files, and two per-run timeline files.
+Manifest readback proved `api/summary.json` hash
+`sha256:16788f6c494990ca77fc51cdd19e91d4480e5b03dbe1fba4b4a985bc16988776`
+and `index.html` hash
+`sha256:554870febfa02a6ece9b45f4a4619cda32f120c3731bc82570d85f5eb796f930`.
 
 ## Phase 8: Enterprise Controls
 

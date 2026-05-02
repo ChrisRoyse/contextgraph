@@ -48,7 +48,8 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 
 Design implication:
 
-- export traces, metrics, and logs to existing observability stacks (Phase 7);
+- export traces, metrics, and logs to existing observability stacks (reserved
+  after Phase 7);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 

@@ -75,8 +75,19 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `crates/context-graph-cli/tests/blackbox_phase6_mcp_policy_fsv.rs`
     (4/4 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase6_mcp_policy_fsv`).
-- **Phases 7–8**: NOT started. See `13_mvp_implementation_phases.md` for the
-  exact next-step order and `20`/`21`/`22`/`23`/`24`/`25`
+- **Phase 7 (Team Dashboard)**: COMPLETE and verified.
+  - Commands: `blackbox dashboard build --ledger PATH --out DIR [--force]`
+    and `blackbox dashboard api --ledger PATH --view VIEW [--run-id RUN_ID]`.
+  - Output source of truth: `index.html`, `manifest.json`, and
+    `api/*.json` under the dashboard directory.
+  - Dashboard views: summary, runs, per-run timelines, evidence,
+    verifier status, error drilldown, and export commands.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase7_dashboard_fsv.rs`
+    (5/5 passing; run with
+    `cargo test --package context-graph-cli --test blackbox_phase7_dashboard_fsv`).
+- **Phase 8**: NOT started. See `13_mvp_implementation_phases.md` for the
+  exact next-step order and `20`/`21`/`22`/`23`/`24`/`25`/`26`
   state-and-invariant docs for the shipped baseline.
 
 ## Build And Test Quick Reference
@@ -103,6 +114,9 @@ cargo test --package context-graph-cli --test blackbox_phase5_export_fsv -- --no
 # Phase 6 FSV tests (real MCP stdio + real SQLite + real Git patch gateway)
 cargo test --package context-graph-cli --test blackbox_phase6_mcp_policy_fsv -- --nocapture
 
+# Phase 7 FSV tests (real SQLite ledger + real dashboard files)
+cargo test --package context-graph-cli --test blackbox_phase7_dashboard_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -117,17 +131,17 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 6
+- `04_event_ledger_schema.md` — record contracts and the current Phase 7
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped Phase 2 connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped Phase 2 registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 6 MCP/policy shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 7 dashboard shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–6 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–7 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -149,6 +163,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   JSONL/manifest/eval artifacts, tests, and manual FSV evidence.
 - `25_phase6_state_and_invariants.md` — shipped Phase 6 MCP stdio gateway,
   policy records, capability registry, tests, and manual FSV evidence.
+- `26_phase7_state_and_invariants.md` — shipped Phase 7 dashboard builder,
+  dashboard API files, tests, and manual FSV evidence.
 
 ## Build Doctrine
 
@@ -172,7 +188,7 @@ non-zero exit code, every time.
 
 1. **No backwards compatibility.** This product is pre-production. On a schema
    change, wipe the SQLite ledger; never write a migration shim. Current
-   physical ledger schema is version `3`.
+   physical ledger schema is version `4`.
 2. **Fail fast, no fallbacks.** A failure must surface as a typed error code
    with `source_of_truth`, `connector`, `field_path`, and `remediation`. If the
    path errors, do not catch and substitute a default — let it bubble.
