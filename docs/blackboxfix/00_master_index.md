@@ -54,9 +54,17 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`
     (4/4 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase4_fsv`).
-- **Phases 5–8**: NOT started. See `13_mvp_implementation_phases.md` for the
-  exact next-step order and `20`/`21`/`22`/`23` state-and-invariant docs for
-  the shipped baseline.
+- **Phase 5 (Training/Eval Exporter)**: COMPLETE and verified.
+  - Command: `blackbox export episodes --ledger PATH --out DIR [--force]`.
+  - Output source of truth: `episodes.jsonl`, `manifest.json`, and `evals/`
+    under the export directory.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs`
+    (4/4 passing; run with
+    `cargo test --package context-graph-cli --test blackbox_phase5_export_fsv`).
+- **Phases 6–8**: NOT started. See `13_mvp_implementation_phases.md` for the
+  exact next-step order and `20`/`21`/`22`/`23`/`24`
+  state-and-invariant docs for the shipped baseline.
 
 ## Build And Test Quick Reference
 
@@ -75,6 +83,9 @@ cargo test --package context-graph-cli --test blackbox_phase3_fsv -- --nocapture
 
 # Phase 4 FSV tests (real SQLite ledger + real exported evidence files)
 cargo test --package context-graph-cli --test blackbox_phase4_fsv -- --nocapture
+
+# Phase 5 FSV tests (real SQLite ledger + real JSONL/manifest/eval files)
+cargo test --package context-graph-cli --test blackbox_phase5_export_fsv -- --nocapture
 
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
@@ -95,12 +106,12 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `05_source_of_truth_connectors.md` — connector contract and shipped Phase 2 connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped Phase 2 registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
-- `08_training_eval_corpus.md` — verified episode export (Phase 5).
+- `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 4 CLI shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 5 CLI shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–4 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–5 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -118,6 +129,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   connectors, verifiers, live tests, and manual FSV evidence.
 - `23_phase4_state_and_invariants.md` — shipped Phase 4 evidence packets,
   incident packets, replay/export commands, tests, and manual FSV evidence.
+- `24_phase5_state_and_invariants.md` — shipped Phase 5 episode exporter,
+  JSONL/manifest/eval artifacts, tests, and manual FSV evidence.
 
 ## Build Doctrine
 

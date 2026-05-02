@@ -77,6 +77,22 @@ Design implication:
 - borrow the run/job/dataset lineage pattern for data workflows;
 - use facets or facet-like extensions for verifier evidence;
 - make lineage export possible for data-agent workflows.
+- Phase 5 manifests separate static source-ledge metadata from per-row episode
+  data, mirroring the run/job/dataset distinction rather than flattening all
+  lineage into one row.
+
+### JSON Lines
+
+Reference: <https://jsonlines.org/>
+
+Design implication:
+
+- export one complete UTF-8 JSON value per line so rows can be streamed,
+  concatenated, and validated independently;
+- reject blank lines and invalid per-line JSON during readback;
+- include a line terminator after each row to make future concatenation safe.
+- Phase 5 implements this by writing `episodes.jsonl`, re-reading every line,
+  validating required fields, and hashing the exact bytes written.
 
 ### in-toto
 

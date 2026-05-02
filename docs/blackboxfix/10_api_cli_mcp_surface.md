@@ -3,11 +3,12 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 4 ships the local CLI with local Git/file/command, GitHub/GitHub
-Actions readback, evidence packets, forensic replay, and JSON evidence
-export. The HTTP API, MCP servers, and SDKs are reserved for Phase 6+.
+Phase 5 ships the local CLI with local Git/file/command, GitHub/GitHub
+Actions readback, evidence packets, forensic replay, JSON evidence export,
+and verified JSONL episode export. The HTTP API, MCP servers, and SDKs are
+reserved for Phase 6+.
 
-## CLI (shipped Phase 4)
+## CLI (shipped Phase 5)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -52,6 +53,7 @@ blackbox inspect ledger        --ledger PATH
                                [--limit N]
 blackbox replay                --ledger PATH --run-id RUN_ID
 blackbox export evidence       --ledger PATH --run-id RUN_ID --out FILE
+blackbox export episodes       --ledger PATH --out DIR [--force]
 ```
 
 The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
@@ -92,14 +94,6 @@ connector was able to read physical state, then `verifier_result`, then an
 failed or blocked verifier returns non-zero **after** persisting the verifier
 evidence, except for invalid top-level JSON that cannot be associated with a
 run/tool-call.
-
-### Phase 5 Commands (planned, not implemented)
-
-```text
-blackbox export episodes       --ledger PATH --out DIR
-```
-
-Implement after Phase 4; do not skip ahead to MCP/API before episode export.
 
 ## CLI Failure Shape (enforced)
 
@@ -154,7 +148,10 @@ one was created.
 `inspect ledger` returns `integrity` plus a `records` array with each row's
 fields and hashes. `replay` returns a read-only forensic report. `export
 evidence` returns the exported file path, byte count, sha256, and evidence/
-incident counts after reading the file back from disk.
+incident counts after reading the file back from disk. `export episodes`
+returns the output directory, `episodes.jsonl`, `manifest.json`, `evals/`,
+row counts, split counts, JSONL sha256, ledger sequence range, and ledger tip
+after reading all files back from disk.
 
 ## HTTP API (Phase 6 target)
 
@@ -246,6 +243,8 @@ The ledger remains authoritative.
 - Ledger records include `schema_version` (= 3 in Phase 4).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumps
   the current schema to 3 for `evidence_packet` and `incident_packet`.
+- Phase 5 does not bump the ledger schema. It writes export artifacts outside
+  the ledger with `episode_schema_version = 1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -272,4 +271,6 @@ Concrete inputs and expected outputs live in
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
 integration test, PASS) and
-`crates/context-graph-cli/tests/blackbox_phase4_fsv.rs` (4 tests, PASS).
+`crates/context-graph-cli/tests/blackbox_phase4_fsv.rs` (4 tests, PASS) and
+`crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs` (4 tests,
+PASS).

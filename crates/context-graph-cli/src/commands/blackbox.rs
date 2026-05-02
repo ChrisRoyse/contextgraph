@@ -4,8 +4,9 @@
 //! ledger database. Every mutating command writes only after redaction,
 //! schema validation, and hash-chain verification have succeeded.
 
-use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -32,6 +33,7 @@ const GHA_CONNECTOR_ID: &str = "gha_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
+const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Parser, Debug)]
 #[command(name = "blackbox")]
@@ -228,6 +230,8 @@ pub struct ReplayArgs {
 pub enum ExportCommands {
     /// Export a JSON evidence report for a run.
     Evidence(ExportEvidenceArgs),
+    /// Export verified training/eval episodes from the ledger.
+    Episodes(ExportEpisodesArgs),
 }
 
 #[derive(Args, Debug)]
@@ -243,6 +247,21 @@ pub struct ExportEvidenceArgs {
     /// Output JSON file path.
     #[arg(long)]
     pub out: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct ExportEpisodesArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Output directory. The exporter writes episodes.jsonl, manifest.json, and evals/.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing output directory.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -627,6 +646,7 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Replay(args) => replay_run(args),
         BlackboxCommands::Export { action } => match action {
             ExportCommands::Evidence(args) => export_evidence(args),
+            ExportCommands::Episodes(args) => export_episodes(args),
         },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
@@ -1503,6 +1523,152 @@ fn export_evidence(args: ExportEvidenceArgs) -> BbxResult<Value> {
     }))
 }
 
+fn export_episodes(args: ExportEpisodesArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    validate_export_directory_path(&args.out, args.force)?;
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    validate_tool_calls_have_evidence(&args.ledger, &inspection.records)?;
+    let record_refs = inspection.records.iter().collect::<Vec<_>>();
+    verify_evidence_packet_refs(&args.ledger, &record_refs)?;
+
+    let rows = build_episode_rows(&args.ledger, &inspection)?;
+    if rows.is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_NO_EXPORTABLE_EPISODES",
+            "ledger contains no evidence_packet rows to export",
+            Some(source_of_truth(&args.ledger)),
+            SQLITE_CONNECTOR_ID,
+            Some("ledger_records.record_kind".to_string()),
+            "run one or more verifiers so the ledger contains durable evidence_packet rows",
+        ));
+    }
+
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_export_temp_dir(&temp_dir)?;
+    let export_result =
+        write_episode_export_directory(&args, &inspection, &ledger_id, &rows, &temp_dir);
+    match export_result {
+        Ok(summary) => Ok(summary),
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            Err(err)
+        }
+    }
+}
+
+fn write_episode_export_directory(
+    args: &ExportEpisodesArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    rows: &[Value],
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir(temp_dir)
+        .map_err(|err| BlackboxError::io(temp_dir, "create episode export temp directory", err))?;
+    let episodes_path = temp_dir.join("episodes.jsonl");
+    let manifest_path = temp_dir.join("manifest.json");
+    let evals_dir = temp_dir.join("evals");
+    fs::create_dir(&evals_dir)
+        .map_err(|err| BlackboxError::io(&evals_dir, "create episode eval directory", err))?;
+
+    write_episode_jsonl(&episodes_path, rows)?;
+    let tmp_readback = readback_episode_jsonl(&episodes_path)?;
+    if tmp_readback.line_count != rows.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "EPISODE_JSONL_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&episodes_path),
+            "episodes.jsonl",
+            format!(
+                "episodes temp readback count mismatch: expected {}, got {}",
+                rows.len(),
+                tmp_readback.line_count
+            ),
+            "delete the temp export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    let eval_fixtures = write_eval_fixtures(&evals_dir, rows)?;
+    let sequence_range = exported_sequence_range(rows)?;
+    let manifest = build_episodes_manifest(
+        args,
+        inspection,
+        ledger_id,
+        &episodes_path,
+        &tmp_readback,
+        &eval_fixtures,
+        sequence_range,
+    );
+    write_json_file_new(&manifest_path, &manifest, "episode export manifest")?;
+    let manifest_readback = read_json_file(&manifest_path, "episode export manifest readback")?;
+    if manifest_readback["status"] != "ok"
+        || manifest_readback["output"]["episodes_sha256"] != tmp_readback.sha256
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "EPISODE_MANIFEST_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&manifest_path),
+            "manifest.json",
+            "episode manifest readback does not match the JSONL hash written in the manifest",
+            "delete the corrupt export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    promote_episode_export_dir(temp_dir, &args.out, args.force)?;
+
+    let final_episodes = args.out.join("episodes.jsonl");
+    let final_manifest = args.out.join("manifest.json");
+    let final_readback = readback_episode_jsonl(&final_episodes)?;
+    if final_readback.sha256 != tmp_readback.sha256
+        || final_readback.line_count != tmp_readback.line_count
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "EPISODE_EXPORT_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&final_episodes),
+            "episodes.jsonl",
+            "final episodes.jsonl readback changed after directory promotion",
+            "treat the export target as unreliable; inspect filesystem/storage before retrying",
+        ));
+    }
+    let final_manifest_readback = read_json_file(&final_manifest, "final episode manifest")?;
+    if final_manifest_readback["output"]["episodes_sha256"] != final_readback.sha256 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "EPISODE_MANIFEST_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&final_manifest),
+            "manifest.json.output.episodes_sha256",
+            "final manifest hash does not match final episodes.jsonl readback",
+            "delete the corrupt export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox export episodes",
+        "source_of_truth": file_source_of_truth(&final_episodes),
+        "ledger_source_of_truth": source_of_truth(&args.ledger),
+        "out": args.out,
+        "episodes": final_episodes,
+        "manifest": final_manifest,
+        "evals": args.out.join("evals"),
+        "episodes_total": final_readback.line_count,
+        "episodes_sha256": final_readback.sha256,
+        "episodes_size_bytes": final_readback.size_bytes,
+        "counts": {
+            "rows_by_kind": final_readback.rows_by_kind,
+            "splits": final_readback.splits,
+        },
+        "eval_fixture_count": final_manifest_readback["evals"]["fixture_count"].clone(),
+        "ledger_sequence_range": final_manifest_readback["source_ledger"]["ledger_sequence_range"].clone(),
+        "ledger_tip_sha256_at_export": inspection.ledger_tip_sha256,
+    }))
+}
+
 fn validate_export_output_path(path: &Path) -> BbxResult<()> {
     if path.as_os_str().is_empty() {
         return Err(BlackboxError::new_with_connector(
@@ -1543,6 +1709,1051 @@ fn validate_export_output_path(path: &Path) -> BbxResult<()> {
         }
     }
     Ok(())
+}
+
+fn validate_export_directory_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty export output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "episode export output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this export directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "episode export parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the export",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_tool_calls_have_evidence(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<()> {
+    let mut evidenced_tool_calls = BTreeSet::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        if let Some(tool_call_id) = record.payload.get("tool_call_id").and_then(Value::as_str) {
+            evidenced_tool_calls.insert(tool_call_id.to_string());
+        }
+    }
+
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "tool_call")
+    {
+        let tool_call_id = record
+            .payload
+            .get("tool_call_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                BlackboxError::evidence_integrity(
+                    "EPISODE_SOURCE_SCHEMA_INVALID",
+                    source_of_truth(ledger_path),
+                    format!("ledger_records[{}].payload.tool_call_id", record.sequence),
+                    "tool_call payload is missing tool_call_id",
+                    "treat the ledger as inconsistent and inspect the append-only chain",
+                )
+            })?;
+        if !evidenced_tool_calls.contains(tool_call_id) {
+            return Err(BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_VERIFIER_MISSING_FOR_MUTATING_ACTION",
+                format!("tool_call_id {tool_call_id} has no evidence_packet verifier output"),
+                Some(source_of_truth(ledger_path)),
+                Some(format!("ledger_records[{}].payload.tool_call_id", record.sequence)),
+                "run blackbox verify for every mutating tool_call before exporting training episodes",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn build_episode_rows(ledger_path: &Path, inspection: &LedgerInspection) -> BbxResult<Vec<Value>> {
+    let records_by_sequence = inspection
+        .records
+        .iter()
+        .map(|record| (record.sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let mut incidents_by_evidence_id = BTreeMap::<String, Vec<&LedgerRecordOutput>>::new();
+    for record in inspection
+        .records
+        .iter()
+        .filter(|record| record.record_kind == "incident_packet")
+    {
+        if let Some(evidence_id) = record
+            .payload
+            .get("evidence_packet_id")
+            .and_then(Value::as_str)
+        {
+            incidents_by_evidence_id
+                .entry(evidence_id.to_string())
+                .or_default()
+                .push(record);
+        }
+    }
+
+    let mut rows = Vec::new();
+    for evidence_record in inspection
+        .records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        let evidence_id = required_payload_str(ledger_path, evidence_record, "evidence_packet_id")?;
+        let run_record = required_evidence_ref_record(
+            ledger_path,
+            evidence_record,
+            &records_by_sequence,
+            "run",
+            "agent_run",
+        )?;
+        let tool_record = required_evidence_ref_record(
+            ledger_path,
+            evidence_record,
+            &records_by_sequence,
+            "tool_call",
+            "tool_call",
+        )?;
+        let expected_record = required_evidence_ref_record(
+            ledger_path,
+            evidence_record,
+            &records_by_sequence,
+            "expected_delta",
+            "expected_delta",
+        )?;
+        let verifier_record = required_evidence_ref_record(
+            ledger_path,
+            evidence_record,
+            &records_by_sequence,
+            "verifier_result",
+            "verifier_result",
+        )?;
+        let readback_record = optional_evidence_ref_record(
+            ledger_path,
+            evidence_record,
+            &records_by_sequence,
+            "readback_snapshot",
+            "readback_snapshot",
+        )?;
+        let incidents = incidents_by_evidence_id
+            .get(evidence_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let row = build_verified_episode_row(
+            ledger_path,
+            inspection,
+            evidence_record,
+            run_record,
+            tool_record,
+            expected_record,
+            readback_record,
+            verifier_record,
+            incidents.first().copied(),
+        )?;
+        rows.push(row);
+
+        for incident in incidents {
+            rows.push(build_incident_episode_row(
+                ledger_path,
+                inspection,
+                evidence_record,
+                run_record,
+                tool_record,
+                expected_record,
+                readback_record,
+                verifier_record,
+                incident,
+            )?);
+        }
+    }
+    Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_verified_episode_row(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    evidence_record: &LedgerRecordOutput,
+    run_record: &LedgerRecordOutput,
+    tool_record: &LedgerRecordOutput,
+    expected_record: &LedgerRecordOutput,
+    readback_record: Option<&LedgerRecordOutput>,
+    verifier_record: &LedgerRecordOutput,
+    incident_record: Option<&LedgerRecordOutput>,
+) -> BbxResult<Value> {
+    let evidence_id = required_payload_str(ledger_path, evidence_record, "evidence_packet_id")?;
+    let run_id = required_payload_str(ledger_path, evidence_record, "run_id")?;
+    let tool_call_id = required_payload_str(ledger_path, evidence_record, "tool_call_id")?;
+    let verifier_status = required_payload_str(ledger_path, verifier_record, "status")?;
+    let split = match verifier_status {
+        "passed" | "failed" | "blocked" => verifier_status,
+        other => {
+            return Err(BlackboxError::evidence_integrity(
+                "EPISODE_SOURCE_SCHEMA_INVALID",
+                source_of_truth(ledger_path),
+                format!(
+                    "ledger_records[{}].payload.status",
+                    verifier_record.sequence
+                ),
+                format!("verifier_result status {other:?} is not exportable"),
+                "fix the verifier status so it is passed, failed, or blocked before exporting",
+            ));
+        }
+    };
+    let sequence_range = row_sequence_range(&[
+        Some(run_record),
+        Some(tool_record),
+        Some(expected_record),
+        readback_record,
+        Some(verifier_record),
+        Some(evidence_record),
+        incident_record,
+    ])?;
+    let source = episode_source(
+        ledger_path,
+        inspection,
+        run_record,
+        tool_record,
+        evidence_record,
+        incident_record,
+        sequence_range,
+    );
+    Ok(json!({
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "episode_schema_version": EPISODE_EXPORT_SCHEMA_VERSION,
+        "record_kind": "verified_agent_episode",
+        "dataset_split": split,
+        "episode_id": format!("{run_id}:evidence:{evidence_id}"),
+        "source": source,
+        "state": {
+            "task": run_record.payload.get("task").cloned().unwrap_or(Value::Null),
+            "runtime": run_record.payload.get("runtime").cloned().unwrap_or(Value::Null),
+            "policy_context": tool_record.payload.get("authorization").cloned().unwrap_or(Value::Null),
+            "available_tools": [tool_record.payload.get("tool_name").cloned().unwrap_or(Value::Null)],
+            "source_of_truth": evidence_record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+        },
+        "action": {
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_record.payload.get("tool_name").cloned().unwrap_or(Value::Null),
+            "capability_id": tool_record.payload.get("capability_id").cloned().unwrap_or(Value::Null),
+            "tool_input_redacted": tool_record.payload.get("input_redacted").cloned().unwrap_or(Value::Null),
+            "execution": tool_record.payload.get("execution").cloned().unwrap_or(Value::Null),
+            "model_decision_redacted": Value::Null,
+        },
+        "expected_persisted_delta": expected_record.payload.get("expected_persisted_delta").cloned().unwrap_or(Value::Null),
+        "actual_readback": {
+            "readback_snapshot": readback_record.map(|record| record.payload.clone()).unwrap_or(Value::Null),
+            "verifier_actual_readback": verifier_record.payload.get("actual_readback").cloned().unwrap_or(Value::Null),
+        },
+        "verifier_status": {
+            "status": verifier_status,
+            "verifier_id": verifier_record.payload.get("verifier_id").cloned().unwrap_or(Value::Null),
+            "verifier_result_id": verifier_record.payload.get("verifier_result_id").cloned().unwrap_or(Value::Null),
+            "score": verifier_record.payload.get("score").cloned().unwrap_or(Value::Null),
+        },
+        "error_code": verifier_record.payload.get("error_code").cloned().unwrap_or(Value::Null),
+        "remediation": verifier_record.payload.get("remediation").cloned().unwrap_or(Value::Null),
+        "incident": incident_record.map(|record| record.payload.clone()).unwrap_or(Value::Null),
+        "provenance": evidence_record.payload.get("provenance").cloned().unwrap_or(Value::Null),
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_incident_episode_row(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    evidence_record: &LedgerRecordOutput,
+    run_record: &LedgerRecordOutput,
+    tool_record: &LedgerRecordOutput,
+    expected_record: &LedgerRecordOutput,
+    readback_record: Option<&LedgerRecordOutput>,
+    verifier_record: &LedgerRecordOutput,
+    incident_record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let evidence_id = required_payload_str(ledger_path, evidence_record, "evidence_packet_id")?;
+    let incident_id = required_payload_str(ledger_path, incident_record, "incident_packet_id")?;
+    let run_id = required_payload_str(ledger_path, evidence_record, "run_id")?;
+    let sequence_range = row_sequence_range(&[
+        Some(run_record),
+        Some(tool_record),
+        Some(expected_record),
+        readback_record,
+        Some(verifier_record),
+        Some(evidence_record),
+        Some(incident_record),
+    ])?;
+    let source = episode_source(
+        ledger_path,
+        inspection,
+        run_record,
+        tool_record,
+        evidence_record,
+        Some(incident_record),
+        sequence_range,
+    );
+    Ok(json!({
+        "schema_version": LEDGER_SCHEMA_VERSION,
+        "episode_schema_version": EPISODE_EXPORT_SCHEMA_VERSION,
+        "record_kind": "incident_agent_episode",
+        "dataset_split": "incident",
+        "episode_id": format!("{run_id}:incident:{incident_id}"),
+        "source": source,
+        "state": {
+            "task": run_record.payload.get("task").cloned().unwrap_or(Value::Null),
+            "incident": incident_record.payload.clone(),
+            "source_of_truth": incident_record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+        },
+        "action": {
+            "tool_name": tool_record.payload.get("tool_name").cloned().unwrap_or(Value::Null),
+            "capability_id": tool_record.payload.get("capability_id").cloned().unwrap_or(Value::Null),
+            "tool_input_redacted": tool_record.payload.get("input_redacted").cloned().unwrap_or(Value::Null),
+            "execution": tool_record.payload.get("execution").cloned().unwrap_or(Value::Null),
+            "trigger": incident_record.payload.get("trigger").cloned().unwrap_or(Value::Null),
+        },
+        "expected_persisted_delta": expected_record.payload.get("expected_persisted_delta").cloned().unwrap_or(Value::Null),
+        "actual_readback": {
+            "readback_snapshot": readback_record.map(|record| record.payload.clone()).unwrap_or(Value::Null),
+            "verifier_result": verifier_record.payload.clone(),
+            "incident_packet": incident_record.payload.clone(),
+        },
+        "verifier_status": {
+            "status": "incident",
+            "linked_verifier_status": verifier_record.payload.get("status").cloned().unwrap_or(Value::Null),
+            "verifier_id": verifier_record.payload.get("verifier_id").cloned().unwrap_or(Value::Null),
+        },
+        "error_code": incident_record.payload.get("error_code").cloned().unwrap_or(Value::Null),
+        "remediation": incident_record.payload.get("remediation").cloned().unwrap_or(Value::Null),
+        "provenance": evidence_record.payload.get("provenance").cloned().unwrap_or(Value::Null),
+        "evidence_packet_id": evidence_id,
+    }))
+}
+
+fn episode_source(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_record: &LedgerRecordOutput,
+    tool_record: &LedgerRecordOutput,
+    evidence_record: &LedgerRecordOutput,
+    incident_record: Option<&LedgerRecordOutput>,
+    sequence_range: (i64, i64),
+) -> Value {
+    json!({
+        "tenant_id": evidence_record.tenant_id,
+        "run_id": evidence_record.run_id,
+        "step_id": evidence_record.step_id,
+        "tool_call_id": evidence_record.payload.get("tool_call_id").cloned().unwrap_or(Value::Null),
+        "evidence_packet_id": evidence_record.payload.get("evidence_packet_id").cloned().unwrap_or(Value::Null),
+        "evidence_packet_sequence": evidence_record.sequence,
+        "evidence_packet_record_sha256": evidence_record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+        "incident_packet_id": incident_record.and_then(|record| record.payload.get("incident_packet_id")).cloned().unwrap_or(Value::Null),
+        "incident_packet_sequence": incident_record.map(|record| json!(record.sequence)).unwrap_or(Value::Null),
+        "ledger_sequence_range": [sequence_range.0, sequence_range.1],
+        "ledger_tip_sha256_at_export": inspection.ledger_tip_sha256,
+        "ledger_source_of_truth": source_of_truth(ledger_path),
+        "run_record": ledger_record_ref_from_record("run", run_record),
+        "tool_call_record": ledger_record_ref_from_record("tool_call", tool_record),
+    })
+}
+
+fn ledger_record_ref_from_record(role: &str, record: &LedgerRecordOutput) -> Value {
+    json!({
+        "role": role,
+        "sequence": record.sequence,
+        "record_id": record.record_id,
+        "record_kind": record.record_kind,
+        "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+        "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn required_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity(
+                "EPISODE_SOURCE_SCHEMA_INVALID",
+                source_of_truth(ledger_path),
+                format!("ledger_records[{}].payload.{field}", record.sequence),
+                format!(
+                    "{} payload is missing non-empty {field}",
+                    record.record_kind
+                ),
+                "treat the source ledger as incomplete and rerun verification before export",
+            )
+        })
+}
+
+fn required_evidence_ref_record<'a>(
+    ledger_path: &Path,
+    evidence_record: &LedgerRecordOutput,
+    records_by_sequence: &BTreeMap<i64, &'a LedgerRecordOutput>,
+    role: &'static str,
+    expected_kind: &'static str,
+) -> BbxResult<&'a LedgerRecordOutput> {
+    optional_evidence_ref_record(
+        ledger_path,
+        evidence_record,
+        records_by_sequence,
+        role,
+        expected_kind,
+    )?
+    .ok_or_else(|| {
+        BlackboxError::evidence_integrity(
+            "EPISODE_SOURCE_SCHEMA_INVALID",
+            source_of_truth(ledger_path),
+            format!(
+                "ledger_records[{}].payload.record_refs",
+                evidence_record.sequence
+            ),
+            format!("evidence_packet is missing required {role} reference"),
+            "rebuild the evidence packet from immutable ledger records before export",
+        )
+    })
+}
+
+fn optional_evidence_ref_record<'a>(
+    ledger_path: &Path,
+    evidence_record: &LedgerRecordOutput,
+    records_by_sequence: &BTreeMap<i64, &'a LedgerRecordOutput>,
+    role: &'static str,
+    expected_kind: &'static str,
+) -> BbxResult<Option<&'a LedgerRecordOutput>> {
+    let Some(sequence) = evidence_ref_sequence(ledger_path, evidence_record, role)? else {
+        return Ok(None);
+    };
+    let record = records_by_sequence.get(&sequence).copied().ok_or_else(|| {
+        BlackboxError::evidence_integrity(
+            "EVIDENCE_HASH_MISMATCH",
+            source_of_truth(ledger_path),
+            format!(
+                "ledger_records[{}].payload.record_refs.{role}",
+                evidence_record.sequence
+            ),
+            format!("evidence_packet references missing ledger sequence {sequence}"),
+            "treat the evidence packet as invalid and rebuild from an intact ledger",
+        )
+    })?;
+    if record.record_kind != expected_kind {
+        return Err(BlackboxError::evidence_integrity(
+            "EPISODE_SOURCE_SCHEMA_INVALID",
+            source_of_truth(ledger_path),
+            format!(
+                "ledger_records[{}].payload.record_refs.{role}",
+                evidence_record.sequence
+            ),
+            format!(
+                "evidence role {role} points to record_kind {}, expected {expected_kind}",
+                record.record_kind
+            ),
+            "rebuild the evidence packet with correct role references before export",
+        ));
+    }
+    Ok(Some(record))
+}
+
+fn evidence_ref_sequence(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    role: &str,
+) -> BbxResult<Option<i64>> {
+    let refs = record
+        .payload
+        .get("record_refs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity(
+                "EPISODE_SOURCE_SCHEMA_INVALID",
+                source_of_truth(ledger_path),
+                format!("ledger_records[{}].payload.record_refs", record.sequence),
+                "evidence_packet payload is missing record_refs array",
+                "rebuild the evidence packet from immutable ledger records before export",
+            )
+        })?;
+    for item in refs {
+        if item.get("role").and_then(Value::as_str) == Some(role) {
+            let sequence = item
+                .get("sequence")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| {
+                    BlackboxError::evidence_integrity(
+                        "EPISODE_SOURCE_SCHEMA_INVALID",
+                        source_of_truth(ledger_path),
+                        format!(
+                            "ledger_records[{}].payload.record_refs.{role}.sequence",
+                            record.sequence
+                        ),
+                        "evidence record reference is missing sequence",
+                        "rebuild the evidence packet from immutable ledger records before export",
+                    )
+                })?;
+            return Ok(Some(sequence));
+        }
+    }
+    Ok(None)
+}
+
+fn row_sequence_range(records: &[Option<&LedgerRecordOutput>]) -> BbxResult<(i64, i64)> {
+    let sequences = records
+        .iter()
+        .filter_map(|record| record.map(|record| record.sequence))
+        .collect::<Vec<_>>();
+    let Some(min) = sequences.iter().min().copied() else {
+        return Err(BlackboxError::invalid(
+            "episode row has no source ledger records",
+            "report this as a bug; episode rows must be built from physical ledger rows",
+        ));
+    };
+    let max = sequences
+        .iter()
+        .max()
+        .copied()
+        .expect("non-empty sequence list has max");
+    Ok((min, max))
+}
+
+fn exported_sequence_range(rows: &[Value]) -> BbxResult<(i64, i64)> {
+    let mut min_sequence: Option<i64> = None;
+    let mut max_sequence: Option<i64> = None;
+    for row in rows {
+        let range = row
+            .pointer("/source/ledger_sequence_range")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                BlackboxError::invalid(
+                    "episode row is missing source.ledger_sequence_range",
+                    "report this as a bug; episode rows must include a physical ledger sequence range",
+                )
+            })?;
+        if range.len() != 2 {
+            return Err(BlackboxError::invalid(
+                "episode row source.ledger_sequence_range must contain two integers",
+                "report this as a bug; episode rows must include [first_sequence,last_sequence]",
+            ));
+        }
+        let start = range[0].as_i64().ok_or_else(|| {
+            BlackboxError::invalid(
+                "episode row source.ledger_sequence_range[0] must be integer",
+                "report this as a bug; episode rows must include integer sequence bounds",
+            )
+        })?;
+        let end = range[1].as_i64().ok_or_else(|| {
+            BlackboxError::invalid(
+                "episode row source.ledger_sequence_range[1] must be integer",
+                "report this as a bug; episode rows must include integer sequence bounds",
+            )
+        })?;
+        min_sequence = Some(min_sequence.map_or(start, |current| current.min(start)));
+        max_sequence = Some(max_sequence.map_or(end, |current| current.max(end)));
+    }
+    match (min_sequence, max_sequence) {
+        (Some(start), Some(end)) => Ok((start, end)),
+        _ => Err(BlackboxError::invalid(
+            "episode export has no rows",
+            "run verifiers before exporting episodes",
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct EpisodeJsonlReadback {
+    line_count: usize,
+    rows_by_kind: BTreeMap<String, i64>,
+    splits: BTreeMap<String, i64>,
+    first_episode_id: Option<String>,
+    last_episode_id: Option<String>,
+    sha256: String,
+    size_bytes: u64,
+}
+
+fn write_episode_jsonl(path: &Path, rows: &[Value]) -> BbxResult<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, "create episode JSONL", err))?;
+    let mut writer = BufWriter::new(file);
+    for row in rows {
+        serde_json::to_writer(&mut writer, row).map_err(|err| {
+            BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "EPISODE_JSONL_SERIALIZE_FAILED",
+                format!("failed to serialize episode row: {err}"),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("episodes.jsonl".to_string()),
+                "inspect the episode row JSON shape and rerun export",
+            )
+        })?;
+        writer
+            .write_all(b"\n")
+            .map_err(|err| BlackboxError::io(path, "write episode JSONL newline", err))?;
+    }
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "flush episode JSONL", err))?;
+    Ok(())
+}
+
+fn readback_episode_jsonl(path: &Path) -> BbxResult<EpisodeJsonlReadback> {
+    let sha256 = sha256_file(path)?;
+    let size_bytes = fs::metadata(path)
+        .map_err(|err| BlackboxError::io(path, "stat episode JSONL", err))?
+        .len();
+    let file =
+        File::open(path).map_err(|err| BlackboxError::io(path, "open episode JSONL", err))?;
+    let reader = BufReader::new(file);
+    let mut line_count = 0usize;
+    let mut rows_by_kind = BTreeMap::<String, i64>::new();
+    let mut splits = BTreeMap::<String, i64>::new();
+    for split in ["passed", "failed", "blocked", "incident", "edge_case"] {
+        splits.insert(split.to_string(), 0);
+    }
+    let mut first_episode_id = None;
+    let mut last_episode_id = None;
+    for (idx, line_result) in reader.lines().enumerate() {
+        let line =
+            line_result.map_err(|err| BlackboxError::io(path, "read episode JSONL line", err))?;
+        if line.trim().is_empty() {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "EPISODE_JSONL_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("episodes.jsonl:{}", idx + 1),
+                "blank JSONL lines are invalid episode records",
+                "regenerate the export; every line must be one complete JSON object",
+            ));
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            BlackboxError::evidence_integrity_for_connector(
+                "EPISODE_JSONL_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("episodes.jsonl:{}", idx + 1),
+                format!("episode JSONL line does not parse as JSON: {err}"),
+                "regenerate the export; every line must be one complete JSON object",
+            )
+        })?;
+        validate_episode_row(path, idx + 1, &value)?;
+        let episode_id = value["episode_id"]
+            .as_str()
+            .expect("validate_episode_row checked episode_id")
+            .to_string();
+        if first_episode_id.is_none() {
+            first_episode_id = Some(episode_id.clone());
+        }
+        last_episode_id = Some(episode_id);
+        let kind = value["record_kind"]
+            .as_str()
+            .expect("validate_episode_row checked record_kind")
+            .to_string();
+        let split = value["dataset_split"]
+            .as_str()
+            .expect("validate_episode_row checked dataset_split")
+            .to_string();
+        *rows_by_kind.entry(kind).or_insert(0) += 1;
+        *splits.entry(split).or_insert(0) += 1;
+        line_count += 1;
+    }
+    Ok(EpisodeJsonlReadback {
+        line_count,
+        rows_by_kind,
+        splits,
+        first_episode_id,
+        last_episode_id,
+        sha256,
+        size_bytes,
+    })
+}
+
+fn validate_episode_row(path: &Path, line: usize, value: &Value) -> BbxResult<()> {
+    if !value.is_object() {
+        return Err(episode_jsonl_invalid(
+            path,
+            line,
+            "$",
+            "episode row must be a JSON object",
+        ));
+    }
+    if value.get("schema_version").and_then(Value::as_i64) != Some(LEDGER_SCHEMA_VERSION) {
+        return Err(episode_jsonl_invalid(
+            path,
+            line,
+            "schema_version",
+            "episode row schema_version does not match current ledger schema",
+        ));
+    }
+    if value.get("episode_schema_version").and_then(Value::as_i64)
+        != Some(EPISODE_EXPORT_SCHEMA_VERSION)
+    {
+        return Err(episode_jsonl_invalid(
+            path,
+            line,
+            "episode_schema_version",
+            "episode row has unsupported episode schema version",
+        ));
+    }
+    for key in [
+        "record_kind",
+        "dataset_split",
+        "episode_id",
+        "source",
+        "state",
+        "action",
+        "expected_persisted_delta",
+        "actual_readback",
+        "verifier_status",
+    ] {
+        if value.get(key).is_none() {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                key,
+                format!("episode row missing required field {key}"),
+            ));
+        }
+    }
+    match value["record_kind"].as_str() {
+        Some("verified_agent_episode" | "incident_agent_episode") => {}
+        Some(other) => {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                "record_kind",
+                format!("unsupported episode record_kind {other}"),
+            ));
+        }
+        None => {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                "record_kind",
+                "record_kind must be string",
+            ));
+        }
+    }
+    match value["dataset_split"].as_str() {
+        Some("passed" | "failed" | "blocked" | "incident" | "edge_case") => {}
+        Some(other) => {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                "dataset_split",
+                format!("unsupported dataset_split {other}"),
+            ));
+        }
+        None => {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                "dataset_split",
+                "dataset_split must be string",
+            ));
+        }
+    }
+    for pointer in [
+        "/source/evidence_packet_id",
+        "/source/ledger_sequence_range",
+        "/source/ledger_tip_sha256_at_export",
+        "/verifier_status/status",
+    ] {
+        if value.pointer(pointer).is_none() {
+            return Err(episode_jsonl_invalid(
+                path,
+                line,
+                pointer,
+                format!("episode row missing required pointer {pointer}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn episode_jsonl_invalid(
+    path: &Path,
+    line: usize,
+    field: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "EPISODE_JSONL_INVALID",
+        FS_CONNECTOR_ID,
+        file_source_of_truth(path),
+        format!("episodes.jsonl:{line}:{}", field.into()),
+        message,
+        "regenerate the export and inspect the named JSONL field",
+    )
+}
+
+fn write_eval_fixtures(evals_dir: &Path, rows: &[Value]) -> BbxResult<Vec<Value>> {
+    let mut fixtures = Vec::new();
+    for row in rows {
+        let split = row
+            .get("dataset_split")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        if split == "passed" {
+            continue;
+        }
+        let error_code = row
+            .get("error_code")
+            .and_then(Value::as_str)
+            .unwrap_or("UNKNOWN_ERROR");
+        let episode_id = row
+            .get("episode_id")
+            .and_then(Value::as_str)
+            .unwrap_or("episode_unknown");
+        let file_name = format!(
+            "{:04}_{}_{}.json",
+            fixtures.len() + 1,
+            safe_filename_fragment(split),
+            safe_filename_fragment(error_code)
+        );
+        let path = evals_dir.join(file_name);
+        let fixture = json!({
+            "format": "blackbox_eval_fixture_json_v1",
+            "schema_version": EPISODE_EXPORT_SCHEMA_VERSION,
+            "generated_from_episode_id": episode_id,
+            "dataset_split": split,
+            "evidence_packet_id": row.pointer("/source/evidence_packet_id").cloned().unwrap_or(Value::Null),
+            "source_of_truth": row.get("source").cloned().unwrap_or(Value::Null),
+            "input": {
+                "state": row.get("state").cloned().unwrap_or(Value::Null),
+                "action": row.get("action").cloned().unwrap_or(Value::Null),
+                "expected_persisted_delta": row.get("expected_persisted_delta").cloned().unwrap_or(Value::Null),
+                "actual_readback": row.get("actual_readback").cloned().unwrap_or(Value::Null),
+            },
+            "expected": {
+                "verifier_status": row.get("verifier_status").cloned().unwrap_or(Value::Null),
+                "error_code": row.get("error_code").cloned().unwrap_or(Value::Null),
+                "remediation": row.get("remediation").cloned().unwrap_or(Value::Null),
+            }
+        });
+        write_json_file_new(&path, &fixture, "episode eval fixture")?;
+        let readback = read_json_file(&path, "episode eval fixture readback")?;
+        if readback["format"] != "blackbox_eval_fixture_json_v1" {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "EPISODE_EVAL_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                "format",
+                "eval fixture readback did not preserve expected format",
+                "delete the corrupt export and rerun after inspecting filesystem/storage consistency",
+            ));
+        }
+        fixtures.push(json!({
+            "path": path,
+            "sha256": sha256_file(&path)?,
+            "bytes": fs::metadata(&path).map_err(|err| BlackboxError::io(&path, "stat eval fixture", err))?.len(),
+            "dataset_split": split,
+            "error_code": error_code,
+            "episode_id": episode_id,
+        }));
+    }
+    Ok(fixtures)
+}
+
+fn build_episodes_manifest(
+    args: &ExportEpisodesArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    episodes_path: &Path,
+    readback: &EpisodeJsonlReadback,
+    eval_fixtures: &[Value],
+    sequence_range: (i64, i64),
+) -> Value {
+    json!({
+        "status": "ok",
+        "format": "blackbox_episodes_manifest_json_v1",
+        "schema_version": EPISODE_EXPORT_SCHEMA_VERSION,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count": inspection.record_count,
+            "ledger_sequence_range": [sequence_range.0, sequence_range.1],
+            "ledger_tip_sha256_at_export": inspection.ledger_tip_sha256,
+        },
+        "output": {
+            "directory": args.out,
+            "episodes_jsonl": episodes_path,
+            "episodes_sha256": readback.sha256,
+            "source_sha256": readback.sha256,
+            "episodes_bytes": readback.size_bytes,
+            "readback": readback,
+        },
+        "counts": {
+            "episodes_total": readback.line_count,
+            "rows_by_kind": readback.rows_by_kind,
+            "splits": readback.splits,
+        },
+        "evals": {
+            "directory": episodes_path.parent().unwrap_or_else(|| Path::new(".")).join("evals"),
+            "fixture_count": eval_fixtures.len(),
+            "fixtures": eval_fixtures,
+        },
+    })
+}
+
+fn write_json_file_new(path: &Path, value: &Value, label: &'static str) -> BbxResult<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let mut writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(&mut writer, value).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_JSON_SERIALIZE_FAILED",
+            format!("{label}: {err}"),
+            Some(file_source_of_truth(path)),
+            FS_CONNECTOR_ID,
+            Some(path.display().to_string()),
+            "inspect the export JSON value and rerun",
+        )
+    })?;
+    writer
+        .write_all(b"\n")
+        .map_err(|err| BlackboxError::io(path, "write JSON file newline", err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "flush JSON file", err))?;
+    Ok(())
+}
+
+fn read_json_file(path: &Path, label: &'static str) -> BbxResult<Value> {
+    let bytes = fs::read(path).map_err(|err| BlackboxError::io(path, label, err))?;
+    serde_json::from_slice(&bytes).map_err(|err| {
+        BlackboxError::evidence_integrity_for_connector(
+            "BBX_JSON_READBACK_INVALID",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            format!("{label} does not parse as JSON after write: {err}"),
+            "delete the corrupt export and rerun after inspecting filesystem/storage consistency",
+        )
+    })
+}
+
+fn sha256_file(path: &Path) -> BbxResult<String> {
+    let bytes =
+        fs::read(path).map_err(|err| BlackboxError::io(path, "read file for sha256", err))?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn export_temp_dir(path: &Path) -> PathBuf {
+    PathBuf::from(format!(
+        "{}.tmp-{}",
+        path.display(),
+        Uuid::new_v4().simple()
+    ))
+}
+
+fn cleanup_export_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|err| {
+            BlackboxError::io(path, "remove stale episode export temp directory", err)
+        })?;
+    }
+    Ok(())
+}
+
+fn promote_episode_export_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "episode export output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this export directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out).map_err(|err| {
+            BlackboxError::io(out, "replace existing episode export directory", err)
+        })?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote episode export temp directory", err))?;
+    Ok(())
+}
+
+fn safe_filename_fragment(value: &str) -> String {
+    let mut out = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if out.is_empty() {
+        out = "unknown".to_string();
+    }
+    out.truncate(80);
+    out
 }
 
 fn build_run_replay_report(

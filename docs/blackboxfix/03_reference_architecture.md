@@ -17,19 +17,24 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Phase 1 Concrete Layout (shipped)
+## Concrete Layout (shipped through Phase 5)
 
-| Layer | Phase 1 implementation | File path |
+| Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record run`, `record tool-call`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
-| FSV harness | 10 tests against real binary + real SQLite | `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` |
+| Local source readback | Git, filesystem, command connectors | `git_local_v1`, `fs_local_v1`, `cmd_local_v1` |
+| Hosted source readback | GitHub and GitHub Actions connectors | `github_v1`, `gha_v1` |
+| Evidence/replay/export | `evidence_packet`, `incident_packet`, JSON evidence, JSONL episodes, eval fixtures | `blackbox replay`, `blackbox export evidence`, `blackbox export episodes` |
+| FSV harness | Phase 1-5 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything not in the table above is **not yet implemented**. Do not assume it.
+Anything outside Phases 1-5 is **not yet implemented**. Do not assume MCP,
+HTTP API, dashboard, RBAC, or enterprise controls exist until their phase docs
+are marked complete.
 
 ## Components (target architecture)
 

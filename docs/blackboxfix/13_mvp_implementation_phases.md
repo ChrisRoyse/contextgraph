@@ -179,22 +179,42 @@ at `/tmp/bbx-phase4-manual-fsv.M8gObv/evidence-report.json`, parsed as
 `blackbox_evidence_report_json_v1`, and its replay report had
 `evidence_hash_verification.status=passed`.
 
-## Phase 5: Training/Eval Exporter
+## Phase 5: Training/Eval Exporter — DONE (2026-05-02)
 
-Deliverables:
+Deliverables (all shipped):
 
-- `blackbox export episodes` (mirrors
+- `blackbox export episodes --ledger PATH --out DIR [--force]` (mirrors
   `crates/context-graph-cli/src/commands/export_dynamicjepa.rs`);
 - manifest with content sha256 and ledger sequence range;
 - JSONL row validation (re-parse each line);
 - eval fixture generation for failure classes;
-- Phase 5 FSV test (`tests/blackbox_phase5_export_fsv.rs`).
+- Phase 5 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs`).
 
-Exit criteria:
+Exit criteria (verified):
 
 - exported JSONL parses line by line;
 - manifest hash matches file;
 - every row links back to a ledger evidence packet.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase5_export_fsv -- --nocapture
+```
+
+Current result: 4/4 passing. Coverage includes JSONL/manifest/eval happy path,
+output-exists fail-closed behavior, hash-chain tamper blocking, and unverified
+tool-call blocking.
+
+Manual FSV completed against `/tmp/bbx-phase5-manual-fsv.exRXYj/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=2`, `readback_snapshot=2`, `verifier_result=2`,
+`evidence_packet=2`, `incident_packet=1`. The export directory contained
+`episodes.jsonl`, `manifest.json`, and two eval fixtures; direct file readback
+proved 3 JSONL rows with splits `passed=1`, `failed=1`, `incident=1`, and
+manifest/output SHA
+`sha256:c0c4d0a76db8ed18ba2c708208f6556de5040a9854ca51a1cf44f069c53afcda`.
 
 ## Phase 6: MCP Gateway + Policy
 

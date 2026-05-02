@@ -133,6 +133,10 @@ Concretely, that means:
   SQLite rows, verifies replay is read-only by comparing before/after counts,
   writes a real JSON export file, reads the file back from disk, byte-compares
   it, and parses it before success.
+- Phase 5 FSV exports real `episodes.jsonl`, `manifest.json`, and eval
+  fixtures, then reads every file back from disk, re-parses every JSONL line,
+  checks the manifest SHA against actual bytes, and verifies every episode's
+  evidence packet id exists in physical SQLite rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -144,8 +148,9 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4 inputs/outputs are enumerated in
-`23_phase4_state_and_invariants.md`.
+`21_phase2_state_and_invariants.md`. Phase 4/5 inputs/outputs are enumerated
+in `23_phase4_state_and_invariants.md` and
+`24_phase5_state_and_invariants.md`.
 
 A synthetic test must include:
 

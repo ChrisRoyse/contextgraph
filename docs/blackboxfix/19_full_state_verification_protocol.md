@@ -33,8 +33,8 @@ writing a line of code:
 | 1 | SQLite file at `--ledger PATH`, table `ledger_records`, plus `blackbox_metadata` rows for `ledger_record_count` / `ledger_tip_sha256` |
 | 2 | Phase 1 + on-disk Git repository state + filesystem files + test command exit codes |
 | 3 | Phase 2 + GitHub API (PRs, checks, issues) + GitHub Actions API |
-| 4 | Phase 3 + evidence artifact directory + incident packet rows |
-| 5 | Phase 4 + exported `episodes.jsonl` + `manifest.json` on disk |
+| 4 | Phase 3 + evidence/incident packet rows + exported evidence report file |
+| 5 | Phase 4 + exported `episodes.jsonl`, `manifest.json`, and `evals/` on disk |
 | 6 | Phase 5 + MCP tool registry contents + policy decision rows |
 | 7 | Phase 6 + dashboard API responses |
 | 8 | Phase 7 + SSO/SCIM directory state + tenant key store |

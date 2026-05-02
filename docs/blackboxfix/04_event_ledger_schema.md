@@ -112,7 +112,7 @@ reserved for later phases and **must not be invented ad-hoc**:
 | 3 | `policy_decision` | authorization and approval result, reserved for Phase 6 policy work |
 | 4 | `evidence_packet` | exportable proof bundle |
 | 4 | `incident_packet` | high-severity failure bundle |
-| 5 | `episode_record` | training/eval export row |
+| 5 | `episode_record` | reserved future ledger-side export audit row; Phase 5 currently emits JSONL rows outside the ledger |
 | 6 | `model_decision` | model output, tool choice, confidence, policy context |
 | 6 | `agent_step` | one reasoning/action step inside a run |
 
@@ -369,7 +369,8 @@ governed-mode phases may add blocked-policy incidents.
   result links to the source-of-truth snapshots it used.
 - Every evidence packet must be verifiable from physical ledger records and
   hashes; Phase 4 replay enforces this.
-- Every exported training row must link back to immutable evidence (Phase 5).
+- Every exported training/eval JSONL row must link back to immutable evidence;
+  Phase 5 enforces this in `blackbox export episodes`.
 - The append-only triggers must be **present and enabled** on every read; the
   Phase 1 FSV tests `phase1_append_only_trigger_blocks_direct_update` and
   `phase1_schema_validation_rejects_noop_append_only_trigger` prove this
