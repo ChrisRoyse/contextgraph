@@ -1,15 +1,18 @@
 # 23 - CI Smoke Regression And Drift Detection
 
-## Reference Release Pinning (v1.0.0-rc5)
+## Reference Release Pinning (v2.0.0-rc1)
 
 The drift gate compares against the published reference release:
 
-- Zenodo DOI: [`10.5281/zenodo.19953951`](https://doi.org/10.5281/zenodo.19953951)
-- Release archive sha256: `8cccf4980893fe949db9b50b8111e592e72ab8419438c4cd08e10c8974943ecd`
-- Docker Hub image: `leapable/contextgraph-mejepa@sha256:b4883b0ff6867348f96ec453fad452e5292ba187590a84c9fde7fba4fc9c362e`
-- Apptainer SIF sha256: `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825`
+- Zenodo DOI: [`10.5281/zenodo.19977981`](https://doi.org/10.5281/zenodo.19977981)
+- Zenodo concept DOI: [`10.5281/zenodo.19953950`](https://doi.org/10.5281/zenodo.19953950)
+- Release archive sha256: `91461515e29c851017ef9bdd5fb584ed6bc404abedca52be4b8107fb3d4b1a01`
+- Docker image tar sha256: `830304d56887b54d72c34f51c05176f2c39557e97829468fab379f403ae1940b`
+- Apptainer SIF sha256: `78c87c55406996d711f4ecff7c12fe66610dc8d53110766784cf7ed80f386bad`
+- Pairwise MI audit sha256: `06506ebc1fffcb171cbbe2e9146f1916c5fb7568772710b86aac0bb56e33c064`
+- Public download FSV: `docs/5090jepa/smokedocs/reports/20260502_zenodo_v2_release_fsv.md`
 
-`reference/reference_release_v1.0.0.json` is the canonical hash bundle the gate
+`reference/reference_release_v2.0.0.json` is the canonical hash bundle the gate
 diffs against. It must not be regenerated as part of a routine CI run; it
 changes only when the release reference itself intentionally changes.
 

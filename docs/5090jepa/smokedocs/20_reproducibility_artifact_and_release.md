@@ -1,6 +1,26 @@
 # 20 - Reproducibility Artifact And Release
 
-## Published Release (v1.0.0-rc5)
+## Latest Published Release (v2.0.0-rc1)
+
+| Asset | Identifier |
+| --- | --- |
+| Zenodo DOI | [`10.5281/zenodo.19977981`](https://doi.org/10.5281/zenodo.19977981) |
+| Zenodo record | https://zenodo.org/records/19977981 |
+| Zenodo concept DOI | [`10.5281/zenodo.19953950`](https://doi.org/10.5281/zenodo.19953950) |
+| Release archive | `mejepa_5090_artifact_v2.0.0_rc1.tar.gz` (sha256 `91461515e29c851017ef9bdd5fb584ed6bc404abedca52be4b8107fb3d4b1a01`) |
+| Docker image tar | `container/contextgraph-mejepa.docker.tar` (sha256 `830304d56887b54d72c34f51c05176f2c39557e97829468fab379f403ae1940b`) |
+| Apptainer SIF | `container/contextgraph-mejepa.sif` (sha256 `78c87c55406996d711f4ecff7c12fe66610dc8d53110766784cf7ed80f386bad`) |
+| Reference | `reference_release_v2.0.0.json` (sha256 `70eebc518feb8786c006cbc02bd4df00bebaa42ac29fdc6998d60da74acd9b57`) |
+| Local binary | `bin/context-graph` (sha256 `e6013ccb72e1878e6229e5e43c8d317b5db5c46ba794b99bdbbe91a942589494`) |
+| Pairwise MI audit | `pairwise_mi_audit.json` (sha256 `06506ebc1fffcb171cbbe2e9146f1916c5fb7568772710b86aac0bb56e33c064`) |
+| License | PolyForm-Noncommercial-1.0.0 |
+
+The v2 DOI is the current citation source of truth. The published Zenodo
+archive was downloaded from the public record after publication and verified
+byte-for-byte against the local upload source and SHA-256 checksum. Evidence:
+`docs/5090jepa/smokedocs/reports/20260502_zenodo_v2_release_fsv.md`.
+
+## Previous Published Release (v1.0.0-rc5)
 
 | Asset | Identifier |
 | --- | --- |
@@ -12,9 +32,8 @@
 | Apptainer SIF | sha256 `30b531c77966c46524383adcceea9de7983ee251935a68740c2f3009695f2825` |
 | License | PolyForm-Noncommercial-1.0.0 |
 
-The DOI is the citation source of truth. The Docker registry digest is immutable
-and is the citable reference for the runtime image; mutable tags must not be
-treated as the source of truth.
+The v1 DOI remains the source of truth for the earlier v1 archive. The v2
+record above is the current release pin for release-D.
 
 ## Goal
 

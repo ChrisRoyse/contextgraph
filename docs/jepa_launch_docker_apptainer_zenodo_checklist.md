@@ -5,6 +5,20 @@ DynamicJEPA / ME-JEPA artifact ready for public launch.
 
 ## Current Launch State
 
+Latest published v2 release:
+
+```text
+Zenodo DOI: 10.5281/zenodo.19977981
+Zenodo record: https://zenodo.org/records/19977981
+Version: v2.0.0-rc1
+Release archive: mejepa_5090_artifact_v2.0.0_rc1.tar.gz
+Archive SHA-256: 91461515e29c851017ef9bdd5fb584ed6bc404abedca52be4b8107fb3d4b1a01
+Docker tar SHA-256: 830304d56887b54d72c34f51c05176f2c39557e97829468fab379f403ae1940b
+SIF SHA-256: 78c87c55406996d711f4ecff7c12fe66610dc8d53110766784cf7ed80f386bad
+Publication date: 2026-05-02
+Public download FSV: docs/5090jepa/smokedocs/reports/20260502_zenodo_v2_release_fsv.md
+```
+
 Current local release candidate:
 
 ```text
@@ -244,9 +258,17 @@ archive contains Docker tar, SIF, SIF verification evidence, reference hashes,
 and archive file hashes
 ```
 
-## Zenodo: Not Done
+## Zenodo: Published For v2
 
-Zenodo is the remaining public-launch blocker.
+The latest v2 release is published and publicly verified. See
+`docs/5090jepa/smokedocs/reports/20260502_zenodo_v2_release_fsv.md` for the
+API readback, remote MD5 comparison, downloaded checksum comparison, and full
+downloaded archive SHA-256 verification.
+
+The historical v1 checklist notes below are retained for provenance.
+
+Zenodo was the remaining public-launch blocker for the earlier v1 local release
+candidate.
 
 Needed inputs:
 
@@ -309,4 +331,3 @@ Launch is ready only when all of these are true:
 - Downloaded Zenodo archive hash matches local archive hash.
 - The paper or launch page states the safe claim only: public O*NET taxonomy
   demo, not real recruiting prediction.
-

@@ -33,6 +33,14 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def md5_file(path: Path) -> str:
+    digest = hashlib.md5(usedforsecurity=False)
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def read_token(token_stdin: bool) -> str:
     token = os.environ.get("ZENODO_ACCESS_TOKEN", "")
     if token_stdin:
@@ -227,7 +235,15 @@ def verify_uploaded_files(
             )
         checksum = actual.get("checksum") or ""
         if checksum.startswith("md5:"):
-            continue
+            actual_md5 = checksum.removeprefix("md5:")
+        elif checksum:
+            actual_md5 = checksum
+        else:
+            raise ZenodoError(f"ZENODO_UPLOAD_CHECKSUM_MISSING: {name}")
+        if actual_md5 != expected["md5"]:
+            raise ZenodoError(
+                f"ZENODO_UPLOAD_MD5_DRIFT: {name} expected={expected['md5']} actual={actual_md5}"
+            )
 
 
 def cmd_new_version(args: argparse.Namespace) -> None:
@@ -292,8 +308,16 @@ def cmd_publish_release(args: argparse.Namespace) -> None:
         expected={200},
     )
     expected_files = {
-        archive.name: {"size": archive.stat().st_size, "sha256": sha256_file(archive)},
-        checksums.name: {"size": checksums.stat().st_size, "sha256": sha256_file(checksums)},
+        archive.name: {
+            "size": archive.stat().st_size,
+            "sha256": sha256_file(archive),
+            "md5": md5_file(archive),
+        },
+        checksums.name: {
+            "size": checksums.stat().st_size,
+            "sha256": sha256_file(checksums),
+            "md5": md5_file(checksums),
+        },
     }
     verify_uploaded_files(readback, expected_files)
     readback_summary = sanitize_record(readback)
@@ -305,6 +329,49 @@ def cmd_publish_release(args: argparse.Namespace) -> None:
         print(json.dumps(sanitize_record(published), indent=2, sort_keys=True))
     else:
         print(json.dumps(readback_summary, indent=2, sort_keys=True))
+
+
+def cmd_publish_draft(args: argparse.Namespace) -> None:
+    archive = Path(args.archive)
+    checksums = Path(args.checksums)
+    for path in [archive, checksums]:
+        if not path.is_file():
+            raise ZenodoError(f"ZENODO_INPUT_MISSING: {path}")
+    token = read_token(args.token_stdin)
+    session = requests.Session()
+    session.headers.update({"Authorization": f"Bearer {token}"})
+
+    _, draft = request_json(
+        session,
+        "GET",
+        f"{args.base_url}/api/deposit/depositions/{args.draft_id}",
+        expected={200},
+    )
+    if draft.get("submitted") is not False:
+        raise ZenodoError("ZENODO_DRAFT_ALREADY_SUBMITTED: refusing to publish non-draft deposition")
+
+    expected_files = {
+        archive.name: {
+            "size": archive.stat().st_size,
+            "sha256": sha256_file(archive),
+            "md5": md5_file(archive),
+        },
+        checksums.name: {
+            "size": checksums.stat().st_size,
+            "sha256": sha256_file(checksums),
+            "md5": md5_file(checksums),
+        },
+    }
+    verify_uploaded_files(draft, expected_files)
+    readback_summary = sanitize_record(draft)
+    readback_summary["expected_files"] = expected_files
+    write_json(Path(args.evidence_dir) / "zenodo_pre_publish_readback_summary.json", readback_summary)
+
+    published = publish(session, args.base_url, args.draft_id)
+    write_json(Path(args.evidence_dir) / "zenodo_publish_response.json", published)
+    published_summary = sanitize_record(published)
+    write_json(Path(args.evidence_dir) / "zenodo_publish_summary.json", published_summary)
+    print(json.dumps(published_summary, indent=2, sort_keys=True))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -327,6 +394,13 @@ def build_parser() -> argparse.ArgumentParser:
     publish_release.add_argument("--evidence-dir", required=True)
     publish_release.add_argument("--publish", action="store_true")
     publish_release.set_defaults(func=cmd_publish_release)
+
+    publish_draft = subparsers.add_parser("publish-draft")
+    publish_draft.add_argument("--draft-id", required=True)
+    publish_draft.add_argument("--archive", required=True)
+    publish_draft.add_argument("--checksums", required=True)
+    publish_draft.add_argument("--evidence-dir", required=True)
+    publish_draft.set_defaults(func=cmd_publish_draft)
     return parser
 
 
