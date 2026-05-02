@@ -204,6 +204,20 @@ def update_metadata(
     return updated
 
 
+def edit_published_record(
+    session: requests.Session,
+    base_url: str,
+    record_id: str,
+) -> dict[str, Any]:
+    _, draft = request_json(
+        session,
+        "POST",
+        f"{base_url}/api/deposit/depositions/{record_id}/actions/edit",
+        expected={201, 202},
+    )
+    return draft
+
+
 def publish(session: requests.Session, base_url: str, draft_id: str) -> dict[str, Any]:
     _, published = request_json(
         session,
@@ -212,6 +226,43 @@ def publish(session: requests.Session, base_url: str, draft_id: str) -> dict[str
         expected={202, 201, 200},
     )
     return published
+
+
+def verify_metadata_readback(record: dict[str, Any], expected_metadata: dict[str, Any]) -> None:
+    metadata = record.get("metadata", {})
+    for field in ["title", "description", "version", "publication_date", "access_right", "license"]:
+        if metadata.get(field) != expected_metadata.get(field):
+            raise ZenodoError(
+                f"ZENODO_METADATA_READBACK_DRIFT: {field} expected={expected_metadata.get(field)!r} actual={metadata.get(field)!r}"
+            )
+    if metadata.get("keywords") != expected_metadata.get("keywords"):
+        raise ZenodoError("ZENODO_METADATA_KEYWORDS_DRIFT")
+
+
+def public_record_readback(
+    base_url: str,
+    record_id: str,
+    expected_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    last_record: dict[str, Any] | None = None
+    for _ in range(24):
+        response = requests.get(f"{base_url}/api/records/{record_id}", timeout=60)
+        if response.status_code == 200:
+            record = response.json()
+            last_record = record
+            metadata = record.get("metadata", {})
+            if (
+                metadata.get("title") == expected_metadata.get("title")
+                and metadata.get("description") == expected_metadata.get("description")
+                and metadata.get("version") == expected_metadata.get("version")
+            ):
+                return record
+        time.sleep(5)
+    raise ZenodoError(
+        "ZENODO_PUBLIC_METADATA_READBACK_TIMEOUT: public record did not expose updated metadata"
+        if last_record is None
+        else f"ZENODO_PUBLIC_METADATA_READBACK_TIMEOUT: last title={last_record.get('metadata', {}).get('title')!r}"
+    )
 
 
 def verify_uploaded_files(
@@ -374,6 +425,48 @@ def cmd_publish_draft(args: argparse.Namespace) -> None:
     print(json.dumps(published_summary, indent=2, sort_keys=True))
 
 
+def cmd_edit_metadata(args: argparse.Namespace) -> None:
+    metadata_path = Path(args.metadata)
+    if not metadata_path.is_file():
+        raise ZenodoError(f"ZENODO_INPUT_MISSING: {metadata_path}")
+    metadata = json.loads(metadata_path.read_text())
+    token = read_token(args.token_stdin)
+    session = requests.Session()
+    session.headers.update({"Authorization": f"Bearer {token}"})
+
+    _, before = request_json(
+        session,
+        "GET",
+        f"{args.base_url}/api/deposit/depositions/{args.record_id}",
+        expected={200},
+    )
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_before.json", before)
+
+    if before.get("state") == "inprogress":
+        draft = before
+    else:
+        draft = edit_published_record(session, args.base_url, args.record_id)
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_draft.json", draft)
+    draft_id = str(draft.get("id") or args.record_id)
+    if draft.get("state") != "inprogress":
+        raise ZenodoError(
+            f"ZENODO_METADATA_EDIT_DRAFT_NOT_OPEN: expected state=inprogress, got {draft.get('state')!r}"
+        )
+
+    updated = update_metadata(session, args.base_url, draft_id, metadata)
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_after_put.json", updated)
+    verify_metadata_readback(updated, metadata)
+
+    published = publish(session, args.base_url, draft_id)
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_publish_response.json", published)
+    public_readback = public_record_readback(args.base_url, args.record_id, metadata)
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_public_readback.json", public_readback)
+    summary = sanitize_record(public_readback)
+    summary["description_length"] = len(public_readback.get("metadata", {}).get("description") or "")
+    write_json(Path(args.evidence_dir) / "zenodo_metadata_edit_summary.json", summary)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="https://zenodo.org")
@@ -401,6 +494,12 @@ def build_parser() -> argparse.ArgumentParser:
     publish_draft.add_argument("--checksums", required=True)
     publish_draft.add_argument("--evidence-dir", required=True)
     publish_draft.set_defaults(func=cmd_publish_draft)
+
+    edit_metadata = subparsers.add_parser("edit-metadata")
+    edit_metadata.add_argument("--record-id", required=True)
+    edit_metadata.add_argument("--metadata", required=True)
+    edit_metadata.add_argument("--evidence-dir", required=True)
+    edit_metadata.set_defaults(func=cmd_edit_metadata)
     return parser
 
 
