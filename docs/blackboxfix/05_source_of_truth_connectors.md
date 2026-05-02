@@ -4,9 +4,11 @@ Connectors define how BlackBoxFix reads and verifies real systems. A connector
 is not just a tool wrapper. It must provide **independent readback** and
 explicit evidence extraction.
 
-Phase 2 ships four local connectors: `sqlite_local_v1` (the ledger itself),
-`git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 ships read-only
-GitHub + GitHub Actions readbacks: `github_v1` and `gha_v1`.
+Phase 2 shipped four local connectors: `sqlite_local_v1` (the ledger itself),
+`git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 shipped read-only
+GitHub + GitHub Actions readbacks: `github_v1` and `gha_v1`. Phase 4 reuses
+those connectors and adds replay/export behavior over the SQLite and
+filesystem sources of truth.
 
 ## Connector Contract
 

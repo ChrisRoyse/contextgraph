@@ -74,8 +74,9 @@ Deliverables (all shipped):
   `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
-  `verifier_result` (bumps `LEDGER_SCHEMA_VERSION` to 2 and **wipes** the
-  ledger — no migration shim).
+  `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
+  **wiped** the ledger — no migration shim; current shipped schema is v3 after
+  Phase 4).
 
 Exit criteria (verified):
 
@@ -136,24 +137,47 @@ checks covering missing targets, stale/wrong expectations, PR-vs-issue
 ambiguity, and schema blocks.
 
 Manual FSV completed against `/tmp/bbx-phase3-manual-fsv.KZAAKb/fsv.log`.
-Final physical SQLite state: `agent_run=1`, `tool_call=1`,
-`expected_delta=8`, `readback_snapshot=7`, `verifier_result=8`. The blocked
-schema edge intentionally wrote no `readback_snapshot`.
+Final physical SQLite state at Phase 3 completion: `agent_run=1`,
+`tool_call=1`, `expected_delta=8`, `readback_snapshot=7`,
+`verifier_result=8`. The blocked schema edge intentionally wrote no
+`readback_snapshot`. Current Phase 4 tests also prove Phase 3 verifiers now
+append evidence packets under schema v3.
 
-## Phase 4: Evidence Packets And Replay
+## Phase 4: Evidence Packets And Replay — DONE (2026-05-02)
 
-Deliverables:
+Deliverables (all shipped):
 
 - evidence packet builder (`evidence_packet` record kind);
-- forensic replay timeline reader;
+- forensic replay timeline reader (`blackbox replay --ledger PATH --run-id RUN_ID`);
 - incident packet generation (`incident_packet` record kind);
-- JSON/PDF-ready audit export.
+- JSON/PDF-ready audit export
+  (`blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE`);
+- schema bump to `LEDGER_SCHEMA_VERSION = 3`; old v1/v2 ledgers are wiped on
+  init, never migrated in-place.
 
-Exit criteria:
+Exit criteria (verified):
 
 - failed verifier produces an incident packet;
 - replay reconstructs full run without mutation;
 - evidence hashes verify against ledger records.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase4_fsv -- --nocapture
+```
+
+Current result: 4/4 passing. Coverage includes passed verifier evidence,
+failed verifier incident creation, read-only replay, export file write +
+readback + JSON parse, and edge cases for missing run and invalid export path.
+
+Manual FSV completed against `/tmp/bbx-phase4-manual-fsv.M8gObv/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=2`, `readback_snapshot=2`, `verifier_result=2`,
+`evidence_packet=2`, `incident_packet=1`. The exported evidence file existed
+at `/tmp/bbx-phase4-manual-fsv.M8gObv/evidence-report.json`, parsed as
+`blackbox_evidence_report_json_v1`, and its replay report had
+`evidence_hash_verification.status=passed`.
 
 ## Phase 5: Training/Eval Exporter
 

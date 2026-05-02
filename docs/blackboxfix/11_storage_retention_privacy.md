@@ -20,13 +20,15 @@ The ledger holds:
 - expected deltas (Phase 2);
 - readback snapshots (Phase 2);
 - verifier results (Phase 2);
+- evidence packets (Phase 4);
 - policy decisions (Phase 6);
 - incident packets (Phase 4);
 - export manifests (Phase 5).
 
 ### Evidence Artifact Store (Phase 4)
 
-Large or sensitive artifacts:
+Phase 4 ships local JSON evidence export files. Larger or sensitive artifacts
+are reserved for later connector/export phases:
 
 - redacted logs;
 - test reports;
@@ -35,8 +37,10 @@ Large or sensitive artifacts:
 - screenshots if UI automation is used;
 - signed audit packets.
 
-Artifact records store SHA-256 hashes, MIME types, sizes, and retention
-policies. The ledger holds only the hash + locator.
+Artifact records must store SHA-256 hashes, MIME types, sizes, and retention
+policies. The ledger should hold only the hash + locator. Phase 4 already
+applies this discipline to exported evidence reports by writing the file,
+reading it back, byte-comparing it, parsing the JSON, and returning its SHA-256.
 
 ### Index Store (Phase 7)
 
@@ -114,7 +118,7 @@ The platform fails closed if:
 
 - ledger write fails — Phase 1 already aborts the SQLite transaction and
   surfaces `BBX_SQLITE_ERROR`.
-- evidence artifact hash cannot be computed — Phase 4.
+- evidence export hash/readback cannot be computed — Phase 4.
 - redaction policy fails — Phase 1: `BBX_REDACTION_VIOLATION` (no row written).
 - schema validation fails — Phase 1: `BBX_SCHEMA_VALIDATION_FAILED` /
   `BBX_INPUT_SCHEMA_INVALID` / `BBX_INPUT_JSON_INVALID`.

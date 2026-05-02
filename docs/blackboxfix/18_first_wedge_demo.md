@@ -3,10 +3,9 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-This demo lands at the **end of Phase 3** (Git + GitHub + CI verifiers). Until
-then, demonstrate Phase 1 directly with the synthetic flow in
-`20_phase1_state_and_invariants.md` to show the recording / hash-chain /
-redaction primitives.
+The CLI demo is now viable through **Phase 4**: Git + GitHub + CI verifiers,
+evidence packets, forensic replay, and evidence export. Phase 5 will add the
+episode exporter.
 
 ## Demo Thesis
 
@@ -134,15 +133,18 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 3 target)
+## Demo Commands (Phase 4 shipped surface)
 
 ```bash
+ledger=/tmp/bbx-demo.sqlite
 context-graph blackbox connector test --connector github_v1 --source org/service
-context-graph blackbox verify --run-id RUN
-context-graph blackbox replay --run-id RUN
-context-graph blackbox export evidence --run-id RUN --out evidence.json
-context-graph blackbox export episodes --run-id RUN --out episodes.jsonl
+context-graph blackbox verify --ledger "$ledger" --input verify-spec.json
+context-graph blackbox replay --ledger "$ledger" --run-id "$RUN"
+context-graph blackbox export evidence --ledger "$ledger" --run-id "$RUN" --out evidence.json
 ```
+
+`blackbox export episodes` is Phase 5; keep it in the demo script only after
+the Phase 5 exporter ships.
 
 ## Evidence To Show Buyer
 

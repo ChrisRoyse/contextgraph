@@ -667,6 +667,8 @@ fn phase3_live_github_and_actions_fsv() {
     assert_kind_count(&case.ledger, "expected_delta", 5);
     assert_kind_count(&case.ledger, "readback_snapshot", 5);
     assert_kind_count(&case.ledger, "verifier_result", 5);
+    assert_kind_count(&case.ledger, "evidence_packet", 5);
+    assert_kind_count(&case.ledger, "incident_packet", 0);
     let readback = latest_payload(&case.ledger, "readback_snapshot");
     assert_eq!(readback["source_of_truth"]["kind"], "gha_v1");
 
@@ -849,4 +851,6 @@ fn phase3_live_github_and_actions_fsv() {
     assert_kind_count(&case.ledger, "expected_delta", 20);
     assert_kind_count(&case.ledger, "readback_snapshot", 16);
     assert_kind_count(&case.ledger, "verifier_result", 20);
+    assert_kind_count(&case.ledger, "evidence_packet", 20);
+    assert_kind_count(&case.ledger, "incident_packet", 11);
 }

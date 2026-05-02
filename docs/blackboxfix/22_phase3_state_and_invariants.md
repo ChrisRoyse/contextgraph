@@ -11,9 +11,10 @@ implementation.
 | GitHub PRs/issues/branches/check suites | GitHub REST API for the target `OWNER/REPO` |
 | GitHub Actions runs | GitHub REST API workflow-run endpoints for the target `OWNER/REPO` |
 
-Phase 3 reuses `LEDGER_SCHEMA_VERSION = 2`; it adds no new record kinds.
-`blackbox verify` still writes `expected_delta`, `readback_snapshot` when a
-source read occurred, and `verifier_result`.
+Phase 3 reused `LEDGER_SCHEMA_VERSION = 2`; it added no new record kinds. The
+current live ledger schema is `LEDGER_SCHEMA_VERSION = 3` after Phase 4.
+`blackbox verify` writes `expected_delta`, `readback_snapshot` when a source
+read occurred, `verifier_result`, and then Phase 4 evidence packet rows.
 
 ## Shipped Connectors
 

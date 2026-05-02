@@ -54,13 +54,19 @@ Design implication:
 
 ### W3C PROV
 
-Reference: <https://www.w3.org/TR/prov-dm/>
+References:
+
+- <https://www.w3.org/TR/prov-overview/>
+- <https://www.w3.org/TR/prov-dm/>
 
 Design implication:
 
 - model provenance with entities, activities, and agents;
 - represent tool calls as activities and source-of-truth records as entities;
 - preserve responsibility and derivation across runs.
+- Phase 4 evidence packets include a W3C-PROV-inspired `provenance` object
+  and physical ledger row references so quality/reliability assessment is
+  grounded in durable records, not CLI return values.
 
 ### OpenLineage
 
@@ -74,23 +80,35 @@ Design implication:
 
 ### in-toto
 
-Reference: <https://in-toto.io/>
+References:
+
+- <https://in-toto.io/>
+- <https://github.com/in-toto/attestation/tree/main/spec>
 
 Design implication:
 
 - use supply-chain style metadata for who did what, in what order;
 - make action chains transparent;
 - consider signed attestations for evidence packets (Phase 4/5).
+- Phase 4 keeps evidence packets structured as explicit subject-like record
+  references plus predicate-like verifier details, leaving room for a future
+  signed envelope without changing the ledger's proof model.
 
 ### SLSA Provenance
 
-Reference: <https://slsa.dev/spec/v1.0/provenance>
+References:
+
+- <https://slsa.dev/spec/v1.2/provenance>
+- <https://slsa.dev/spec/v1.1/provenance>
 
 Design implication:
 
 - describe how artifacts were produced;
 - let consumers verify that production matched expectations;
 - apply provenance thinking to agent-produced code, config, and reports.
+- Phase 4 replay/export follows the same direction: capture the invocation,
+  source inputs, resolved source-of-truth readbacks, byproduct evidence, and
+  verifier decision so later consumers can inspect how a claim was produced.
 
 ### Model Context Protocol
 

@@ -5,7 +5,9 @@ The verifier is the core product. It converts "the agent said it worked" into
 
 Phase 1 shipped a structural verifier for the ledger (hash-chain integrity
 across the SQLite source of truth). Phase 2 shipped local Git/file/command
-outcome verifiers. Phase 3 ships GitHub/GitHub Actions outcome verifiers.
+outcome verifiers. Phase 3 shipped GitHub/GitHub Actions outcome verifiers.
+Phase 4 shipped evidence packets, incident packets, read-only replay, and
+evidence export.
 
 ## Full-State Verification Protocol
 
@@ -144,25 +146,44 @@ test discovers real GitHub/GHA state, verifies all five happy paths, then
 covers missing targets, stale/wrong expectations, issue/PR ambiguity, and
 schema blocks.
 
-## Evidence Packet (Phase 4 target)
+Phase 4 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
+SQLite ledgers, a real local Git repository, real exported JSON files, and
+direct physical readback to prove replay/export behavior.
+
+## Evidence Packet (Phase 4, shipped)
 
 ```json
 {
+  "record_kind": "evidence_packet",
   "evidence_packet_id": "ev_...",
   "run_id": "run_...",
   "tool_call_id": "tool_...",
+  "verifier_id": "git_branch_exists_v1",
   "verifier_result_id": "verify_...",
+  "verifier_status": "passed|failed|blocked",
   "source_of_truth": [{
-    "kind": "github",
-    "locator": "github:org/service/pull/123",
-    "read_at": "RFC3339",
-    "state_hash": "sha256:..."
+    "kind": "git_local_v1",
+    "locator": "git:/tmp/repo#refs/heads/main"
   }],
-  "before_state_hash": "sha256:...",
-  "after_state_hash": "sha256:...",
-  "verdict": "passed"
+  "record_refs": [{
+    "sequence": 1,
+    "record_id": "bbx_rec_...",
+    "record_kind": "agent_run",
+    "payload_sha256": "sha256:...",
+    "record_sha256": "sha256:..."
+  }],
+  "hashes": {
+    "expected_delta_record_sha256": "sha256:...",
+    "readback_snapshot_record_sha256": "sha256:... | null",
+    "verifier_result_record_sha256": "sha256:..."
+  }
 }
 ```
+
+`blackbox replay` must reject an evidence packet if any referenced physical
+ledger row is missing or has a different `record_kind`, `payload_sha256`, or
+`record_sha256`.
 
 ## Robust Logging
 
@@ -175,7 +196,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -204,10 +225,12 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3 happy paths use real Git/local-command and live GitHub/GHA sources;
-# see tests/blackbox_phase2_fsv.rs, tests/blackbox_phase3_fsv.rs, and
+# Phase 2/3/4 happy paths use real Git/local-command, live GitHub/GHA sources,
+# and real exported evidence files; see tests/blackbox_phase2_fsv.rs,
+# tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
-# docs/blackboxfix/22_phase3_state_and_invariants.md.
+# docs/blackboxfix/22_phase3_state_and_invariants.md /
+# docs/blackboxfix/23_phase4_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

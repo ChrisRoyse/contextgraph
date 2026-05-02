@@ -1,12 +1,13 @@
 # Replay, Forensics, And Incidents
 
 Replay is how users understand what happened after an agent acted. The
-platform must support both deterministic and forensic replay (Phase 4).
+platform supports forensic replay in Phase 4 and may add deterministic replay
+for tightly pinned local workflows later.
 
-Phase 1 already provides a primitive forensic readback: `blackbox inspect
-ledger` returns the full per-record timeline (sequence, kind, hashes,
-redaction report, payload). Phase 4 layers richer evidence packets and
-incident packets on top.
+Phase 1 provides the primitive forensic readback: `blackbox inspect ledger`
+returns the full per-record timeline (sequence, kind, hashes, redaction
+report, payload). Phase 4 ships richer evidence packets, incident packets,
+read-only replay, and JSON evidence export.
 
 ## Replay Modes
 
@@ -44,11 +45,31 @@ Poor candidates (must use forensic replay instead):
 - external SaaS calls with changing state;
 - irreversible actions.
 
+## Shipped Phase 4 Commands
+
+```text
+blackbox replay          --ledger PATH --run-id RUN_ID
+blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE
+```
+
+`blackbox replay` verifies ledger integrity, reconstructs a single run from
+immutable rows, validates every `evidence_packet.record_refs[]` entry against
+physical SQLite rows, and returns a forensic report. It does not mutate the
+ledger or any external source of truth.
+
+`blackbox export evidence` builds the same replay report, writes a JSON report
+to `--out`, immediately reads the file back, byte-compares the readback, and
+parses the JSON before returning success. Directory paths, missing parents,
+readback mismatches, and invalid exported JSON fail closed.
+
 ## Incident Packet (Phase 4)
 
-An incident packet is created when:
+In the shipped Phase 4 implementation, an incident packet is created when:
 
 - verifier status is `failed` on a high-risk action;
+
+Later governed-mode phases may also create incidents when:
+
 - verifier status is `blocked` in governed mode;
 - policy denies an attempted action;
 - the agent accesses a sensitive resource unexpectedly;
@@ -64,8 +85,8 @@ An incident packet is created when:
   "run_id": "run_...",
   "trigger": "verifier_failed",
   "error_code": "CI_REQUIRED_CHECK_FAILED",
-  "timeline": ["rec_1", "rec_2", "rec_3"],
-  "source_of_truth": ["github:org/service/pull/123"],
+  "timeline": ["bbx_rec_1", "bbx_rec_2", "bbx_rec_3"],
+  "source_of_truth": "github:org/service/pull/123",
   "blast_radius": {
     "repos": ["org/service"],
     "tickets": ["SEC-123"],
@@ -92,21 +113,36 @@ The UI (Phase 7) must show:
 The timeline must support filters by: failed verifier, high risk, sensitive
 data touched, unapproved tool, source of truth, connector.
 
-## Replay Output
+## Replay Output (shipped)
 
-Replay must produce a stable, exportable report. Example:
+Replay produces a stable, exportable JSON report. Example shape:
 
-```text
-Run: run_123
-Task: remediate CVE in org/service
-Status: failed
-Failure: CI_REQUIRED_CHECK_FAILED
-
-Step 4: github_create_pull_request
-Expected: PR open and CI passing
-Readback: PR open, unit-tests failed
-Source: github:org/service/actions/runs/456
-Remediation: inspect test artifact artifact_789
+```json
+{
+  "mode": "forensic",
+  "mutates_source_of_truth": false,
+  "summary": {
+    "run_id": "run_123",
+    "status": "failed",
+    "kinds": {
+      "agent_run": 1,
+      "tool_call": 1,
+      "expected_delta": 2,
+      "readback_snapshot": 2,
+      "verifier_result": 2,
+      "evidence_packet": 2,
+      "incident_packet": 1
+    },
+    "first_failure": {
+      "error_code": "CI_REQUIRED_CHECK_FAILED"
+    }
+  },
+  "timeline": [],
+  "incidents": [],
+  "evidence_hash_verification": {
+    "status": "passed"
+  }
+}
 ```
 
 ## Root-Cause Workflow
@@ -126,7 +162,7 @@ The ledger must detect:
 - missing records (gap in `sequence`);
 - modified payloads (`payload_sha256` mismatch);
 - out-of-order records (`previous_record_sha256` mismatch);
-- evidence artifact hash mismatch (Phase 4);
+- evidence packet reference/hash mismatch;
 - broken run hash chain (`run_chain_sha256` mismatch);
 - tenant chain discontinuity (Phase 8).
 

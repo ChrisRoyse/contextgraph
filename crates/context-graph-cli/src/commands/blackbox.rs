@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 2;
+const LEDGER_SCHEMA_VERSION: i64 = 3;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -63,6 +63,13 @@ pub enum BlackboxCommands {
     },
     /// Verify a tool call against local source-of-truth systems.
     Verify(VerifyArgs),
+    /// Reconstruct a run timeline from immutable ledger records without mutation.
+    Replay(ReplayArgs),
+    /// Export BlackBoxFix evidence reports.
+    Export {
+        #[command(subcommand)]
+        action: ExportCommands,
+    },
     /// Inspect physical ledger state.
     Inspect {
         #[command(subcommand)]
@@ -204,6 +211,38 @@ pub struct VerifyArgs {
     /// Optional model identifier.
     #[arg(long)]
     pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ReplayArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id to reconstruct.
+    #[arg(long)]
+    pub run_id: String,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ExportCommands {
+    /// Export a JSON evidence report for a run.
+    Evidence(ExportEvidenceArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ExportEvidenceArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id to export.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Output JSON file path.
+    #[arg(long)]
+    pub out: PathBuf,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -435,6 +474,42 @@ impl BlackboxError {
         )
     }
 
+    fn evidence_integrity(
+        error_code: &'static str,
+        source_of_truth: String,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+    ) -> Self {
+        Self::evidence_integrity_for_connector(
+            error_code,
+            SQLITE_CONNECTOR_ID,
+            source_of_truth,
+            field_path,
+            message,
+            remediation,
+        )
+    }
+
+    fn evidence_integrity_for_connector(
+        error_code: &'static str,
+        connector: &'static str,
+        source_of_truth: String,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+    ) -> Self {
+        Self::new_with_connector(
+            ErrorKind::HashChain,
+            error_code,
+            message,
+            Some(source_of_truth),
+            connector,
+            Some(field_path.into()),
+            remediation,
+        )
+    }
+
     fn verifier_spec(
         path: &Path,
         field_path: impl Into<String>,
@@ -549,6 +624,10 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             RecordCommands::ToolCall(args) => record_tool_call(args),
         },
         BlackboxCommands::Verify(args) => verify_local(args).await,
+        BlackboxCommands::Replay(args) => replay_run(args),
+        BlackboxCommands::Export { action } => match action {
+            ExportCommands::Evidence(args) => export_evidence(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -910,6 +989,109 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
     }))
 }
 
+fn ledger_record_ref_by_run(
+    conn: &Connection,
+    path: &Path,
+    run_id: &str,
+    role: &str,
+) -> BbxResult<Value> {
+    let found: Option<(i64, String, String, String, String)> = conn
+        .query_row(
+            "SELECT sequence, record_id, record_kind, payload_sha256, record_sha256
+             FROM ledger_records
+             WHERE record_kind = 'agent_run' AND run_id = ?1
+             ORDER BY sequence ASC
+             LIMIT 1",
+            params![run_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|err| BlackboxError::sqlite(path, "read agent_run reference", err))?;
+    let Some((sequence, record_id, record_kind, payload_sha256, record_sha256)) = found else {
+        return Err(BlackboxError::not_found(
+            path,
+            format!("run_id {run_id} does not exist in ledger_records"),
+        ));
+    };
+    Ok(ledger_record_ref_json(
+        role,
+        sequence,
+        &record_id,
+        &record_kind,
+        &payload_sha256,
+        &record_sha256,
+    ))
+}
+
+fn ledger_record_ref_by_tool_call(
+    conn: &Connection,
+    path: &Path,
+    tool_call_id: &str,
+    role: &str,
+) -> BbxResult<Value> {
+    let found: Option<(i64, String, String, String, String)> = conn
+        .query_row(
+            "SELECT sequence, record_id, record_kind, payload_sha256, record_sha256
+             FROM ledger_records
+             WHERE record_kind = 'tool_call'
+               AND json_extract(payload_json, '$.tool_call_id') = ?1
+             ORDER BY sequence ASC
+             LIMIT 1",
+            params![tool_call_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|err| BlackboxError::sqlite(path, "read tool_call reference", err))?;
+    let Some((sequence, record_id, record_kind, payload_sha256, record_sha256)) = found else {
+        return Err(BlackboxError::not_found(
+            path,
+            format!("tool_call_id {tool_call_id} does not exist in ledger_records"),
+        ));
+    };
+    Ok(ledger_record_ref_json(
+        role,
+        sequence,
+        &record_id,
+        &record_kind,
+        &payload_sha256,
+        &record_sha256,
+    ))
+}
+
+fn ledger_record_ref_json(
+    role: &str,
+    sequence: i64,
+    record_id: &str,
+    record_kind: &str,
+    payload_sha256: &str,
+    record_sha256: &str,
+) -> Value {
+    json!({
+        "role": role,
+        "sequence": sequence,
+        "record_id": record_id,
+        "record_kind": record_kind,
+        "payload_sha256": payload_sha256,
+        "record_sha256": record_sha256,
+    })
+}
+
 async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     validate_ledger_path(&args.ledger)?;
     require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
@@ -949,15 +1131,21 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         &args.tenant,
     )?;
 
+    let run_id = spec.run_id.clone();
+    let tool_call_id = spec.tool_call_id.clone();
+    let verifier_id = spec.verifier_id.clone();
+    let expected_value = spec.expected.clone();
+    let tenant_id = args.tenant.clone();
     let actor = actor_json(&args.agent, args.model.as_deref());
     let expected_delta_id = prefixed_id("expected");
+    let expected_record_id = prefixed_id("bbx_rec");
     let expected_payload = json!({
         "record_kind": "expected_delta",
         "expected_delta_id": expected_delta_id,
-        "tool_call_id": spec.tool_call_id,
-        "verifier_id": spec.verifier_id,
+        "tool_call_id": tool_call_id,
+        "verifier_id": verifier_id,
         "source_of_truth": spec.source_of_truth_hint(),
-        "expected_persisted_delta": spec.expected,
+        "expected_persisted_delta": expected_value,
         "spec_redacted": redacted_spec.value,
         "recorded_at": Utc::now().to_rfc3339(),
     });
@@ -965,10 +1153,10 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         &mut conn,
         &args.ledger,
         NewRecord {
-            record_id: prefixed_id("bbx_rec"),
+            record_id: expected_record_id.clone(),
             record_kind: "expected_delta".to_string(),
-            tenant_id: args.tenant.clone(),
-            run_id: Some(spec.run_id.clone()),
+            tenant_id: tenant_id.clone(),
+            run_id: Some(run_id.clone()),
             step_id: None,
             actor: actor.clone(),
             payload: expected_payload,
@@ -977,15 +1165,18 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     )?;
 
     let verification = run_phase2_verifier(&spec).await;
+    let mut readback_record_id: Option<String> = None;
     let readback_append = if let Some(readback_payload) = verification.readback_payload.clone() {
+        let generated_readback_record_id = prefixed_id("bbx_rec");
+        readback_record_id = Some(generated_readback_record_id.clone());
         Some(append_record(
             &mut conn,
             &args.ledger,
             NewRecord {
-                record_id: prefixed_id("bbx_rec"),
+                record_id: generated_readback_record_id,
                 record_kind: "readback_snapshot".to_string(),
-                tenant_id: args.tenant.clone(),
-                run_id: Some(spec.run_id.clone()),
+                tenant_id: tenant_id.clone(),
+                run_id: Some(run_id.clone()),
                 step_id: None,
                 actor: actor.clone(),
                 payload: readback_payload,
@@ -997,13 +1188,14 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     };
 
     let verifier_result_id = prefixed_id("verify");
+    let verifier_record_id = prefixed_id("bbx_rec");
     let verifier_payload = json!({
         "record_kind": "verifier_result",
         "verifier_result_id": verifier_result_id,
-        "tool_call_id": spec.tool_call_id,
-        "verifier_id": spec.verifier_id,
+        "tool_call_id": tool_call_id,
+        "verifier_id": verifier_id,
         "status": verification.status,
-        "expected_persisted_delta": spec.expected,
+        "expected_persisted_delta": expected_value,
         "actual_readback": verification.actual_readback,
         "score": {
             "correctness": verification.correctness,
@@ -1022,21 +1214,160 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         &mut conn,
         &args.ledger,
         NewRecord {
-            record_id: prefixed_id("bbx_rec"),
+            record_id: verifier_record_id.clone(),
             record_kind: "verifier_result".to_string(),
-            tenant_id: args.tenant,
-            run_id: Some(spec.run_id),
+            tenant_id: tenant_id.clone(),
+            run_id: Some(run_id.clone()),
             step_id: None,
-            actor,
+            actor: actor.clone(),
             payload: verifier_payload,
             redaction: RedactionReport::empty(),
         },
     )?;
 
+    let run_ref = ledger_record_ref_by_run(&conn, &args.ledger, &run_id, "run")?;
+    let tool_call_ref =
+        ledger_record_ref_by_tool_call(&conn, &args.ledger, &tool_call_id, "tool_call")?;
+    let expected_ref = ledger_record_ref_json(
+        "expected_delta",
+        expected_append.sequence,
+        &expected_record_id,
+        "expected_delta",
+        &expected_append.payload_sha256,
+        &expected_append.record_sha256,
+    );
+    let readback_ref = readback_append.as_ref().map(|append| {
+        let record_id = readback_record_id
+            .as_deref()
+            .expect("readback record id exists when readback append exists");
+        ledger_record_ref_json(
+            "readback_snapshot",
+            append.sequence,
+            record_id,
+            "readback_snapshot",
+            &append.payload_sha256,
+            &append.record_sha256,
+        )
+    });
+    let verifier_ref = ledger_record_ref_json(
+        "verifier_result",
+        verifier_append.sequence,
+        &verifier_record_id,
+        "verifier_result",
+        &verifier_append.payload_sha256,
+        &verifier_append.record_sha256,
+    );
+    let mut record_refs = vec![run_ref, tool_call_ref, expected_ref];
+    if let Some(readback_ref) = &readback_ref {
+        record_refs.push(readback_ref.clone());
+    }
+    record_refs.push(verifier_ref);
+
+    let actual_readback_sha256 = sha256_hex(&canonical_json_bytes(&verification.actual_readback)?);
+    let expected_delta_sha256 = sha256_hex(&canonical_json_bytes(&expected_value)?);
+    let evidence_packet_id = prefixed_id("ev");
+    let evidence_payload = json!({
+        "record_kind": "evidence_packet",
+        "evidence_packet_id": evidence_packet_id,
+        "run_id": run_id,
+        "tool_call_id": tool_call_id,
+        "verifier_result_id": verifier_result_id,
+        "verifier_id": verifier_id,
+        "verifier_status": verification.status,
+        "source_of_truth": [{
+            "kind": verification.connector,
+            "locator": verification.source_of_truth,
+            "readback_sequence": readback_append.as_ref().map(|append| append.sequence),
+            "readback_record_sha256": readback_append.as_ref().map(|append| append.record_sha256.clone()),
+            "state_hash": actual_readback_sha256,
+        }],
+        "provenance": {
+            "model": "w3c-prov-inspired",
+            "entities": record_refs,
+            "activities": [{
+                "activity_kind": "blackbox_verify",
+                "verifier_id": verifier_id,
+                "used": ["run", "tool_call", "expected_delta", "readback_snapshot"],
+                "generated": ["verifier_result", "evidence_packet"],
+            }],
+            "agents": [actor],
+        },
+        "record_refs": record_refs,
+        "hashes": {
+            "expected_delta_sha256": expected_delta_sha256,
+            "actual_readback_sha256": actual_readback_sha256,
+            "expected_delta_record_sha256": expected_append.record_sha256,
+            "readback_snapshot_record_sha256": readback_append.as_ref().map(|append| append.record_sha256.clone()),
+            "verifier_result_record_sha256": verifier_append.record_sha256,
+        },
+        "created_at": Utc::now().to_rfc3339(),
+    });
+    let evidence_record_id = prefixed_id("bbx_rec");
+    let evidence_append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: evidence_record_id,
+            record_kind: "evidence_packet".to_string(),
+            tenant_id: tenant_id.clone(),
+            run_id: Some(run_id.clone()),
+            step_id: None,
+            actor: actor.clone(),
+            payload: evidence_payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+
+    let incident_append = if verification.status == "failed" {
+        let incident_packet_id = prefixed_id("inc");
+        let incident_payload = json!({
+            "record_kind": "incident_packet",
+            "incident_packet_id": incident_packet_id,
+            "severity": "high",
+            "run_id": run_id,
+            "tool_call_id": tool_call_id,
+            "trigger": "verifier_failed",
+            "verifier_id": verifier_id,
+            "verifier_result_id": verifier_result_id,
+            "evidence_packet_id": evidence_packet_id,
+            "evidence_packet_sequence": evidence_append.sequence,
+            "evidence_packet_record_sha256": evidence_append.record_sha256,
+            "error_code": verification.error_code,
+            "error_message": verification.message,
+            "field_path": verification.field_path,
+            "source_of_truth": [verification.source_of_truth],
+            "blast_radius": {
+                "sources": [verification.source_of_truth],
+                "repos": [],
+                "tickets": [],
+                "deployments": [],
+            },
+            "remediation": verification.remediation,
+            "timeline": record_refs,
+            "created_at": Utc::now().to_rfc3339(),
+        });
+        Some(append_record(
+            &mut conn,
+            &args.ledger,
+            NewRecord {
+                record_id: prefixed_id("bbx_rec"),
+                record_kind: "incident_packet".to_string(),
+                tenant_id: tenant_id.clone(),
+                run_id: Some(run_id.clone()),
+                step_id: None,
+                actor: actor.clone(),
+                payload: incident_payload,
+                redaction: RedactionReport::empty(),
+            },
+        )?)
+    } else {
+        None
+    };
+
     let output = json!({
         "status": "ok",
         "command": "blackbox verify",
-        "verifier_id": spec.verifier_id,
+        "verifier_id": verifier_id,
         "verifier_status": verification.status,
         "connector": verification.connector,
         "source_of_truth": verification.source_of_truth,
@@ -1046,6 +1377,11 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         "expected_delta_record_sha256": expected_append.record_sha256,
         "readback_snapshot_record_sha256": readback_append.as_ref().map(|append| append.record_sha256.clone()),
         "verifier_result_record_sha256": verifier_append.record_sha256,
+        "evidence_packet_id": evidence_packet_id,
+        "evidence_packet_sequence": evidence_append.sequence,
+        "evidence_packet_record_sha256": evidence_append.record_sha256,
+        "incident_packet_sequence": incident_append.as_ref().map(|append| append.sequence),
+        "incident_packet_record_sha256": incident_append.as_ref().map(|append| append.record_sha256.clone()),
         "actual_readback": verification.actual_readback,
     });
 
@@ -1086,6 +1422,364 @@ async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         )),
         _ => Ok(output),
     }
+}
+
+fn replay_run(args: ReplayArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let report = build_run_replay_report(&args.ledger, &inspection, &args.run_id)?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox replay",
+        "source_of_truth": source_of_truth(&args.ledger),
+        "run_id": args.run_id,
+        "report": report,
+    }))
+}
+
+fn export_evidence(args: ExportEvidenceArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    validate_export_output_path(&args.out)?;
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let report = build_run_replay_report(&args.ledger, &inspection, &args.run_id)?;
+    let export = json!({
+        "format": "blackbox_evidence_report_json_v1",
+        "pdf_ready": true,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_of_truth": source_of_truth(&args.ledger),
+        "report": report,
+    });
+    let bytes = serde_json::to_vec_pretty(&export).map_err(|err| {
+        BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "EVIDENCE_EXPORT_SERIALIZE_FAILED",
+            format!("failed to serialize evidence export JSON: {err}"),
+            Some(source_of_truth(&args.ledger)),
+            Some("export".to_string()),
+            "inspect non-serializable export fields before retrying",
+        )
+    })?;
+    fs::write(&args.out, &bytes)
+        .map_err(|err| BlackboxError::io(&args.out, "write evidence export JSON", err))?;
+    let readback = fs::read(&args.out)
+        .map_err(|err| BlackboxError::io(&args.out, "read evidence export JSON", err))?;
+    if readback != bytes {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "EVIDENCE_EXPORT_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&args.out),
+            "--out",
+            "evidence export readback bytes do not match bytes written",
+            "treat the export target as unreliable; inspect filesystem/storage before retrying",
+        ));
+    }
+    let parsed: Value = serde_json::from_slice(&readback).map_err(|err| {
+        BlackboxError::evidence_integrity_for_connector(
+            "EVIDENCE_EXPORT_JSON_INVALID",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&args.out),
+            "$",
+            format!("evidence export file does not parse as JSON after write: {err}"),
+            "delete the corrupt export file and rerun after fixing the filesystem/storage path",
+        )
+    })?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox export evidence",
+        "source_of_truth": file_source_of_truth(&args.out),
+        "ledger_source_of_truth": source_of_truth(&args.ledger),
+        "run_id": args.run_id,
+        "out": args.out,
+        "size_bytes": readback.len(),
+        "sha256": sha256_hex(&readback),
+        "record_count": parsed.pointer("/report/summary/record_count").cloned().unwrap_or(Value::Null),
+        "evidence_packet_count": parsed.pointer("/report/summary/kinds/evidence_packet").cloned().unwrap_or(Value::Null),
+        "incident_packet_count": parsed.pointer("/report/summary/kinds/incident_packet").cloned().unwrap_or(Value::Null),
+    }))
+}
+
+fn validate_export_output_path(path: &Path) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty export output path",
+        ));
+    }
+    if path.exists() && path.is_dir() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out points to a directory, expected a JSON file path",
+            Some(file_source_of_truth(path)),
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a file path, not a directory",
+        ));
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "export parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the export",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn build_run_replay_report(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_id: &str,
+) -> BbxResult<Value> {
+    let records = inspection
+        .records
+        .iter()
+        .filter(|record| record.run_id.as_deref() == Some(run_id))
+        .collect::<Vec<_>>();
+    if records.is_empty() {
+        return Err(BlackboxError::not_found(
+            ledger_path,
+            format!("run_id {run_id} does not exist in ledger_records"),
+        ));
+    }
+    if !records
+        .iter()
+        .any(|record| record.record_kind.as_str() == "agent_run")
+    {
+        return Err(BlackboxError::evidence_integrity(
+            "REPLAY_RUN_RECORD_MISSING",
+            source_of_truth(ledger_path),
+            "ledger_records.record_kind",
+            format!("run_id {run_id} has no agent_run record"),
+            "treat the ledger as inconsistent and inspect the append-only chain",
+        ));
+    }
+
+    let mut kinds = BTreeMap::<String, i64>::new();
+    let mut verifier_statuses = BTreeMap::<String, i64>::new();
+    let mut first_failure = Value::Null;
+    for record in &records {
+        *kinds.entry(record.record_kind.clone()).or_insert(0) += 1;
+        if record.record_kind == "verifier_result" {
+            let status = record
+                .payload
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string();
+            *verifier_statuses.entry(status.clone()).or_insert(0) += 1;
+            if first_failure.is_null() && status != "passed" {
+                first_failure = json!({
+                    "sequence": record.sequence,
+                    "verifier_id": record.payload.get("verifier_id").cloned().unwrap_or(Value::Null),
+                    "status": status,
+                    "error_code": record.payload.get("error_code").cloned().unwrap_or(Value::Null),
+                    "source_of_truth": record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+                    "remediation": record.payload.get("remediation").cloned().unwrap_or(Value::Null),
+                });
+            }
+        }
+    }
+
+    let evidence_verification = verify_evidence_packet_refs(ledger_path, &records)?;
+    let timeline = records
+        .iter()
+        .map(|record| {
+            json!({
+                "sequence": record.sequence,
+                "record_id": record.record_id,
+                "record_kind": record.record_kind,
+                "created_at": record.created_at,
+                "actor": record.actor,
+                "payload": record.payload,
+                "hash": record.hash,
+                "redaction": record.redaction,
+            })
+        })
+        .collect::<Vec<_>>();
+    let incidents = records
+        .iter()
+        .filter(|record| record.record_kind == "incident_packet")
+        .map(|record| {
+            json!({
+                "sequence": record.sequence,
+                "record_id": record.record_id,
+                "payload": record.payload,
+                "hash": record.hash,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "run_id": run_id,
+        "mode": "forensic",
+        "mutates_source_of_truth": false,
+        "ledger_integrity": {
+            "status": "passed",
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "record_count": inspection.record_count,
+            "ledger_tip_sha256": inspection.ledger_tip_sha256,
+        },
+        "summary": {
+            "record_count": records.len(),
+            "kinds": kinds,
+            "verifier_statuses": verifier_statuses,
+            "first_failure": first_failure,
+        },
+        "evidence_hash_verification": evidence_verification,
+        "timeline": timeline,
+        "incidents": incidents,
+    }))
+}
+
+fn verify_evidence_packet_refs(
+    ledger_path: &Path,
+    records: &[&LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut checked_packets = 0_i64;
+    let mut checked_refs = 0_i64;
+    for packet in records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        checked_packets += 1;
+        let refs = packet
+            .payload
+            .get("record_refs")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                BlackboxError::evidence_integrity(
+                    "EVIDENCE_PACKET_SCHEMA_INVALID",
+                    source_of_truth(ledger_path),
+                    format!("ledger_records[{}].payload.record_refs", packet.sequence),
+                    "evidence_packet payload is missing record_refs array",
+                    "rebuild the evidence packet from immutable ledger records",
+                )
+            })?;
+        for (index, record_ref) in refs.iter().enumerate() {
+            let sequence = record_ref
+                .get("sequence")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| {
+                    BlackboxError::evidence_integrity(
+                        "EVIDENCE_PACKET_SCHEMA_INVALID",
+                        source_of_truth(ledger_path),
+                        format!(
+                            "ledger_records[{}].payload.record_refs[{index}].sequence",
+                            packet.sequence
+                        ),
+                        "evidence record ref is missing integer sequence",
+                        "rebuild the evidence packet from immutable ledger records",
+                    )
+                })?;
+            let expected_kind = record_ref
+                .get("record_kind")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    BlackboxError::evidence_integrity(
+                        "EVIDENCE_PACKET_SCHEMA_INVALID",
+                        source_of_truth(ledger_path),
+                        format!(
+                            "ledger_records[{}].payload.record_refs[{index}].record_kind",
+                            packet.sequence
+                        ),
+                        "evidence record ref is missing record_kind",
+                        "rebuild the evidence packet from immutable ledger records",
+                    )
+                })?;
+            let expected_payload_sha256 = record_ref
+                .get("payload_sha256")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    BlackboxError::evidence_integrity(
+                        "EVIDENCE_PACKET_SCHEMA_INVALID",
+                        source_of_truth(ledger_path),
+                        format!(
+                            "ledger_records[{}].payload.record_refs[{index}].payload_sha256",
+                            packet.sequence
+                        ),
+                        "evidence record ref is missing payload_sha256",
+                        "rebuild the evidence packet from immutable ledger records",
+                    )
+                })?;
+            let expected_record_sha256 = record_ref
+                .get("record_sha256")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    BlackboxError::evidence_integrity(
+                        "EVIDENCE_PACKET_SCHEMA_INVALID",
+                        source_of_truth(ledger_path),
+                        format!(
+                            "ledger_records[{}].payload.record_refs[{index}].record_sha256",
+                            packet.sequence
+                        ),
+                        "evidence record ref is missing record_sha256",
+                        "rebuild the evidence packet from immutable ledger records",
+                    )
+                })?;
+            let Some(actual) = records.iter().find(|record| record.sequence == sequence) else {
+                return Err(BlackboxError::evidence_integrity(
+                    "EVIDENCE_HASH_MISMATCH",
+                    source_of_truth(ledger_path),
+                    format!(
+                        "ledger_records[{}].payload.record_refs[{index}]",
+                        packet.sequence
+                    ),
+                    format!("evidence references missing ledger sequence {sequence}"),
+                    "treat the evidence packet as invalid and rebuild from an intact ledger",
+                ));
+            };
+            let actual_payload_sha256 = actual
+                .hash
+                .get("payload_sha256")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let actual_record_sha256 = actual
+                .hash
+                .get("record_sha256")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if actual.record_kind != expected_kind
+                || actual_payload_sha256 != expected_payload_sha256
+                || actual_record_sha256 != expected_record_sha256
+            {
+                return Err(BlackboxError::evidence_integrity(
+                    "EVIDENCE_HASH_MISMATCH",
+                    source_of_truth(ledger_path),
+                    format!("ledger_records[{}].payload.record_refs[{index}]", packet.sequence),
+                    format!(
+                        "evidence reference for sequence {sequence} does not match physical ledger row"
+                    ),
+                    "treat the evidence packet as invalid and rebuild from an intact ledger",
+                ));
+            }
+            checked_refs += 1;
+        }
+    }
+    Ok(json!({
+        "status": "passed",
+        "checked_packets": checked_packets,
+        "checked_record_refs": checked_refs,
+    }))
 }
 
 fn inspect_ledger(args: InspectLedgerArgs) -> BbxResult<Value> {
@@ -1262,7 +1956,7 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
                  SELECT RAISE(ABORT, 'ledger_records is append-only; deletes are forbidden');
              END;
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
-             VALUES ('schema_version', '2');
+             VALUES ('schema_version', '3');
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
              VALUES ('ledger_id', lower(hex(randomblob(16))));
          INSERT OR IGNORE INTO blackbox_metadata(key, value)

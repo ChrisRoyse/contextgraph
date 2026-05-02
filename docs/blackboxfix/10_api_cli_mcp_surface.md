@@ -3,11 +3,11 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 3 ships the local CLI with local Git/file/command plus GitHub/GitHub
-Actions readback. The HTTP API, MCP servers, and SDKs are reserved for Phase
-6+.
+Phase 4 ships the local CLI with local Git/file/command, GitHub/GitHub
+Actions readback, evidence packets, forensic replay, and JSON evidence
+export. The HTTP API, MCP servers, and SDKs are reserved for Phase 6+.
 
-## CLI (shipped Phase 3)
+## CLI (shipped Phase 4)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -50,6 +50,8 @@ blackbox verify                --ledger PATH --input SPEC_JSON
 blackbox inspect ledger        --ledger PATH
                                [--run-id RUN_ID]
                                [--limit N]
+blackbox replay                --ledger PATH --run-id RUN_ID
+blackbox export evidence       --ledger PATH --run-id RUN_ID --out FILE
 ```
 
 The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
@@ -85,20 +87,19 @@ Supported Phase 2/3 verifier ids:
 - `gha_workflow_run_completed_v1`
 
 Every verifier writes `expected_delta`, then a `readback_snapshot` when the
-connector was able to read physical state, then `verifier_result`. A failed
-or blocked verifier returns non-zero **after** persisting the verifier
+connector was able to read physical state, then `verifier_result`, then an
+`evidence_packet`. A failed verifier also writes an `incident_packet`. A
+failed or blocked verifier returns non-zero **after** persisting the verifier
 evidence, except for invalid top-level JSON that cannot be associated with a
 run/tool-call.
 
-### Phase 4/5 Commands (planned, not implemented)
+### Phase 5 Commands (planned, not implemented)
 
 ```text
-blackbox replay                --run-id RUN_ID
 blackbox export episodes       --ledger PATH --out DIR
-blackbox export evidence       --run-id RUN_ID --out FILE
 ```
 
-Implement each in priority order; do not attempt to land all at once.
+Implement after Phase 4; do not skip ahead to MCP/API before episode export.
 
 ## CLI Failure Shape (enforced)
 
@@ -134,7 +135,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 2,
+  "schema_version": 3,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -146,8 +147,14 @@ Every success prints a JSON object on stdout:
 `payload_sha256`, `previous_record_sha256`, `run_chain_sha256`, and
 `record_sha256`.
 
+`verify` also returns `evidence_packet_id`, `evidence_packet_sequence`,
+`evidence_packet_record_sha256`, and the incident packet sequence/hash when
+one was created.
+
 `inspect ledger` returns `integrity` plus a `records` array with each row's
-fields and hashes.
+fields and hashes. `replay` returns a read-only forensic report. `export
+evidence` returns the exported file path, byte count, sha256, and evidence/
+incident counts after reading the file back from disk.
 
 ## HTTP API (Phase 6 target)
 
@@ -236,8 +243,9 @@ The ledger remains authoritative.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 2 in Phase 2).
-- Phase 3 reuses schema version 2 and adds no new record kinds.
+- Ledger records include `schema_version` (= 3 in Phase 4).
+- Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumps
+  the current schema to 3 for `evidence_packet` and `incident_packet`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -256,10 +264,12 @@ For each shipped command, the FSV protocol is:
    match.
 
 Concrete inputs and expected outputs live in
-`20_phase1_state_and_invariants.md` and
-`21_phase2_state_and_invariants.md`, and
-`22_phase3_state_and_invariants.md`. The automated equivalents are
+`20_phase1_state_and_invariants.md`,
+`21_phase2_state_and_invariants.md`,
+`22_phase3_state_and_invariants.md`, and
+`23_phase4_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
-integration test, PASS).
+integration test, PASS) and
+`crates/context-graph-cli/tests/blackbox_phase4_fsv.rs` (4 tests, PASS).

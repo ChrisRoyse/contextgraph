@@ -12,7 +12,7 @@ The mandatory operator-side protocol lives in
 |---|---|
 | SQLite ledger DB at `--ledger PATH` | every row written, every hash chain |
 | `blackbox_metadata` rows | record count + tip hash agree with physical rows |
-| Evidence artifact store (Phase 4) | artifacts referenced from ledger exist on disk |
+| Evidence packet rows + exported report files (Phase 4) | packet references match physical rows and export files read back byte-for-byte |
 | Hash-chain verification output | per-record + per-run chain unbroken |
 | External systems under connector tests | readback matches expected delta |
 | Exported JSONL + manifest (Phase 5) | every line re-parses; sha256 matches manifest |
@@ -88,7 +88,7 @@ Expected delta:
 Verifier:
   status: passed | failed | blocked
   error_code: <or null>
-  evidence_packet_id: <or "n/a in current phase">
+  evidence_packet_id: <ev_...>
 
 Physical proof:
   <sqlite/git/api command output>
@@ -127,7 +127,12 @@ Concretely, that means:
 - Phase 2 FSV shells to the real `git` binary against a real test repo and
   uses direct `git rev-parse`/`git cat-file`/`git status`/`git diff` plus
   direct SQLite reads before asserting verifier output.
-- Phase 3 FSV must point at a controlled test GitHub org/repo.
+- Phase 3 FSV points at live GitHub/GitHub Actions state and writes only local
+  SQLite rows.
+- Phase 4 FSV reads `evidence_packet.record_refs[]` back from physical
+  SQLite rows, verifies replay is read-only by comparing before/after counts,
+  writes a real JSON export file, reads the file back from disk, byte-compares
+  it, and parses it before success.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -139,7 +144,8 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`.
+`21_phase2_state_and_invariants.md`. Phase 4 inputs/outputs are enumerated in
+`23_phase4_state_and_invariants.md`.
 
 A synthetic test must include:
 

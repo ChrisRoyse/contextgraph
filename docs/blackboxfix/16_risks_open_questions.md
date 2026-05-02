@@ -54,7 +54,7 @@ Mitigation (Phase 1 baseline):
 - append-only triggers (`ledger_records_no_update`, `ledger_records_no_delete`);
 - dual hash chain (per-record + per-run);
 - `BBX_HASH_CHAIN_BROKEN` aborts further writes;
-- artifact hashes (Phase 4);
+- evidence packet row-reference hashes and export file hashes (Phase 4);
 - signed export manifests (Phase 5).
 
 ### SQLite Concurrency
@@ -130,15 +130,16 @@ Mitigation:
   → **Both.** Phase 1 ships both binaries from the same code path
   (`crates/context-graph-cli/src/bin/{blackbox,context-graph}.rs` calling
   `commands::blackbox`). Operators choose; no divergence allowed.
+- **Should evidence packets be signed in Phase 4 or Phase 5?**
+  → **Not Phase 4.** Phase 4 ships unsigned, hash-verified evidence packets
+  and JSON exports. Signing needs key-management and envelope decisions and
+  moves to Phase 5+.
 
 ## Open Questions (still open)
 
 - Which hosted CI connector should come after GitHub Actions?
-  Candidates: Buildkite, CircleCI, GitLab CI. Decide before Phase 3 closes.
-- Should evidence packets be signed in Phase 4 or Phase 5?
-  Signing in Phase 4 lets the exporter copy a signed bundle directly; the
-  signing-key infrastructure work may slip Phase 5. Defer the call until
-  Phase 4 design.
+  Candidates: Buildkite, CircleCI, GitLab CI. Decide before the next hosted
+  CI connector phase.
 - What is the minimum dashboard required for a paid pilot?
   Hypothesis: timeline + filter + evidence viewer + JSONL download. Validate
   with two pilot prospects before building.

@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 2/3 Physical Schema (shipped)
+## Phase 4 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 2 in Phase 2/3
+  schema_version              INTEGER NOT NULL,   -- 3 in Phase 4
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `2` | constant |
+| `schema_version` | `3` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,8 +99,8 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phase 2 ships five `record_kind` values. The remaining families are reserved
-for later phases and **must not be invented ad-hoc**:
+Phases 1-4 ship seven `record_kind` values. The remaining families are
+reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
 |---|---|---|
@@ -109,7 +109,7 @@ for later phases and **must not be invented ad-hoc**:
 | 2 | `expected_delta` | the durable state change the action is expected to produce |
 | 2 | `readback_snapshot` | independent source-of-truth state after execution |
 | 2 | `verifier_result` | comparison of expected delta and readback |
-| 3 | `policy_decision` | authorization and approval result |
+| 3 | `policy_decision` | authorization and approval result, reserved for Phase 6 policy work |
 | 4 | `evidence_packet` | exportable proof bundle |
 | 4 | `incident_packet` | high-severity failure bundle |
 | 5 | `episode_record` | training/eval export row |
@@ -126,7 +126,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -205,7 +205,7 @@ The physical columns reify this envelope. JSON-shape view:
 }
 ```
 
-## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2/3)
+## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2/3/4)
 
 These are stored by `blackbox verify` after a recorded `tool_call` exists for
 the requested `run_id` and tenant.
@@ -280,14 +280,95 @@ Actions readbacks. No new table or schema version was required because the
 existing payloads already include connector id, operation, source locator,
 observed state, typed error fields, and remediation.
 
+## EvidencePacket (Phase 4, shipped)
+
+Every associated `blackbox verify` call appends an `evidence_packet` after the
+`verifier_result`. The packet is not a detached copy of success output; it is a
+portable proof index over the immutable physical ledger rows used by the
+verification.
+
+```json
+{
+  "record_kind": "evidence_packet",
+  "evidence_packet_id": "ev_<uuid_simple>",
+  "run_id": "run_...",
+  "tool_call_id": "tool_...",
+  "verifier_id": "git_branch_exists_v1",
+  "verifier_result_id": "verify_...",
+  "verifier_status": "passed|failed|blocked",
+  "source_of_truth": [
+    { "kind": "git_local_v1", "locator": "git:/tmp/repo#refs/heads/main" }
+  ],
+  "record_refs": [
+    {
+      "sequence": 1,
+      "record_id": "bbx_rec_...",
+      "record_kind": "agent_run",
+      "payload_sha256": "sha256:...",
+      "record_sha256": "sha256:..."
+    }
+  ],
+  "hashes": {
+    "expected_delta_record_sha256": "sha256:...",
+    "readback_snapshot_record_sha256": "sha256:... | null",
+    "verifier_result_record_sha256": "sha256:..."
+  },
+  "provenance": {
+    "model": "w3c-prov-inspired",
+    "entities": [],
+    "activities": [],
+    "agents": []
+  }
+}
+```
+
+`blackbox replay` validates every `record_refs[]` entry against the physical
+SQLite rows by `sequence`, `record_kind`, `payload_sha256`, and
+`record_sha256`. A missing or mismatched reference fails closed with an
+evidence-integrity error.
+
+## IncidentPacket (Phase 4, shipped)
+
+A failed verifier appends an `incident_packet` after the evidence packet. The
+Phase 4 implementation creates incidents for `verifier_failed`; later
+governed-mode phases may add blocked-policy incidents.
+
+```json
+{
+  "record_kind": "incident_packet",
+  "incident_packet_id": "inc_<uuid_simple>",
+  "trigger": "verifier_failed",
+  "severity": "high",
+  "run_id": "run_...",
+  "tool_call_id": "tool_...",
+  "verifier_id": "git_branch_exists_v1",
+  "verifier_result_id": "verify_...",
+  "evidence_packet_id": "ev_...",
+  "evidence_packet_sequence": 6,
+  "evidence_packet_record_sha256": "sha256:...",
+  "error_code": "GIT_BRANCH_NOT_FOUND",
+  "error_message": "...",
+  "field_path": "actual_readback.branch",
+  "remediation": "create the branch before claiming it exists",
+  "source_of_truth": "git:/tmp/repo#refs/heads/missing",
+  "timeline": ["bbx_rec_...", "bbx_rec_..."],
+  "blast_radius": {
+    "repos": [],
+    "tickets": [],
+    "deployments": [],
+    "files": []
+  }
+}
+```
+
 ## Integrity Requirements
 
 - Every record has a stable `record_id` (UUID simple form, prefixed).
 - Phase 2+: every mutating tool call links to one or more expected deltas;
   every expected delta links to one or more readback snapshots; every verifier
   result links to the source-of-truth snapshots it used.
-- Every evidence packet must be verifiable from ledger records and hashes
-  (Phase 4).
+- Every evidence packet must be verifiable from physical ledger records and
+  hashes; Phase 4 replay enforces this.
 - Every exported training row must link back to immutable evidence (Phase 5).
 - The append-only triggers must be **present and enabled** on every read; the
   Phase 1 FSV tests `phase1_append_only_trigger_blocks_direct_update` and

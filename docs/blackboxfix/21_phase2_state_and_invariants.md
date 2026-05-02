@@ -12,9 +12,10 @@ implementation.
 | Filesystem connector | real file bytes, size, SHA-256, optional UTF-8 content |
 | Command verifier | real process exit code/stdout/stderr plus declared artifact files on disk |
 
-The live ledger schema is `LEDGER_SCHEMA_VERSION = 2`. `blackbox init`
-removes v1 ledger files (`.sqlite`, `-wal`, `-shm`) before initializing v2.
-There is no migration shim.
+Phase 2 originally shipped `LEDGER_SCHEMA_VERSION = 2`. The current live
+ledger schema is `LEDGER_SCHEMA_VERSION = 3` after Phase 4; `blackbox init`
+removes older v1/v2 ledger files (`.sqlite`, `-wal`, `-shm`) before
+initializing v3. There is no migration shim.
 
 ## Shipped Connectors
 
@@ -80,7 +81,8 @@ Log: /tmp/bbx-phase2-manual-fsv.vMFZRR/fsv.log
 Ledger source of truth: /tmp/bbx-phase2-manual-fsv.vMFZRR/blackbox.sqlite#ledger_records
 Git source of truth: /tmp/bbx-phase2-manual-fsv.vMFZRR/repo/.git + working tree
 Command artifact: /tmp/bbx-phase2-manual-fsv.vMFZRR/cmd-output.txt#sha256
-Final ledger: schema_version=2, record_count=25, integrity.status=passed
+Final ledger at Phase 2 completion: schema_version=2, record_count=25,
+integrity.status=passed
 Final record counts: agent_run=1, tool_call=1, expected_delta=8,
 readback_snapshot=7, verifier_result=8
 ```
@@ -116,4 +118,5 @@ Manual edge cases:
   surface as `GIT_EXEC_FAILED`.
 - No command artifact may be assumed from exit code; declared artifacts must
   exist on disk and be hashed.
-- No schema bump may preserve older ledger rows; v1 is wiped on v2 init.
+- No schema bump may preserve older ledger rows; older schemas are wiped on
+  init.
