@@ -36,6 +36,7 @@ const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
 const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
+const DASHBOARD_SCHEMA_VERSION: i64 = 1;
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -92,6 +93,11 @@ pub enum BlackboxCommands {
     Export {
         #[command(subcommand)]
         action: ExportCommands,
+    },
+    /// Build and inspect Phase 7 dashboard API responses.
+    Dashboard {
+        #[command(subcommand)]
+        action: DashboardCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -467,6 +473,69 @@ pub struct ExportEpisodesArgs {
     /// Replace an existing output directory.
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DashboardCommands {
+    /// Build a static dashboard bundle from the verified ledger.
+    Build(DashboardBuildArgs),
+    /// Emit one dashboard API response from the verified ledger.
+    Api(DashboardApiArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct DashboardBuildArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Output directory. The builder writes index.html, manifest.json, and api/*.json.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing dashboard directory.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct DashboardApiArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Dashboard view to emit.
+    #[arg(long, value_enum)]
+    pub view: DashboardView,
+
+    /// Required for --view timeline.
+    #[arg(long)]
+    pub run_id: Option<String>,
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum DashboardView {
+    Summary,
+    Runs,
+    Timeline,
+    Evidence,
+    Verifiers,
+    Errors,
+    Exports,
+}
+
+impl DashboardView {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Summary => "summary",
+            Self::Runs => "runs",
+            Self::Timeline => "timeline",
+            Self::Evidence => "evidence",
+            Self::Verifiers => "verifiers",
+            Self::Errors => "errors",
+            Self::Exports => "exports",
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -895,6 +964,10 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Export { action } => match action {
             ExportCommands::Evidence(args) => export_evidence(args),
             ExportCommands::Episodes(args) => export_episodes(args),
+        },
+        BlackboxCommands::Dashboard { action } => match action {
+            DashboardCommands::Build(args) => dashboard_build(args),
+            DashboardCommands::Api(args) => dashboard_api(args),
         },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
@@ -3309,6 +3382,694 @@ fn export_episodes(args: ExportEpisodesArgs) -> BbxResult<Value> {
     }
 }
 
+fn dashboard_api(args: DashboardApiArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    if let Some(run_id) = &args.run_id {
+        require_non_empty_for_ledger(&args.ledger, "--run-id", run_id)?;
+    }
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let data = build_dashboard_data(&args.ledger, &inspection, &ledger_id)?;
+    let view = match args.view {
+        DashboardView::Summary => data.summary,
+        DashboardView::Runs => data.runs,
+        DashboardView::Evidence => data.evidence,
+        DashboardView::Verifiers => data.verifiers,
+        DashboardView::Errors => data.errors,
+        DashboardView::Exports => data.exports,
+        DashboardView::Timeline => {
+            let run_id = args.run_id.as_deref().ok_or_else(|| {
+                BlackboxError::new_with_connector(
+                    ErrorKind::InvalidInput,
+                    "DASHBOARD_RUN_ID_REQUIRED",
+                    "dashboard timeline API requires --run-id",
+                    Some(source_of_truth(&args.ledger)),
+                    SQLITE_CONNECTOR_ID,
+                    Some("--run-id".to_string()),
+                    "provide the run_id from `blackbox dashboard api --view runs`",
+                )
+            })?;
+            data.timelines
+                .into_iter()
+                .find(|(candidate, _, _)| candidate == run_id)
+                .map(|(_, _, timeline)| timeline)
+                .ok_or_else(|| {
+                    BlackboxError::not_found(
+                        &args.ledger,
+                        format!("run_id {run_id} does not exist in dashboard timelines"),
+                    )
+                })?
+        }
+    };
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox dashboard api",
+        "view": args.view.as_str(),
+        "source_of_truth": source_of_truth(&args.ledger),
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": data.generated_at,
+        "data": view,
+    }))
+}
+
+fn dashboard_build(args: DashboardBuildArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    validate_dashboard_directory_path(&args.out, args.force)?;
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let data = build_dashboard_data(&args.ledger, &inspection, &ledger_id)?;
+
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_dashboard_temp_dir(&temp_dir)?;
+    let build_result = write_dashboard_directory(&args, &inspection, &data, &temp_dir);
+    match build_result {
+        Ok(summary) => Ok(summary),
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            Err(err)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct DashboardData {
+    generated_at: String,
+    summary: Value,
+    runs: Value,
+    evidence: Value,
+    verifiers: Value,
+    errors: Value,
+    exports: Value,
+    timelines: Vec<(String, String, Value)>,
+}
+
+fn build_dashboard_data(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+) -> BbxResult<DashboardData> {
+    let generated_at = Utc::now().to_rfc3339();
+    let run_records = inspection
+        .records
+        .iter()
+        .filter(|record| record.record_kind == "agent_run")
+        .collect::<Vec<_>>();
+    if run_records.is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "DASHBOARD_NO_RUNS",
+            "ledger contains no agent_run rows for the dashboard",
+            Some(source_of_truth(ledger_path)),
+            SQLITE_CONNECTOR_ID,
+            Some("ledger_records.record_kind".to_string()),
+            "record at least one agent_run before building the dashboard",
+        ));
+    }
+
+    let all_record_refs = inspection.records.iter().collect::<Vec<_>>();
+    let evidence_hash_verification = verify_evidence_packet_refs(ledger_path, &all_record_refs)?;
+    let kind_counts = ledger_record_kind_counts(&inspection.records);
+    let records_by_run = records_by_run_id(&inspection.records);
+    let tool_call_by_id = tool_call_records_by_id(ledger_path, &inspection.records)?;
+    let evidence_tool_call_ids = evidence_tool_call_ids(ledger_path, &inspection.records)?;
+    let summary = build_dashboard_summary(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &kind_counts,
+        &evidence_hash_verification,
+        &evidence_tool_call_ids,
+    )?;
+    let runs = build_dashboard_runs(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &run_records,
+        &records_by_run,
+    )?;
+    let evidence = build_dashboard_evidence(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &inspection.records,
+    )?;
+    let verifiers = build_dashboard_verifiers(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &inspection.records,
+        &tool_call_by_id,
+    )?;
+    let errors = build_dashboard_errors(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &inspection.records,
+        &tool_call_by_id,
+    )?;
+    let exports = build_dashboard_exports(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &run_records,
+    )?;
+    let timelines = build_dashboard_timelines(ledger_path, inspection, &run_records)?;
+    Ok(DashboardData {
+        generated_at,
+        summary,
+        runs,
+        evidence,
+        verifiers,
+        errors,
+        exports,
+        timelines,
+    })
+}
+
+fn write_dashboard_directory(
+    args: &DashboardBuildArgs,
+    inspection: &LedgerInspection,
+    data: &DashboardData,
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir(temp_dir)
+        .map_err(|err| BlackboxError::io(temp_dir, "create dashboard temp directory", err))?;
+    let api_dir = temp_dir.join("api");
+    fs::create_dir(&api_dir)
+        .map_err(|err| BlackboxError::io(&api_dir, "create dashboard api directory", err))?;
+
+    write_dashboard_json_file(&api_dir.join("summary.json"), &data.summary)?;
+    write_dashboard_json_file(&api_dir.join("runs.json"), &data.runs)?;
+    write_dashboard_json_file(&api_dir.join("evidence.json"), &data.evidence)?;
+    write_dashboard_json_file(&api_dir.join("verifier-status.json"), &data.verifiers)?;
+    write_dashboard_json_file(&api_dir.join("errors.json"), &data.errors)?;
+    write_dashboard_json_file(&api_dir.join("exports.json"), &data.exports)?;
+
+    let mut timeline_files = BTreeSet::new();
+    for (_, file_name, timeline) in &data.timelines {
+        if !timeline_files.insert(file_name.clone()) {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_TIMELINE_FILENAME_COLLISION",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(temp_dir),
+                "api/timeline_*.json",
+                format!("dashboard timeline filename collision for {file_name}"),
+                "use distinct run identifiers before building the dashboard",
+            ));
+        }
+        write_dashboard_json_file(&api_dir.join(file_name), timeline)?;
+    }
+
+    let html = build_dashboard_html(data)?;
+    write_dashboard_text_file(&temp_dir.join("index.html"), &html, "dashboard HTML")?;
+
+    let mut files = vec![
+        dashboard_file_entry(temp_dir, Path::new("index.html"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/summary.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/runs.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/evidence.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/verifier-status.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/errors.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/exports.json"))?,
+    ];
+    for (_, file_name, _) in &data.timelines {
+        files.push(dashboard_file_entry(
+            temp_dir,
+            &Path::new("api").join(file_name),
+        )?);
+    }
+
+    let manifest = json!({
+        "status": "ok",
+        "format": "blackbox_dashboard_manifest_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": data.generated_at,
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": data.summary["source_ledger"]["ledger_id"].clone(),
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count": inspection.record_count,
+            "ledger_tip_sha256_at_build": inspection.ledger_tip_sha256,
+        },
+        "output": {
+            "directory": args.out,
+            "source_of_truth": file_source_of_truth(&args.out),
+            "api_directory": "api",
+            "index": "index.html",
+        },
+        "counts": {
+            "runs_total": data.summary["counts"]["runs_total"].clone(),
+            "evidence_packets_total": data.summary["counts"]["evidence_packets_total"].clone(),
+            "incident_packets_total": data.summary["counts"]["incident_packets_total"].clone(),
+            "timeline_files_total": data.timelines.len(),
+            "files_total": files.len() + 1,
+        },
+        "files": files,
+    });
+    write_dashboard_json_file(&temp_dir.join("manifest.json"), &manifest)?;
+    promote_dashboard_dir(temp_dir, &args.out, args.force)?;
+
+    let final_manifest = args.out.join("manifest.json");
+    let final_manifest_json = read_json_file(&final_manifest, "final dashboard manifest")?;
+    if final_manifest_json["format"] != "blackbox_dashboard_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "DASHBOARD_MANIFEST_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&final_manifest),
+            "manifest.json.format",
+            "final dashboard manifest readback did not preserve the expected format",
+            "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    verify_dashboard_manifest_files(&args.out, &final_manifest_json)?;
+    let manifest_sha256 = sha256_file(&final_manifest)?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox dashboard build",
+        "source_of_truth": file_source_of_truth(&args.out),
+        "ledger_source_of_truth": source_of_truth(&args.ledger),
+        "out": args.out,
+        "index": args.out.join("index.html"),
+        "manifest": final_manifest,
+        "api": args.out.join("api"),
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "manifest_sha256": manifest_sha256,
+        "ledger_record_count": inspection.record_count,
+        "ledger_tip_sha256_at_build": inspection.ledger_tip_sha256,
+        "runs_total": data.summary["counts"]["runs_total"].clone(),
+        "evidence_packets_total": data.summary["counts"]["evidence_packets_total"].clone(),
+        "incident_packets_total": data.summary["counts"]["incident_packets_total"].clone(),
+        "timeline_files_total": data.timelines.len(),
+    }))
+}
+
+fn build_dashboard_summary(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    kind_counts: &BTreeMap<String, i64>,
+    evidence_hash_verification: &Value,
+    evidence_tool_call_ids: &BTreeSet<String>,
+) -> BbxResult<Value> {
+    let verifier_status_counts = verifier_status_counts(ledger_path, &inspection.records)?;
+    let policy_decision_counts = policy_decision_counts(ledger_path, &inspection.records)?;
+    let tool_calls_total = kind_counts.get("tool_call").copied().unwrap_or(0);
+    let tool_calls_with_evidence = evidence_tool_call_ids.len() as i64;
+    let tool_calls_without_evidence = (tool_calls_total - tool_calls_with_evidence).max(0);
+    let verifier_total = verifier_status_counts.values().sum::<i64>();
+    let passed = verifier_status_counts.get("passed").copied().unwrap_or(0);
+    let failed = verifier_status_counts.get("failed").copied().unwrap_or(0);
+    let blocked = verifier_status_counts.get("blocked").copied().unwrap_or(0);
+    let pass_rate = ratio_value(passed, verifier_total);
+    let failure_rate = ratio_value(failed, verifier_total);
+    let source_coverage = ratio_value(tool_calls_with_evidence, tool_calls_total);
+    let metrics = vec![
+        json!({"label": "Runs", "value": kind_counts.get("agent_run").copied().unwrap_or(0)}),
+        json!({"label": "Tool calls", "value": tool_calls_total}),
+        json!({"label": "Evidence packets", "value": kind_counts.get("evidence_packet").copied().unwrap_or(0)}),
+        json!({"label": "Incidents", "value": kind_counts.get("incident_packet").copied().unwrap_or(0)}),
+        json!({"label": "Verifier passed", "value": passed}),
+        json!({"label": "Verifier failed", "value": failed}),
+        json!({"label": "Verifier blocked", "value": blocked}),
+        json!({"label": "Unverified actions", "value": tool_calls_without_evidence}),
+    ];
+    Ok(json!({
+        "format": "blackbox_dashboard_summary_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": {
+            "path": ledger_path,
+            "source_of_truth": source_of_truth(ledger_path),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count": inspection.record_count,
+            "ledger_tip_sha256": inspection.ledger_tip_sha256,
+            "metadata_record_count": inspection.metadata_record_count,
+            "metadata_tip_sha256": inspection.metadata_tip_sha256,
+        },
+        "counts": {
+            "record_kinds": kind_counts,
+            "runs_total": kind_counts.get("agent_run").copied().unwrap_or(0),
+            "tool_calls_total": tool_calls_total,
+            "evidence_packets_total": kind_counts.get("evidence_packet").copied().unwrap_or(0),
+            "incident_packets_total": kind_counts.get("incident_packet").copied().unwrap_or(0),
+            "verifier_results_total": verifier_total,
+            "verifier_statuses": verifier_status_counts,
+            "policy_decisions": policy_decision_counts,
+        },
+        "metrics": metrics,
+        "rates": {
+            "verifier_pass_rate": pass_rate,
+            "verifier_failure_rate": failure_rate,
+            "source_of_truth_coverage": source_coverage,
+        },
+        "source_of_truth_coverage": {
+            "tool_calls_total": tool_calls_total,
+            "tool_calls_with_evidence": tool_calls_with_evidence,
+            "tool_calls_without_evidence": tool_calls_without_evidence,
+            "coverage_ratio": source_coverage,
+        },
+        "evidence_hash_verification": evidence_hash_verification,
+    }))
+}
+
+fn build_dashboard_runs(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    run_records: &[&LedgerRecordOutput],
+    records_by_run: &BTreeMap<String, Vec<&LedgerRecordOutput>>,
+) -> BbxResult<Value> {
+    let mut seen = BTreeSet::new();
+    let mut rows = Vec::new();
+    for run_record in run_records {
+        let run_id = required_dashboard_payload_str(ledger_path, run_record, "run_id")?;
+        if !seen.insert(run_id.to_string()) {
+            return Err(dashboard_schema_error(
+                ledger_path,
+                run_record,
+                "payload.run_id",
+                format!("duplicate agent_run row for run_id {run_id}"),
+            ));
+        }
+        let records = records_by_run.get(run_id).ok_or_else(|| {
+            dashboard_schema_error(
+                ledger_path,
+                run_record,
+                "run_id",
+                format!("run_id {run_id} has no records_by_run entry"),
+            )
+        })?;
+        let kinds = ledger_record_kind_counts_from_refs(records);
+        let verifier_counts = verifier_status_counts_from_refs(ledger_path, records)?;
+        let policy_counts = policy_decision_counts_from_refs(ledger_path, records)?;
+        let latest = records
+            .iter()
+            .max_by_key(|record| record.sequence)
+            .expect("run has at least one record");
+        let sequence_start = records
+            .iter()
+            .map(|record| record.sequence)
+            .min()
+            .expect("run has at least one sequence");
+        let sequence_end = records
+            .iter()
+            .map(|record| record.sequence)
+            .max()
+            .expect("run has at least one sequence");
+        let tool_calls_total = kinds.get("tool_call").copied().unwrap_or(0);
+        let evidence_packets_total = kinds.get("evidence_packet").copied().unwrap_or(0);
+        let incident_packets_total = kinds.get("incident_packet").copied().unwrap_or(0);
+        rows.push(json!({
+            "run_id": run_id,
+            "tenant_id": run_record.tenant_id,
+            "created_at": run_record.created_at,
+            "actor": run_record.actor.clone(),
+            "task": run_record.payload.get("task").cloned().unwrap_or(Value::Null),
+            "runtime": run_record.payload.get("runtime").cloned().unwrap_or(Value::Null),
+            "status": dashboard_run_status(&verifier_counts, &policy_counts, incident_packets_total, tool_calls_total, evidence_packets_total),
+            "record_count": records.len(),
+            "record_kind_counts": kinds,
+            "verifier_status_counts": verifier_counts,
+            "policy_decision_counts": policy_counts,
+            "tool_calls_total": tool_calls_total,
+            "evidence_packets_total": evidence_packets_total,
+            "incident_packets_total": incident_packets_total,
+            "ledger_sequence_range": [sequence_start, sequence_end],
+            "latest_record_sha256": latest.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+            "source_of_truth": {
+                "ledger": source_of_truth(ledger_path),
+                "run_chain_record_sha256": latest.hash.get("run_chain_sha256").cloned().unwrap_or(Value::Null),
+            },
+            "timeline_api": format!("api/{}", dashboard_timeline_file_name(run_id)),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_runs_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "runs": rows,
+    }))
+}
+
+fn build_dashboard_evidence(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut packets = Vec::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        packets.push(json!({
+            "evidence_packet_id": required_dashboard_payload_str(ledger_path, record, "evidence_packet_id")?,
+            "run_id": required_dashboard_payload_str(ledger_path, record, "run_id")?,
+            "tool_call_id": required_dashboard_payload_str(ledger_path, record, "tool_call_id")?,
+            "verifier_id": required_dashboard_payload_str(ledger_path, record, "verifier_id")?,
+            "verifier_result_id": required_dashboard_payload_str(ledger_path, record, "verifier_result_id")?,
+            "verifier_status": required_dashboard_payload_str(ledger_path, record, "verifier_status")?,
+            "sequence": record.sequence,
+            "record_id": record.record_id,
+            "created_at": record.created_at,
+            "source_of_truth": record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+            "record_refs": record.payload.get("record_refs").cloned().unwrap_or(Value::Null),
+            "hashes": record.payload.get("hashes").cloned().unwrap_or(Value::Null),
+            "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+            "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_evidence_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "evidence_packets": packets,
+    }))
+}
+
+fn build_dashboard_verifiers(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    records: &[LedgerRecordOutput],
+    tool_call_by_id: &BTreeMap<String, &LedgerRecordOutput>,
+) -> BbxResult<Value> {
+    let mut rows = Vec::new();
+    let mut by_tool = BTreeMap::<String, BTreeMap<String, i64>>::new();
+    let mut by_connector = BTreeMap::<String, BTreeMap<String, i64>>::new();
+    let mut by_agent = BTreeMap::<String, BTreeMap<String, i64>>::new();
+    let mut by_tenant = BTreeMap::<String, BTreeMap<String, i64>>::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "verifier_result")
+    {
+        let status = required_dashboard_payload_str(ledger_path, record, "status")?;
+        let tool_call_id = required_dashboard_payload_str(ledger_path, record, "tool_call_id")?;
+        let tool_name = tool_call_by_id
+            .get(tool_call_id)
+            .map(|tool| required_dashboard_payload_str(ledger_path, tool, "tool_name"))
+            .transpose()?
+            .ok_or_else(|| {
+                dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.tool_call_id",
+                    format!("verifier_result references missing tool_call_id {tool_call_id}"),
+                )
+            })?;
+        let connector = required_dashboard_payload_str(ledger_path, record, "connector")?;
+        let agent_id = required_dashboard_actor_str(ledger_path, record, "agent_id")?;
+        increment_nested_count(&mut by_tool, tool_name, status);
+        increment_nested_count(&mut by_connector, connector, status);
+        increment_nested_count(&mut by_agent, agent_id, status);
+        increment_nested_count(&mut by_tenant, &record.tenant_id, status);
+        rows.push(json!({
+            "verifier_result_id": required_dashboard_payload_str(ledger_path, record, "verifier_result_id")?,
+            "run_id": record.run_id,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "verifier_id": required_dashboard_payload_str(ledger_path, record, "verifier_id")?,
+            "connector": connector,
+            "status": status,
+            "score": record.payload.get("score").cloned().unwrap_or(Value::Null),
+            "error_code": record.payload.get("error_code").cloned().unwrap_or(Value::Null),
+            "error_message": record.payload.get("error_message").cloned().unwrap_or(Value::Null),
+            "field_path": record.payload.get("field_path").cloned().unwrap_or(Value::Null),
+            "remediation": record.payload.get("remediation").cloned().unwrap_or(Value::Null),
+            "source_of_truth": record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+            "sequence": record.sequence,
+            "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_verifier_status_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "counts": {
+            "by_status": verifier_status_counts(ledger_path, records)?,
+            "by_tool": by_tool,
+            "by_connector": by_connector,
+            "by_agent": by_agent,
+            "by_tenant": by_tenant,
+        },
+        "verifier_results": rows,
+    }))
+}
+
+fn build_dashboard_errors(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    records: &[LedgerRecordOutput],
+    tool_call_by_id: &BTreeMap<String, &LedgerRecordOutput>,
+) -> BbxResult<Value> {
+    let mut groups = BTreeMap::<String, DashboardErrorGroup>::new();
+    for record in records.iter().filter(|record| {
+        record.record_kind == "verifier_result"
+            || record.record_kind == "incident_packet"
+            || record.record_kind == "policy_decision"
+    }) {
+        let error_code = record.payload.get("error_code").and_then(Value::as_str);
+        let include_policy_denial = record.record_kind == "policy_decision"
+            && record.payload.get("status").and_then(Value::as_str) == Some("denied");
+        let Some(code) = error_code.filter(|code| !code.trim().is_empty()) else {
+            if include_policy_denial {
+                return Err(dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.error_code",
+                    "denied policy_decision is missing error_code",
+                ));
+            }
+            continue;
+        };
+        let group = groups
+            .entry(code.to_string())
+            .or_insert_with(|| DashboardErrorGroup::new(code));
+        group.count += 1;
+        group.record_kinds.insert(record.record_kind.clone());
+        group.first_sequence = group.first_sequence.min(record.sequence);
+        group.last_sequence = group.last_sequence.max(record.sequence);
+        if let Some(remediation) = record.payload.get("remediation").and_then(Value::as_str) {
+            group.remediations.insert(remediation.to_string());
+        }
+        if let Some(source) = record.payload.get("source_of_truth") {
+            group.source_examples.push(source.clone());
+        }
+        if let Some(tool_call_id) = record.payload.get("tool_call_id").and_then(Value::as_str) {
+            if let Some(tool_record) = tool_call_by_id.get(tool_call_id) {
+                group.tools.insert(
+                    required_dashboard_payload_str(ledger_path, tool_record, "tool_name")?
+                        .to_string(),
+                );
+            }
+        }
+    }
+    let error_codes = groups
+        .into_values()
+        .map(|group| group.to_json())
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "format": "blackbox_dashboard_errors_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "error_codes": error_codes,
+    }))
+}
+
+fn build_dashboard_exports(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    run_records: &[&LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut run_exports = Vec::new();
+    for run_record in run_records {
+        let run_id = required_dashboard_payload_str(ledger_path, run_record, "run_id")?;
+        run_exports.push(json!({
+            "run_id": run_id,
+            "evidence_export_command": [
+                "blackbox", "export", "evidence",
+                "--ledger", ledger_path.display().to_string(),
+                "--run-id", run_id,
+                "--out", format!("evidence_{}.json", safe_filename_fragment(run_id)),
+            ],
+            "timeline_api": format!("api/{}", dashboard_timeline_file_name(run_id)),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_exports_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "exports": {
+            "evidence_by_run": run_exports,
+            "episodes_export_command": [
+                "blackbox", "export", "episodes",
+                "--ledger", ledger_path.display().to_string(),
+                "--out", "episodes-export"
+            ],
+            "dashboard_files": [
+                "index.html",
+                "manifest.json",
+                "api/summary.json",
+                "api/runs.json",
+                "api/evidence.json",
+                "api/verifier-status.json",
+                "api/errors.json",
+                "api/exports.json"
+            ],
+        },
+    }))
+}
+
+fn build_dashboard_timelines(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_records: &[&LedgerRecordOutput],
+) -> BbxResult<Vec<(String, String, Value)>> {
+    let mut timelines = Vec::new();
+    for run_record in run_records {
+        let run_id = required_dashboard_payload_str(ledger_path, run_record, "run_id")?;
+        let report = build_run_replay_report(ledger_path, inspection, run_id)?;
+        timelines.push((
+            run_id.to_string(),
+            dashboard_timeline_file_name(run_id),
+            json!({
+                "format": "blackbox_dashboard_timeline_json_v1",
+                "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+                "source_of_truth": source_of_truth(ledger_path),
+                "run_id": run_id,
+                "report": report,
+            }),
+        ));
+    }
+    Ok(timelines)
+}
+
 fn write_episode_export_directory(
     args: &ExportEpisodesArgs,
     inspection: &LedgerInspection,
@@ -4485,6 +5246,775 @@ fn promote_episode_export_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxRe
     fs::rename(temp_dir, out)
         .map_err(|err| BlackboxError::io(out, "promote episode export temp directory", err))?;
     Ok(())
+}
+
+fn validate_dashboard_directory_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty dashboard output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "dashboard output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this dashboard directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "dashboard parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the dashboard build",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_dashboard_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)
+            .map_err(|err| BlackboxError::io(path, "remove stale dashboard temp directory", err))?;
+    }
+    Ok(())
+}
+
+fn promote_dashboard_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "dashboard output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this dashboard directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out)
+            .map_err(|err| BlackboxError::io(out, "replace existing dashboard directory", err))?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote dashboard temp directory", err))?;
+    Ok(())
+}
+
+fn write_dashboard_json_file(path: &Path, value: &Value) -> BbxResult<()> {
+    write_json_file_new(path, value, "dashboard API JSON")?;
+    let readback = read_json_file(path, "dashboard API JSON readback")?;
+    if &readback != value {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "DASHBOARD_API_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "dashboard API JSON readback does not match the value written",
+            "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn write_dashboard_text_file(path: &Path, text: &str, label: &'static str) -> BbxResult<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "flush dashboard text file", err))?;
+    let readback = fs::read_to_string(path)
+        .map_err(|err| BlackboxError::io(path, "read dashboard HTML", err))?;
+    if readback != text {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "DASHBOARD_HTML_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "dashboard HTML readback does not match the value written",
+            "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn dashboard_file_entry(base: &Path, relative: &Path) -> BbxResult<Value> {
+    let path = base.join(relative);
+    let bytes = fs::metadata(&path)
+        .map_err(|err| BlackboxError::io(&path, "stat dashboard file", err))?
+        .len();
+    Ok(json!({
+        "path": relative.to_string_lossy(),
+        "sha256": sha256_file(&path)?,
+        "bytes": bytes,
+    }))
+}
+
+fn verify_dashboard_manifest_files(out: &Path, manifest: &Value) -> BbxResult<()> {
+    let files = manifest
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files",
+                "dashboard manifest is missing files array",
+                "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+    for file in files {
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "dashboard manifest file entry is missing path",
+                "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_MANIFEST_PATH_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("dashboard manifest file path is not a safe relative path: {rel}"),
+                "regenerate the dashboard manifest from trusted code",
+            ));
+        }
+        let path = out.join(rel_path);
+        let expected_sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].sha256",
+                "dashboard manifest file entry is missing sha256",
+                "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let expected_bytes = file.get("bytes").and_then(Value::as_u64).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].bytes",
+                "dashboard manifest file entry is missing byte count",
+                "delete the corrupt dashboard directory and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let actual_sha = sha256_file(&path)?;
+        let actual_bytes = fs::metadata(&path)
+            .map_err(|err| BlackboxError::io(&path, "stat final dashboard file", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "DASHBOARD_FILE_HASH_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                rel,
+                "dashboard file hash or byte count changed after promotion",
+                "treat the dashboard output directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn ledger_record_kind_counts(records: &[LedgerRecordOutput]) -> BTreeMap<String, i64> {
+    let mut counts = BTreeMap::new();
+    for record in records {
+        *counts.entry(record.record_kind.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn ledger_record_kind_counts_from_refs(records: &[&LedgerRecordOutput]) -> BTreeMap<String, i64> {
+    let mut counts = BTreeMap::new();
+    for record in records {
+        *counts.entry(record.record_kind.clone()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn verifier_status_counts(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, i64>> {
+    let mut counts = initialized_status_counts();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "verifier_result")
+    {
+        let status = required_dashboard_payload_str(ledger_path, record, "status")?;
+        *counts.entry(status.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn verifier_status_counts_from_refs(
+    ledger_path: &Path,
+    records: &[&LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, i64>> {
+    let mut counts = initialized_status_counts();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "verifier_result")
+    {
+        let status = required_dashboard_payload_str(ledger_path, record, "status")?;
+        *counts.entry(status.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn initialized_status_counts() -> BTreeMap<String, i64> {
+    let mut counts = BTreeMap::new();
+    for status in ["passed", "failed", "blocked", "unknown"] {
+        counts.insert(status.to_string(), 0);
+    }
+    counts
+}
+
+fn policy_decision_counts(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, i64>> {
+    let mut counts = BTreeMap::new();
+    for status in ["allowed", "denied", "unknown"] {
+        counts.insert(status.to_string(), 0);
+    }
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "policy_decision")
+    {
+        let status = required_dashboard_payload_str(ledger_path, record, "status")?;
+        *counts.entry(status.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn policy_decision_counts_from_refs(
+    ledger_path: &Path,
+    records: &[&LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, i64>> {
+    let mut counts = BTreeMap::new();
+    for status in ["allowed", "denied", "unknown"] {
+        counts.insert(status.to_string(), 0);
+    }
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "policy_decision")
+    {
+        let status = required_dashboard_payload_str(ledger_path, record, "status")?;
+        *counts.entry(status.to_string()).or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+fn records_by_run_id(records: &[LedgerRecordOutput]) -> BTreeMap<String, Vec<&LedgerRecordOutput>> {
+    let mut by_run = BTreeMap::<String, Vec<&LedgerRecordOutput>>::new();
+    for record in records {
+        if let Some(run_id) = &record.run_id {
+            by_run.entry(run_id.clone()).or_default().push(record);
+        }
+    }
+    by_run
+}
+
+fn tool_call_records_by_id<'a>(
+    ledger_path: &Path,
+    records: &'a [LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, &'a LedgerRecordOutput>> {
+    let mut by_tool = BTreeMap::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "tool_call")
+    {
+        let tool_call_id = required_dashboard_payload_str(ledger_path, record, "tool_call_id")?;
+        if by_tool.insert(tool_call_id.to_string(), record).is_some() {
+            return Err(dashboard_schema_error(
+                ledger_path,
+                record,
+                "payload.tool_call_id",
+                format!("duplicate tool_call_id {tool_call_id}"),
+            ));
+        }
+    }
+    Ok(by_tool)
+}
+
+fn evidence_tool_call_ids(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<BTreeSet<String>> {
+    let mut ids = BTreeSet::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        ids.insert(
+            required_dashboard_payload_str(ledger_path, record, "tool_call_id")?.to_string(),
+        );
+    }
+    Ok(ids)
+}
+
+fn dashboard_run_status(
+    verifier_counts: &BTreeMap<String, i64>,
+    policy_counts: &BTreeMap<String, i64>,
+    incident_packets_total: i64,
+    tool_calls_total: i64,
+    evidence_packets_total: i64,
+) -> &'static str {
+    if incident_packets_total > 0
+        || verifier_counts.get("failed").copied().unwrap_or(0) > 0
+        || policy_counts.get("denied").copied().unwrap_or(0) > 0
+    {
+        "failed"
+    } else if verifier_counts.get("blocked").copied().unwrap_or(0) > 0 {
+        "blocked"
+    } else if tool_calls_total > evidence_packets_total {
+        "needs_verification"
+    } else if verifier_counts.get("passed").copied().unwrap_or(0) > 0 {
+        "passed"
+    } else {
+        "recorded"
+    }
+}
+
+fn increment_nested_count(
+    counts: &mut BTreeMap<String, BTreeMap<String, i64>>,
+    dimension: &str,
+    status: &str,
+) {
+    let entry = counts.entry(dimension.to_string()).or_default();
+    for known in ["passed", "failed", "blocked", "unknown"] {
+        entry.entry(known.to_string()).or_insert(0);
+    }
+    *entry.entry(status.to_string()).or_insert(0) += 1;
+}
+
+fn ratio_value(numerator: i64, denominator: i64) -> Value {
+    if denominator <= 0 {
+        Value::Null
+    } else {
+        json!((numerator as f64) / (denominator as f64))
+    }
+}
+
+fn dashboard_source_ledger(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+) -> Value {
+    json!({
+        "path": ledger_path,
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_id": ledger_id,
+        "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+        "ledger_record_count": inspection.record_count,
+        "ledger_tip_sha256": inspection.ledger_tip_sha256,
+    })
+}
+
+fn dashboard_timeline_file_name(run_id: &str) -> String {
+    format!("timeline_{}.json", safe_filename_fragment(run_id))
+}
+
+fn required_dashboard_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            dashboard_schema_error(
+                ledger_path,
+                record,
+                format!("payload.{field}"),
+                format!(
+                    "{} payload is missing non-empty {field}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn required_dashboard_actor_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .actor
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            dashboard_schema_error(
+                ledger_path,
+                record,
+                format!("actor.{field}"),
+                format!("{} actor is missing non-empty {field}", record.record_kind),
+            )
+        })
+}
+
+fn dashboard_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity(
+        "DASHBOARD_SOURCE_SCHEMA_INVALID",
+        source_of_truth(ledger_path),
+        format!("ledger_records[{}].{}", record.sequence, field.into()),
+        message,
+        "inspect the physical ledger row and rebuild the invalid record from a verified run",
+    )
+}
+
+#[derive(Debug)]
+struct DashboardErrorGroup {
+    error_code: String,
+    count: i64,
+    record_kinds: BTreeSet<String>,
+    tools: BTreeSet<String>,
+    remediations: BTreeSet<String>,
+    source_examples: Vec<Value>,
+    first_sequence: i64,
+    last_sequence: i64,
+}
+
+impl DashboardErrorGroup {
+    fn new(error_code: &str) -> Self {
+        Self {
+            error_code: error_code.to_string(),
+            count: 0,
+            record_kinds: BTreeSet::new(),
+            tools: BTreeSet::new(),
+            remediations: BTreeSet::new(),
+            source_examples: Vec::new(),
+            first_sequence: i64::MAX,
+            last_sequence: 0,
+        }
+    }
+
+    fn to_json(self) -> Value {
+        json!({
+            "error_code": self.error_code,
+            "count": self.count,
+            "record_kinds": self.record_kinds,
+            "tools": self.tools,
+            "remediations": self.remediations,
+            "source_of_truth_examples": self.source_examples,
+            "ledger_sequence_range": [self.first_sequence, self.last_sequence],
+        })
+    }
+}
+
+fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
+    let summary = &data.summary;
+    let ledger_source = html_escape(
+        summary
+            .pointer("/source_ledger/source_of_truth")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    );
+    let mut html = String::new();
+    html.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+    html.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    html.push_str("<title>BlackBoxFix Team Dashboard</title>\n");
+    html.push_str("<style>\n");
+    html.push_str(":root{color-scheme:light;--ink:#17212b;--muted:#5a6673;--line:#c9d1d9;--panel:#f7f9fb;--ok:#1b7f3a;--fail:#b42318;--warn:#9a5b00;--bg:#ffffff;}\n");
+    html.push_str("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}header,main{max-width:1280px;margin:0 auto;padding:20px}header{border-bottom:1px solid var(--line)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 10px}.source{color:var(--muted);word-break:break-all}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}a{color:#075985}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff}th,td{border:1px solid var(--line);padding:8px;vertical-align:top;overflow-wrap:anywhere}th{background:var(--panel);text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.metric{border:1px solid var(--line);padding:10px;background:var(--panel);min-height:70px}.metric b{display:block;font-size:22px}.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px}.filters label{display:grid;gap:4px;color:var(--muted)}select,input{border:1px solid var(--line);background:#fff;color:var(--ink);min-height:34px;padding:5px 8px;min-width:150px}.status-passed{color:var(--ok);font-weight:700}.status-failed{color:var(--fail);font-weight:700}.status-blocked,.status-needs_verification{color:var(--warn);font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}@media(max-width:760px){header,main{padding:14px}table{font-size:12px}.wide{overflow-x:auto}th,td{min-width:130px}select,input{width:100%}.filters label{width:100%}}\n");
+    html.push_str("</style>\n</head>\n<body>\n<header>\n");
+    html.push_str("<h1>BlackBoxFix Team Dashboard</h1>\n");
+    html.push_str(&format!(
+        "<div class=\"source\">Source of truth: <code>{}</code></div>\n",
+        ledger_source
+    ));
+    html.push_str("<nav aria-label=\"Dashboard API responses\"><a href=\"api/summary.json\">summary</a><a href=\"api/runs.json\">runs</a><a href=\"api/evidence.json\">evidence</a><a href=\"api/verifier-status.json\">verifiers</a><a href=\"api/errors.json\">errors</a><a href=\"api/exports.json\">exports</a></nav>\n");
+    html.push_str("</header>\n<main>\n<div role=\"status\">Dashboard files read back and hash verified.</div>\n");
+    html.push_str("<section aria-labelledby=\"metrics\"><h2 id=\"metrics\">Metrics</h2><div class=\"metric-grid\">\n");
+    for metric in dashboard_array(summary, "/metrics")? {
+        let label = html_escape(metric.get("label").and_then(Value::as_str).unwrap_or(""));
+        let value = html_escape(&dashboard_display_value(
+            metric.get("value").unwrap_or(&Value::Null),
+        ));
+        html.push_str(&format!(
+            "<div class=\"metric\"><span>{}</span><b>{}</b></div>\n",
+            label, value
+        ));
+    }
+    html.push_str("</div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"runs\"><h2 id=\"runs\">Runs</h2><div class=\"wide\"><table><thead><tr><th>Run</th><th>Status</th><th>Task</th><th>Verifier Status</th><th>Source</th><th>Timeline</th></tr></thead><tbody>\n");
+    for run in dashboard_array(&data.runs, "/runs")? {
+        let run_id = html_escape(run.get("run_id").and_then(Value::as_str).unwrap_or(""));
+        let status = run.get("status").and_then(Value::as_str).unwrap_or("");
+        let class = format!("status-{}", safe_filename_fragment(status));
+        let task = html_escape(&dashboard_display_value(
+            run.get("task").unwrap_or(&Value::Null),
+        ));
+        let verifier = html_escape(&dashboard_display_value(
+            run.get("verifier_status_counts").unwrap_or(&Value::Null),
+        ));
+        let source = html_escape(&dashboard_display_value(
+            run.get("source_of_truth").unwrap_or(&Value::Null),
+        ));
+        let timeline = html_escape(
+            run.get("timeline_api")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td class=\"{}\">{}</td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
+            run_id,
+            class,
+            html_escape(status),
+            task,
+            verifier,
+            source,
+            timeline
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"ok\">ok</option><option value=\"running\">running</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
+    for (_, _, timeline) in &data.timelines {
+        let run_id = timeline.get("run_id").and_then(Value::as_str).unwrap_or("");
+        for record in dashboard_array(timeline, "/report/timeline")? {
+            let record_kind = record
+                .get("record_kind")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let status = dashboard_timeline_record_status(record);
+            let risk = dashboard_timeline_record_risk(record);
+            let source = dashboard_timeline_record_source(record);
+            let detail = dashboard_timeline_record_detail(record);
+            html.push_str(&format!(
+                "<tr class=\"timeline-row\" data-kind=\"{}\" data-status=\"{}\" data-risk=\"{}\" data-source=\"{}\"><td><code>{}</code></td><td>{}</td><td><code>{}</code></td><td class=\"status-{}\">{}</td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>\n",
+                html_escape(record_kind),
+                html_escape(&status),
+                html_escape(&risk),
+                html_escape(&source),
+                html_escape(run_id),
+                html_escape(&dashboard_display_value(record.get("sequence").unwrap_or(&Value::Null))),
+                html_escape(record_kind),
+                safe_filename_fragment(&status),
+                html_escape(&status),
+                html_escape(&risk),
+                html_escape(&source),
+                html_escape(&detail)
+            ));
+        }
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"verifiers\"><h2 id=\"verifiers\">Verifier Status</h2><div class=\"wide\"><table><thead><tr><th>Verifier</th><th>Status</th><th>Tool</th><th>Error</th><th>Source Of Truth</th></tr></thead><tbody>\n");
+    for verifier in dashboard_array(&data.verifiers, "/verifier_results")? {
+        let status = verifier.get("status").and_then(Value::as_str).unwrap_or("");
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td class=\"status-{}\">{}</td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td></tr>\n",
+            html_escape(verifier.get("verifier_id").and_then(Value::as_str).unwrap_or("")),
+            safe_filename_fragment(status),
+            html_escape(status),
+            html_escape(verifier.get("tool_name").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(verifier.get("error_code").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(verifier.get("source_of_truth").unwrap_or(&Value::Null)))
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"evidence\"><h2 id=\"evidence\">Evidence</h2><div class=\"wide\"><table><thead><tr><th>Evidence Packet</th><th>Run</th><th>Tool Call</th><th>Status</th><th>Record SHA256</th><th>Source Of Truth</th></tr></thead><tbody>\n");
+    for packet in dashboard_array(&data.evidence, "/evidence_packets")? {
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td></tr>\n",
+            html_escape(packet.get("evidence_packet_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(packet.get("run_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(packet.get("tool_call_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(packet.get("verifier_status").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(packet.get("record_sha256").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(packet.get("source_of_truth").unwrap_or(&Value::Null)))
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"errors\"><h2 id=\"errors\">Error Codes</h2><div class=\"wide\"><table><thead><tr><th>Error Code</th><th>Count</th><th>Records</th><th>Remediation</th><th>Source Of Truth</th></tr></thead><tbody>\n");
+    for error in dashboard_array(&data.errors, "/error_codes")? {
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td>{}</td><td><code>{}</code></td><td>{}</td><td><code>{}</code></td></tr>\n",
+            html_escape(error.get("error_code").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(error.get("count").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(error.get("record_kinds").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(error.get("remediations").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(error.get("source_of_truth_examples").unwrap_or(&Value::Null)))
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"exports\"><h2 id=\"exports\">Exports</h2><div class=\"wide\"><table><thead><tr><th>Run</th><th>Evidence Command</th><th>Timeline API</th></tr></thead><tbody>\n");
+    for export in dashboard_array(&data.exports, "/exports/evidence_by_run")? {
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
+            html_escape(export.get("run_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(export.get("evidence_export_command").unwrap_or(&Value::Null))),
+            html_escape(export.get("timeline_api").and_then(Value::as_str).unwrap_or(""))
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+    html.push_str("</main>\n<script>\n(function(){function q(id){return document.getElementById(id)}function apply(){var kind=q('timeline-kind').value;var status=q('timeline-status').value;var risk=q('timeline-risk').value;var source=q('timeline-source').value.toLowerCase();document.querySelectorAll('.timeline-row').forEach(function(row){var hide=(kind&&row.dataset.kind!==kind)||(status&&row.dataset.status!==status)||(risk&&row.dataset.risk!==risk)||(source&&row.dataset.source.toLowerCase().indexOf(source)===-1);row.hidden=hide;});}['timeline-kind','timeline-status','timeline-risk','timeline-source'].forEach(function(id){q(id).addEventListener('input',apply);});})();\n</script>\n</body>\n</html>\n");
+    Ok(html)
+}
+
+fn dashboard_array<'a>(value: &'a Value, pointer: &'static str) -> BbxResult<&'a Vec<Value>> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::invalid(
+                format!("dashboard HTML source is missing array at {pointer}"),
+                "report this as a bug; dashboard API builders must provide every rendered array",
+            )
+        })
+}
+
+fn dashboard_display_value(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn dashboard_timeline_record_status(record: &Value) -> String {
+    for pointer in [
+        "/payload/status",
+        "/payload/verifier_status",
+        "/payload/execution/status",
+        "/payload/trigger",
+    ] {
+        if let Some(status) = record.pointer(pointer).and_then(Value::as_str) {
+            if !status.trim().is_empty() {
+                return status.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+fn dashboard_timeline_record_risk(record: &Value) -> String {
+    record
+        .pointer("/payload/task/risk_tier")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn dashboard_timeline_record_source(record: &Value) -> String {
+    if let Some(source) = record.pointer("/payload/source_of_truth") {
+        return dashboard_display_value(source);
+    }
+    if let Some(source) = record.pointer("/payload/source_of_truth/locator") {
+        return dashboard_display_value(source);
+    }
+    if let Some(source) = record.pointer("/payload/read_path/connector_id") {
+        return dashboard_display_value(source);
+    }
+    String::new()
+}
+
+fn dashboard_timeline_record_detail(record: &Value) -> String {
+    for pointer in [
+        "/payload/task/requested_outcome",
+        "/payload/summary",
+        "/payload/tool_name",
+        "/payload/verifier_id",
+        "/payload/error_code",
+        "/payload/evidence_packet_id",
+        "/payload/incident_packet_id",
+    ] {
+        if let Some(value) = record.pointer(pointer) {
+            let rendered = dashboard_display_value(value);
+            if !rendered.trim().is_empty() {
+                return rendered;
+            }
+        }
+    }
+    dashboard_display_value(record.get("payload").unwrap_or(&Value::Null))
+}
+
+fn html_escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn safe_filename_fragment(value: &str) -> String {
