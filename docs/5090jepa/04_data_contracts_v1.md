@@ -334,7 +334,7 @@ pub struct DatasetShardRecord {
 }
 ```
 
-Validation: monotonic timestamps, no duplicate transitions, deterministic hashes, no future leakage in input panels, every negative reference must read back from `CF_DJ_LATENT_PANELS`.
+Validation: monotonic timestamps, no duplicate transitions, deterministic hashes, no future leakage in input panels, every negative reference must read back from `CF_DJ_LATENT_PANELS`, and the selected negative must not flatten to the same training feature vector as the target under the row action override. Current dataset shard records use record version 2 and compiler version 2 so the persisted `LeakageReport` includes `negative_feature_equals_target_count`.
 
 ## 8. Predictor / Artifact / Prediction (`predictor.rs`, `artifact.rs`)
 

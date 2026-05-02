@@ -270,6 +270,11 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
         train_get["decoded_records"]["dataset_shard"]["row_count"],
         1
     );
+    assert_eq!(
+        train_get["decoded_records"]["dataset_shard"]["leakage_report"]
+            ["negative_feature_equals_target_count"],
+        0
+    );
     evidence.push(json!({"step": "counter_get_train_shard", "output": train_get}));
 
     let train_row = inspect_dataset(&counter_db, &dataset_id, &train_shard_id, "0");
@@ -280,6 +285,10 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
     assert_eq!(
         train_row["decoded_records"]["row"]["source_hash_checks"]["target_equal"],
         true
+    );
+    assert_eq!(
+        train_row["decoded_records"]["row"]["training_feature_checks"]["target_negative_equal"],
+        false
     );
     assert_eq!(
         train_row["decoded_records"]["row"]["input_state_fields"]["counter"]["I64"],
@@ -479,7 +488,7 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
     assert!(bad_negative_err["error_message"]
         .as_str()
         .expect("error message")
-        .contains("insufficient negatives"));
+        .contains("insufficient feature-distinct negatives"));
     assert_eq!(
         delta(
             &bad_negative_before,
@@ -529,6 +538,10 @@ fn dynamicjepa_phase6_cli_fsv_real_rocksdb() {
         grid_row["decoded_records"]["row"]["input_action_fields"]["move"]["Categorical"]["variant"]
             .as_str()
             .is_some()
+    );
+    assert_eq!(
+        grid_row["decoded_records"]["row"]["training_feature_checks"]["target_negative_equal"],
+        false
     );
     evidence.push(json!({"step": "grid_inspect_train_row_0", "output": grid_row}));
 

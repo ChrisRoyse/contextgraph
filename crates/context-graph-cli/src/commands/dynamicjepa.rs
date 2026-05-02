@@ -16,21 +16,21 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
 use context_graph_core::dynamicjepa::{
-    ActionId, ActionOrigin, ActionSchema, AdapterId, AdapterRunRecord, AdapterRunStatus,
-    AdapterSpec, ArtifactHashCheck, BindingId, BindingKind, BindingMethod, BindingRecord,
-    BindingRef, CandidateActionConfig, ConstellationCentroid, ConstellationConfig,
-    ConstellationGlobalSpec, ConstellationId, ConstellationModalities, ConstellationSubjectSpec,
-    DatasetId, DatasetPolicy, DatasetShardId, DatasetShardRecord, DjJsonValue, DjRecordHeader,
-    DomainPack, DomainPackId, DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EntitySchema,
-    EventId, FieldKind, FieldSpec, FieldValue, InstrumentId, InstrumentKind, InstrumentReading,
-    InstrumentSpec, InstrumentValidation, InvariantSpec, LatentPanel, LeakageReport,
-    ModelArtifactId, Normalization, NormalizedAction, NormalizedOutcome, NormalizedState,
-    ObjectiveSpec, OutcomeId, OutcomeSchema, PairKindBitset, PairKindName, PairwiseReading,
-    PairwiseReadingId, PanelId, PanelSlot, PanelSlotKind, PayloadFormat, PlanTraceId,
-    PlannerPolicy, PredictionId, RawDomainEvent, ReadingStatus, ShapeSummary, SkillId, SourceKind,
-    StateId, StateSchema, StateTransition, SurpriseEventId, ThresholdCalibration,
-    ThresholdCalibrationId, TimeEncoding, TimeSchema, TrainingRunId, TrajectoryId,
-    TrajectoryRecord, TransitionId, Validate, VerificationPolicy, VerificationRunId,
+    flatten_panel_with_action_override, panel_action_vector, ActionId, ActionOrigin, ActionSchema,
+    AdapterId, AdapterRunRecord, AdapterRunStatus, AdapterSpec, ArtifactHashCheck, BindingId,
+    BindingKind, BindingMethod, BindingRecord, BindingRef, CandidateActionConfig,
+    ConstellationCentroid, ConstellationConfig, ConstellationGlobalSpec, ConstellationId,
+    ConstellationModalities, ConstellationSubjectSpec, DatasetId, DatasetPolicy, DatasetShardId,
+    DatasetShardRecord, DjJsonValue, DjRecordHeader, DomainPack, DomainPackId, DynamicJepaError,
+    DynamicJepaRecord, DynamicJepaResult, EntitySchema, EventId, FieldKind, FieldSpec, FieldValue,
+    InstrumentId, InstrumentKind, InstrumentReading, InstrumentSpec, InstrumentValidation,
+    InvariantSpec, LatentPanel, LeakageReport, ModelArtifactId, Normalization, NormalizedAction,
+    NormalizedOutcome, NormalizedState, ObjectiveSpec, OutcomeId, OutcomeSchema, PairKindBitset,
+    PairKindName, PairwiseReading, PairwiseReadingId, PanelId, PanelSlot, PanelSlotKind,
+    PayloadFormat, PlanTraceId, PlannerPolicy, PredictionId, RawDomainEvent, ReadingStatus,
+    ShapeSummary, SkillId, SourceKind, StateId, StateSchema, StateTransition, SurpriseEventId,
+    ThresholdCalibration, ThresholdCalibrationId, TimeEncoding, TimeSchema, TrainingRunId,
+    TrajectoryId, TrajectoryRecord, TransitionId, Validate, VerificationPolicy, VerificationRunId,
     VerificationRunRecord, VerificationStatus, ADAPTER_RUN_RECORD_VERSION, BINDING_RECORD_VERSION,
     CONSTELLATION_CENTROID_RECORD_VERSION, DATASET_SHARD_RECORD_VERSION,
     DOMAIN_PACK_RECORD_VERSION, INSTRUMENT_READING_RECORD_VERSION, LATENT_PANEL_RECORD_VERSION,
@@ -17030,6 +17030,7 @@ fn build_dataset_record(
         future_in_input_count: 0,
         same_panel_input_target_count: 0,
         negative_equals_target_count: 0,
+        negative_feature_equals_target_count: 0,
         split_overlap_count,
     };
 
@@ -17057,14 +17058,31 @@ fn build_dataset_record(
         if row.input_panel.panel_id == row.target_panel.panel_id {
             leakage_report.same_panel_input_target_count += 1;
         }
+        let action_vector = panel_action_vector(&row.input_panel)?;
+        let target_training_vector =
+            flatten_panel_with_action_override(&row.target_panel, Some(&action_vector))?;
         let negative_panel_id = select_negative_panel_id(
             domain_pack,
             row,
             negative_pool,
             domain_pack.dataset_policy.min_negatives_per_row,
+            &target_training_vector,
+            &action_vector,
         )?;
         if negative_panel_id == row.target_panel.panel_id {
             leakage_report.negative_equals_target_count += 1;
+        }
+        let negative_panel = negative_pool
+            .iter()
+            .find(|entry| entry.panel.panel_id == negative_panel_id)
+            .ok_or_else(|| DynamicJepaError::SourceOfTruthMissing {
+                cf: CF_DJ_LATENT_PANELS.to_string(),
+                key: negative_panel_id.into_bytes().to_vec(),
+            })?;
+        let negative_training_vector =
+            flatten_panel_with_action_override(&negative_panel.panel, Some(&action_vector))?;
+        if negative_training_vector == target_training_vector {
+            leakage_report.negative_feature_equals_target_count += 1;
         }
 
         input_panel_ids.push(row.input_panel.panel_id);
@@ -17106,7 +17124,7 @@ fn build_dataset_record(
         },
         source_hashes,
         leakage_report,
-        compiler_version: 1,
+        compiler_version: 2,
     };
     record.refresh_content_hash()?;
     Ok(record)
@@ -17117,6 +17135,8 @@ fn select_negative_panel_id(
     row: &DatasetCandidateRow,
     negative_pool: &[NegativePoolEntry],
     required: u32,
+    target_training_vector: &[f32],
+    action_vector: &[f32],
 ) -> DynamicJepaResult<PanelId> {
     let target_signature = negative_pool
         .iter()
@@ -17126,13 +17146,24 @@ fn select_negative_panel_id(
             cf: CF_DJ_LATENT_PANELS.to_string(),
             key: row.target_panel.panel_id.into_bytes().to_vec(),
         })?;
-    let mut candidates = negative_pool
-        .iter()
-        .filter(|entry| {
-            entry.panel.panel_id != row.target_panel.panel_id
-                && entry.outcome_signature != target_signature
-        })
-        .collect::<Vec<_>>();
+    let mut outcome_distinct_candidates = 0usize;
+    let mut feature_collision_candidates = 0usize;
+    let mut candidates = Vec::new();
+    for entry in negative_pool {
+        if entry.panel.panel_id == row.target_panel.panel_id
+            || entry.outcome_signature == target_signature
+        {
+            continue;
+        }
+        outcome_distinct_candidates += 1;
+        let negative_training_vector =
+            flatten_panel_with_action_override(&entry.panel, Some(action_vector))?;
+        if negative_training_vector == target_training_vector {
+            feature_collision_candidates += 1;
+            continue;
+        }
+        candidates.push(entry);
+    }
     candidates.sort_by(|left, right| {
         left.stable_selection_hash
             .cmp(&right.stable_selection_hash)
@@ -17141,24 +17172,30 @@ fn select_negative_panel_id(
     if candidates.len() < required as usize {
         return Err(DynamicJepaError::DatasetLeakageDetected {
             message: format!(
-                "insufficient negatives for domain {} trajectory {} row {}: required={} found={}",
+                "insufficient feature-distinct negatives for domain {} trajectory {} row {}: required={} found={} outcome_distinct_candidates={} feature_collisions={} remediation=recompile with more source trajectories or adjust the domain pack so negatives differ in the exact training feature representation",
                 domain_pack.id,
                 row.trajectory_id,
                 row.row_index_in_trajectory,
                 required,
-                candidates.len()
+                candidates.len(),
+                outcome_distinct_candidates,
+                feature_collision_candidates
             ),
             dataset_id: Uuid::nil(),
         });
     }
     let input_panel_feature_hash = stable_panel_feature_hash(&row.input_panel)?;
     let target_panel_feature_hash = stable_panel_feature_hash(&row.target_panel)?;
+    let target_training_feature_hash = stable_f32_feature_hash(target_training_vector);
+    let action_feature_hash = stable_f32_feature_hash(action_vector);
     let seed = serde_json::to_vec(&json!({
         "domain_pack_id": domain_pack.id.to_string(),
         "domain_pack_version": &domain_pack.version,
         "row_index_in_trajectory": row.row_index_in_trajectory,
         "input_panel_feature_sha256": hex_bytes(&input_panel_feature_hash),
         "target_panel_feature_sha256": hex_bytes(&target_panel_feature_hash),
+        "target_training_feature_sha256": hex_bytes(&target_training_feature_hash),
+        "action_feature_sha256": hex_bytes(&action_feature_hash),
         "target_outcome_signature_sha256": hex_bytes(&sha256(target_signature.as_bytes())),
     }))
     .map_err(|err| {
@@ -17190,6 +17227,15 @@ fn stable_panel_feature_hash(panel: &LatentPanel) -> DynamicJepaResult<[u8; 32]>
         )
     })?;
     Ok(sha256(&bytes))
+}
+
+fn stable_f32_feature_hash(values: &[f32]) -> [u8; 32] {
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(values) + std::mem::size_of::<u64>());
+    bytes.extend_from_slice(&(values.len() as u64).to_le_bytes());
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    sha256(&bytes)
 }
 
 fn stable_negative_panel_selection_hash(
@@ -17247,12 +17293,35 @@ fn verify_dataset_shard_sources(
             cf: CF_DJ_ACTIONS.to_string(),
             key: action_id.into_bytes().to_vec(),
         })?;
-        get_latent_panel(db, negative_panel_id)?.ok_or_else(|| {
+        if input_panel.action_id != action_id {
+            return Err(DynamicJepaError::DatasetLeakageDetected {
+                message: format!(
+                    "shard action_id {} does not match input panel {} action_id {} at row {}",
+                    action_id, input_panel_id, input_panel.action_id, row_idx
+                ),
+                dataset_id: record.dataset_id.0,
+            });
+        }
+        let negative_panel = get_latent_panel(db, negative_panel_id)?.ok_or_else(|| {
             DynamicJepaError::SourceOfTruthMissing {
                 cf: CF_DJ_LATENT_PANELS.to_string(),
                 key: negative_panel_id.into_bytes().to_vec(),
             }
         })?;
+        let action_vector = panel_action_vector(&input_panel)?;
+        let target_training_vector =
+            flatten_panel_with_action_override(&target_panel, Some(&action_vector))?;
+        let negative_training_vector =
+            flatten_panel_with_action_override(&negative_panel, Some(&action_vector))?;
+        if target_training_vector == negative_training_vector {
+            return Err(DynamicJepaError::DatasetLeakageDetected {
+                message: format!(
+                    "shard row {} target_panel {} and negative_panel {} flatten to identical training features under action {}; recompile the dataset so negatives are feature-distinct",
+                    row_idx, target_panel_id, negative_panel_id, action_id
+                ),
+                dataset_id: record.dataset_id.0,
+            });
+        }
         if record.source_hashes[row_idx * 2] != input_panel.header.content_hash {
             return Err(DynamicJepaError::DatasetLeakageDetected {
                 message: format!(
@@ -17348,6 +17417,13 @@ fn dataset_row_snapshot(
             dataset_id: record.dataset_id.0,
         }
     })?;
+    let action_vector = panel_action_vector(&input_panel)?;
+    let target_training_vector =
+        flatten_panel_with_action_override(&target_panel, Some(&action_vector))?;
+    let negative_training_vector =
+        flatten_panel_with_action_override(&negative_panel, Some(&action_vector))?;
+    let target_training_feature_hash = stable_f32_feature_hash(&target_training_vector);
+    let negative_training_feature_hash = stable_f32_feature_hash(&negative_training_vector);
 
     Ok(json!({
         "row_index": row_index,
@@ -17366,6 +17442,12 @@ fn dataset_row_snapshot(
         "source_hash_checks": {
             "input_equal": *expected_input_hash == input_panel.header.content_hash,
             "target_equal": *expected_target_hash == target_panel.header.content_hash,
+        },
+        "training_feature_checks": {
+            "target_negative_equal": target_training_vector == negative_training_vector,
+            "target_training_feature_sha256": hex_bytes(&target_training_feature_hash),
+            "negative_training_feature_sha256": hex_bytes(&negative_training_feature_hash),
+            "action_feature_sha256": hex_bytes(&stable_f32_feature_hash(&action_vector)),
         }
     }))
 }

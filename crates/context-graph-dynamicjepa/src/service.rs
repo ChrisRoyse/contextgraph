@@ -6,18 +6,18 @@ use crate::config::TrainConfig;
 use crate::model::{train_tiny_jepa, TrainExample};
 use candle_core::{Device, Tensor};
 use context_graph_core::dynamicjepa::{
-    ActionId, ActionOrigin, ArtifactStatus, CandidateActionConfig, ConstellationId,
-    ConstellationModalities, DatasetId, DatasetShardRecord, DjRecordHeader, DomainPack,
-    DynamicJepaError, DynamicJepaRecord, DynamicJepaResult, EventId, FieldKind, FieldSpec,
-    FieldValue, GuardDecision, GuardDecisionId, GuardDecisionRecord, InstrumentId, InstrumentKind,
-    InstrumentSpec, LatentPanel, ModelArtifactId, ModelArtifactRecord, Normalization,
-    NormalizedAction, NormalizedState, OutcomeId, PanelId, PanelSlotKind, PlanTraceId,
-    PlanTraceRecord, PlanTraceStatus, PredictionId, PredictionRecord, SkillId, SkillPolicyRecord,
-    SkillStrategy, SurpriseEventId, SurpriseEventRecord, SurpriseKind, TrainingRunId,
-    TrainingRunRecord, TrainingRunStatus, GUARD_DECISION_RECORD_VERSION,
-    MODEL_ARTIFACT_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION, PLAN_TRACE_RECORD_VERSION,
-    PREDICTION_RECORD_VERSION, SKILL_POLICY_RECORD_VERSION, SURPRISE_EVENT_RECORD_VERSION,
-    TRAINING_RUN_RECORD_VERSION,
+    flatten_panel, flatten_panel_with_action_override, panel_action_vector, ActionId, ActionOrigin,
+    ArtifactStatus, CandidateActionConfig, ConstellationId, ConstellationModalities, DatasetId,
+    DatasetShardRecord, DjRecordHeader, DomainPack, DynamicJepaError, DynamicJepaRecord,
+    DynamicJepaResult, EventId, FieldKind, FieldSpec, FieldValue, GuardDecision, GuardDecisionId,
+    GuardDecisionRecord, InstrumentId, InstrumentKind, InstrumentSpec, LatentPanel,
+    ModelArtifactId, ModelArtifactRecord, Normalization, NormalizedAction, NormalizedState,
+    OutcomeId, PanelId, PanelSlotKind, PlanTraceId, PlanTraceRecord, PlanTraceStatus, PredictionId,
+    PredictionRecord, SkillId, SkillPolicyRecord, SkillStrategy, SurpriseEventId,
+    SurpriseEventRecord, SurpriseKind, TrainingRunId, TrainingRunRecord, TrainingRunStatus,
+    GUARD_DECISION_RECORD_VERSION, MODEL_ARTIFACT_RECORD_VERSION, NORMALIZED_ACTION_RECORD_VERSION,
+    PLAN_TRACE_RECORD_VERSION, PREDICTION_RECORD_VERSION, SKILL_POLICY_RECORD_VERSION,
+    SURPRISE_EVENT_RECORD_VERSION, TRAINING_RUN_RECORD_VERSION,
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_AUDIT_LOG, CF_DJ_DATASET_SHARDS, CF_DJ_GUARD_DECISIONS,
@@ -2224,7 +2224,7 @@ fn collect_examples(
                     dataset_id: shard.dataset_id.0,
                 });
             }
-            let action = action_vector(&input_panel)?;
+            let action = panel_action_vector(&input_panel)?;
             let target_panel = flatten_panel_with_action_override(&target_panel, Some(&action))?;
             let negative_panel =
                 flatten_panel_with_action_override(&negative_panel, Some(&action))?;
@@ -2254,102 +2254,6 @@ fn get_panel_or_missing(
         cf: CF_DJ_LATENT_PANELS.to_string(),
         key: id.into_bytes().to_vec(),
     })
-}
-
-fn flatten_panel(panel: &LatentPanel) -> DynamicJepaResult<Vec<f32>> {
-    flatten_panel_with_action_override(panel, None)
-}
-
-fn flatten_panel_with_action_override(
-    panel: &LatentPanel,
-    action_override: Option<&[f32]>,
-) -> DynamicJepaResult<Vec<f32>> {
-    let mut out = Vec::new();
-    let mut action_offset = 0usize;
-    for (idx, (slot, vector)) in panel
-        .ordered_slots
-        .iter()
-        .zip(panel.slot_vectors.iter())
-        .enumerate()
-    {
-        if !panel.slot_masks[idx] {
-            return Err(DynamicJepaError::PanelShapeMismatch {
-                domain_pack_id: panel.header.domain_pack_id.to_string(),
-                expected: vec![slot.dim],
-                actual: vec![0],
-            });
-        }
-        if vector.len() != slot.dim {
-            return Err(DynamicJepaError::PanelShapeMismatch {
-                domain_pack_id: panel.header.domain_pack_id.to_string(),
-                expected: vec![slot.dim],
-                actual: vec![vector.len()],
-            });
-        }
-        if matches!(slot.kind, PanelSlotKind::Action) {
-            if let Some(action_override) = action_override {
-                let next_offset = action_offset + slot.dim;
-                let action_slice =
-                    action_override
-                        .get(action_offset..next_offset)
-                        .ok_or_else(|| DynamicJepaError::PanelShapeMismatch {
-                            domain_pack_id: panel.header.domain_pack_id.to_string(),
-                            expected: vec![next_offset],
-                            actual: vec![action_override.len()],
-                        })?;
-                out.extend_from_slice(action_slice);
-                action_offset = next_offset;
-                continue;
-            }
-        }
-        out.extend_from_slice(vector);
-    }
-    if let Some(action_override) = action_override {
-        if action_offset != action_override.len() {
-            return Err(DynamicJepaError::PanelShapeMismatch {
-                domain_pack_id: panel.header.domain_pack_id.to_string(),
-                expected: vec![action_offset],
-                actual: vec![action_override.len()],
-            });
-        }
-    }
-    if out.is_empty() {
-        return Err(DynamicJepaError::PanelShapeMismatch {
-            domain_pack_id: panel.header.domain_pack_id.to_string(),
-            expected: vec![1],
-            actual: vec![0],
-        });
-    }
-    Ok(out)
-}
-
-fn action_vector(panel: &LatentPanel) -> DynamicJepaResult<Vec<f32>> {
-    let mut out = Vec::new();
-    for (idx, (slot, vector)) in panel
-        .ordered_slots
-        .iter()
-        .zip(panel.slot_vectors.iter())
-        .enumerate()
-    {
-        if matches!(slot.kind, PanelSlotKind::Action) {
-            if !panel.slot_masks[idx] || vector.len() != slot.dim {
-                return Err(DynamicJepaError::PanelShapeMismatch {
-                    domain_pack_id: panel.header.domain_pack_id.to_string(),
-                    expected: vec![slot.dim],
-                    actual: vec![vector.len()],
-                });
-            }
-            out.extend_from_slice(vector);
-        }
-    }
-    if out.is_empty() {
-        return Err(DynamicJepaError::PanelShapeMismatch {
-            domain_pack_id: panel.header.domain_pack_id.to_string(),
-            expected: vec![1],
-            actual: vec![0],
-        });
-    }
-    Ok(out)
 }
 
 fn prepare_artifact_root(root: &Path) -> DynamicJepaResult<PathBuf> {

@@ -4,7 +4,7 @@ use crate::dynamicjepa::record_header::DjRecordHeader;
 use crate::dynamicjepa::validation::Validate;
 use serde::{Deserialize, Serialize};
 
-pub const DATASET_SHARD_RECORD_VERSION: u8 = 1;
+pub const DATASET_SHARD_RECORD_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DatasetShardRecord {
@@ -40,6 +40,7 @@ pub struct LeakageReport {
     pub future_in_input_count: u64,
     pub same_panel_input_target_count: u64,
     pub negative_equals_target_count: u64,
+    pub negative_feature_equals_target_count: u64,
     pub split_overlap_count: u64,
 }
 
@@ -61,6 +62,7 @@ impl Validate for LeakageReport {
         if self.future_in_input_count != 0
             || self.same_panel_input_target_count != 0
             || self.negative_equals_target_count != 0
+            || self.negative_feature_equals_target_count != 0
             || self.split_overlap_count != 0
         {
             return Err(DynamicJepaError::DatasetLeakageDetected {
@@ -132,7 +134,7 @@ impl Validate for DatasetShardRecord {
             return Err(DynamicJepaError::validation(
                 "DatasetShardRecord.compiler_version",
                 "compiler_version must be >= 1",
-                "set compiler_version=1",
+                "set the current dataset compiler version",
             ));
         }
         Ok(())

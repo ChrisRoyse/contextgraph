@@ -72,11 +72,17 @@ Cause: a required instrument's input field is missing from the normalized state/
 
 Fix: Re-read `08_adapter_and_panel_pipeline.md` Section 4. The most likely cause is an adapter mapping that points to a JSON path that does not exist in the fixture. In Phase 4, confirm by `dynamicjepa inspect-cf --cf dj_normalized_states` / `dj_actions` / `dj_outcomes` and inspect the field maps; dedicated `get-state` style commands are later-phase read conveniences.
 
-### 2.6 `compile-dataset` — `DatasetLeakageDetected: insufficient negatives`
+### 2.6 `compile-dataset` — `DatasetLeakageDetected: insufficient feature-distinct negatives`
 
-Cause: not enough panels with different outcomes to satisfy `min_negatives_per_row`.
+Cause: not enough panels with different outcomes and different flattened training features to satisfy `min_negatives_per_row`. Outcome ids alone are not sufficient: gridworld can have distinct outcomes while the target and negative panels flatten to the same feature vector once the row action override is applied.
 
-Fix: For counter_world this should never happen (3 distinct outcomes). For gridworld this should also not happen (8000 panels). If it does, the corpus is degenerate — re-generate.
+Fix: Inspect the dataset row with `dynamicjepa inspect-dataset`; `training_feature_checks.target_negative_equal` must be `false`, and the shard `leakage_report.negative_feature_equals_target_count` must be `0`. If candidates are exhausted, regenerate a less-degenerate corpus or lower the domain pack's negative requirement only with an explicit design change. Do not allow `train` to work around the bad shard.
+
+### 2.6b `train` — target and negative panel are identical
+
+Cause: a persisted dataset shard predates the feature-level negative audit or was manually corrupted. The trainer compares the exact vectors consumed by the contrastive objective and rejects identical target/negative rows.
+
+Fix: Wipe the pre-production DB, recompile datasets with the current compiler (`DatasetShardRecord` version 2 / compiler version 2), then verify the shard through `get-dataset-shard` and `inspect-dataset`. The compiler must reject feature-identical negatives before a shard reaches training.
 
 ### 2.6a `ingest-event` / `run-adapter` — terminal timestamp precedes start timestamp
 

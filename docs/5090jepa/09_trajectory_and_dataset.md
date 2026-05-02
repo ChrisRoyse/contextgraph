@@ -61,11 +61,14 @@ pub struct LeakageReport {
     pub future_in_input_count: u64,        // must be 0
     pub same_panel_input_target_count: u64, // must be 0
     pub negative_equals_target_count: u64,  // must be 0
+    pub negative_feature_equals_target_count: u64, // must be 0 after action override flattening
     pub split_overlap_count: u64,           // must be 0 (an entity in train must not appear in val/test)
 }
 ```
 
 Any non-zero value → `DatasetLeakageDetected` and **no shard row is written**.
+
+Negative sampling must reject candidates that flatten to the same training feature vector as the target under the row action override, even when the candidate has a different panel id or outcome id. This keeps false negatives out of persisted shards before `train` reads them.
 
 ### 2.4 Shape Summary
 

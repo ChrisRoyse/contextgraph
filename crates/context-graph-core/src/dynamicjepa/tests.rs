@@ -822,9 +822,10 @@ fn sample_records() -> (DomainPack, Samples) {
             future_in_input_count: 0,
             same_panel_input_target_count: 0,
             negative_equals_target_count: 0,
+            negative_feature_equals_target_count: 0,
             split_overlap_count: 0,
         },
-        compiler_version: 1,
+        compiler_version: 2,
     });
 
     let artifact_file = ArtifactFile {
