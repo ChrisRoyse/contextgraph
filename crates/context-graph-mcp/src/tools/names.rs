@@ -325,6 +325,12 @@ pub const DYNAMICJEPA_GET_CONSTELLATION: &str = "dynamicjepa_get_constellation";
 pub const DYNAMICJEPA_CALIBRATE_THRESHOLD: &str = "dynamicjepa_calibrate_threshold";
 /// Supersede a DynamicJEPA G_tau threshold calibration.
 pub const DYNAMICJEPA_RECALIBRATE_THRESHOLD: &str = "dynamicjepa_recalibrate_threshold";
+/// Aggregate DynamicJEPA audit-log signal_yield rows into MC-ratio evidence.
+pub const DYNAMICJEPA_COMPUTE_MC_RATIO: &str = "dynamicjepa_compute_mc_ratio";
+/// Estimate persisted DynamicJEPA pairwise mutual information and write release-D evidence.
+pub const DYNAMICJEPA_AUDIT_PAIRWISE_MI: &str = "dynamicjepa_audit_pairwise_mi";
+/// Run the counter_world to gridworld DynamicJEPA cross-domain transfer pilot.
+pub const DYNAMICJEPA_CROSS_DOMAIN_TRANSFER: &str = "dynamicjepa_cross_domain_transfer";
 /// Read one persisted prediction.
 pub const DYNAMICJEPA_GET_PREDICTION: &str = "dynamicjepa_get_prediction";
 /// Read one persisted plan trace.

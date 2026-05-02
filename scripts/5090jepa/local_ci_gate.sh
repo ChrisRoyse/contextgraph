@@ -13,6 +13,7 @@ Environment:
   MEJEPA_CI_RUN_ROOT       default: tmp/mejepa_local_ci_runs
   ONET_TEXT_ZIP           default: tmp/onet_probe/db_30_2_text.zip
   LOCAL_CI_RUN_ID_PREFIX  default: local_<UTC timestamp>_<pid>
+  RELEASE_D_SIF_PATH      default: <run_root>/<run_id>_contextgraph_mejepa_v2.sif
 USAGE
 }
 
@@ -157,6 +158,7 @@ precheck_tier_roots() {
       require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_paper_small_multiseed_aggregate" "LOCAL_CI_RELEASE_AGGREGATE_ROOT_EXISTS"
       if [[ "$TIER" == "release-d" ]]; then
         require_no_existing_path "$RUN_ROOT/${RUN_ID_PREFIX}_release_archive_v2" "LOCAL_CI_RELEASE_D_ARCHIVE_ROOT_EXISTS"
+        require_no_existing_path "${RELEASE_D_SIF_PATH:-$RUN_ROOT/${RUN_ID_PREFIX}_contextgraph_mejepa_v2.sif}" "LOCAL_CI_RELEASE_D_SIF_EXISTS"
       fi
       ;;
     preflight|static)
@@ -525,11 +527,8 @@ case "$TIER" in
     require_file "reference/reference_release_v2.0.0.json" "LOCAL_CI_REFERENCE_V2_MISSING"
     require_file "scripts/5090jepa/artifact_evaluation_dry_run.sh" "LOCAL_CI_ARTIFACT_EVALUATION_MISSING"
     require_file "scripts/5090jepa/prepare_release_candidate_archive_v2.sh" "LOCAL_CI_RELEASE_D_ARCHIVE_SCRIPT_MISSING"
-    [[ -n "${APPTAINER_SIF:-}" ]] || {
-      echo "LOCAL_CI_RELEASE_D_APPTAINER_SIF_REQUIRED: set APPTAINER_SIF to a real v2 SIF path" >&2
-      exit 1
-    }
-    require_file "$APPTAINER_SIF" "LOCAL_CI_RELEASE_D_APPTAINER_SIF_MISSING"
+    release_d_sif="${RELEASE_D_SIF_PATH:-$RUN_ROOT/${RUN_ID_PREFIX}_contextgraph_mejepa_v2.sif}"
+    require_no_existing_path "$release_d_sif" "LOCAL_CI_RELEASE_D_SIF_EXISTS"
     test -x ./reproduce.sh || {
       echo "LOCAL_CI_REPRODUCE_SCRIPT_MISSING: release-d requires executable reproduce.sh" >&2
       exit 1
@@ -575,10 +574,15 @@ case "$TIER" in
       --reference /workspace/reference/reference_release_v2.0.0.json \
       --json | tee "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json"
     jq -e '.status == "ok"' "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json"
+    add_evidence "$release_d_sif"
+    log "release-d building SIF from docker tar output=$release_d_sif source=$docker_tar_1"
+    singularity build "$release_d_sif" "docker-archive://$(realpath "$docker_tar_1")"
+    require_file "$release_d_sif" "LOCAL_CI_RELEASE_D_SIF_BUILD_MISSING"
+    sha256sum "$release_d_sif" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2.sha256"
     apptainer_tar_1="$RUN_ROOT/${RUN_ID_PREFIX}_apptainer_v2_1.tar"
     apptainer_tar_2="$RUN_ROOT/${RUN_ID_PREFIX}_apptainer_v2_2.tar"
-    apptainer_sif_dir="$(dirname -- "$APPTAINER_SIF")"
-    apptainer_sif_base="$(basename -- "$APPTAINER_SIF")"
+    apptainer_sif_dir="$(dirname -- "$release_d_sif")"
+    apptainer_sif_base="$(basename -- "$release_d_sif")"
     tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
       -cf "$apptainer_tar_1" -C "$apptainer_sif_dir" "$apptainer_sif_base"
     tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
@@ -587,10 +591,10 @@ case "$TIER" in
       echo "LOCAL_CI_APPTAINER_TAR_DRIFT: deterministic Apptainer tar exports differ" >&2
       exit 1
     }
-    singularity inspect --json "$APPTAINER_SIF" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2_inspect.json"
+    singularity inspect --json "$release_d_sif" | tee "$RUN_ROOT/${RUN_ID_PREFIX}_sif_v2_inspect.json"
     singularity exec --nv --cleanenv --no-home \
       -B "$aggregate_abs:/work/aggregate:ro" \
-      "$APPTAINER_SIF" \
+      "$release_d_sif" \
       /workspace/reproduce.sh verify-aggregate \
       --aggregate /work/aggregate \
       --reference /workspace/reference/reference_release_v2.0.0.json \
@@ -613,7 +617,7 @@ case "$TIER" in
       --container-verify-json "$RUN_ROOT/${RUN_ID_PREFIX}_docker_v2_container_verify_aggregate.json" \
       --reference reference/reference_release_v2.0.0.json \
       --output-root "$RUN_ROOT/${RUN_ID_PREFIX}_release_archive_v2" \
-      --apptainer-sif "$APPTAINER_SIF" \
+      --apptainer-sif "$release_d_sif" \
       --require-apptainer \
       --source-date-epoch "$SOURCE_DATE_EPOCH"
     ;;

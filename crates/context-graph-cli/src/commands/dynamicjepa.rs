@@ -3559,12 +3559,12 @@ fn list_constellations_command(args: ListConstellationsArgs) -> DynamicJepaResul
         .filter(|row| {
             domain_filter
                 .as_ref()
-                .map_or(true, |domain_id| &row.header.domain_pack_id == domain_id)
+                .is_none_or(|domain_id| &row.header.domain_pack_id == domain_id)
         })
         .filter(|row| {
             args.subject
                 .as_ref()
-                .map_or(true, |subject| row.subject_id == *subject)
+                .is_none_or(|subject| row.subject_id == *subject)
         })
         .skip(args.offset)
         .take(args.limit)
@@ -3726,18 +3726,18 @@ fn calibrate_threshold_command(
                 (0, None, None)
             };
             let percentile = args.percentile.unwrap_or(target.calibration_percentile);
-            let record = build_threshold_calibration_record(
+            let record = build_threshold_calibration_record(ThresholdCalibrationBuildInput {
                 db,
-                &domain,
-                &target,
-                &modality,
-                &constellation,
-                &calibration_states,
+                domain: &domain,
+                target: &target,
+                modality: &modality,
+                constellation: &constellation,
+                calibration_states: &calibration_states,
                 percentile,
                 supersede_seq,
                 supersedes_uuid,
                 reason,
-            )?;
+            })?;
             superseded.push(supersedes_uuid.map(|id| id.to_string()));
             writes.push((
                 domain_uuid,
@@ -3747,16 +3747,15 @@ fn calibrate_threshold_command(
                 record,
             ));
         }
-        write_threshold_calibration_rows(
+        write_threshold_calibration_rows(ThresholdCalibrationWriteInput {
             db,
-            "calibrate_threshold",
-            &target,
+            operation: "calibrate_threshold",
+            target: &target,
             selector,
-            &calibration_states,
+            calibration_states: &calibration_states,
             writes,
             superseded,
-            &source_cfs,
-        )
+        })
     })();
 
     let after_counts = snapshot_dj_counts(db)?;
@@ -3913,18 +3912,18 @@ fn recalibrate_threshold_command(
                     "start a fresh domain pack version before recalibrating again",
                 )
             })?;
-            let record = build_threshold_calibration_record(
+            let record = build_threshold_calibration_record(ThresholdCalibrationBuildInput {
                 db,
-                &domain,
-                &target,
-                &modality,
-                &constellation,
-                &calibration_states,
+                domain: &domain,
+                target: &target,
+                modality: &modality,
+                constellation: &constellation,
+                calibration_states: &calibration_states,
                 percentile,
                 supersede_seq,
-                Some(supersedes),
-                Some(reason.clone()),
-            )?;
+                supersedes_uuid: Some(supersedes),
+                reason: Some(reason.clone()),
+            })?;
             superseded.push(Some(supersedes.to_string()));
             writes.push((
                 domain_uuid,
@@ -3934,16 +3933,15 @@ fn recalibrate_threshold_command(
                 record,
             ));
         }
-        write_threshold_calibration_rows(
+        write_threshold_calibration_rows(ThresholdCalibrationWriteInput {
             db,
-            "recalibrate_threshold",
-            &target,
+            operation: "recalibrate_threshold",
+            target: &target,
             selector,
-            &calibration_states,
+            calibration_states: &calibration_states,
             writes,
             superseded,
-            &source_cfs,
-        )
+        })
     })();
 
     let after_counts = snapshot_dj_counts(db)?;
@@ -3999,7 +3997,7 @@ fn compute_mc_ratio_command(args: ComputeMcRatioArgs) -> DynamicJepaResult<Comma
             }
         })?;
         let report = compute_mc_ratio_report(db, &domain)?;
-        write_mc_ratio_outputs(&output_root, &[report.clone()])?;
+        write_mc_ratio_outputs(&output_root, std::slice::from_ref(&report))?;
 
         let table_path = output_root.join("paper_tables/table_mc_ratio.csv");
         let breakdown_path = output_root.join("mc_ratio_per_stage.json");
@@ -4491,7 +4489,7 @@ fn select_pairwise_mi_sample_states(
             .then_with(|| left.source_event_id.cmp(&right.source_event_id))
     });
     states.truncate(requested);
-    states.sort_by(|left, right| left.source_event_id.cmp(&right.source_event_id));
+    states.sort_by_key(|left| left.source_event_id);
     Ok(states)
 }
 
@@ -20263,18 +20261,34 @@ fn leave_one_out_stability(vectors: &[Vec<f32>], centroid: &[f32]) -> DynamicJep
     Ok((total / vectors.len() as f64).clamp(0.0, 1.0) as f32)
 }
 
-fn build_threshold_calibration_record(
-    db: &rocksdb::DB,
-    domain: &DomainPack,
-    target: &ResolvedConstellationTarget,
-    modality: &ResolvedConstellationModality,
-    constellation: &ConstellationCentroid,
-    calibration_states: &[NormalizedState],
+struct ThresholdCalibrationBuildInput<'a> {
+    db: &'a rocksdb::DB,
+    domain: &'a DomainPack,
+    target: &'a ResolvedConstellationTarget,
+    modality: &'a ResolvedConstellationModality,
+    constellation: &'a ConstellationCentroid,
+    calibration_states: &'a [NormalizedState],
     percentile: u8,
     supersede_seq: u32,
     supersedes_uuid: Option<ThresholdCalibrationId>,
     reason: Option<String>,
+}
+
+fn build_threshold_calibration_record(
+    input: ThresholdCalibrationBuildInput<'_>,
 ) -> DynamicJepaResult<ThresholdCalibration> {
+    let ThresholdCalibrationBuildInput {
+        db,
+        domain,
+        target,
+        modality,
+        constellation,
+        calibration_states,
+        percentile,
+        supersede_seq,
+        supersedes_uuid,
+        reason,
+    } = input;
     if percentile > 100 {
         return Err(DynamicJepaError::validation(
             "calibrate-threshold.percentile",
@@ -20360,16 +20374,28 @@ fn build_threshold_calibration_record(
     Ok(record)
 }
 
-fn write_threshold_calibration_rows(
-    db: &rocksdb::DB,
-    operation: &str,
-    target: &ResolvedConstellationTarget,
+struct ThresholdCalibrationWriteInput<'a> {
+    db: &'a rocksdb::DB,
+    operation: &'a str,
+    target: &'a ResolvedConstellationTarget,
     selector: EventSelector,
-    calibration_states: &[NormalizedState],
+    calibration_states: &'a [NormalizedState],
     writes: Vec<(Uuid, String, u32, u32, ThresholdCalibration)>,
     superseded: Vec<Option<String>>,
-    _source_cfs: &[&str],
+}
+
+fn write_threshold_calibration_rows(
+    input: ThresholdCalibrationWriteInput<'_>,
 ) -> DynamicJepaResult<Value> {
+    let ThresholdCalibrationWriteInput {
+        db,
+        operation,
+        target,
+        selector,
+        calibration_states,
+        writes,
+        superseded,
+    } = input;
     let mut audit = build_audit(
         operation,
         AuditStatus::Ok,

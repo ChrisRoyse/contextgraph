@@ -43,9 +43,10 @@ fn repo_root() -> PathBuf {
 fn write_counter_fixture(temp: &Path) -> PathBuf {
     let mut lines = Vec::new();
     for counter in 0..60 {
+        let delta = [-2, -1, 0, 1, 2][counter % 5];
+        let next_counter = counter as i64 + delta;
         lines.push(format!(
-            r#"{{"state":{{"counter":{counter}}},"action":{{"delta":1}},"outcome":{{"next_counter":{}}},"ts":{}}}"#,
-            counter + 1,
+            r#"{{"state":{{"counter":{counter}}},"action":{{"delta":{delta}}},"outcome":{{"next_counter":{next_counter}}},"ts":{}}}"#,
             1_700_000_000_000i64 + counter as i64 * 1_000
         ));
     }
@@ -321,7 +322,7 @@ fn assert_dynamicjepa_tools_listed() {
         .filter(|tool| tool.name.starts_with("dynamicjepa_"))
         .map(|tool| tool.name.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(dynamic_names.len(), 32);
+    assert_eq!(dynamic_names.len(), 35);
     for name in [
         tool_names::DYNAMICJEPA_REGISTER_DOMAIN_PACK,
         tool_names::DYNAMICJEPA_LIST_DOMAIN_PACKS,
@@ -350,6 +351,9 @@ fn assert_dynamicjepa_tools_listed() {
         tool_names::DYNAMICJEPA_GET_CONSTELLATION,
         tool_names::DYNAMICJEPA_CALIBRATE_THRESHOLD,
         tool_names::DYNAMICJEPA_RECALIBRATE_THRESHOLD,
+        tool_names::DYNAMICJEPA_COMPUTE_MC_RATIO,
+        tool_names::DYNAMICJEPA_AUDIT_PAIRWISE_MI,
+        tool_names::DYNAMICJEPA_CROSS_DOMAIN_TRANSFER,
         tool_names::DYNAMICJEPA_GET_PREDICTION,
         tool_names::DYNAMICJEPA_GET_PLAN_TRACE,
         tool_names::DYNAMICJEPA_GET_SURPRISE,
@@ -1185,6 +1189,118 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
         "output": surprise_cf_key
     }));
 
+    let mc_ratio_root = run_root.join("dynamicjepa_phase9_mc_ratio_out");
+    let before_mc_ratio = inspect_counts_mcp(&handlers, &db_path).await;
+    let mc_ratio = call_tool_ok(
+        &handlers,
+        tool_names::DYNAMICJEPA_COMPUTE_MC_RATIO,
+        json!({
+            "dbPath": db_path,
+            "domain": "counter_world",
+            "outputDir": mc_ratio_root
+        }),
+    )
+    .await;
+    let after_mc_ratio = inspect_counts_mcp(&handlers, &db_path).await;
+    assert_eq!(before_mc_ratio["counts"], after_mc_ratio["counts"]);
+    assert_eq!(mc_ratio["summary"]["domain"], json!("counter_world"));
+    assert!(run_root
+        .join("dynamicjepa_phase9_mc_ratio_out/paper_tables/table_mc_ratio.csv")
+        .is_file());
+    assert!(run_root
+        .join("dynamicjepa_phase9_mc_ratio_out/mc_ratio_per_stage.json")
+        .is_file());
+    assert!(run_root
+        .join("dynamicjepa_phase9_mc_ratio_out/plots/signal_density_per_event_distribution.svg")
+        .is_file());
+    evidence.push(json!({
+        "step": "happy_compute_mc_ratio_mcp_file_readback",
+        "before": before_mc_ratio,
+        "output": mc_ratio,
+        "after": after_mc_ratio
+    }));
+
+    let mi_root = run_root.join("dynamicjepa_phase9_pairwise_mi_out");
+    let before_pairwise_mi = inspect_counts_mcp(&handlers, &db_path).await;
+    let pairwise_mi = call_tool_ok(
+        &handlers,
+        tool_names::DYNAMICJEPA_AUDIT_PAIRWISE_MI,
+        json!({
+            "dbPath": db_path,
+            "domain": "counter_world",
+            "sampleSize": 50,
+            "ksgK": 3,
+            "bootstrapIters": 8,
+            "seed": 20260501,
+            "outputDir": mi_root
+        }),
+    )
+    .await;
+    let after_pairwise_mi = inspect_counts_mcp(&handlers, &db_path).await;
+    assert_eq!(
+        delta(&before_pairwise_mi, &after_pairwise_mi, CF_DJ_AUDIT_LOG),
+        1
+    );
+    assert_eq!(pairwise_mi["summary"]["domain"], json!("counter_world"));
+    assert_eq!(pairwise_mi["summary"]["n_pairs"], json!(1));
+    assert!(run_root
+        .join("dynamicjepa_phase9_pairwise_mi_out/pairwise_mi_matrix.csv")
+        .is_file());
+    assert!(run_root
+        .join("dynamicjepa_phase9_pairwise_mi_out/paper_tables/table_pairwise_mi_summary.csv")
+        .is_file());
+    assert!(run_root
+        .join("dynamicjepa_phase9_pairwise_mi_out/pairwise_mi_heatmap.svg")
+        .is_file());
+    assert!(run_root
+        .join("dynamicjepa_phase9_pairwise_mi_out/pairwise_mi_audit.json")
+        .is_file());
+    evidence.push(json!({
+        "step": "happy_audit_pairwise_mi_mcp_file_and_audit_log_readback",
+        "before": before_pairwise_mi,
+        "output": pairwise_mi,
+        "after": after_pairwise_mi
+    }));
+
+    let transfer_existing_root = run_root.join("dynamicjepa_phase9_existing_transfer_root");
+    fs::create_dir_all(&transfer_existing_root).expect("create existing transfer root");
+    let transfer_edge_before = inspect_counts_mcp(&handlers, &db_path).await;
+    let transfer_existing_root_error = call_tool_error(
+        &handlers,
+        tool_names::DYNAMICJEPA_CROSS_DOMAIN_TRANSFER,
+        json!({
+            "outputRoot": transfer_existing_root,
+            "seeds": [42],
+            "sourceEvents": 40,
+            "targetEvents": 24,
+            "bootstrapIters": 1,
+            "trainEpochs": 1,
+            "batchSize": 1,
+            "maxSecondsPerTraining": 1,
+            "stoppingTarget": 0.50
+        }),
+    )
+    .await;
+    let transfer_edge_after = inspect_counts_mcp(&handlers, &db_path).await;
+    assert_eq!(
+        transfer_edge_before["counts"],
+        transfer_edge_after["counts"]
+    );
+    assert_eq!(
+        transfer_existing_root_error["structuredContent"]["status"],
+        json!("error")
+    );
+    println!(
+        "PHASE9_EDGE_CROSS_DOMAIN_EXISTING_OUTPUT before={} error={} after={}",
+        transfer_edge_before, transfer_existing_root_error, transfer_edge_after
+    );
+    evidence.push(json!({
+        "step": "edge_cross_domain_transfer_existing_output_no_db_write",
+        "before": transfer_edge_before,
+        "error": transfer_existing_root_error,
+        "after": transfer_edge_after
+    }));
+
     let seed_before = inspect_counts_mcp(&handlers, &db_path).await;
     let seeded_event_id = seed_started_adapter_run(&db_path);
     let seed_after = inspect_counts_mcp(&handlers, &db_path).await;
@@ -1359,7 +1475,7 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
                 "evidence_file": evidence_dir.join("mcp_phase9_fsv.json")
             },
             "tool_count": {
-                "dynamicjepa_tools": 32,
+                "dynamicjepa_tools": 35,
                 "total_tools": get_tool_definitions().len()
             },
             "evidence": evidence

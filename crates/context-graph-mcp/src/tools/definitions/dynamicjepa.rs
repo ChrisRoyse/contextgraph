@@ -289,6 +289,88 @@ pub fn definitions() -> Vec<ToolDefinition> {
             &["dbPath", "domain", "supersedes", "reason"],
         ),
         tool(
+            tool_names::DYNAMICJEPA_COMPUTE_MC_RATIO,
+            "Aggregate DynamicJEPA audit-log signal_yield rows into MC-ratio paper evidence.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                path_prop(
+                    "outputDir",
+                    "Fresh output directory for table_mc_ratio.csv and plot evidence.",
+                ),
+            ]),
+            &["dbPath", "domain", "outputDir"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_AUDIT_PAIRWISE_MI,
+            "Estimate pairwise mutual information across persisted instrument readings and write release-D evidence.",
+            props(&[
+                db_path(),
+                string_prop("domain", "Registered domain pack id."),
+                string_default("domainVersion", "1.0.0", "Domain pack version."),
+                integer_default(
+                    "sampleSize",
+                    50,
+                    1000,
+                    "Number of persisted events to audit; must meet the KSG support floor.",
+                ),
+                string_default("estimator", "ksg", "MI estimator; Phase 5 supports ksg."),
+                integer_default("ksgK", 1, 5, "K nearest neighbours for KSG-1."),
+                integer_default(
+                    "bootstrapIters",
+                    1,
+                    1000,
+                    "Deterministic bootstrap iterations for confidence intervals.",
+                ),
+                integer_default("seed", 0, 20260501, "Deterministic audit seed."),
+                path_prop("outputDir", "Fresh output directory for pairwise MI artifacts."),
+            ]),
+            &["dbPath", "domain", "outputDir"],
+        ),
+        tool(
+            tool_names::DYNAMICJEPA_CROSS_DOMAIN_TRANSFER,
+            "Run the counter_world to gridworld DynamicJEPA cross-domain transfer pilot.",
+            props(&[
+                path_prop(
+                    "outputRoot",
+                    "Fresh output root for transfer_results.json, paper table, plots, and bridge artifacts.",
+                ),
+                integer_array_default(
+                    "seeds",
+                    &[42, 43, 44, 45, 46],
+                    "Paired transfer seeds.",
+                ),
+                integer_default("sourceEvents", 20, 1000, "Counter-world bridge events per seed."),
+                integer_default("targetEvents", 20, 200, "Gridworld bridge events per seed."),
+                integer_default(
+                    "bootstrapIters",
+                    1,
+                    10000,
+                    "Bootstrap iterations for seed-level confidence intervals.",
+                ),
+                integer_default("trainEpochs", 1, 160, "Training epochs per bridge predictor."),
+                integer_default("batchSize", 1, 64, "Training batch size per bridge predictor."),
+                integer_default(
+                    "maxSecondsPerTraining",
+                    1,
+                    120,
+                    "Maximum wall-clock seconds per bridge training run.",
+                ),
+                number_positive_default(
+                    "learningRate",
+                    0.001,
+                    "AdamW learning rate for bridge predictor training.",
+                ),
+                number_positive_default(
+                    "stoppingTarget",
+                    0.20,
+                    "Required val_latent_mse convergence target.",
+                ),
+            ]),
+            &["outputRoot"],
+        ),
+        tool(
             tool_names::DYNAMICJEPA_GET_PREDICTION,
             "Read one persisted DynamicJEPA prediction.",
             props(&[db_path(), string_prop("id", "Prediction UUID.")]),
@@ -431,6 +513,46 @@ fn integer_optional(name: &'static str, description: &'static str) -> (&'static 
     (
         name,
         json!({"type": "integer", "minimum": 0, "maximum": 100, "description": description}),
+    )
+}
+
+fn integer_default(
+    name: &'static str,
+    minimum: u64,
+    default: u64,
+    description: &'static str,
+) -> (&'static str, Value) {
+    (
+        name,
+        json!({"type": "integer", "minimum": minimum, "default": default, "description": description}),
+    )
+}
+
+fn integer_array_default(
+    name: &'static str,
+    default: &[u64],
+    description: &'static str,
+) -> (&'static str, Value) {
+    (
+        name,
+        json!({
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0},
+            "minItems": 1,
+            "default": default,
+            "description": description
+        }),
+    )
+}
+
+fn number_positive_default(
+    name: &'static str,
+    default: f64,
+    description: &'static str,
+) -> (&'static str, Value) {
+    (
+        name,
+        json!({"type": "number", "exclusiveMinimum": 0.0, "default": default, "description": description}),
     )
 }
 

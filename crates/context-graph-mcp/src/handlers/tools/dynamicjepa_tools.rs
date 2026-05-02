@@ -5,11 +5,12 @@ use serde_json::{json, Value};
 use tracing::{error, info};
 
 use context_graph_cli::commands::dynamicjepa::{
-    run_dynamicjepa_command, BindArgs, BuildConstellationArgs, CalibrateThresholdArgs,
-    CompileDatasetArgs, CompileTrajectoriesArgs, DynamicJepaCommands, GetArtifactArgs,
-    GetConstellationArgs, GetDatasetShardArgs, GetDomainArgs, GetPanelArgs, GetPlanTraceArgs,
-    GetPredictionArgs, GetSurpriseArgs, GetTrainingRunArgs, GetTrajectoryArgs, IngestEventArgs,
-    InspectCfArgs, InspectCountsArgs, InspectDatasetArgs, ListBindingsArgs, ListConstellationsArgs,
+    run_dynamicjepa_command, AuditPairwiseMiArgs, BindArgs, BuildConstellationArgs,
+    CalibrateThresholdArgs, CompileDatasetArgs, CompileTrajectoriesArgs, ComputeMcRatioArgs,
+    CrossDomainTransferArgs, DynamicJepaCommands, GetArtifactArgs, GetConstellationArgs,
+    GetDatasetShardArgs, GetDomainArgs, GetPanelArgs, GetPlanTraceArgs, GetPredictionArgs,
+    GetSurpriseArgs, GetTrainingRunArgs, GetTrajectoryArgs, IngestEventArgs, InspectCfArgs,
+    InspectCountsArgs, InspectDatasetArgs, ListBindingsArgs, ListConstellationsArgs,
     ListDomainsArgs, ListInstrumentReadingsArgs, ListTrajectoriesArgs, MaterializePanelArgs,
     PlanArgs, PredictArgs, RecalibrateThresholdArgs, RecordSurpriseArgs, RegisterDomainArgs,
     RunAdapterArgs, TrainArgs,
@@ -635,6 +636,86 @@ impl Handlers {
                 supersedes: req.supersedes,
                 reason: req.reason,
                 percentile: req.percentile,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_compute_mc_ratio(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: ComputeMcRatioRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_compute_mc_ratio", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::ComputeMcRatio(ComputeMcRatioArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                output_dir: req.output_dir,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_audit_pairwise_mi(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: AuditPairwiseMiRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_audit_pairwise_mi", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::AuditPairwiseMi(AuditPairwiseMiArgs {
+                db: req.db_path,
+                domain: req.domain,
+                domain_version: req.domain_version,
+                sample_size: req.sample_size,
+                estimator: req.estimator,
+                ksg_k: req.ksg_k,
+                bootstrap_iters: req.bootstrap_iters,
+                seed: req.seed,
+                output_dir: req.output_dir,
+                json: true,
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_dynamicjepa_cross_domain_transfer(
+        &self,
+        id: Option<JsonRpcId>,
+        args: Value,
+    ) -> JsonRpcResponse {
+        let req: CrossDomainTransferRequest =
+            match parse_dynamicjepa_args(&id, args, "dynamicjepa_cross_domain_transfer", self) {
+                Ok(req) => req,
+                Err(resp) => return resp,
+            };
+        self.run_dynamicjepa_mcp(
+            id,
+            DynamicJepaCommands::CrossDomainTransfer(CrossDomainTransferArgs {
+                output_root: req.output_root,
+                seeds: req.seeds,
+                source_events: req.source_events,
+                target_events: req.target_events,
+                bootstrap_iters: req.bootstrap_iters,
+                train_epochs: req.train_epochs,
+                batch_size: req.batch_size,
+                max_seconds_per_training: req.max_seconds_per_training,
+                learning_rate: req.learning_rate,
+                stopping_target: req.stopping_target,
                 json: true,
             }),
         )

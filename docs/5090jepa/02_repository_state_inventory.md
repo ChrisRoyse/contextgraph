@@ -118,7 +118,7 @@ Phase 9 source of truth verified:
 
 - Automated MCP FSV evidence: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv.json`.
 - Runtime source-of-truth DB/artifact root: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/`.
-- `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` calls all 32 DynamicJEPA tools through real MCP `tools/call`, trains on CUDA, verifies `get_capability_matrix`, reads exact prediction/plan/action/guard/skill/surprise rows through MCP `dynamicjepa_inspect_cf` with `keyHex`, opens RocksDB directly for decoded row proof, and checks physical `ldb dump --count_only` counts.
+- `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` verifies the 35-tool DynamicJEPA MCP surface through real `tools/call`, trains on CUDA, verifies `get_capability_matrix`, reads MC-ratio and pairwise-MI output files, reads exact prediction/plan/action/guard/skill/surprise rows through MCP `dynamicjepa_inspect_cf` with `keyHex`, opens RocksDB directly for decoded row proof, and checks physical `ldb dump --count_only` counts.
 - Observed Phase 9 final counts include `dj_raw_events=61`, `dj_adapter_runs=61`, `dj_latent_panels=60`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_actions=66`, `dj_predictions=6`, `dj_skill_policies=1`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=1`, and `dj_audit_log=314`.
 - Phase 9 edge cases verified: empty input is rejected before storage; duplicate domain registration leaves counts unchanged; invalid CF leaves counts unchanged; missing artifact prediction leaves `dj_predictions` unchanged.
 
@@ -281,12 +281,12 @@ Single‑writer enforcement: `<db_path>/mcp.pid` + Unix flock via `PidFileGuard`
 
 Tool registry surface:
 
-- `tools/names.rs` — currently exposes 32 DynamicJEPA tool constants in addition to the existing MCP surface.
+- `tools/names.rs` — currently exposes 35 DynamicJEPA tool constants in addition to the existing MCP surface.
 - `tools/types.rs` — `ToolDefinition` struct.
 - `tools/definitions/<group>.rs` — one file per group; `dynamicjepa.rs` is aggregated in `tools/definitions/mod.rs`.
 - `handlers/tools/<group>_tools.rs` + `<group>_dtos.rs` — per-group handler; DynamicJEPA uses `dynamicjepa_tools.rs` + `dynamicjepa_dtos.rs`.
 - `handlers/tools/dispatch.rs` — central tools/call switch with a match arm per DynamicJEPA tool.
-- Tool count tests in `tools/definitions/tests` — current totals are 142 with `llm`, 138 without.
+- Tool count tests in `tools/definitions/tests` — current totals are 145 with `llm`, 141 without.
 - Capability matrix handler in `handlers/tools/capability_tools.rs` — includes DynamicJEPA enabled flag, CFs, counts, and registered domain/runtime state (see `13_mcp_and_cli_surface.md`).
 
 ### 5.4 CLI (`crates/context-graph-cli/src/`)

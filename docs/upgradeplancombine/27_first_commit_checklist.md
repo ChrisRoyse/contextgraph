@@ -449,8 +449,9 @@ When all 17 PRs are in main and the release-D gate passes:
 git tag v2.0.0-rc1
 git push --tags
 
-# Build the artifact
-make release-candidate-archive RELEASE_ID=v2.0.0-rc1
+# Build the artifact from the passed release-D evidence.
+# The local CI gate normally performs this packaging itself.
+make release-candidate-archive-v2 RELEASE_ID=mejepa_5090_artifact_v2.0.0_rc1
 
 # Update the Zenodo record (per existing procedure)
 # Update CITATION.cff

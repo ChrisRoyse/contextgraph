@@ -28,6 +28,10 @@ fn default_modality_all() -> String {
     "all".to_string()
 }
 
+fn default_estimator_ksg() -> String {
+    "ksg".to_string()
+}
+
 fn default_trajectory_policy() -> String {
     "by_domain_session".to_string()
 }
@@ -50,6 +54,58 @@ fn default_binding_kind() -> String {
 
 fn default_score() -> f32 {
     1.0
+}
+
+fn default_mi_sample_size() -> usize {
+    1000
+}
+
+fn default_ksg_k() -> usize {
+    5
+}
+
+fn default_mi_bootstrap_iters() -> usize {
+    1000
+}
+
+fn default_mi_seed() -> u64 {
+    20260501
+}
+
+fn default_transfer_seeds() -> Vec<u64> {
+    vec![42, 43, 44, 45, 46]
+}
+
+fn default_transfer_source_events() -> usize {
+    1000
+}
+
+fn default_transfer_target_events() -> usize {
+    200
+}
+
+fn default_transfer_bootstrap_iters() -> usize {
+    10_000
+}
+
+fn default_transfer_train_epochs() -> usize {
+    160
+}
+
+fn default_transfer_batch_size() -> usize {
+    64
+}
+
+fn default_transfer_max_seconds() -> u64 {
+    120
+}
+
+fn default_transfer_learning_rate() -> f64 {
+    0.001
+}
+
+fn default_transfer_stopping_target() -> f64 {
+    0.20
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,6 +395,60 @@ pub(crate) struct RecalibrateThresholdRequest {
     pub supersedes: Option<String>,
     pub reason: Option<String>,
     pub percentile: Option<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ComputeMcRatioRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    pub output_dir: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AuditPairwiseMiRequest {
+    pub db_path: PathBuf,
+    pub domain: String,
+    #[serde(default = "default_domain_version")]
+    pub domain_version: String,
+    #[serde(default = "default_mi_sample_size")]
+    pub sample_size: usize,
+    #[serde(default = "default_estimator_ksg")]
+    pub estimator: String,
+    #[serde(default = "default_ksg_k")]
+    pub ksg_k: usize,
+    #[serde(default = "default_mi_bootstrap_iters")]
+    pub bootstrap_iters: usize,
+    #[serde(default = "default_mi_seed")]
+    pub seed: u64,
+    pub output_dir: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct CrossDomainTransferRequest {
+    pub output_root: PathBuf,
+    #[serde(default = "default_transfer_seeds")]
+    pub seeds: Vec<u64>,
+    #[serde(default = "default_transfer_source_events")]
+    pub source_events: usize,
+    #[serde(default = "default_transfer_target_events")]
+    pub target_events: usize,
+    #[serde(default = "default_transfer_bootstrap_iters")]
+    pub bootstrap_iters: usize,
+    #[serde(default = "default_transfer_train_epochs")]
+    pub train_epochs: usize,
+    #[serde(default = "default_transfer_batch_size")]
+    pub batch_size: usize,
+    #[serde(default = "default_transfer_max_seconds")]
+    pub max_seconds_per_training: u64,
+    #[serde(default = "default_transfer_learning_rate")]
+    pub learning_rate: f64,
+    #[serde(default = "default_transfer_stopping_target")]
+    pub stopping_target: f64,
 }
 
 #[derive(Debug, Deserialize)]

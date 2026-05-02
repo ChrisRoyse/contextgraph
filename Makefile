@@ -134,3 +134,23 @@ release-candidate-archive:
 	  --output-root "$(RELEASE_OUTPUT_ROOT)" \
 	  --full-bundle-seed "$(RELEASE_FULL_BUNDLE_SEED)" \
 	  $(RELEASE_APPTAINER_ARGS)
+
+release-candidate-archive-v2:
+	@test -n "$(RELEASE_AGGREGATE)" || { echo "RELEASE_AGGREGATE is required"; exit 1; }
+	@test -n "$(RELEASE_LOCAL_CI_MANIFEST)" || { echo "RELEASE_LOCAL_CI_MANIFEST is required"; exit 1; }
+	@test -n "$(RELEASE_DOCKER_TAR_1)" || { echo "RELEASE_DOCKER_TAR_1 is required"; exit 1; }
+	@test -n "$(RELEASE_DOCKER_TAR_2)" || { echo "RELEASE_DOCKER_TAR_2 is required"; exit 1; }
+	@test -n "$(RELEASE_CONTAINER_VERIFY_JSON)" || { echo "RELEASE_CONTAINER_VERIFY_JSON is required"; exit 1; }
+	@test -n "$(RELEASE_APPTAINER_SIF)" || { echo "RELEASE_APPTAINER_SIF is required"; exit 1; }
+	scripts/5090jepa/prepare_release_candidate_archive_v2.sh \
+	  --release-id "$(RELEASE_ID)" \
+	  --aggregate "$(RELEASE_AGGREGATE)" \
+	  --local-ci-manifest "$(RELEASE_LOCAL_CI_MANIFEST)" \
+	  --docker-tar-1 "$(RELEASE_DOCKER_TAR_1)" \
+	  --docker-tar-2 "$(RELEASE_DOCKER_TAR_2)" \
+	  --container-verify-json "$(RELEASE_CONTAINER_VERIFY_JSON)" \
+	  --reference "$(RELEASE_REFERENCE)" \
+	  --output-root "$(RELEASE_OUTPUT_ROOT)" \
+	  --full-bundle-seed "$(RELEASE_FULL_BUNDLE_SEED)" \
+	  --apptainer-sif "$(RELEASE_APPTAINER_SIF)" \
+	  --require-apptainer

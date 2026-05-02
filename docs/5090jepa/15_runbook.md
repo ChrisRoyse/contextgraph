@@ -524,7 +524,7 @@ Expected: domain pack count = 2, training runs = 2, artifacts = 2, verification 
 
 ## 8. Phase 9 MCP FSV And Capability Matrix Check
 
-Run the in-process Phase 9 MCP FSV first. It calls all 32 DynamicJEPA tools through real `tools/call`, trains on CUDA, inspects exact rows through MCP `inspect-cf` `keyHex`, inspects the real RocksDB source of truth, verifies physical `ldb dump --count_only` counts, and writes the evidence bundle under `tmp/5090jepa_evidence/phase9/`.
+Run the in-process Phase 9 MCP FSV first. It verifies the 35-tool DynamicJEPA MCP surface through real `tools/call`, trains on CUDA, runs MC-ratio and pairwise-MI audit wrappers, inspects exact rows through MCP `inspect-cf` `keyHex`, inspects the real RocksDB source of truth, verifies physical `ldb dump --count_only` counts, and writes the evidence bundle under `tmp/5090jepa_evidence/phase9/`.
 
 ```bash
 cargo test -p context-graph-mcp --all-features test_dynamicjepa_phase9_mcp_full_state_verification -- --nocapture
@@ -559,9 +559,9 @@ ldb --db=tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_
 Expected Phase 9 source-of-truth highlights:
 
 ```text
-tool definitions 142 with llm, 138 without
-dynamicjepa tool definitions 32
-dynamicjepa tool count 32
+tool definitions 145 with llm, 141 without
+dynamicjepa tool definitions 35
+dynamicjepa tool count 35
 dj_domain_packs 1
 dj_raw_events 61
 dj_adapter_runs 61
@@ -578,7 +578,7 @@ dj_skill_policies 1
 dj_guard_decisions 5
 dj_plan_traces 1
 dj_surprise_events 1
-dj_audit_log 314
+dj_audit_log 315
 ```
 
 Optional daemon-level check after creating a populated DB:
@@ -599,7 +599,7 @@ curl -sS -X POST http://127.0.0.1:3199 -d '{"jsonrpc":"2.0","id":2,"method":"too
 kill $MCP_PID
 ```
 
-Expected: `tools/list` length = 142 with `llm` feature, or 138 without. `dynamicjepa.enabled = true`, `dynamicjepa.tool_count = 32`, and CF counts are populated.
+Expected: `tools/list` length = 145 with `llm` feature, or 141 without. `dynamicjepa.enabled = true`, `dynamicjepa.tool_count = 35`, and CF counts are populated.
 
 ## 9. Test Suite
 
@@ -621,7 +621,31 @@ cargo test --workspace --release --all-features
 
 All targets must pass with **zero** ignored DynamicJEPA tests. If any are ignored, that is a bug — `#[ignore]` is reserved for cases the user has explicitly approved.
 
-## 10. Evidence Bundle
+## 10. Release-D Gate And v2 Archive
+
+The release-D gate is the operational source of truth for the v2 artifact. It rebuilds the five-seed `paper_small` aggregate, runs the pairwise-MI audit, verifies the checked-in v2 reference, exports two byte-identical Docker image tars, builds a v2 SIF from that exact Docker tar, verifies both containers against the aggregate, and packages `mejepa_5090_artifact_v2.0.0_rc1`.
+
+```bash
+export CUDA_COMPUTE_CAP=120
+export LOCAL_CI_RUN_ID_PREFIX="$(date -u +%Y%m%dT%H%M%SZ)_release_d_gate_v2"
+scripts/5090jepa/local_ci_gate.sh release-d
+```
+
+Expected source-of-truth outputs:
+
+```text
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_local_ci_manifest.json
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_paper_small_multiseed_aggregate/aggregate_manifest.json
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_paper_small_multiseed_aggregate/pairwise_mi_audit_career_taxonomy/pairwise_mi_audit.json
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_docker_image_v2_1.tar
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_docker_image_v2_2.tar
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_contextgraph_mejepa_v2.sif
+tmp/mejepa_local_ci_runs/${LOCAL_CI_RUN_ID_PREFIX}_release_archive_v2/mejepa_5090_artifact_v2.0.0_rc1.tar.gz
+```
+
+The SIF is intentionally built inside release-D from the just-produced Docker tar. Supplying a stale prebuilt v1 SIF is not accepted as release-D evidence.
+
+## 11. Evidence Bundle
 
 ```bash
 ls tmp/5090jepa_evidence/
@@ -632,7 +656,7 @@ sha256sum /tmp/5090jepa_evidence.tar.gz
 
 Hand the tarball to the operator along with the `verification_run_record.json` of each run. That is the artifact reviewer expects.
 
-## 11. Failure Recovery
+## 12. Failure Recovery
 
 If a run fails:
 

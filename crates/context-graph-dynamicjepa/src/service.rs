@@ -484,19 +484,19 @@ pub fn plan_next_action(
         let predicted_state = predicted_state_after_action(&domain, &source_state, action)?;
         let utility = utility_score(&domain, &predicted_state, uncertainty)?;
         for guard_id in &domain.planner_policy.guards {
-            guard_decisions.push(build_guard_decision(
+            guard_decisions.push(build_guard_decision(GuardDecisionInput {
                 db,
-                &domain,
-                &panel,
-                &source_state,
+                domain: &domain,
+                panel: &panel,
+                source_state: &source_state,
                 action,
                 plan_trace_id,
                 guard_id,
-                action.action_id,
-                prediction.prediction_id,
-                &predicted_state,
-                utility,
-            )?);
+                action_id: action.action_id,
+                prediction_id: prediction.prediction_id,
+                predicted_state: &predicted_state,
+                utility_score: utility,
+            })?);
         }
         utility_scores.push(utility);
         predictions.push(prediction);
@@ -1361,19 +1361,34 @@ fn check_min_max(
     Ok(())
 }
 
-fn build_guard_decision(
-    db: &DB,
-    domain: &DomainPack,
-    panel: &LatentPanel,
-    source_state: &NormalizedState,
-    action: &NormalizedAction,
+struct GuardDecisionInput<'a> {
+    db: &'a DB,
+    domain: &'a DomainPack,
+    panel: &'a LatentPanel,
+    source_state: &'a NormalizedState,
+    action: &'a NormalizedAction,
     plan_trace_id: PlanTraceId,
-    guard_id: &str,
+    guard_id: &'a str,
     action_id: ActionId,
     prediction_id: PredictionId,
-    predicted_state: &BTreeMap<String, f64>,
+    predicted_state: &'a BTreeMap<String, f64>,
     utility_score: f32,
-) -> DynamicJepaResult<GuardDecisionRecord> {
+}
+
+fn build_guard_decision(input: GuardDecisionInput<'_>) -> DynamicJepaResult<GuardDecisionRecord> {
+    let GuardDecisionInput {
+        db,
+        domain,
+        panel,
+        source_state,
+        action,
+        plan_trace_id,
+        guard_id,
+        action_id,
+        prediction_id,
+        predicted_state,
+        utility_score,
+    } = input;
     if guard_id != "bounds_check" {
         return Err(DynamicJepaError::validation(
             "PlannerPolicy.guards",
