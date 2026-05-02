@@ -164,8 +164,10 @@ encryption keys, SSO/RBAC, long retention, SIEM export.
 8. Ledger persists result, evidence, score, and remediation.
 9. Exporter updates training/eval corpus.
 
-In Phase 1, only steps 1, 2, and 8 are implemented (and steps 1/2 are operator-
-driven via the CLI). Phases 2/3 wire steps 3–7.
+Phase 1 implemented the local ledger/CLI recorder. Phase 2 implemented local
+source-of-truth readback and verification for Git, filesystem, and command
+artifacts. Policy/gateway pre-state orchestration remains Phase 6; hosted
+GitHub/CI readback remains Phase 3.
 
 ## Design Constraint
 

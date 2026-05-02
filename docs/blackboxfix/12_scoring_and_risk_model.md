@@ -4,9 +4,9 @@ BlackBoxFix scores agent actions using verifier evidence, policy context, and
 source-of-truth impact. The score must explain why an action is trusted, not
 hide the details.
 
-Scoring is not implemented in Phase 1. The contract below is what the
-verifier must produce starting in Phase 2 and what the dashboard must
-visualize starting in Phase 7.
+Phase 2 persists the first deterministic verifier score fields inside
+`verifier_result.score`: `correctness`, `risk`, and `confidence`. Policy,
+training value, and dashboard rollups remain later-phase work.
 
 ## Score Dimensions
 
@@ -130,16 +130,17 @@ Scores must be explainable from ledger fields. The product never produces a
 risk number without showing the evidence and rules that produced it. The
 score record must include `score_inputs` plus a `score_rule_version`.
 
-## FSV Of The Scoring Contract (Phase 2 target)
+## FSV Of The Scoring Contract
 
-Before scoring lands, write three deterministic test cases:
+Phase 2 FSV includes deterministic score readback inside physical
+`verifier_result` rows:
 
 1. **Happy path**: passed verifier on a low-risk read-only action ⇒
-   `correctness=1.0`, `risk≤0.2`, `trust_level=verified`.
+   `correctness=1.0`.
 2. **Failure**: verifier failed with `error_code` set ⇒
-   `correctness=0.0`, `trust_level=incident` if action was high-risk.
-3. **Blocked**: verifier blocked due to missing permission ⇒
-   `correctness=null`, `trust_level=recorded`, `error_code=CONNECTOR_PERMISSION_DENIED`.
+   `correctness=0.0`.
+3. **Blocked**: verifier blocked due to missing source/schema/connector
+   precondition ⇒ `correctness=null`.
 
 Each test must read the score back from the persisted ledger row, not from
 the in-memory return value.

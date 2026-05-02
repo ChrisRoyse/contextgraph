@@ -25,7 +25,7 @@ manifest that points at the exact ledger sequence range exported.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "record_kind": "verified_agent_episode",
   "episode_id": "run_123:step_4:tool_2",
   "source": {

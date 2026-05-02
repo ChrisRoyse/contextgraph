@@ -23,9 +23,20 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `cargo test --package context-graph-cli --test blackbox_phase1_fsv`).
   - Source of truth: SQLite file at `--ledger PATH`, table `ledger_records`,
     append-only via triggers `ledger_records_no_update`/`_no_delete`.
-- **Phases 2–8**: NOT started. See `13_mvp_implementation_phases.md` for the
-  exact next-step order and `20_phase1_state_and_invariants.md` for the
-  invariants that must continue to hold as later phases land.
+- **Phase 2 (Git/File/Command Verification)**: COMPLETE and verified.
+  - Connectors: `git_local_v1`, `fs_local_v1`, `cmd_local_v1`.
+  - Verifiers: `git_branch_exists_v1`, `git_commit_exists_v1`,
+    `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
+    `cmd_exit_zero_v1`.
+  - Ledger schema: `LEDGER_SCHEMA_VERSION = 2`; v1 ledgers are wiped on init,
+    never migrated in-place.
+  - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
+    (19/19 passing; run with
+    `cargo test --package context-graph-cli --test blackbox_phase2_fsv`).
+- **Phases 3–8**: NOT started. See `13_mvp_implementation_phases.md` for the
+  exact next-step order, `20_phase1_state_and_invariants.md` for the Phase 1
+  baseline, and `21_phase2_state_and_invariants.md` for the current verifier
+  surface.
 
 ## Build And Test Quick Reference
 
@@ -35,6 +46,9 @@ cargo build --release --workspace
 
 # Phase 1 unit + FSV tests (executes the real binary against a real SQLite DB)
 cargo test --package context-graph-cli --test blackbox_phase1_fsv -- --nocapture
+
+# Phase 2 FSV tests (real SQLite + real Git repos + real commands/files)
+cargo test --package context-graph-cli --test blackbox_phase2_fsv -- --nocapture
 
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
@@ -50,16 +64,16 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the Phase 1 SQLite schema.
-- `05_source_of_truth_connectors.md` — connector contract and Phase 2/3 priorities.
-- `06_fsv_verification_engine.md` — verifier protocol and registry (Phase 2/3).
+- `04_event_ledger_schema.md` — record contracts and the Phase 2 SQLite schema.
+- `05_source_of_truth_connectors.md` — connector contract and shipped Phase 2 connectors.
+- `06_fsv_verification_engine.md` — verifier protocol and shipped Phase 2 registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 1 shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 2 CLI shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phase 1 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–2 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -71,6 +85,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `20_phase1_state_and_invariants.md` — physical schema, invariants, error
   codes, and exact synthetic happy/edge inputs and expected outputs of the
   shipped Phase 1.
+- `21_phase2_state_and_invariants.md` — shipped Phase 2 connectors,
+  verifiers, ledger rows, tests, and manual FSV evidence.
 
 ## Build Doctrine
 
@@ -93,8 +109,8 @@ non-zero exit code, every time.
 ## Project-Wide Rules (apply to every doc, every commit)
 
 1. **No backwards compatibility.** This product is pre-production. On a schema
-   change, wipe the SQLite ledger; never write a migration shim, never accept
-   `schema_version != 1` until Phase ≥2 explicitly bumps the version.
+   change, wipe the SQLite ledger; never write a migration shim. Current
+   physical ledger schema is version `2`.
 2. **Fail fast, no fallbacks.** A failure must surface as a typed error code
    with `source_of_truth`, `connector`, `field_path`, and `remediation`. If the
    path errors, do not catch and substitute a default — let it bubble.

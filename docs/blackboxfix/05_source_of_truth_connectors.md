@@ -4,8 +4,8 @@ Connectors define how BlackBoxFix reads and verifies real systems. A connector
 is not just a tool wrapper. It must provide **independent readback** and
 explicit evidence extraction.
 
-Phase 1 ships exactly one connector: `sqlite_local_v1` (the ledger itself; no
-external system). Phase 2 adds Git + filesystem; Phase 3 adds GitHub + CI.
+Phase 2 ships four local connectors: `sqlite_local_v1` (the ledger itself),
+`git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 adds GitHub + CI.
 
 ## Connector Contract
 
@@ -56,11 +56,11 @@ Reference shape:
 
 ## Priority Connectors
 
-### Phase 2: Git Local (filesystem only, no network)
+### Phase 2: Git Local (filesystem only, no network) — shipped
 
 Source of truth:
 
-- `.git` object database (read via `git2` or shelling out to `git`);
+- `.git` object database (read via the real `git` binary);
 - working tree status;
 - commit graph;
 - diff output;
@@ -72,16 +72,19 @@ Verifier examples (`verifier_id`):
 - `git_commit_exists_v1`
 - `git_file_diff_matches_patch_v1`
 - `git_working_tree_clean_v1`
-- `git_changed_paths_subset_v1`
 
-### Phase 2: Local Test Command
+### Phase 2: Local Filesystem — shipped
+
+Source of truth: a file path on disk. The connector returns file existence,
+size, SHA-256, and UTF-8 content when decodable. Phase 2 exposes this through
+`blackbox connector test`; no mutating filesystem verifier ships yet.
+
+### Phase 2: Local Test Command — shipped
 
 Source of truth: the exit code, stdout/stderr, and any artifact files of a
-declared test command. Verifier examples:
+declared test command. Shipped verifier:
 
 - `cmd_exit_zero_v1`
-- `cmd_stdout_contains_v1`
-- `cmd_artifact_hash_matches_v1`
 
 ### Phase 3: GitHub
 
@@ -158,13 +161,17 @@ state and low connector sprawl.
 
 ## FSV Of This Document
 
-Until Phase 2 lands, the only physically present connector is the ledger
-itself. After every connector is added, the operator must run:
+For shipped local connectors, the operator must run:
 
 ```bash
 context-graph blackbox connector list
 context-graph blackbox connector test --connector <id> --source <fixture>
-sqlite3 <ledger> 'SELECT record_kind, COUNT(*) FROM ledger_records GROUP BY 1;'
+context-graph blackbox verify --ledger <ledger> --input <spec.json>
+python3 - <<'PY'
+import sqlite3
+conn = sqlite3.connect("<ledger>")
+print(conn.execute("SELECT record_kind, COUNT(*) FROM ledger_records GROUP BY 1").fetchall())
+PY
 ```
 
 …and confirm the row counts match the test plan. Anything else is hearsay.

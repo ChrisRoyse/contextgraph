@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 1 Physical Schema (shipped)
+## Phase 2 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,8 +15,8 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 1 in Phase 1
-  record_kind                 TEXT NOT NULL,      -- 'agent_run' | 'tool_call'
+  schema_version              INTEGER NOT NULL,   -- 2 in Phase 2
+  record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
   step_id                     TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `1` | constant |
+| `schema_version` | `2` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -97,11 +97,10 @@ actor_json_sha256, redaction_json_sha256 = sha256(actor_json_string), sha256(red
 
 All hashes are stored as `sha256:<lowercase-hex>`.
 
-## Record Families (target)
+## Record Families
 
-Phase 1 ships only two `record_kind` values: `agent_run` and `tool_call`. The
-remaining families are reserved for later phases and **must not be invented
-ad-hoc**:
+Phase 2 ships five `record_kind` values. The remaining families are reserved
+for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
 |---|---|---|
@@ -121,13 +120,13 @@ When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
 backwards compatibility).
 
-## Common Record Envelope (target shape)
+## Common Record Envelope
 
-The Phase 1 columns reify this envelope. JSON-shape view:
+The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -155,7 +154,7 @@ The Phase 1 columns reify this envelope. JSON-shape view:
 }
 ```
 
-## AgentRun Payload (Phase 1)
+## AgentRun Payload (Phase 1+, shipped)
 
 ```json
 {
@@ -181,7 +180,7 @@ The Phase 1 columns reify this envelope. JSON-shape view:
 }
 ```
 
-## ToolCall Payload (Phase 1)
+## ToolCall Payload (Phase 1+, shipped)
 
 ```json
 {
@@ -206,43 +205,74 @@ The Phase 1 columns reify this envelope. JSON-shape view:
 }
 ```
 
-## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2 target)
+## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2)
 
-These are **not yet stored**. Reserved JSON shapes for Phase 2:
+These are stored by `blackbox verify` after a recorded `tool_call` exists for
+the requested `run_id` and tenant.
 
 ```json
-{ "record_kind": "expected_delta", "tool_call_id": "...",
-  "source_of_truth": [ { "kind": "git", "locator": "...", "readback_spec_id": "..." } ],
-  "delta": { "branch_exists": true, "commit_count_delta": 1 } }
+{
+  "record_kind": "expected_delta",
+  "expected_delta_id": "expected_<uuid_simple>",
+  "tool_call_id": "tool_...",
+  "verifier_id": "git_branch_exists_v1",
+  "source_of_truth": "git:/tmp/repo#refs/heads/main",
+  "expected_persisted_delta": { "branch": "main" },
+  "spec_redacted": { "...": "..." },
+  "recorded_at": "RFC3339"
+}
 ```
 
 ```json
-{ "record_kind": "readback_snapshot", "readback_id": "readback_...",
+{
+  "record_kind": "readback_snapshot",
+  "readback_id": "readback_...",
   "tool_call_id": "...",
-  "source_of_truth": { "kind": "github", "locator": "github:org/service/pull/123" },
-  "read_path": { "connector_id": "github_v1", "operation": "get_pull_request",
-                 "credential_key_id": "key_..." },
-  "observed_state": { "state": "open", "head_ref": "agent/fix", "commits": 1 },
-  "read_at": "RFC3339" }
+  "source_of_truth": { "kind": "git_local_v1", "locator": "git:/tmp/repo#app.txt" },
+  "read_path": {
+    "connector_id": "git_local_v1",
+    "operation": "diff --no-ext-diff --no-color -- <path>",
+    "credential_key_id": null
+  },
+  "observed_state": {
+    "repository": { "head": "..." },
+    "observed": { "path": "app.txt", "patch_sha256": "sha256:..." }
+  },
+  "read_at": "RFC3339"
+}
 ```
 
 ```json
-{ "record_kind": "verifier_result", "verifier_result_id": "verify_...",
-  "tool_call_id": "...", "verifier_id": "github_pr_open_v1",
-  "status": "passed|failed|blocked|not_applicable",
-  "expected_persisted_delta": {}, "actual_readback": {},
+{
+  "record_kind": "verifier_result",
+  "verifier_result_id": "verify_...",
+  "tool_call_id": "tool_...",
+  "verifier_id": "cmd_exit_zero_v1",
+  "status": "passed|failed|blocked",
+  "expected_persisted_delta": {},
+  "actual_readback": {},
   "score": { "correctness": 1.0, "risk": 0.18, "confidence": 0.99 },
-  "error_code": null, "remediation": null }
+  "error_code": null,
+  "error_message": null,
+  "field_path": null,
+  "remediation": null,
+  "source_of_truth": "cmd:/tmp/work#sha256:...",
+  "connector": "cmd_local_v1",
+  "recorded_at": "RFC3339"
+}
 ```
 
 Typed failure example:
 
 ```json
-{ "record_kind": "verifier_result", "status": "failed",
-  "error_code": "GITHUB_PR_STATE_MISMATCH",
-  "error_message": "expected PR state open, read closed",
-  "field_path": "actual_readback.pull_request_state",
-  "remediation": "reopen the PR or mark the agent run failed; do not export as a passed episode" }
+{
+  "record_kind": "verifier_result",
+  "status": "failed",
+  "error_code": "GIT_WORKING_TREE_DIRTY",
+  "error_message": "Git working tree cleanliness did not match the expected state",
+  "field_path": "actual_readback.clean",
+  "remediation": "commit, revert, or remove working tree changes before claiming the run is clean"
+}
 ```
 
 ## Integrity Requirements

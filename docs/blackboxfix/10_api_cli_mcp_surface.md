@@ -3,10 +3,10 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 1 ships only the CLI. The HTTP API, MCP servers, and SDKs are reserved
+Phase 2 ships the local CLI. The HTTP API, MCP servers, and SDKs are reserved
 for Phase 6+.
 
-## CLI (shipped Phase 1)
+## CLI (shipped Phase 2)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -18,10 +18,15 @@ Two binaries, identical semantics for the BlackBoxFix subset:
 Build via `cargo build --release -p context-graph-cli`. Both binaries land in
 `target/release/`.
 
-### Phase 1 Commands (verified by FSV tests)
+### Commands (verified by FSV tests)
 
 ```text
 blackbox init                  --ledger PATH
+blackbox connector list
+blackbox connector test        --connector git_local_v1 --source REPO_PATH
+blackbox connector test        --connector fs_local_v1 --source FILE_PATH
+blackbox connector test        --connector cmd_local_v1 --source CWD
+                               --command ARGV...
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -35,6 +40,10 @@ blackbox record tool-call      --ledger PATH --run-id RUN_ID --tool TOOL
                                [--capability CAP]   (default: local.tool)
                                [--status STATUS]    (ok|failed|blocked, default: ok)
                                [--external-request-id ID]
+blackbox verify                --ledger PATH --input SPEC_JSON
+                               [--tenant TENANT]    (default: tenant_local)
+                               [--agent AGENT]      (default: blackbox_verifier)
+                               [--model MODEL]
 blackbox inspect ledger        --ledger PATH
                                [--run-id RUN_ID]
                                [--limit N]
@@ -45,12 +54,37 @@ The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
 `-v`/`-vv`/`-vvv` increase log verbosity (warn/info/debug/trace, written to
 stderr). Stdout always carries the JSON result on success.
 
-### Phase 2/3/4/5 Commands (planned, not implemented)
+### Verifier Spec Input (Phase 2)
+
+`blackbox verify --input` takes a JSON object:
+
+```json
+{
+  "verifier_id": "git_branch_exists_v1",
+  "run_id": "run_...",
+  "tool_call_id": "tool_...",
+  "source": { "repo": "/tmp/repo" },
+  "expected": { "branch": "main" }
+}
+```
+
+Supported Phase 2 verifier ids:
+
+- `git_branch_exists_v1`
+- `git_commit_exists_v1`
+- `git_file_diff_matches_patch_v1`
+- `git_working_tree_clean_v1`
+- `cmd_exit_zero_v1`
+
+Every verifier writes `expected_delta`, then a `readback_snapshot` when the
+connector was able to read physical state, then `verifier_result`. A failed
+or blocked verifier returns non-zero **after** persisting the verifier
+evidence, except for invalid top-level JSON that cannot be associated with a
+run/tool-call.
+
+### Phase 3/4/5 Commands (planned, not implemented)
 
 ```text
-blackbox connector list
-blackbox connector test        --connector ID --source LOCATOR
-blackbox verify                --run-id RUN_ID
 blackbox replay                --run-id RUN_ID
 blackbox export episodes       --ledger PATH --out DIR
 blackbox export evidence       --run-id RUN_ID --out FILE
@@ -58,7 +92,7 @@ blackbox export evidence       --run-id RUN_ID --out FILE
 
 Implement each in priority order; do not attempt to land all at once.
 
-## CLI Failure Shape (Phase 1 enforced)
+## CLI Failure Shape (enforced)
 
 Every failure prints a JSON object on **stderr** and exits non-zero:
 
@@ -82,7 +116,7 @@ Exit codes:
 
 The full error-code list is in `20_phase1_state_and_invariants.md`.
 
-## CLI Success Shape (Phase 1)
+## CLI Success Shape
 
 Every success prints a JSON object on stdout:
 
@@ -92,14 +126,14 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 1,
+  "schema_version": 2,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
 }
 ```
 
-`record run` and `record tool-call` additionally return the new
+`record run`, `record tool-call`, and `verify` additionally return the new
 `record_id`, `run_id` (and `tool_call_id` for tool calls), `ledger_sequence`,
 `payload_sha256`, `previous_record_sha256`, `run_chain_sha256`, and
 `record_sha256`.
@@ -194,21 +228,25 @@ The ledger remains authoritative.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 1 in Phase 1).
+- Ledger records include `schema_version` (= 2 in Phase 2).
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
-  (`sqlite_local_v1` today).
+  (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
 ## FSV Of The CLI Surface
 
-For each Phase 1 command, the FSV protocol is:
+For each shipped command, the FSV protocol is:
 
 1. Run the command with a real synthetic input.
-2. Read the SQLite source of truth via the `sqlite3` CLI.
-3. Confirm row counts, payload structure, and hash-chain consistency match.
+2. Read the SQLite source of truth directly.
+3. For connectors/verifiers, read Git/filesystem/command artifacts directly.
+4. Confirm row counts, payload structure, readbacks, and hash-chain consistency
+   match.
 
 Concrete inputs and expected outputs live in
-`20_phase1_state_and_invariants.md`. The automated equivalent is
-`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, all PASS).
+`20_phase1_state_and_invariants.md` and
+`21_phase2_state_and_invariants.md`. The automated equivalents are
+`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
+`crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS).

@@ -62,11 +62,11 @@ Exit criteria (verified by automated FSV at
   missing append-only trigger
   (`phase1_init_does_not_repair_missing_append_only_trigger`).
 
-## Phase 2: Git And File Verification — NEXT
+## Phase 2: Git And File Verification — DONE (2026-05-02)
 
-Deliverables:
+Deliverables (all shipped):
 
-- local Git connector (`git_local_v1`) reading via `git2` or shell;
+- local Git connector (`git_local_v1`) reading via the real `git` binary;
 - file-readback connector (`fs_local_v1`) reading file content + hash;
 - test-command evidence capture (`cmd_local_v1`): exit code, stdout/stderr,
   artifact files;
@@ -77,18 +77,28 @@ Deliverables:
   `verifier_result` (bumps `LEDGER_SCHEMA_VERSION` to 2 and **wipes** the
   ledger — no migration shim).
 
-Exit criteria:
+Exit criteria (verified):
 
-- agent/code workflow can be recorded and verified locally;
-- three edge cases per mutating verifier;
-- failed verifiers produce typed errors;
-- Phase 2 FSV test file (`tests/blackbox_phase2_fsv.rs`) covers happy path
-  + 3 edge cases per verifier against real Git fixtures.
+- agent/code workflow can be recorded and verified locally
+  (`phase2_happy_path_verifiers_persist_physical_readbacks`);
+- three edge cases per mutating verifier are covered against real Git repos,
+  files, and commands;
+- failed verifiers produce typed errors with connector/source/field/remediation;
+- Phase 2 FSV test file
+  (`crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`) covers connector
+  list/test, five happy-path verifiers, three edge classes per verifier, strict
+  command argv schema rejection, and v1-ledger wipe on schema v2 init
+  (19/19 passing);
+- manual FSV completed against `/tmp/bbx-phase2-manual-fsv.vMFZRR/fsv.log`:
+  final physical SQLite state had schema version `2`, 25 rows, hash-chain
+  integrity `passed`, and direct Git/filesystem/command reads matched ledger
+  readbacks.
 
-Cargo dependencies to add (Phase 2 only): `git2 = "0.19"` or
-`gix` (decide based on bundled-libgit2 footprint).
+No Git library dependency was added. Shelling to the installed `git` binary
+keeps Phase 2 aligned with operator-visible source-of-truth commands and
+avoids bundled-libgit2 footprint until a later need proves otherwise.
 
-## Phase 3: GitHub And CI Connectors
+## Phase 3: GitHub And CI Connectors — NEXT
 
 Deliverables:
 

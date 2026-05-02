@@ -48,8 +48,10 @@ For each mutating workflow, follow the protocol in
 5. Print evidence packet ids and ledger row sequences.
 6. Run at least three edge cases.
 
-Phase 1 already has automated FSV (`tests/blackbox_phase1_fsv.rs`). Each
-later phase ships its own `tests/blackbox_phaseN_*_fsv.rs` file.
+Phase 1 has automated FSV (`tests/blackbox_phase1_fsv.rs`). Phase 2 has
+automated FSV (`tests/blackbox_phase2_fsv.rs`) against real SQLite ledgers,
+real Git repositories, real files, and real commands. Each later phase ships
+its own `tests/blackbox_phaseN_*_fsv.rs` file.
 
 ## Acceptance Criteria
 
@@ -122,8 +124,9 @@ Concretely, that means:
 - Phase 1 FSV opens the SQLite file with the standalone `rusqlite` library
   and queries `ledger_records` directly, then asserts row counts and
   payload contents — see `phase1_happy_path_persists_and_inspects_physical_rows`.
-- Phase 2 FSV must `git2`-open a real test repo and `git log`/`git diff`
-  through an independent path before asserting verifier output.
+- Phase 2 FSV shells to the real `git` binary against a real test repo and
+  uses direct `git rev-parse`/`git cat-file`/`git status`/`git diff` plus
+  direct SQLite reads before asserting verifier output.
 - Phase 3 FSV must point at a controlled test GitHub org/repo.
 
 For hosted systems unavailable in CI, run those tests as gated integration
@@ -135,6 +138,8 @@ tests **mandatory** (gating only the live ones is a recipe for green-on-broken).
 For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
+Phase 2 inputs/outputs are enumerated in
+`21_phase2_state_and_invariants.md`.
 
 A synthetic test must include:
 

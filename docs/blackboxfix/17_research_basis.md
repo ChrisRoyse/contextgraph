@@ -116,6 +116,36 @@ Design implication:
   ledger when combined with `BEFORE UPDATE`/`BEFORE DELETE` `RAISE(ABORT)`
   triggers; Phase 1 uses exactly this pattern.
 
+### Git Plumbing And Scriptable Readback
+
+References:
+
+- <https://git-scm.com/docs/git-rev-parse/2.45.3>
+- <https://git-scm.com/docs/git-status>
+- <https://git-scm.com/docs/git-diff>
+- <https://git-scm.com/docs/git-cat-file>
+
+Design implication:
+
+- use `git rev-parse --verify --quiet --end-of-options <rev>^{commit}` for
+  branch/commit existence checks against untrusted verifier input;
+- use `git status --porcelain=v1 --untracked-files=all` for script-stable
+  working-tree cleanliness;
+- use `git diff --no-ext-diff --no-color -- <path>` for exact patch readback;
+- use `git cat-file -t -- <object>` to record object type evidence.
+
+### Rust Process Execution
+
+Reference: <https://doc.rust-lang.org/std/process/struct.Command.html>
+
+Design implication:
+
+- pass command argv as discrete strings through `std::process::Command`, not a
+  shell string;
+- invalid command schema must block before execution;
+- stdout/stderr/exit code are evidence, while artifact files must still be
+  read and hashed from disk.
+
 ## Internal Project References
 
 - `docs/upgradeplancombine/09_fsv_extensions.md` — FSV protocol primitives

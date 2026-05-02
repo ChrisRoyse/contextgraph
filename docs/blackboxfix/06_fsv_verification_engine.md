@@ -3,9 +3,9 @@
 The verifier is the core product. It converts "the agent said it worked" into
 "the source of truth proves it worked" — or a typed failure.
 
-Phase 1 ships a structural verifier for the ledger only (hash-chain integrity
-across the SQLite source of truth). Phase 2 introduces the first real
-verifiers (Git + filesystem). Phase 3 ships GitHub/CI.
+Phase 1 shipped a structural verifier for the ledger (hash-chain integrity
+across the SQLite source of truth). Phase 2 ships the first outcome verifiers
+for local Git and command artifacts. Phase 3 ships GitHub/CI.
 
 ## Full-State Verification Protocol
 
@@ -43,7 +43,23 @@ Return values, logs, stdout, model text, and tool summaries are evidence but
 **not** the source of truth unless the durable artifact actually is that
 log/file.
 
-## Verifier Registry (target Phase 2/3)
+## Verifier Registry
+
+Shipped Phase 2 verifier ids:
+
+| Verifier | Connector | Source of truth | Main comparison |
+|---|---|---|---|
+| `git_branch_exists_v1` | `git_local_v1` | `refs/heads/<branch>` | branch ref resolves to a commit |
+| `git_commit_exists_v1` | `git_local_v1` | Git object DB | commit-ish resolves to a commit and object type is recorded |
+| `git_file_diff_matches_patch_v1` | `git_local_v1` | `git diff --no-ext-diff --no-color -- <path>` | exact patch string/hash match |
+| `git_working_tree_clean_v1` | `git_local_v1` | `git status --porcelain=v1 --untracked-files=all` | clean bool equals expected |
+| `cmd_exit_zero_v1` | `cmd_local_v1` | process exit/stdout/stderr + declared artifact files | exit code zero and artifacts exist |
+
+All verifier specs are JSON objects containing `verifier_id`, `run_id`,
+`tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;
+readback mismatches are `failed`; matches are `passed`.
+
+## Future Verifier Registry Shape
 
 Verifiers are versioned specs. JSON shape:
 
@@ -112,6 +128,11 @@ Phase 1 already follows this rule for the ledger verifier:
 | Hash chain tampering | privileged update of `payload_json` after dropping the no-update trigger | `BBX_HASH_CHAIN_BROKEN` (exit 2) | `phase1_hash_chain_detection_catches_payload_tampering` |
 | Append-only trigger bypass | direct `UPDATE ledger_records SET record_kind=...` | SQLite `RAISE(ABORT)` (exit non-zero) | `phase1_append_only_trigger_blocks_direct_update` |
 
+Phase 2 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`: each shipped mutating
+verifier has real-source happy-path coverage plus missing target, wrong target,
+and schema/connector failure coverage.
+
 ## Evidence Packet (Phase 4 target)
 
 ```json
@@ -143,7 +164,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 1 already enforces this with the `BlackboxError` JSON shape (`status`,
+Phase 2 enforces this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -158,8 +179,7 @@ Verifier output becomes supervision (Phase 5):
 
 ## FSV Of This Document
 
-The Phase 1 verifier — the `inspect ledger` integrity check — is itself a
-runnable demonstration. To prove the doc:
+The Phase 1/2 verifiers are runnable demonstrations. To prove the doc:
 
 ```bash
 ledger=/tmp/bbx-fsv.sqlite
@@ -172,6 +192,9 @@ context-graph blackbox inspect ledger --ledger "$ledger" --run-id <RUN>
 sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records SET payload_json='{}' WHERE sequence=1;"
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
+
+# Phase 2 happy path uses a real Git repo and command artifact; see
+# tests/blackbox_phase2_fsv.rs and docs/blackboxfix/21_phase2_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

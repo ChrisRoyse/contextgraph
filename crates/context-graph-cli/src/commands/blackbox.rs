@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -17,9 +18,12 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 1;
+const LEDGER_SCHEMA_VERSION: i64 = 2;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
+const GIT_CONNECTOR_ID: &str = "git_local_v1";
+const FS_CONNECTOR_ID: &str = "fs_local_v1";
+const CMD_CONNECTOR_ID: &str = "cmd_local_v1";
 
 #[derive(Parser, Debug)]
 #[command(name = "blackbox")]
@@ -39,11 +43,18 @@ pub struct BlackboxCli {
 pub enum BlackboxCommands {
     /// Initialize a local append-only ledger database.
     Init(InitArgs),
+    /// Test source-of-truth connectors.
+    Connector {
+        #[command(subcommand)]
+        action: ConnectorCommands,
+    },
     /// Record agent runs and tool calls.
     Record {
         #[command(subcommand)]
         action: RecordCommands,
     },
+    /// Verify a tool call against local source-of-truth systems.
+    Verify(VerifyArgs),
     /// Inspect physical ledger state.
     Inspect {
         #[command(subcommand)]
@@ -56,6 +67,29 @@ pub struct InitArgs {
     /// SQLite ledger database path.
     #[arg(long, env = "BLACKBOX_LEDGER")]
     pub ledger: PathBuf,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConnectorCommands {
+    /// List available connectors.
+    List,
+    /// Test a connector against a physical local source.
+    Test(ConnectorTestArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ConnectorTestArgs {
+    /// Connector id: git_local_v1, fs_local_v1, or cmd_local_v1.
+    #[arg(long)]
+    pub connector: String,
+
+    /// Physical source path. For cmd_local_v1 this is the working directory.
+    #[arg(long)]
+    pub source: PathBuf,
+
+    /// Command argv for cmd_local_v1. Pass each argument separately after --command.
+    #[arg(long, num_args = 1.., allow_hyphen_values = true)]
+    pub command: Vec<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -141,6 +175,29 @@ pub struct RecordToolCallArgs {
     pub external_request_id: Option<String>,
 }
 
+#[derive(Args, Debug)]
+pub struct VerifyArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// JSON verifier spec.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Verifier actor identifier.
+    #[arg(long, default_value = "blackbox_verifier")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum ToolExecutionStatus {
     Ok,
@@ -189,6 +246,8 @@ enum ErrorKind {
     Redaction,
     NotFound,
     TenantMismatch,
+    ConnectorBlocked,
+    VerifierFailed,
     HashChain,
 }
 
@@ -199,7 +258,8 @@ pub struct BlackboxError {
     message: String,
     source_of_truth: Option<String>,
     field_path: Option<String>,
-    remediation: &'static str,
+    remediation: String,
+    connector: &'static str,
 }
 
 impl BlackboxError {
@@ -209,7 +269,27 @@ impl BlackboxError {
         message: impl Into<String>,
         source_of_truth: Option<String>,
         field_path: Option<String>,
-        remediation: &'static str,
+        remediation: impl Into<String>,
+    ) -> Self {
+        Self::new_with_connector(
+            kind,
+            error_code,
+            message,
+            source_of_truth,
+            SQLITE_CONNECTOR_ID,
+            field_path,
+            remediation,
+        )
+    }
+
+    fn new_with_connector(
+        kind: ErrorKind,
+        error_code: &'static str,
+        message: impl Into<String>,
+        source_of_truth: Option<String>,
+        connector: &'static str,
+        field_path: Option<String>,
+        remediation: impl Into<String>,
     ) -> Self {
         Self {
             kind,
@@ -217,11 +297,12 @@ impl BlackboxError {
             message: message.into(),
             source_of_truth,
             field_path,
-            remediation,
+            remediation: remediation.into(),
+            connector,
         }
     }
 
-    fn invalid(message: impl Into<String>, remediation: &'static str) -> Self {
+    fn invalid(message: impl Into<String>, remediation: impl Into<String>) -> Self {
         Self::new(
             ErrorKind::InvalidInput,
             "BBX_INVALID_INPUT",
@@ -236,7 +317,7 @@ impl BlackboxError {
         path: &Path,
         field_path: impl Into<String>,
         message: impl Into<String>,
-        remediation: &'static str,
+        remediation: impl Into<String>,
     ) -> Self {
         Self::new(
             ErrorKind::InvalidInput,
@@ -346,6 +427,59 @@ impl BlackboxError {
         )
     }
 
+    fn verifier_spec(
+        path: &Path,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            ErrorKind::InvalidInput,
+            "BBX_VERIFIER_SPEC_INVALID",
+            message,
+            Some(source_of_truth(path)),
+            Some(field_path.into()),
+            "fix the verifier spec JSON so required fields and types match the verifier contract",
+        )
+    }
+
+    fn connector_blocked(
+        error_code: &'static str,
+        connector: &'static str,
+        source_of_truth: String,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+    ) -> Self {
+        Self::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            error_code,
+            message,
+            Some(source_of_truth),
+            connector,
+            Some(field_path.into()),
+            remediation,
+        )
+    }
+
+    fn verifier_failed(
+        error_code: &'static str,
+        connector: &'static str,
+        source_of_truth: String,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+    ) -> Self {
+        Self::new_with_connector(
+            ErrorKind::VerifierFailed,
+            error_code,
+            message,
+            Some(source_of_truth),
+            connector,
+            Some(field_path.into()),
+            remediation,
+        )
+    }
+
     fn exit_code(&self) -> i32 {
         match self.kind {
             ErrorKind::HashChain => 2,
@@ -359,7 +493,7 @@ impl BlackboxError {
             "error_code": self.error_code,
             "message": self.message,
             "source_of_truth": self.source_of_truth,
-            "connector": SQLITE_CONNECTOR_ID,
+            "connector": self.connector,
             "field_path": self.field_path,
             "remediation": self.remediation,
         })
@@ -398,13 +532,120 @@ pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
 fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
     match command {
         BlackboxCommands::Init(args) => init_ledger(args),
+        BlackboxCommands::Connector { action } => match action {
+            ConnectorCommands::List => connector_list(),
+            ConnectorCommands::Test(args) => connector_test(args),
+        },
         BlackboxCommands::Record { action } => match action {
             RecordCommands::Run(args) => record_run(args),
             RecordCommands::ToolCall(args) => record_tool_call(args),
         },
+        BlackboxCommands::Verify(args) => verify_local(args),
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
+    }
+}
+
+fn connector_list() -> BbxResult<Value> {
+    Ok(json!({
+        "status": "ok",
+        "connectors": [
+            {
+                "connector_id": GIT_CONNECTOR_ID,
+                "source_kind": "git",
+                "readback_specs": [
+                    "git_branch_exists_v1",
+                    "git_commit_exists_v1",
+                    "git_file_diff_matches_patch_v1",
+                    "git_working_tree_clean_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": FS_CONNECTOR_ID,
+                "source_kind": "filesystem",
+                "readback_specs": ["fs_file_readback_v1"],
+                "fail_closed": true
+            },
+            {
+                "connector_id": CMD_CONNECTOR_ID,
+                "source_kind": "command",
+                "readback_specs": ["cmd_exit_zero_v1"],
+                "fail_closed": true
+            }
+        ]
+    }))
+}
+
+fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
+    require_non_empty_for_source("--connector", &args.connector)?;
+    match args.connector.as_str() {
+        GIT_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    GIT_CONNECTOR_ID,
+                    git_source_of_truth(&args.source, "connector_test"),
+                    "--command",
+                    "git_local_v1 connector test does not accept --command",
+                    "remove --command and pass the repository path through --source",
+                ));
+            }
+            let readback = git_repo_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": GIT_CONNECTOR_ID,
+                "source_of_truth": git_source_of_truth(&args.source, "repository"),
+                "readback": readback,
+            }))
+        }
+        FS_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    FS_CONNECTOR_ID,
+                    file_source_of_truth(&args.source),
+                    "--command",
+                    "fs_local_v1 connector test does not accept --command",
+                    "remove --command and pass the file path through --source",
+                ));
+            }
+            let readback = fs_file_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": FS_CONNECTOR_ID,
+                "source_of_truth": file_source_of_truth(&args.source),
+                "readback": readback,
+            }))
+        }
+        CMD_CONNECTOR_ID => {
+            if args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    CMD_CONNECTOR_ID,
+                    cmd_source_of_truth(&args.source, &args.command),
+                    "--command",
+                    "cmd_local_v1 connector test requires at least one --command value",
+                    "pass the executable and each argument separately after --command",
+                ));
+            }
+            let readback = cmd_readback(&args.source, &args.command, &[])?;
+            Ok(json!({
+                "status": "ok",
+                "connector": CMD_CONNECTOR_ID,
+                "source_of_truth": cmd_source_of_truth(&args.source, &args.command),
+                "readback": readback,
+            }))
+        }
+        other => Err(BlackboxError::connector_blocked(
+            "CONNECTOR_UNKNOWN",
+            SQLITE_CONNECTOR_ID,
+            "blackbox:connector_registry".to_string(),
+            "--connector",
+            format!("unknown connector_id {other}"),
+            "run `blackbox connector list` and choose one of the advertised connector ids",
+        )),
     }
 }
 
@@ -417,6 +658,7 @@ fn init_ledger(args: InitArgs) -> BbxResult<Value> {
         }
     }
 
+    let wiped_existing_ledger = wipe_ledger_on_schema_version_mismatch(&args.ledger)?;
     let mut conn = open_connection(&args.ledger)?;
     if table_exists(&conn, &args.ledger, "blackbox_metadata")?
         || table_exists(&conn, &args.ledger, "ledger_records")?
@@ -435,6 +677,7 @@ fn init_ledger(args: InitArgs) -> BbxResult<Value> {
         "redaction_policy_id": REDACTION_POLICY_ID,
         "record_count": inspection.record_count,
         "ledger_tip_sha256": inspection.ledger_tip_sha256,
+        "wiped_existing_ledger": wiped_existing_ledger,
     }))
 }
 
@@ -596,6 +839,184 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
     }))
 }
 
+fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let input_text = fs::read_to_string(&args.input)
+        .map_err(|err| BlackboxError::io(&args.input, "read verifier spec JSON", err))?;
+    let spec_value: Value = serde_json::from_str(&input_text).map_err(|err| {
+        BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_VERIFIER_SPEC_INVALID",
+            format!("verifier spec is not valid JSON: {err}"),
+            Some(format!("file:{}", args.input.display())),
+            Some("$".to_string()),
+            "write valid verifier spec JSON and retry",
+        )
+    })?;
+    if !spec_value.is_object() {
+        return Err(BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_VERIFIER_SPEC_INVALID",
+            "verifier spec JSON must be an object",
+            Some(format!("file:{}", args.input.display())),
+            Some("$".to_string()),
+            "wrap the verifier spec in a JSON object",
+        ));
+    }
+    let redacted_spec = redact_tool_input(&args.ledger, &spec_value)?;
+    let spec = VerifySpec::parse(&args.ledger, &spec_value)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    ensure_tool_call_exists_for_run_tenant(
+        &conn,
+        &args.ledger,
+        &spec.run_id,
+        &spec.tool_call_id,
+        &args.tenant,
+    )?;
+
+    let actor = actor_json(&args.agent, args.model.as_deref());
+    let expected_delta_id = prefixed_id("expected");
+    let expected_payload = json!({
+        "record_kind": "expected_delta",
+        "expected_delta_id": expected_delta_id,
+        "tool_call_id": spec.tool_call_id,
+        "verifier_id": spec.verifier_id,
+        "source_of_truth": spec.source_of_truth_hint(),
+        "expected_persisted_delta": spec.expected,
+        "spec_redacted": redacted_spec.value,
+        "recorded_at": Utc::now().to_rfc3339(),
+    });
+    let expected_append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: prefixed_id("bbx_rec"),
+            record_kind: "expected_delta".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(spec.run_id.clone()),
+            step_id: None,
+            actor: actor.clone(),
+            payload: expected_payload,
+            redaction: redacted_spec.report,
+        },
+    )?;
+
+    let verification = run_phase2_verifier(&spec);
+    let readback_append = if let Some(readback_payload) = verification.readback_payload.clone() {
+        Some(append_record(
+            &mut conn,
+            &args.ledger,
+            NewRecord {
+                record_id: prefixed_id("bbx_rec"),
+                record_kind: "readback_snapshot".to_string(),
+                tenant_id: args.tenant.clone(),
+                run_id: Some(spec.run_id.clone()),
+                step_id: None,
+                actor: actor.clone(),
+                payload: readback_payload,
+                redaction: RedactionReport::empty(),
+            },
+        )?)
+    } else {
+        None
+    };
+
+    let verifier_result_id = prefixed_id("verify");
+    let verifier_payload = json!({
+        "record_kind": "verifier_result",
+        "verifier_result_id": verifier_result_id,
+        "tool_call_id": spec.tool_call_id,
+        "verifier_id": spec.verifier_id,
+        "status": verification.status,
+        "expected_persisted_delta": spec.expected,
+        "actual_readback": verification.actual_readback,
+        "score": {
+            "correctness": verification.correctness,
+            "risk": verification.risk,
+            "confidence": verification.confidence,
+        },
+        "error_code": verification.error_code,
+        "error_message": verification.message,
+        "field_path": verification.field_path,
+        "remediation": verification.remediation,
+        "source_of_truth": verification.source_of_truth,
+        "connector": verification.connector,
+        "recorded_at": Utc::now().to_rfc3339(),
+    });
+    let verifier_append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: prefixed_id("bbx_rec"),
+            record_kind: "verifier_result".to_string(),
+            tenant_id: args.tenant,
+            run_id: Some(spec.run_id),
+            step_id: None,
+            actor,
+            payload: verifier_payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+
+    let output = json!({
+        "status": "ok",
+        "command": "blackbox verify",
+        "verifier_id": spec.verifier_id,
+        "verifier_status": verification.status,
+        "connector": verification.connector,
+        "source_of_truth": verification.source_of_truth,
+        "expected_delta_sequence": expected_append.sequence,
+        "readback_snapshot_sequence": readback_append.as_ref().map(|append| append.sequence),
+        "verifier_result_sequence": verifier_append.sequence,
+        "expected_delta_record_sha256": expected_append.record_sha256,
+        "readback_snapshot_record_sha256": readback_append.as_ref().map(|append| append.record_sha256.clone()),
+        "verifier_result_record_sha256": verifier_append.record_sha256,
+        "actual_readback": verification.actual_readback,
+    });
+
+    match verification.status {
+        "passed" => Ok(output),
+        "failed" => Err(BlackboxError::verifier_failed(
+            verification.error_code.unwrap_or("VERIFIER_FAILED"),
+            verification.connector,
+            verification.source_of_truth,
+            verification
+                .field_path
+                .as_deref()
+                .unwrap_or("actual_readback")
+                .to_string(),
+            verification.message.as_deref().unwrap_or("verifier failed"),
+            verification
+                .remediation
+                .as_deref()
+                .unwrap_or("inspect the source of truth and rerun after correcting the state"),
+        )),
+        "blocked" => Err(BlackboxError::connector_blocked(
+            verification.error_code.unwrap_or("VERIFIER_BLOCKED"),
+            verification.connector,
+            verification.source_of_truth,
+            verification
+                .field_path
+                .as_deref()
+                .unwrap_or("source")
+                .to_string(),
+            verification
+                .message
+                .as_deref()
+                .unwrap_or("verifier was blocked"),
+            verification
+                .remediation
+                .as_deref()
+                .unwrap_or("restore source-of-truth access and rerun verification"),
+        )),
+        _ => Ok(output),
+    }
+}
+
 fn inspect_ledger(args: InspectLedgerArgs) -> BbxResult<Value> {
     let conn = open_initialized_ledger(&args.ledger)?;
     let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
@@ -664,6 +1085,48 @@ fn validate_risk_tier(path: &Path, value: &str) -> BbxResult<()> {
     }
 }
 
+fn wipe_ledger_on_schema_version_mismatch(path: &Path) -> BbxResult<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let conn = open_connection(path)?;
+    if !table_exists(&conn, path, "blackbox_metadata")? {
+        return Ok(false);
+    }
+    let version = get_metadata(&conn, path, "schema_version")?;
+    drop(conn);
+    match version.as_deref() {
+        Some(version) if version == LEDGER_SCHEMA_VERSION.to_string() => Ok(false),
+        Some(_) => {
+            remove_ledger_file_set(path)?;
+            Ok(true)
+        }
+        None => Err(BlackboxError::schema_field(
+            path,
+            "blackbox_metadata.schema_version",
+            "blackbox_metadata exists but schema_version is missing",
+        )),
+    }
+}
+
+fn remove_ledger_file_set(path: &Path) -> BbxResult<()> {
+    for candidate in ledger_file_set(path) {
+        if candidate.exists() {
+            fs::remove_file(&candidate)
+                .map_err(|err| BlackboxError::io(&candidate, "wipe old schema ledger file", err))?;
+        }
+    }
+    Ok(())
+}
+
+fn ledger_file_set(path: &Path) -> Vec<PathBuf> {
+    vec![
+        path.to_path_buf(),
+        PathBuf::from(format!("{}-wal", path.display())),
+        PathBuf::from(format!("{}-shm", path.display())),
+    ]
+}
+
 fn open_connection(path: &Path) -> BbxResult<Connection> {
     let conn = Connection::open(path)
         .map_err(|err| BlackboxError::sqlite(path, "open SQLite ledger", err))?;
@@ -728,7 +1191,7 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
                  SELECT RAISE(ABORT, 'ledger_records is append-only; deletes are forbidden');
              END;
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
-             VALUES ('schema_version', '1');
+             VALUES ('schema_version', '2');
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
              VALUES ('ledger_id', lower(hex(randomblob(16))));
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
@@ -1308,6 +1771,1138 @@ fn ensure_run_exists_for_tenant(
         ));
     }
     Ok(())
+}
+
+fn ensure_tool_call_exists_for_run_tenant(
+    conn: &Connection,
+    path: &Path,
+    run_id: &str,
+    tool_call_id: &str,
+    tenant_id: &str,
+) -> BbxResult<()> {
+    ensure_run_exists_for_tenant(conn, path, run_id, tenant_id)?;
+    let found: Option<(String, String)> = conn
+        .query_row(
+            "SELECT tenant_id, run_id FROM ledger_records
+             WHERE record_kind = 'tool_call'
+               AND json_extract(payload_json, '$.tool_call_id') = ?1",
+            params![tool_call_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|err| BlackboxError::sqlite(path, "read tool-call parent from ledger", err))?;
+    let Some((tool_tenant, tool_run_id)) = found else {
+        return Err(BlackboxError::new(
+            ErrorKind::NotFound,
+            "BBX_RECORD_NOT_FOUND",
+            format!("tool_call_id {tool_call_id} does not exist in ledger_records"),
+            Some(source_of_truth(path)),
+            Some("$.tool_call_id".to_string()),
+            "record the tool call first and retry with an existing tool_call_id",
+        ));
+    };
+    if tool_run_id != run_id {
+        return Err(BlackboxError::new(
+            ErrorKind::NotFound,
+            "BBX_RECORD_NOT_FOUND",
+            format!(
+                "tool_call_id {tool_call_id} belongs to run_id {tool_run_id}, not requested run_id {run_id}"
+            ),
+            Some(source_of_truth(path)),
+            Some("$.run_id".to_string()),
+            "verify the tool call under the run_id that owns it",
+        ));
+    }
+    if tool_tenant != tenant_id {
+        return Err(BlackboxError::tenant_mismatch(
+            path,
+            run_id,
+            &tool_tenant,
+            tenant_id,
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct VerifySpec {
+    verifier_id: String,
+    run_id: String,
+    tool_call_id: String,
+    source: Value,
+    expected: Value,
+}
+
+impl VerifySpec {
+    fn parse(ledger_path: &Path, value: &Value) -> BbxResult<Self> {
+        Ok(Self {
+            verifier_id: required_string(ledger_path, value, "$.verifier_id")?,
+            run_id: required_string(ledger_path, value, "$.run_id")?,
+            tool_call_id: required_string(ledger_path, value, "$.tool_call_id")?,
+            source: required_object_value(ledger_path, value, "$.source")?,
+            expected: required_object_value(ledger_path, value, "$.expected")?,
+        })
+    }
+
+    fn source_of_truth_hint(&self) -> String {
+        match self.verifier_id.as_str() {
+            "git_branch_exists_v1" => git_source_of_truth(
+                Path::new(optional_str(&self.source, "repo").unwrap_or("")),
+                &format!(
+                    "refs/heads/{}",
+                    optional_str(&self.expected, "branch").unwrap_or("")
+                ),
+            ),
+            "git_commit_exists_v1" => git_source_of_truth(
+                Path::new(optional_str(&self.source, "repo").unwrap_or("")),
+                optional_str(&self.expected, "commit").unwrap_or("commit"),
+            ),
+            "git_file_diff_matches_patch_v1" => git_source_of_truth(
+                Path::new(optional_str(&self.source, "repo").unwrap_or("")),
+                optional_str(&self.expected, "path").unwrap_or("diff"),
+            ),
+            "git_working_tree_clean_v1" => git_source_of_truth(
+                Path::new(optional_str(&self.source, "repo").unwrap_or("")),
+                "working_tree",
+            ),
+            "cmd_exit_zero_v1" => {
+                let command = optional_string_array(&self.expected, "command").unwrap_or_default();
+                cmd_source_of_truth(
+                    Path::new(optional_str(&self.source, "cwd").unwrap_or("")),
+                    &command,
+                )
+            }
+            _ => "blackbox:unknown_verifier".to_string(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct VerificationOutcome {
+    status: &'static str,
+    connector: &'static str,
+    source_of_truth: String,
+    readback_payload: Option<Value>,
+    actual_readback: Value,
+    correctness: Option<f64>,
+    risk: f64,
+    confidence: f64,
+    error_code: Option<&'static str>,
+    field_path: Option<String>,
+    message: Option<String>,
+    remediation: Option<String>,
+}
+
+fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
+    match spec.verifier_id.as_str() {
+        "git_branch_exists_v1" => verify_git_branch_exists(spec),
+        "git_commit_exists_v1" => verify_git_commit_exists(spec),
+        "git_file_diff_matches_patch_v1" => verify_git_file_diff_matches_patch(spec),
+        "git_working_tree_clean_v1" => verify_git_working_tree_clean(spec),
+        "cmd_exit_zero_v1" => verify_cmd_exit_zero(spec),
+        _ => VerificationOutcome::blocked(
+            SQLITE_CONNECTOR_ID,
+            "blackbox:verifier_registry".to_string(),
+            "VERIFIER_SPEC_MISSING",
+            "$.verifier_id",
+            "verifier_id is not registered",
+            "choose a registered Phase 2 verifier id",
+            None,
+        ),
+    }
+}
+
+impl VerificationOutcome {
+    fn passed(
+        connector: &'static str,
+        source_of_truth: String,
+        readback_payload: Value,
+        actual_readback: Value,
+    ) -> Self {
+        Self {
+            status: "passed",
+            connector,
+            source_of_truth,
+            readback_payload: Some(readback_payload),
+            actual_readback,
+            correctness: Some(1.0),
+            risk: 0.2,
+            confidence: 0.99,
+            error_code: None,
+            field_path: None,
+            message: None,
+            remediation: None,
+        }
+    }
+
+    fn failed(
+        connector: &'static str,
+        source_of_truth: String,
+        error_code: &'static str,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+        readback_payload: Value,
+        actual_readback: Value,
+    ) -> Self {
+        Self {
+            status: "failed",
+            connector,
+            source_of_truth,
+            readback_payload: Some(readback_payload),
+            actual_readback,
+            correctness: Some(0.0),
+            risk: 0.4,
+            confidence: 0.99,
+            error_code: Some(error_code),
+            field_path: Some(field_path.into()),
+            message: Some(message.into()),
+            remediation: Some(remediation.into()),
+        }
+    }
+
+    fn blocked(
+        connector: &'static str,
+        source_of_truth: String,
+        error_code: &'static str,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+        readback_payload: Option<Value>,
+    ) -> Self {
+        let actual_readback = readback_payload
+            .as_ref()
+            .and_then(|payload| payload.get("observed_state").cloned())
+            .unwrap_or_else(|| json!({ "blocked": true }));
+        Self {
+            status: "blocked",
+            connector,
+            source_of_truth,
+            readback_payload,
+            actual_readback,
+            correctness: None,
+            risk: 0.5,
+            confidence: 0.0,
+            error_code: Some(error_code),
+            field_path: Some(field_path.into()),
+            message: Some(message.into()),
+            remediation: Some(remediation.into()),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ProcessReadback {
+    exit_code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+fn required_string(
+    ledger_path: &Path,
+    value: &Value,
+    field_path: &'static str,
+) -> BbxResult<String> {
+    value
+        .pointer(json_pointer_from_field_path(field_path).as_str())
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            BlackboxError::verifier_spec(
+                ledger_path,
+                field_path,
+                format!("{field_path} is required and must be a non-empty string"),
+            )
+        })
+}
+
+fn required_object_value(
+    ledger_path: &Path,
+    value: &Value,
+    field_path: &'static str,
+) -> BbxResult<Value> {
+    let item = value
+        .pointer(json_pointer_from_field_path(field_path).as_str())
+        .ok_or_else(|| {
+            BlackboxError::verifier_spec(
+                ledger_path,
+                field_path,
+                format!("{field_path} is required"),
+            )
+        })?;
+    if !item.is_object() {
+        return Err(BlackboxError::verifier_spec(
+            ledger_path,
+            field_path,
+            format!("{field_path} must be a JSON object"),
+        ));
+    }
+    Ok(item.clone())
+}
+
+fn json_pointer_from_field_path(field_path: &str) -> String {
+    if field_path == "$" {
+        return String::new();
+    }
+    let trimmed = field_path.trim_start_matches("$.");
+    format!("/{}", trimmed.replace('.', "/"))
+}
+
+fn optional_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn optional_string_array(value: &Value, key: &str) -> Option<Vec<String>> {
+    value.get(key).and_then(Value::as_array).map(|items| {
+        items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn required_expected_string(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    connector: &'static str,
+    source_of_truth: &str,
+    allow_empty: bool,
+) -> Result<String, VerificationOutcome> {
+    match spec.expected.get(key) {
+        Some(Value::String(value)) if allow_empty || !value.trim().is_empty() => Ok(value.clone()),
+        Some(Value::String(_)) | None => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!(
+                "{} requires {field_path} as {} JSON string",
+                spec.verifier_id,
+                if allow_empty { "a" } else { "a non-empty" }
+            ),
+            format!("set {field_path} to the expected string value"),
+            None,
+        )),
+        Some(_) => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            field_path,
+            format!(
+                "{} requires {field_path} to be a JSON string",
+                spec.verifier_id
+            ),
+            format!("replace {field_path} with a JSON string"),
+            None,
+        )),
+    }
+}
+
+fn required_expected_bool(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    connector: &'static str,
+    source_of_truth: &str,
+) -> Result<bool, VerificationOutcome> {
+    match spec.expected.get(key) {
+        Some(Value::Bool(value)) => Ok(*value),
+        None => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!(
+                "{} requires {field_path} as a JSON boolean",
+                spec.verifier_id
+            ),
+            format!("set {field_path} to true or false"),
+            None,
+        )),
+        Some(_) => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            field_path,
+            format!(
+                "{} requires {field_path} to be a JSON boolean",
+                spec.verifier_id
+            ),
+            format!("replace {field_path} with true or false"),
+            None,
+        )),
+    }
+}
+
+fn expected_string_array(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    connector: &'static str,
+    source_of_truth: &str,
+    required_non_empty: bool,
+) -> Result<Vec<String>, VerificationOutcome> {
+    let Some(value) = spec.expected.get(key) else {
+        if required_non_empty {
+            return Err(VerificationOutcome::blocked(
+                connector,
+                source_of_truth.to_string(),
+                "VERIFIER_SPEC_MISSING_FIELD",
+                field_path,
+                format!(
+                    "{} requires {field_path} as a JSON string array",
+                    spec.verifier_id
+                ),
+                format!("set {field_path} to an array of JSON strings"),
+                None,
+            ));
+        }
+        return Ok(Vec::new());
+    };
+    let Some(items) = value.as_array() else {
+        return Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            field_path,
+            format!(
+                "{} requires {field_path} to be a JSON array",
+                spec.verifier_id
+            ),
+            format!("replace {field_path} with an array of JSON strings"),
+            None,
+        ));
+    };
+    if required_non_empty && items.is_empty() {
+        return Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!(
+                "{} requires {field_path} to contain at least one string",
+                spec.verifier_id
+            ),
+            format!(
+                "add the executable and each argument as separate JSON strings in {field_path}"
+            ),
+            None,
+        ));
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(text) = item.as_str() else {
+            return Err(VerificationOutcome::blocked(
+                connector,
+                source_of_truth.to_string(),
+                "VERIFIER_SPEC_FIELD_TYPE",
+                format!("{field_path}[{index}]"),
+                format!(
+                    "{} requires every {field_path} item to be a JSON string",
+                    spec.verifier_id
+                ),
+                format!("replace {field_path}[{index}] with a JSON string"),
+                None,
+            ));
+        };
+        if required_non_empty && index == 0 && text.trim().is_empty() {
+            return Err(VerificationOutcome::blocked(
+                connector,
+                source_of_truth.to_string(),
+                "VERIFIER_SPEC_MISSING_FIELD",
+                format!("{field_path}[{index}]"),
+                format!(
+                    "{} requires the command executable to be non-empty",
+                    spec.verifier_id
+                ),
+                format!("set {field_path}[0] to an executable name or path"),
+                None,
+            ));
+        }
+        parsed.push(text.to_string());
+    }
+    Ok(parsed)
+}
+
+fn require_non_empty_for_source(field: &'static str, value: &str) -> BbxResult<()> {
+    if value.trim().is_empty() {
+        return Err(BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_INVALID_INPUT",
+            format!("{field} must not be empty"),
+            None,
+            Some(field.to_string()),
+            "provide a non-empty value and retry",
+        ));
+    }
+    Ok(())
+}
+
+fn git_repo_readback(repo: &Path) -> BbxResult<Value> {
+    if repo.as_os_str().is_empty() {
+        return Err(BlackboxError::connector_blocked(
+            "GIT_REPO_PATH_MISSING",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "source.repo",
+            "Git repository path is empty",
+            "provide a non-empty source.repo path",
+        ));
+    }
+    if !repo.exists() || !repo.is_dir() {
+        return Err(BlackboxError::connector_blocked(
+            "GIT_REPO_NOT_FOUND",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "source.repo",
+            "Git repository directory does not exist",
+            "create the repository directory or pass the correct source.repo path",
+        ));
+    }
+    let git_dir = run_git(repo, &["rev-parse", "--git-dir"])?;
+    if git_dir.exit_code != 0 {
+        return Err(BlackboxError::connector_blocked(
+            "GIT_REPO_NOT_FOUND",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "source.repo",
+            "source.repo is not a readable Git repository",
+            "initialize the directory with git init or pass a valid repository path",
+        ));
+    }
+    let top = run_git(repo, &["rev-parse", "--show-toplevel"])?;
+    let head = run_git(repo, &["rev-parse", "--verify", "--quiet", "HEAD"])?;
+    let status = run_git(repo, &["status", "--porcelain=v1", "--untracked-files=all"])?;
+    let git_version = run_process(
+        Path::new("."),
+        &["git".to_string(), "--version".to_string()],
+    )
+    .map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GIT_EXEC_FAILED",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "git.version",
+            format!("failed to execute git --version: {err}"),
+            "install Git and ensure the git executable is available on PATH",
+        )
+    })?;
+    if git_version.exit_code != 0 {
+        return Err(BlackboxError::connector_blocked(
+            "GIT_EXEC_FAILED",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "git.version",
+            format!("git --version exited non-zero: {}", git_version.stderr),
+            "install a working Git executable and retry",
+        ));
+    }
+    Ok(json!({
+        "repo": repo.display().to_string(),
+        "git_dir": git_dir.stdout.trim(),
+        "worktree_root": top.stdout.trim(),
+        "head": if head.exit_code == 0 { Value::String(head.stdout.trim().to_string()) } else { Value::Null },
+        "status_porcelain_v1": status.stdout,
+        "git_version": git_version.stdout.trim().to_string(),
+    }))
+}
+
+fn fs_file_readback(path: &Path) -> BbxResult<Value> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::connector_blocked(
+            "FS_FILE_PATH_MISSING",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "source",
+            "filesystem source path is empty",
+            "provide a non-empty file path",
+        ));
+    }
+    if !path.exists() || !path.is_file() {
+        return Err(BlackboxError::connector_blocked(
+            "FS_FILE_NOT_FOUND",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "source",
+            "filesystem source file does not exist",
+            "create the file or pass the correct source path",
+        ));
+    }
+    let bytes = fs::read(path).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "FS_FILE_READ_FAILED",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "source",
+            format!("failed to read filesystem source file: {err}"),
+            "fix file permissions and retry",
+        )
+    })?;
+    Ok(json!({
+        "path": path.display().to_string(),
+        "size_bytes": bytes.len(),
+        "sha256": sha256_hex(&bytes),
+        "utf8": String::from_utf8(bytes).ok(),
+        "read_at": Utc::now().to_rfc3339(),
+    }))
+}
+
+fn cmd_readback(cwd: &Path, command: &[String], artifacts: &[String]) -> BbxResult<Value> {
+    if cwd.as_os_str().is_empty() || !cwd.exists() || !cwd.is_dir() {
+        return Err(BlackboxError::connector_blocked(
+            "CMD_WORKDIR_NOT_FOUND",
+            CMD_CONNECTOR_ID,
+            cmd_source_of_truth(cwd, command),
+            "source.cwd",
+            "command working directory does not exist",
+            "create the working directory or pass the correct source.cwd path",
+        ));
+    }
+    let output = run_process(cwd, command).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "CMD_EXEC_FAILED",
+            CMD_CONNECTOR_ID,
+            cmd_source_of_truth(cwd, command),
+            "expected.command",
+            format!("failed to execute command argv: {err}"),
+            "provide an executable command array; do not pass a shell string unless the shell is the explicit executable",
+        )
+    })?;
+    let artifact_readbacks = artifacts
+        .iter()
+        .map(|artifact| {
+            let path = cwd.join(artifact);
+            if path.exists() && path.is_file() {
+                let bytes = fs::read(&path).map_err(|err| {
+                    BlackboxError::connector_blocked(
+                        "CMD_ARTIFACT_READ_FAILED",
+                        CMD_CONNECTOR_ID,
+                        file_source_of_truth(&path),
+                        "expected.artifacts",
+                        format!("failed to read command artifact {artifact}: {err}"),
+                        "fix artifact permissions and rerun verification",
+                    )
+                })?;
+                Ok(json!({
+                    "path": artifact,
+                    "exists": true,
+                    "size_bytes": bytes.len(),
+                    "sha256": sha256_hex(&bytes),
+                }))
+            } else {
+                Ok(json!({
+                    "path": artifact,
+                    "exists": false,
+                    "size_bytes": null,
+                    "sha256": null,
+                }))
+            }
+        })
+        .collect::<BbxResult<Vec<_>>>()?;
+    Ok(json!({
+        "cwd": cwd.display().to_string(),
+        "command": command,
+        "exit_code": output.exit_code,
+        "stdout": output.stdout,
+        "stderr": output.stderr,
+        "artifacts": artifact_readbacks,
+        "finished_at": Utc::now().to_rfc3339(),
+    }))
+}
+
+fn run_git(repo: &Path, args: &[&str]) -> BbxResult<ProcessReadback> {
+    let command = std::iter::once("git".to_string())
+        .chain(std::iter::once("-C".to_string()))
+        .chain(std::iter::once(repo.display().to_string()))
+        .chain(args.iter().map(|arg| (*arg).to_string()))
+        .collect::<Vec<_>>();
+    run_process(Path::new("."), &command).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GIT_EXEC_FAILED",
+            GIT_CONNECTOR_ID,
+            git_source_of_truth(repo, "repository"),
+            "git.exec",
+            format!("failed to execute git argv {:?}: {err}", command),
+            "install Git and ensure the git executable is available on PATH",
+        )
+    })
+}
+
+fn run_process(cwd: &Path, command: &[String]) -> std::io::Result<ProcessReadback> {
+    if command.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "command argv must not be empty",
+        ));
+    }
+    let mut cmd = Command::new(&command[0]);
+    cmd.args(&command[1..]);
+    if !cwd.as_os_str().is_empty() {
+        cmd.current_dir(cwd);
+    }
+    let output = cmd.output()?;
+    Ok(ProcessReadback {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
+fn git_source_of_truth(repo: &Path, locator: &str) -> String {
+    format!("git:{}#{locator}", repo.display())
+}
+
+fn file_source_of_truth(path: &Path) -> String {
+    format!("file:{}#sha256", path.display())
+}
+
+fn cmd_source_of_truth(cwd: &Path, command: &[String]) -> String {
+    let command_value = Value::Array(
+        command
+            .iter()
+            .map(|item| Value::String(item.clone()))
+            .collect(),
+    );
+    let digest = sha256_hex(
+        &canonical_json_bytes(&command_value)
+            .expect("command argv arrays of JSON strings serialize canonically"),
+    );
+    format!("cmd:{}#{digest}", cwd.display())
+}
+
+fn verify_git_branch_exists(spec: &VerifySpec) -> VerificationOutcome {
+    let repo = PathBuf::from(optional_str(&spec.source, "repo").unwrap_or(""));
+    let branch_hint = optional_str(&spec.expected, "branch").unwrap_or("");
+    let source = git_source_of_truth(&repo, &format!("refs/heads/{branch_hint}"));
+    let branch = match required_expected_string(
+        spec,
+        "branch",
+        "$.expected.branch",
+        GIT_CONNECTOR_ID,
+        &source,
+        false,
+    ) {
+        Ok(branch) => branch,
+        Err(outcome) => return outcome,
+    };
+    let repo_readback = match git_repo_readback(&repo) {
+        Ok(readback) => readback,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let rev = format!("refs/heads/{branch}^{{commit}}");
+    let output = match run_git(
+        &repo,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &rev],
+    ) {
+        Ok(output) => output,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let exists = output.exit_code == 0;
+    let commit = if exists {
+        Some(output.stdout.trim().to_string())
+    } else {
+        None
+    };
+    let actual = json!({
+        "branch": branch,
+        "branch_exists": exists,
+        "commit": commit,
+        "git_exit_code": output.exit_code,
+        "git_stdout": output.stdout,
+        "git_stderr": output.stderr,
+    });
+    let readback = readback_payload(
+        "readback",
+        "git_branch_exists_v1",
+        GIT_CONNECTOR_ID,
+        &source,
+        "rev-parse --verify --quiet refs/heads/<branch>^{commit}",
+        json!({
+            "repository": repo_readback,
+            "observed": actual,
+        }),
+    );
+    if exists {
+        VerificationOutcome::passed(GIT_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_BRANCH_NOT_FOUND",
+            "actual_readback.branch_exists",
+            "expected branch does not exist in the Git source of truth",
+            "create the branch or verify the expected branch name",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_git_commit_exists(spec: &VerifySpec) -> VerificationOutcome {
+    let repo = PathBuf::from(optional_str(&spec.source, "repo").unwrap_or(""));
+    let commit_hint = optional_str(&spec.expected, "commit").unwrap_or("");
+    let source = git_source_of_truth(&repo, commit_hint);
+    let commit = match required_expected_string(
+        spec,
+        "commit",
+        "$.expected.commit",
+        GIT_CONNECTOR_ID,
+        &source,
+        false,
+    ) {
+        Ok(commit) => commit,
+        Err(outcome) => return outcome,
+    };
+    let repo_readback = match git_repo_readback(&repo) {
+        Ok(readback) => readback,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let rev = format!("{commit}^{{commit}}");
+    let output = match run_git(
+        &repo,
+        &["rev-parse", "--verify", "--quiet", "--end-of-options", &rev],
+    ) {
+        Ok(output) => output,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let object_type_output = match run_git(&repo, &["cat-file", "-t", "--", &commit]) {
+        Ok(output) => output,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let exists = output.exit_code == 0;
+    let resolved_commit = if exists {
+        Some(output.stdout.trim().to_string())
+    } else {
+        None
+    };
+    let object_type = if object_type_output.exit_code == 0 {
+        Some(object_type_output.stdout.trim().to_string())
+    } else {
+        None
+    };
+    let actual = json!({
+        "commit": commit,
+        "exists": exists,
+        "commit_exists": exists,
+        "resolved_commit": resolved_commit,
+        "object_type": object_type,
+        "git_exit_code": output.exit_code,
+        "git_stdout": output.stdout,
+        "git_stderr": output.stderr,
+        "git_object_type_exit_code": object_type_output.exit_code,
+        "git_object_type_stdout": object_type_output.stdout,
+        "git_object_type_stderr": object_type_output.stderr,
+    });
+    let readback = readback_payload(
+        "readback",
+        "git_commit_exists_v1",
+        GIT_CONNECTOR_ID,
+        &source,
+        "rev-parse --verify --quiet <commit>^{commit}; cat-file -t <commit>",
+        json!({
+            "repository": repo_readback,
+            "observed": actual,
+        }),
+    );
+    if exists {
+        VerificationOutcome::passed(GIT_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_COMMIT_NOT_FOUND",
+            "actual_readback.commit_exists",
+            "expected commit does not exist as a commit object in the Git source of truth",
+            "use a commit object id that exists in the repository",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_git_working_tree_clean(spec: &VerifySpec) -> VerificationOutcome {
+    let repo = PathBuf::from(optional_str(&spec.source, "repo").unwrap_or(""));
+    let source = git_source_of_truth(&repo, "working_tree");
+    let expected_clean = match required_expected_bool(
+        spec,
+        "clean",
+        "$.expected.clean",
+        GIT_CONNECTOR_ID,
+        &source,
+    ) {
+        Ok(expected_clean) => expected_clean,
+        Err(outcome) => return outcome,
+    };
+    let repo_readback = match git_repo_readback(&repo) {
+        Ok(readback) => readback,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let output = match run_git(
+        &repo,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    ) {
+        Ok(output) => output,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    if output.exit_code != 0 {
+        return VerificationOutcome::blocked(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_STATUS_FAILED",
+            "git.status",
+            "git status failed for the repository",
+            "inspect git stderr, repository permissions, and repository health",
+            Some(readback_payload(
+                "readback",
+                "git_working_tree_clean_v1",
+                GIT_CONNECTOR_ID,
+                &git_source_of_truth(&repo, "working_tree"),
+                "status --porcelain=v1 --untracked-files=all",
+                json!({ "git_exit_code": output.exit_code, "git_stdout": output.stdout, "git_stderr": output.stderr }),
+            )),
+        );
+    }
+    let clean = output.stdout.trim().is_empty();
+    let actual = json!({
+        "clean": clean,
+        "status_porcelain_v1": output.stdout,
+    });
+    let readback = readback_payload(
+        "readback",
+        "git_working_tree_clean_v1",
+        GIT_CONNECTOR_ID,
+        &source,
+        "status --porcelain=v1 --untracked-files=all",
+        json!({
+            "repository": repo_readback,
+            "observed": actual,
+        }),
+    );
+    if clean == expected_clean {
+        VerificationOutcome::passed(GIT_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_WORKING_TREE_DIRTY",
+            "actual_readback.clean",
+            "Git working tree cleanliness did not match the expected state",
+            "commit, revert, or remove working tree changes before claiming the run is clean",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_git_file_diff_matches_patch(spec: &VerifySpec) -> VerificationOutcome {
+    let repo = PathBuf::from(optional_str(&spec.source, "repo").unwrap_or(""));
+    let path_hint = optional_str(&spec.expected, "path").unwrap_or("");
+    let source = git_source_of_truth(&repo, path_hint);
+    let path = match required_expected_string(
+        spec,
+        "path",
+        "$.expected.path",
+        GIT_CONNECTOR_ID,
+        &source,
+        false,
+    ) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let expected_patch = match required_expected_string(
+        spec,
+        "patch",
+        "$.expected.patch",
+        GIT_CONNECTOR_ID,
+        &source,
+        true,
+    ) {
+        Ok(patch) => patch,
+        Err(outcome) => return outcome,
+    };
+    let repo_readback = match git_repo_readback(&repo) {
+        Ok(readback) => readback,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let output = match run_git(&repo, &["diff", "--no-ext-diff", "--no-color", "--", &path]) {
+        Ok(output) => output,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    if output.exit_code != 0 {
+        return VerificationOutcome::blocked(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_DIFF_FAILED",
+            "git.diff",
+            "git diff failed for the requested path",
+            "inspect git stderr and verify the pathspec is valid for this repository",
+            Some(readback_payload(
+                "readback",
+                "git_file_diff_matches_patch_v1",
+                GIT_CONNECTOR_ID,
+                &git_source_of_truth(&repo, &path),
+                "diff --no-ext-diff --no-color -- <path>",
+                json!({ "git_exit_code": output.exit_code, "git_stdout": output.stdout, "git_stderr": output.stderr }),
+            )),
+        );
+    }
+    let actual = json!({
+        "path": path,
+        "patch": output.stdout,
+        "patch_sha256": sha256_hex(output.stdout.as_bytes()),
+        "expected_patch_sha256": sha256_hex(expected_patch.as_bytes()),
+    });
+    let readback = readback_payload(
+        "readback",
+        "git_file_diff_matches_patch_v1",
+        GIT_CONNECTOR_ID,
+        &source,
+        "diff --no-ext-diff --no-color -- <path>",
+        json!({
+            "repository": repo_readback,
+            "observed": actual,
+        }),
+    );
+    if output.stdout == expected_patch {
+        VerificationOutcome::passed(GIT_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GIT_CONNECTOR_ID,
+            source,
+            "GIT_FILE_DIFF_MISMATCH",
+            "actual_readback.patch",
+            "Git diff readback does not match the expected patch exactly",
+            "read the physical git diff and update the expected delta or fix the working tree",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_cmd_exit_zero(spec: &VerifySpec) -> VerificationOutcome {
+    let cwd = PathBuf::from(optional_str(&spec.source, "cwd").unwrap_or(""));
+    let command_hint = optional_string_array(&spec.expected, "command").unwrap_or_default();
+    let mut source = cmd_source_of_truth(&cwd, &command_hint);
+    let command = match expected_string_array(
+        spec,
+        "command",
+        "$.expected.command",
+        CMD_CONNECTOR_ID,
+        &source,
+        true,
+    ) {
+        Ok(command) => command,
+        Err(outcome) => return outcome,
+    };
+    source = cmd_source_of_truth(&cwd, &command);
+    let artifacts = match expected_string_array(
+        spec,
+        "artifacts",
+        "$.expected.artifacts",
+        CMD_CONNECTOR_ID,
+        &source,
+        false,
+    ) {
+        Ok(artifacts) => artifacts,
+        Err(outcome) => return outcome,
+    };
+    match cmd_readback(&cwd, &command, &artifacts) {
+        Ok(readback) => {
+            let exit_code = readback
+                .get("exit_code")
+                .and_then(Value::as_i64)
+                .unwrap_or(-1);
+            let missing_artifacts = readback
+                .get("artifacts")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter(|item| {
+                            !item.get("exists").and_then(Value::as_bool).unwrap_or(false)
+                        })
+                        .count()
+                })
+                .unwrap_or(0);
+            let payload = readback_payload(
+                "readback",
+                "cmd_exit_zero_v1",
+                CMD_CONNECTOR_ID,
+                &source,
+                "std::process::Command argv execution",
+                readback.clone(),
+            );
+            if missing_artifacts > 0 {
+                VerificationOutcome::failed(
+                    CMD_CONNECTOR_ID,
+                    source,
+                    "CMD_ARTIFACT_MISSING",
+                    "actual_readback.artifacts",
+                    "one or more declared command artifacts do not exist after command execution",
+                    "inspect the command output and write the declared artifact before claiming success",
+                    payload,
+                    readback,
+                )
+            } else if exit_code == 0 {
+                VerificationOutcome::passed(CMD_CONNECTOR_ID, source, payload, readback)
+            } else {
+                VerificationOutcome::failed(
+                    CMD_CONNECTOR_ID,
+                    source,
+                    "CMD_EXIT_NON_ZERO",
+                    "actual_readback.exit_code",
+                    "command exit code was non-zero",
+                    "inspect stdout/stderr and rerun only after the command exits zero",
+                    payload,
+                    readback,
+                )
+            }
+        }
+        Err(err) => connector_error_to_outcome(err),
+    }
+}
+
+fn connector_error_to_outcome(err: BlackboxError) -> VerificationOutcome {
+    let field_path = err.field_path.unwrap_or_else(|| "source".to_string());
+    VerificationOutcome::blocked(
+        err.connector,
+        err.source_of_truth
+            .unwrap_or_else(|| "source_of_truth:unknown".to_string()),
+        err.error_code,
+        field_path,
+        err.message,
+        err.remediation,
+        None,
+    )
+}
+
+fn readback_payload(
+    readback_id_prefix: &str,
+    verifier_id: &str,
+    connector: &str,
+    source_of_truth: &str,
+    operation: &str,
+    observed_state: Value,
+) -> Value {
+    json!({
+        "record_kind": "readback_snapshot",
+        "readback_id": prefixed_id(readback_id_prefix),
+        "verifier_id": verifier_id,
+        "source_of_truth": {
+            "kind": connector,
+            "locator": source_of_truth,
+        },
+        "read_path": {
+            "connector_id": connector,
+            "operation": operation,
+            "credential_key_id": null,
+        },
+        "observed_state": observed_state,
+        "read_at": Utc::now().to_rfc3339(),
+    })
 }
 
 fn latest_record_hash(conn: &Connection, path: &Path) -> BbxResult<Option<String>> {
