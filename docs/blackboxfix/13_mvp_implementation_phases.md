@@ -98,22 +98,47 @@ No Git library dependency was added. Shelling to the installed `git` binary
 keeps Phase 2 aligned with operator-visible source-of-truth commands and
 avoids bundled-libgit2 footprint until a later need proves otherwise.
 
-## Phase 3: GitHub And CI Connectors — NEXT
+## Phase 3: GitHub And CI Connectors — DONE (2026-05-02)
 
-Deliverables:
+Deliverables (all shipped):
 
 - GitHub PR/checks/issues connector (`github_v1`);
 - CI readback connector for GitHub Actions first (`gha_v1`);
-- verifiers for PR state, branch head, check suite, issue state.
+- verifiers: `github_pr_state_v1`,
+  `github_branch_head_matches_commit_v1`,
+  `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
+  `gha_workflow_run_completed_v1`;
+- async GitHub REST client with explicit API version/media headers, typed
+  rate-limit/auth/schema errors, and endpoint-specific handling for expected
+  `404`/`422` absent-resource readbacks.
 
-Exit criteria:
+Exit criteria (verified):
 
-- vulnerability remediation demo (`18_first_wedge_demo.md`) verifies GitHub
-  and CI state end-to-end;
-- permission failures are `blocked` with `CONNECTOR_PERMISSION_DENIED`;
-- stale readback and missing PR edge cases are covered;
-- Phase 3 FSV uses a controlled test repo (do **not** create test artifacts
-  on production-shaped repos).
+- GitHub and CI state are verified end-to-end against the live public fixture
+  repository `actions/checkout`;
+- permission failures are `blocked` with `CONNECTOR_PERMISSION_DENIED` for
+  `401`/`403` responses, and rate limits are `blocked` with
+  `GITHUB_RATE_LIMITED`;
+- stale readback and missing PR edge cases are covered by both automated and
+  manual FSV;
+- Phase 3 creates no GitHub artifacts. It uses read-only live GitHub/GHA
+  source-of-truth reads and writes only the local SQLite ledger.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase3_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The single live integration test discovers real
+GitHub state, verifies all five Phase 3 happy paths, then runs 15 real edge
+checks covering missing targets, stale/wrong expectations, PR-vs-issue
+ambiguity, and schema blocks.
+
+Manual FSV completed against `/tmp/bbx-phase3-manual-fsv.KZAAKb/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=8`, `readback_snapshot=7`, `verifier_result=8`. The blocked
+schema edge intentionally wrote no `readback_snapshot`.
 
 ## Phase 4: Evidence Packets And Replay
 

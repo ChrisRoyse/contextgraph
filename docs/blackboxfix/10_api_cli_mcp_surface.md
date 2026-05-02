@@ -3,10 +3,11 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 2 ships the local CLI. The HTTP API, MCP servers, and SDKs are reserved
-for Phase 6+.
+Phase 3 ships the local CLI with local Git/file/command plus GitHub/GitHub
+Actions readback. The HTTP API, MCP servers, and SDKs are reserved for Phase
+6+.
 
-## CLI (shipped Phase 2)
+## CLI (shipped Phase 3)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -27,6 +28,8 @@ blackbox connector test        --connector git_local_v1 --source REPO_PATH
 blackbox connector test        --connector fs_local_v1 --source FILE_PATH
 blackbox connector test        --connector cmd_local_v1 --source CWD
                                --command ARGV...
+blackbox connector test        --connector github_v1 --source OWNER/REPO
+blackbox connector test        --connector gha_v1 --source OWNER/REPO
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -54,7 +57,7 @@ The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
 `-v`/`-vv`/`-vvv` increase log verbosity (warn/info/debug/trace, written to
 stderr). Stdout always carries the JSON result on success.
 
-### Verifier Spec Input (Phase 2)
+### Verifier Spec Input (Phase 2/3)
 
 `blackbox verify --input` takes a JSON object:
 
@@ -68,13 +71,18 @@ stderr). Stdout always carries the JSON result on success.
 }
 ```
 
-Supported Phase 2 verifier ids:
+Supported Phase 2/3 verifier ids:
 
 - `git_branch_exists_v1`
 - `git_commit_exists_v1`
 - `git_file_diff_matches_patch_v1`
 - `git_working_tree_clean_v1`
 - `cmd_exit_zero_v1`
+- `github_pr_state_v1`
+- `github_branch_head_matches_commit_v1`
+- `github_check_suite_passed_v1`
+- `github_issue_state_changed_v1`
+- `gha_workflow_run_completed_v1`
 
 Every verifier writes `expected_delta`, then a `readback_snapshot` when the
 connector was able to read physical state, then `verifier_result`. A failed
@@ -82,7 +90,7 @@ or blocked verifier returns non-zero **after** persisting the verifier
 evidence, except for invalid top-level JSON that cannot be associated with a
 run/tool-call.
 
-### Phase 3/4/5 Commands (planned, not implemented)
+### Phase 4/5 Commands (planned, not implemented)
 
 ```text
 blackbox replay                --run-id RUN_ID
@@ -229,9 +237,11 @@ The ledger remains authoritative.
 
 - APIs are versioned by URL.
 - Ledger records include `schema_version` (= 2 in Phase 2).
+- Phase 3 reuses schema version 2 and adds no new record kinds.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
-  (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1` today).
+  (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
+  `github_v1`, `gha_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -247,6 +257,9 @@ For each shipped command, the FSV protocol is:
 
 Concrete inputs and expected outputs live in
 `20_phase1_state_and_invariants.md` and
-`21_phase2_state_and_invariants.md`. The automated equivalents are
+`21_phase2_state_and_invariants.md`, and
+`22_phase3_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
-`crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS).
+`crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
+plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
+integration test, PASS).

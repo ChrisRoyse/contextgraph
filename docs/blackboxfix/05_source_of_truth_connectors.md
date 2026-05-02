@@ -5,7 +5,8 @@ is not just a tool wrapper. It must provide **independent readback** and
 explicit evidence extraction.
 
 Phase 2 ships four local connectors: `sqlite_local_v1` (the ledger itself),
-`git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 adds GitHub + CI.
+`git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 ships read-only
+GitHub + GitHub Actions readbacks: `github_v1` and `gha_v1`.
 
 ## Connector Contract
 
@@ -86,28 +87,35 @@ declared test command. Shipped verifier:
 
 - `cmd_exit_zero_v1`
 
-### Phase 3: GitHub
+### Phase 3: GitHub — shipped
 
 Source of truth:
 
 - repository metadata; pull requests; branches; commits; checks; reviews;
   issues; deployments.
 
-Verifier examples:
+Shipped verifiers:
 
-- `github_pr_open_v1`
+- `github_pr_state_v1`
 - `github_branch_head_matches_commit_v1`
 - `github_check_suite_passed_v1`
 - `github_issue_state_changed_v1`
-- `github_review_approved_v1`
 
-### Phase 3: CI Providers
+The connector uses GitHub REST API `GET` endpoints only. It sends
+`Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`,
+and a stable user agent. `BBX_GITHUB_TOKEN` or `GITHUB_TOKEN` is optional for
+public resources and required by operators for private resources.
+
+### Phase 3: CI Providers — GitHub Actions shipped
 
 Initial target: GitHub Actions. Add later: Buildkite, CircleCI, GitLab CI.
 
-Verifier examples:
+Shipped verifier:
 
 - `gha_workflow_run_completed_v1`
+
+Deferred examples:
+
 - `gha_required_jobs_passed_v1`
 - `gha_artifact_present_v1`
 - `gha_test_report_no_failures_v1`
@@ -174,4 +182,6 @@ print(conn.execute("SELECT record_kind, COUNT(*) FROM ledger_records GROUP BY 1"
 PY
 ```
 
-…and confirm the row counts match the test plan. Anything else is hearsay.
+For GitHub/GHA shipped in Phase 3, `<fixture>` is `OWNER/REPO` and the test
+suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it.
+Confirm the row counts match the test plan. Anything else is hearsay.

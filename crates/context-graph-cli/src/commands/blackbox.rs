@@ -8,9 +8,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use chrono::Utc;
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, RETRY_AFTER, USER_AGENT};
+use reqwest::{Client, Url};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -24,6 +27,11 @@ const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
 const FS_CONNECTOR_ID: &str = "fs_local_v1";
 const CMD_CONNECTOR_ID: &str = "cmd_local_v1";
+const GITHUB_CONNECTOR_ID: &str = "github_v1";
+const GHA_CONNECTOR_ID: &str = "gha_v1";
+const GITHUB_API_BASE: &str = "https://api.github.com";
+const GITHUB_API_VERSION: &str = "2022-11-28";
+const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
 
 #[derive(Parser, Debug)]
 #[command(name = "blackbox")]
@@ -511,7 +519,7 @@ impl std::error::Error for BlackboxError {}
 type BbxResult<T> = Result<T, BlackboxError>;
 
 pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
-    match run_blackbox_command(command) {
+    match run_blackbox_command(command).await {
         Ok(output) => {
             println!(
                 "{}",
@@ -529,18 +537,18 @@ pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
     }
 }
 
-fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
+async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
     match command {
         BlackboxCommands::Init(args) => init_ledger(args),
         BlackboxCommands::Connector { action } => match action {
             ConnectorCommands::List => connector_list(),
-            ConnectorCommands::Test(args) => connector_test(args),
+            ConnectorCommands::Test(args) => connector_test(args).await,
         },
         BlackboxCommands::Record { action } => match action {
             RecordCommands::Run(args) => record_run(args),
             RecordCommands::ToolCall(args) => record_tool_call(args),
         },
-        BlackboxCommands::Verify(args) => verify_local(args),
+        BlackboxCommands::Verify(args) => verify_local(args).await,
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -573,12 +581,29 @@ fn connector_list() -> BbxResult<Value> {
                 "source_kind": "command",
                 "readback_specs": ["cmd_exit_zero_v1"],
                 "fail_closed": true
+            },
+            {
+                "connector_id": GITHUB_CONNECTOR_ID,
+                "source_kind": "github",
+                "readback_specs": [
+                    "github_pr_state_v1",
+                    "github_branch_head_matches_commit_v1",
+                    "github_check_suite_passed_v1",
+                    "github_issue_state_changed_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": GHA_CONNECTOR_ID,
+                "source_kind": "github_actions",
+                "readback_specs": ["gha_workflow_run_completed_v1"],
+                "fail_closed": true
             }
         ]
     }))
 }
 
-fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
+async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
     require_non_empty_for_source("--connector", &args.connector)?;
     match args.connector.as_str() {
         GIT_CONNECTOR_ID => {
@@ -635,6 +660,52 @@ fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": CMD_CONNECTOR_ID,
                 "source_of_truth": cmd_source_of_truth(&args.source, &args.command),
+                "readback": readback,
+            }))
+        }
+        GITHUB_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    GITHUB_CONNECTOR_ID,
+                    github_source_of_truth_from_locator(
+                        &args.source.display().to_string(),
+                        "repository",
+                    ),
+                    "--command",
+                    "github_v1 connector test does not accept --command",
+                    "remove --command and pass OWNER/REPO through --source",
+                ));
+            }
+            let (owner, repo) = parse_github_repo_locator(&args.source.display().to_string())?;
+            let readback = github_repo_readback(&owner, &repo).await?;
+            Ok(json!({
+                "status": "ok",
+                "connector": GITHUB_CONNECTOR_ID,
+                "source_of_truth": github_source_of_truth(&owner, &repo, "repository"),
+                "readback": readback,
+            }))
+        }
+        GHA_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    GHA_CONNECTOR_ID,
+                    github_source_of_truth_from_locator(
+                        &args.source.display().to_string(),
+                        "actions/runs",
+                    ),
+                    "--command",
+                    "gha_v1 connector test does not accept --command",
+                    "remove --command and pass OWNER/REPO through --source",
+                ));
+            }
+            let (owner, repo) = parse_github_repo_locator(&args.source.display().to_string())?;
+            let readback = gha_repo_readback(&owner, &repo).await?;
+            Ok(json!({
+                "status": "ok",
+                "connector": GHA_CONNECTOR_ID,
+                "source_of_truth": gha_source_of_truth(&owner, &repo, "actions/runs"),
                 "readback": readback,
             }))
         }
@@ -839,7 +910,7 @@ fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
     }))
 }
 
-fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
+async fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
     validate_ledger_path(&args.ledger)?;
     require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
     require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
@@ -905,7 +976,7 @@ fn verify_local(args: VerifyArgs) -> BbxResult<Value> {
         },
     )?;
 
-    let verification = run_phase2_verifier(&spec);
+    let verification = run_phase2_verifier(&spec).await;
     let readback_append = if let Some(readback_payload) = verification.readback_payload.clone() {
         Some(append_record(
             &mut conn,
@@ -1872,6 +1943,58 @@ impl VerifySpec {
                     &command,
                 )
             }
+            "github_pr_state_v1" => github_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "pulls/{}",
+                    self.expected
+                        .get("pr_number")
+                        .and_then(Value::as_u64)
+                        .map(|number| number.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+            ),
+            "github_branch_head_matches_commit_v1" => github_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "heads/{}",
+                    optional_str(&self.expected, "branch").unwrap_or("unknown")
+                ),
+            ),
+            "github_issue_state_changed_v1" => github_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "issues/{}",
+                    self.expected
+                        .get("issue_number")
+                        .and_then(Value::as_u64)
+                        .map(|number| number.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+            ),
+            "github_check_suite_passed_v1" => github_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "commits/{}/check-suites",
+                    optional_str(&self.expected, "ref").unwrap_or("unknown")
+                ),
+            ),
+            "gha_workflow_run_completed_v1" => gha_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "actions/runs/{}",
+                    self.expected
+                        .get("run_id")
+                        .and_then(Value::as_u64)
+                        .map(|number| number.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+            ),
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -1893,20 +2016,27 @@ struct VerificationOutcome {
     remediation: Option<String>,
 }
 
-fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
+async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
     match spec.verifier_id.as_str() {
         "git_branch_exists_v1" => verify_git_branch_exists(spec),
         "git_commit_exists_v1" => verify_git_commit_exists(spec),
         "git_file_diff_matches_patch_v1" => verify_git_file_diff_matches_patch(spec),
         "git_working_tree_clean_v1" => verify_git_working_tree_clean(spec),
         "cmd_exit_zero_v1" => verify_cmd_exit_zero(spec),
+        "github_pr_state_v1" => verify_github_pr_state(spec).await,
+        "github_branch_head_matches_commit_v1" => {
+            verify_github_branch_head_matches_commit(spec).await
+        }
+        "github_issue_state_changed_v1" => verify_github_issue_state_changed(spec).await,
+        "github_check_suite_passed_v1" => verify_github_check_suite_passed(spec).await,
+        "gha_workflow_run_completed_v1" => verify_gha_workflow_run_completed(spec).await,
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
             "VERIFIER_SPEC_MISSING",
             "$.verifier_id",
             "verifier_id is not registered",
-            "choose a registered Phase 2 verifier id",
+            "choose a registered Phase 2 or Phase 3 verifier id",
             None,
         ),
     }
@@ -1996,6 +2126,17 @@ struct ProcessReadback {
     exit_code: i32,
     stdout: String,
     stderr: String,
+}
+
+#[derive(Debug)]
+struct GithubApiReadback {
+    status: u16,
+    url: String,
+    body: Value,
+    body_sha256: String,
+    rate_limit: Value,
+    request_id: Option<String>,
+    etag: Option<String>,
 }
 
 fn required_string(
@@ -2132,6 +2273,91 @@ fn required_expected_bool(
                 spec.verifier_id
             ),
             format!("replace {field_path} with true or false"),
+            None,
+        )),
+    }
+}
+
+fn required_source_string(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    connector: &'static str,
+    source_of_truth: &str,
+) -> Result<String, VerificationOutcome> {
+    match spec.source.get(key) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Ok(value.clone()),
+        Some(Value::String(_)) | None => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!(
+                "{} requires {field_path} as a non-empty JSON string",
+                spec.verifier_id
+            ),
+            format!("set {field_path} to the source value"),
+            None,
+        )),
+        Some(_) => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            field_path,
+            format!(
+                "{} requires {field_path} to be a JSON string",
+                spec.verifier_id
+            ),
+            format!("replace {field_path} with a JSON string"),
+            None,
+        )),
+    }
+}
+
+fn required_expected_u64(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    connector: &'static str,
+    source_of_truth: &str,
+) -> Result<u64, VerificationOutcome> {
+    match spec.expected.get(key) {
+        Some(Value::Number(value)) => value.as_u64().ok_or_else(|| {
+            VerificationOutcome::blocked(
+                connector,
+                source_of_truth.to_string(),
+                "VERIFIER_SPEC_FIELD_TYPE",
+                field_path,
+                format!(
+                    "{} requires {field_path} to be a non-negative integer",
+                    spec.verifier_id
+                ),
+                format!("replace {field_path} with a non-negative integer"),
+                None,
+            )
+        }),
+        None => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!(
+                "{} requires {field_path} as a non-negative integer",
+                spec.verifier_id
+            ),
+            format!("set {field_path} to the expected integer value"),
+            None,
+        )),
+        Some(_) => Err(VerificationOutcome::blocked(
+            connector,
+            source_of_truth.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            field_path,
+            format!(
+                "{} requires {field_path} to be a non-negative integer",
+                spec.verifier_id
+            ),
+            format!("replace {field_path} with a non-negative integer"),
             None,
         )),
     }
@@ -2471,6 +2697,1052 @@ fn cmd_source_of_truth(cwd: &Path, command: &[String]) -> String {
             .expect("command argv arrays of JSON strings serialize canonically"),
     );
     format!("cmd:{}#{digest}", cwd.display())
+}
+
+fn github_source_of_truth(owner: &str, repo: &str, locator: &str) -> String {
+    github_source_of_truth_from_parts(owner, repo, locator)
+}
+
+fn github_source_of_truth_from_parts(owner: &str, repo: &str, locator: &str) -> String {
+    format!("github:{owner}/{repo}#{locator}")
+}
+
+fn github_source_of_truth_from_locator(repo_locator: &str, locator: &str) -> String {
+    format!("github:{repo_locator}#{locator}")
+}
+
+fn gha_source_of_truth(owner: &str, repo: &str, locator: &str) -> String {
+    gha_source_of_truth_from_parts(owner, repo, locator)
+}
+
+fn gha_source_of_truth_from_parts(owner: &str, repo: &str, locator: &str) -> String {
+    format!("gha:{owner}/{repo}#{locator}")
+}
+
+fn parse_github_repo_locator(locator: &str) -> BbxResult<(String, String)> {
+    let trimmed = locator.trim().trim_matches('/');
+    let parts = trimmed.split('/').collect::<Vec<_>>();
+    if parts.len() != 2 || parts.iter().any(|part| part.trim().is_empty()) {
+        return Err(BlackboxError::connector_blocked(
+            "GITHUB_REPO_LOCATOR_INVALID",
+            GITHUB_CONNECTOR_ID,
+            github_source_of_truth_from_locator(locator, "repository"),
+            "--source",
+            "GitHub connector source must be OWNER/REPO",
+            "pass a repository locator like actions/checkout",
+        ));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
+fn github_api_url(segments: &[&str], query: &[(&str, String)]) -> Url {
+    let mut url = Url::parse(GITHUB_API_BASE).expect("GitHub API base URL is valid");
+    {
+        let mut path = url
+            .path_segments_mut()
+            .expect("GitHub API base URL supports path segments");
+        for segment in segments {
+            path.push(segment);
+        }
+    }
+    if !query.is_empty() {
+        let mut pairs = url.query_pairs_mut();
+        for (key, value) in query {
+            pairs.append_pair(key, value);
+        }
+    }
+    url
+}
+
+fn github_token() -> Option<String> {
+    std::env::var("BBX_GITHUB_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("GITHUB_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+}
+
+fn github_client(source_of_truth: &str, connector: &'static str) -> BbxResult<Client> {
+    Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|err| {
+            BlackboxError::connector_blocked(
+                "GITHUB_HTTP_CLIENT_FAILED",
+                connector,
+                source_of_truth.to_string(),
+                "github.client",
+                format!("failed to build GitHub HTTP client: {err}"),
+                "inspect the local TLS/network configuration and retry",
+            )
+        })
+}
+
+fn github_header(headers: &HeaderMap, name: &'static str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
+}
+
+fn github_rate_limit(headers: &HeaderMap) -> Value {
+    json!({
+        "limit": github_header(headers, "x-ratelimit-limit"),
+        "remaining": github_header(headers, "x-ratelimit-remaining"),
+        "used": github_header(headers, "x-ratelimit-used"),
+        "reset": github_header(headers, "x-ratelimit-reset"),
+        "resource": github_header(headers, "x-ratelimit-resource"),
+        "retry_after": headers
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned),
+    })
+}
+
+fn github_error_message(body: &Value) -> String {
+    body.get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("GitHub API returned an error")
+        .to_string()
+}
+
+fn github_is_rate_limited(status: u16, headers: &HeaderMap, body: &Value) -> bool {
+    if status == 429 {
+        return true;
+    }
+    if headers.contains_key(RETRY_AFTER) {
+        return true;
+    }
+    if github_header(headers, "x-ratelimit-remaining").as_deref() == Some("0") {
+        return true;
+    }
+    github_error_message(body)
+        .to_lowercase()
+        .contains("rate limit")
+}
+
+fn github_allowed_non_success_response(
+    status: u16,
+    body: &Value,
+    allowed_non_success_statuses: &[u16],
+) -> bool {
+    if !allowed_non_success_statuses.contains(&status) {
+        return false;
+    }
+    if status != 422 {
+        return true;
+    }
+    github_error_message(body).starts_with("No commit found for SHA:")
+}
+
+async fn github_get_json(
+    connector: &'static str,
+    url: Url,
+    source_of_truth: &str,
+    operation: &'static str,
+    allowed_non_success_statuses: &[u16],
+) -> BbxResult<GithubApiReadback> {
+    let client = github_client(source_of_truth, connector)?;
+    let mut request = client
+        .get(url.clone())
+        .header(USER_AGENT, HeaderValue::from_static(GITHUB_USER_AGENT))
+        .header(
+            ACCEPT,
+            HeaderValue::from_static("application/vnd.github+json"),
+        )
+        .header("X-GitHub-Api-Version", GITHUB_API_VERSION);
+    if let Some(token) = github_token() {
+        let header_value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|err| {
+            BlackboxError::connector_blocked(
+                "CONNECTOR_CREDENTIAL_INVALID",
+                connector,
+                source_of_truth.to_string(),
+                "env.BBX_GITHUB_TOKEN",
+                format!("GitHub token could not be encoded as an HTTP header: {err}"),
+                "replace BBX_GITHUB_TOKEN/GITHUB_TOKEN with a valid bearer token",
+            )
+        })?;
+        request = request.header(AUTHORIZATION, header_value);
+    }
+    let response = request.send().await.map_err(|err| {
+        BlackboxError::connector_blocked(
+            "SOURCE_OF_TRUTH_UNAVAILABLE",
+            connector,
+            source_of_truth.to_string(),
+            operation,
+            format!("GitHub API request failed before an HTTP response was received: {err}"),
+            "check network access, DNS/TLS, and GitHub availability, then retry",
+        )
+    })?;
+    let status = response.status().as_u16();
+    let headers = response.headers().clone();
+    let url_after_redirects = response.url().to_string();
+    let request_id = github_header(&headers, "x-github-request-id");
+    let etag = github_header(&headers, "etag");
+    let body_text = response.text().await.map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GITHUB_RESPONSE_READ_FAILED",
+            connector,
+            source_of_truth.to_string(),
+            operation,
+            format!("failed to read GitHub API response body: {err}"),
+            "retry after confirming the network connection is stable",
+        )
+    })?;
+    let body = if body_text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&body_text).map_err(|err| {
+            BlackboxError::connector_blocked(
+                "READBACK_SCHEMA_DRIFT",
+                connector,
+                source_of_truth.to_string(),
+                operation,
+                format!("GitHub API response body was not valid JSON: {err}"),
+                "inspect the response and update the connector only if GitHub changed the endpoint contract",
+            )
+        })?
+    };
+    let rate_limit = github_rate_limit(&headers);
+    let body_sha256 = sha256_hex(body_text.as_bytes());
+    if (200..300).contains(&status) {
+        return Ok(GithubApiReadback {
+            status,
+            url: url_after_redirects,
+            body,
+            body_sha256,
+            rate_limit,
+            request_id,
+            etag,
+        });
+    }
+    if github_allowed_non_success_response(status, &body, allowed_non_success_statuses) {
+        return Ok(GithubApiReadback {
+            status,
+            url: url_after_redirects,
+            body,
+            body_sha256,
+            rate_limit,
+            request_id,
+            etag,
+        });
+    }
+    if github_is_rate_limited(status, &headers, &body) {
+        return Err(BlackboxError::connector_blocked(
+            "GITHUB_RATE_LIMITED",
+            connector,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitHub API rate limit blocked readback: HTTP {status}: {}",
+                github_error_message(&body)
+            ),
+            "wait until x-ratelimit-reset or retry-after, then rerun verification without claiming success",
+        ));
+    }
+    if status == 401 || status == 403 {
+        return Err(BlackboxError::connector_blocked(
+            "CONNECTOR_PERMISSION_DENIED",
+            connector,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitHub API denied readback: HTTP {status}: {}",
+                github_error_message(&body)
+            ),
+            "provide a token with the documented read permission or verify the repository is public",
+        ));
+    }
+    if status == 409 || status >= 500 {
+        return Err(BlackboxError::connector_blocked(
+            "SOURCE_OF_TRUTH_UNAVAILABLE",
+            connector,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitHub source of truth could not provide a stable readback: HTTP {status}: {}",
+                github_error_message(&body)
+            ),
+            "retry after the repository/API state is available; do not treat this as success",
+        ));
+    }
+    Err(BlackboxError::connector_blocked(
+        "GITHUB_HTTP_STATUS_UNEXPECTED",
+        connector,
+        source_of_truth.to_string(),
+        operation,
+        format!(
+            "GitHub API returned unexpected HTTP {status}: {}",
+            github_error_message(&body)
+        ),
+        "inspect the endpoint, request parameters, and GitHub API docs before retrying",
+    ))
+}
+
+fn github_api_snapshot(response: &GithubApiReadback) -> Value {
+    json!({
+        "http_status": response.status,
+        "url": response.url,
+        "request_id": response.request_id,
+        "etag": response.etag,
+        "rate_limit": response.rate_limit,
+        "body_sha256": response.body_sha256,
+        "body": response.body,
+    })
+}
+
+async fn github_repo_readback(owner: &str, repo: &str) -> BbxResult<Value> {
+    let source = github_source_of_truth(owner, repo, "repository");
+    let url = github_api_url(&["repos", owner, repo], &[]);
+    let response = github_get_json(
+        GITHUB_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}",
+        &[404],
+    )
+    .await?;
+    if response.status == 404 {
+        return Err(BlackboxError::connector_blocked(
+            "GITHUB_REPO_NOT_FOUND",
+            GITHUB_CONNECTOR_ID,
+            source,
+            "source",
+            "GitHub repository was not found",
+            "verify OWNER/REPO and provide credentials for private repositories",
+        ));
+    }
+    Ok(json!({
+        "repository": github_repo_summary(&response.body),
+        "api": github_api_snapshot(&response),
+    }))
+}
+
+async fn gha_repo_readback(owner: &str, repo: &str) -> BbxResult<Value> {
+    let source = gha_source_of_truth(owner, repo, "actions/runs");
+    let url = github_api_url(
+        &["repos", owner, repo, "actions", "runs"],
+        &[("per_page", "1".to_string())],
+    );
+    let response = github_get_json(
+        GHA_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/actions/runs",
+        &[404],
+    )
+    .await?;
+    if response.status == 404 {
+        return Err(BlackboxError::connector_blocked(
+            "GHA_REPO_NOT_FOUND",
+            GHA_CONNECTOR_ID,
+            source,
+            "source",
+            "GitHub Actions repository was not found",
+            "verify OWNER/REPO and provide Actions read credentials for private repositories",
+        ));
+    }
+    Ok(json!({
+        "total_count": response.body.get("total_count").cloned().unwrap_or(Value::Null),
+        "latest_run": response.body
+            .get("workflow_runs")
+            .and_then(Value::as_array)
+            .and_then(|runs| runs.first())
+            .map(github_workflow_run_summary),
+        "api": github_api_snapshot(&response),
+    }))
+}
+
+fn github_repo_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "full_name": body.get("full_name").cloned().unwrap_or(Value::Null),
+        "private": body.get("private").cloned().unwrap_or(Value::Null),
+        "default_branch": body.get("default_branch").cloned().unwrap_or(Value::Null),
+        "html_url": body.get("html_url").cloned().unwrap_or(Value::Null),
+        "pushed_at": body.get("pushed_at").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn github_pr_summary(body: &Value) -> Value {
+    json!({
+        "number": body.get("number").cloned().unwrap_or(Value::Null),
+        "state": body.get("state").cloned().unwrap_or(Value::Null),
+        "draft": body.get("draft").cloned().unwrap_or(Value::Null),
+        "merged": body.get("merged").cloned().unwrap_or(Value::Null),
+        "head_ref": body.pointer("/head/ref").cloned().unwrap_or(Value::Null),
+        "head_sha": body.pointer("/head/sha").cloned().unwrap_or(Value::Null),
+        "base_ref": body.pointer("/base/ref").cloned().unwrap_or(Value::Null),
+        "base_sha": body.pointer("/base/sha").cloned().unwrap_or(Value::Null),
+        "html_url": body.get("html_url").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn github_issue_summary(body: &Value) -> Value {
+    json!({
+        "number": body.get("number").cloned().unwrap_or(Value::Null),
+        "state": body.get("state").cloned().unwrap_or(Value::Null),
+        "state_reason": body.get("state_reason").cloned().unwrap_or(Value::Null),
+        "title": body.get("title").cloned().unwrap_or(Value::Null),
+        "html_url": body.get("html_url").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+        "is_pull_request": body.get("pull_request").is_some(),
+    })
+}
+
+fn github_commit_summary(body: &Value) -> Value {
+    json!({
+        "sha": body.get("sha").cloned().unwrap_or(Value::Null),
+        "html_url": body.get("html_url").cloned().unwrap_or(Value::Null),
+        "message": body.pointer("/commit/message").cloned().unwrap_or(Value::Null),
+        "author_date": body.pointer("/commit/author/date").cloned().unwrap_or(Value::Null),
+        "committer_date": body.pointer("/commit/committer/date").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn github_check_suite_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "status": body.get("status").cloned().unwrap_or(Value::Null),
+        "conclusion": body.get("conclusion").cloned().unwrap_or(Value::Null),
+        "head_sha": body.get("head_sha").cloned().unwrap_or(Value::Null),
+        "app_slug": body.pointer("/app/slug").cloned().unwrap_or(Value::Null),
+        "check_runs_url": body.get("check_runs_url").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn github_workflow_run_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "name": body.get("name").cloned().unwrap_or(Value::Null),
+        "status": body.get("status").cloned().unwrap_or(Value::Null),
+        "conclusion": body.get("conclusion").cloned().unwrap_or(Value::Null),
+        "head_sha": body.get("head_sha").cloned().unwrap_or(Value::Null),
+        "head_branch": body.get("head_branch").cloned().unwrap_or(Value::Null),
+        "event": body.get("event").cloned().unwrap_or(Value::Null),
+        "workflow_id": body.get("workflow_id").cloned().unwrap_or(Value::Null),
+        "html_url": body.get("html_url").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn github_owner_repo_from_spec(
+    spec: &VerifySpec,
+    connector: &'static str,
+    source_hint: &str,
+) -> Result<(String, String), VerificationOutcome> {
+    let owner = required_source_string(spec, "owner", "$.source.owner", connector, source_hint)?;
+    let repo = required_source_string(spec, "repo", "$.source.repo", connector, source_hint)?;
+    Ok((owner, repo))
+}
+
+fn github_readback_payload(
+    verifier_id: &str,
+    connector: &'static str,
+    source: &str,
+    operation: &str,
+    response: &GithubApiReadback,
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        connector,
+        source,
+        operation,
+        json!({
+            "api": github_api_snapshot(response),
+            "observed": actual,
+        }),
+    )
+}
+
+async fn verify_github_pr_state(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = github_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "pulls/unknown",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GITHUB_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let pr_number = match required_expected_u64(
+        spec,
+        "pr_number",
+        "$.expected.pr_number",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(number) => number,
+        Err(outcome) => return outcome,
+    };
+    let expected_state = match required_expected_string(
+        spec,
+        "state",
+        "$.expected.state",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    let source = github_source_of_truth(&owner, &repo, &format!("pulls/{pr_number}"));
+    let url = github_api_url(
+        &["repos", &owner, &repo, "pulls", &pr_number.to_string()],
+        &[],
+    );
+    let response = match github_get_json(
+        GITHUB_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+        &[404],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let actual = if response.status == 404 {
+        json!({
+            "pr_number": pr_number,
+            "exists": false,
+            "http_status": response.status,
+            "message": github_error_message(&response.body),
+        })
+    } else {
+        let summary = github_pr_summary(&response.body);
+        json!({
+            "pr_number": pr_number,
+            "exists": true,
+            "http_status": response.status,
+            "state": summary.get("state").cloned().unwrap_or(Value::Null),
+            "head_sha": summary.get("head_sha").cloned().unwrap_or(Value::Null),
+            "head_ref": summary.get("head_ref").cloned().unwrap_or(Value::Null),
+            "base_ref": summary.get("base_ref").cloned().unwrap_or(Value::Null),
+            "draft": summary.get("draft").cloned().unwrap_or(Value::Null),
+            "merged": summary.get("merged").cloned().unwrap_or(Value::Null),
+            "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+            "updated_at": summary.get("updated_at").cloned().unwrap_or(Value::Null),
+        })
+    };
+    let readback = github_readback_payload(
+        "github_pr_state_v1",
+        GITHUB_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+        &response,
+        &actual,
+    );
+    if response.status == 404 {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_PR_NOT_FOUND",
+            "actual_readback.exists",
+            "expected pull request does not exist in GitHub",
+            "verify the pull request number or create the pull request before claiming success",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("state").and_then(Value::as_str) == Some(expected_state.as_str()) {
+        VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_PR_STATE_MISMATCH",
+            "actual_readback.state",
+            "GitHub pull request state did not match the expected state",
+            "read the GitHub pull request and update the expected delta or fix the PR state",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_github_branch_head_matches_commit(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = github_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "heads/unknown",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GITHUB_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let branch = match required_expected_string(
+        spec,
+        "branch",
+        "$.expected.branch",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(branch) => branch,
+        Err(outcome) => return outcome,
+    };
+    let expected_commit = match required_expected_string(
+        spec,
+        "commit",
+        "$.expected.commit",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(commit) => commit,
+        Err(outcome) => return outcome,
+    };
+    let source = github_source_of_truth(&owner, &repo, &format!("heads/{branch}"));
+    let ref_name = format!("heads/{branch}");
+    let url = github_api_url(&["repos", &owner, &repo, "commits", &ref_name], &[]);
+    let response = match github_get_json(
+        GITHUB_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/commits/{ref}",
+        &[404, 422],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let missing_branch = response.status == 404 || response.status == 422;
+    let actual = if missing_branch {
+        json!({
+            "branch": branch,
+            "exists": false,
+            "http_status": response.status,
+            "message": github_error_message(&response.body),
+        })
+    } else {
+        let summary = github_commit_summary(&response.body);
+        json!({
+            "branch": branch,
+            "exists": true,
+            "http_status": response.status,
+            "sha": summary.get("sha").cloned().unwrap_or(Value::Null),
+            "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+            "committer_date": summary.get("committer_date").cloned().unwrap_or(Value::Null),
+        })
+    };
+    let readback = github_readback_payload(
+        "github_branch_head_matches_commit_v1",
+        GITHUB_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/commits/{ref}",
+        &response,
+        &actual,
+    );
+    if missing_branch {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_BRANCH_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitHub branch/ref does not exist",
+            "verify the branch name or push the branch before claiming success",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("sha").and_then(Value::as_str) == Some(expected_commit.as_str()) {
+        VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_BRANCH_HEAD_MISMATCH",
+            "actual_readback.sha",
+            "GitHub branch head SHA did not match the expected commit",
+            "push the expected commit to the branch or update the expected delta",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_github_issue_state_changed(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = github_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "issues/unknown",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GITHUB_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let issue_number = match required_expected_u64(
+        spec,
+        "issue_number",
+        "$.expected.issue_number",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(number) => number,
+        Err(outcome) => return outcome,
+    };
+    let expected_state = match required_expected_string(
+        spec,
+        "state",
+        "$.expected.state",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    let source = github_source_of_truth(&owner, &repo, &format!("issues/{issue_number}"));
+    let url = github_api_url(
+        &["repos", &owner, &repo, "issues", &issue_number.to_string()],
+        &[],
+    );
+    let response = match github_get_json(
+        GITHUB_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/issues/{issue_number}",
+        &[404],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let actual = if response.status == 404 {
+        json!({
+            "issue_number": issue_number,
+            "exists": false,
+            "http_status": response.status,
+            "message": github_error_message(&response.body),
+        })
+    } else {
+        let summary = github_issue_summary(&response.body);
+        json!({
+            "issue_number": issue_number,
+            "exists": true,
+            "http_status": response.status,
+            "state": summary.get("state").cloned().unwrap_or(Value::Null),
+            "state_reason": summary.get("state_reason").cloned().unwrap_or(Value::Null),
+            "is_pull_request": summary.get("is_pull_request").cloned().unwrap_or(Value::Bool(false)),
+            "title": summary.get("title").cloned().unwrap_or(Value::Null),
+            "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+            "updated_at": summary.get("updated_at").cloned().unwrap_or(Value::Null),
+        })
+    };
+    let readback = github_readback_payload(
+        "github_issue_state_changed_v1",
+        GITHUB_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/issues/{issue_number}",
+        &response,
+        &actual,
+    );
+    if response.status == 404 {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitHub issue does not exist",
+            "verify the issue number or create the issue before claiming success",
+            readback,
+            actual,
+        );
+    }
+    if actual
+        .get("is_pull_request")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_IS_PULL_REQUEST",
+            "actual_readback.is_pull_request",
+            "GitHub issue endpoint returned a pull request, not an issue",
+            "use github_pr_state_v1 for pull requests or provide a real issue number",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("state").and_then(Value::as_str) == Some(expected_state.as_str()) {
+        VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_STATE_MISMATCH",
+            "actual_readback.state",
+            "GitHub issue state did not match the expected state",
+            "read the GitHub issue and update the expected delta or fix the issue state",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_github_check_suite_passed(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = github_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "commits/unknown/check-suites",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GITHUB_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let git_ref = match required_expected_string(
+        spec,
+        "ref",
+        "$.expected.ref",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(git_ref) => git_ref,
+        Err(outcome) => return outcome,
+    };
+    let expected_conclusion = match required_expected_string(
+        spec,
+        "conclusion",
+        "$.expected.conclusion",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(conclusion) => conclusion,
+        Err(outcome) => return outcome,
+    };
+    let source = github_source_of_truth(&owner, &repo, &format!("commits/{git_ref}/check-suites"));
+    let url = github_api_url(
+        &["repos", &owner, &repo, "commits", &git_ref, "check-suites"],
+        &[("per_page", "100".to_string())],
+    );
+    let response = match github_get_json(
+        GITHUB_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/commits/{ref}/check-suites",
+        &[404, 422],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let suites = response
+        .body
+        .get("check_suites")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let suite_summaries = suites
+        .iter()
+        .map(github_check_suite_summary)
+        .collect::<Vec<_>>();
+    let total_count = response
+        .body
+        .get("total_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(suite_summaries.len() as u64);
+    let mismatched = suite_summaries
+        .iter()
+        .filter(|suite| {
+            suite.get("conclusion").and_then(Value::as_str) != Some(expected_conclusion.as_str())
+        })
+        .count();
+    let actual = json!({
+        "ref": git_ref,
+        "http_status": response.status,
+        "total_count": total_count,
+        "expected_conclusion": expected_conclusion,
+        "mismatched_count": mismatched,
+        "check_suites": suite_summaries,
+    });
+    let readback = github_readback_payload(
+        "github_check_suite_passed_v1",
+        GITHUB_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/commits/{ref}/check-suites",
+        &response,
+        &actual,
+    );
+    if response.status == 404 || total_count == 0 {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_CHECK_SUITE_NOT_FOUND",
+            "actual_readback.total_count",
+            "no GitHub check suites were found for the expected ref",
+            "wait for checks to be created or verify the expected ref",
+            readback,
+            actual,
+        );
+    }
+    if mismatched == 0 {
+        VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_CHECK_SUITE_CONCLUSION_MISMATCH",
+            "actual_readback.check_suites",
+            "one or more GitHub check suites did not match the expected conclusion",
+            "inspect the failing/pending check suites before claiming CI passed",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_gha_workflow_run_completed(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = gha_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "actions/runs/unknown",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GHA_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let run_id = match required_expected_u64(
+        spec,
+        "run_id",
+        "$.expected.run_id",
+        GHA_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(run_id) => run_id,
+        Err(outcome) => return outcome,
+    };
+    let expected_status = match required_expected_string(
+        spec,
+        "status",
+        "$.expected.status",
+        GHA_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(status) => status,
+        Err(outcome) => return outcome,
+    };
+    let expected_conclusion = match required_expected_string(
+        spec,
+        "conclusion",
+        "$.expected.conclusion",
+        GHA_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(conclusion) => conclusion,
+        Err(outcome) => return outcome,
+    };
+    let source = gha_source_of_truth(&owner, &repo, &format!("actions/runs/{run_id}"));
+    let url = github_api_url(
+        &[
+            "repos",
+            &owner,
+            &repo,
+            "actions",
+            "runs",
+            &run_id.to_string(),
+        ],
+        &[],
+    );
+    let response = match github_get_json(
+        GHA_CONNECTOR_ID,
+        url,
+        &source,
+        "GET /repos/{owner}/{repo}/actions/runs/{run_id}",
+        &[404],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let actual = if response.status == 404 {
+        json!({
+            "run_id": run_id,
+            "exists": false,
+            "http_status": response.status,
+            "message": github_error_message(&response.body),
+        })
+    } else {
+        let summary = github_workflow_run_summary(&response.body);
+        json!({
+            "run_id": run_id,
+            "exists": true,
+            "http_status": response.status,
+            "status": summary.get("status").cloned().unwrap_or(Value::Null),
+            "conclusion": summary.get("conclusion").cloned().unwrap_or(Value::Null),
+            "head_sha": summary.get("head_sha").cloned().unwrap_or(Value::Null),
+            "head_branch": summary.get("head_branch").cloned().unwrap_or(Value::Null),
+            "event": summary.get("event").cloned().unwrap_or(Value::Null),
+            "workflow_id": summary.get("workflow_id").cloned().unwrap_or(Value::Null),
+            "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+            "updated_at": summary.get("updated_at").cloned().unwrap_or(Value::Null),
+        })
+    };
+    let readback = github_readback_payload(
+        "gha_workflow_run_completed_v1",
+        GHA_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/actions/runs/{run_id}",
+        &response,
+        &actual,
+    );
+    if response.status == 404 {
+        return VerificationOutcome::failed(
+            GHA_CONNECTOR_ID,
+            source,
+            "GHA_WORKFLOW_RUN_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitHub Actions workflow run does not exist",
+            "verify the workflow run id before claiming CI completed",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("status").and_then(Value::as_str) != Some(expected_status.as_str()) {
+        return VerificationOutcome::failed(
+            GHA_CONNECTOR_ID,
+            source,
+            "GHA_WORKFLOW_RUN_STATUS_MISMATCH",
+            "actual_readback.status",
+            "GitHub Actions workflow run status did not match the expected status",
+            "wait for the workflow run to reach the expected status or update the expected delta",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("conclusion").and_then(Value::as_str) == Some(expected_conclusion.as_str()) {
+        VerificationOutcome::passed(GHA_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GHA_CONNECTOR_ID,
+            source,
+            "GHA_WORKFLOW_RUN_CONCLUSION_MISMATCH",
+            "actual_readback.conclusion",
+            "GitHub Actions workflow run conclusion did not match the expected conclusion",
+            "inspect the workflow run before claiming CI passed",
+            readback,
+            actual,
+        )
+    }
 }
 
 fn verify_git_branch_exists(spec: &VerifySpec) -> VerificationOutcome {

@@ -146,6 +146,30 @@ Design implication:
 - stdout/stderr/exit code are evidence, while artifact files must still be
   read and hashed from disk.
 
+### GitHub REST API And GitHub Actions
+
+References:
+
+- <https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/checks/suites?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28>
+
+Design implication:
+
+- use the documented media type and API version headers for every readback;
+- use authenticated requests when private repos or higher rate limits are
+  required, but allow unauthenticated reads for public fixtures;
+- treat `401`/`403` as permission blocks and rate-limit headers as hard
+  blocks, not warnings;
+- follow redirects and avoid manually parsing response URLs for identity;
+- do not ignore repeated `4xx`/`5xx` errors. Endpoint-specific absent-resource
+  responses such as commit/check-suite `422` are captured as verifier failures
+  only where the endpoint contract and live readback prove they mean “target
+  absent.”
+
 ## Internal Project References
 
 - `docs/upgradeplancombine/09_fsv_extensions.md` — FSV protocol primitives

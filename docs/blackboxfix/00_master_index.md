@@ -33,10 +33,20 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase2_fsv`).
-- **Phases 3–8**: NOT started. See `13_mvp_implementation_phases.md` for the
-  exact next-step order, `20_phase1_state_and_invariants.md` for the Phase 1
-  baseline, and `21_phase2_state_and_invariants.md` for the current verifier
-  surface.
+- **Phase 3 (GitHub + GitHub Actions Verification)**: COMPLETE and verified.
+  - Connectors: `github_v1`, `gha_v1`.
+  - Verifiers: `github_pr_state_v1`,
+    `github_branch_head_matches_commit_v1`,
+    `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
+    `gha_workflow_run_completed_v1`.
+  - Ledger schema remains `LEDGER_SCHEMA_VERSION = 2`; Phase 3 adds no new
+    record kinds.
+  - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
+    (1 live integration test covering 5 happy verifiers + 15 edge checks; run
+    with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
+- **Phases 4–8**: NOT started. See `13_mvp_implementation_phases.md` for the
+  exact next-step order and `20`/`21`/`22` state-and-invariant docs for the
+  shipped baseline.
 
 ## Build And Test Quick Reference
 
@@ -49,6 +59,9 @@ cargo test --package context-graph-cli --test blackbox_phase1_fsv -- --nocapture
 
 # Phase 2 FSV tests (real SQLite + real Git repos + real commands/files)
 cargo test --package context-graph-cli --test blackbox_phase2_fsv -- --nocapture
+
+# Phase 3 FSV tests (live GitHub/GitHub Actions API + real SQLite ledger)
+cargo test --package context-graph-cli --test blackbox_phase3_fsv -- --nocapture
 
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
@@ -73,7 +86,7 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 2 CLI shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–2 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–3 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -87,6 +100,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   shipped Phase 1.
 - `21_phase2_state_and_invariants.md` — shipped Phase 2 connectors,
   verifiers, ledger rows, tests, and manual FSV evidence.
+- `22_phase3_state_and_invariants.md` — shipped Phase 3 GitHub/GHA
+  connectors, verifiers, live tests, and manual FSV evidence.
 
 ## Build Doctrine
 

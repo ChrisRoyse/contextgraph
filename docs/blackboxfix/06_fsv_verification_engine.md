@@ -4,8 +4,8 @@ The verifier is the core product. It converts "the agent said it worked" into
 "the source of truth proves it worked" — or a typed failure.
 
 Phase 1 shipped a structural verifier for the ledger (hash-chain integrity
-across the SQLite source of truth). Phase 2 ships the first outcome verifiers
-for local Git and command artifacts. Phase 3 ships GitHub/CI.
+across the SQLite source of truth). Phase 2 shipped local Git/file/command
+outcome verifiers. Phase 3 ships GitHub/GitHub Actions outcome verifiers.
 
 ## Full-State Verification Protocol
 
@@ -45,7 +45,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2 verifier ids:
+Shipped Phase 2/3 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -54,6 +54,11 @@ Shipped Phase 2 verifier ids:
 | `git_file_diff_matches_patch_v1` | `git_local_v1` | `git diff --no-ext-diff --no-color -- <path>` | exact patch string/hash match |
 | `git_working_tree_clean_v1` | `git_local_v1` | `git status --porcelain=v1 --untracked-files=all` | clean bool equals expected |
 | `cmd_exit_zero_v1` | `cmd_local_v1` | process exit/stdout/stderr + declared artifact files | exit code zero and artifacts exist |
+| `github_pr_state_v1` | `github_v1` | GitHub pull request API | PR exists and state equals expected |
+| `github_branch_head_matches_commit_v1` | `github_v1` | GitHub commit API for `heads/<branch>` | branch/ref resolves to expected commit SHA |
+| `github_issue_state_changed_v1` | `github_v1` | GitHub issue API | issue exists, is not a PR, and state equals expected |
+| `github_check_suite_passed_v1` | `github_v1` | GitHub check suites API | at least one suite exists and all suite conclusions match expected |
+| `gha_workflow_run_completed_v1` | `gha_v1` | GitHub Actions workflow run API | workflow run status and conclusion match expected |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;
@@ -133,6 +138,12 @@ Phase 2 follows the same rule in
 verifier has real-source happy-path coverage plus missing target, wrong target,
 and schema/connector failure coverage.
 
+Phase 3 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`: the live integration
+test discovers real GitHub/GHA state, verifies all five happy paths, then
+covers missing targets, stale/wrong expectations, issue/PR ambiguity, and
+schema blocks.
+
 ## Evidence Packet (Phase 4 target)
 
 ```json
@@ -164,7 +175,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2 enforces this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -193,8 +204,10 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2 happy path uses a real Git repo and command artifact; see
-# tests/blackbox_phase2_fsv.rs and docs/blackboxfix/21_phase2_state_and_invariants.md.
+# Phase 2/3 happy paths use real Git/local-command and live GitHub/GHA sources;
+# see tests/blackbox_phase2_fsv.rs, tests/blackbox_phase3_fsv.rs, and
+# docs/blackboxfix/21_phase2_state_and_invariants.md /
+# docs/blackboxfix/22_phase3_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

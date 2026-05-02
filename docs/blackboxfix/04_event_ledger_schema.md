@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 2 Physical Schema (shipped)
+## Phase 2/3 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 2 in Phase 2
+  schema_version              INTEGER NOT NULL,   -- 2 in Phase 2/3
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -205,7 +205,7 @@ The physical columns reify this envelope. JSON-shape view:
 }
 ```
 
-## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2)
+## ExpectedDelta / ReadbackSnapshot / VerifierResult (Phase 2/3)
 
 These are stored by `blackbox verify` after a recorded `tool_call` exists for
 the requested `run_id` and tenant.
@@ -274,6 +274,11 @@ Typed failure example:
   "remediation": "commit, revert, or remove working tree changes before claiming the run is clean"
 }
 ```
+
+Phase 3 reuses these same three evidence record kinds for GitHub/GitHub
+Actions readbacks. No new table or schema version was required because the
+existing payloads already include connector id, operation, source locator,
+observed state, typed error fields, and remediation.
 
 ## Integrity Requirements
 
