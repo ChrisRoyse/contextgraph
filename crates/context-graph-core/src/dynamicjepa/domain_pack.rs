@@ -289,11 +289,11 @@ impl Validate for DomainPack {
                 actual: self.header.domain_pack_version.clone(),
             });
         }
-        if self.schema_version != 1 {
+        if !matches!(self.schema_version, 1 | 2) {
             return Err(DynamicJepaError::schema(
                 "DomainPack.schema_version",
                 format!("unsupported schema_version {}", self.schema_version),
-                "Phase 1 supports schema_version=1 only",
+                "supported DynamicJEPA domain-pack schema versions are 1 and 2",
             ));
         }
         if self.title.trim().is_empty() {

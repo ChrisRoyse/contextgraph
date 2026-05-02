@@ -41,8 +41,9 @@ use context_graph_core::dynamicjepa::{
 };
 use context_graph_dynamicjepa::{
     bootstrap_ksg_1_ci, estimate_ksg_1, plan_next_action, predict_next_panel, record_surprise,
-    summarize_pairwise_mi, train_dataset, verify_artifact_files, PairwiseMiPairReport,
-    PairwiseMiSummary, TrainConfig, MI_AUDIT_MIN_SAMPLE_SIZE,
+    run_cross_domain_transfer, summarize_pairwise_mi, train_dataset, verify_artifact_files,
+    CrossDomainTransferConfig, PairwiseMiPairReport, PairwiseMiSummary, TrainConfig,
+    MI_AUDIT_MIN_SAMPLE_SIZE, TRANSFER_DEFAULT_BOOTSTRAP_ITERS,
 };
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_REGISTRY, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS,
@@ -154,6 +155,8 @@ pub enum DynamicJepaCommands {
     ComputeMcRatio(ComputeMcRatioArgs),
     /// Estimate pairwise mutual information across persisted instrument readings.
     AuditPairwiseMi(AuditPairwiseMiArgs),
+    /// Run the counter_world to gridworld cross-domain transfer pilot.
+    CrossDomainTransfer(CrossDomainTransferArgs),
     /// Read a persisted DynamicJEPA prediction.
     GetPrediction(GetPredictionArgs),
     /// Read a persisted DynamicJEPA plan trace.
@@ -214,6 +217,7 @@ impl DynamicJepaCommands {
             Self::RecalibrateThreshold(_) => "dynamicjepa_recalibrate_threshold",
             Self::ComputeMcRatio(_) => "dynamicjepa_compute_mc_ratio",
             Self::AuditPairwiseMi(_) => "dynamicjepa_audit_pairwise_mi",
+            Self::CrossDomainTransfer(_) => "dynamicjepa_cross_domain_transfer",
             Self::GetPrediction(_) => "dynamicjepa_get_prediction",
             Self::GetPlanTrace(_) => "dynamicjepa_get_plan_trace",
             Self::GetSurprise(_) => "dynamicjepa_get_surprise",
@@ -958,6 +962,57 @@ pub struct AuditPairwiseMiArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct CrossDomainTransferArgs {
+    /// Fresh output root for transfer_results.json, paper table, plots, and bridge artifacts.
+    #[arg(long = "output-root")]
+    pub output_root: PathBuf,
+
+    /// Paired transfer seeds. The documented v2.1 pilot uses 42,43,44,45,46.
+    #[arg(
+        long = "seeds",
+        value_delimiter = ',',
+        default_value = "42,43,44,45,46"
+    )]
+    pub seeds: Vec<u64>,
+
+    /// Counter-world bridge events per seed.
+    #[arg(long = "source-events", default_value_t = 1000)]
+    pub source_events: usize,
+
+    /// Held-out gridworld bridge events per seed.
+    #[arg(long = "target-events", default_value_t = 200)]
+    pub target_events: usize,
+
+    /// BCa bootstrap iterations for seed-level confidence intervals.
+    #[arg(long = "bootstrap-iters", default_value_t = TRANSFER_DEFAULT_BOOTSTRAP_ITERS)]
+    pub bootstrap_iters: usize,
+
+    /// CUDA training epochs for each bridge predictor.
+    #[arg(long = "train-epochs", default_value_t = 160)]
+    pub train_epochs: usize,
+
+    /// CUDA batch size for each bridge predictor.
+    #[arg(long = "batch-size", default_value_t = 64)]
+    pub batch_size: usize,
+
+    /// Max wall-clock seconds for each bridge predictor training run.
+    #[arg(long = "max-seconds-per-training", default_value_t = 120)]
+    pub max_seconds_per_training: u64,
+
+    /// AdamW learning rate for bridge predictor training.
+    #[arg(long = "learning-rate", default_value_t = 0.001)]
+    pub learning_rate: f64,
+
+    /// Required val_latent_mse convergence target.
+    #[arg(long = "stopping-target", default_value_t = 0.20)]
+    pub stopping_target: f64,
+
+    /// Emit one machine-readable JSON object.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
 pub struct GetPredictionArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
@@ -1366,6 +1421,7 @@ async fn run(action: DynamicJepaCommands) -> DynamicJepaResult<CommandOutcome> {
         DynamicJepaCommands::RecalibrateThreshold(args) => recalibrate_threshold_command(args),
         DynamicJepaCommands::ComputeMcRatio(args) => compute_mc_ratio_command(args),
         DynamicJepaCommands::AuditPairwiseMi(args) => audit_pairwise_mi_command(args),
+        DynamicJepaCommands::CrossDomainTransfer(args) => cross_domain_transfer_command(args),
         DynamicJepaCommands::GetPrediction(args) => get_prediction_command(args),
         DynamicJepaCommands::GetPlanTrace(args) => get_plan_trace_command(args),
         DynamicJepaCommands::GetSurprise(args) => get_surprise_command(args),
@@ -4291,6 +4347,95 @@ fn audit_pairwise_mi_command(args: AuditPairwiseMiArgs) -> DynamicJepaResult<Com
             ),
             exit_code: 1,
         }),
+    }
+}
+
+fn cross_domain_transfer_command(
+    args: CrossDomainTransferArgs,
+) -> DynamicJepaResult<CommandOutcome> {
+    let _json = args.json;
+    let source_of_truth = [
+        "transfer_results.json",
+        "paper_tables/table_cross_domain_transfer.csv",
+        "plots/cross_domain_transfer_box.svg",
+        "counter_world/seed_*/events.jsonl",
+        "gridworld_5x5/seed_*/events.jsonl",
+        "bridge/seed_*/model.safetensors",
+    ];
+    let before_state = ci_path_state(&args.output_root)?;
+    let config = CrossDomainTransferConfig {
+        output_root: args.output_root.clone(),
+        seeds: args.seeds.clone(),
+        source_events: args.source_events,
+        target_events: args.target_events,
+        bootstrap_iters: args.bootstrap_iters,
+        train_epochs: args.train_epochs,
+        batch_size: args.batch_size,
+        max_seconds_per_training: args.max_seconds_per_training,
+        learning_rate: args.learning_rate,
+        stopping_target: args.stopping_target,
+    };
+
+    match run_cross_domain_transfer(&config) {
+        Ok(report) => {
+            let transfer_results_path = args.output_root.join("transfer_results.json");
+            let table_path = args
+                .output_root
+                .join("paper_tables/table_cross_domain_transfer.csv");
+            let plot_path = args.output_root.join("plots/cross_domain_transfer_box.svg");
+            let results_readback = read_json_file(&transfer_results_path)?;
+            let table_readback = read_ci_csv_table(&table_path, "table_cross_domain_transfer")?;
+            let after_state = json!({
+                "output_root": ci_path_state(&args.output_root)?,
+                "transfer_results_json": ci_path_state(&transfer_results_path)?,
+                "table_cross_domain_transfer_csv": ci_path_state(&table_path)?,
+                "cross_domain_transfer_box_svg": ci_path_state(&plot_path)?,
+            });
+            Ok(CommandOutcome {
+                value: json!({
+                    "operation": "dynamicjepa_cross_domain_transfer",
+                    "status": "ok",
+                    "source_of_truth": source_of_truth,
+                    "before_state": before_state,
+                    "after_state": after_state,
+                    "summary": {
+                        "domain": report.domain,
+                        "domain_version": report.domain_version,
+                        "phase1_passed_seeds": report.phase1_passed_seeds,
+                        "phase2_passed_seeds": report.phase2_passed_seeds,
+                        "n_seeds": report.statistics.n_seeds,
+                        "hypothesis_result": report.acceptance.hypothesis_result,
+                        "sign_flip_pairwise_effect_p": report.statistics.sign_flip_pairwise_effect_p,
+                    },
+                    "decoded_records": {
+                        "transfer_results": results_readback,
+                        "table_cross_domain_transfer": {
+                            "headers": table_readback.headers,
+                            "rows": table_readback.rows,
+                        },
+                    },
+                    "artifact_manifest": report.artifacts,
+                }),
+                exit_code: 0,
+            })
+        }
+        Err(err) => {
+            let after_state = ci_path_state(&args.output_root)?;
+            let mut value = error_value(
+                "dynamicjepa_cross_domain_transfer",
+                None,
+                &source_of_truth,
+                None,
+                None,
+                &err,
+            );
+            value["before_state"] = before_state;
+            value["after_state"] = after_state;
+            Ok(CommandOutcome {
+                value,
+                exit_code: 1,
+            })
+        }
     }
 }
 

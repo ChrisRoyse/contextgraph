@@ -271,6 +271,23 @@ pub enum DynamicJepaError {
         event_id: Uuid,
         instrument_id: String,
     },
+    #[error(
+        "bridge action mapping incomplete: source_domain={source_domain} action_label={action_label}"
+    )]
+    BridgeActionMappingIncomplete {
+        source_domain: String,
+        action_label: String,
+    },
+    #[error("bridge instrument count drift: expected={expected} actual={actual}")]
+    BridgeInstrumentCountDrift { expected: usize, actual: usize },
+    #[error(
+        "bridge predictor input dim mismatch: phase={phase} expected={expected} actual={actual}"
+    )]
+    BridgePredictorInputDimMismatch {
+        phase: String,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl DynamicJepaError {
@@ -370,6 +387,9 @@ impl DynamicJepaError {
             Self::MiAuditMineNonconvergent { .. } => "MI_AUDIT_MINE_NONCONVERGENT",
             Self::MiAuditOutputDirExists { .. } => "MI_AUDIT_OUTPUT_DIR_EXISTS",
             Self::MiAuditInstrumentHashDrift { .. } => "MI_AUDIT_INSTRUMENT_HASH_DRIFT",
+            Self::BridgeActionMappingIncomplete { .. } => "BRIDGE_ACTION_MAPPING_INCOMPLETE",
+            Self::BridgeInstrumentCountDrift { .. } => "BRIDGE_INSTRUMENT_COUNT_DRIFT",
+            Self::BridgePredictorInputDimMismatch { .. } => "BRIDGE_PREDICTOR_INPUT_DIM_MISMATCH",
         }
     }
 }

@@ -575,6 +575,39 @@ pub fn train_tiny_jepa(
     })
 }
 
+pub fn random_init_tiny_jepa_tensors(
+    config: &TrainConfig,
+    input_dim: usize,
+    action_dim: usize,
+    seed: u64,
+) -> DynamicJepaResult<HashMap<String, Tensor>> {
+    config.validate()?;
+    if config.model.predictor.in_action_dim != action_dim {
+        return Err(DynamicJepaError::PanelShapeMismatch {
+            domain_pack_id: "dynamicjepa_random_init".to_string(),
+            expected: vec![config.model.predictor.in_action_dim],
+            actual: vec![action_dim],
+        });
+    }
+    let device = Device::new_cuda(0).map_err(|err| DynamicJepaError::TrainingFailed {
+        training_run_id: uuid::Uuid::nil(),
+        message: format!("failed to initialize CUDA device 0 for random-init baseline: {err}"),
+        remediation:
+            "confirm nvidia-smi reports compute_cap 12.0 and CUDA_COMPUTE_CAP=120 was used at build time"
+                .to_string(),
+    })?;
+    device
+        .set_seed(seed)
+        .map_err(|err| training_err(format!("failed to seed CUDA RNG: {err}")))?;
+    cuda_warmup(&device)?;
+    let model = TinyMlpJepa::new(config, input_dim, action_dim, &device).map_err(|err| {
+        training_err(format!(
+            "failed to initialize random-init tiny JEPA MLP: {err}"
+        ))
+    })?;
+    Ok(model.tensors())
+}
+
 struct BatchTensors {
     input: Tensor,
     target: Tensor,

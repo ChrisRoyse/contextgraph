@@ -1,6 +1,7 @@
 //! DynamicJEPA RocksDB storage data plane.
 
 pub mod audit;
+pub mod bridge;
 pub mod column_families;
 pub mod keys;
 
@@ -25,6 +26,7 @@ mod verification_store;
 pub use artifact_store::*;
 pub use audit::*;
 pub use binding_store::*;
+pub use bridge::*;
 pub use constellation_store::*;
 pub use dataset_store::*;
 pub use domain_pack_store::*;
