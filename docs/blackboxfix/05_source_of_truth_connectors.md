@@ -8,7 +8,9 @@ Phase 2 shipped four local connectors: `sqlite_local_v1` (the ledger itself),
 `git_local_v1`, `fs_local_v1`, and `cmd_local_v1`. Phase 3 shipped read-only
 GitHub + GitHub Actions readbacks: `github_v1` and `gha_v1`. Phase 4 reuses
 those connectors and adds replay/export behavior over the SQLite and
-filesystem sources of truth.
+filesystem sources of truth. Phase 6 adds MCP/policy surfaces
+`mcp_stdio_v1` and `blackbox_policy_v1`, and uses `git_local_v1` as the
+physical source of truth for the first verified gateway mutation.
 
 ## Connector Contract
 

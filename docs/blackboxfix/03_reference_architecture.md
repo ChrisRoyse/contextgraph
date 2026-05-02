@@ -30,11 +30,11 @@ agent runtime
 | Local source readback | Git, filesystem, command connectors | `git_local_v1`, `fs_local_v1`, `cmd_local_v1` |
 | Hosted source readback | GitHub and GitHub Actions connectors | `github_v1`, `gha_v1` |
 | Evidence/replay/export | `evidence_packet`, `incident_packet`, JSON evidence, JSONL episodes, eval fixtures | `blackbox replay`, `blackbox export evidence`, `blackbox export episodes` |
-| FSV harness | Phase 1-5 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| MCP/policy gateway | JSON-RPC stdio MCP recorder/gateway, policy rows, capability registry | `blackbox mcp recorder`, `blackbox mcp gateway`, `blackbox policy ...` |
+| FSV harness | Phase 1-6 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-5 is **not yet implemented**. Do not assume MCP,
-HTTP API, dashboard, RBAC, or enterprise controls exist until their phase docs
-are marked complete.
+Anything outside Phases 1-6 is **not yet implemented**. Do not assume dashboard,
+RBAC, or enterprise controls exist until their phase docs are marked complete.
 
 ## Components (target architecture)
 
@@ -44,13 +44,13 @@ Adapters instrument common agent runtimes without forcing a single framework.
 Initial adapters in priority order:
 
 1. local CLI wrapper (Phase 1: implicit — operator invokes `blackbox record …`);
-2. MCP recorder server (Phase 6);
-3. OpenAI/Anthropic style tool-call wrapper (Phase 6);
+2. MCP recorder server (Phase 6 shipped over JSON-RPC stdio);
+3. OpenAI/Anthropic style tool-call wrapper (reserved after Phase 6);
 4. coding-agent shell/git wrapper (Phase 2);
-5. generic HTTP webhook ingestion (Phase 6).
+5. generic HTTP webhook ingestion (reserved after Phase 6).
 
-Each adapter emits `AgentRun`, `AgentStep`, `ToolCall`, and `ModelDecision`
-records (only `agent_run` and `tool_call` exist in Phase 1).
+The shipped MCP adapter emits `AgentRun`, `AgentStep`, `ToolCall`, and
+`ModelDecision` records for the verified Git patch workflow.
 
 ### Tool Gateway (Phase 6)
 
@@ -171,8 +171,9 @@ encryption keys, SSO/RBAC, long retention, SIEM export.
 
 Phase 1 implemented the local ledger/CLI recorder. Phase 2 implemented local
 source-of-truth readback and verification for Git, filesystem, and command
-artifacts. Policy/gateway pre-state orchestration remains Phase 6; hosted
-GitHub/CI readback remains Phase 3.
+artifacts. Policy/gateway pre-state orchestration shipped in Phase 6 for the
+local `verified_git_apply_patch` workflow; hosted GitHub/CI readback remains
+Phase 3.
 
 ## Design Constraint
 

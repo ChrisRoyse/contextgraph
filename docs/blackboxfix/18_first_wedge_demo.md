@@ -3,8 +3,9 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-The CLI demo is now viable through **Phase 5**: Git + GitHub + CI verifiers,
-evidence packets, forensic replay, evidence export, and episode/eval export.
+The CLI/MCP demo is now viable through **Phase 6**: Git + GitHub + CI
+verifiers, evidence packets, forensic replay, evidence export, episode/eval
+export, and a policy-governed MCP gateway for verified Git patch application.
 
 ## Demo Thesis
 
@@ -132,7 +133,7 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 5 shipped surface)
+## Demo Commands (Phase 6 shipped surface)
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
@@ -141,6 +142,7 @@ context-graph blackbox verify --ledger "$ledger" --input verify-spec.json
 context-graph blackbox replay --ledger "$ledger" --run-id "$RUN"
 context-graph blackbox export evidence --ledger "$ledger" --run-id "$RUN" --out evidence.json
 context-graph blackbox export episodes --ledger "$ledger" --out episodes-export
+context-graph blackbox mcp gateway --ledger "$ledger" --policy-mode bounded_autonomous
 ```
 
 ## Evidence To Show Buyer

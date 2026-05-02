@@ -49,7 +49,7 @@ manipulation.
 - Every evidence packet is tamper-evident. (Phase 1 satisfies this for the
   ledger via dual-chain SHA-256; Phase 4 extends it to evidence packets.)
 
-## Policy Modes (Phase 6)
+## Policy Modes (Phase 6 shipped)
 
 | Mode | Behavior |
 |---|---|
@@ -59,7 +59,10 @@ manipulation.
 | `blocked` | deny the action |
 
 Policy mode must be persisted on every `PolicyDecision` and visible in the
-audit timeline. It is **not** a hidden runtime flag.
+audit timeline. It is **not** a hidden runtime flag. Phase 6 persists this as
+`policy_decision` rows in `ledger_records`; the MCP gateway returns a typed tool
+error and does not mutate the external source when mode is `blocked` or when a
+mutating capability lacks verifier coverage.
 
 ## Secret And Sensitive Data Handling
 
@@ -82,7 +85,7 @@ Additional rules for Phase 2+:
 - make redaction deterministic for equality checks (already true in Phase 1
   because the digest is over canonical JSON).
 
-## Authorization (Phase 6)
+## Authorization (Phase 6 shipped locally)
 
 Authorization combines:
 
@@ -95,6 +98,11 @@ Authorization combines:
 - runtime environment;
 - risk tier;
 - approval state.
+
+The shipped local registry includes `verified_git_apply_patch` with capability
+`local.git.apply_patch` and verifier `git_file_diff_matches_patch_v1`.
+Unregistered capabilities and mutating calls without verifier ids are denied
+fail-closed and persisted for audit.
 
 Example denial:
 

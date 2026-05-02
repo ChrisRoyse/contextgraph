@@ -3,12 +3,11 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 5 ships the local CLI with local Git/file/command, GitHub/GitHub
-Actions readback, evidence packets, forensic replay, JSON evidence export,
-and verified JSONL episode export. The HTTP API, MCP servers, and SDKs are
-reserved for Phase 6+.
+Phase 6 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+decision rows, a capability registry, and a machine-readable HTTP API surface.
+SDKs and hosted HTTP serving are reserved for later phases.
 
-## CLI (shipped Phase 5)
+## CLI (shipped Phase 6)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -36,6 +35,13 @@ blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--model MODEL]      (default: null)
                                [--task-kind KIND]   (default: local_agent_task)
                                [--risk-tier TIER]   (default: medium)
+blackbox record step           --ledger PATH --run-id RUN_ID --summary TEXT
+                               [--step-kind KIND] [--tenant TENANT]
+                               [--agent AGENT] [--model MODEL]
+blackbox record model-decision --ledger PATH --run-id RUN_ID --tool-name TOOL
+                               --capability CAP --input PATH
+                               [--confidence FLOAT] [--tenant TENANT]
+                               [--agent AGENT] [--model MODEL]
 blackbox record tool-call      --ledger PATH --run-id RUN_ID --tool TOOL
                                --input PATH         (path to JSON file)
                                [--tenant TENANT]    (default: tenant_local)
@@ -54,6 +60,14 @@ blackbox inspect ledger        --ledger PATH
 blackbox replay                --ledger PATH --run-id RUN_ID
 blackbox export evidence       --ledger PATH --run-id RUN_ID --out FILE
 blackbox export episodes       --ledger PATH --out DIR [--force]
+blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
+                               --capability CAP [--run-id RUN_ID]
+                               [--mutating] [--verifier-id VERIFIER]
+                               [--source-scope SCOPE]
+blackbox policy registry       [--ledger PATH]
+blackbox api surface           [--ledger PATH]
+blackbox mcp recorder          --ledger PATH
+blackbox mcp gateway           --ledger PATH --policy-mode MODE
 ```
 
 The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
@@ -129,7 +143,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 3,
+  "schema_version": 4,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -153,9 +167,11 @@ returns the output directory, `episodes.jsonl`, `manifest.json`, `evals/`,
 row counts, split counts, JSONL sha256, ledger sequence range, and ledger tip
 after reading all files back from disk.
 
-## HTTP API (Phase 6 target)
+## HTTP API Surface (Phase 6 shipped as registry)
 
-Core endpoints (none implemented yet):
+`blackbox api surface [--ledger PATH]` returns the HTTP endpoint registry below
+as JSON, after verifying the ledger when `--ledger` is supplied. A network HTTP
+server remains reserved for Phase 7+.
 
 ```text
 POST /v1/runs
@@ -175,7 +191,7 @@ POST /v1/policies/evaluate
 Write endpoints return the created ledger ids. They must not claim the action
 is correct unless verifier evidence exists.
 
-## MCP Surface (Phase 6 target)
+## MCP Surface (Phase 6 shipped)
 
 Two server modes:
 
@@ -190,24 +206,26 @@ blackbox_record_tool_call
 blackbox_verify_tool_call
 blackbox_get_evidence
 blackbox_export_episodes
+blackbox_policy_evaluate
 ```
 
 ### Gateway MCP Server
 
-Tools that wrap external systems and **always** produce verifier evidence:
+Tools that wrap external systems and **always** produce verifier evidence for
+the shipped first workflow:
 
 ```text
-verified_github_create_pr
 verified_git_apply_patch
-verified_ci_wait_for_checks
-verified_ticket_update
-verified_k8s_rollout
 ```
 
-Each gateway tool has strict schemas and returns source-of-truth ids plus
-verifier results.
+`verified_git_apply_patch` requires a real Git repo path, target path, and
+patch. It records `agent_step`, `model_decision`, `policy_decision`, and
+`tool_call`, applies the patch through Git, then runs
+`git_file_diff_matches_patch_v1`. The MCP tool result includes source-of-truth
+ids, verifier result, and evidence packet data. Governed modes block
+unverified mutating calls before external mutation.
 
-## SDK (Phase 6 target)
+## SDK (reserved after Phase 6)
 
 Start with Python and TypeScript:
 
@@ -240,11 +258,13 @@ The ledger remains authoritative.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 3 in Phase 4).
-- Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumps
-  the current schema to 3 for `evidence_packet` and `incident_packet`.
-- Phase 5 does not bump the ledger schema. It writes export artifacts outside
+- Ledger records include `schema_version` (= 4 in Phase 6).
+- Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
+  the schema to 3 for `evidence_packet` and `incident_packet`.
+- Phase 5 did not bump the ledger schema. It writes export artifacts outside
   the ledger with `episode_schema_version = 1`.
+- Phase 6 bumps the ledger schema to 4 for `policy_decision`, `agent_step`,
+  and `model_decision`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,

@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 4 Physical Schema (shipped)
+## Phase 6 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 3 in Phase 4
+  schema_version              INTEGER NOT NULL,   -- 4 in Phase 6
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `3` | constant |
+| `schema_version` | `4` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,8 +99,8 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-4 ship seven `record_kind` values. The remaining families are
-reserved for later phases and **must not be invented ad-hoc**:
+Phases 1-6 ship nine `record_kind` values. The remaining families are reserved
+for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
 |---|---|---|
@@ -109,12 +109,12 @@ reserved for later phases and **must not be invented ad-hoc**:
 | 2 | `expected_delta` | the durable state change the action is expected to produce |
 | 2 | `readback_snapshot` | independent source-of-truth state after execution |
 | 2 | `verifier_result` | comparison of expected delta and readback |
-| 3 | `policy_decision` | authorization and approval result, reserved for Phase 6 policy work |
+| 6 | `policy_decision` | authorization and approval result |
 | 4 | `evidence_packet` | exportable proof bundle |
 | 4 | `incident_packet` | high-severity failure bundle |
 | 5 | `episode_record` | reserved future ledger-side export audit row; Phase 5 currently emits JSONL rows outside the ledger |
-| 6 | `model_decision` | model output, tool choice, confidence, policy context |
 | 6 | `agent_step` | one reasoning/action step inside a run |
+| 6 | `model_decision` | model output, tool choice, confidence, policy context |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -126,7 +126,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",

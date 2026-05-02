@@ -13,8 +13,9 @@ implementation.
 | Eval fixtures | JSON files under `--out/evals/` |
 | Evidence linkage | physical `ledger_records` rows with matching `evidence_packet_id` |
 
-Phase 5 does not change the live ledger schema. Current ledger records remain
-`LEDGER_SCHEMA_VERSION = 3`; exported rows add `episode_schema_version = 1`.
+Phase 5 did not change the live ledger schema. Current ledger records now use
+`LEDGER_SCHEMA_VERSION = 4` after Phase 6; exported rows still add
+`episode_schema_version = 1`.
 
 ## Shipped Command
 

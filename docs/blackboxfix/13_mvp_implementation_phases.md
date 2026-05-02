@@ -75,8 +75,8 @@ Deliverables (all shipped):
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
-  **wiped** the ledger — no migration shim; current shipped schema is v3 after
-  Phase 4).
+  **wiped** the ledger — no migration shim; current shipped schema is v4 after
+  Phase 6).
 
 Exit criteria (verified):
 
@@ -141,7 +141,7 @@ Final physical SQLite state at Phase 3 completion: `agent_run=1`,
 `tool_call=1`, `expected_delta=8`, `readback_snapshot=7`,
 `verifier_result=8`. The blocked schema edge intentionally wrote no
 `readback_snapshot`. Current Phase 4 tests also prove Phase 3 verifiers now
-append evidence packets under schema v3.
+append evidence packets under the current schema.
 
 ## Phase 4: Evidence Packets And Replay — DONE (2026-05-02)
 
@@ -152,7 +152,7 @@ Deliverables (all shipped):
 - incident packet generation (`incident_packet` record kind);
 - JSON/PDF-ready audit export
   (`blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE`);
-- schema bump to `LEDGER_SCHEMA_VERSION = 3`; old v1/v2 ledgers are wiped on
+- schema bump to `LEDGER_SCHEMA_VERSION = 3` at Phase 4; older ledgers are wiped on
   init, never migrated in-place.
 
 Exit criteria (verified):
@@ -218,21 +218,44 @@ manifest/output SHA
 
 ## Phase 6: MCP Gateway + Policy
 
+Status: **DONE** (2026-05-02).
+
 Deliverables:
 
-- recorder MCP server (Tool registry + JSON-RPC stdio);
-- gateway MCP server (verified tool wrappers for first workflow);
-- strict schemas;
-- capability registry;
-- policy modes (`observe_only`, `supervised`, `bounded_autonomous`,
-  `blocked`);
-- HTTP API surface from `10_api_cli_mcp_surface.md`.
+- recorder MCP server (Tool registry + JSON-RPC stdio) shipped as
+  `blackbox mcp recorder`;
+- gateway MCP server shipped as `blackbox mcp gateway`;
+- strict MCP tool schemas with `additionalProperties=false`;
+- capability registry shipped through `blackbox policy registry`;
+- policy modes (`observe_only`, `supervised`, `bounded_autonomous`, `blocked`)
+  persisted as `policy_decision` rows;
+- HTTP API surface from `10_api_cli_mcp_surface.md` shipped as
+  `blackbox api surface`;
+- first verified gateway workflow shipped as `verified_git_apply_patch`.
 
 Exit criteria:
 
 - an MCP-compatible agent can run through the gateway;
 - every mutating MCP tool returns verifier evidence;
 - governed mode blocks unverified mutating tools.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase6_mcp_policy_fsv -- --nocapture
+```
+
+Current result: 4/4 passing. Coverage includes MCP `tools/list`, a real
+`verified_git_apply_patch` happy path against a physical Git repo, blocked-mode
+denial before mutation, missing-verifier policy denial, and invalid MCP
+arguments failing before new rows are written.
+
+Manual FSV completed against `/tmp/bbx-phase6-manual-fsv.98fUrJ/fsv.log`.
+Happy-path source-of-truth readback: SQLite kind counts were
+`agent_run=1`, `agent_step=1`, `model_decision=1`, `policy_decision=1`,
+`tool_call=1`, `expected_delta=1`, `readback_snapshot=1`,
+`verifier_result=1`, `evidence_packet=1`; physical Git diff SHA matched the
+expected patch SHA `c53f17a0f04b39466228cf0139f211e029beae6f1fd529b2dd2727a0b255dbb2`.
 
 ## Phase 7: Team Dashboard
 

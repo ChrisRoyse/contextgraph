@@ -128,13 +128,24 @@ Design implication:
 
 ### Model Context Protocol
 
-Reference: <https://modelcontextprotocol.io/specification/2025-06-18>
+References:
+
+- <https://modelcontextprotocol.io/specification/2025-06-18>
+- <https://modelcontextprotocol.io/specification/2025-06-18/server/tools>
+- <https://modelcontextprotocol.io/specification/2025-03-26/basic/transports>
+- <https://www.jsonrpc.org/specification>
+- <https://owasp.org/www-project-mcp-top-10/>
 
 Design implication:
 
 - support MCP as a standard way for agents to access tools and context
   (Phase 6);
-- expose verified tool wrappers through MCP;
+- use newline-delimited JSON-RPC stdio for subprocess MCP servers;
+- expose verified tool wrappers through MCP with deterministic tool schemas;
+- return tool execution failures as structured MCP tool results with
+  `isError=true`, while preserving standard JSON-RPC protocol errors for
+  malformed protocol requests;
+- enforce least-privilege capability scope and authorization for MCP tools;
 - treat tool descriptions as untrusted unless from trusted servers.
 
 ### SQLite WAL And Triggers

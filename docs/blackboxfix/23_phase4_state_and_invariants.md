@@ -13,9 +13,10 @@ implementation.
 | Export | JSON file at `--out`, read back from disk byte-for-byte |
 | Git edge fixture | real `.git` object DB and refs read through the installed `git` binary |
 
-The live ledger schema is `LEDGER_SCHEMA_VERSION = 3`. `blackbox init` removes
-older v1/v2 ledger files (`.sqlite`, `-wal`, `-shm`) before initializing v3.
-There is no migration shim.
+Phase 4 shipped `LEDGER_SCHEMA_VERSION = 3`. The current live ledger schema is
+`LEDGER_SCHEMA_VERSION = 4` after Phase 6. `blackbox init` removes older ledger
+files (`.sqlite`, `-wal`, `-shm`) before initializing the current schema. There
+is no migration shim.
 
 ## Shipped Record Kinds
 
