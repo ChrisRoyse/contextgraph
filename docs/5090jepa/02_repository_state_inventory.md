@@ -114,6 +114,14 @@ Phase 8 source of truth verified:
 - Observed Phase 8 deterministic planning proof: counter_world candidates `[-2, -1, 0, 1, 2]` produce utility scores `[-2, -1, 0, 1, 2]`, and the persisted selected hypothetical action has `fields.delta.I64 = 2`.
 - Phase 8 edge cases verified: missing artifact leaves `dj_predictions` and `dj_audit_log` unchanged; observed outcome/panel mismatch fails with `VALIDATION` and leaves surprise/audit counts unchanged; corrupted `model.safetensors` makes `predict`, `plan`, and `record-surprise` fail with `ARTIFACT_HASH_MISMATCH` and unchanged prediction/plan/surprise/audit counts as applicable.
 
+Phase 9 source of truth verified:
+
+- Automated MCP FSV evidence: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv.json`.
+- Runtime source-of-truth DB/artifact root: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/`.
+- `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` calls all 32 DynamicJEPA tools through real MCP `tools/call`, trains on CUDA, verifies `get_capability_matrix`, reads exact prediction/plan/action/guard/skill/surprise rows through MCP `dynamicjepa_inspect_cf` with `keyHex`, opens RocksDB directly for decoded row proof, and checks physical `ldb dump --count_only` counts.
+- Observed Phase 9 final counts include `dj_raw_events=61`, `dj_adapter_runs=61`, `dj_latent_panels=60`, `dj_dataset_shards=3`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_actions=66`, `dj_predictions=6`, `dj_skill_policies=1`, `dj_guard_decisions=5`, `dj_plan_traces=1`, `dj_surprise_events=1`, and `dj_audit_log=314`.
+- Phase 9 edge cases verified: empty input is rejected before storage; duplicate domain registration leaves counts unchanged; invalid CF leaves counts unchanged; missing artifact prediction leaves `dj_predictions` unchanged.
+
 Phase 10 source of truth verified:
 
 - Automated CLI FSV test: `crates/context-graph-cli/tests/dynamicjepa_phase10_fsv.rs`.
@@ -273,19 +281,19 @@ Single‑writer enforcement: `<db_path>/mcp.pid` + Unix flock via `PidFileGuard`
 
 Tool registry surface:
 
-- `tools/names.rs` — 110 `pub const` tool names with `llm` enabled (106 without). Append DynamicJEPA names; do not renumber.
+- `tools/names.rs` — currently exposes 32 DynamicJEPA tool constants in addition to the existing MCP surface.
 - `tools/types.rs` — `ToolDefinition` struct.
-- `tools/definitions/<group>.rs` — one file per group; aggregated in `tools/definitions/mod.rs`. Add `dynamicjepa.rs`.
-- `handlers/tools/<group>_tools.rs` + `<group>_dtos.rs` — per‑group handler. Add `dynamicjepa_tools.rs` + `dynamicjepa_dtos.rs`.
-- `handlers/tools/dispatch.rs` — central tools/call switch. Add a match arm per DynamicJEPA tool.
-- Tool count tests in `tools/definitions/tests` — bump expected count by the number of DynamicJEPA tools added.
-- Capability matrix handler in `handlers/tools/capability_tools.rs` — extend to include DynamicJEPA enabled flag, CFs, and counts (see `13_mcp_and_cli_surface.md`).
+- `tools/definitions/<group>.rs` — one file per group; `dynamicjepa.rs` is aggregated in `tools/definitions/mod.rs`.
+- `handlers/tools/<group>_tools.rs` + `<group>_dtos.rs` — per-group handler; DynamicJEPA uses `dynamicjepa_tools.rs` + `dynamicjepa_dtos.rs`.
+- `handlers/tools/dispatch.rs` — central tools/call switch with a match arm per DynamicJEPA tool.
+- Tool count tests in `tools/definitions/tests` — current totals are 142 with `llm`, 138 without.
+- Capability matrix handler in `handlers/tools/capability_tools.rs` — includes DynamicJEPA enabled flag, CFs, counts, and registered domain/runtime state (see `13_mcp_and_cli_surface.md`).
 
 ### 5.4 CLI (`crates/context-graph-cli/src/`)
 
 Existing top‑level subcommands (in `commands/`): `setup`, `warmup`, `watch`, `topic`, `divergence`, `learning`, `utl`, `export_training`, `backfill_e14`, `memory`, `session`, `hooks`, and now `dynamicjepa`.
 
-Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. Phase 6 dataset subcommands now present: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. Phase 7 model/artifact subcommands now present: `train`, `get-training-run`, and `get-artifact --verify-files`. Phase 8 subcommands now present and FSV-tested in the working tree: `predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and `get-surprise`. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag. Phase 10 verification and Phase 9 MCP subcommands remain unimplemented.
+Phase 3 implemented subcommands: `register-domain`, `list-domains`, `get-domain`, `inspect-counts`, and `inspect-cf`. Phase 4 implemented subcommands: `ingest-event`, `run-adapter`, `materialize-panel`, `get-panel`, and `list-instrument-readings`. Phase 5 implemented subcommands: `bind`, `list-bindings`, `compile-trajectories`, `get-trajectory`, and `list-trajectories`. Phase 6 dataset subcommands now present: `compile-dataset`, `get-dataset-shard`, and `inspect-dataset`. Phase 7 model/artifact subcommands now present: `train`, `get-training-run`, and `get-artifact --verify-files`. Phase 8 subcommands now present and FSV-tested in the working tree: `predict`, `plan`, `record-surprise`, `get-prediction`, `get-plan-trace`, and `get-surprise`. Phase 10 verification subcommands `verify-counter-world` and `verify-gridworld` are implemented. All accept `--db <path>` and `--json`; `get-domain` accepts `--domain-version` with default `1.0.0` to avoid colliding with Clap's global `--version` flag.
 
 All FSV‑supporting subcommands accept `--db <path>` and `--json` (machine‑readable JSON output is a hard requirement — operator evidence logs depend on it).
 

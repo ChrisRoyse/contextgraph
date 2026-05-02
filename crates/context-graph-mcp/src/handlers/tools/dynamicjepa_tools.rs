@@ -742,7 +742,7 @@ impl Handlers {
             DynamicJepaCommands::InspectCf(InspectCfArgs {
                 db: req.db_path,
                 cf: req.cf,
-                key_hex: None,
+                key_hex: req.key_hex,
                 limit: req.limit,
                 offset: req.offset,
                 json: true,

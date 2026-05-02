@@ -89,6 +89,7 @@ pub(crate) struct InspectCountsRequest {
 pub(crate) struct InspectCfRequest {
     pub db_path: PathBuf,
     pub cf: String,
+    pub key_hex: Option<String>,
     #[serde(default = "default_limit_20")]
     pub limit: usize,
     #[serde(default = "default_zero")]

@@ -319,8 +319,14 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         tool(
             tool_names::DYNAMICJEPA_INSPECT_CF,
-            "Decode rows from one DynamicJEPA column family.",
-            props(&[db_path(), string_prop("cf", "DynamicJEPA CF name."), limit(), offset()]),
+            "Decode rows from one DynamicJEPA column family, or decode one exact key when keyHex is supplied.",
+            props(&[
+                db_path(),
+                string_prop("cf", "DynamicJEPA CF name."),
+                string_optional("keyHex", "Exact RocksDB key as hex from a previous inspect-cf row."),
+                limit(),
+                offset(),
+            ]),
             &["dbPath", "cf"],
         ),
     ]

@@ -6,6 +6,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use context_graph_core::dynamicjepa::DjRecordHeader;
 use context_graph_core::dynamicjepa::{
@@ -16,15 +17,16 @@ use context_graph_core::dynamicjepa::{
 use context_graph_storage::dynamicjepa::column_families::{
     CF_DJ_ACTIONS, CF_DJ_ADAPTER_RUNS, CF_DJ_AUDIT_LOG, CF_DJ_BINDINGS, CF_DJ_DATASET_SHARDS,
     CF_DJ_DOMAIN_PACKS, CF_DJ_GUARD_DECISIONS, CF_DJ_LATENT_PANELS, CF_DJ_MODEL_ARTIFACTS,
-    CF_DJ_PREDICTIONS, CF_DJ_RAW_EVENTS, CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS,
+    CF_DJ_OUTCOMES, CF_DJ_PAIRWISE_READINGS, CF_DJ_PLAN_TRACES, CF_DJ_PREDICTIONS,
+    CF_DJ_RAW_EVENTS, CF_DJ_SKILL_POLICIES, CF_DJ_SURPRISE_EVENTS, CF_DJ_TRAINING_RUNS,
     CF_DJ_TRAJECTORIES, CF_DJ_TRANSITIONS,
 };
 use context_graph_storage::dynamicjepa::{
-    inspect_cf, put_raw_event_and_adapter_run_started, snapshot_dj_counts, AuditStatus,
-    DjAuditRecord,
+    inspect_cf, inspect_cf_key, put_raw_event_and_adapter_run_started, snapshot_dj_counts,
+    AuditStatus, DjAuditRecord,
 };
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
@@ -141,10 +143,23 @@ async fn inspect_cf_mcp(handlers: &Handlers, db_path: &Path, cf: &str, limit: us
     .await
 }
 
+async fn inspect_cf_key_mcp(handlers: &Handlers, db_path: &Path, cf: &str, key_hex: &str) -> Value {
+    call_tool_ok(
+        handlers,
+        tool_names::DYNAMICJEPA_INSPECT_CF,
+        json!({ "dbPath": db_path, "cf": cf, "keyHex": key_hex }),
+    )
+    .await
+}
+
 fn decoded_rows(value: &Value) -> &[Value] {
     value["decoded_records"]["rows"]
         .as_array()
         .expect("decoded_records.rows")
+}
+
+fn decoded_key_row(value: &Value) -> &Value {
+    &value["decoded_records"]["row"]["decoded"]
 }
 
 fn first_key_hex(inspect_value: &Value) -> String {
@@ -152,6 +167,61 @@ fn first_key_hex(inspect_value: &Value) -> String {
         .as_str()
         .expect("row key_hex")
         .to_string()
+}
+
+fn uuid_key_hex(id: &str) -> String {
+    id.chars().filter(|ch| *ch != '-').collect()
+}
+
+fn uuid_key_bytes(id: &str) -> Vec<u8> {
+    Uuid::parse_str(id)
+        .unwrap_or_else(|err| panic!("invalid UUID key {id}: {err}"))
+        .as_bytes()
+        .to_vec()
+}
+
+fn string_array(value: &Value, field: &str) -> Vec<String> {
+    value
+        .as_array()
+        .unwrap_or_else(|| panic!("{field} must be an array: {value:#}"))
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .unwrap_or_else(|| panic!("{field} item must be string: {item:#}"))
+                .to_string()
+        })
+        .collect()
+}
+
+fn action_delta(action: &Value) -> i64 {
+    action["fields"]["delta"]["I64"]
+        .as_i64()
+        .unwrap_or_else(|| panic!("candidate action missing delta field: {action:#}"))
+}
+
+fn ldb_count(db_path: &Path, cf: &str) -> u64 {
+    let output = Command::new("/usr/bin/ldb")
+        .args([
+            format!("--db={}", db_path.display()),
+            format!("--column_family={cf}"),
+            "dump".to_string(),
+            "--count_only".to_string(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("run ldb count for {cf}: {err}"));
+    let stdout = String::from_utf8(output.stdout).expect("ldb stdout is UTF-8");
+    let stderr = String::from_utf8(output.stderr).expect("ldb stderr is UTF-8");
+    assert!(
+        output.status.success(),
+        "ldb count failed for {cf}: stdout={stdout}\nstderr={stderr}"
+    );
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("Keys in range:"))
+        .unwrap_or_else(|| panic!("ldb count output missing key count for {cf}: {stdout}"))
+        .trim()
+        .parse::<u64>()
+        .unwrap_or_else(|err| panic!("parse ldb count for {cf}: {err}; stdout={stdout}"))
 }
 
 fn seed_started_adapter_run(db_path: &Path) -> String {
@@ -807,6 +877,35 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
         "get": get_prediction
     }));
 
+    let prediction_cf_key = inspect_cf_key_mcp(
+        &handlers,
+        &db_path,
+        CF_DJ_PREDICTIONS,
+        &uuid_key_hex(&prediction_id),
+    )
+    .await;
+    let prediction_cf_record = decoded_key_row(&prediction_cf_key);
+    assert_eq!(
+        prediction_cf_record["prediction_id"].as_str(),
+        Some(prediction_id.as_str())
+    );
+    assert_eq!(
+        prediction_cf_record["model_artifact_id"].as_str(),
+        Some(artifact_id.as_str())
+    );
+    assert_eq!(
+        prediction_cf_record["input_panel_id"].as_str(),
+        Some(input_panel_id.as_str())
+    );
+    assert_eq!(
+        prediction_cf_record["candidate_action_id"].as_str(),
+        Some(action_id.as_str())
+    );
+    evidence.push(json!({
+        "step": "mcp_inspect_prediction_cf_key_readback",
+        "output": prediction_cf_key
+    }));
+
     let before_plan = inspect_counts_mcp(&handlers, &db_path).await;
     let plan = call_tool_ok(
         &handlers,
@@ -852,6 +951,150 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
         "output": plan,
         "after": after_plan,
         "get": get_plan
+    }));
+
+    let candidate_action_ids = string_array(
+        &plan["created_ids"]["candidate_action_ids"],
+        "candidate_action_ids",
+    );
+    let plan_prediction_ids =
+        string_array(&plan["created_ids"]["prediction_ids"], "prediction_ids");
+    let guard_decision_ids = string_array(
+        &plan["created_ids"]["guard_decision_ids"],
+        "guard_decision_ids",
+    );
+    let selected_action_id = plan["created_ids"]["selected_action_id"]
+        .as_str()
+        .expect("selected action id")
+        .to_string();
+    let plan_trace_cf_key = inspect_cf_key_mcp(
+        &handlers,
+        &db_path,
+        CF_DJ_PLAN_TRACES,
+        &uuid_key_hex(&plan_trace_id),
+    )
+    .await;
+    let plan_trace_cf_record = decoded_key_row(&plan_trace_cf_key);
+    assert_eq!(
+        plan_trace_cf_record["plan_trace_id"].as_str(),
+        Some(plan_trace_id.as_str())
+    );
+    assert_eq!(
+        string_array(
+            &plan_trace_cf_record["candidate_action_ids"],
+            "plan_trace.candidate_action_ids"
+        ),
+        candidate_action_ids
+    );
+    assert_eq!(
+        string_array(
+            &plan_trace_cf_record["prediction_ids"],
+            "plan_trace.prediction_ids"
+        ),
+        plan_prediction_ids
+    );
+    assert_eq!(
+        string_array(
+            &plan_trace_cf_record["guard_decision_ids"],
+            "plan_trace.guard_decision_ids"
+        ),
+        guard_decision_ids
+    );
+    assert_eq!(
+        plan_trace_cf_record["selected_action_id"].as_str(),
+        Some(selected_action_id.as_str())
+    );
+
+    let mut action_cf_key_readbacks = Vec::new();
+    for id in &candidate_action_ids {
+        action_cf_key_readbacks
+            .push(inspect_cf_key_mcp(&handlers, &db_path, CF_DJ_ACTIONS, &uuid_key_hex(id)).await);
+    }
+    let persisted_deltas = action_cf_key_readbacks
+        .iter()
+        .map(|row| action_delta(decoded_key_row(row)))
+        .collect::<Vec<_>>();
+    assert_eq!(persisted_deltas, vec![-2, -1, 0, 1, 2]);
+    for (idx, row) in action_cf_key_readbacks.iter().enumerate() {
+        let decoded = decoded_key_row(row);
+        assert_eq!(
+            decoded["action_id"].as_str(),
+            Some(candidate_action_ids[idx].as_str())
+        );
+        assert_eq!(decoded["action_origin"].as_str(), Some("Hypothetical"));
+    }
+
+    let mut plan_prediction_cf_key_readbacks = Vec::new();
+    for id in &plan_prediction_ids {
+        plan_prediction_cf_key_readbacks.push(
+            inspect_cf_key_mcp(&handlers, &db_path, CF_DJ_PREDICTIONS, &uuid_key_hex(id)).await,
+        );
+    }
+    for (idx, row) in plan_prediction_cf_key_readbacks.iter().enumerate() {
+        let decoded = decoded_key_row(row);
+        assert_eq!(
+            decoded["prediction_id"].as_str(),
+            Some(plan_prediction_ids[idx].as_str())
+        );
+        assert_eq!(
+            decoded["input_panel_id"].as_str(),
+            Some(input_panel_id.as_str())
+        );
+        assert_eq!(
+            decoded["candidate_action_id"].as_str(),
+            Some(candidate_action_ids[idx].as_str())
+        );
+        assert_eq!(
+            decoded["header"]["source_run_id"].as_str(),
+            Some(plan_trace_id.as_str())
+        );
+    }
+
+    let mut guard_cf_key_readbacks = Vec::new();
+    for id in &guard_decision_ids {
+        guard_cf_key_readbacks.push(
+            inspect_cf_key_mcp(
+                &handlers,
+                &db_path,
+                CF_DJ_GUARD_DECISIONS,
+                &uuid_key_hex(id),
+            )
+            .await,
+        );
+    }
+    for row in &guard_cf_key_readbacks {
+        let decoded = decoded_key_row(row);
+        assert_eq!(
+            decoded["plan_trace_id"].as_str(),
+            Some(plan_trace_id.as_str())
+        );
+        let guard_action_id = decoded["candidate_action_id"]
+            .as_str()
+            .expect("guard candidate_action_id");
+        assert!(
+            candidate_action_ids.iter().any(|id| id == guard_action_id),
+            "guard action {guard_action_id} must reference a persisted candidate"
+        );
+    }
+
+    let skill_policy_cf_key = inspect_cf_key_mcp(
+        &handlers,
+        &db_path,
+        CF_DJ_SKILL_POLICIES,
+        &uuid_key_hex(skill_id),
+    )
+    .await;
+    assert_eq!(
+        decoded_key_row(&skill_policy_cf_key)["skill_id"].as_str(),
+        Some(skill_id)
+    );
+    evidence.push(json!({
+        "step": "mcp_inspect_plan_cf_key_readbacks",
+        "plan_trace": plan_trace_cf_key,
+        "candidate_actions": action_cf_key_readbacks,
+        "predictions": plan_prediction_cf_key_readbacks,
+        "guard_decisions": guard_cf_key_readbacks,
+        "skill_policy": skill_policy_cf_key
     }));
 
     let val_row = call_tool_ok(
@@ -911,6 +1154,35 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
         "output": surprise,
         "after": after_surprise,
         "get": get_surprise
+    }));
+
+    let surprise_cf_key = inspect_cf_key_mcp(
+        &handlers,
+        &db_path,
+        CF_DJ_SURPRISE_EVENTS,
+        &uuid_key_hex(&surprise_id),
+    )
+    .await;
+    let surprise_cf_record = decoded_key_row(&surprise_cf_key);
+    assert_eq!(
+        surprise_cf_record["surprise_event_id"].as_str(),
+        Some(surprise_id.as_str())
+    );
+    assert_eq!(
+        surprise_cf_record["prediction_id"].as_str(),
+        Some(prediction_id.as_str())
+    );
+    assert_eq!(
+        surprise_cf_record["observed_outcome_id"].as_str(),
+        Some(far_outcome_id.as_str())
+    );
+    assert_eq!(
+        surprise_cf_record["observed_panel_id"].as_str(),
+        Some(far_target_panel_id.as_str())
+    );
+    evidence.push(json!({
+        "step": "mcp_inspect_surprise_cf_key_readback",
+        "output": surprise_cf_key
     }));
 
     let seed_before = inspect_counts_mcp(&handlers, &db_path).await;
@@ -994,6 +1266,34 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
         inspect_cf(direct_db, CF_DJ_SURPRISE_EVENTS, 10, 0).expect("direct surprises inspect");
     let direct_artifacts =
         inspect_cf(direct_db, CF_DJ_MODEL_ARTIFACTS, 10, 0).expect("direct artifacts inspect");
+    let direct_prediction_key = inspect_cf_key(
+        direct_db,
+        CF_DJ_PREDICTIONS,
+        &uuid_key_bytes(&prediction_id),
+    )
+    .expect("direct prediction key inspect")
+    .expect("direct prediction key exists");
+    let direct_plan_key = inspect_cf_key(
+        direct_db,
+        CF_DJ_PLAN_TRACES,
+        &uuid_key_bytes(&plan_trace_id),
+    )
+    .expect("direct plan key inspect")
+    .expect("direct plan key exists");
+    let direct_surprise_key = inspect_cf_key(
+        direct_db,
+        CF_DJ_SURPRISE_EVENTS,
+        &uuid_key_bytes(&surprise_id),
+    )
+    .expect("direct surprise key inspect")
+    .expect("direct surprise key exists");
+    let direct_artifact_key = inspect_cf_key(
+        direct_db,
+        CF_DJ_MODEL_ARTIFACTS,
+        &uuid_key_bytes(&artifact_id),
+    )
+    .expect("direct artifact key inspect")
+    .expect("direct artifact key exists");
     println!(
         "PHASE9_DIRECT_SOURCE_OF_TRUTH counts={:?} predictions={} surprises={} artifacts={}",
         direct_counts,
@@ -1003,10 +1303,50 @@ async fn dynamicjepa_phase9_mcp_full_state_verification_inner() {
     );
     evidence.push(json!({
         "step": "direct_rocksdb_source_of_truth",
-        "counts": direct_counts,
+        "counts": direct_counts.clone(),
         "predictions": direct_predictions,
         "surprises": direct_surprises,
-        "artifacts": direct_artifacts
+        "artifacts": direct_artifacts,
+        "exact_keys": {
+            "prediction": direct_prediction_key,
+            "plan_trace": direct_plan_key,
+            "surprise": direct_surprise_key,
+            "artifact": direct_artifact_key
+        }
+    }));
+    drop(direct_store);
+
+    let physical_count_cfs = [
+        CF_DJ_DOMAIN_PACKS,
+        CF_DJ_RAW_EVENTS,
+        CF_DJ_ADAPTER_RUNS,
+        CF_DJ_LATENT_PANELS,
+        CF_DJ_OUTCOMES,
+        CF_DJ_PAIRWISE_READINGS,
+        CF_DJ_TRAJECTORIES,
+        CF_DJ_DATASET_SHARDS,
+        CF_DJ_TRAINING_RUNS,
+        CF_DJ_MODEL_ARTIFACTS,
+        CF_DJ_ACTIONS,
+        CF_DJ_PREDICTIONS,
+        CF_DJ_SKILL_POLICIES,
+        CF_DJ_GUARD_DECISIONS,
+        CF_DJ_PLAN_TRACES,
+        CF_DJ_SURPRISE_EVENTS,
+        CF_DJ_AUDIT_LOG,
+    ];
+    let mut physical_counts = Map::new();
+    for cf in physical_count_cfs {
+        let physical_count = ldb_count(&db_path, cf);
+        assert_eq!(
+            physical_count, direct_counts[cf],
+            "physical ldb count for {cf} must match direct RocksDB count"
+        );
+        physical_counts.insert(cf.to_string(), json!(physical_count));
+    }
+    evidence.push(json!({
+        "step": "physical_ldb_count_proof",
+        "ldb_counts": physical_counts
     }));
 
     fs::write(

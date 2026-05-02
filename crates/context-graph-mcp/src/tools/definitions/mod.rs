@@ -1,18 +1,7 @@
-//! Tool definitions per PRD v6 Section 10 (56 tools with LLM, 52 without).
+//! Tool definitions for the MCP surface.
 //!
-//! Includes 17 original tools (inject_context merged into store_memory)
-//! plus 4 sequence tools for E4 integration
-//! plus 4 causal tools for E5 Priority 1 enhancement
-//! plus 2 causal discovery tools for E5 LLM-based relationship discovery (LLM only)
-//! plus 1 keyword tool for E6 keyword search enhancement
-//! plus 1 code tool for E7 code search enhancement
-//! plus 2 graph tools (+2 with LLM) for E8 upgrade (Phase 4)
-//! plus 1 robustness tool for E9 typo-tolerant search
-//! plus 6 entity tools for E11 integration (extract, search, infer, find, validate, graph)
-//! plus 4 embedder-first search tools for Constitution v6.3
-//! plus 2 temporal tools for E2/E3 (search_recent, search_periodic)
-//! plus 4 graph linking tools (get_memory_neighbors, get_typed_edges, traverse_graph, get_unified_neighbors)
-//! plus 1 maintenance tool (repair_causal_relationships).
+//! The current registry exposes 142 tools with the `llm` feature and 138
+//! without it, including the 32-tool DynamicJEPA Phase 9 surface.
 
 pub(crate) mod capability;
 pub(crate) mod causal;
@@ -46,7 +35,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(137);
+    let mut tools = Vec::with_capacity(142);
 
     // Capability discovery tools (1) - compact map of embedders, CFs, and tools
     tools.extend(capability::definitions());
@@ -129,7 +118,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Typed-edge training tools (4) - Phase 4 (F1/F2/F4 + list)
     tools.extend(typed_edges::definitions());
 
-    // DynamicJEPA tools (27) - 5090jepa Phase 9 MCP surface for Phases 3-8
+    // DynamicJEPA tools (32) - 5090jepa Phase 9 MCP surface for Phases 3-8 plus guard-threshold read/build tools
     tools.extend(dynamicjepa::definitions());
 
     tools
@@ -143,9 +132,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 137);
+        assert_eq!(tools.len(), 142);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 133);
+        assert_eq!(tools.len(), 138);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -182,6 +171,7 @@ mod tests {
         assert_eq!(robustness::definitions().len(), 1);
         assert_eq!(entity::definitions().len(), 6);
         assert_eq!(embedder::definitions().len(), 7);
+        assert_eq!(embedder::standalone_definitions().len(), 2);
         assert_eq!(temporal::definitions().len(), 2);
         assert_eq!(graph_link::definitions().len(), 4);
         assert_eq!(maintenance::definitions().len(), 1);

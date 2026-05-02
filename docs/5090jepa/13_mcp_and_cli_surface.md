@@ -1,6 +1,6 @@
 # 13 — MCP & CLI Surface (v1)
 
-The DynamicJEPA tools are *additive* on the existing 110-tool MCP with `llm` enabled (106 without) and existing CLI. Phase 9 adds 27 operational DynamicJEPA MCP tools, bringing the current totals to 137 with `llm` enabled and 133 without. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
+The DynamicJEPA tools are additive on the existing MCP and CLI. Phase 9 exposes 32 operational DynamicJEPA MCP tools, bringing the current totals to 142 with `llm` enabled and 138 without. Every mutating operation returns its source-of-truth ids and verification summaries; every read tool decodes records by id.
 
 Current implementation status as of the Phase 10 FSV run on 2026-04-30: the CLI implements and FSV-accepts Phases 3-10, including bundled `verify-counter-world` and `verify-gridworld`. `context-graph-mcp` exposes the operational Phases 3-8 surface through strict MCP tool definitions, DTOs, handlers, dispatch entries, and capability matrix runtime state. Phase 10 verification commands are CLI-only at this point; MCP still reports verification rows/counts through capability/read tools rather than exposing `dynamicjepa_verify_*` tools.
 
@@ -31,6 +31,11 @@ pub const DYNAMICJEPA_GET_ARTIFACT:            &str = "dynamicjepa_get_artifact"
 pub const DYNAMICJEPA_PREDICT:                 &str = "dynamicjepa_predict";
 pub const DYNAMICJEPA_PLAN:                    &str = "dynamicjepa_plan";
 pub const DYNAMICJEPA_RECORD_SURPRISE:         &str = "dynamicjepa_record_surprise";
+pub const DYNAMICJEPA_BUILD_CONSTELLATION:     &str = "dynamicjepa_build_constellation";
+pub const DYNAMICJEPA_LIST_CONSTELLATIONS:     &str = "dynamicjepa_list_constellations";
+pub const DYNAMICJEPA_GET_CONSTELLATION:       &str = "dynamicjepa_get_constellation";
+pub const DYNAMICJEPA_CALIBRATE_THRESHOLD:     &str = "dynamicjepa_calibrate_threshold";
+pub const DYNAMICJEPA_RECALIBRATE_THRESHOLD:   &str = "dynamicjepa_recalibrate_threshold";
 pub const DYNAMICJEPA_GET_PREDICTION:          &str = "dynamicjepa_get_prediction";
 pub const DYNAMICJEPA_GET_PLAN_TRACE:          &str = "dynamicjepa_get_plan_trace";
 pub const DYNAMICJEPA_GET_SURPRISE:            &str = "dynamicjepa_get_surprise";
@@ -38,7 +43,7 @@ pub const DYNAMICJEPA_INSPECT_COUNTS:          &str = "dynamicjepa_inspect_count
 pub const DYNAMICJEPA_INSPECT_CF:              &str = "dynamicjepa_inspect_cf";
 ```
 
-That is **27** new tools. The tool count test now asserts:
+That is **32** DynamicJEPA tools. The total tool count test now asserts:
 
 ```rust
 // crates/context-graph-mcp/src/tools/definitions/tests.rs
@@ -47,7 +52,7 @@ fn test_total_tool_count_and_no_duplicates() {
     let tools = get_tool_definitions();
     let names: HashSet<_> = tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names.len(), tools.len(), "duplicate tool names");
-    let expected = if cfg!(feature = "llm") { 110 + 27 } else { 106 + 27 };
+    let expected = if cfg!(feature = "llm") { 142 } else { 138 };
     assert_eq!(tools.len(), expected, "expected {expected} tools, got {}", tools.len());
 }
 ```
@@ -209,7 +214,7 @@ Extend `crates/context-graph-mcp/src/handlers/tools/capability_tools.rs::get_cap
 ```json
 "dynamicjepa": {
   "enabled": true,
-  "tool_count": 27,
+  "tool_count": 32,
   "tools": ["dynamicjepa_register_domain_pack", ...],
   "column_families": ["dj_domain_packs", ...],
   "cf_counts": { "dj_domain_packs": 1, "dj_latent_panels": 8003, ... },
@@ -269,7 +274,7 @@ Add or keep current:
 - Current Phase 6: `crates/context-graph-cli/tests/dynamicjepa_phase6_fsv.rs` — real CLI binary, real temp RocksDB, dataset shards, row inspection, and dataset edge cases.
 - Current Phase 7: `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs` — real CLI binary, real temp RocksDB, generated counter_world training data, CUDA training, artifact hash verification, and missing dataset / invalid CPU config / corrupted artifact edge cases.
 - Current Phase 8: `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs` — real CLI binary, real temp RocksDB, generated counter_world training data, CUDA training, prediction, plan, guard decision, surprise, readback, missing artifact, and corrupt artifact edge cases.
-- `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` — Phase 9 MCP FSV: confirms 27 DynamicJEPA tool definitions, calls every DynamicJEPA tool through `tools/call`, trains on CUDA, verifies capability matrix runtime state, reads the real RocksDB source of truth directly, and exercises empty input / duplicate register / invalid CF / missing artifact edge cases with before/after counts.
+- `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` — Phase 9 MCP FSV: confirms 32 DynamicJEPA tool definitions, calls every DynamicJEPA tool through `tools/call`, trains on CUDA, verifies capability matrix runtime state, reads exact source-of-truth rows through `dynamicjepa_inspect_cf` with `keyHex`, reads the real RocksDB source of truth directly, checks physical `ldb dump --count_only` counts, and exercises empty input / duplicate register / invalid CF / missing artifact edge cases with before/after counts.
 - `crates/context-graph-cli/tests/dynamicjepa_cli_smoke_test.rs` — CLI argument parsing, exit codes, JSON shape.
 - `crates/context-graph-cli/tests/dynamicjepa_counter_world_fsv.rs` — full happy path + 3 edge cases against a real `/tmp/` DB. (This is the same shape as `tests/e14_phase_b_full_state_verification.rs`.)
 - `crates/context-graph-cli/tests/dynamicjepa_gridworld_fsv.rs` — same for gridworld.

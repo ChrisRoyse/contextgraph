@@ -524,7 +524,7 @@ Expected: domain pack count = 2, training runs = 2, artifacts = 2, verification 
 
 ## 8. Phase 9 MCP FSV And Capability Matrix Check
 
-Run the in-process Phase 9 MCP FSV first. It calls all 27 DynamicJEPA tools through real `tools/call`, trains on CUDA, inspects the real RocksDB source of truth, and writes the evidence bundle under `tmp/5090jepa_evidence/phase9/`.
+Run the in-process Phase 9 MCP FSV first. It calls all 32 DynamicJEPA tools through real `tools/call`, trains on CUDA, inspects exact rows through MCP `inspect-cf` `keyHex`, inspects the real RocksDB source of truth, verifies physical `ldb dump --count_only` counts, and writes the evidence bundle under `tmp/5090jepa_evidence/phase9/`.
 
 ```bash
 cargo test -p context-graph-mcp --all-features test_dynamicjepa_phase9_mcp_full_state_verification -- --nocapture
@@ -559,20 +559,26 @@ ldb --db=tmp/5090jepa_evidence/phase9/mcp_phase9_fsv_runtime/dynamicjepa_phase9_
 Expected Phase 9 source-of-truth highlights:
 
 ```text
-tool definitions 137 with llm, 133 without
-dynamicjepa tool count 27
+tool definitions 142 with llm, 138 without
+dynamicjepa tool definitions 32
+dynamicjepa tool count 32
 dj_domain_packs 1
 dj_raw_events 61
+dj_adapter_runs 61
 dj_latent_panels 60
+dj_outcomes 61
+dj_pairwise_readings 60
 dj_trajectories 1
 dj_dataset_shards 3
 dj_training_runs 1
 dj_model_artifacts 1
+dj_actions 66
 dj_predictions 6
+dj_skill_policies 1
 dj_guard_decisions 5
 dj_plan_traces 1
 dj_surprise_events 1
-dj_audit_log 193
+dj_audit_log 314
 ```
 
 Optional daemon-level check after creating a populated DB:
@@ -593,7 +599,7 @@ curl -sS -X POST http://127.0.0.1:3199 -d '{"jsonrpc":"2.0","id":2,"method":"too
 kill $MCP_PID
 ```
 
-Expected: `tools/list` length = 137 (110 base + 27 dynamicjepa) with `llm` feature, or 133 without. `dynamicjepa.enabled = true` and CF counts populated.
+Expected: `tools/list` length = 142 with `llm` feature, or 138 without. `dynamicjepa.enabled = true`, `dynamicjepa.tool_count = 32`, and CF counts are populated.
 
 ## 9. Test Suite
 
