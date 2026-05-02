@@ -38,7 +38,7 @@ Deliverables (all shipped):
   plus a post-scan that rejects any unredacted secret-like literal.
 
 Exit criteria (verified by automated FSV at
-`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs`, 4/4 passing):
+`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs`, 10/10 passing):
 
 - manual FSV proves records persist in the SQLite ledger
   (`phase1_happy_path_persists_and_inspects_physical_rows`);
@@ -48,6 +48,19 @@ Exit criteria (verified by automated FSV at
   (`phase1_redaction_violation_blocks_persistence`);
 - append-only triggers reject privileged updates
   (`phase1_append_only_trigger_blocks_direct_update`).
+- case-insensitive secret prefixes block persistence
+  (`phase1_case_insensitive_secret_prefix_blocks_persistence`);
+- cross-tenant tool-call/run links are refused
+  (`phase1_cross_tenant_tool_call_is_blocked`);
+- missing parent run ids are refused before persistence
+  (`phase1_missing_parent_run_blocks_tool_call`);
+- invalid risk tiers are refused before a row is written
+  (`phase1_invalid_risk_tier_blocks_persistence`);
+- schema validation rejects no-op append-only trigger drift
+  (`phase1_schema_validation_rejects_noop_append_only_trigger`);
+- `init` does not silently repair an already-initialized ledger with a
+  missing append-only trigger
+  (`phase1_init_does_not_repair_missing_append_only_trigger`).
 
 ## Phase 2: Git And File Verification — NEXT
 

@@ -19,7 +19,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Standalone binary entry: `crates/context-graph-cli/src/bin/blackbox.rs`
   - Subcommand wiring (within `context-graph` binary): `crates/context-graph-cli/src/main.rs:136-139, 210`
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs`
-    (4/4 passing; run with
+    (10/10 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase1_fsv`).
   - Source of truth: SQLite file at `--ledger PATH`, table `ledger_records`,
     append-only via triggers `ledger_records_no_update`/`_no_delete`.

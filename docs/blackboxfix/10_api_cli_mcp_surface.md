@@ -211,4 +211,4 @@ For each Phase 1 command, the FSV protocol is:
 
 Concrete inputs and expected outputs live in
 `20_phase1_state_and_invariants.md`. The automated equivalent is
-`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (4 tests, all PASS).
+`crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, all PASS).

@@ -27,7 +27,7 @@ agent runtime
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
-| FSV harness | 4 tests against real binary + real SQLite | `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` |
+| FSV harness | 10 tests against real binary + real SQLite | `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` |
 
 Anything not in the table above is **not yet implemented**. Do not assume it.
 

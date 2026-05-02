@@ -61,6 +61,12 @@ Single-row-per-key configuration set on `blackbox init`:
 against the physical row count and last `record_sha256`. Mismatch →
 `BBX_HASH_CHAIN_BROKEN` (exit 2).
 
+`ensure_schema` also validates the physical schema before any record or
+inspection path proceeds: table columns, required indexes, UNIQUE constraints,
+trigger attachment, trigger SQL, `schema_version`, and `redaction_policy_id`.
+A same-name trigger with different behavior is `BBX_SCHEMA_VALIDATION_FAILED`,
+not a warning.
+
 ## Canonical JSON Rule
 
 Every JSON written to the ledger is **canonicalized**: object keys are sorted
@@ -249,8 +255,9 @@ Typed failure example:
   (Phase 4).
 - Every exported training row must link back to immutable evidence (Phase 5).
 - The append-only triggers must be **present and enabled** on every read; the
-  Phase 1 FSV test `phase1_append_only_trigger_blocks_direct_update` proves
-  this against a real SQLite database.
+  Phase 1 FSV tests `phase1_append_only_trigger_blocks_direct_update` and
+  `phase1_schema_validation_rejects_noop_append_only_trigger` prove this
+  against a real SQLite database.
 
 ## FSV Of This Document
 

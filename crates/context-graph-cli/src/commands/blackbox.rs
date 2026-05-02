@@ -188,6 +188,7 @@ enum ErrorKind {
     LedgerMissing,
     Redaction,
     NotFound,
+    TenantMismatch,
     HashChain,
 }
 
@@ -231,6 +232,22 @@ impl BlackboxError {
         )
     }
 
+    fn invalid_field_for_ledger(
+        path: &Path,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: &'static str,
+    ) -> Self {
+        Self::new(
+            ErrorKind::InvalidInput,
+            "BBX_INVALID_INPUT",
+            message,
+            Some(source_of_truth(path)),
+            Some(field_path.into()),
+            remediation,
+        )
+    }
+
     fn io(path: &Path, action: &'static str, err: std::io::Error) -> Self {
         Self::new(
             ErrorKind::Io,
@@ -254,12 +271,20 @@ impl BlackboxError {
     }
 
     fn schema(path: &Path, message: impl Into<String>) -> Self {
+        Self::schema_field(path, "schema", message)
+    }
+
+    fn schema_field(
+        path: &Path,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self::new(
             ErrorKind::Schema,
             "BBX_SCHEMA_VALIDATION_FAILED",
             message,
             Some(source_of_truth(path)),
-            None,
+            Some(field_path.into()),
             "run `blackbox init --ledger PATH` against a new ledger or migrate the existing database explicitly",
         )
     }
@@ -270,7 +295,7 @@ impl BlackboxError {
             "BBX_LEDGER_NOT_INITIALIZED",
             format!("ledger is not initialized at {}", path.display()),
             Some(source_of_truth(path)),
-            None,
+            Some("--ledger".to_string()),
             "initialize the physical ledger first with `blackbox init --ledger PATH`",
         )
     }
@@ -292,8 +317,21 @@ impl BlackboxError {
             "BBX_RECORD_NOT_FOUND",
             message,
             Some(source_of_truth(path)),
-            None,
+            Some("--run-id".to_string()),
             "record the parent run first and retry with an existing run_id",
+        )
+    }
+
+    fn tenant_mismatch(path: &Path, run_id: &str, expected: &str, actual: &str) -> Self {
+        Self::new(
+            ErrorKind::TenantMismatch,
+            "BBX_TENANT_MISMATCH",
+            format!(
+                "run_id {run_id} belongs to tenant {expected}, but the tool-call was recorded for tenant {actual}"
+            ),
+            Some(source_of_truth(path)),
+            Some("ledger_records.tenant_id".to_string()),
+            "record the tool call with the parent run's tenant_id or start a new run for the requested tenant",
         )
     }
 
@@ -380,6 +418,11 @@ fn init_ledger(args: InitArgs) -> BbxResult<Value> {
     }
 
     let mut conn = open_connection(&args.ledger)?;
+    if table_exists(&conn, &args.ledger, "blackbox_metadata")?
+        || table_exists(&conn, &args.ledger, "ledger_records")?
+    {
+        ensure_schema(&conn, &args.ledger)?;
+    }
     initialize_schema(&mut conn, &args.ledger)?;
     let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
 
@@ -396,9 +439,12 @@ fn init_ledger(args: InitArgs) -> BbxResult<Value> {
 }
 
 fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
-    require_non_empty("--task", &args.task)?;
-    require_non_empty("--agent", &args.agent)?;
-    require_non_empty("--tenant", &args.tenant)?;
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--task", &args.task)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--task-kind", &args.task_kind)?;
+    validate_risk_tier(&args.ledger, &args.risk_tier)?;
 
     let mut conn = open_initialized_ledger(&args.ledger)?;
     let run_id = prefixed_id("run");
@@ -457,13 +503,15 @@ fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
 }
 
 fn record_tool_call(args: RecordToolCallArgs) -> BbxResult<Value> {
-    require_non_empty("--run-id", &args.run_id)?;
-    require_non_empty("--tool", &args.tool)?;
-    require_non_empty("--tenant", &args.tenant)?;
-    require_non_empty("--agent", &args.agent)?;
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--tool", &args.tool)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    require_non_empty_for_ledger(&args.ledger, "--capability", &args.capability)?;
 
     let mut conn = open_initialized_ledger(&args.ledger)?;
-    ensure_run_exists(&conn, &args.ledger, &args.run_id)?;
+    ensure_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
 
     let input_text = fs::read_to_string(&args.input)
         .map_err(|err| BlackboxError::io(&args.input, "read tool input JSON", err))?;
@@ -592,14 +640,28 @@ fn validate_ledger_path(path: &Path) -> BbxResult<()> {
     Ok(())
 }
 
-fn require_non_empty(field: &'static str, value: &str) -> BbxResult<()> {
+fn require_non_empty_for_ledger(path: &Path, field: &'static str, value: &str) -> BbxResult<()> {
     if value.trim().is_empty() {
-        return Err(BlackboxError::invalid(
+        return Err(BlackboxError::invalid_field_for_ledger(
+            path,
+            field,
             format!("{field} must not be empty"),
             "provide a non-empty value and retry",
         ));
     }
     Ok(())
+}
+
+fn validate_risk_tier(path: &Path, value: &str) -> BbxResult<()> {
+    match value {
+        "low" | "medium" | "high" => Ok(()),
+        other => Err(BlackboxError::invalid_field_for_ledger(
+            path,
+            "--risk-tier",
+            format!("--risk-tier must be one of low, medium, or high; found {other:?}"),
+            "choose one of the supported risk tiers: low, medium, high",
+        )),
+    }
 }
 
 fn open_connection(path: &Path) -> BbxResult<Connection> {
@@ -684,57 +746,401 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
 }
 
 fn ensure_schema(conn: &Connection, path: &Path) -> BbxResult<()> {
-    let version: Option<String> = conn
-        .query_row(
-            "SELECT value FROM blackbox_metadata WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| BlackboxError::sqlite(path, "read ledger schema metadata", err))?;
-    match version.as_deref() {
-        Some("1") => {}
-        Some(other) => {
-            return Err(BlackboxError::schema(
-                path,
-                format!("unsupported ledger schema_version {other}; expected 1"),
+    validate_table_columns(conn, path, "blackbox_metadata", expected_metadata_columns())?;
+    validate_table_columns(conn, path, "ledger_records", expected_ledger_columns())?;
+    validate_index_columns(
+        conn,
+        path,
+        "idx_ledger_records_run_id",
+        &["run_id", "sequence"],
+    )?;
+    validate_index_columns(
+        conn,
+        path,
+        "idx_ledger_records_kind",
+        &["record_kind", "sequence"],
+    )?;
+    validate_unique_index_for_columns(conn, path, "ledger_records", &["record_id"])?;
+    validate_unique_index_for_columns(conn, path, "ledger_records", &["record_sha256"])?;
+    validate_trigger_sql(
+        conn,
+        path,
+        "ledger_records_no_update",
+        "ledger_records",
+        EXPECTED_UPDATE_TRIGGER_SQL,
+    )?;
+    validate_trigger_sql(
+        conn,
+        path,
+        "ledger_records_no_delete",
+        "ledger_records",
+        EXPECTED_DELETE_TRIGGER_SQL,
+    )?;
+    validate_metadata_value(
+        conn,
+        path,
+        "schema_version",
+        &LEDGER_SCHEMA_VERSION.to_string(),
+    )?;
+    validate_metadata_value(conn, path, "redaction_policy_id", REDACTION_POLICY_ID)?;
+    Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ExpectedColumn {
+    name: &'static str,
+    data_type: &'static str,
+    notnull: bool,
+    pk: i64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ActualColumn {
+    name: String,
+    data_type: String,
+    notnull: bool,
+    pk: i64,
+}
+
+const EXPECTED_UPDATE_TRIGGER_SQL: &str = "CREATE TRIGGER ledger_records_no_update
+BEFORE UPDATE ON ledger_records
+BEGIN
+SELECT RAISE(ABORT, 'ledger_records is append-only; updates are forbidden');
+END";
+
+const EXPECTED_DELETE_TRIGGER_SQL: &str = "CREATE TRIGGER ledger_records_no_delete
+BEFORE DELETE ON ledger_records
+BEGIN
+SELECT RAISE(ABORT, 'ledger_records is append-only; deletes are forbidden');
+END";
+
+fn expected_metadata_columns() -> &'static [ExpectedColumn] {
+    &[
+        ExpectedColumn {
+            name: "key",
+            data_type: "TEXT",
+            notnull: false,
+            pk: 1,
+        },
+        ExpectedColumn {
+            name: "value",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+    ]
+}
+
+fn expected_ledger_columns() -> &'static [ExpectedColumn] {
+    &[
+        ExpectedColumn {
+            name: "sequence",
+            data_type: "INTEGER",
+            notnull: false,
+            pk: 1,
+        },
+        ExpectedColumn {
+            name: "record_id",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "schema_version",
+            data_type: "INTEGER",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "record_kind",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "tenant_id",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "run_id",
+            data_type: "TEXT",
+            notnull: false,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "step_id",
+            data_type: "TEXT",
+            notnull: false,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "created_at",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "actor_json",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "payload_json",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "redaction_json",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "payload_sha256",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "previous_record_sha256",
+            data_type: "TEXT",
+            notnull: false,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "run_previous_record_sha256",
+            data_type: "TEXT",
+            notnull: false,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "run_chain_sha256",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+        ExpectedColumn {
+            name: "record_sha256",
+            data_type: "TEXT",
+            notnull: true,
+            pk: 0,
+        },
+    ]
+}
+
+fn table_exists(conn: &Connection, path: &Path, table: &'static str) -> BbxResult<bool> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![table],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|count| count == 1)
+    .map_err(|err| BlackboxError::sqlite(path, "inspect SQLite schema tables", err))
+}
+
+fn table_info_sql(table: &'static str) -> BbxResult<&'static str> {
+    match table {
+        "blackbox_metadata" => Ok("PRAGMA table_info(blackbox_metadata)"),
+        "ledger_records" => Ok("PRAGMA table_info(ledger_records)"),
+        _ => Err(BlackboxError::invalid(
+            format!("unsupported schema table {table}"),
+            "report this as a bug; schema validators must use known table names",
+        )),
+    }
+}
+
+fn validate_table_columns(
+    conn: &Connection,
+    path: &Path,
+    table: &'static str,
+    expected: &[ExpectedColumn],
+) -> BbxResult<()> {
+    let mut stmt = conn
+        .prepare(table_info_sql(table)?)
+        .map_err(|err| BlackboxError::sqlite(path, "prepare table schema inspection", err))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ActualColumn {
+                name: row.get(1)?,
+                data_type: row.get::<_, String>(2)?.to_ascii_uppercase(),
+                notnull: row.get::<_, i64>(3)? != 0,
+                pk: row.get(5)?,
+            })
+        })
+        .map_err(|err| BlackboxError::sqlite(path, "inspect table schema columns", err))?;
+    let actual = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| BlackboxError::sqlite(path, "decode table schema columns", err))?;
+    let expected_actual = expected
+        .iter()
+        .map(|col| ActualColumn {
+            name: col.name.to_string(),
+            data_type: col.data_type.to_string(),
+            notnull: col.notnull,
+            pk: col.pk,
+        })
+        .collect::<Vec<_>>();
+    if actual != expected_actual {
+        return Err(BlackboxError::schema_field(
+            path,
+            format!("schema.tables.{table}.columns"),
+            format!(
+                "{table} columns do not match schema version {LEDGER_SCHEMA_VERSION}; expected {expected_actual:?}, found {actual:?}"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_index_columns(
+    conn: &Connection,
+    path: &Path,
+    index: &'static str,
+    expected_columns: &[&'static str],
+) -> BbxResult<()> {
+    let actual = index_columns(conn, path, index)?;
+    let expected = expected_columns
+        .iter()
+        .map(|column| (*column).to_string())
+        .collect::<Vec<_>>();
+    if actual != expected {
+        return Err(BlackboxError::schema_field(
+            path,
+            format!("schema.indexes.{index}.columns"),
+            format!(
+                "{index} columns do not match; expected {expected_columns:?}, found {actual:?}"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_unique_index_for_columns(
+    conn: &Connection,
+    path: &Path,
+    table: &'static str,
+    expected_columns: &[&'static str],
+) -> BbxResult<()> {
+    let pragma = match table {
+        "ledger_records" => "PRAGMA index_list(ledger_records)",
+        _ => {
+            return Err(BlackboxError::invalid(
+                format!("unsupported unique-index table {table}"),
+                "report this as a bug; schema validators must use known table names",
             ));
         }
-        None => return Err(BlackboxError::ledger_missing(path)),
+    };
+    let mut stmt = conn
+        .prepare(pragma)
+        .map_err(|err| BlackboxError::sqlite(path, "prepare unique index inspection", err))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? != 0,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|err| BlackboxError::sqlite(path, "inspect unique indexes", err))?;
+    for row in rows {
+        let (index_name, unique, origin) =
+            row.map_err(|err| BlackboxError::sqlite(path, "decode unique index row", err))?;
+        if !unique || origin != "u" {
+            continue;
+        }
+        let columns = index_columns(conn, path, &index_name)?;
+        let expected = expected_columns
+            .iter()
+            .map(|column| (*column).to_string())
+            .collect::<Vec<_>>();
+        if columns == expected {
+            return Ok(());
+        }
     }
+    Err(BlackboxError::schema_field(
+        path,
+        format!("schema.tables.{table}.unique_indexes"),
+        format!("missing UNIQUE constraint on {table} columns {expected_columns:?}"),
+    ))
+}
 
-    let table_count: i64 = conn
+fn index_columns(conn: &Connection, path: &Path, index_name: &str) -> BbxResult<Vec<String>> {
+    let mut stmt = conn
+        .prepare("SELECT name FROM pragma_index_info(?1) ORDER BY seqno")
+        .map_err(|err| BlackboxError::sqlite(path, "prepare index column inspection", err))?;
+    let rows = stmt
+        .query_map(params![index_name], |row| row.get::<_, String>(0))
+        .map_err(|err| BlackboxError::sqlite(path, "inspect index columns", err))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|err| BlackboxError::sqlite(path, "decode index columns", err))
+}
+
+fn validate_trigger_sql(
+    conn: &Connection,
+    path: &Path,
+    trigger: &'static str,
+    table: &'static str,
+    expected_sql: &str,
+) -> BbxResult<()> {
+    let found: Option<(String, String)> = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master
-             WHERE type = 'table' AND name IN ('blackbox_metadata', 'ledger_records')",
-            [],
-            |row| row.get(0),
+            "SELECT tbl_name, sql FROM sqlite_master WHERE type = 'trigger' AND name = ?1",
+            params![trigger],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .map_err(|err| BlackboxError::sqlite(path, "inspect ledger tables", err))?;
-    if table_count != 2 {
-        return Err(BlackboxError::schema(
+        .optional()
+        .map_err(|err| BlackboxError::sqlite(path, "inspect append-only trigger SQL", err))?;
+    let Some((tbl_name, sql)) = found else {
+        return Err(BlackboxError::schema_field(
             path,
-            "required tables blackbox_metadata and ledger_records are not both present",
+            format!("schema.triggers.{trigger}"),
+            format!("required append-only trigger {trigger} is missing"),
+        ));
+    };
+    if tbl_name != table {
+        return Err(BlackboxError::schema_field(
+            path,
+            format!("schema.triggers.{trigger}.tbl_name"),
+            format!("trigger {trigger} is attached to {tbl_name}, expected {table}"),
         ));
     }
-
-    let trigger_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master
-             WHERE type = 'trigger'
-               AND name IN ('ledger_records_no_update', 'ledger_records_no_delete')",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|err| BlackboxError::sqlite(path, "inspect append-only triggers", err))?;
-    if trigger_count != 2 {
-        return Err(BlackboxError::schema(
+    if normalize_schema_sql(&sql) != normalize_schema_sql(expected_sql) {
+        return Err(BlackboxError::schema_field(
             path,
-            "append-only triggers are missing from ledger_records",
+            format!("schema.triggers.{trigger}.sql"),
+            format!("trigger {trigger} SQL does not match the append-only guard for schema version {LEDGER_SCHEMA_VERSION}"),
         ));
     }
-
     Ok(())
+}
+
+fn validate_metadata_value(
+    conn: &Connection,
+    path: &Path,
+    key: &'static str,
+    expected: &str,
+) -> BbxResult<()> {
+    let actual = get_metadata(conn, path, key)?;
+    if actual.as_deref() != Some(expected) {
+        return Err(BlackboxError::schema_field(
+            path,
+            format!("blackbox_metadata.{key}"),
+            format!("metadata {key} expected {expected:?}, found {actual:?}"),
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_schema_sql(sql: &str) -> String {
+    sql.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_end_matches(';')
+        .to_ascii_lowercase()
 }
 
 #[derive(Debug)]
@@ -760,8 +1166,8 @@ struct AppendResult {
 }
 
 fn append_record(conn: &mut Connection, path: &Path, record: NewRecord) -> BbxResult<AppendResult> {
-    require_non_empty("record_kind", &record.record_kind)?;
-    require_non_empty("tenant_id", &record.tenant_id)?;
+    require_non_empty_for_ledger(path, "record_kind", &record.record_kind)?;
+    require_non_empty_for_ledger(path, "tenant_id", &record.tenant_id)?;
 
     let tx = conn
         .transaction()
@@ -872,19 +1278,33 @@ fn set_metadata(
     Ok(())
 }
 
-fn ensure_run_exists(conn: &Connection, path: &Path, run_id: &str) -> BbxResult<()> {
-    let exists: i64 = conn
+fn ensure_run_exists_for_tenant(
+    conn: &Connection,
+    path: &Path,
+    run_id: &str,
+    tenant_id: &str,
+) -> BbxResult<()> {
+    let parent_tenant: Option<String> = conn
         .query_row(
-            "SELECT COUNT(*) FROM ledger_records
+            "SELECT tenant_id FROM ledger_records
              WHERE record_kind = 'agent_run' AND run_id = ?1",
             params![run_id],
             |row| row.get(0),
         )
+        .optional()
         .map_err(|err| BlackboxError::sqlite(path, "read run parent from ledger", err))?;
-    if exists == 0 {
+    let Some(parent_tenant) = parent_tenant else {
         return Err(BlackboxError::not_found(
             path,
             format!("run_id {run_id} does not exist in ledger_records"),
+        ));
+    };
+    if parent_tenant != tenant_id {
+        return Err(BlackboxError::tenant_mismatch(
+            path,
+            run_id,
+            &parent_tenant,
+            tenant_id,
         ));
     }
     Ok(())
@@ -1106,7 +1526,7 @@ fn verify_ledger_integrity_tx_like(conn: &Connection, path: &Path) -> BbxResult<
             step_id: record.step_id.clone(),
             actor: actor_value.clone(),
             payload: payload_value.clone(),
-            redaction: RedactionReport::from_json(redaction_value.clone())?,
+            redaction: RedactionReport::from_json(redaction_value.clone(), path, record.sequence)?,
         };
         let actor_json = canonical_json_string(&actor_value)?;
         let redaction_json = canonical_json_string(&redaction_value)?;
@@ -1296,20 +1716,22 @@ impl RedactionReport {
         })
     }
 
-    fn from_json(value: Value) -> BbxResult<Self> {
+    fn from_json(value: Value, ledger_path: &Path, sequence: i64) -> BbxResult<Self> {
         let policy = value
             .get("policy_id")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                BlackboxError::invalid(
+                BlackboxError::hash_chain(
+                    ledger_path,
+                    format!("ledger_records[{sequence}].redaction_json.policy_id"),
                     "redaction policy_id missing",
-                    "repair the ledger row or restore from backup",
                 )
             })?;
         if policy != REDACTION_POLICY_ID {
-            return Err(BlackboxError::invalid(
+            return Err(BlackboxError::hash_chain(
+                ledger_path,
+                format!("ledger_records[{sequence}].redaction_json.policy_id"),
                 format!("unsupported redaction policy_id {policy}"),
-                "migrate the ledger row to the current redaction policy",
             ));
         }
 
@@ -1317,17 +1739,19 @@ impl RedactionReport {
             .get("redacted_fields")
             .and_then(Value::as_array)
             .ok_or_else(|| {
-                BlackboxError::invalid(
+                BlackboxError::hash_chain(
+                    ledger_path,
+                    format!("ledger_records[{sequence}].redaction_json.redacted_fields"),
                     "redacted_fields missing",
-                    "repair the ledger row or restore from backup",
                 )
             })?
             .iter()
             .map(|item| {
                 item.as_str().map(ToOwned::to_owned).ok_or_else(|| {
-                    BlackboxError::invalid(
+                    BlackboxError::hash_chain(
+                        ledger_path,
+                        format!("ledger_records[{sequence}].redaction_json.redacted_fields"),
                         "redacted_fields must contain strings",
-                        "repair the ledger row or restore from backup",
                     )
                 })
             })
@@ -1337,9 +1761,10 @@ impl RedactionReport {
             .get("secret_digest_fields")
             .and_then(Value::as_object)
             .ok_or_else(|| {
-                BlackboxError::invalid(
+                BlackboxError::hash_chain(
+                    ledger_path,
+                    format!("ledger_records[{sequence}].redaction_json.secret_digest_fields"),
                     "secret_digest_fields missing",
-                    "repair the ledger row or restore from backup",
                 )
             })?
             .iter()
@@ -1347,9 +1772,12 @@ impl RedactionReport {
                 val.as_str()
                     .map(|digest| (key.clone(), digest.to_string()))
                     .ok_or_else(|| {
-                        BlackboxError::invalid(
+                        BlackboxError::hash_chain(
+                            ledger_path,
+                            format!(
+                                "ledger_records[{sequence}].redaction_json.secret_digest_fields.{key}"
+                            ),
                             "secret_digest_fields values must be strings",
-                            "repair the ledger row or restore from backup",
                         )
                     })
             })
@@ -1486,20 +1914,18 @@ fn looks_like_secret_literal(text: &str) -> bool {
         || lower.contains("access_token=")
         || lower.contains("password=")
         || lower.contains("client_secret=")
-        || trimmed.starts_with("ghp_")
-        || trimmed.starts_with("github_pat_")
-        || trimmed.starts_with("xoxb-")
-        || trimmed.starts_with("sk-")
+        || lower.starts_with("ghp_")
+        || lower.starts_with("github_pat_")
+        || lower.starts_with("xoxb-")
+        || lower.starts_with("sk-")
         || looks_like_aws_access_key(trimmed)
         || looks_like_jwt(trimmed)
 }
 
 fn looks_like_aws_access_key(text: &str) -> bool {
     text.len() == 20
-        && text.starts_with("AKIA")
-        && text
-            .chars()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        && text.to_ascii_uppercase().starts_with("AKIA")
+        && text.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 fn looks_like_jwt(text: &str) -> bool {

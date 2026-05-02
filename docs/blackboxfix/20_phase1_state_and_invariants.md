@@ -20,7 +20,7 @@ and `crates/context-graph-cli/src/main.rs:136-139,210`.
 | `crates/context-graph-cli/src/main.rs` | umbrella entry; hosts `Commands::Blackbox` variant |
 | `crates/context-graph-cli/src/commands/mod.rs` | exposes `pub mod blackbox;` |
 | `crates/context-graph-cli/src/commands/blackbox.rs` | full Phase 1 implementation (≈1600 lines, single file) |
-| `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` | FSV harness (4 tests, all pass) |
+| `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` | FSV harness (10 tests, all pass) |
 
 ## Constants (do not change without a schema bump + ledger wipe)
 
@@ -48,6 +48,9 @@ Tables and triggers (full DDL is in `04_event_ledger_schema.md`):
 - `blackbox_metadata` (single row per key)
 - triggers `ledger_records_no_update` and `ledger_records_no_delete` raise
   `RAISE(ABORT, 'ledger_records is append-only; …')` on any UPDATE/DELETE.
+- `ensure_schema` validates table columns, required indexes, UNIQUE
+  constraints, trigger attachment, trigger SQL, `schema_version`, and
+  `redaction_policy_id` before record/inspect paths proceed.
 
 Logical source-of-truth string used in error reports:
 `sqlite:<path>#ledger_records`.
@@ -147,6 +150,7 @@ Any literal match in a non-sensitive field aborts the write with
 | `BBX_LEDGER_NOT_INITIALIZED` | running `record`/`inspect` against a non-existent ledger | 1 |
 | `BBX_REDACTION_VIOLATION` | sensitive literal outside redacted field | 1 |
 | `BBX_RECORD_NOT_FOUND` | `--run-id` does not exist | 1 |
+| `BBX_TENANT_MISMATCH` | `record tool-call` references a run owned by a different tenant | 1 |
 | `BBX_INPUT_JSON_INVALID` | tool input file is not valid JSON | 1 |
 | `BBX_INPUT_SCHEMA_INVALID` | tool input JSON is not an object | 1 |
 | `BBX_JSON_CANONICALIZATION_FAILED` | serde_json failure during canonicalization | 1 |
@@ -309,6 +313,30 @@ Expected outcome:
 Mirrored automated test:
 `phase1_append_only_trigger_blocks_direct_update`.
 
+### Additional Guarded Edge Cases
+
+The automated FSV suite also proves these Phase 1 failure paths against real
+SQLite files:
+
+- `phase1_case_insensitive_secret_prefix_blocks_persistence`: a non-sensitive
+  field containing `SK-SHOULD-NOT-BE-PERSISTED` exits `1` with
+  `BBX_REDACTION_VIOLATION` and the row count is unchanged.
+- `phase1_cross_tenant_tool_call_is_blocked`: a tool call for `tenant_other`
+  referencing a run created under `tenant_phase1_test` exits `1` with
+  `BBX_TENANT_MISMATCH` and no tool-call row is written.
+- `phase1_missing_parent_run_blocks_tool_call`: a tool call referencing
+  `run_missing` exits `1` with `BBX_RECORD_NOT_FOUND` and no row is written.
+- `phase1_invalid_risk_tier_blocks_persistence`: `--risk-tier critical` exits
+  `1` with `BBX_INVALID_INPUT` and no `agent_run` row is written.
+- `phase1_schema_validation_rejects_noop_append_only_trigger`: replacing the
+  update trigger with a same-name no-op trigger makes `inspect ledger` exit
+  `1` with `BBX_SCHEMA_VALIDATION_FAILED` at
+  `schema.triggers.ledger_records_no_update.sql`.
+- `phase1_init_does_not_repair_missing_append_only_trigger`: rerunning
+  `blackbox init` against an already-initialized ledger with a dropped update
+  trigger exits `1` with `BBX_SCHEMA_VALIDATION_FAILED`; it does not recreate
+  the trigger silently.
+
 ## Invariants That Must Continue To Hold In Phases 2+
 
 If you change Phase 1 code, you must not break any of these. If a phase
@@ -328,10 +356,14 @@ genuinely needs to break one (e.g. Phase 2 adds a new `record_kind`), bump
 6. Each row's `run_chain_sha256` chains over `run_previous_record_sha256`
    plus the row's run-relevant contents.
 7. Tool-call rows must reference an existing `run_id` of kind `agent_run`.
-8. Sensitive-named fields are redacted; secret-like literals in any field
+8. Tool-call rows must use the same `tenant_id` as the parent `agent_run`.
+9. `risk_tier` must be exactly `low`, `medium`, or `high`.
+10. Physical schema validation checks columns, indexes, unique constraints,
+   trigger SQL, and required metadata values; same-name no-op triggers fail.
+11. Sensitive-named fields are redacted; secret-like literals in any field
    abort persistence.
-9. Errors on stderr; success JSON on stdout.
-10. `inspect ledger` re-runs the full integrity check and returns exit `2` on
+12. Errors on stderr; success JSON on stdout.
+13. `inspect ledger` re-runs the full integrity check and returns exit `2` on
     `BBX_HASH_CHAIN_BROKEN`.
 
 ## Running The Automated FSV
@@ -340,7 +372,7 @@ genuinely needs to break one (e.g. Phase 2 adds a new `record_kind`), bump
 cargo test --package context-graph-cli --test blackbox_phase1_fsv -- --nocapture
 ```
 
-Expected: `test result: ok. 4 passed; 0 failed`.
+Expected: `test result: ok. 10 passed; 0 failed`.
 
 If any test fails, **the implementation is broken** — root-cause the
 divergence; do not edit the test to make it green.
