@@ -16,6 +16,10 @@ path = "src/main.rs"
 name = "context-graph"
 path = "src/bin/context-graph.rs"
 
+[[bin]]
+name = "blackbox"
+path = "src/bin/blackbox.rs"
+
 [dependencies]
 context-graph-core = { path = "../context-graph-core" }
 context-graph-storage = { path = "../context-graph-storage" }
@@ -40,10 +44,11 @@ thiserror = { workspace = true }
 anyhow = "1.0"
 
 # UUIDs for node ID parsing (TASK-HOOKS-011)
-uuid = "1.0"
+uuid = { workspace = true }
 sha2 = "0.10"
 rocksdb = "0.22"
 zip = "7.2.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Logging
 tracing = { workspace = true }

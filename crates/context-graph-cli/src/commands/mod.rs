@@ -10,6 +10,7 @@
 //! - `divergence`: Divergence detection commands
 
 pub mod backfill_e14;
+pub mod blackbox;
 pub mod divergence;
 pub mod dynamicjepa;
 pub mod export_dynamicjepa;
