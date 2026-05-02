@@ -75,8 +75,8 @@ Current evidence:
 - Current Phase 7 test: `crates/context-graph-cli/tests/dynamicjepa_phase7_fsv.rs`.
 - Current Phase 8 evidence: `tmp/5090jepa_evidence/phase8/cli_phase8_fsv.json`.
 - Current Phase 8 test: `crates/context-graph-cli/tests/dynamicjepa_phase8_fsv.rs`.
-- Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, and `dj_audit_log=194`.
-- Phase 8 decoded proof includes `get-prediction`, `get-plan-trace --include-predictions --include-guards`, `get-surprise`, and direct `ldb dump --count_only` counts against `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
+- Phase 8 final observed counts include `dj_actions=71`, `dj_predictions=11`, `dj_guard_decisions=10`, `dj_plan_traces=2`, `dj_skill_policies=1`, `dj_surprise_events=1`, `dj_training_runs=1`, `dj_model_artifacts=1`, `dj_latent_panels=61`, `dj_outcomes=61`, `dj_pairwise_readings=61`, and `dj_audit_log=316`.
+- Phase 8 decoded proof includes `get-prediction`, `get-plan-trace --include-predictions --include-guards`, `get-surprise`, exact-row `inspect-cf --key-hex` reads for prediction/plan/action/guard/skill/surprise rows, and direct `ldb dump --count_only` counts against `dj_actions`, `dj_predictions`, `dj_skill_policies`, `dj_guard_decisions`, `dj_plan_traces`, `dj_surprise_events`, `dj_audit_log`, `dj_model_artifacts`, `dj_latent_panels`, and `dj_outcomes`.
 - Phase 8 edge proof includes selected counter_world hypothetical action `delta=2`, observed outcome/panel mismatch failing with `VALIDATION`, and corrupt artifact failures for `predict`, `plan`, and `record-surprise` leaving prediction/plan/surprise/audit counts unchanged.
 - Current Phase 9 MCP evidence: `tmp/5090jepa_evidence/phase9/mcp_phase9_fsv.json`.
 - Current Phase 9 MCP test: `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs`.
@@ -335,9 +335,9 @@ context-graph dynamicjepa get-artifact --db "$DJ_DB" --id $ARTIFACT --verify-fil
 Current Phase 7 counter_world asserts on the generated 60-event fixture (decoded JSON, not return values):
 
 ```text
-counter_world current: val_latent_cosine ≥ 0.99 ∧ val_latent_mse ≤ 0.005 ∧ vicreg_variance_per_dim_min ≥ 0.5 ∧ parameter_count_trainable = 480
+counter_world current: val_latent_cosine ≥ 0.99 ∧ val_latent_mse ≤ 0.005 ∧ vicreg_variance_per_dim_min ≥ 0.5 ∧ centered persisted-negative shuffled_target_cosine ≤ 0.10 ∧ vicreg_covariance_off_diag_rms ≤ 0.75 ∧ parameter_count_trainable = 480
 gridworld current:     val_latent_cosine ≥ 0.95 ∧ val_latent_mse ≤ 0.05 ∧ test_latent_cosine ≥ 0.92 ∧ action_contrast_acc ≥ 0.95 ∧ parameter_count_trainable < 20000
-recorded but open:     shuffled_target_cosine/covariance strict bounds remain model-quality audit gaps
+recorded diagnostics:  raw covariance Frobenius and VICReg covariance loss-scale remain in metrics.json for scale audits
 ```
 
 ## 9. Artifact Hash Audit (Both Packs)

@@ -59,6 +59,26 @@ fn run_err(args: &[&str]) -> Value {
     value
 }
 
+fn read_json(path: &Path) -> Value {
+    serde_json::from_slice(
+        &fs::read(path).unwrap_or_else(|err| panic!("read JSON {}: {err}", path.display())),
+    )
+    .unwrap_or_else(|err| panic!("parse JSON {}: {err}", path.display()))
+}
+
+fn metric_f64(value: &Value, key: &str) -> f64 {
+    value[key]
+        .as_f64()
+        .unwrap_or_else(|| panic!("metric {key} missing in {value:#}"))
+}
+
+fn assert_close(lhs: f64, rhs: f64, label: &str) {
+    assert!(
+        (lhs - rhs).abs() <= 1.0e-12,
+        "{label} mismatch: lhs={lhs} rhs={rhs}"
+    );
+}
+
 fn counts(value: &Value) -> &Value {
     value
         .get("counts")
@@ -280,6 +300,18 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
             .expect("variance min")
             >= 0.5
     );
+    assert!(
+        train["summary"]["metrics"]["shuffled_target_cosine"]
+            .as_f64()
+            .expect("centered shuffled target cosine")
+            <= 0.10
+    );
+    assert!(
+        train["summary"]["metrics"]["vicreg_covariance_off_diag_rms"]
+            .as_f64()
+            .expect("covariance off diagonal rms")
+            <= 0.75
+    );
     let training_run_id = train["created_ids"]["training_run_id"]
         .as_str()
         .expect("training run id")
@@ -332,6 +364,51 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
         .iter()
         .all(|file| file["equal"].as_bool() == Some(true)));
     evidence.push(json!({"step": "happy_get_artifact_verify", "output": get_artifact}));
+
+    let artifact_metrics = read_json(&Path::new(&artifact_root).join("metrics.json"));
+    let evaluation_report = read_json(&Path::new(&artifact_root).join("evaluation_report.json"));
+    for key in [
+        "val_latent_mse",
+        "val_latent_cosine",
+        "shuffled_target_cosine",
+        "vicreg_variance_per_dim_min",
+        "vicreg_covariance_off_diag_rms",
+        "vicreg_covariance_loss_scale",
+    ] {
+        assert_close(
+            metric_f64(&artifact_metrics, key),
+            metric_f64(&train["summary"]["metrics"], key),
+            key,
+        );
+    }
+    assert_close(
+        evaluation_report["shuffled_target_baseline"]["cosine"]
+            .as_f64()
+            .expect("evaluation shuffled target baseline"),
+        metric_f64(&artifact_metrics, "shuffled_target_cosine"),
+        "evaluation_report.shuffled_target_baseline.cosine",
+    );
+    assert_close(
+        evaluation_report["vicreg_covariance_off_diag_rms"]
+            .as_f64()
+            .expect("evaluation covariance rms"),
+        metric_f64(&artifact_metrics, "vicreg_covariance_off_diag_rms"),
+        "evaluation_report.vicreg_covariance_off_diag_rms",
+    );
+    evidence.push(json!({
+        "step": "happy_artifact_file_readback",
+        "source_of_truth": {
+            "metrics_json": Path::new(&artifact_root).join("metrics.json"),
+            "evaluation_report_json": Path::new(&artifact_root).join("evaluation_report.json")
+        },
+        "metrics": artifact_metrics,
+        "evaluation_report_excerpt": {
+            "shuffled_target_baseline": evaluation_report["shuffled_target_baseline"],
+            "vicreg_variance_per_dim_min": evaluation_report["vicreg_variance_per_dim_min"],
+            "vicreg_covariance_off_diag_rms": evaluation_report["vicreg_covariance_off_diag_rms"],
+            "collapse_diagnostics": evaluation_report["collapse_diagnostics"]
+        }
+    }));
 
     let missing_before = run_ok(&[
         "dynamicjepa",
@@ -445,7 +522,9 @@ fn dynamicjepa_phase7_cli_fsv_real_cuda_artifacts() {
                 "read_paths": [
                     "dynamicjepa inspect-counts",
                     "dynamicjepa get-training-run",
-                    "dynamicjepa get-artifact --verify-files"
+                    "dynamicjepa get-artifact --verify-files",
+                    "artifact_root/metrics.json",
+                    "artifact_root/evaluation_report.json"
                 ]
             },
             "steps": evidence

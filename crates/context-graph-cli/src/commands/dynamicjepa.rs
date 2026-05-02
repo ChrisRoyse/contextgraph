@@ -314,6 +314,10 @@ pub struct InspectCfArgs {
     #[arg(long)]
     pub cf: String,
 
+    /// Exact RocksDB key to decode, as hex from a previous inspect-cf row.
+    #[arg(long = "key-hex")]
+    pub key_hex: Option<String>,
+
     /// Maximum rows to decode.
     #[arg(long, default_value_t = 20)]
     pub limit: usize,
@@ -1739,7 +1743,22 @@ fn inspect_column_family(args: InspectCfArgs) -> DynamicJepaResult<CommandOutcom
     let db = store.dynamicjepa_db();
     let db_path = canonical_existing_path(&args.db, "inspect-cf.db")?;
     let counts = snapshot_dj_counts(db)?;
-    let rows = inspect_cf(db, cf_name, args.limit, args.offset)?;
+    let decoded_records = if let Some(key_hex) = args.key_hex.as_deref() {
+        let key = parse_hex_key(key_hex, "inspect-cf.key_hex")?;
+        let row = inspect_cf_key(db, cf_name, &key)?.ok_or_else(|| {
+            DynamicJepaError::SourceOfTruthMissing {
+                cf: cf_name.to_string(),
+                key: key.clone(),
+            }
+        })?;
+        json!({
+            "row": row,
+        })
+    } else {
+        json!({
+            "rows": inspect_cf(db, cf_name, args.limit, args.offset)?,
+        })
+    };
     Ok(CommandOutcome {
         value: json!({
             "operation": "dynamicjepa_inspect_cf",
@@ -1748,11 +1767,10 @@ fn inspect_column_family(args: InspectCfArgs) -> DynamicJepaResult<CommandOutcom
             "source_of_truth": [cf_name],
             "counts": counts,
             "cf": cf_name,
+            "key_hex": args.key_hex,
             "limit": args.limit,
             "offset": args.offset,
-            "decoded_records": {
-                "rows": rows,
-            },
+            "decoded_records": decoded_records,
         }),
         exit_code: 0,
     })

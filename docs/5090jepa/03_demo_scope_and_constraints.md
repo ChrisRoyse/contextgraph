@@ -85,7 +85,7 @@ Current enforcement lives in real CLI/RocksDB FSV tests:
 - Current Phase 9: `crates/context-graph-mcp/src/handlers/tests/dynamicjepa_tools.rs` calls all 27 DynamicJEPA tools through real MCP dispatch, verifies the capability matrix, and reads the RocksDB source of truth directly.
 - Current Phase 10: `crates/context-graph-cli/tests/dynamicjepa_phase10_fsv.rs` invokes real bundled CLI verifiers for counter_world and gridworld, checks persisted `dj_verification_runs`, checks evidence files, and independently inspects final RocksDB counts.
 
-Still-open model-quality audit gaps are documented rather than hidden: the current tiny model passes validation MSE/cosine and variance-floor assertions on the 60-event counter_world fixture and passes gridworld Phase 10 convergence targets, but the strict shuffled-target and covariance bounds in §4 are recorded as metrics and are not yet passing acceptance gates.
+Model-quality audit gates are explicit: the current tiny model passes validation MSE/cosine, variance-floor, centered persisted-negative leakage, and normalized covariance assertions on the 60-event counter_world fixture. Gridworld Phase 10 convergence remains covered by the bundled verifier.
 
 These are **integration tests using real RocksDB** under `tempfile::TempDir`. No mocks. No synthetic embedders that bypass the real instruments. If a test passes with the system in a half‑broken state, the test is a bug.
 
@@ -112,7 +112,7 @@ The full Definition of Done is in `00_TASK.md` §4. Phase‑level acceptance:
 - **Phase 4**: ingesting the happy‑path fixture (3 events for counter_world, 8 for one gridworld trajectory) produces the exact count deltas in `14_…`; invalid fixture writes a failed adapter run row but no normalized rows.
 - **Phase 5**: trajectory compile produces the exact ordered transition list documented per domain.
 - **Phase 6**: dataset shard row count = `transitions − 1` per trajectory; insufficient negatives fails before partial shard write.
-- **Phase 7**: model service crate exists; CUDA-only counter_world training converges on the generated 60-event FSV fixture; artifact hash recomputes to registered value; corrupt artifact verification fails with a typed error. Phase 10 proves real gridworld training/hash verification through the bundled verifier. Strict shuffled-target/covariance acceptance remains open.
+- **Phase 7**: model service crate exists; CUDA-only counter_world training converges on the generated 60-event FSV fixture; artifact hash recomputes to registered value; corrupt artifact verification fails with a typed error. The FSV asserts the centered persisted-negative baseline and normalized covariance gate. Phase 10 proves real gridworld training/hash verification through the bundled verifier.
 - **Phase 8**: prediction/planning/surprise code is present and FSV-tested in the working tree: prediction row references the actual artifact + panel + action; plan trace references concrete predictions and guard decisions; surprise event links prediction → outcome → panel when threshold is crossed.
 - **Phase 9**: every DynamicJEPA tool listed in `13_…` exists in `tools::names`, has a definition, has a handler, dispatches correctly, and has a corresponding capability‑matrix entry; tool count test bumped to the new total.
 - **Phase 10**: `verify-counter-world` and `verify-gridworld` both pass on a fresh DB; verification run rows persist; JSON evidence under `tmp/5090jepa_evidence/` includes every required field per `14_…` §10.

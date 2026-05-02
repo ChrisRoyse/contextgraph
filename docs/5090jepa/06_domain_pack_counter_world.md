@@ -262,8 +262,8 @@ Phase 4 edge-case FSV confirmed the final source-of-truth counts after running a
   },
   "loss": {
     "latent_mse_weight": 1.0,
-    "vicreg_variance_weight": 1.0,
-    "vicreg_covariance_weight": 0.04,
+    "vicreg_variance_weight": 3.0,
+    "vicreg_covariance_weight": 0.2,
     "vicreg_target_std": 1.0
   },
   "optim": {
@@ -296,8 +296,10 @@ Runs on the 5090 in well under 30 seconds for the current generated 60-event Pha
 - `metrics.val_latent_mse <= 0.005`
 - `metrics.parameter_count_trainable == 480`
 - `metrics.vicreg_variance_per_dim_min >= 0.5`
+- `metrics.shuffled_target_cosine <= 0.10`
+- `metrics.vicreg_covariance_off_diag_rms <= 0.75`
 
-The same report records `action_contrast_acc`, `shuffled_target_cosine`, `random_init_cosine`, and covariance. The strict shuffled-target and covariance gates are not yet passing and remain open; do not remove those metrics or lower the future acceptance bar to hide the issue.
+The same report records `action_contrast_acc`, `random_init_cosine`, raw covariance Frobenius, normalized covariance RMS, and the covariance loss-scale value. `shuffled_target_cosine` is computed against persisted `negative_panel_ids` after split-mean centering, so the monotonic counter offset cannot hide a mismatched target.
 
 ## 7. Verification Run Evidence
 

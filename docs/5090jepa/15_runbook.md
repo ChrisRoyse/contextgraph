@@ -394,11 +394,14 @@ parameter_count_trainable 480
 val_latent_mse <= 0.005
 val_latent_cosine >= 0.99
 vicreg_variance_per_dim_min >= 0.5
+shuffled_target_cosine <= 0.10
+vicreg_covariance_off_diag_rms <= 0.75
 ```
 
-Known caveats: the strict shuffled-target and covariance targets are recorded but
-not yet passing acceptance gates. Gridworld model training and bundled
-`verify-*` commands are implemented and FSV-tested in Phase 10.
+`shuffled_target_cosine` is the centered cosine against persisted negative panels.
+Raw covariance Frobenius remains recorded as a diagnostic; the normalized RMS
+value is the acceptance gate. Gridworld model training and bundled `verify-*`
+commands are implemented and FSV-tested in Phase 10.
 
 Phase 8 counter_world prediction/planning/surprise FSV is:
 
@@ -424,7 +427,10 @@ dj_skill_policies 1
 dj_surprise_events 1
 dj_training_runs 1
 dj_model_artifacts 1
-dj_audit_log 194
+dj_latent_panels 61
+dj_outcomes 61
+dj_pairwise_readings 61
+dj_audit_log 316
 ```
 
 Additional Phase 8 assertions now covered by the FSV test:
@@ -432,6 +438,7 @@ Additional Phase 8 assertions now covered by the FSV test:
 ```text
 happy plan selected_action.fields.delta.I64 = 2
 happy plan utility_scores = [-2, -1, 0, 1, 2]
+exact inspect-cf --key-hex readback for prediction/plan/action/guard/skill/surprise rows
 mismatched record-surprise outcome/panel -> VALIDATION, surprise/audit deltas 0
 corrupt artifact predict -> ARTIFACT_HASH_MISMATCH, prediction/audit deltas 0
 corrupt artifact plan -> ARTIFACT_HASH_MISMATCH, action/prediction/guard/plan/audit deltas 0

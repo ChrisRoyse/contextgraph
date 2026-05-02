@@ -2,7 +2,7 @@
 
 After a model is trained and an artifact is registered, the demo proves that predictions, plans, and surprise events all persist independently readable rows. Planning is a recorded process, not a function call.
 
-Current implementation status as of the Phase 8 FSV pass on 2026-04-30: training and artifact hash verification are FSV-accepted, and prediction, planning, guard, and surprise command code is FSV-tested in the working tree (`predict`, `plan`, `record-surprise`, plus read commands). Phase 7 FSV leaves these rows at zero; Phase 8 FSV writes and reads them as source-of-truth rows. The current Phase 8 FSV also proves counter_world selects the persisted hypothetical `delta=2` action, rejects mismatched observed outcome/panel ids, and refuses predict/plan/record-surprise when the registered artifact file hash is stale.
+Current implementation status as of the Phase 8 FSV pass on 2026-05-02: training and artifact hash verification are FSV-accepted, and prediction, planning, guard, and surprise command code is FSV-tested (`predict`, `plan`, `record-surprise`, plus read commands). Phase 7 FSV leaves these rows at zero; Phase 8 FSV writes and reads them as source-of-truth rows. The current Phase 8 FSV also proves counter_world selects the persisted hypothetical `delta=2` action, rejects mismatched observed outcome/panel ids, refuses predict/plan/record-surprise when the registered artifact file hash is stale, reads exact prediction/plan/action/guard/surprise rows through `inspect-cf --key-hex`, and verifies physical `ldb dump --count_only` counts.
 
 ## 1. Prediction
 

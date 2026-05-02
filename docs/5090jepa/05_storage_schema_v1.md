@@ -177,9 +177,10 @@ Plus a generic:
 
 ```rust
 pub fn inspect_cf(db: &Database, cf_name: &str, limit: usize) -> StorageResult<Vec<(Vec<u8>, serde_json::Value)>>;
+pub fn inspect_cf_key(db: &Database, cf_name: &str, key: &[u8]) -> StorageResult<Option<serde_json::Value>>;
 ```
 
-`inspect_cf` returns the first `limit` (key, decoded JSON) pairs. CLI commands `dynamicjepa inspect-cf` and `dynamicjepa inspect-counts` (Phase 3 and Phase 4 FSV) call these directly.
+`inspect_cf` returns the first `limit` (key, decoded JSON) pairs. `inspect_cf_key` decodes one exact RocksDB key and is exposed as `dynamicjepa inspect-cf --key-hex` for FSV row proofs. CLI commands `dynamicjepa inspect-cf` and `dynamicjepa inspect-counts` call these directly.
 
 ## 8. Database Open Path
 

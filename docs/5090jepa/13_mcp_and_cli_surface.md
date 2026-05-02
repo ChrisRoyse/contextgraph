@@ -156,6 +156,7 @@ context-graph dynamicjepa get-domain --db PATH --id ID --json
 context-graph dynamicjepa get-domain --db PATH --id ID --domain-version 1.0.0 --json
 context-graph dynamicjepa inspect-counts --db PATH --json
 context-graph dynamicjepa inspect-cf --db PATH --cf dj_domain_packs --limit N --json
+context-graph dynamicjepa inspect-cf --db PATH --cf dj_predictions --key-hex HEX --json
 
 context-graph dynamicjepa ingest-event --domain ID --adapter ID --file PATH
 context-graph dynamicjepa run-adapter --event-id UUID
@@ -188,6 +189,7 @@ context-graph dynamicjepa get-surprise --id UUID
 
 context-graph dynamicjepa inspect-counts
 context-graph dynamicjepa inspect-cf --cf NAME --limit N
+context-graph dynamicjepa inspect-cf --cf NAME --key-hex HEX
 
 context-graph dynamicjepa verify-counter-world --fixtures-root PATH --artifact-root PATH
 context-graph dynamicjepa verify-gridworld     --fixtures-root PATH --artifact-root PATH

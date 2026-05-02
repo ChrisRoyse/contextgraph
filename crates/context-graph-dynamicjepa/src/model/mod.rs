@@ -34,6 +34,8 @@ pub struct EvaluationReport {
     pub vicreg_variance_per_dim_min: f64,
     pub vicreg_variance_per_dim_mean: f64,
     pub vicreg_covariance_off_diag_frobenius: f64,
+    pub vicreg_covariance_off_diag_rms: f64,
+    pub vicreg_covariance_loss_scale: f64,
     pub collapse_diagnostics: CollapseDiagnostics,
     pub epoch_metrics: Vec<EpochMetric>,
     pub parameter_count_trainable: usize,
@@ -48,6 +50,8 @@ pub struct CollapseDiagnostics {
     pub val_var_p75: f64,
     pub val_var_max: f64,
     pub covar_frob: f64,
+    pub covar_rms: f64,
+    pub covar_loss_scale: f64,
     pub eff_rank: f64,
     pub eff_rank_ratio: f64,
     pub alignment: f64,
@@ -69,6 +73,8 @@ impl CollapseDiagnostics {
             val_var_p75: sorted_quantile(&variances, 0.75),
             val_var_max: *variances.last().unwrap_or(&0.0),
             covar_frob: variance_metrics.cov_off_diag_frobenius,
+            covar_rms: variance_metrics.cov_off_diag_rms,
+            covar_loss_scale: variance_metrics.cov_loss_scale,
             eff_rank: f64::NAN,
             eff_rank_ratio: f64::NAN,
             alignment: f64::NAN,
@@ -710,6 +716,17 @@ fn validate_examples(
                 });
             }
         }
+        if example.target_panel == example.negative_panel {
+            return Err(DynamicJepaError::TrainingFailed {
+                training_run_id: uuid::Uuid::nil(),
+                message: format!(
+                    "row {idx} target_panel and negative_panel are identical; negative-control audit would be invalid"
+                ),
+                remediation:
+                    "recompile the dataset and inspect negative_panel_ids for same-outcome leakage"
+                        .to_string(),
+            });
+        }
     }
     Ok(())
 }
@@ -859,20 +876,12 @@ fn evaluate_model(
             .push(idx);
     }
     let mut split_metrics = std::collections::BTreeMap::new();
-    let mut shuffled_targets = Vec::with_capacity(examples.len());
-    for idx in 0..examples.len() {
-        let shuffled = if examples.len() > 1 {
-            (idx + 1) % examples.len()
-        } else {
-            idx
-        };
-        shuffled_targets.push(shuffled);
-    }
     for (split, idxs) in &by_split {
         let mut mse = 0.0;
         let mut cosine_sum = 0.0;
         let mut contrast_hits = 0u64;
-        let mut shuffled_cosine_sum = 0.0;
+        let mut mismatched_cosine_sum = 0.0;
+        let target_mean = mean_vector(idxs.iter().map(|idx| target[*idx].as_slice()));
         for idx in idxs {
             mse += mse_vec(&pred[*idx], &target[*idx]);
             cosine_sum += cosine(&pred[*idx], &target[*idx]);
@@ -881,13 +890,9 @@ fn evaluate_model(
             if pos > neg {
                 contrast_hits += 1;
             }
-            let shuffled_idx = shuffled_targets[*idx];
-            let shuffled_target = if shuffled_idx == *idx {
-                &negative[*idx]
-            } else {
-                &target[shuffled_idx]
-            };
-            shuffled_cosine_sum += cosine(&pred[*idx], shuffled_target);
+            let centered_pred = subtract_mean(&pred[*idx], &target_mean);
+            let centered_negative = subtract_mean(&negative[*idx], &target_mean);
+            mismatched_cosine_sum += cosine(&centered_pred, &centered_negative);
         }
         let denom = idxs.len() as f64;
         split_metrics.insert(
@@ -901,7 +906,7 @@ fn evaluate_model(
                 ),
                 (
                     "shuffled_target_cosine".to_string(),
-                    shuffled_cosine_sum / denom,
+                    mismatched_cosine_sum / denom,
                 ),
             ]),
         );
@@ -930,6 +935,8 @@ fn evaluate_model(
         vicreg_variance_per_dim_min: variance_metrics.var_min,
         vicreg_variance_per_dim_mean: variance_metrics.var_mean,
         vicreg_covariance_off_diag_frobenius: variance_metrics.cov_off_diag_frobenius,
+        vicreg_covariance_off_diag_rms: variance_metrics.cov_off_diag_rms,
+        vicreg_covariance_loss_scale: variance_metrics.cov_loss_scale,
         collapse_diagnostics,
         epoch_metrics: Vec::new(),
         parameter_count_trainable: 0,
@@ -996,6 +1003,14 @@ fn flatten_metrics(report: &EvaluationReport) -> std::collections::BTreeMap<Stri
         report.vicreg_covariance_off_diag_frobenius,
     );
     out.insert(
+        "vicreg_covariance_off_diag_rms".to_string(),
+        report.vicreg_covariance_off_diag_rms,
+    );
+    out.insert(
+        "vicreg_covariance_loss_scale".to_string(),
+        report.vicreg_covariance_loss_scale,
+    );
+    out.insert(
         "collapse_val_var_min".to_string(),
         report.collapse_diagnostics.val_var_min,
     );
@@ -1026,6 +1041,14 @@ fn flatten_metrics(report: &EvaluationReport) -> std::collections::BTreeMap<Stri
     out.insert(
         "collapse_covar_frob".to_string(),
         report.collapse_diagnostics.covar_frob,
+    );
+    out.insert(
+        "collapse_covar_rms".to_string(),
+        report.collapse_diagnostics.covar_rms,
+    );
+    out.insert(
+        "collapse_covar_loss_scale".to_string(),
+        report.collapse_diagnostics.covar_loss_scale,
     );
     out.insert(
         "collapse_eff_rank".to_string(),
@@ -1078,6 +1101,8 @@ struct VarianceCovarianceMetrics {
     var_min: f64,
     var_mean: f64,
     cov_off_diag_frobenius: f64,
+    cov_off_diag_rms: f64,
+    cov_loss_scale: f64,
 }
 
 fn variance_covariance_metrics(rows: &[Vec<f32>]) -> VarianceCovarianceMetrics {
@@ -1089,6 +1114,8 @@ fn variance_covariance_metrics(rows: &[Vec<f32>]) -> VarianceCovarianceMetrics {
             var_min: 0.0,
             var_mean: 0.0,
             cov_off_diag_frobenius: 0.0,
+            cov_off_diag_rms: 0.0,
+            cov_loss_scale: 0.0,
         };
     }
     let n = rows.len();
@@ -1138,6 +1165,8 @@ fn variance_covariance_metrics(rows: &[Vec<f32>]) -> VarianceCovarianceMetrics {
         var_min,
         var_mean,
         cov_off_diag_frobenius: off_diag.sqrt(),
+        cov_off_diag_rms: (off_diag / d.saturating_mul(d.saturating_sub(1)).max(1) as f64).sqrt(),
+        cov_loss_scale: off_diag / d.max(1) as f64,
     }
 }
 
@@ -1156,6 +1185,8 @@ fn collapse_diagnostics(
             val_var_p75: 0.0,
             val_var_max: 0.0,
             covar_frob: 0.0,
+            covar_rms: 0.0,
+            covar_loss_scale: 0.0,
             eff_rank: 0.0,
             eff_rank_ratio: 0.0,
             alignment: 0.0,
@@ -1196,6 +1227,8 @@ fn collapse_diagnostics(
         val_var_p75,
         val_var_max,
         covar_frob: variance_metrics.cov_off_diag_frobenius,
+        covar_rms: variance_metrics.cov_off_diag_rms,
+        covar_loss_scale: variance_metrics.cov_loss_scale,
         eff_rank,
         eff_rank_ratio,
         alignment,
@@ -1443,6 +1476,33 @@ fn mse_vec(lhs: &[f32], rhs: &[f32]) -> f64 {
         })
         .sum::<f64>()
         / lhs.len().max(1) as f64
+}
+
+fn mean_vector<'a>(rows: impl Iterator<Item = &'a [f32]>) -> Vec<f64> {
+    let mut count = 0usize;
+    let mut mean = Vec::new();
+    for row in rows {
+        if mean.is_empty() {
+            mean.resize(row.len(), 0.0);
+        }
+        count += 1;
+        for (idx, value) in row.iter().enumerate() {
+            mean[idx] += *value as f64;
+        }
+    }
+    if count > 0 {
+        for value in &mut mean {
+            *value /= count as f64;
+        }
+    }
+    mean
+}
+
+fn subtract_mean(row: &[f32], mean: &[f64]) -> Vec<f32> {
+    row.iter()
+        .zip(mean.iter())
+        .map(|(value, mean)| (*value as f64 - *mean) as f32)
+        .collect()
 }
 
 fn cosine(lhs: &[f32], rhs: &[f32]) -> f64 {
