@@ -121,11 +121,51 @@ def normalize_table_for_reference(aggregate_root, table_name, spec)
   }
 end
 
+def build_pairwise_mi_audit_references(aggregate_root)
+  Dir.glob(File.join(aggregate_root, "pairwise_mi_audit_*")).sort.filter_map do |audit_dir|
+    next unless File.directory?(audit_dir)
+
+    audit_path = File.join(audit_dir, "pairwise_mi_audit.json")
+    summary_path = File.join(audit_dir, "paper_tables/table_pairwise_mi_summary.csv")
+    matrix_path = File.join(audit_dir, "pairwise_mi_matrix.csv")
+    heatmap_path = File.join(audit_dir, "pairwise_mi_heatmap.svg")
+    [audit_path, summary_path, matrix_path, heatmap_path].each do |path|
+      state = path_state(path)
+      unless state["exists"] && state["kind"] == "file" && state["size_bytes"].to_i.positive?
+        raise "pairwise MI audit output is missing or empty: #{path}"
+      end
+    end
+
+    audit = read_json(audit_path, "pairwise_mi_audit")
+    summary = audit.fetch("summary")
+    domain = summary.fetch("domain")
+    n_panel_slots = summary.fetch("n_panel_slots").to_i
+    {
+      "domain" => domain,
+      "path" => File.basename(audit_dir),
+      "summary_path" => File.join(File.basename(audit_dir), "paper_tables/table_pairwise_mi_summary.csv"),
+      "matrix_path" => File.join(File.basename(audit_dir), "pairwise_mi_matrix.csv"),
+      "heatmap_path" => File.join(File.basename(audit_dir), "pairwise_mi_heatmap.svg"),
+      "audit_json_path" => File.join(File.basename(audit_dir), "pairwise_mi_audit.json"),
+      "expected" => {
+        "sample_size" => audit.fetch("estimator").fetch("sample_size").to_i,
+        "n_panel_slots" => n_panel_slots,
+        "n_pairs" => summary.fetch("n_pairs").to_i,
+        "n_eff_loose_min" => 9.0,
+        "n_eff_loose_max" => n_panel_slots.to_f,
+        "n_eff_strict_min" => 9.0,
+        "n_eff_strict_max" => n_panel_slots.to_f
+      }
+    }
+  end
+end
+
 def build_reference(aggregate_root, reference_id)
   manifest = read_json(File.join(aggregate_root, "aggregate_manifest.json"), "aggregate_manifest")
   fsv = read_json(File.join(aggregate_root, "aggregate_fsv_report.json"), "aggregate_fsv_report")
+  pairwise_mi_audits = build_pairwise_mi_audit_references(aggregate_root)
 
-  {
+  reference = {
     "schema_version" => 1,
     "kind" => "dynamicjepa_release_aggregate_reference",
     "reference_id" => reference_id,
@@ -153,6 +193,8 @@ def build_reference(aggregate_root, reference_id)
       [table_name, normalize_table_for_reference(aggregate_root, table_name, spec)]
     end
   }
+  reference["pairwise_mi_audits"] = pairwise_mi_audits unless pairwise_mi_audits.empty?
+  reference
 end
 
 def compare_table(table_name, spec, actual_root, reference_table)
