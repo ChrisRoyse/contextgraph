@@ -1,53 +1,64 @@
 # Tests, Acceptance, And Full-State Verification
 
-Testing must prove the system works by inspecting durable state after execution.
-Unit tests are useful, but they are not enough for this product.
+Testing must prove the system works by inspecting durable state after
+execution. Unit tests are useful, but they are not enough for this product.
+The mandatory operator-side protocol lives in
+`19_full_state_verification_protocol.md`; this file lists the testing
+**levels** and the per-phase acceptance criteria.
 
-## Source Of Truth For The Platform
+## Source Of Truth For BlackBoxFix Itself
 
-For BlackBoxFix itself, sources of truth are:
-
-- ledger database;
-- evidence artifact store;
-- hash-chain verification output;
-- external systems under connector tests;
-- exported JSONL and manifests.
+| Source | What it proves |
+|---|---|
+| SQLite ledger DB at `--ledger PATH` | every row written, every hash chain |
+| `blackbox_metadata` rows | record count + tip hash agree with physical rows |
+| Evidence artifact store (Phase 4) | artifacts referenced from ledger exist on disk |
+| Hash-chain verification output | per-record + per-run chain unbroken |
+| External systems under connector tests | readback matches expected delta |
+| Exported JSONL + manifest (Phase 5) | every line re-parses; sha256 matches manifest |
 
 ## Test Levels
 
 ### Unit Tests
 
 - schema validation;
-- redaction;
+- redaction (field-name + literal pattern + post-scan);
+- canonical-JSON sorting;
+- hash computation;
 - comparison functions;
 - score calculation;
 - error-code mapping.
 
 ### Integration Tests
 
-- connector readback against real local systems;
-- ledger write and readback;
+- connector readback against real local systems (no mocks);
+- ledger write and readback on a real SQLite file;
 - evidence artifact hash verification;
 - exporter parse and manifest verification.
 
-### Manual FSV
+### Full-State Verification (FSV)
 
-For each mutating workflow:
+For each mutating workflow, follow the protocol in
+`19_full_state_verification_protocol.md`:
 
-1. Print before-state from source of truth.
-2. Execute action.
-3. Print after-state from source of truth through a separate read.
-4. Verify expected persisted delta.
-5. Print evidence packet ids and ledger rows.
+1. Print the before-state from the source of truth.
+2. Execute the action.
+3. Print the after-state from the source of truth through a separate read.
+4. Verify the expected persisted delta matches.
+5. Print evidence packet ids and ledger row sequences.
 6. Run at least three edge cases.
+
+Phase 1 already has automated FSV (`tests/blackbox_phase1_fsv.rs`). Each
+later phase ships its own `tests/blackbox_phaseN_*_fsv.rs` file.
 
 ## Acceptance Criteria
 
-The MVP is accepted only when:
+The MVP is accepted only when, **after running on a fresh checkout against
+real systems**:
 
 - every mutating action has a verifier or is blocked in governed mode;
 - every verifier has happy path and three edge cases;
-- every failure has error code and remediation;
+- every failure has error code, source of truth, field path, and remediation;
 - every evidence packet can be read back from storage;
 - every exported JSONL row links to evidence;
 - hash-chain tampering is detected;
@@ -57,40 +68,40 @@ The MVP is accepted only when:
 ## Manual FSV Template
 
 ```text
-FSV: github_pr_open_v1
-Source of truth: GitHub API pull request record
+FSV: <verifier_id>
+Source of truth: <system + locator>
 
 Before:
-  PR exists: false
-  branch exists: true
+  <field>: <value>
 
 Trigger:
-  verified_github_create_pr
+  <command or tool call>
 
-After readback:
-  PR exists: true
-  PR state: open
-  head_ref: agent/fix-cve
+After readback (via independent read path):
+  <field>: <value>
 
 Expected delta:
-  PR exists: true
-  PR state: open
-  head_ref: agent/fix-cve
+  <field>: <value>
 
 Verifier:
-  status: passed
-  evidence_packet_id: ev_123
+  status: passed | failed | blocked
+  error_code: <or null>
+  evidence_packet_id: <or "n/a in current phase">
+
+Physical proof:
+  <sqlite/git/api command output>
 ```
 
-## Required Edge Cases
+## Required Edge Cases (per verifier)
 
-Every verifier defines at least three:
+Mandatory three:
 
-- missing target state;
-- wrong target state;
-- permission or schema failure.
+1. **Missing target state** (e.g. PR not found, branch missing, file absent).
+2. **Wrong target state** (e.g. PR closed, file content mismatch).
+3. **Permission or schema failure** (connector rejected; expected
+   `BBX_*` or `*_PERMISSION_DENIED`).
 
-Additional useful edge cases:
+Strongly recommended additional edge cases:
 
 - stale readback;
 - partial write;
@@ -98,25 +109,60 @@ Additional useful edge cases:
 - rate limit;
 - redaction violation;
 - artifact hash mismatch;
-- tampered ledger record.
+- tampered ledger record (Phase 1 already covers this).
 
 ## Real Data Rule
 
-Tests should use real local repositories, real temporary databases, real files,
-real command output, and real connector sandboxes. No test should pass by
-asserting a fabricated success response while the source of truth is broken.
+Tests use real local repositories, real temporary databases, real files, real
+command output, and real connector sandboxes. **No test passes by asserting a
+fabricated success response while the source of truth is broken.**
 
-For hosted systems, use controlled test repositories and sandboxes. If a live
-external service is not available in CI, run those tests as gated integration
-tests and keep local source-of-truth tests mandatory.
+Concretely, that means:
+
+- Phase 1 FSV opens the SQLite file with the standalone `rusqlite` library
+  and queries `ledger_records` directly, then asserts row counts and
+  payload contents — see `phase1_happy_path_persists_and_inspects_physical_rows`.
+- Phase 2 FSV must `git2`-open a real test repo and `git log`/`git diff`
+  through an independent path before asserting verifier output.
+- Phase 3 FSV must point at a controlled test GitHub org/repo.
+
+For hosted systems unavailable in CI, run those tests as gated integration
+tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
+tests **mandatory** (gating only the live ones is a recipe for green-on-broken).
+
+## Synthetic Data Strategy
+
+For each phase, synthesize input where you control the ground truth, then
+read the source of truth and compare. Phase 1 inputs/outputs are enumerated
+in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
+
+A synthetic test must include:
+
+1. The exact command(s) issued.
+2. The exact JSON file(s) supplied as input.
+3. The expected stdout JSON shape (success) **or** stderr JSON shape
+   (failure with `error_code`).
+4. The expected `sqlite3 …` query and its expected output.
+5. The expected exit code (`0`, `1`, or `2`).
+
+If any of these is missing, the test is incomplete.
 
 ## Regression Evals
 
-Every production incident and every new verifier edge case should produce:
+Every production incident and every new verifier edge case produces:
 
-- a ledger fixture;
+- a ledger fixture (a deterministic SQLite file under `tests/fixtures/`);
 - an episode row;
 - an eval case;
 - expected verifier status;
 - expected remediation.
 
+A regression that ships without all five is not a regression test; it is a
+note.
+
+## Tying It Together
+
+The shortest valid sentence describing acceptance: **"When I run
+`cargo test --package context-graph-cli --test blackbox_phaseN_fsv` on a
+fresh checkout against real systems, all tests pass and a manual run of
+the documented commands produces byte-identical SQLite/JSON output."**

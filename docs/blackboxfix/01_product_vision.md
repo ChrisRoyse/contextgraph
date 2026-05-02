@@ -17,7 +17,7 @@ Every AI agent action is:
 
 ## Primary Users
 
-- AI platform engineers who need to ship governed agents across teams.
+- AI platform engineers shipping governed agents across teams.
 - CISOs and security architects who need containment, audit trails, and proof.
 - Regulated enterprise teams that need evidence for model and agent controls.
 - Agent vendors that need a trust layer for customer deployments.
@@ -28,7 +28,8 @@ Every AI agent action is:
 Most observability tools show that an action happened. BlackBoxFix proves
 whether the intended outcome actually persisted where it matters.
 
-The key distinction is the expected delta/readback pair:
+The defensible claim is the **expected delta / actual readback** pair. Every
+mutating action ships with both, and the verifier compares them physically:
 
 ```json
 {
@@ -46,25 +47,36 @@ The key distinction is the expected delta/readback pair:
 }
 ```
 
+In Phase 1 (shipped) the ledger persists this pair structurally; Phase 2/3 add
+the connectors that produce `actual_readback`.
+
 ## Product Principles
 
-- Source-of-truth first: return values are never enough.
-- Fail closed: unverified state is a blocking state for governed workflows.
-- Typed failures: every failure has an error code, location, and remediation.
-- Real systems only: verification reads actual systems, databases, files, APIs,
-  ledgers, or other durable state.
-- Evidence over trust: users should see the state before, the trigger, the
-  state after, and the verifier conclusion.
-- Training by operation: every verified action becomes usable supervision data.
+- **Source-of-truth first.** Return values are never enough. Verifiers read
+  the durable system on a separate path.
+- **Fail closed.** Unverified state is a blocking state in governed mode.
+  Phase 1 already enforces this for the ledger itself: any redaction,
+  schema, hash-chain, or readback failure aborts the write and exits non-zero.
+- **Typed failures.** Every failure has `error_code`, `field_path`, and
+  `remediation` (Phase 1 codes enumerated in `20_phase1_state_and_invariants.md`).
+- **Real systems only.** Verification reads actual systems, databases, files,
+  APIs, ledgers, or other durable state. No mock connectors, ever.
+- **Evidence over trust.** Users see the state before, the trigger, the state
+  after, and the verifier conclusion.
+- **Training by operation.** Every verified action becomes usable supervision
+  data via the Phase 5 episode exporter.
 
 ## Non-Goals
 
 - Do not build another generic trace viewer as the main product.
 - Do not store full secrets, credentials, or unredacted sensitive payloads.
-- Do not silently skip verifiers when credentials, APIs, or sources of truth are
-  unavailable.
+  (Phase 1 enforces this with the `redact_v1` policy + post-scan; secret-like
+  literals outside redacted fields → `BBX_REDACTION_VIOLATION`.)
+- Do not silently skip verifiers when credentials, APIs, or sources of truth
+  are unavailable. `blocked` is not success.
 - Do not accept a model's explanation as proof of success.
 - Do not make safety dependent on prompt text alone.
+- Do not introduce migration shims when schemas change. Wipe the ledger.
 
 ## Jobs To Be Done
 
@@ -78,8 +90,14 @@ The key distinction is the expected delta/readback pair:
 
 ## Long-Term Possibility
 
-BlackBoxFix can become the operational memory and proof layer for tool-using AI.
-The richer the corpus of verified state/action/outcome episodes becomes, the
-better it can train agents to reason about real consequences instead of only
-textual plausibility.
+BlackBoxFix can become the operational memory and proof layer for tool-using
+AI. The richer the corpus of verified state/action/outcome episodes becomes,
+the better it can train agents to reason about real consequences instead of
+only textual plausibility.
 
+## Verification Of This Document
+
+Source of truth: this file plus `20_phase1_state_and_invariants.md`. Edge case
+to confirm: the `BBX_REDACTION_VIOLATION` path actually rejects an agent that
+posts a `Bearer ...` token in a non-sensitive field. Reproduce with the
+synthetic input in `20_phase1_state_and_invariants.md` §"Edge Case 1".

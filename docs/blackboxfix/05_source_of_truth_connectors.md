@@ -1,8 +1,11 @@
 # Source-Of-Truth Connectors
 
 Connectors define how BlackBoxFix reads and verifies real systems. A connector
-is not just a tool wrapper. It must provide independent readback and explicit
-evidence extraction.
+is not just a tool wrapper. It must provide **independent readback** and
+explicit evidence extraction.
+
+Phase 1 ships exactly one connector: `sqlite_local_v1` (the ledger itself; no
+external system). Phase 2 adds Git + filesystem; Phase 3 adds GitHub + CI.
 
 ## Connector Contract
 
@@ -19,15 +22,14 @@ Each connector declares:
 - evidence artifact types;
 - failure error codes.
 
+Reference shape:
+
 ```json
 {
   "connector_id": "github_v1",
   "source_kind": "github",
   "capabilities": [
-    "repo.read",
-    "pull_request.read",
-    "pull_request.write",
-    "checks.read"
+    "repo.read", "pull_request.read", "pull_request.write", "checks.read"
   ],
   "readback_specs": [
     "github_pr_open_v1",
@@ -40,158 +42,129 @@ Each connector declares:
 
 ## Required Connector Properties
 
-- Readback must use the source system, not the agent's return payload.
-- Readback must be separately invocable for manual FSV.
+- Readback **must** use the source system, not the agent's return payload.
+- Readback **must** be separately invocable for manual FSV (CLI subcommand
+  `blackbox connector test --connector ... --source ...`).
 - Mutating calls must produce correlation IDs.
-- Connector errors must be typed.
+- Connector errors must be typed with the `BBX_*` / connector-specific codes.
 - Missing permission must be `blocked`, not `passed`.
-- Rate-limit exhaustion must be visible in the ledger.
-- Data redaction must happen before persistence.
+- Rate-limit exhaustion must be visible in the ledger (Phase 3).
+- Data redaction must happen **before** persistence — the Phase 1
+  `redact_v1` post-scan is the model: any unredacted secret-like literal
+  outside an explicitly redacted field is a fatal error
+  (`BBX_REDACTION_VIOLATION`).
 
 ## Priority Connectors
 
-### Git Local
+### Phase 2: Git Local (filesystem only, no network)
 
 Source of truth:
 
-- `.git` object database;
+- `.git` object database (read via `git2` or shelling out to `git`);
 - working tree status;
 - commit graph;
 - diff output;
 - tags and refs.
 
-Verifier examples:
+Verifier examples (`verifier_id`):
 
-- branch exists;
-- commit exists;
-- file diff matches expected patch;
-- working tree is clean;
-- tests touched expected files only.
+- `git_branch_exists_v1`
+- `git_commit_exists_v1`
+- `git_file_diff_matches_patch_v1`
+- `git_working_tree_clean_v1`
+- `git_changed_paths_subset_v1`
 
-### GitHub
+### Phase 2: Local Test Command
 
-Source of truth:
+Source of truth: the exit code, stdout/stderr, and any artifact files of a
+declared test command. Verifier examples:
 
-- repository metadata;
-- pull requests;
-- branches;
-- commits;
-- checks;
-- reviews;
-- issues;
-- deployments.
+- `cmd_exit_zero_v1`
+- `cmd_stdout_contains_v1`
+- `cmd_artifact_hash_matches_v1`
 
-Verifier examples:
-
-- PR exists and points at expected branch;
-- expected commit is present;
-- CI check suite passed;
-- vulnerability issue changed state;
-- review approval exists.
-
-### CI Providers
-
-Initial targets:
-
-- GitHub Actions;
-- Buildkite;
-- CircleCI;
-- GitLab CI.
-
-Verifier examples:
-
-- workflow run completed;
-- required jobs passed;
-- artifact exists and hash matches;
-- test report contains expected count and no failures.
-
-### Package And Vulnerability Scanners
-
-Initial targets:
-
-- OSV Scanner;
-- npm audit;
-- cargo audit;
-- Trivy;
-- Snyk if customer uses it.
-
-Verifier examples:
-
-- vulnerability no longer appears;
-- lockfile changed expected package version;
-- SBOM artifact exists;
-- scanner report hash matches evidence.
-
-### Kubernetes
+### Phase 3: GitHub
 
 Source of truth:
 
-- Kubernetes API server;
-- resource version;
-- deployment status;
-- pod health;
-- events.
+- repository metadata; pull requests; branches; commits; checks; reviews;
+  issues; deployments.
 
 Verifier examples:
 
-- deployment image changed to expected digest;
-- rollout completed;
-- desired and available replicas match;
-- no new crash loops.
+- `github_pr_open_v1`
+- `github_branch_head_matches_commit_v1`
+- `github_check_suite_passed_v1`
+- `github_issue_state_changed_v1`
+- `github_review_approved_v1`
 
-### Terraform And Cloud
+### Phase 3: CI Providers
 
-Source of truth:
-
-- Terraform plan output;
-- Terraform state;
-- cloud resource API;
-- cloud audit logs.
+Initial target: GitHub Actions. Add later: Buildkite, CircleCI, GitLab CI.
 
 Verifier examples:
 
-- plan contains only approved changes;
-- state resource matches expected attributes;
-- cloud API confirms resource exists;
-- audit log shows principal and action.
+- `gha_workflow_run_completed_v1`
+- `gha_required_jobs_passed_v1`
+- `gha_artifact_present_v1`
+- `gha_test_report_no_failures_v1`
 
-### Ticketing
+### Phase 3: Package And Vulnerability Scanners
 
-Initial targets:
+Initial targets: OSV-Scanner, `cargo audit`, `npm audit`, Trivy. Verifiers:
 
-- Jira;
-- Linear;
-- ServiceNow;
-- GitHub Issues.
+- `scanner_vulnerability_absent_v1`
+- `scanner_lockfile_pinned_to_version_v1`
+- `scanner_sbom_artifact_present_v1`
 
-Verifier examples:
+### Later Phases (deferred)
 
-- ticket state changed;
-- linked PR exists;
-- incident tag added;
-- remediation note contains evidence packet link.
+- Kubernetes: `k8s_deployment_image_digest_v1`,
+  `k8s_rollout_completed_v1`, `k8s_replicas_match_v1`.
+- Terraform/Cloud: `tf_plan_only_approved_changes_v1`,
+  `tf_state_attribute_v1`, `cloud_resource_present_v1`,
+  `cloud_audit_principal_action_v1`.
+- Ticketing: `jira_ticket_state_v1`, `linear_ticket_state_v1`,
+  `servicenow_ticket_state_v1`, `github_issue_evidence_link_v1`.
 
 ## Connector Lifecycle
 
-1. Define connector spec.
-2. Implement read-only readback.
-3. Implement mutating capability, if needed.
-4. Implement verifier specs.
-5. Build happy path FSV.
-6. Build three edge-case FSV tests.
-7. Add redaction tests.
-8. Add SIEM/audit export mapping.
+Every new connector lands as a single PR that includes:
 
-## First Connector Set
+1. Connector spec doc (`docs/blackboxfix/connectors/<id>.md`).
+2. Read-only readback module (Rust) with typed errors.
+3. Mutating capability module (if any).
+4. Verifier specs in `crates/context-graph-cli/src/blackbox/verifiers/`.
+5. Happy-path FSV test against a real local fixture.
+6. Three edge-case FSV tests (missing target, wrong target, permission/schema
+   failure — see `06_fsv_verification_engine.md`).
+7. Redaction tests with synthetic secret-bearing inputs.
+8. SIEM/audit export mapping (Phase 8).
 
-For the first product demo, implement:
+A connector PR that lacks any of items 1–7 must not merge.
+
+## First Connector Set (Phase 2 + 3 demo)
+
+For the first product demo (`18_first_wedge_demo.md`):
 
 - local Git;
-- GitHub pull requests/checks/issues;
+- GitHub PRs / checks / issues;
 - local test command verifier;
-- OSV or package audit scanner;
-- JSONL evidence exporter.
+- OSV-Scanner / cargo audit;
+- JSONL evidence exporter (Phase 5).
 
-This creates a credible DevSecOps agent governance workflow with inspectable
+This produces a credible DevSecOps agent governance workflow with inspectable
 state and low connector sprawl.
 
+## FSV Of This Document
+
+Until Phase 2 lands, the only physically present connector is the ledger
+itself. After every connector is added, the operator must run:
+
+```bash
+context-graph blackbox connector list
+context-graph blackbox connector test --connector <id> --source <fixture>
+sqlite3 <ledger> 'SELECT record_kind, COUNT(*) FROM ledger_records GROUP BY 1;'
+```
+
+…and confirm the row counts match the test plan. Anything else is hearsay.

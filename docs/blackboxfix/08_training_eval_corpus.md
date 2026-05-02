@@ -1,23 +1,25 @@
 # Training And Eval Corpus
 
-BlackBoxFix should turn verified agent operations into high-quality training and
-eval data. The key is that each row includes the expected delta and the actual
-readback, not just a transcript.
+BlackBoxFix turns verified agent operations into high-quality training and
+eval data. The key is that each row includes the **expected delta** and the
+**actual readback**, not just a transcript.
 
-## Relationship To Existing Exporter
+This document is the contract for the **Phase 5** exporter
+(`blackbox export episodes`). It is not yet implemented; the existing
+DynamicJEPA exporter is the implementation pattern to copy.
 
-The existing DynamicJEPA bundle exporter already uses the right shape:
+## Reference Implementation Pattern
 
-- `state`;
-- `action`;
-- `expected_persisted_delta`;
-- `actual_readback`;
-- `verifier_status`;
-- `error_code`;
-- `remediation`.
+DynamicJEPA already ships an export pipeline with the same shape:
 
-BlackBoxFix generalizes that pattern from DynamicJEPA bundles to arbitrary agent
-runs and operational connectors.
+- Implementation: `crates/context-graph-cli/src/commands/export_dynamicjepa.rs`
+- FSV test: `crates/context-graph-cli/tests/dynamicjepa_bundle_export_fsv.rs`
+- CLI surface: `context-graph export dynamicjepa-episodes` (see
+  `crates/context-graph-cli/src/main.rs:158-161,204-207`).
+
+Phase 5 must mirror that pipeline: read the physical SQLite source of truth,
+re-parse every line of the JSONL after writing, hash the file, and write a
+manifest that points at the exact ledger sequence range exported.
 
 ## Episode Row Contract
 
@@ -31,7 +33,9 @@ runs and operational connectors.
     "run_id": "run_123",
     "step_id": "step_4",
     "tool_call_id": "tool_2",
-    "evidence_packet_id": "ev_..."
+    "evidence_packet_id": "ev_...",
+    "ledger_sequence_range": [42, 47],
+    "ledger_tip_sha256_at_export": "sha256:..."
   },
   "state": {
     "task": "upgrade vulnerable dependency",
@@ -55,9 +59,15 @@ runs and operational connectors.
 }
 ```
 
+Hashes (`source.ledger_tip_sha256_at_export`) are required so a verifier can
+prove the exporter saw the same physical state. If the ledger has been
+extended after export, the manifest's `ledger_tip_sha256_at_export` will not
+match the latest tip — that is intended; readers can still recompute the
+chain across the exported range and confirm it matches.
+
 ## Data Splits
 
-The exporter should support:
+The exporter must support these splits and never silently drop a category:
 
 - `passed`: correct actions.
 - `failed`: outcome mismatch examples.
@@ -65,20 +75,19 @@ The exporter should support:
 - `incident`: high-risk failure packets.
 - `edge_case`: manual FSV edge-case rows.
 
-Do not discard failures. Failures are high-value training data for tool-use
-planning, verifier-aware reasoning, and recovery.
+**Failures are the most valuable training data.** Do not discard them.
 
 ## Training Uses
 
 ### Process Supervision
 
 Train models to prefer actions that lead to verified state, not just plausible
-text. The model sees task state, action, expected delta, actual readback, and
+text. The model sees: task state, action, expected delta, actual readback,
 verifier result.
 
 ### Tool-Use Fine-Tuning
 
-Teach exact tool schema use, precondition checking, and remediation behavior.
+Teach exact tool schema use, precondition checking, and remediation.
 
 ### Eval Generation
 
@@ -97,10 +106,7 @@ Use failed and blocked episodes to train the next action:
 
 ```json
 {
-  "state": {
-    "verifier_status": "failed",
-    "error_code": "CI_REQUIRED_CHECK_FAILED"
-  },
+  "state": { "verifier_status": "failed", "error_code": "CI_REQUIRED_CHECK_FAILED" },
   "expected_next_action": {
     "tool_name": "ci_get_test_artifact",
     "reason": "inspect failing test before editing again"
@@ -110,36 +116,74 @@ Use failed and blocked episodes to train the next action:
 
 ## Export Modes
 
-- `episodes.jsonl`: main training/eval rows.
-- `manifest.json`: counts, hashes, source ledger ids, schema versions.
-- `evidence/`: optional redacted evidence packet files.
-- `evals/`: generated regression eval fixtures.
+| File | Purpose |
+|---|---|
+| `episodes.jsonl` | one episode per line, UTF-8, no trailing newline weirdness |
+| `manifest.json` | counts per split, sha256 of `episodes.jsonl`, source ledger ids, schema versions, exporter version, ledger tip hash |
+| `evidence/` | optional redacted evidence packet files (deterministic file names) |
+| `evals/` | generated regression eval fixtures |
 
-## Export Acceptance
+## Export Acceptance Rules
 
-The exporter must:
+The exporter MUST:
 
-- read from the physical ledger, not in-memory return values;
-- reject broken hash chains;
-- reject missing verifier results for mutating actions;
-- parse every JSONL row after writing;
-- hash the output file;
-- write a manifest;
-- verify the manifest points to the exact ledger range exported.
+1. Read from the physical ledger (`SELECT * FROM ledger_records ORDER BY
+   sequence`) — not in-memory return values.
+2. Reject broken hash chains (`BBX_HASH_CHAIN_BROKEN`) before writing any
+   row. This is the same `verify_ledger_integrity` sweep used by
+   `inspect ledger`.
+3. Reject missing verifier results for mutating actions (Phase 2+).
+4. Re-parse every JSONL row after writing (read back, deserialize, assert).
+5. Compute and store SHA-256 of `episodes.jsonl` in `manifest.json`.
+6. Record the exact `ledger_sequence` range covered.
+7. Refuse to overwrite an existing output directory unless `--force`.
 
 ## High-Value Dataset Types
 
-- agent action -> verifier result;
-- failed action -> remediation;
-- task -> required source-of-truth checks;
-- tool schema -> valid invocation;
-- policy context -> allowed or denied tool use;
-- before/after state -> expected delta;
-- incident packet -> root cause label.
+- agent action → verifier result;
+- failed action → remediation;
+- task → required source-of-truth checks;
+- tool schema → valid invocation;
+- policy context → allowed or denied tool use;
+- before/after state → expected delta;
+- incident packet → root cause label.
 
 ## Long-Term Moat
 
-A corpus of verified operational episodes is difficult to copy because it comes
-from real tool use, real source-of-truth readback, and real failures. This can
-become the data layer for agents that understand consequences.
+A corpus of verified operational episodes is hard to copy because it comes
+from real tool use, real source-of-truth readback, and real failures. This
+becomes the data layer for agents that understand consequences.
 
+## FSV Of The Phase 5 Exporter (target)
+
+Synthetic happy path:
+
+```bash
+ledger=/tmp/bbx-export.sqlite
+out=/tmp/bbx-export-out
+context-graph blackbox init --ledger "$ledger"
+# ... run + tool-calls produced via Phase 1 commands ...
+context-graph blackbox export episodes --ledger "$ledger" --out "$out"
+
+# Source of truth checks (must all pass)
+test -f "$out/episodes.jsonl"
+test -f "$out/manifest.json"
+jq -e '.episodes_total > 0 and .source_sha256 != ""' "$out/manifest.json"
+sha256sum "$out/episodes.jsonl" | awk '{print "sha256:" $1}' \
+  | diff - <(jq -r .source_sha256 "$out/manifest.json")
+# Re-parse each line; every line must be valid JSON with required fields:
+while IFS= read -r line; do
+  echo "$line" | jq -e '.episode_id and .verifier_status.status' >/dev/null
+done < "$out/episodes.jsonl"
+```
+
+Edge cases (must produce typed errors, no rows written):
+
+1. `--out` already exists without `--force` → exit 1, error `BBX_OUTPUT_EXISTS`.
+2. Ledger has a hash-chain break → exit 2, error `BBX_HASH_CHAIN_BROKEN`,
+   no manifest written.
+3. Mutating tool call missing a verifier result (Phase 2+) → exit 1, error
+   `BBX_VERIFIER_MISSING_FOR_MUTATING_ACTION`.
+
+Each edge case must have a corresponding test in
+`crates/context-graph-cli/tests/blackbox_phase5_export_fsv.rs` (to be created).

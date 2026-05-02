@@ -3,9 +3,9 @@
 ## Market Thesis
 
 Enterprises want agents for coding, operations, support, compliance, security,
-analytics, and back-office workflows. The blocker is not only model quality. The
-larger blocker is permission to let agents act in systems where mistakes create
-security, financial, compliance, or availability risk.
+analytics, and back-office workflows. The blocker is not only model quality.
+The larger blocker is **permission to let agents act in systems where mistakes
+create security, financial, compliance, or availability risk**.
 
 BlackBoxFix monetizes that blocker by making agent actions inspectable,
 verifiable, replayable, and exportable as training/eval data.
@@ -26,8 +26,8 @@ CISOs need evidence for:
 Regulated enterprises need durable audit evidence that maps to risk management
 and governance frameworks.
 
-Agent vendors need enterprise trust features to close deals: audit logs, policy
-controls, tenant isolation, redaction, and verifiable outcomes.
+Agent vendors need enterprise trust features to close deals: audit logs,
+policy controls, tenant isolation, redaction, and verifiable outcomes.
 
 ## Why This Can Be Profitable
 
@@ -41,14 +41,14 @@ The product sits near high-budget concerns:
 - incident response;
 - training data generation.
 
-The buyer can justify spend because the alternative is delaying agent rollout or
-allowing uncontrolled agents into expensive workflows.
+The buyer can justify spend because the alternative is delaying agent rollout
+or allowing uncontrolled agents into expensive workflows.
 
 ## Initial ICP
 
 Best first customers:
 
-- 200 to 5000 engineer companies adopting coding or DevOps agents;
+- 200–5,000 engineer companies adopting coding or DevOps agents;
 - regulated SaaS, fintech, healthcare, defense-adjacent, infrastructure, and
   cyber companies;
 - AI platform teams responsible for multiple internal agent projects;
@@ -59,17 +59,19 @@ hard to inspect. DevOps/SecOps workflows produce concrete evidence quickly.
 
 ## Competitive Landscape
 
-Adjacent categories:
+Adjacent categories and our claim against each:
 
-- LLM observability and prompt tracing;
-- AI gateway and policy enforcement;
-- runtime security and data loss prevention;
-- model eval platforms;
-- SIEM/SOAR;
-- audit logging and governance risk compliance tooling;
-- agent frameworks with built-in traces.
+| Category | Their claim | Our differentiating claim |
+|---|---|---|
+| LLM observability / prompt tracing | "We log everything" | We **verify** that the persisted outcome matches the expected delta |
+| AI gateway / policy enforcement | "We block bad calls" | We block AND prove what got through actually persisted correctly |
+| Runtime security / DLP | "We catch leaks" | We catch leaks AND show the source-of-truth state |
+| Model eval platforms | "We score model quality" | We turn real verified ops episodes into evals automatically |
+| SIEM / SOAR | "We aggregate alerts" | We emit incident packets with hash-chained evidence |
+| Audit logging | "We append events" | We append **and** independently read source of truth |
+| Agent frameworks with built-in traces | "Our framework logs itself" | We are framework-neutral, verify across systems |
 
-BlackBoxFix should integrate with these categories instead of copying them. The
+BlackBoxFix should integrate with these categories rather than copy them. The
 defensible product claim is verifiable outcome evidence plus training/eval
 corpus generation.
 
@@ -99,20 +101,33 @@ Platform buyer form:
 - dashboard and evidence export;
 - eval corpus generated from real runs.
 
-Example workflow:
+Example workflow (also detailed in `18_first_wedge_demo.md`):
 
 1. Agent remediates a dependency vulnerability.
 2. BlackBoxFix records the issue, plan, file edits, tests, PR, CI run, and
    scanner result.
-3. Verifiers read Git diff, lockfile, test output, CI status, scanner state, and
-   ticket state.
+3. Verifiers read Git diff, lockfile, test output, CI status, scanner state,
+   and ticket state.
 4. The platform exports episodes for future evals and regression tests.
 
 ## Packaging
 
-- Developer: local recorder, CLI, file/Git verifier, JSONL exporter.
-- Team: shared ledger, GitHub/CI/ticketing connectors, dashboards.
-- Enterprise: SSO, RBAC, tenant isolation, retention, SIEM export, private
-  deployment, custom connectors.
-- Vendor/OEM: SDK and embedded verification layer for agent products.
+| Tier | Surface |
+|---|---|
+| **Developer** | Local recorder (Phase 1 today), CLI, file/Git verifier (Phase 2), JSONL exporter (Phase 5) |
+| **Team** | Shared ledger, GitHub/CI/ticketing connectors, dashboards |
+| **Enterprise** | SSO, RBAC, tenant isolation, retention, SIEM export, private deployment, custom connectors |
+| **Vendor/OEM** | SDK and embedded verification layer for agent products |
 
+## Buyer Validation Checklist
+
+Before claiming a buyer is real, FSV the claim:
+
+1. The buyer named a specific workflow.
+2. The buyer named the source of truth for that workflow.
+3. The buyer can grant readback permission to that source of truth.
+4. The buyer has a budget owner for "agent governance".
+5. The buyer can describe the cost of an unverified agent action.
+
+If any of these is missing, the conversation is not yet a sales motion; it is
+discovery.

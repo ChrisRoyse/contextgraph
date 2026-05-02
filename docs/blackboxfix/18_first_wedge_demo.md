@@ -1,13 +1,18 @@
 # First Wedge Demo
 
-The first demo should prove the product in a workflow where the source of truth
-is concrete and the business value is obvious.
+The first demo proves the product in a workflow where the source of truth is
+concrete and the business value is obvious.
+
+This demo lands at the **end of Phase 3** (Git + GitHub + CI verifiers). Until
+then, demonstrate Phase 1 directly with the synthetic flow in
+`20_phase1_state_and_invariants.md` to show the recording / hash-chain /
+redaction primitives.
 
 ## Demo Thesis
 
 An AI agent remediates a dependency vulnerability. BlackBoxFix records every
-action, verifies the resulting state in Git, GitHub, CI, scanner output, and the
-ticketing system, then exports verified and failed episodes for evals.
+action, verifies the resulting state in Git, GitHub, CI, scanner output, and
+the ticketing system, then exports verified and failed episodes for evals.
 
 ## Workflow
 
@@ -23,12 +28,14 @@ ticketing system, then exports verified and failed episodes for evals.
 
 ## Sources Of Truth
 
-- Git local repository: file changes, commit, branch.
-- GitHub: PR, branch head, checks, issue link.
-- CI: workflow status, test artifact.
-- Scanner: vulnerability report.
-- Ticketing: issue status and evidence link.
-- Ledger: BlackBoxFix records and evidence packet hashes.
+| Layer | System | Read path |
+|---|---|---|
+| Git | local repository | `git log`, `git diff`, `git rev-parse`, `git status` |
+| GitHub | API | `GET /repos/.../pulls/N`, `GET /repos/.../check-suites` |
+| CI | GitHub Actions API | `GET /repos/.../actions/runs/M` |
+| Scanner | OSV-Scanner / `cargo audit` | scanner CLI output + lockfile read |
+| Ticketing | Jira/Linear/GitHub Issues API | issue state + linked PR |
+| Ledger | BlackBoxFix SQLite | `sqlite3 <ledger> "SELECT … FROM ledger_records …"` |
 
 ## Happy Path Expected Deltas
 
@@ -56,7 +63,7 @@ ticketing system, then exports verified and failed episodes for evals.
 
 ## Required Failure Demos
 
-### Failure 1: CI Fails
+### Failure 1 — CI Fails
 
 Expected:
 
@@ -66,7 +73,7 @@ Expected:
 - incident packet created;
 - episode exported with remediation.
 
-### Failure 2: Scanner Still Finds Vulnerability
+### Failure 2 — Scanner Still Finds Vulnerability
 
 Expected:
 
@@ -75,7 +82,7 @@ Expected:
 - scanner report stored as evidence;
 - ticket is not marked resolved.
 
-### Failure 3: Missing GitHub Permission
+### Failure 3 — Missing GitHub Permission
 
 Expected:
 
@@ -84,13 +91,53 @@ Expected:
 - no success claim;
 - remediation asks for required read scope.
 
-## Demo Commands
+## Demo Commands (Phase 1 today)
 
-Target CLI shape:
+The Phase 1 commands work end-to-end against synthetic input. Show this
+during early sales conversations to demonstrate the recorder and hash chain;
+swap to the full Phase 3 workflow once verifiers exist.
 
-```text
-context-graph blackbox init --ledger .blackbox/ledger
-context-graph blackbox record run --task "remediate CVE-2026-0001"
+```bash
+ledger=/tmp/bbx-demo.sqlite
+context-graph blackbox init --ledger "$ledger"
+RUN=$(context-graph blackbox record run \
+        --ledger "$ledger" \
+        --task "remediate CVE-2026-0001" \
+        --agent demo_agent \
+        --tenant tenant_demo \
+        --risk-tier high | jq -r .run_id)
+
+cat > /tmp/tool-input.json <<'JSON'
+{
+  "repo": "org/service",
+  "branch": "agent/fix-cve-2026-0001",
+  "title": "Fix CVE-2026-0001",
+  "github_token": "ghp_REPLACE_ME"
+}
+JSON
+
+context-graph blackbox record tool-call \
+  --ledger "$ledger" \
+  --run-id "$RUN" \
+  --tool github_create_pull_request \
+  --capability github.pull_request.write \
+  --input /tmp/tool-input.json
+
+context-graph blackbox inspect ledger --ledger "$ledger" --run-id "$RUN"
+
+# Source-of-truth proof:
+sqlite3 "$ledger" \
+  "SELECT sequence, record_kind, run_id, payload_sha256 FROM ledger_records;"
+sqlite3 "$ledger" \
+  "SELECT json_extract(redaction_json, '\$.redacted_fields') FROM ledger_records WHERE record_kind='tool_call';"
+# Must contain '$.github_token' — the redaction policy auto-detected the
+# secret-named field and replaced its value with [REDACTED:sha256:...].
+```
+
+## Demo Commands (Phase 3 target)
+
+```bash
+context-graph blackbox connector test --connector github_v1 --source org/service
 context-graph blackbox verify --run-id RUN
 context-graph blackbox replay --run-id RUN
 context-graph blackbox export evidence --run-id RUN --out evidence.json
@@ -114,3 +161,18 @@ context-graph blackbox export episodes --run-id RUN --out episodes.jsonl
 - The JSONL export includes passed, failed, and blocked examples.
 - A buyer can explain how this would unblock an internal agent pilot.
 
+## FSV Of The Demo
+
+Treat the demo itself as a verifier:
+
+1. Capture the SQLite snapshot before the demo (`sha256sum
+   "$ledger"` ⇒ pre-hash).
+2. Run the script.
+3. Capture the SQLite snapshot after (`sha256sum "$ledger"` ⇒ post-hash).
+4. Confirm `ledger_record_count` increased by exactly the expected amount.
+5. Confirm every `tool_call` row has `redaction_json.redacted_fields` covering
+   any sensitive-named field in the input.
+6. Confirm `inspect ledger` exit code is `0` and `integrity.status="passed"`.
+
+If any of these checks fails, do **not** show the demo to a buyer until the
+discrepancy is rooted out.
