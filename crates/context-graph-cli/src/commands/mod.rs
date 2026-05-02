@@ -12,6 +12,7 @@
 pub mod backfill_e14;
 pub mod divergence;
 pub mod dynamicjepa;
+pub mod export_dynamicjepa;
 pub mod export_training;
 pub mod hooks;
 pub mod learning;

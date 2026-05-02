@@ -136,9 +136,9 @@ enum Commands {
 
 /// `context-graph-cli export <sub>` targets.
 ///
-/// Phase 6 ships the `training-corpus` target (Parquet). Constellations and
-/// contrastive-pair targets are intentionally deferred per plan §8 and will
-/// be added in a later phase.
+/// Phase 6 shipped the `training-corpus` target (Parquet). The
+/// DynamicJEPA episode exporter turns verified bundles into JSONL process
+/// episodes for downstream model training and audit replay.
 #[derive(Subcommand)]
 enum ExportSubcommand {
     /// Export every row in `CF_TRAINING_RECORDS` to a Parquet file.
@@ -150,6 +150,9 @@ enum ExportSubcommand {
     /// Python via the `TRAINING_RECORD_VERSION` + bincode wire contract.
     #[command(name = "training-corpus")]
     TrainingCorpus(commands::export_training::ExportTrainingArgs),
+    /// Export DynamicJEPA bundle plan and edge-case evidence to JSONL.
+    #[command(name = "dynamicjepa-episodes")]
+    DynamicJepaEpisodes(commands::export_dynamicjepa::ExportDynamicJepaEpisodesArgs),
 }
 
 #[tokio::main]
@@ -192,6 +195,10 @@ pub async fn main() {
             ExportSubcommand::TrainingCorpus(args) => {
                 let result = commands::export_training::run(args).await;
                 commands::export_training::summary_to_exit_code(result)
+            }
+            ExportSubcommand::DynamicJepaEpisodes(args) => {
+                let result = commands::export_dynamicjepa::run(args).await;
+                commands::export_dynamicjepa::summary_to_exit_code(result)
             }
         },
         Commands::BackfillE14(args) => commands::backfill_e14::run(args).await,

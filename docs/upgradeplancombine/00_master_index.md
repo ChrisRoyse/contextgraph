@@ -79,7 +79,8 @@ research-paper view in roughly 1{,}000 lines.
 
 For an implementer starting Day 1: `27` is the literal runbook;
 `20` is the per-PR map; `21`–`26` are the per-area design + diff
-combinations referenced from each PR.
+combinations referenced from each PR; `28` documents the verified bundle
+episode exporter added after the v2 bundle became operational.
 
 ## Naming conventions
 
