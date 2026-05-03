@@ -1145,9 +1145,10 @@ fn connector_list() -> BbxResult<Value> {
                 "source_kind": "github",
                 "readback_specs": [
                     "github_pr_state_v1",
-                    "github_branch_head_matches_commit_v1",
-                    "github_check_suite_passed_v1",
-                    "github_issue_state_changed_v1"
+                "github_branch_head_matches_commit_v1",
+                "github_check_suite_passed_v1",
+                "github_issue_state_changed_v1",
+                "github_issue_evidence_link_v1"
                 ],
                 "fail_closed": true
             },
@@ -9900,6 +9901,18 @@ impl VerifySpec {
                         .unwrap_or_else(|| "unknown".to_string())
                 ),
             ),
+            "github_issue_evidence_link_v1" => github_source_of_truth_from_parts(
+                optional_str(&self.source, "owner").unwrap_or(""),
+                optional_str(&self.source, "repo").unwrap_or(""),
+                &format!(
+                    "issues/{}/evidence-link",
+                    self.expected
+                        .get("issue_number")
+                        .and_then(Value::as_u64)
+                        .map(|number| number.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+            ),
             "github_check_suite_passed_v1" => github_source_of_truth_from_parts(
                 optional_str(&self.source, "owner").unwrap_or(""),
                 optional_str(&self.source, "repo").unwrap_or(""),
@@ -9975,6 +9988,7 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
             verify_github_branch_head_matches_commit(spec).await
         }
         "github_issue_state_changed_v1" => verify_github_issue_state_changed(spec).await,
+        "github_issue_evidence_link_v1" => verify_github_issue_evidence_link(spec).await,
         "github_check_suite_passed_v1" => verify_github_check_suite_passed(spec).await,
         "gha_workflow_run_completed_v1" => verify_gha_workflow_run_completed(spec).await,
         "gitlab_pipeline_status_v1" => verify_gitlab_pipeline_status(spec).await,
@@ -10087,6 +10101,7 @@ struct GithubApiReadback {
     body: Value,
     body_sha256: String,
     rate_limit: Value,
+    pagination: Value,
     request_id: Option<String>,
     etag: Option<String>,
 }
@@ -11161,6 +11176,12 @@ fn github_rate_limit(headers: &HeaderMap) -> Value {
     })
 }
 
+fn github_pagination(headers: &HeaderMap) -> Value {
+    json!({
+        "link": github_header(headers, "link"),
+    })
+}
+
 fn github_error_message(body: &Value) -> String {
     body.get("message")
         .and_then(Value::as_str)
@@ -11266,6 +11287,7 @@ async fn github_get_json(
         })?
     };
     let rate_limit = github_rate_limit(&headers);
+    let pagination = github_pagination(&headers);
     let body_sha256 = sha256_hex(body_text.as_bytes());
     if (200..300).contains(&status) {
         return Ok(GithubApiReadback {
@@ -11274,6 +11296,7 @@ async fn github_get_json(
             body,
             body_sha256,
             rate_limit,
+            pagination,
             request_id,
             etag,
         });
@@ -11285,6 +11308,7 @@ async fn github_get_json(
             body,
             body_sha256,
             rate_limit,
+            pagination,
             request_id,
             etag,
         });
@@ -11348,6 +11372,7 @@ fn github_api_snapshot(response: &GithubApiReadback) -> Value {
         "request_id": response.request_id,
         "etag": response.etag,
         "rate_limit": response.rate_limit,
+        "pagination": response.pagination,
         "body_sha256": response.body_sha256,
         "body": response.body,
     })
@@ -11911,6 +11936,22 @@ fn github_issue_summary(body: &Value) -> Value {
     })
 }
 
+fn github_comment_summary(body: &Value) -> Result<Value, String> {
+    let id = body
+        .get("id")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "comment.id is required".to_string())?;
+    let html_url = body.get("html_url").and_then(Value::as_str).unwrap_or("");
+    let body_text = body.get("body").and_then(Value::as_str).unwrap_or("");
+    Ok(json!({
+        "id": id,
+        "html_url": html_url,
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+        "body_sha256": sha256_hex(body_text.as_bytes()),
+        "body_length": body_text.len(),
+    }))
+}
+
 fn github_commit_summary(body: &Value) -> Value {
     json!({
         "sha": body.get("sha").cloned().unwrap_or(Value::Null),
@@ -11977,6 +12018,152 @@ fn github_readback_payload(
             "observed": actual,
         }),
     )
+}
+
+fn github_readback_pages_payload(
+    verifier_id: &str,
+    connector: &'static str,
+    source: &str,
+    operation: &str,
+    responses: &[GithubApiReadback],
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        connector,
+        source,
+        operation,
+        json!({
+            "api_pages": responses.iter().map(github_api_snapshot).collect::<Vec<_>>(),
+            "observed": actual,
+        }),
+    )
+}
+
+fn github_link_rel_url(
+    response: &GithubApiReadback,
+    rel: &str,
+    source: &str,
+) -> BbxResult<Option<Url>> {
+    let Some(link_header) = response.pagination.get("link").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    if link_header.trim().is_empty() {
+        return Ok(None);
+    }
+    for entry in link_header.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        if !entry.starts_with('<') {
+            return Err(BlackboxError::connector_blocked(
+                "GITHUB_PAGINATION_INVALID",
+                GITHUB_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                format!("GitHub Link header entry {entry:?} did not start with '<'"),
+                "inspect GitHub pagination headers and rerun only after the connector can parse every page",
+            ));
+        }
+        let Some(end) = entry.find('>') else {
+            return Err(BlackboxError::connector_blocked(
+                "GITHUB_PAGINATION_INVALID",
+                GITHUB_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                format!("GitHub Link header entry {entry:?} did not contain a closing '>'"),
+                "inspect GitHub pagination headers and rerun only after the connector can parse every page",
+            ));
+        };
+        let link_url = &entry[1..end];
+        let mut rel_matches = false;
+        for param in entry[end + 1..].split(';') {
+            let trimmed = param.trim();
+            if let Some(value) = trimmed.strip_prefix("rel=") {
+                let value = value.trim_matches('"');
+                if value == rel {
+                    rel_matches = true;
+                }
+            }
+        }
+        if rel_matches {
+            return Url::parse(link_url).map(Some).map_err(|err| {
+                BlackboxError::connector_blocked(
+                    "GITHUB_PAGINATION_INVALID",
+                    GITHUB_CONNECTOR_ID,
+                    source.to_string(),
+                    "response.headers.link",
+                    format!("GitHub Link rel={rel:?} URL {link_url:?} was invalid: {err}"),
+                    "inspect GitHub pagination headers and rerun only after the connector can parse every page",
+                )
+            });
+        }
+    }
+    Ok(None)
+}
+
+fn github_validated_evidence_url(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<String, VerificationOutcome> {
+    let url = required_expected_string(
+        spec,
+        "evidence_url",
+        "$.expected.evidence_url",
+        GITHUB_CONNECTOR_ID,
+        source_hint,
+        false,
+    )?;
+    match Url::parse(&url) {
+        Ok(parsed)
+            if matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some() =>
+        {
+            Ok(url)
+        }
+        Ok(_) | Err(_) => Err(VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source_hint.to_string(),
+            "GITHUB_ISSUE_EVIDENCE_URL_INVALID",
+            "$.expected.evidence_url",
+            "github_issue_evidence_link_v1 requires an absolute http(s) evidence URL",
+            "set $.expected.evidence_url to the exact http(s) evidence link expected in the issue body or comments",
+            None,
+        )),
+    }
+}
+
+fn github_issue_evidence_scope(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<String, VerificationOutcome> {
+    match spec.expected.get("link_scope") {
+        None => Ok("body_or_comments".to_string()),
+        Some(Value::String(value))
+            if matches!(value.as_str(), "body" | "comments" | "body_or_comments") =>
+        {
+            Ok(value.clone())
+        }
+        Some(Value::String(value)) => Err(VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source_hint.to_string(),
+            "GITHUB_ISSUE_EVIDENCE_SCOPE_INVALID",
+            "$.expected.link_scope",
+            format!("unsupported GitHub issue evidence link scope {value:?}"),
+            "use one of body, comments, or body_or_comments",
+            None,
+        )),
+        Some(_) => Err(VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            "$.expected.link_scope",
+            "github_issue_evidence_link_v1 requires link_scope to be a JSON string when supplied",
+            "replace $.expected.link_scope with body, comments, or body_or_comments",
+            None,
+        )),
+    }
 }
 
 fn gitlab_project_from_spec(
@@ -13588,6 +13775,325 @@ async fn verify_github_issue_state_changed(spec: &VerifySpec) -> VerificationOut
             "actual_readback.state",
             "GitHub issue state did not match the expected state",
             "read the GitHub issue and update the expected delta or fix the issue state",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_github_issue_evidence_link(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = github_source_of_truth_from_parts(
+        optional_str(&spec.source, "owner").unwrap_or(""),
+        optional_str(&spec.source, "repo").unwrap_or(""),
+        "issues/unknown/evidence-link",
+    );
+    let (owner, repo) = match github_owner_repo_from_spec(spec, GITHUB_CONNECTOR_ID, &source_hint) {
+        Ok(parts) => parts,
+        Err(outcome) => return outcome,
+    };
+    let issue_number = match required_expected_u64(
+        spec,
+        "issue_number",
+        "$.expected.issue_number",
+        GITHUB_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(number) => number,
+        Err(outcome) => return outcome,
+    };
+    let source = github_source_of_truth(
+        &owner,
+        &repo,
+        &format!("issues/{issue_number}/evidence-link"),
+    );
+    let evidence_url = match github_validated_evidence_url(spec, &source) {
+        Ok(url) => url,
+        Err(outcome) => return outcome,
+    };
+    let link_scope = match github_issue_evidence_scope(spec, &source) {
+        Ok(scope) => scope,
+        Err(outcome) => return outcome,
+    };
+    let issue_url = github_api_url(
+        &["repos", &owner, &repo, "issues", &issue_number.to_string()],
+        &[],
+    );
+    let issue_response = match github_get_json(
+        GITHUB_CONNECTOR_ID,
+        issue_url,
+        &source,
+        "GET /repos/{owner}/{repo}/issues/{issue_number}",
+        &[404],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let mut responses = vec![issue_response];
+    if responses[0].status == 404 {
+        let actual = json!({
+            "issue_number": issue_number,
+            "exists": false,
+            "http_status": responses[0].status,
+            "message": github_error_message(&responses[0].body),
+            "evidence_url": evidence_url,
+            "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+            "link_scope": link_scope,
+            "evidence_link_present": false,
+            "matched_count": 0,
+            "matched_locations": [],
+        });
+        let readback = github_readback_pages_payload(
+            "github_issue_evidence_link_v1",
+            GITHUB_CONNECTOR_ID,
+            &source,
+            "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+            &responses,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitHub issue does not exist",
+            "verify the issue number or create the issue before claiming ticket evidence is linked",
+            readback,
+            actual,
+        );
+    }
+
+    let summary = github_issue_summary(&responses[0].body);
+    let is_pull_request = summary
+        .get("is_pull_request")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let issue_body = responses[0]
+        .body
+        .get("body")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let mut matched_locations = Vec::new();
+    if matches!(link_scope.as_str(), "body" | "body_or_comments")
+        && issue_body.contains(&evidence_url)
+    {
+        matched_locations.push(json!({
+            "location": "issue_body",
+            "issue_number": issue_number,
+            "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+            "body_sha256": sha256_hex(issue_body.as_bytes()),
+        }));
+    }
+
+    let mut comments = Vec::new();
+    let mut comment_pages_read = 0usize;
+    if matches!(link_scope.as_str(), "comments" | "body_or_comments") && !is_pull_request {
+        let mut next_url = Some(github_api_url(
+            &[
+                "repos",
+                &owner,
+                &repo,
+                "issues",
+                &issue_number.to_string(),
+                "comments",
+            ],
+            &[("per_page", "100".to_string()), ("page", "1".to_string())],
+        ));
+        while let Some(url) = next_url.take() {
+            let response = match github_get_json(
+                GITHUB_CONNECTOR_ID,
+                url,
+                &source,
+                "GET /repos/{owner}/{repo}/issues/{issue_number}/comments",
+                &[404],
+            )
+            .await
+            {
+                Ok(response) => response,
+                Err(err) => return connector_error_to_outcome(err),
+            };
+            responses.push(response);
+            let response = responses
+                .last()
+                .expect("response was just pushed into responses");
+            if response.status == 404 {
+                let actual = json!({
+                    "issue_number": issue_number,
+                    "exists": true,
+                    "comments_exists": false,
+                    "http_status": response.status,
+                    "message": github_error_message(&response.body),
+                    "evidence_url": evidence_url,
+                    "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+                    "link_scope": link_scope,
+                    "evidence_link_present": false,
+                    "matched_count": matched_locations.len(),
+                    "matched_locations": matched_locations,
+                });
+                let readback = github_readback_pages_payload(
+                    "github_issue_evidence_link_v1",
+                    GITHUB_CONNECTOR_ID,
+                    &source,
+                    "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+                    &responses,
+                    &actual,
+                );
+                return VerificationOutcome::failed(
+                    GITHUB_CONNECTOR_ID,
+                    source,
+                    "GITHUB_ISSUE_COMMENTS_NOT_FOUND",
+                    "actual_readback.comments_exists",
+                    "GitHub issue comments endpoint was not found",
+                    "verify the issue number and repository before claiming evidence was linked in comments",
+                    readback,
+                    actual,
+                );
+            }
+            let Some(items) = response.body.as_array() else {
+                let actual = json!({
+                    "issue_number": issue_number,
+                    "exists": true,
+                    "schema_error": "GitHub issue comments response body was not a JSON array",
+                    "evidence_url": evidence_url,
+                    "link_scope": link_scope,
+                });
+                let readback = github_readback_pages_payload(
+                    "github_issue_evidence_link_v1",
+                    GITHUB_CONNECTOR_ID,
+                    &source,
+                    "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+                    &responses,
+                    &actual,
+                );
+                return VerificationOutcome::blocked(
+                    GITHUB_CONNECTOR_ID,
+                    source,
+                    "READBACK_SCHEMA_DRIFT",
+                    "response.body",
+                    "GitHub issue comments endpoint returned a success body that was not a JSON array",
+                    "inspect the response and update the connector only if GitHub changed the issue comments API contract",
+                    Some(readback),
+                );
+            };
+            comment_pages_read += 1;
+            for (index, comment) in items.iter().enumerate() {
+                let summary = match github_comment_summary(comment) {
+                    Ok(summary) => summary,
+                    Err(err) => {
+                        let actual = json!({
+                            "issue_number": issue_number,
+                            "exists": true,
+                            "schema_error": format!("comments[{index}]: {err}"),
+                            "evidence_url": evidence_url,
+                            "link_scope": link_scope,
+                        });
+                        let readback = github_readback_pages_payload(
+                            "github_issue_evidence_link_v1",
+                            GITHUB_CONNECTOR_ID,
+                            &source,
+                            "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+                            &responses,
+                            &actual,
+                        );
+                        return VerificationOutcome::blocked(
+                            GITHUB_CONNECTOR_ID,
+                            source,
+                            "READBACK_SCHEMA_DRIFT",
+                            format!("response.body[{index}]"),
+                            "GitHub issue comment did not match the expected schema",
+                            "inspect the response and update the connector only if GitHub changed the issue comments API contract",
+                            Some(readback),
+                        );
+                    }
+                };
+                let body = comment.get("body").and_then(Value::as_str).unwrap_or("");
+                if body.contains(&evidence_url) {
+                    matched_locations.push(json!({
+                        "location": "issue_comment",
+                        "issue_number": issue_number,
+                        "comment_id": summary.get("id").cloned().unwrap_or(Value::Null),
+                        "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+                        "body_sha256": summary.get("body_sha256").cloned().unwrap_or(Value::Null),
+                    }));
+                }
+                comments.push(summary);
+            }
+            next_url = match github_link_rel_url(response, "next", &source) {
+                Ok(next) => next,
+                Err(err) => return connector_error_to_outcome(err),
+            };
+            if next_url.is_none() && items.len() == 100 {
+                return connector_error_to_outcome(BlackboxError::connector_blocked(
+                    "GITHUB_PAGINATION_INCOMPLETE",
+                    GITHUB_CONNECTOR_ID,
+                    source,
+                    "response.headers.link",
+                    "GitHub returned a full issue-comments page without a rel=\"next\" link",
+                    "rerun after GitHub provides complete pagination headers; do not claim verification success from a possibly partial comment list",
+                ));
+            }
+        }
+    }
+
+    let actual = json!({
+        "issue_number": issue_number,
+        "exists": true,
+        "http_status": responses[0].status,
+        "state": summary.get("state").cloned().unwrap_or(Value::Null),
+        "state_reason": summary.get("state_reason").cloned().unwrap_or(Value::Null),
+        "is_pull_request": is_pull_request,
+        "title": summary.get("title").cloned().unwrap_or(Value::Null),
+        "html_url": summary.get("html_url").cloned().unwrap_or(Value::Null),
+        "updated_at": summary.get("updated_at").cloned().unwrap_or(Value::Null),
+        "issue_body_sha256": sha256_hex(issue_body.as_bytes()),
+        "issue_body_length": issue_body.len(),
+        "comments_scanned": matches!(link_scope.as_str(), "comments" | "body_or_comments") && !is_pull_request,
+        "comment_pages_read": comment_pages_read,
+        "comments_total": comments.len(),
+        "comments": comments,
+        "evidence_url": evidence_url,
+        "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+        "link_scope": link_scope,
+        "evidence_link_present": !matched_locations.is_empty(),
+        "matched_count": matched_locations.len(),
+        "matched_locations": matched_locations,
+    });
+    let readback = github_readback_pages_payload(
+        "github_issue_evidence_link_v1",
+        GITHUB_CONNECTOR_ID,
+        &source,
+        "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+        &responses,
+        &actual,
+    );
+    if is_pull_request {
+        return VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_IS_PULL_REQUEST",
+            "actual_readback.is_pull_request",
+            "GitHub issue endpoint returned a pull request, not an issue",
+            "use GitHub pull request verifiers for PRs or provide a real ticket issue number",
+            readback,
+            actual,
+        );
+    }
+    if actual
+        .get("evidence_link_present")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        VerificationOutcome::passed(GITHUB_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "GITHUB_ISSUE_EVIDENCE_LINK_NOT_FOUND",
+            "actual_readback.matched_locations",
+            "GitHub issue did not contain the expected evidence link in the configured scope",
+            "update the issue body/comment with the exact evidence URL before claiming the ticket was linked",
             readback,
             actual,
         )
