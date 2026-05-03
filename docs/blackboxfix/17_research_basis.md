@@ -19,6 +19,22 @@ Design implication:
 - Phase 14 release gates turn measured scorecard/evidence/privacy state into
   an explicit governed promote/block decision instead of leaving readiness as
   an informal dashboard interpretation.
+- Phase 16 risk assessments turn remaining product/security uncertainty into
+  an explicit Govern/Map/Measure/Manage artifact backed by ledger evidence and
+  owner/date-bound decisions.
+
+### NIST SP 800-30 Risk Assessments
+
+Reference: <https://csrc.nist.gov/pubs/sp/800/30/r1/final>
+
+Design implication:
+
+- risk assessment output must support a decision about what action to take in
+  response to identified risks;
+- Phase 16 persists accepted and blocked risk postures as ledger rows instead
+  of leaving them as prose, and includes required owner, rationale, evidence,
+  review trigger, severity, and due-date fields for each open-question
+  decision.
 
 ### NIST Secure Software Development Framework
 
@@ -34,6 +50,10 @@ Design implication:
 - Phase 15 applies the same archive-and-provenance pattern to buyer proof:
   package files are hashed in a manifest and tied back to source ledger refs
   instead of being free-floating collateral.
+- Phase 16 uses the same root-cause prevention pattern for risk management:
+  invalid decisions, missing pilot evidence, unresolved incidents, and
+  runtime durability drift block readiness with typed errors or durable
+  blocked assessments.
 
 ### OWASP Top 10 For LLM And GenAI Applications
 
@@ -67,6 +87,10 @@ Design implication:
   `export-audit` authorization attempts before creating any export files, so
   allowed and denied export attempts are both inspectable in the append-only
   ledger.
+- Phase 16 applies the logging guidance to risk posture: denied risk reviews,
+  invalid decision registers, secret-like decision text, and blocked readiness
+  checks surface typed errors with source-of-truth, field path, and
+  remediation; no fallback assessment is synthesized.
 
 ### MITRE ATLAS
 
@@ -85,7 +109,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 15);
+  after Phase 16);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 - Phase 15 package usage dimensions intentionally avoid per-event UUID-style
@@ -407,6 +431,33 @@ Design implication:
   hashes in `readback_snapshot`, and treats missing files, schema drift, and
   malformed JSON as typed verifier failures/blocks instead of falling back to
   scanner process return values.
+
+### Authenticated HTTP API Serving
+
+References:
+
+- <https://owasp.org/API-Security/editions/2023/en/0x11-t10/>
+- <https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html>
+- <https://docs.rs/axum/latest/axum/>
+- <https://csrc.nist.gov/pubs/sp/800/218/final>
+
+Design implication:
+
+- API endpoints must perform authentication and tenant authorization at the
+  endpoint boundary; tenant-scoped dashboard reads cannot reuse a global
+  dashboard response without filtering physical rows first;
+- request bodies need explicit resource limits and strict JSON schemas because
+  unrestricted resource consumption and mass-assignment-style input are common
+  API failure modes;
+- management-style endpoints should default to loopback/private exposure and
+  require explicit operator evidence before remote binds;
+- errors should be typed and operationally useful without returning stack
+  traces or raw secrets to clients;
+- security-relevant events, including token validation failures, need durable
+  audit rows so an operator can inspect the source of truth after the event;
+- Rust HTTP serving should use a maintained routing/extractor framework over
+  Tokio rather than a hand-rolled parser, keeping the ledger-specific logic in
+  existing recorder functions.
 
 ## Internal Project References
 

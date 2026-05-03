@@ -13,14 +13,14 @@ implementation.
 | File integrity | `manifest.json.files[]` sha256 and byte counts matched against physical file bytes |
 
 Phase 7 did not bump `LEDGER_SCHEMA_VERSION`. The current live ledger schema
-is `LEDGER_SCHEMA_VERSION = 9` after Phase 15. Dashboard artifacts use
+is `LEDGER_SCHEMA_VERSION = 11` after Phase 17. Dashboard artifacts use
 `dashboard_schema_version = 1`.
 
 ## Shipped Commands
 
 ```text
 blackbox dashboard build --ledger PATH --out DIR [--force]
-blackbox dashboard api --ledger PATH --view summary|runs|timeline|evidence|verifiers|errors|exports|pilot-packages [--run-id RUN_ID]
+blackbox dashboard api --ledger PATH --view summary|runs|timeline|evidence|verifiers|errors|exports|pilot-packages|risk-assessments [--run-id RUN_ID]
 ```
 
 `dashboard build` writes:
@@ -35,6 +35,7 @@ api/verifier-status.json
 api/errors.json
 api/exports.json
 api/pilot-packages.json
+api/risk-assessments.json
 api/timeline_<run_id>.json
 ```
 

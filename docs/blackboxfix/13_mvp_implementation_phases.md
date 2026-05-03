@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 15,
-fresh ledgers initialize at schema version 9.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 17,
+fresh ledgers initialize at schema version 11.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-15, fresh ledgers initialize at schema version 9.
+17, fresh ledgers initialize at schema version 11.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-15, fresh ledgers initialize at schema version 9.
+17, fresh ledgers initialize at schema version 11.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -792,6 +792,100 @@ readback.
 
 Phase 15 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 9` for
 `pilot_package`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
+
+## Phase 16: Risks And Open Questions Closure — DONE (2026-05-03)
+
+Deliverables (all shipped):
+
+- `blackbox risk evaluate --ledger PATH --tenant TENANT
+  --principal-id PRINCIPAL --decisions DECISIONS_JSON --agent AGENT
+  [--model MODEL]`;
+- connector `blackbox_risk_v1`;
+- ledger record kind `risk_assessment`;
+- dashboard risk readback file `api/risk-assessments.json`;
+- dashboard summary count `risk_assessments_total` and risk error grouping;
+- required decision-register schema for the five Phase 16 open-question ids:
+  `next_hosted_ci_connector`, `paid_pilot_dashboard_minimum`,
+  `raw_model_text_storage_default`, `customer_managed_key_path`, and
+  `eval_export_format_after_jsonl`.
+
+Exit criteria (verified):
+
+- a risk review cannot pass from prose alone; the required decision-register
+  JSON must contain exactly one closed, future-reviewed, owner/rationale/
+  evidence-backed entry for every required id;
+- authorized evaluations persist one `enterprise_access_decision`, inspect the
+  real SQLite ledger/runtime state, append one `risk_assessment`, and read it
+  back by id/hash/sequence;
+- missing pilot evidence, unresolved incident-to-eval conversion, runtime
+  durability drift, secret-like payload findings, failed/blocked verifiers,
+  denied policies, missing enterprise controls, or open decisions block
+  readiness with durable `decision.status=blocked`;
+- unauthorized principals persist only a denied access decision and create no
+  `risk_assessment` row;
+- invalid decision registers fail before authorization and create no rows;
+- the dashboard exposes physical risk rows through
+  `api/risk-assessments.json`.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase16_risk_register_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. Coverage includes blocked pre-package risk
+posture, accepted risk posture after a passed pilot package exists,
+unauthorized principal, invalid decision register, connector readback,
+dashboard/API readback, and direct SQLite proof.
+
+Phase 16 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 10` for
+`risk_assessment`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
+
+## Phase 17: Authenticated HTTP Server — DONE (2026-05-03)
+
+Deliverables:
+
+- `blackbox server serve --ledger PATH --bind 127.0.0.1:7607`;
+- required `Authorization: Bearer <BLACKBOX_API_KEY>` authentication for all
+  protected endpoints;
+- required `X-Blackbox-Tenant` tenant scope and request/body tenant matching;
+- loopback bind by default, with non-loopback binds refused unless
+  `--allow-remote-bind --tls-terminated-by NAME` is explicitly provided;
+- single in-process writer lock around ledger mutation and HTTP audit append;
+- served endpoints for run creation/readback, step creation, tool-call
+  creation, and tenant-scoped dashboard read models;
+- bounded 64 KiB request bodies and strict JSON schemas with unknown-field
+  rejection;
+- durable `http_request_audit` rows for success, authentication failure,
+  tenant mismatch, schema failure, and body-limit failure.
+
+Exit criteria (verified):
+
+- HTTP-created runs persist as real `agent_run` rows with
+  `runtime.framework="http_server"`;
+- every protected request creates a physical `http_request_audit` row;
+- tenant-scoped dashboard responses do not expose other tenants' rows;
+- invalid API keys, tenant/header mismatches, and oversized bodies fail closed
+  with typed HTTP JSON errors and no business row;
+- source-of-truth proof reads `ledger_records` directly after each trigger.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase17_http_server_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. Coverage starts a real server process, sends real
+HTTP requests with `reqwest`, then opens SQLite directly to prove persisted
+`agent_run`, `agent_step`, `tool_call`, and `http_request_audit` rows. Edge
+cases cover invalid auth, tenant mismatch, and oversized request bodies.
+
+Phase 17 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 11` for
+`http_request_audit`. The physical table shape is unchanged, but older
 schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
 

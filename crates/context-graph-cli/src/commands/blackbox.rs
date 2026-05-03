@@ -7,22 +7,37 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
+use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
+use axum::extract::{DefaultBodyLimit, Path as AxumPath, State};
+use axum::http::header::{
+    AUTHORIZATION as AXUM_AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS,
+};
+use axum::http::{HeaderMap as AxumHeaderMap, HeaderValue as AxumHeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use chrono::{NaiveDate, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, RETRY_AFTER, USER_AGENT};
+use reqwest::header::{
+    HeaderMap as ReqwestHeaderMap, HeaderValue as ReqwestHeaderValue, ACCEPT,
+    AUTHORIZATION as REQWEST_AUTHORIZATION, RETRY_AFTER, USER_AGENT,
+};
 use reqwest::{Client, Url};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 9;
+const LEDGER_SCHEMA_VERSION: i64 = 11;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -39,6 +54,8 @@ const SCORING_CONNECTOR_ID: &str = "blackbox_scoring_v1";
 const PRIVACY_CONNECTOR_ID: &str = "blackbox_privacy_v1";
 const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
 const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
+const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
+const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -52,9 +69,25 @@ const SCORECARD_SCHEMA_VERSION: i64 = 1;
 const PRIVACY_SCHEMA_VERSION: i64 = 1;
 const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
 const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
+const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
+const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
+const HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
+const HTTP_API_KEY_MIN_CHARS: usize = 32;
+const HTTP_DEFAULT_API_KEY_ENV: &str = "BLACKBOX_API_KEY";
+const HTTP_TENANT_HEADER: &str = "x-blackbox-tenant";
+const HTTP_REQUEST_ID_HEADER: &str = "x-request-id";
+const HTTP_AUDIT_TENANT_ID: &str = "tenant_http_gateway";
 const SCORE_RULE_VERSION: &str = "score_v1";
 const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
 const PILOT_PACKAGE_RULE_VERSION: &str = "pilot_package_v1";
+const RISK_ASSESSMENT_RULE_VERSION: &str = "risk_register_v1";
+const REQUIRED_RISK_DECISION_IDS: [&str; 5] = [
+    "next_hosted_ci_connector",
+    "paid_pilot_dashboard_minimum",
+    "raw_model_text_storage_default",
+    "customer_managed_key_path",
+    "eval_export_format_after_jsonl",
+];
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -103,6 +136,11 @@ pub enum BlackboxCommands {
         #[command(subcommand)]
         action: ApiCommands,
     },
+    /// Run the Phase 17 authenticated HTTP server over one local ledger.
+    Server {
+        #[command(subcommand)]
+        action: ServerCommands,
+    },
     /// Verify a tool call against local source-of-truth systems.
     Verify(VerifyArgs),
     /// Reconstruct a run timeline from immutable ledger records without mutation.
@@ -141,6 +179,11 @@ pub enum BlackboxCommands {
     Package {
         #[command(subcommand)]
         action: PackageCommands,
+    },
+    /// Evaluate Phase 16 risks and open-question closure against ledger evidence.
+    Risk {
+        #[command(subcommand)]
+        action: RiskCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -222,6 +265,35 @@ pub struct RecordRunArgs {
     /// Risk tier.
     #[arg(long, default_value = "medium")]
     pub risk_tier: String,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ServerCommands {
+    /// Serve authenticated JSON HTTP endpoints backed by the append-only ledger.
+    Serve(ServerServeArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ServerServeArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Socket address to bind. Phase 17 refuses non-loopback binds unless explicitly allowed.
+    #[arg(long, default_value = "127.0.0.1:7607")]
+    pub bind: SocketAddr,
+
+    /// Environment variable containing the API key. The key is never accepted as a CLI argument.
+    #[arg(long, default_value = HTTP_DEFAULT_API_KEY_ENV)]
+    pub api_key_env: String,
+
+    /// Permit binding to a non-loopback address when TLS/auth termination is handled outside this process.
+    #[arg(long)]
+    pub allow_remote_bind: bool,
+
+    /// Required description of the trusted TLS terminator when --allow-remote-bind is used.
+    #[arg(long, requires = "allow_remote_bind")]
+    pub tls_terminated_by: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -566,6 +638,7 @@ pub enum DashboardView {
     Errors,
     Exports,
     PilotPackages,
+    RiskAssessments,
 }
 
 #[derive(Subcommand, Debug)]
@@ -712,6 +785,12 @@ pub enum GateCommands {
 pub enum PackageCommands {
     /// Build and persist a buyer-facing pilot report and usage package.
     PilotReport(PackagePilotReportArgs),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RiskCommands {
+    /// Persist a risk/open-question assessment for pilot readiness.
+    Evaluate(RiskEvaluateArgs),
 }
 
 #[derive(Args, Debug)]
@@ -901,6 +980,33 @@ pub struct PackagePilotReportArgs {
     pub model: Option<String>,
 }
 
+#[derive(Args, Debug)]
+pub struct RiskEvaluateArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id governed by the latest enterprise configuration.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Principal id that must have risk.review permission through SCIM/RBAC.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// JSON file closing required Phase 16 open questions.
+    #[arg(long)]
+    pub decisions: PathBuf,
+
+    /// Agent or operator identity evaluating the risk register.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
 impl DashboardView {
     fn as_str(self) -> &'static str {
         match self {
@@ -912,6 +1018,7 @@ impl DashboardView {
             Self::Errors => "errors",
             Self::Exports => "exports",
             Self::PilotPackages => "pilot-packages",
+            Self::RiskAssessments => "risk-assessments",
         }
     }
 }
@@ -1290,6 +1397,7 @@ type BbxResult<T> = Result<T, BlackboxError>;
 pub async fn handle_blackbox_command(command: BlackboxCommands) -> i32 {
     match command {
         BlackboxCommands::Mcp { action } => return handle_mcp_command(action).await,
+        BlackboxCommands::Server { action } => return handle_server_command(action).await,
         other => return handle_blackbox_json_command(other).await,
     }
 }
@@ -1337,6 +1445,10 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Api { action } => match action {
             ApiCommands::Surface(args) => api_surface(args),
         },
+        BlackboxCommands::Server { action: _ } => Err(BlackboxError::invalid(
+            "HTTP server commands must be handled through the server path",
+            "report this as a bug; handle_blackbox_command should intercept server commands",
+        )),
         BlackboxCommands::Verify(args) => verify_local(args).await,
         BlackboxCommands::Replay(args) => replay_run(args),
         BlackboxCommands::Export { action } => match action {
@@ -1366,10 +1478,1274 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Package { action } => match action {
             PackageCommands::PilotReport(args) => package_pilot_report(args),
         },
+        BlackboxCommands::Risk { action } => match action {
+            RiskCommands::Evaluate(args) => risk_evaluate(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
     }
+}
+
+async fn handle_server_command(action: ServerCommands) -> i32 {
+    let result = match action {
+        ServerCommands::Serve(args) => serve_http(args).await,
+    };
+    match result {
+        Ok(()) => 0,
+        Err(err) => {
+            eprintln!(
+                "{}",
+                serde_json::to_string_pretty(&err.to_json()).expect("JSON error serializes")
+            );
+            err.exit_code()
+        }
+    }
+}
+
+#[derive(Clone)]
+struct HttpServerState {
+    ledger: PathBuf,
+    api_key_sha256: String,
+    write_lock: Arc<tokio::sync::Mutex<()>>,
+    bind: SocketAddr,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRecordRunRequest {
+    tenant: String,
+    task: String,
+    agent: String,
+    model: Option<String>,
+    task_kind: String,
+    risk_tier: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRecordStepRequest {
+    tenant: String,
+    summary: String,
+    step_kind: String,
+    agent: String,
+    model: Option<String>,
+    context: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HttpRecordToolCallRequest {
+    tenant: String,
+    run_id: String,
+    tool: String,
+    input: Value,
+    agent: String,
+    model: Option<String>,
+    capability: String,
+    status: String,
+    external_request_id: Option<String>,
+}
+
+struct HttpRequestContext {
+    request_id: String,
+    tenant: String,
+}
+
+struct HttpAuditInput<'a> {
+    request_id: &'a str,
+    tenant: &'a str,
+    method: &'a str,
+    path: &'a str,
+    route_id: &'a str,
+    status_code: u16,
+    outcome: &'a str,
+    error_code: Option<&'a str>,
+    request_body_sha256: Option<&'a str>,
+    response_body_sha256: &'a str,
+    started_at: &'a str,
+    finished_at: &'a str,
+    bind: SocketAddr,
+}
+
+async fn serve_http(args: ServerServeArgs) -> BbxResult<()> {
+    validate_ledger_path(&args.ledger)?;
+    validate_http_bind(&args)?;
+    validate_http_api_key_env_name(&args.api_key_env)?;
+    let api_key = load_http_api_key(&args.api_key_env)?;
+    let api_key_sha256 = sha256_hex(api_key.as_bytes());
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    verify_ledger_integrity(&conn, &args.ledger)?;
+    drop(conn);
+
+    let listener = tokio::net::TcpListener::bind(args.bind)
+        .await
+        .map_err(|err| {
+            BlackboxError::new_with_connector(
+                ErrorKind::Io,
+                "HTTP_SERVER_BIND_FAILED",
+                format!("failed to bind HTTP server to {}: {err}", args.bind),
+                Some(format!("tcp:{}", args.bind)),
+                HTTP_SERVER_CONNECTOR_ID,
+                Some("--bind".to_string()),
+                "choose an available loopback socket address or stop the process currently using that port",
+            )
+        })?;
+    let local_addr = listener.local_addr().map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::Io,
+            "HTTP_SERVER_BIND_INSPECT_FAILED",
+            format!("failed to inspect bound HTTP server socket: {err}"),
+            Some(format!("tcp:{}", args.bind)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("--bind".to_string()),
+            "inspect local socket permissions and retry",
+        )
+    })?;
+
+    let state = HttpServerState {
+        ledger: args.ledger.clone(),
+        api_key_sha256,
+        write_lock: Arc::new(tokio::sync::Mutex::new(())),
+        bind: local_addr,
+    };
+    let app = http_router(state).layer(DefaultBodyLimit::max(HTTP_MAX_BODY_BYTES));
+    eprintln!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "status": "ok",
+            "command": "blackbox server serve",
+            "source_of_truth": source_of_truth(&args.ledger),
+            "connector": HTTP_SERVER_CONNECTOR_ID,
+            "bind": local_addr.to_string(),
+            "protected_routes_require": ["Authorization: Bearer <api-key>", "X-Blackbox-Tenant"],
+            "max_body_bytes": HTTP_MAX_BODY_BYTES,
+            "audit_record_kind": "http_request_audit",
+            "fail_closed": true,
+        }))
+        .expect("server startup JSON serializes")
+    );
+
+    axum::serve(listener, app).await.map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::Io,
+            "HTTP_SERVER_RUNTIME_FAILED",
+            format!("HTTP server stopped with an error: {err}"),
+            Some(format!("tcp:{local_addr}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("axum::serve".to_string()),
+            "inspect stderr logs and restart the server after fixing the socket/runtime failure",
+        )
+    })
+}
+
+fn http_router(state: HttpServerState) -> Router {
+    Router::new()
+        .route("/v1/health", get(http_health))
+        .route("/v1/runs", post(http_record_run))
+        .route("/v1/runs/{run_id}", get(http_get_run))
+        .route("/v1/runs/{run_id}/steps", post(http_record_step))
+        .route("/v1/tool-calls", post(http_record_tool_call))
+        .route("/v1/dashboard/summary", get(http_dashboard_summary))
+        .route("/v1/dashboard/runs", get(http_dashboard_runs))
+        .route(
+            "/v1/dashboard/runs/{run_id}/timeline",
+            get(http_dashboard_timeline),
+        )
+        .route("/v1/dashboard/evidence", get(http_dashboard_evidence))
+        .route(
+            "/v1/dashboard/verifier-status",
+            get(http_dashboard_verifiers),
+        )
+        .route("/v1/dashboard/errors", get(http_dashboard_errors))
+        .route("/v1/dashboard/exports", get(http_dashboard_exports))
+        .route(
+            "/v1/dashboard/pilot-packages",
+            get(http_dashboard_pilot_packages),
+        )
+        .route(
+            "/v1/dashboard/risk-assessments",
+            get(http_dashboard_risk_assessments),
+        )
+        .with_state(state)
+}
+
+async fn http_health(State(state): State<HttpServerState>) -> Response {
+    let request_id = prefixed_id("http_req");
+    let started_at = Utc::now().to_rfc3339();
+    let result = (|| -> BbxResult<Value> {
+        let conn = open_initialized_ledger(&state.ledger)?;
+        let inspection = verify_ledger_integrity(&conn, &state.ledger)?;
+        Ok(json!({
+            "status": "ok",
+            "request_id": request_id,
+            "connector": HTTP_SERVER_CONNECTOR_ID,
+            "source_of_truth": source_of_truth(&state.ledger),
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "record_count": inspection.record_count,
+            "ledger_tip_sha256": inspection.ledger_tip_sha256,
+            "started_at": started_at,
+        }))
+    })();
+    match result {
+        Ok(value) => http_json_response(StatusCode::OK, value),
+        Err(err) => http_error_response(http_status_for_error(&err), &request_id, err, None, None),
+    }
+}
+
+async fn http_record_run(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let route_id = "POST /v1/runs";
+    let path = "/v1/runs";
+    let method = "POST";
+    let started_at = Utc::now().to_rfc3339();
+    let request_id = http_request_id(&headers);
+    let result = async {
+        let (ctx, request, body_hash) = parse_authenticated_json::<HttpRecordRunRequest>(
+            &state,
+            &headers,
+            body,
+            path,
+            &request_id,
+        )?;
+        require_body_tenant_matches_header(
+            &state.ledger,
+            &ctx.tenant,
+            &request.tenant,
+            "$.tenant",
+        )?;
+        let _guard = state.write_lock.lock().await;
+        let output = record_run_from_parts(
+            &state.ledger,
+            &request.task,
+            &request.agent,
+            &request.tenant,
+            request.model.as_deref(),
+            &request.task_kind,
+            &request.risk_tier,
+            "http_server",
+        )?;
+        append_success_audit(
+            &state,
+            &ctx,
+            method,
+            path,
+            route_id,
+            Some(&body_hash),
+            &started_at,
+            &output,
+        )?;
+        Ok::<Value, BlackboxError>(output)
+    }
+    .await;
+    http_finish_response(
+        &state,
+        route_id,
+        method,
+        path,
+        &request_id,
+        &started_at,
+        result,
+    )
+    .await
+}
+
+async fn http_record_step(
+    State(state): State<HttpServerState>,
+    AxumPath(run_id): AxumPath<String>,
+    headers: AxumHeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let route_id = "POST /v1/runs/{run_id}/steps";
+    let path = format!("/v1/runs/{run_id}/steps");
+    let method = "POST";
+    let started_at = Utc::now().to_rfc3339();
+    let request_id = http_request_id(&headers);
+    let result = async {
+        let (ctx, request, body_hash) = parse_authenticated_json::<HttpRecordStepRequest>(
+            &state,
+            &headers,
+            body,
+            &path,
+            &request_id,
+        )?;
+        require_body_tenant_matches_header(
+            &state.ledger,
+            &ctx.tenant,
+            &request.tenant,
+            "$.tenant",
+        )?;
+        let _guard = state.write_lock.lock().await;
+        let output = record_agent_step_from_parts(
+            &state.ledger,
+            &run_id,
+            &request.step_kind,
+            &request.summary,
+            &request.tenant,
+            &request.agent,
+            request.model.as_deref(),
+            request.context.unwrap_or_else(|| json!({})),
+        )?;
+        append_success_audit(
+            &state,
+            &ctx,
+            method,
+            &path,
+            route_id,
+            Some(&body_hash),
+            &started_at,
+            &output,
+        )?;
+        Ok::<Value, BlackboxError>(output)
+    }
+    .await;
+    http_finish_response(
+        &state,
+        route_id,
+        method,
+        &path,
+        &request_id,
+        &started_at,
+        result,
+    )
+    .await
+}
+
+async fn http_record_tool_call(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let route_id = "POST /v1/tool-calls";
+    let path = "/v1/tool-calls";
+    let method = "POST";
+    let started_at = Utc::now().to_rfc3339();
+    let request_id = http_request_id(&headers);
+    let result = async {
+        let (ctx, request, body_hash) = parse_authenticated_json::<HttpRecordToolCallRequest>(
+            &state,
+            &headers,
+            body,
+            path,
+            &request_id,
+        )?;
+        require_body_tenant_matches_header(
+            &state.ledger,
+            &ctx.tenant,
+            &request.tenant,
+            "$.tenant",
+        )?;
+        let status = parse_http_tool_status(&state.ledger, &request.status)?;
+        let _guard = state.write_lock.lock().await;
+        let output = record_tool_call_from_value(
+            &state.ledger,
+            &request.run_id,
+            &request.tool,
+            &request.input,
+            &request.tenant,
+            &request.agent,
+            request.model.as_deref(),
+            &request.capability,
+            status,
+            request.external_request_id.as_deref(),
+            json!({
+                "policy_decision_id": null,
+                "mode": "http_server",
+                "approved_by": null,
+            }),
+            None,
+        )?;
+        append_success_audit(
+            &state,
+            &ctx,
+            method,
+            path,
+            route_id,
+            Some(&body_hash),
+            &started_at,
+            &output,
+        )?;
+        Ok::<Value, BlackboxError>(output)
+    }
+    .await;
+    http_finish_response(
+        &state,
+        route_id,
+        method,
+        path,
+        &request_id,
+        &started_at,
+        result,
+    )
+    .await
+}
+
+async fn http_get_run(
+    State(state): State<HttpServerState>,
+    AxumPath(run_id): AxumPath<String>,
+    headers: AxumHeaderMap,
+) -> Response {
+    let route_id = "GET /v1/runs/{run_id}";
+    let path = format!("/v1/runs/{run_id}");
+    let method = "GET";
+    let started_at = Utc::now().to_rfc3339();
+    let request_id = http_request_id(&headers);
+    let result = async {
+        let ctx = authenticate_http_request(&state, &headers, &request_id)?;
+        let _guard = state.write_lock.lock().await;
+        let output = get_http_run(&state.ledger, &ctx.tenant, &run_id)?;
+        append_success_audit(
+            &state,
+            &ctx,
+            method,
+            &path,
+            route_id,
+            None,
+            &started_at,
+            &output,
+        )?;
+        Ok::<Value, BlackboxError>(output)
+    }
+    .await;
+    http_finish_response(
+        &state,
+        route_id,
+        method,
+        &path,
+        &request_id,
+        &started_at,
+        result,
+    )
+    .await
+}
+
+async fn http_dashboard_summary(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/summary",
+        "/v1/dashboard/summary".to_string(),
+        DashboardView::Summary,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_runs(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/runs",
+        "/v1/dashboard/runs".to_string(),
+        DashboardView::Runs,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_timeline(
+    State(state): State<HttpServerState>,
+    AxumPath(run_id): AxumPath<String>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/runs/{run_id}/timeline",
+        format!("/v1/dashboard/runs/{run_id}/timeline"),
+        DashboardView::Timeline,
+        Some(run_id),
+    )
+    .await
+}
+
+async fn http_dashboard_evidence(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/evidence",
+        "/v1/dashboard/evidence".to_string(),
+        DashboardView::Evidence,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_verifiers(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/verifier-status",
+        "/v1/dashboard/verifier-status".to_string(),
+        DashboardView::Verifiers,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_errors(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/errors",
+        "/v1/dashboard/errors".to_string(),
+        DashboardView::Errors,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_exports(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/exports",
+        "/v1/dashboard/exports".to_string(),
+        DashboardView::Exports,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_pilot_packages(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/pilot-packages",
+        "/v1/dashboard/pilot-packages".to_string(),
+        DashboardView::PilotPackages,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_risk_assessments(
+    State(state): State<HttpServerState>,
+    headers: AxumHeaderMap,
+) -> Response {
+    http_dashboard_response(
+        state,
+        headers,
+        "GET /v1/dashboard/risk-assessments",
+        "/v1/dashboard/risk-assessments".to_string(),
+        DashboardView::RiskAssessments,
+        None,
+    )
+    .await
+}
+
+async fn http_dashboard_response(
+    state: HttpServerState,
+    headers: AxumHeaderMap,
+    route_id: &'static str,
+    path: String,
+    view: DashboardView,
+    run_id: Option<String>,
+) -> Response {
+    let method = "GET";
+    let started_at = Utc::now().to_rfc3339();
+    let request_id = http_request_id(&headers);
+    let result = async {
+        let ctx = authenticate_http_request(&state, &headers, &request_id)?;
+        let _guard = state.write_lock.lock().await;
+        let output = dashboard_api_for_tenant(&state.ledger, view, run_id.as_deref(), &ctx.tenant)?;
+        append_success_audit(
+            &state,
+            &ctx,
+            method,
+            &path,
+            route_id,
+            None,
+            &started_at,
+            &output,
+        )?;
+        Ok::<Value, BlackboxError>(output)
+    }
+    .await;
+    http_finish_response(
+        &state,
+        route_id,
+        method,
+        &path,
+        &request_id,
+        &started_at,
+        result,
+    )
+    .await
+}
+
+async fn http_finish_response(
+    state: &HttpServerState,
+    route_id: &'static str,
+    method: &'static str,
+    path: &str,
+    request_id: &str,
+    started_at: &str,
+    result: BbxResult<Value>,
+) -> Response {
+    match result {
+        Ok(value) => http_json_response(StatusCode::OK, value),
+        Err(err) => {
+            let status = http_status_for_error(&err);
+            let response_value = http_error_body(request_id, &err, None);
+            let response_hash = match http_response_hash(&response_value) {
+                Ok(hash) => hash,
+                Err(hash_err) => {
+                    return http_error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        request_id,
+                        hash_err,
+                        None,
+                        None,
+                    );
+                }
+            };
+            let finished_at = Utc::now().to_rfc3339();
+            let audit = {
+                let _guard = state.write_lock.lock().await;
+                append_http_request_audit(
+                    &state.ledger,
+                    HttpAuditInput {
+                        request_id,
+                        tenant: HTTP_AUDIT_TENANT_ID,
+                        method,
+                        path,
+                        route_id,
+                        status_code: status.as_u16(),
+                        outcome: "error",
+                        error_code: Some(err.error_code),
+                        request_body_sha256: None,
+                        response_body_sha256: &response_hash,
+                        started_at,
+                        finished_at: &finished_at,
+                        bind: state.bind,
+                    },
+                )
+            };
+            match audit {
+                Ok(_audit) => http_error_response(status, request_id, err, None, None),
+                Err(audit_err) => http_error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    request_id,
+                    audit_err,
+                    None,
+                    None,
+                ),
+            }
+        }
+    }
+}
+
+fn append_success_audit(
+    state: &HttpServerState,
+    ctx: &HttpRequestContext,
+    method: &str,
+    path: &str,
+    route_id: &'static str,
+    request_body_sha256: Option<&str>,
+    started_at: &str,
+    response: &Value,
+) -> BbxResult<()> {
+    let response_body_sha256 = http_response_hash(response)?;
+    let finished_at = Utc::now().to_rfc3339();
+    append_http_request_audit(
+        &state.ledger,
+        HttpAuditInput {
+            request_id: &ctx.request_id,
+            tenant: &ctx.tenant,
+            method,
+            path,
+            route_id,
+            status_code: StatusCode::OK.as_u16(),
+            outcome: "ok",
+            error_code: None,
+            request_body_sha256,
+            response_body_sha256: &response_body_sha256,
+            started_at,
+            finished_at: &finished_at,
+            bind: state.bind,
+        },
+    )
+}
+
+fn append_http_request_audit(ledger: &Path, input: HttpAuditInput<'_>) -> BbxResult<()> {
+    require_non_empty_for_ledger(ledger, "http.request_id", input.request_id)?;
+    require_non_empty_for_ledger(ledger, "http.tenant", input.tenant)?;
+    let mut conn = open_initialized_ledger(ledger)?;
+    let payload = json!({
+        "record_kind": "http_request_audit",
+        "http_request_audit_id": prefixed_id("http_audit"),
+        "http_request_audit_schema_version": HTTP_REQUEST_AUDIT_SCHEMA_VERSION,
+        "request": {
+            "request_id": input.request_id,
+            "method": input.method,
+            "path": input.path,
+            "route_id": input.route_id,
+            "tenant_id": input.tenant,
+            "started_at": input.started_at,
+            "finished_at": input.finished_at,
+            "body_sha256": input.request_body_sha256,
+        },
+        "response": {
+            "status_code": input.status_code,
+            "outcome": input.outcome,
+            "error_code": input.error_code,
+            "body_sha256": input.response_body_sha256,
+        },
+        "server": {
+            "connector": HTTP_SERVER_CONNECTOR_ID,
+            "bind": input.bind.to_string(),
+            "max_body_bytes": HTTP_MAX_BODY_BYTES,
+            "api_key_storage": "environment_variable_hash_in_memory",
+            "single_writer_lock": true,
+        },
+    });
+    append_record(
+        &mut conn,
+        ledger,
+        NewRecord {
+            record_id: prefixed_id("bbx_rec"),
+            record_kind: "http_request_audit".to_string(),
+            tenant_id: input.tenant.to_string(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json("blackbox_http_server", None),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    Ok(())
+}
+
+fn parse_authenticated_json<T: DeserializeOwned>(
+    state: &HttpServerState,
+    headers: &AxumHeaderMap,
+    body: Result<Bytes, BytesRejection>,
+    path: &str,
+    request_id: &str,
+) -> BbxResult<(HttpRequestContext, T, String)> {
+    require_json_content_type(&state.ledger, headers)?;
+    let ctx = authenticate_http_request(state, headers, request_id)?;
+    let bytes = body.map_err(|err| {
+        let message = err.to_string();
+        let lower = message.to_ascii_lowercase();
+        let error_code = if lower.contains("length") || lower.contains("limit") {
+            "HTTP_BODY_TOO_LARGE"
+        } else {
+            "HTTP_BODY_READ_FAILED"
+        };
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            error_code,
+            format!("failed to read bounded HTTP request body: {message}"),
+            Some(format!("http:{path}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("request.body".to_string()),
+            format!("send a valid JSON body no larger than {HTTP_MAX_BODY_BYTES} bytes"),
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_JSON_REQUIRED",
+            "HTTP request body is empty",
+            Some(format!("http:{path}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("request.body".to_string()),
+            "send an application/json object body matching the endpoint schema",
+        ));
+    }
+    let value: Value = serde_json::from_slice(&bytes).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_JSON_INVALID",
+            format!("HTTP request body is not valid JSON: {err}"),
+            Some(format!("http:{path}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("$".to_string()),
+            "fix the JSON body and retry",
+        )
+    })?;
+    if !value.is_object() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_JSON_OBJECT_REQUIRED",
+            "HTTP request JSON body must be an object",
+            Some(format!("http:{path}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("$".to_string()),
+            "send a JSON object so unknown fields and tenant identity can be validated",
+        ));
+    }
+    let body_hash = sha256_hex(&canonical_json_bytes(&value)?);
+    let parsed = serde_json::from_value(value).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_REQUEST_SCHEMA_INVALID",
+            format!("HTTP request body does not match endpoint schema: {err}"),
+            Some(format!("http:{path}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("$".to_string()),
+            "send only the documented fields with the required string/object value types",
+        )
+    })?;
+    Ok((ctx, parsed, body_hash))
+}
+
+fn authenticate_http_request(
+    state: &HttpServerState,
+    headers: &AxumHeaderMap,
+    fallback_request_id: &str,
+) -> BbxResult<HttpRequestContext> {
+    let request_id = fallback_request_id.to_string();
+    let auth = headers
+        .get(AXUM_AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| http_auth_error("HTTP_AUTH_MISSING", "Authorization header is required"))?;
+    let Some(api_key) = auth.strip_prefix("Bearer ") else {
+        return Err(http_auth_error(
+            "HTTP_AUTH_SCHEME_INVALID",
+            "Authorization header must use the Bearer scheme",
+        ));
+    };
+    if api_key.trim() != api_key || api_key.len() < HTTP_API_KEY_MIN_CHARS {
+        return Err(http_auth_error(
+            "HTTP_AUTH_INVALID",
+            "API key is malformed or too short",
+        ));
+    }
+    let provided = sha256_hex(api_key.as_bytes());
+    if !constant_time_eq(provided.as_bytes(), state.api_key_sha256.as_bytes()) {
+        return Err(http_auth_error("HTTP_AUTH_INVALID", "API key was rejected"));
+    }
+    let tenant = http_required_header(headers, HTTP_TENANT_HEADER, "HTTP_TENANT_HEADER_MISSING")?;
+    require_non_empty_for_ledger(&state.ledger, HTTP_TENANT_HEADER, &tenant)?;
+    Ok(HttpRequestContext { request_id, tenant })
+}
+
+fn http_auth_error(error_code: &'static str, message: &'static str) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::ConnectorBlocked,
+        error_code,
+        message,
+        Some("http:Authorization".to_string()),
+        HTTP_SERVER_CONNECTOR_ID,
+        Some("headers.authorization".to_string()),
+        "send Authorization: Bearer <BLACKBOX_API_KEY> with the configured API key",
+    )
+}
+
+fn http_required_header(
+    headers: &AxumHeaderMap,
+    name: &'static str,
+    error_code: &'static str,
+) -> BbxResult<String> {
+    let value = headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                error_code,
+                format!("{name} header is required"),
+                Some(format!("http:{name}")),
+                HTTP_SERVER_CONNECTOR_ID,
+                Some(format!("headers.{name}")),
+                format!(
+                    "send the {name} header with the tenant id authorized for the request body"
+                ),
+            )
+        })?;
+    if value.len() > 128 || !value.chars().all(is_safe_http_header_char) {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_HEADER_INVALID",
+            format!("{name} header contains unsupported characters or exceeds 128 characters"),
+            Some(format!("http:{name}")),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some(format!("headers.{name}")),
+            "use printable tenant/request identifiers without control characters",
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn http_request_id(headers: &AxumHeaderMap) -> String {
+    headers
+        .get(HTTP_REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 128 && value.chars().all(is_safe_http_header_char)
+        })
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| prefixed_id("http_req"))
+}
+
+fn is_safe_http_header_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/' | '@')
+}
+
+fn require_json_content_type(ledger: &Path, headers: &AxumHeaderMap) -> BbxResult<()> {
+    let Some(content_type) = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    else {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_CONTENT_TYPE_REQUIRED",
+            "Content-Type header is required for JSON request bodies",
+            Some(source_of_truth(ledger)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("headers.content-type".to_string()),
+            "send Content-Type: application/json",
+        ));
+    };
+    if !content_type
+        .split(';')
+        .next()
+        .map(str::trim)
+        .map(|value| value.eq_ignore_ascii_case("application/json"))
+        .unwrap_or(false)
+    {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_CONTENT_TYPE_INVALID",
+            format!("Content-Type must be application/json, found {content_type:?}"),
+            Some(source_of_truth(ledger)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("headers.content-type".to_string()),
+            "send Content-Type: application/json",
+        ));
+    }
+    Ok(())
+}
+
+fn require_body_tenant_matches_header(
+    ledger: &Path,
+    header_tenant: &str,
+    body_tenant: &str,
+    field_path: &'static str,
+) -> BbxResult<()> {
+    require_non_empty_for_ledger(ledger, field_path, body_tenant)?;
+    if header_tenant != body_tenant {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::TenantMismatch,
+            "HTTP_TENANT_MISMATCH",
+            format!("request tenant header {header_tenant:?} does not match body tenant {body_tenant:?}"),
+            Some(source_of_truth(ledger)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some(field_path.to_string()),
+            "send the same tenant id in X-Blackbox-Tenant and the JSON body",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_http_tool_status(ledger: &Path, status: &str) -> BbxResult<ToolExecutionStatus> {
+    match status {
+        "ok" => Ok(ToolExecutionStatus::Ok),
+        "failed" => Ok(ToolExecutionStatus::Failed),
+        "blocked" => Ok(ToolExecutionStatus::Blocked),
+        other => Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_REQUEST_SCHEMA_INVALID",
+            format!("tool-call status must be ok, failed, or blocked; found {other:?}"),
+            Some(source_of_truth(ledger)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("$.status".to_string()),
+            "send status as one of ok, failed, or blocked",
+        )),
+    }
+}
+
+fn get_http_run(ledger: &Path, tenant: &str, run_id: &str) -> BbxResult<Value> {
+    require_non_empty_for_ledger(ledger, "--run-id", run_id)?;
+    let conn = open_initialized_ledger(ledger)?;
+    let inspection = verify_ledger_integrity(&conn, ledger)?;
+    let records = inspection
+        .records
+        .into_iter()
+        .filter(|record| record.tenant_id == tenant)
+        .filter(|record| record.run_id.as_deref() == Some(run_id))
+        .collect::<Vec<_>>();
+    if !records
+        .iter()
+        .any(|record| record.record_kind == "agent_run")
+    {
+        return Err(BlackboxError::not_found(
+            ledger,
+            format!("run_id {run_id} does not exist for tenant {tenant}"),
+        ));
+    }
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox http get-run",
+        "source_of_truth": source_of_truth(ledger),
+        "tenant_id": tenant,
+        "run_id": run_id,
+        "records": records,
+    }))
+}
+
+fn dashboard_api_for_tenant(
+    ledger: &Path,
+    view: DashboardView,
+    run_id: Option<&str>,
+    tenant: &str,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    require_non_empty_for_ledger(ledger, HTTP_TENANT_HEADER, tenant)?;
+    if let Some(run_id) = run_id {
+        require_non_empty_for_ledger(ledger, "--run-id", run_id)?;
+    }
+
+    let conn = open_initialized_ledger(ledger)?;
+    let inspection = verify_ledger_integrity(&conn, ledger)?;
+    let scoped = tenant_scoped_inspection(inspection, tenant);
+    let ledger_id = get_metadata(&conn, ledger, "ledger_id")?.unwrap_or_default();
+    let data = build_dashboard_data(ledger, &scoped, &ledger_id)?;
+    let output_view = match view {
+        DashboardView::Summary => data.summary,
+        DashboardView::Runs => data.runs,
+        DashboardView::Evidence => data.evidence,
+        DashboardView::Verifiers => data.verifiers,
+        DashboardView::Errors => data.errors,
+        DashboardView::Exports => data.exports,
+        DashboardView::PilotPackages => data.packages,
+        DashboardView::RiskAssessments => data.risk_assessments,
+        DashboardView::Timeline => {
+            let run_id = run_id.ok_or_else(|| {
+                BlackboxError::new_with_connector(
+                    ErrorKind::InvalidInput,
+                    "DASHBOARD_RUN_ID_REQUIRED",
+                    "dashboard timeline API requires run_id",
+                    Some(source_of_truth(ledger)),
+                    HTTP_SERVER_CONNECTOR_ID,
+                    Some("path.run_id".to_string()),
+                    "provide the run_id path segment",
+                )
+            })?;
+            data.timelines
+                .into_iter()
+                .find(|(candidate, _, _)| candidate == run_id)
+                .map(|(_, _, timeline)| timeline)
+                .ok_or_else(|| {
+                    BlackboxError::not_found(
+                        ledger,
+                        format!(
+                            "run_id {run_id} does not exist in tenant-scoped dashboard timelines"
+                        ),
+                    )
+                })?
+        }
+    };
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox http dashboard api",
+        "view": view.as_str(),
+        "tenant_id": tenant,
+        "source_of_truth": source_of_truth(ledger),
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": data.generated_at,
+        "data": output_view,
+    }))
+}
+
+fn tenant_scoped_inspection(mut inspection: LedgerInspection, tenant: &str) -> LedgerInspection {
+    inspection
+        .records
+        .retain(|record| record.tenant_id == tenant);
+    inspection.record_count = inspection.records.len() as i64;
+    inspection
+}
+
+fn validate_http_bind(args: &ServerServeArgs) -> BbxResult<()> {
+    let is_loopback = match args.bind.ip() {
+        IpAddr::V4(ip) => ip.is_loopback(),
+        IpAddr::V6(ip) => ip.is_loopback(),
+    };
+    if is_loopback {
+        return Ok(());
+    }
+    if !args.allow_remote_bind {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "HTTP_REMOTE_BIND_REFUSED",
+            format!("refusing to bind Phase 17 HTTP server to non-loopback address {}", args.bind),
+            Some(format!("tcp:{}", args.bind)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("--bind".to_string()),
+            "bind to 127.0.0.1/::1 or pass --allow-remote-bind with --tls-terminated-by after configuring a trusted TLS terminator and firewall",
+        ));
+    }
+    let terminator = args.tls_terminated_by.as_deref().unwrap_or("");
+    if terminator.trim().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_TLS_TERMINATOR_REQUIRED",
+            "--allow-remote-bind requires --tls-terminated-by",
+            Some(format!("tcp:{}", args.bind)),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("--tls-terminated-by".to_string()),
+            "name the trusted TLS terminator/proxy enforcing HTTPS before exposing this listener remotely",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_http_api_key_env_name(name: &str) -> BbxResult<()> {
+    if name.trim().is_empty()
+        || name.trim() != name
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+    {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "HTTP_API_KEY_ENV_INVALID",
+            "API key environment variable name must be a non-empty uppercase env var identifier",
+            Some("process:environment".to_string()),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some("--api-key-env".to_string()),
+            "use an uppercase environment variable such as BLACKBOX_API_KEY",
+        ));
+    }
+    Ok(())
+}
+
+fn load_http_api_key(env_name: &str) -> BbxResult<String> {
+    let value = std::env::var(env_name).map_err(|_| {
+        BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "HTTP_API_KEY_MISSING",
+            format!("{env_name} is not set"),
+            Some("process:environment".to_string()),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some(format!("env.{env_name}")),
+            "set a high-entropy API key in the configured environment variable before starting the HTTP server",
+        )
+    })?;
+    if value.trim() != value || value.len() < HTTP_API_KEY_MIN_CHARS {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "HTTP_API_KEY_INVALID",
+            format!("{env_name} must contain at least {HTTP_API_KEY_MIN_CHARS} non-whitespace characters"),
+            Some("process:environment".to_string()),
+            HTTP_SERVER_CONNECTOR_ID,
+            Some(format!("env.{env_name}")),
+            "replace the API key with a high-entropy secret and restart the server",
+        ));
+    }
+    Ok(value)
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut diff = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        let a = left.get(index).copied().unwrap_or(0);
+        let b = right.get(index).copied().unwrap_or(0);
+        diff |= (a ^ b) as usize;
+    }
+    diff == 0
+}
+
+fn http_status_for_error(err: &BlackboxError) -> StatusCode {
+    match err.error_code {
+        "HTTP_AUTH_MISSING" | "HTTP_AUTH_SCHEME_INVALID" | "HTTP_AUTH_INVALID" => {
+            StatusCode::UNAUTHORIZED
+        }
+        "HTTP_BODY_TOO_LARGE" => StatusCode::PAYLOAD_TOO_LARGE,
+        "HTTP_REMOTE_BIND_REFUSED" => StatusCode::FORBIDDEN,
+        _ => match err.kind {
+            ErrorKind::InvalidInput | ErrorKind::TenantMismatch | ErrorKind::Redaction => {
+                StatusCode::BAD_REQUEST
+            }
+            ErrorKind::NotFound | ErrorKind::LedgerMissing => StatusCode::NOT_FOUND,
+            ErrorKind::ConnectorBlocked => StatusCode::FORBIDDEN,
+            ErrorKind::HashChain | ErrorKind::Schema => StatusCode::CONFLICT,
+            ErrorKind::Io | ErrorKind::Sqlite | ErrorKind::VerifierFailed => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        },
+    }
+}
+
+fn http_json_response(status: StatusCode, body: Value) -> Response {
+    let mut response = (status, Json(body)).into_response();
+    let headers = response.headers_mut();
+    headers.insert(CACHE_CONTROL, AxumHeaderValue::from_static("no-store"));
+    headers.insert(
+        X_CONTENT_TYPE_OPTIONS,
+        AxumHeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+fn http_error_body(request_id: &str, err: &BlackboxError, audit_sequence: Option<i64>) -> Value {
+    let mut body = err.to_json();
+    if let Some(object) = body.as_object_mut() {
+        object.insert(
+            "request_id".to_string(),
+            Value::String(request_id.to_string()),
+        );
+        object.insert(
+            "audit_sequence".to_string(),
+            audit_sequence.map(Value::from).unwrap_or(Value::Null),
+        );
+        object.insert("audit_record_sha256".to_string(), Value::Null);
+    }
+    body
+}
+
+fn http_error_response(
+    status: StatusCode,
+    request_id: &str,
+    err: BlackboxError,
+    audit_sequence: Option<i64>,
+    audit_record_sha256: Option<&str>,
+) -> Response {
+    let mut body = http_error_body(request_id, &err, audit_sequence);
+    if let Some(object) = body.as_object_mut() {
+        object.insert(
+            "audit_record_sha256".to_string(),
+            audit_record_sha256
+                .map(|value| Value::String(value.to_string()))
+                .unwrap_or(Value::Null),
+        );
+    }
+    http_json_response(status, body)
+}
+
+fn http_response_hash(value: &Value) -> BbxResult<String> {
+    canonical_json_bytes(value).map(|bytes| sha256_hex(&bytes))
 }
 
 fn connector_list() -> BbxResult<Value> {
@@ -1476,6 +2852,24 @@ fn connector_list() -> BbxResult<Value> {
                 "readback_specs": [
                     "blackbox_pilot_package_v1",
                     "blackbox_usage_meter_events_jsonl_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": RISK_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_risk_register",
+                "readback_specs": [
+                    "blackbox_risk_assessment_v1",
+                    "blackbox_open_question_decisions_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": HTTP_SERVER_CONNECTOR_ID,
+                "source_kind": "authenticated_http_single_writer",
+                "readback_specs": [
+                    "http_request_audit_v1",
+                    "tenant_scoped_dashboard_v1"
                 ],
                 "fail_closed": true
             }
@@ -1769,6 +3163,57 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 },
             }))
         }
+        RISK_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    RISK_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_risk_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": RISK_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "risk_assessment_records_total": inspection.records.iter().filter(|record| record.record_kind == "risk_assessment").count(),
+                },
+            }))
+        }
+        HTTP_SERVER_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    HTTP_SERVER_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_http_server_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": HTTP_SERVER_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "http_request_audit_records_total": inspection.records.iter().filter(|record| record.record_kind == "http_request_audit").count(),
+                    "http_server_bind_is_runtime_state": true,
+                },
+            }))
+        }
         other => Err(BlackboxError::connector_blocked(
             "CONNECTOR_UNKNOWN",
             SQLITE_CONNECTOR_ID,
@@ -1813,27 +3258,51 @@ fn init_ledger(args: InitArgs) -> BbxResult<Value> {
 }
 
 fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
-    validate_ledger_path(&args.ledger)?;
-    require_non_empty_for_ledger(&args.ledger, "--task", &args.task)?;
-    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
-    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
-    require_non_empty_for_ledger(&args.ledger, "--task-kind", &args.task_kind)?;
-    validate_risk_tier(&args.ledger, &args.risk_tier)?;
+    record_run_from_parts(
+        &args.ledger,
+        &args.task,
+        &args.agent,
+        &args.tenant,
+        args.model.as_deref(),
+        &args.task_kind,
+        &args.risk_tier,
+        "cli",
+    )
+}
 
-    let mut conn = open_initialized_ledger(&args.ledger)?;
+#[allow(clippy::too_many_arguments)]
+fn record_run_from_parts(
+    ledger: &Path,
+    task: &str,
+    agent: &str,
+    tenant: &str,
+    model: Option<&str>,
+    task_kind: &str,
+    risk_tier: &str,
+    runtime_framework: &str,
+) -> BbxResult<Value> {
+    validate_ledger_path(ledger)?;
+    require_non_empty_for_ledger(ledger, "--task", task)?;
+    require_non_empty_for_ledger(ledger, "--agent", agent)?;
+    require_non_empty_for_ledger(ledger, "--tenant", tenant)?;
+    require_non_empty_for_ledger(ledger, "--task-kind", task_kind)?;
+    require_non_empty_for_ledger(ledger, "runtime.framework", runtime_framework)?;
+    validate_risk_tier(ledger, risk_tier)?;
+
+    let mut conn = open_initialized_ledger(ledger)?;
     let run_id = prefixed_id("run");
     let record_id = prefixed_id("bbx_rec");
-    let actor = actor_json(&args.agent, args.model.as_deref());
+    let actor = actor_json(agent, model);
     let payload = json!({
         "record_kind": "agent_run",
         "run_id": run_id,
         "task": {
-            "task_kind": args.task_kind,
-            "requested_outcome": args.task,
-            "risk_tier": args.risk_tier,
+            "task_kind": task_kind,
+            "requested_outcome": task,
+            "risk_tier": risk_tier,
         },
         "runtime": {
-            "framework": "cli",
+            "framework": runtime_framework,
             "adapter_version": env!("CARGO_PKG_VERSION"),
         },
         "status": "running",
@@ -1849,11 +3318,11 @@ fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
 
     let append = append_record(
         &mut conn,
-        &args.ledger,
+        ledger,
         NewRecord {
             record_id: record_id.clone(),
             record_kind: "agent_run".to_string(),
-            tenant_id: args.tenant,
+            tenant_id: tenant.to_string(),
             run_id: Some(run_id.clone()),
             step_id: None,
             actor,
@@ -1868,7 +3337,7 @@ fn record_run(args: RecordRunArgs) -> BbxResult<Value> {
         "record_kind": "agent_run",
         "run_id": run_id,
         "ledger_sequence": append.sequence,
-        "source_of_truth": source_of_truth(&args.ledger),
+        "source_of_truth": source_of_truth(ledger),
         "payload_sha256": append.payload_sha256,
         "previous_record_sha256": append.previous_record_sha256,
         "run_chain_sha256": append.run_chain_sha256,
@@ -2487,6 +3956,31 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
         "command": "blackbox api surface",
         "source_of_truth": ledger_source,
         "format": "blackbox_http_api_surface_json_v1",
+        "phase17_http_server": {
+            "command": "blackbox server serve --ledger PATH --bind 127.0.0.1:7607",
+            "connector": HTTP_SERVER_CONNECTOR_ID,
+            "authentication": "Authorization: Bearer ${BLACKBOX_API_KEY}",
+            "tenant_scope_header": "X-Blackbox-Tenant",
+            "max_body_bytes": HTTP_MAX_BODY_BYTES,
+            "served_endpoints": [
+                "GET /v1/health",
+                "POST /v1/runs",
+                "GET /v1/runs/{run_id}",
+                "POST /v1/runs/{run_id}/steps",
+                "POST /v1/tool-calls",
+                "GET /v1/dashboard/summary",
+                "GET /v1/dashboard/runs",
+                "GET /v1/dashboard/runs/{run_id}/timeline",
+                "GET /v1/dashboard/evidence",
+                "GET /v1/dashboard/verifier-status",
+                "GET /v1/dashboard/errors",
+                "GET /v1/dashboard/exports",
+                "GET /v1/dashboard/pilot-packages",
+                "GET /v1/dashboard/risk-assessments"
+            ],
+            "audit_record_kind": "http_request_audit",
+            "fail_closed": true
+        },
         "endpoints": [
             { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
             { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
@@ -2508,6 +4002,7 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "GET", "path": "/v1/dashboard/errors", "ledger_record_kind": null },
             { "method": "GET", "path": "/v1/dashboard/exports", "ledger_record_kind": null },
             { "method": "GET", "path": "/v1/dashboard/pilot-packages", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/risk-assessments", "ledger_record_kind": null },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/config", "ledger_record_kind": "enterprise_tenant_config" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
@@ -2516,7 +4011,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate", "ledger_record_kind": "retention_decision" },
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" },
             { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" },
-            { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" }
+            { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" },
+            { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -5359,6 +6855,1158 @@ fn package_schema_error(
     )
 }
 
+fn risk_evaluate(args: RiskEvaluateArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--principal-id", &args.principal_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    let decision_register =
+        validate_risk_decision_register(&args.ledger, &args.decisions, &args.tenant)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    let resource = format!("tenant:{}:risk/phase16", args.tenant);
+    let authorization = enterprise_access_outcome(
+        &args.ledger,
+        &inspection_before,
+        &args.tenant,
+        &args.principal_id,
+        "risk.review",
+        &resource,
+    )?;
+    let authorization_append = append_enterprise_access_decision(
+        &mut conn,
+        &args.ledger,
+        &args.tenant,
+        &args.principal_id,
+        "risk.review",
+        &resource,
+        &args.agent,
+        args.model.as_deref(),
+        &authorization,
+    )?;
+    if !authorization.allowed {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "RISK_ASSESSMENT_RBAC_DENIED",
+            format!(
+                "principal {} is not authorized to evaluate risk for tenant {}",
+                args.principal_id, args.tenant
+            ),
+            Some(source_of_truth(&args.ledger)),
+            RISK_CONNECTOR_ID,
+            authorization.field_path.clone(),
+            authorization.remediation.clone().unwrap_or_else(|| {
+                "grant risk.review through a SCIM group role and retry".to_string()
+            }),
+        ));
+    }
+
+    let inspection_after_auth = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let authorization_ref = ledger_record_ref_json(
+        "authorization_decision",
+        authorization_append.sequence,
+        &authorization_append.record_id,
+        "enterprise_access_decision",
+        &authorization_append.payload_sha256,
+        &authorization_append.record_sha256,
+    );
+    let risk_assessment_id = prefixed_id("risk_assessment");
+    let payload = build_risk_assessment_payload(
+        &conn,
+        &args,
+        &inspection_after_auth,
+        &ledger_id,
+        &risk_assessment_id,
+        &resource,
+        authorization_ref.clone(),
+        decision_register,
+    )?;
+    let failed_checks = payload
+        .pointer("/decision/failed_checks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let accepted = payload
+        .pointer("/decision/accepted")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let record_count_before_risk = inspection_after_auth.record_count;
+    let record_id = prefixed_id("bbx_risk");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "risk_assessment".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: payload.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_risk_assessment_append(
+        &conn,
+        &args.ledger,
+        &risk_assessment_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before_risk,
+    )?;
+    let output = json!({
+        "status": if accepted { "ok" } else { "blocked" },
+        "command": "blackbox risk evaluate",
+        "connector": RISK_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "risk_assessment",
+        "risk_assessment_id": risk_assessment_id,
+        "risk_assessment_schema_version": RISK_ASSESSMENT_SCHEMA_VERSION,
+        "risk_assessment_rule_version": RISK_ASSESSMENT_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "principal_id": args.principal_id,
+        "decision": payload["decision"].clone(),
+        "authorization_record": authorization_ref,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "readback": readback,
+    });
+    if accepted {
+        Ok(output)
+    } else {
+        Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "RISK_ASSESSMENT_BLOCKED",
+            format!(
+                "risk assessment {} blocked tenant {}; failed checks: {}",
+                payload["risk_assessment_id"].as_str().unwrap_or("risk_assessment"),
+                payload["tenant_id"].as_str().unwrap_or("tenant"),
+                failed_checks
+                    .iter()
+                    .filter_map(|check| check.get("reason_code").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            Some(source_of_truth(&args.ledger)),
+            RISK_CONNECTOR_ID,
+            Some("risk_assessment.checks".to_string()),
+            "inspect the persisted risk_assessment row, close the failed risk/open-question controls with physical evidence, then re-evaluate",
+        ))
+    }
+}
+
+fn build_risk_assessment_payload(
+    conn: &Connection,
+    args: &RiskEvaluateArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    risk_assessment_id: &str,
+    resource: &str,
+    authorization_ref: Value,
+    decision_register: Value,
+) -> BbxResult<Value> {
+    let tenant_records = inspection
+        .records
+        .iter()
+        .filter(|record| record.tenant_id == args.tenant && record.record_kind != "risk_assessment")
+        .collect::<Vec<_>>();
+    let tenant_record_refs = tenant_records
+        .iter()
+        .map(|record| risk_record_ref_from_output(&args.ledger, "risk_input", record))
+        .collect::<BbxResult<Vec<_>>>()?;
+    let tenant_record_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(tenant_record_refs))?);
+    let kind_counts = ledger_record_kind_counts_from_refs(&tenant_records);
+    let verifier_counts = verifier_status_counts_from_refs(&args.ledger, &tenant_records)?;
+    let policy_counts = policy_decision_counts_from_refs(&args.ledger, &tenant_records)?;
+    let tool_coverage = risk_tool_evidence_coverage(&args.ledger, &tenant_records)?;
+    let runtime = risk_sqlite_runtime(conn, &args.ledger)?;
+    let secret_findings = risk_secret_findings(&tenant_records);
+    let latest_approved_gate = tenant_records.iter().copied().rev().find(|record| {
+        record.record_kind == "release_gate"
+            && record
+                .payload
+                .pointer("/decision/status")
+                .and_then(Value::as_str)
+                == Some("approved")
+    });
+    let latest_passed_package = tenant_records.iter().copied().rev().find(|record| {
+        record.record_kind == "pilot_package"
+            && record
+                .payload
+                .pointer("/pilot_success/status")
+                .and_then(Value::as_str)
+                == Some("passed")
+    });
+    let incidents_total = kind_counts.get("incident_packet").copied().unwrap_or(0);
+    let latest_package_eval_candidates = latest_passed_package
+        .and_then(|record| {
+            record
+                .payload
+                .pointer("/usage_summary/eval_candidates_total")
+                .and_then(Value::as_i64)
+        })
+        .unwrap_or(0);
+
+    let mut checks = Vec::new();
+    checks.push(risk_check(
+        "ledger_integrity_and_append_only",
+        true,
+        json!({
+            "ledger_record_count": inspection.record_count,
+            "ledger_tip_sha256": inspection.ledger_tip_sha256,
+            "append_only_schema_verified": true,
+        }),
+        json!("passed"),
+        "RISK_LEDGER_INTEGRITY_FAILED",
+        "ledger_records.hash_chain",
+        "restore from trusted backup or start a new ledger; never accept risk evidence from a broken chain",
+    ));
+    checks.push(risk_check(
+        "sqlite_runtime_config",
+        runtime
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        runtime.clone(),
+        json!({"journal_mode": "wal", "synchronous": "FULL", "busy_timeout_ms_min": 5000}),
+        "RISK_SQLITE_RUNTIME_UNSAFE",
+        "sqlite.pragmas",
+        "reopen the ledger through BlackBoxFix so WAL, FULL synchronous, and busy_timeout are enforced",
+    ));
+    checks.push(risk_check(
+        "secret_leak_scan",
+        secret_findings.is_empty(),
+        json!({
+            "findings_total": secret_findings.len(),
+            "findings": secret_findings,
+        }),
+        json!({"findings_total": 0}),
+        "RISK_SECRET_LEAK_DETECTED",
+        "ledger_records.payload_json",
+        "stop using the ledger, rotate exposed credentials, and rebuild evidence with redacted inputs",
+    ));
+    checks.push(risk_check(
+        "enterprise_controls_present",
+        kind_counts.get("enterprise_tenant_config").copied().unwrap_or(0) >= 1
+            && kind_counts
+                .get("enterprise_directory_snapshot")
+                .copied()
+                .unwrap_or(0)
+                >= 1,
+        json!({
+            "enterprise_tenant_config": kind_counts.get("enterprise_tenant_config").copied().unwrap_or(0),
+            "enterprise_directory_snapshot": kind_counts.get("enterprise_directory_snapshot").copied().unwrap_or(0),
+            "enterprise_access_decision": kind_counts.get("enterprise_access_decision").copied().unwrap_or(0),
+        }),
+        json!({"enterprise_tenant_config_min": 1, "enterprise_directory_snapshot_min": 1}),
+        "RISK_ENTERPRISE_CONTROLS_MISSING",
+        "ledger_records.record_kind",
+        "configure enterprise controls and sync a SCIM directory before accepting paid-pilot risk",
+    ));
+    checks.push(risk_check(
+        "source_of_truth_coverage",
+        tool_coverage
+            .get("passed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        tool_coverage.clone(),
+        json!({"tool_calls_total_min": 1, "coverage_ratio": 1.0}),
+        "RISK_SOURCE_OF_TRUTH_COVERAGE_INCOMPLETE",
+        "ledger_records.tool_call",
+        "verify every mutating tool call and persist evidence packets before accepting risk",
+    ));
+    checks.push(risk_check(
+        "verifier_and_policy_status_bounded",
+        verifier_counts.get("blocked").copied().unwrap_or(0) == 0
+            && policy_counts.get("denied").copied().unwrap_or(0) == 0,
+        json!({
+            "verifier_status_counts": verifier_counts,
+            "policy_decision_counts": policy_counts,
+        }),
+        json!({"blocked_verifiers": 0, "denied_policies": 0}),
+        "RISK_BLOCKED_GOVERNANCE_EVIDENCE",
+        "ledger_records.verifier_result",
+        "fix blocked verifier or denied policy evidence before risk acceptance",
+    ));
+    checks.push(risk_check(
+        "approved_release_gate_present",
+        latest_approved_gate.is_some(),
+        latest_approved_gate
+            .map(|record| {
+                risk_record_ref_from_output(&args.ledger, "approved_release_gate", record)
+            })
+            .transpose()?
+            .unwrap_or(Value::Null),
+        json!("approved release_gate row"),
+        "RISK_RELEASE_GATE_MISSING",
+        "ledger_records.release_gate",
+        "run `blackbox gate evaluate` and persist an approved release gate before accepting risk",
+    ));
+    checks.push(risk_check(
+        "passed_pilot_package_present",
+        latest_passed_package.is_some(),
+        latest_passed_package
+            .map(|record| risk_record_ref_from_output(&args.ledger, "passed_pilot_package", record))
+            .transpose()?
+            .unwrap_or(Value::Null),
+        json!("passed pilot_package row"),
+        "RISK_PILOT_PACKAGE_MISSING",
+        "ledger_records.pilot_package",
+        "build a passed `blackbox package pilot-report` package before accepting paid-pilot risk",
+    ));
+    checks.push(risk_check(
+        "incidents_converted_to_eval_candidates",
+        incidents_total == 0 || latest_package_eval_candidates >= incidents_total,
+        json!({
+            "incident_packets_total": incidents_total,
+            "latest_passed_package_eval_candidates_total": latest_package_eval_candidates,
+        }),
+        json!({"eval_candidates_total_min": incidents_total}),
+        "RISK_INCIDENTS_NOT_CONVERTED_TO_EVALS",
+        "ledger_records.incident_packet",
+        "convert incident evidence into eval candidates through the pilot package before accepting risk",
+    ));
+    checks.push(risk_check(
+        "open_questions_closed",
+        true,
+        decision_register["summary"].clone(),
+        json!({"required_decisions": REQUIRED_RISK_DECISION_IDS}),
+        "RISK_OPEN_QUESTIONS_UNRESOLVED",
+        "risk_decisions.decisions",
+        "close every required Phase 16 question with owner, trigger, due date, rationale, and evidence",
+    ));
+
+    let failed_checks = checks
+        .iter()
+        .filter(|check| check.get("passed").and_then(Value::as_bool) == Some(false))
+        .cloned()
+        .collect::<Vec<_>>();
+    let accepted = failed_checks.is_empty();
+    Ok(json!({
+        "record_kind": "risk_assessment",
+        "risk_assessment_schema_version": RISK_ASSESSMENT_SCHEMA_VERSION,
+        "risk_assessment_rule_version": RISK_ASSESSMENT_RULE_VERSION,
+        "risk_assessment_id": risk_assessment_id,
+        "tenant_id": args.tenant,
+        "request": {
+            "principal_id": args.principal_id,
+            "permission": "risk.review",
+            "resource": resource,
+            "decisions": args.decisions,
+        },
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_risk": inspection.record_count,
+            "ledger_tip_sha256_before_risk": inspection.ledger_tip_sha256,
+        },
+        "risk_summary": {
+            "record_kind_counts": kind_counts,
+            "tenant_record_refs_sha256": tenant_record_refs_sha256,
+            "verifier_status_counts": verifier_counts,
+            "policy_decision_counts": policy_counts,
+            "tool_evidence_coverage": tool_coverage,
+            "sqlite_runtime": runtime,
+            "incident_packets_total": incidents_total,
+            "latest_passed_package_eval_candidates_total": latest_package_eval_candidates,
+        },
+        "decision_register": decision_register,
+        "checks": checks,
+        "decision": {
+            "status": if accepted { "accepted" } else { "blocked" },
+            "accepted": accepted,
+            "reason_code": if accepted { "RISK_ASSESSMENT_ACCEPTED" } else { "RISK_ASSESSMENT_BLOCKED" },
+            "failed_checks": failed_checks,
+        },
+        "source_refs": {
+            "authorization_decision": authorization_ref,
+            "input_records": tenant_record_refs,
+        },
+        "standards_basis": [
+            "NIST SP 800-30 risk assessment: identify, evaluate, and document risk factors before response",
+            "NIST AI RMF Govern/Map/Measure/Manage: make AI risks explicit, measured, and managed",
+            "NIST SSDF: integrate risk-based secure software decisions into release governance",
+            "OWASP logging guidance: security-relevant failures must be observable without leaking sensitive data"
+        ],
+        "evaluated_at": Utc::now().to_rfc3339(),
+    }))
+}
+
+fn validate_risk_decision_register(
+    ledger_path: &Path,
+    decisions_path: &Path,
+    tenant: &str,
+) -> BbxResult<Value> {
+    if decisions_path.as_os_str().is_empty() {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "--decisions",
+            "--decisions must not be empty",
+            "provide a JSON file that closes every required Phase 16 open question",
+        ));
+    }
+    if !decisions_path.is_file() {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "--decisions",
+            format!("decisions path is not a file: {}", decisions_path.display()),
+            "write the Phase 16 decisions to a physical JSON file and retry",
+        ));
+    }
+    let bytes = fs::read(decisions_path).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::Io,
+            "BBX_IO_ERROR",
+            format!("read Phase 16 decisions file: {err}"),
+            Some(file_source_of_truth(decisions_path)),
+            FS_CONNECTOR_ID,
+            Some("--decisions".to_string()),
+            "check the decisions file path and permissions",
+        )
+    })?;
+    if bytes.is_empty() {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "--decisions",
+            "decisions file is empty",
+            "write a JSON object with all required decisions",
+        ));
+    }
+    let raw: Value = serde_json::from_slice(&bytes).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "RISK_DECISIONS_INVALID",
+            format!("decisions file is not valid JSON: {err}"),
+            Some(file_source_of_truth(decisions_path)),
+            RISK_CONNECTOR_ID,
+            Some("--decisions".to_string()),
+            "write valid JSON and retry",
+        )
+    })?;
+    let object = raw.as_object().ok_or_else(|| {
+        risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "$",
+            "decisions root must be a JSON object",
+            "write a JSON object with tenant_id, decision_schema_version, and decisions",
+        )
+    })?;
+    for key in object.keys() {
+        if !["tenant_id", "decision_schema_version", "decisions"].contains(&key.as_str()) {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                format!("$.{key}"),
+                format!("unknown decisions root key {key}"),
+                "remove unknown keys so misspelled risk fields cannot be accepted",
+            ));
+        }
+    }
+    let tenant_id = risk_required_str(ledger_path, &raw, "$.tenant_id")?;
+    if tenant_id != tenant {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_TENANT_MISMATCH",
+            "$.tenant_id",
+            format!("decisions tenant_id {tenant_id} does not match --tenant {tenant}"),
+            "write the decisions under the tenant that owns the risk assessment",
+        ));
+    }
+    if raw.get("decision_schema_version").and_then(Value::as_i64) != Some(1) {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "$.decision_schema_version",
+            "decision_schema_version must equal 1",
+            "regenerate the decisions file with schema version 1",
+        ));
+    }
+    let decisions = raw
+        .get("decisions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                "$.decisions",
+                "decisions must be a non-empty array",
+                "include one decision object for each required Phase 16 question",
+            )
+        })?;
+    if decisions.is_empty() {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            "$.decisions",
+            "decisions must be a non-empty array",
+            "include one decision object for each required Phase 16 question",
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+    let today = Utc::now().date_naive();
+    for (idx, item) in decisions.iter().enumerate() {
+        let path = format!("$.decisions[{idx}]");
+        let object = item.as_object().ok_or_else(|| {
+            risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                &path,
+                "decision entry must be an object",
+                "replace the entry with a structured decision object",
+            )
+        })?;
+        for key in object.keys() {
+            if ![
+                "question_id",
+                "status",
+                "decision",
+                "owner",
+                "review_trigger",
+                "review_due",
+                "severity",
+                "rationale",
+                "evidence",
+            ]
+            .contains(&key.as_str())
+            {
+                return Err(risk_invalid(
+                    ledger_path,
+                    "RISK_DECISIONS_INVALID",
+                    format!("{path}.{key}"),
+                    format!("unknown decision key {key}"),
+                    "remove unknown keys so misspelled risk fields cannot be accepted",
+                ));
+            }
+        }
+        let question_id = risk_required_key_str(
+            ledger_path,
+            item,
+            "question_id",
+            &format!("{path}.question_id"),
+        )?;
+        if !REQUIRED_RISK_DECISION_IDS.contains(&question_id) {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISION_UNKNOWN",
+                format!("{path}.question_id"),
+                format!("unknown Phase 16 question_id {question_id}"),
+                "use one of the required Phase 16 question ids",
+            ));
+        }
+        if !seen.insert(question_id.to_string()) {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISION_DUPLICATE",
+                format!("{path}.question_id"),
+                format!("duplicate Phase 16 question_id {question_id}"),
+                "keep exactly one decision per required question",
+            ));
+        }
+        let status = risk_required_key_str(ledger_path, item, "status", &format!("{path}.status"))?;
+        if !["resolved", "accepted", "deferred"].contains(&status) {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISION_STATUS_INVALID",
+                format!("{path}.status"),
+                format!("decision status {status} is not closed"),
+                "use resolved, accepted, or deferred; open questions cannot pass Phase 16",
+            ));
+        }
+        let severity =
+            risk_required_key_str(ledger_path, item, "severity", &format!("{path}.severity"))?;
+        if !["low", "medium", "high", "critical"].contains(&severity) {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISION_SEVERITY_INVALID",
+                format!("{path}.severity"),
+                format!("decision severity {severity} is invalid"),
+                "use low, medium, high, or critical",
+            ));
+        }
+        let review_due = risk_required_key_str(
+            ledger_path,
+            item,
+            "review_due",
+            &format!("{path}.review_due"),
+        )?;
+        let review_due_date = NaiveDate::parse_from_str(review_due, "%Y-%m-%d").map_err(|err| {
+            risk_invalid(
+                ledger_path,
+                "RISK_DECISION_REVIEW_DUE_INVALID",
+                format!("{path}.review_due"),
+                format!("review_due must be YYYY-MM-DD: {err}"),
+                "set a concrete future review date for the accepted or deferred risk",
+            )
+        })?;
+        if review_due_date < today {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISION_REVIEW_DUE_EXPIRED",
+                format!("{path}.review_due"),
+                format!("review_due {review_due} is before today's date {today}"),
+                "refresh the risk decision before accepting it",
+            ));
+        }
+        let decision = risk_text(
+            ledger_path,
+            item.get("decision").unwrap_or(&Value::Null),
+            &format!("{path}.decision"),
+            4096,
+        )?;
+        let owner = risk_text(
+            ledger_path,
+            item.get("owner").unwrap_or(&Value::Null),
+            &format!("{path}.owner"),
+            256,
+        )?;
+        let review_trigger = risk_text(
+            ledger_path,
+            item.get("review_trigger").unwrap_or(&Value::Null),
+            &format!("{path}.review_trigger"),
+            1024,
+        )?;
+        let rationale = risk_text(
+            ledger_path,
+            item.get("rationale").unwrap_or(&Value::Null),
+            &format!("{path}.rationale"),
+            4096,
+        )?;
+        let evidence_values = item
+            .get("evidence")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                risk_invalid(
+                    ledger_path,
+                    "RISK_DECISIONS_INVALID",
+                    format!("{path}.evidence"),
+                    "decision evidence must be a non-empty string array",
+                    "include source documents, commands, or ledger/file evidence for the decision",
+                )
+            })?;
+        if evidence_values.is_empty() {
+            return Err(risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                format!("{path}.evidence"),
+                "decision evidence must be non-empty",
+                "include source documents, commands, or ledger/file evidence for the decision",
+            ));
+        }
+        let mut evidence = Vec::new();
+        for (evidence_idx, evidence_item) in evidence_values.iter().enumerate() {
+            evidence.push(risk_text(
+                ledger_path,
+                evidence_item,
+                &format!("{path}.evidence[{evidence_idx}]"),
+                2048,
+            )?);
+        }
+        normalized.push(json!({
+            "question_id": question_id,
+            "status": status,
+            "decision": decision,
+            "owner": owner,
+            "review_trigger": review_trigger,
+            "review_due": review_due,
+            "severity": severity,
+            "rationale": rationale,
+            "evidence": evidence,
+        }));
+    }
+    let missing = REQUIRED_RISK_DECISION_IDS
+        .iter()
+        .filter(|id| !seen.contains(**id))
+        .copied()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISION_MISSING",
+            "$.decisions",
+            format!(
+                "decisions file is missing required question ids: {}",
+                missing.join(",")
+            ),
+            "add exactly one decision for each required Phase 16 question",
+        ));
+    }
+    let register = json!({
+        "format": "blackbox_risk_decisions_json_v1",
+        "tenant_id": tenant,
+        "decision_schema_version": 1,
+        "source_file": {
+            "path": decisions_path,
+            "source_of_truth": file_source_of_truth(decisions_path),
+            "sha256": sha256_hex(&bytes),
+            "bytes": bytes.len(),
+        },
+        "summary": {
+            "required_decisions_total": REQUIRED_RISK_DECISION_IDS.len(),
+            "closed_decisions_total": normalized.len(),
+            "statuses": risk_decision_status_counts(&normalized),
+            "review_due_min": normalized
+                .iter()
+                .filter_map(|decision| decision.get("review_due").and_then(Value::as_str))
+                .min()
+                .unwrap_or(""),
+        },
+        "decisions": normalized,
+    });
+    Ok(register)
+}
+
+fn risk_decision_status_counts(decisions: &[Value]) -> BTreeMap<String, i64> {
+    let mut counts = BTreeMap::from([
+        ("resolved".to_string(), 0),
+        ("accepted".to_string(), 0),
+        ("deferred".to_string(), 0),
+    ]);
+    for decision in decisions {
+        if let Some(status) = decision.get("status").and_then(Value::as_str) {
+            *counts.entry(status.to_string()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+fn risk_tool_evidence_coverage(
+    ledger_path: &Path,
+    records: &[&LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut evidence_tool_ids = BTreeSet::new();
+    for record in records
+        .iter()
+        .copied()
+        .filter(|record| record.record_kind == "evidence_packet")
+    {
+        let tool_call_id = required_risk_payload_str(ledger_path, record, "tool_call_id")?;
+        evidence_tool_ids.insert(tool_call_id.to_string());
+    }
+    let mut tool_calls_total = 0_i64;
+    let mut with_evidence = 0_i64;
+    let mut missing = Vec::new();
+    for record in records
+        .iter()
+        .copied()
+        .filter(|record| record.record_kind == "tool_call")
+    {
+        tool_calls_total += 1;
+        let tool_call_id = required_risk_payload_str(ledger_path, record, "tool_call_id")?;
+        if evidence_tool_ids.contains(tool_call_id) {
+            with_evidence += 1;
+        } else {
+            missing.push(json!({
+                "sequence": record.sequence,
+                "tool_call_id": tool_call_id,
+                "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+            }));
+        }
+    }
+    let coverage_ratio = if tool_calls_total == 0 {
+        0.0
+    } else {
+        with_evidence as f64 / tool_calls_total as f64
+    };
+    Ok(json!({
+        "passed": tool_calls_total > 0 && with_evidence == tool_calls_total,
+        "tool_calls_total": tool_calls_total,
+        "tool_calls_with_evidence": with_evidence,
+        "coverage_ratio": coverage_ratio,
+        "missing_evidence": missing,
+    }))
+}
+
+fn risk_sqlite_runtime(conn: &Connection, ledger_path: &Path) -> BbxResult<Value> {
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "read journal_mode pragma", err))?;
+    let synchronous: i64 = conn
+        .query_row("PRAGMA synchronous", [], |row| row.get(0))
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "read synchronous pragma", err))?;
+    let busy_timeout_ms: i64 = conn
+        .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "read busy_timeout pragma", err))?;
+    let journal_ok = journal_mode.eq_ignore_ascii_case("wal");
+    let synchronous_ok = synchronous == 2;
+    let busy_timeout_ok = busy_timeout_ms >= 5000;
+    Ok(json!({
+        "passed": journal_ok && synchronous_ok && busy_timeout_ok,
+        "journal_mode": journal_mode,
+        "synchronous": synchronous,
+        "synchronous_label": if synchronous == 2 { "FULL" } else { "not_full" },
+        "busy_timeout_ms": busy_timeout_ms,
+    }))
+}
+
+fn risk_secret_findings(records: &[&LedgerRecordOutput]) -> Vec<Value> {
+    let mut findings = Vec::new();
+    for record in records {
+        collect_risk_secret_findings(record, "payload", &record.payload, &mut findings);
+        collect_risk_secret_findings(record, "actor", &record.actor, &mut findings);
+    }
+    findings
+}
+
+fn collect_risk_secret_findings(
+    record: &LedgerRecordOutput,
+    path: &str,
+    value: &Value,
+    findings: &mut Vec<Value>,
+) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                collect_risk_secret_findings(record, &format!("{path}.{key}"), child, findings);
+            }
+        }
+        Value::Array(items) => {
+            for (idx, child) in items.iter().enumerate() {
+                collect_risk_secret_findings(record, &format!("{path}[{idx}]"), child, findings);
+            }
+        }
+        Value::String(text)
+            if looks_like_secret_literal(text) && !text.starts_with("[REDACTED:") =>
+        {
+            findings.push(json!({
+                "sequence": record.sequence,
+                "record_kind": record.record_kind,
+                "field_path": path,
+                "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+            }));
+        }
+        _ => {}
+    }
+}
+
+fn readback_risk_assessment_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    risk_assessment_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "RISK_ASSESSMENT_READBACK_MISMATCH",
+            RISK_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "risk assessment append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun risk evaluation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "RISK_ASSESSMENT_READBACK_MISMATCH",
+                RISK_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("risk assessment sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun risk evaluation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "risk_assessment"
+        || row
+            .payload
+            .get("risk_assessment_id")
+            .and_then(Value::as_str)
+            != Some(risk_assessment_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "RISK_ASSESSMENT_READBACK_MISMATCH",
+            RISK_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.risk_assessment",
+            "risk_assessment row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun risk evaluation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_risk_assessment": inspection_after.record_count,
+        "ledger_tip_sha256_after_risk_assessment": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "risk_assessment_id": row.payload["risk_assessment_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "decision": row.payload["decision"].clone(),
+    }))
+}
+
+fn risk_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let payload_sha256 = record
+        .hash
+        .get("payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            risk_schema_error(
+                ledger_path,
+                record,
+                "hash.payload_sha256",
+                format!("{} row is missing payload_sha256", record.record_kind),
+            )
+        })?;
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            risk_schema_error(
+                ledger_path,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        payload_sha256,
+        record_sha256,
+    ))
+}
+
+fn required_risk_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            risk_schema_error(
+                ledger_path,
+                record,
+                format!("payload.{field}"),
+                format!(
+                    "{} payload is missing string field {field}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn risk_required_str<'a>(
+    ledger_path: &Path,
+    value: &'a Value,
+    field_path: &str,
+) -> BbxResult<&'a str> {
+    value
+        .pointer(risk_json_pointer_from_field_path(field_path).as_str())
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && text.trim() == *text)
+        .ok_or_else(|| {
+            risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                field_path,
+                format!("{field_path} must be a non-empty trimmed string"),
+                "write an explicit string value and retry",
+            )
+        })
+}
+
+fn risk_required_key_str<'a>(
+    ledger_path: &Path,
+    value: &'a Value,
+    key: &str,
+    field_path: &str,
+) -> BbxResult<&'a str> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && text.trim() == *text)
+        .ok_or_else(|| {
+            risk_invalid(
+                ledger_path,
+                "RISK_DECISIONS_INVALID",
+                field_path,
+                format!("{field_path} must be a non-empty trimmed string"),
+                "write an explicit string value and retry",
+            )
+        })
+}
+
+fn risk_text(
+    ledger_path: &Path,
+    value: &Value,
+    field_path: &str,
+    max_len: usize,
+) -> BbxResult<String> {
+    let text = if let Some(text) = value.as_str() {
+        text.trim()
+            .eq(text)
+            .then_some(text)
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| {
+                risk_invalid(
+                    ledger_path,
+                    "RISK_DECISIONS_INVALID",
+                    field_path,
+                    format!("{field_path} must be a non-empty trimmed string"),
+                    "write an explicit string value and retry",
+                )
+            })?
+    } else {
+        risk_required_str(ledger_path, value, field_path)?
+    };
+    if text.len() > max_len {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_DECISIONS_INVALID",
+            field_path,
+            format!("{field_path} exceeds {max_len} bytes"),
+            "shorten the risk decision field and retry",
+        ));
+    }
+    if looks_like_secret_literal(text) {
+        return Err(risk_invalid(
+            ledger_path,
+            "RISK_SECRET_MATERIAL_REFUSED",
+            field_path,
+            "risk decision text contains secret-like material",
+            "replace secret material with a key id, digest, or ticket reference",
+        ));
+    }
+    Ok(text.to_string())
+}
+
+fn risk_json_pointer_from_field_path(field_path: &str) -> String {
+    let trimmed = field_path.trim_start_matches('$');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut pointer = String::new();
+    let mut token = String::new();
+    let mut chars = trimmed.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '.' => {
+                if !token.is_empty() {
+                    pointer.push('/');
+                    pointer.push_str(&token);
+                    token.clear();
+                }
+            }
+            '[' => {
+                if !token.is_empty() {
+                    pointer.push('/');
+                    pointer.push_str(&token);
+                    token.clear();
+                }
+                let mut idx = String::new();
+                for next in chars.by_ref() {
+                    if next == ']' {
+                        break;
+                    }
+                    idx.push(next);
+                }
+                pointer.push('/');
+                pointer.push_str(&idx);
+            }
+            other => token.push(other),
+        }
+    }
+    if !token.is_empty() {
+        pointer.push('/');
+        pointer.push_str(&token);
+    }
+    pointer
+}
+
+fn risk_check(
+    check_id: &'static str,
+    passed: bool,
+    observed: Value,
+    expected: Value,
+    reason_code: &'static str,
+    field_path: &'static str,
+    remediation: &'static str,
+) -> Value {
+    json!({
+        "check_id": check_id,
+        "passed": passed,
+        "observed": observed,
+        "expected": expected,
+        "reason_code": reason_code,
+        "field_path": field_path,
+        "remediation": remediation,
+    })
+}
+
+fn risk_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        RISK_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn risk_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "RISK_SOURCE_SCHEMA_INVALID",
+        RISK_CONNECTOR_ID,
+        source_of_truth(ledger_path),
+        format!("ledger_records[{}].{}", record.sequence, field_path.into()),
+        message,
+        "inspect the persisted source row and rebuild risk evidence after correcting ledger state",
+    )
+}
+
 fn gate_check(
     check_id: &'static str,
     passed: bool,
@@ -6308,6 +8956,7 @@ fn score_connector_reliability(
         PRIVACY_CONNECTOR_ID => Ok(0.93),
         RELEASE_GATE_CONNECTOR_ID => Ok(0.94),
         PACKAGING_CONNECTOR_ID => Ok(0.90),
+        RISK_CONNECTOR_ID => Ok(0.91),
         SQLITE_CONNECTOR_ID => Ok(0.96),
         POLICY_CONNECTOR_ID => Ok(0.88),
         other => Err(scorecard_schema_error(
@@ -10130,6 +12779,7 @@ fn dashboard_api(args: DashboardApiArgs) -> BbxResult<Value> {
         DashboardView::Errors => data.errors,
         DashboardView::Exports => data.exports,
         DashboardView::PilotPackages => data.packages,
+        DashboardView::RiskAssessments => data.risk_assessments,
         DashboardView::Timeline => {
             let run_id = args.run_id.as_deref().ok_or_else(|| {
                 BlackboxError::new_with_connector(
@@ -10196,6 +12846,7 @@ struct DashboardData {
     errors: Value,
     exports: Value,
     packages: Value,
+    risk_assessments: Value,
     timelines: Vec<(String, String, Value)>,
 }
 
@@ -10282,6 +12933,13 @@ fn build_dashboard_data(
         &generated_at,
         &inspection.records,
     )?;
+    let risk_assessments = build_dashboard_risk_assessments(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &inspection.records,
+    )?;
     let timelines = build_dashboard_timelines(ledger_path, inspection, &run_records)?;
     Ok(DashboardData {
         generated_at,
@@ -10292,6 +12950,7 @@ fn build_dashboard_data(
         errors,
         exports,
         packages,
+        risk_assessments,
         timelines,
     })
 }
@@ -10315,6 +12974,10 @@ fn write_dashboard_directory(
     write_dashboard_json_file(&api_dir.join("errors.json"), &data.errors)?;
     write_dashboard_json_file(&api_dir.join("exports.json"), &data.exports)?;
     write_dashboard_json_file(&api_dir.join("pilot-packages.json"), &data.packages)?;
+    write_dashboard_json_file(
+        &api_dir.join("risk-assessments.json"),
+        &data.risk_assessments,
+    )?;
 
     let mut timeline_files = BTreeSet::new();
     for (_, file_name, timeline) in &data.timelines {
@@ -10343,6 +13006,7 @@ fn write_dashboard_directory(
         dashboard_file_entry(temp_dir, Path::new("api/errors.json"))?,
         dashboard_file_entry(temp_dir, Path::new("api/exports.json"))?,
         dashboard_file_entry(temp_dir, Path::new("api/pilot-packages.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/risk-assessments.json"))?,
     ];
     for (_, file_name, _) in &data.timelines {
         files.push(dashboard_file_entry(
@@ -10375,6 +13039,7 @@ fn write_dashboard_directory(
             "evidence_packets_total": data.summary["counts"]["evidence_packets_total"].clone(),
             "incident_packets_total": data.summary["counts"]["incident_packets_total"].clone(),
             "pilot_packages_total": data.summary["counts"]["pilot_packages_total"].clone(),
+            "risk_assessments_total": data.summary["counts"]["risk_assessments_total"].clone(),
             "timeline_files_total": data.timelines.len(),
             "files_total": files.len() + 1,
         },
@@ -10449,6 +13114,7 @@ fn build_dashboard_summary(
         json!({"label": "Erasure decisions", "value": kind_counts.get("evidence_deletion").copied().unwrap_or(0)}),
         json!({"label": "Release gates", "value": kind_counts.get("release_gate").copied().unwrap_or(0)}),
         json!({"label": "Pilot packages", "value": kind_counts.get("pilot_package").copied().unwrap_or(0)}),
+        json!({"label": "Risk assessments", "value": kind_counts.get("risk_assessment").copied().unwrap_or(0)}),
         json!({"label": "Verifier passed", "value": passed}),
         json!({"label": "Verifier failed", "value": failed}),
         json!({"label": "Verifier blocked", "value": blocked}),
@@ -10479,6 +13145,7 @@ fn build_dashboard_summary(
             "evidence_deletions_total": kind_counts.get("evidence_deletion").copied().unwrap_or(0),
             "release_gates_total": kind_counts.get("release_gate").copied().unwrap_or(0),
             "pilot_packages_total": kind_counts.get("pilot_package").copied().unwrap_or(0),
+            "risk_assessments_total": kind_counts.get("risk_assessment").copied().unwrap_or(0),
             "verifier_results_total": verifier_total,
             "verifier_statuses": verifier_status_counts,
             "policy_decisions": policy_decision_counts,
@@ -10706,7 +13373,56 @@ fn build_dashboard_errors(
             || record.record_kind == "evidence_deletion"
             || record.record_kind == "release_gate"
             || record.record_kind == "pilot_package"
+            || record.record_kind == "risk_assessment"
     }) {
+        if record.record_kind == "risk_assessment"
+            && record
+                .payload
+                .pointer("/decision/status")
+                .and_then(Value::as_str)
+                == Some("blocked")
+        {
+            let checks = record
+                .payload
+                .pointer("/decision/failed_checks")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    dashboard_schema_error(
+                        ledger_path,
+                        record,
+                        "payload.decision.failed_checks",
+                        "blocked risk_assessment row is missing failed checks",
+                    )
+                })?;
+            for check in checks {
+                let code = check
+                    .get("reason_code")
+                    .and_then(Value::as_str)
+                    .filter(|code| !code.trim().is_empty())
+                    .ok_or_else(|| {
+                        dashboard_schema_error(
+                            ledger_path,
+                            record,
+                            "payload.decision.failed_checks.reason_code",
+                            "risk_assessment failed check is missing reason_code",
+                        )
+                    })?;
+                let group = groups
+                    .entry(code.to_string())
+                    .or_insert_with(|| DashboardErrorGroup::new(code));
+                group.count += 1;
+                group.record_kinds.insert(record.record_kind.clone());
+                group.first_sequence = group.first_sequence.min(record.sequence);
+                group.last_sequence = group.last_sequence.max(record.sequence);
+                if let Some(remediation) = check.get("remediation").and_then(Value::as_str) {
+                    group.remediations.insert(remediation.to_string());
+                }
+                if let Some(source) = record.payload.pointer("/source_ledger/source_of_truth") {
+                    group.source_examples.push(source.clone());
+                }
+            }
+            continue;
+        }
         if record.record_kind == "pilot_package"
             && record
                 .payload
@@ -10910,6 +13626,14 @@ fn build_dashboard_exports(
                 "--out", "pilot-package",
                 "--agent", "commercial_operator"
             ],
+            "risk_assessment_command": [
+                "blackbox", "risk", "evaluate",
+                "--ledger", ledger_path.display().to_string(),
+                "--tenant", "TENANT_ID",
+                "--principal-id", "USER_WITH_RISK_REVIEW",
+                "--decisions", "phase16-risk-decisions.json",
+                "--agent", "risk_operator"
+            ],
             "dashboard_files": [
                 "index.html",
                 "manifest.json",
@@ -10919,7 +13643,8 @@ fn build_dashboard_exports(
                 "api/verifier-status.json",
                 "api/errors.json",
                 "api/exports.json",
-                "api/pilot-packages.json"
+                "api/pilot-packages.json",
+                "api/risk-assessments.json"
             ],
         },
     }))
@@ -10985,6 +13710,69 @@ fn build_dashboard_packages(
         "generated_at": generated_at,
         "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
         "pilot_packages": packages,
+    }))
+}
+
+fn build_dashboard_risk_assessments(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut assessments = Vec::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "risk_assessment")
+    {
+        let status = record
+            .payload
+            .pointer("/decision/status")
+            .and_then(Value::as_str)
+            .filter(|status| !status.trim().is_empty())
+            .ok_or_else(|| {
+                dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.decision.status",
+                    "risk_assessment row is missing decision status",
+                )
+            })?;
+        let failed_checks = record
+            .payload
+            .pointer("/decision/failed_checks")
+            .and_then(Value::as_array)
+            .map(|checks| checks.len())
+            .ok_or_else(|| {
+                dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.decision.failed_checks",
+                    "risk_assessment row is missing failed_checks array",
+                )
+            })?;
+        assessments.push(json!({
+            "risk_assessment_id": required_dashboard_payload_str(ledger_path, record, "risk_assessment_id")?,
+            "tenant_id": record.tenant_id,
+            "sequence": record.sequence,
+            "created_at": record.created_at,
+            "status": status,
+            "failed_checks_total": failed_checks,
+            "decision": record.payload.get("decision").cloned().unwrap_or(Value::Null),
+            "risk_summary": record.payload.get("risk_summary").cloned().unwrap_or(Value::Null),
+            "decision_register": record.payload.get("decision_register").cloned().unwrap_or(Value::Null),
+            "checks": record.payload.get("checks").cloned().unwrap_or(Value::Null),
+            "source_ledger": record.payload.get("source_ledger").cloned().unwrap_or(Value::Null),
+            "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+            "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_risk_assessments_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "risk_assessments": assessments,
     }))
 }
 
@@ -12726,14 +15514,14 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     html.push_str("<title>BlackBoxFix Team Dashboard</title>\n");
     html.push_str("<style>\n");
     html.push_str(":root{color-scheme:light;--ink:#17212b;--muted:#5a6673;--line:#c9d1d9;--panel:#f7f9fb;--ok:#1b7f3a;--fail:#b42318;--warn:#9a5b00;--bg:#ffffff;}\n");
-    html.push_str("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}header,main{max-width:1280px;margin:0 auto;padding:20px}header{border-bottom:1px solid var(--line)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 10px}.source{color:var(--muted);word-break:break-all}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}a{color:#075985}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff}th,td{border:1px solid var(--line);padding:8px;vertical-align:top;overflow-wrap:anywhere}th{background:var(--panel);text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.metric{border:1px solid var(--line);padding:10px;background:var(--panel);min-height:70px}.metric b{display:block;font-size:22px}.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px}.filters label{display:grid;gap:4px;color:var(--muted)}select,input{border:1px solid var(--line);background:#fff;color:var(--ink);min-height:34px;padding:5px 8px;min-width:150px}.status-passed{color:var(--ok);font-weight:700}.status-failed{color:var(--fail);font-weight:700}.status-blocked,.status-needs_verification,.status-needs_more_evidence{color:var(--warn);font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}@media(max-width:760px){header,main{padding:14px}table{font-size:12px}.wide{overflow-x:auto}th,td{min-width:130px}select,input{width:100%}.filters label{width:100%}}\n");
+    html.push_str("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}header,main{max-width:1280px;margin:0 auto;padding:20px}header{border-bottom:1px solid var(--line)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 10px}.source{color:var(--muted);word-break:break-all}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}a{color:#075985}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff}th,td{border:1px solid var(--line);padding:8px;vertical-align:top;overflow-wrap:anywhere}th{background:var(--panel);text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.metric{border:1px solid var(--line);padding:10px;background:var(--panel);min-height:70px}.metric b{display:block;font-size:22px}.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px}.filters label{display:grid;gap:4px;color:var(--muted)}select,input{border:1px solid var(--line);background:#fff;color:var(--ink);min-height:34px;padding:5px 8px;min-width:150px}.status-passed,.status-accepted{color:var(--ok);font-weight:700}.status-failed{color:var(--fail);font-weight:700}.status-blocked,.status-needs_verification,.status-needs_more_evidence{color:var(--warn);font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}@media(max-width:760px){header,main{padding:14px}table{font-size:12px}.wide{overflow-x:auto}th,td{min-width:130px}select,input{width:100%}.filters label{width:100%}}\n");
     html.push_str("</style>\n</head>\n<body>\n<header>\n");
     html.push_str("<h1>BlackBoxFix Team Dashboard</h1>\n");
     html.push_str(&format!(
         "<div class=\"source\">Source of truth: <code>{}</code></div>\n",
         ledger_source
     ));
-    html.push_str("<nav aria-label=\"Dashboard API responses\"><a href=\"api/summary.json\">summary</a><a href=\"api/runs.json\">runs</a><a href=\"api/evidence.json\">evidence</a><a href=\"api/verifier-status.json\">verifiers</a><a href=\"api/errors.json\">errors</a><a href=\"api/exports.json\">exports</a><a href=\"api/pilot-packages.json\">pilot packages</a></nav>\n");
+    html.push_str("<nav aria-label=\"Dashboard API responses\"><a href=\"api/summary.json\">summary</a><a href=\"api/runs.json\">runs</a><a href=\"api/evidence.json\">evidence</a><a href=\"api/verifier-status.json\">verifiers</a><a href=\"api/errors.json\">errors</a><a href=\"api/exports.json\">exports</a><a href=\"api/pilot-packages.json\">pilot packages</a><a href=\"api/risk-assessments.json\">risk assessments</a></nav>\n");
     html.push_str("</header>\n<main>\n<div role=\"status\">Dashboard files read back and hash verified.</div>\n");
     html.push_str("<section aria-labelledby=\"metrics\"><h2 id=\"metrics\">Metrics</h2><div class=\"metric-grid\">\n");
     for metric in dashboard_array(summary, "/metrics")? {
@@ -12797,7 +15585,26 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option><option value=\"retention_decision\">retention_decision</option><option value=\"evidence_deletion\">evidence_deletion</option><option value=\"release_gate\">release_gate</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"approved\">approved</option><option value=\"retained\">retained</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"risk-assessments\"><h2 id=\"risk-assessments\">Risk Assessments</h2><div class=\"wide\"><table><thead><tr><th>Assessment</th><th>Status</th><th>Tenant</th><th>Failed Checks</th><th>Closed Decisions</th><th>Record SHA256</th></tr></thead><tbody>\n");
+    for assessment in dashboard_array(&data.risk_assessments, "/risk_assessments")? {
+        let status = assessment
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td class=\"status-{}\">{}</td><td><code>{}</code></td><td>{}</td><td>{}</td><td><code>{}</code></td></tr>\n",
+            html_escape(assessment.get("risk_assessment_id").and_then(Value::as_str).unwrap_or("")),
+            safe_filename_fragment(status),
+            html_escape(status),
+            html_escape(assessment.get("tenant_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(assessment.get("failed_checks_total").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(assessment.pointer("/decision_register/summary/closed_decisions_total").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(assessment.get("record_sha256").unwrap_or(&Value::Null)))
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option><option value=\"retention_decision\">retention_decision</option><option value=\"evidence_deletion\">evidence_deletion</option><option value=\"release_gate\">release_gate</option><option value=\"pilot_package\">pilot_package</option><option value=\"risk_assessment\">risk_assessment</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"approved\">approved</option><option value=\"accepted\">accepted</option><option value=\"retained\">retained</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
     for (_, _, timeline) in &data.timelines {
         let run_id = timeline.get("run_id").and_then(Value::as_str).unwrap_or("");
         for record in dashboard_array(timeline, "/report/timeline")? {
@@ -12876,6 +15683,14 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
         html_escape(&dashboard_display_value(
             data.exports
                 .pointer("/exports/pilot_package_command")
+                .unwrap_or(&Value::Null)
+        ))
+    ));
+    html.push_str(&format!(
+        "<tr><td>Risk assessment</td><td><code>{}</code></td></tr>\n",
+        html_escape(&dashboard_display_value(
+            data.exports
+                .pointer("/exports/risk_assessment_command")
                 .unwrap_or(&Value::Null)
         ))
     ));
@@ -12994,6 +15809,7 @@ fn dashboard_timeline_record_detail(record: &Value) -> String {
         "/payload/privacy_decision_id",
         "/payload/release_gate_id",
         "/payload/pilot_package_id",
+        "/payload/risk_assessment_id",
         "/payload/decision/reason_code",
     ] {
         if let Some(value) = record.pointer(pointer) {
@@ -15463,14 +18279,14 @@ fn github_client(source_of_truth: &str, connector: &'static str) -> BbxResult<Cl
         })
 }
 
-fn github_header(headers: &HeaderMap, name: &'static str) -> Option<String> {
+fn github_header(headers: &ReqwestHeaderMap, name: &'static str) -> Option<String> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned)
 }
 
-fn github_rate_limit(headers: &HeaderMap) -> Value {
+fn github_rate_limit(headers: &ReqwestHeaderMap) -> Value {
     json!({
         "limit": github_header(headers, "x-ratelimit-limit"),
         "remaining": github_header(headers, "x-ratelimit-remaining"),
@@ -15484,7 +18300,7 @@ fn github_rate_limit(headers: &HeaderMap) -> Value {
     })
 }
 
-fn github_pagination(headers: &HeaderMap) -> Value {
+fn github_pagination(headers: &ReqwestHeaderMap) -> Value {
     json!({
         "link": github_header(headers, "link"),
     })
@@ -15497,7 +18313,7 @@ fn github_error_message(body: &Value) -> String {
         .to_string()
 }
 
-fn github_is_rate_limited(status: u16, headers: &HeaderMap, body: &Value) -> bool {
+fn github_is_rate_limited(status: u16, headers: &ReqwestHeaderMap, body: &Value) -> bool {
     if status == 429 {
         return true;
     }
@@ -15536,24 +18352,28 @@ async fn github_get_json(
     let client = github_client(source_of_truth, connector)?;
     let mut request = client
         .get(url.clone())
-        .header(USER_AGENT, HeaderValue::from_static(GITHUB_USER_AGENT))
+        .header(
+            USER_AGENT,
+            ReqwestHeaderValue::from_static(GITHUB_USER_AGENT),
+        )
         .header(
             ACCEPT,
-            HeaderValue::from_static("application/vnd.github+json"),
+            ReqwestHeaderValue::from_static("application/vnd.github+json"),
         )
         .header("X-GitHub-Api-Version", GITHUB_API_VERSION);
     if let Some(token) = github_token() {
-        let header_value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|err| {
-            BlackboxError::connector_blocked(
-                "CONNECTOR_CREDENTIAL_INVALID",
-                connector,
-                source_of_truth.to_string(),
-                "env.BBX_GITHUB_TOKEN",
-                format!("GitHub token could not be encoded as an HTTP header: {err}"),
-                "replace BBX_GITHUB_TOKEN/GITHUB_TOKEN with a valid bearer token",
-            )
-        })?;
-        request = request.header(AUTHORIZATION, header_value);
+        let header_value =
+            ReqwestHeaderValue::from_str(&format!("Bearer {token}")).map_err(|err| {
+                BlackboxError::connector_blocked(
+                    "CONNECTOR_CREDENTIAL_INVALID",
+                    connector,
+                    source_of_truth.to_string(),
+                    "env.BBX_GITHUB_TOKEN",
+                    format!("GitHub token could not be encoded as an HTTP header: {err}"),
+                    "replace BBX_GITHUB_TOKEN/GITHUB_TOKEN with a valid bearer token",
+                )
+            })?;
+        request = request.header(REQWEST_AUTHORIZATION, header_value);
     }
     let response = request.send().await.map_err(|err| {
         BlackboxError::connector_blocked(
@@ -15844,14 +18664,14 @@ fn gitlab_client(source_of_truth: &str) -> BbxResult<Client> {
         })
 }
 
-fn gitlab_header(headers: &HeaderMap, name: &'static str) -> Option<String> {
+fn gitlab_header(headers: &ReqwestHeaderMap, name: &'static str) -> Option<String> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned)
 }
 
-fn gitlab_rate_limit(headers: &HeaderMap) -> Value {
+fn gitlab_rate_limit(headers: &ReqwestHeaderMap) -> Value {
     json!({
         "limit": gitlab_header(headers, "ratelimit-limit"),
         "remaining": gitlab_header(headers, "ratelimit-remaining"),
@@ -15864,7 +18684,7 @@ fn gitlab_rate_limit(headers: &HeaderMap) -> Value {
     })
 }
 
-fn gitlab_pagination(headers: &HeaderMap) -> Value {
+fn gitlab_pagination(headers: &ReqwestHeaderMap) -> Value {
     json!({
         "link": gitlab_header(headers, "link"),
         "x_next_page": gitlab_header(headers, "x-next-page"),
@@ -15963,7 +18783,7 @@ fn gitlab_error_message(body: &Value) -> String {
     }
 }
 
-fn gitlab_is_rate_limited(status: u16, headers: &HeaderMap, body: &Value) -> bool {
+fn gitlab_is_rate_limited(status: u16, headers: &ReqwestHeaderMap, body: &Value) -> bool {
     status == 429
         || headers.contains_key(RETRY_AFTER)
         || gitlab_header(headers, "ratelimit-remaining").as_deref() == Some("0")
@@ -15981,10 +18801,13 @@ async fn gitlab_get_json(
     let client = gitlab_client(source_of_truth)?;
     let mut request = client
         .get(url.clone())
-        .header(USER_AGENT, HeaderValue::from_static(GITLAB_USER_AGENT))
-        .header(ACCEPT, HeaderValue::from_static("application/json"));
+        .header(
+            USER_AGENT,
+            ReqwestHeaderValue::from_static(GITLAB_USER_AGENT),
+        )
+        .header(ACCEPT, ReqwestHeaderValue::from_static("application/json"));
     if let Some(token) = gitlab_token() {
-        let header_value = HeaderValue::from_str(&token).map_err(|err| {
+        let header_value = ReqwestHeaderValue::from_str(&token).map_err(|err| {
             BlackboxError::connector_blocked(
                 "CONNECTOR_CREDENTIAL_INVALID",
                 GITLAB_CI_CONNECTOR_ID,

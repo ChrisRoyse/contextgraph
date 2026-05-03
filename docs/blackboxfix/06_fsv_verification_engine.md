@@ -17,6 +17,9 @@ decision verification over physical ledger and enterprise-control rows. Phase
 evidence, policy decisions, incident packets, privacy decisions, and RBAC.
 Phase 15 shipped pilot packaging verification over physical ledger rows and
 package files, including usage-meter and eval-candidate JSONL readback.
+Phase 16 shipped risk/open-question assessment over physical ledger rows,
+SQLite runtime PRAGMAs, package evidence, incident/eval conversion state, and
+a required decision-register JSON file.
 
 ## Full-State Verification Protocol
 
@@ -48,6 +51,7 @@ lives. Examples:
 - ticketing API for issue state.
 - package output files for pilot reports, usage meters, eval candidates, and
   manifests.
+- decision-register JSON files for required risk/open-question closure.
 
 For Phase 1 the durable system is the SQLite `ledger_records` table itself.
 A verifier of the ledger reads back the rows and recomputes both hash chains.
@@ -80,6 +84,8 @@ Shipped Phase 2/3/9/10/11 verifier ids:
 | `scanner_sbom_artifact_present_v1` | `scanner_artifact_v1` | CycloneDX JSON SBOM file | SBOM is valid CycloneDX JSON and contains enough components plus the expected component/version when supplied |
 | `blackbox_pilot_package_v1` | `blackbox_packaging_v1` | SQLite `ledger_records` + package files | package row id/hash/readback and manifest file hashes match |
 | `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
+| `blackbox_risk_assessment_v1` | `blackbox_risk_v1` | SQLite `ledger_records` | risk row id/hash/readback and accepted/blocked checks match physical ledger state |
+| `blackbox_open_question_decisions_v1` | `blackbox_risk_v1` | decision-register JSON file | every required Phase 16 decision exists exactly once, is closed, bounded, and secret-free |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;
@@ -221,6 +227,23 @@ real Git verifier evidence, appends real scorecard and privacy rows, runs
 scorecard, too-low max-risk threshold, unauthorized principal, incident-bearing
 run, invalid thresholds, and connector readback.
 
+Phase 15 follows the same doctrine for pilot packaging in
+`crates/context-graph-cli/tests/blackbox_phase15_pilot_package_fsv.rs`: the
+test writes real package files from real SQLite/Git/enterprise/score/privacy/
+release-gate rows, appends package rows, and reads package/dashboard files
+directly. It covers successful packaging, unmet criteria, unauthorized
+principals, invalid minimum actions, connector readback, dashboard readback,
+and manifest hash verification.
+
+Phase 16 follows the same doctrine for risk assessment in
+`crates/context-graph-cli/tests/blackbox_phase16_risk_register_fsv.rs`: the
+test writes real enterprise, Git verifier, scorecard, privacy, release-gate,
+package, and decision-register state, runs `blackbox risk evaluate`, and then
+reads physical SQLite `risk_assessment` and `enterprise_access_decision` rows
+directly. It covers blocked pre-package posture, accepted posture after the
+pilot package exists, unauthorized principal, invalid decision register,
+dashboard/API readback, and connector readback.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -271,7 +294,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4/9/10/11/12/13/14 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10/11/12/13/14/15/16 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 

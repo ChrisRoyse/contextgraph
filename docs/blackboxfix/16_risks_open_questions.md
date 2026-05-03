@@ -67,9 +67,9 @@ Mitigation:
 
 - `busy_timeout=5000`, `synchronous=FULL`, WAL journaling (already enabled);
 - recommend one writer per ledger file in Phase 1;
-- Phase 7 remains local and read-only for dashboard generation. A hosted
-  writer service with a single SQLite/Postgres write path per tenant remains
-  for the shared-ledger deployment.
+- Phase 17 ships a loopback authenticated HTTP writer with a single in-process
+  ledger lock and durable `http_request_audit` rows. Public multi-tenant SaaS
+  serving and Postgres-backed tenancy remain later work.
 
 ## Product Risks
 
@@ -115,7 +115,8 @@ Mitigation:
 
 - instrument at the tool boundary;
 - support MCP gateway (Phase 6);
-- provide generic HTTP/SDK ingestion.
+- provide generic HTTP ingestion (Phase 17 shipped the first authenticated
+  server) and SDK ingestion in a later phase.
 
 ### Model Provider Platform Moves
 
@@ -143,23 +144,33 @@ Mitigation:
   public, read-only project/pipeline/job source-of-truth endpoints suitable for
   live FSV without test tokens. Buildkite and CircleCI remain candidates for a
   later hosted-CI connector phase.
+- **How are remaining Phase 16 risks and open questions closed?**
+  → **Ledger-backed risk assessment.** Phase 16 ships
+  `blackbox risk evaluate`, connector `blackbox_risk_v1`, dashboard
+  `api/risk-assessments.json`, and ledger record kind `risk_assessment`. A
+  required decision-register JSON file must close every tracked open question
+  before an accepted risk posture can be persisted. Blocked posture is also
+  durable evidence and exits non-zero.
 
-## Open Questions (still open)
+## Phase 16 Required Decision Register
 
-- Which hosted CI connector should follow GitLab CI?
-  Candidates: Buildkite and CircleCI. Choose based on first paid pilot CI
-  footprint and availability of public read-only fixtures for live FSV.
-- What is the minimum dashboard required for a paid pilot?
-  Hypothesis: timeline + filter + evidence viewer + JSONL download. Validate
-  with two pilot prospects before building.
-- How much raw model text should be stored by default?
-  Hypothesis: redacted prompt + redacted response, truncated at 8 KB. Track
-  whether buyers consistently ask for un-truncated raw text in regulated
-  tiers.
-- What is the best customer-managed key path for enterprise?
-  Likely AWS KMS / GCP KMS / HashiCorp Vault — choose based on first
-  enterprise pilot's environment.
-- Which eval format should be exported first beyond JSONL?
-  Candidates: Parquet (we already ship this for `training-corpus`), HuggingFace
-  Datasets format. Default to Parquet to reuse the
-  `crates/context-graph-cli/src/commands/export_training.rs` wiring.
+The following questions are no longer prose-only. They are required ids in
+the Phase 16 decision-register JSON file consumed by `blackbox risk evaluate`.
+Each id must appear exactly once, must be `resolved`, `accepted`, or
+`deferred`, must have a future `review_due`, and must include owner,
+decision, rationale, review trigger, evidence, severity, and secret-free
+bounded text.
+
+| Required id | Default Phase 16 decision |
+|---|---|
+| `next_hosted_ci_connector` | Defer Buildkite/CircleCI selection until first paid-pilot CI footprint and available public read-only fixtures are known. |
+| `paid_pilot_dashboard_minimum` | Use the shipped dashboard timeline, evidence, error, package, and risk API files as the minimum paid-pilot surface. |
+| `raw_model_text_storage_default` | Store redacted/truncated model text only; raw untruncated text requires a later explicit enterprise storage/key decision. |
+| `customer_managed_key_path` | Keep tenant key ids and customer-managed metadata in enterprise config; provider-specific KMS/Vault automation remains pilot-driven. |
+| `eval_export_format_after_jsonl` | Keep JSONL/package outputs as shipped and prefer Parquet next because the repository already contains training-corpus export wiring for it. |
+
+## Open Questions (tracked by risk assessment)
+
+There are no untracked Phase 16 open questions. New questions must be added as
+explicit required decision ids and enforced by `blackbox_risk_v1`; otherwise
+they are documentation-only and do not satisfy FSV.

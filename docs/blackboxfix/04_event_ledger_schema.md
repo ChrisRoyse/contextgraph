@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 15 Physical Schema (shipped)
+## Phase 17 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 9 in Phase 15
+  schema_version              INTEGER NOT NULL,   -- 11 in Phase 17
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `9` | constant |
+| `schema_version` | `11` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-15 ship the following `record_kind` values. The remaining families
+Phases 1-17 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -123,6 +123,8 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 13 | `evidence_deletion` | append-only erasure/deletion-request approval or denial audit row |
 | 14 | `release_gate` | append-only release/promotion approval or block decision over score, evidence, incident, RBAC, and privacy state |
 | 15 | `pilot_package` | append-only pilot packaging/report row with usage meters, eval-candidate summary, file manifest, and source refs |
+| 16 | `risk_assessment` | append-only risk/open-question readiness decision over ledger, runtime, package, incident, secret-scan, and required decision evidence |
+| 17 | `http_request_audit` | append-only authenticated HTTP request/response audit row for the Phase 17 single-writer server |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -134,7 +136,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 9,
+  "schema_version": 11,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -161,6 +163,50 @@ The physical columns reify this envelope. JSON-shape view:
   }
 }
 ```
+
+## HttpRequestAudit Payload (Phase 17, shipped)
+
+`blackbox server serve --ledger PATH --bind 127.0.0.1:7607` writes one
+`http_request_audit` row for every protected HTTP request, including refused
+authentication, tenant mismatch, malformed schema, and body-limit failures.
+The row is the durable proof that the HTTP trigger happened and records the
+route, tenant/audit scope, status code, typed error code, body hashes, and
+server safety configuration.
+
+```json
+{
+  "record_kind": "http_request_audit",
+  "http_request_audit_id": "http_audit_<uuid_simple>",
+  "http_request_audit_schema_version": 1,
+  "request": {
+    "request_id": "http_req_...",
+    "method": "POST",
+    "path": "/v1/runs",
+    "route_id": "POST /v1/runs",
+    "tenant_id": "tenant_...",
+    "started_at": "2026-05-03T00:00:00Z",
+    "finished_at": "2026-05-03T00:00:00Z",
+    "body_sha256": "sha256:... | null"
+  },
+  "response": {
+    "status_code": 200,
+    "outcome": "ok | error",
+    "error_code": null,
+    "body_sha256": "sha256:..."
+  },
+  "server": {
+    "connector": "blackbox_http_server_v1",
+    "bind": "127.0.0.1:7607",
+    "max_body_bytes": 65536,
+    "api_key_storage": "environment_variable_hash_in_memory",
+    "single_writer_lock": true
+  }
+}
+```
+
+Authentication and schema failures use tenant id `tenant_http_gateway` so the
+failure itself is still auditable without trusting an unauthenticated tenant
+claim.
 
 ## EnterpriseTenantConfig Payload (Phase 8, shipped)
 
@@ -645,6 +691,77 @@ If pilot success criteria are not met, the package row and files are still
 durable evidence with `pilot_success.status=needs_more_evidence`; the CLI
 then exits non-zero with `PILOT_PACKAGE_CRITERIA_NOT_MET`. Invalid request
 fields and unauthorized principals create no package row or package files.
+
+## Risk Assessment (Phase 16, shipped)
+
+`blackbox risk evaluate` appends one `risk_assessment` row for authorized
+pilot-readiness risk reviews. The command validates the required open-question
+decision register before authorization, verifies the physical ledger and hash
+chain, persists and reads back an `enterprise_access_decision` for
+`risk.review`, evaluates the current ledger/runtime/package/incidents state,
+appends a durable accepted or blocked assessment, and reads the row back by
+sequence, `risk_assessment_id`, `payload_sha256`, and `record_sha256`.
+
+```json
+{
+  "record_kind": "risk_assessment",
+  "risk_assessment_schema_version": 1,
+  "risk_assessment_rule_version": "risk_register_v1",
+  "risk_assessment_id": "risk_assessment_<uuid_simple>",
+  "tenant_id": "tenant_...",
+  "request": {
+    "principal_id": "user_risk",
+    "permission": "risk.review",
+    "resource": "tenant:tenant_...:risk/assessment",
+    "decisions_path": "/tmp/phase16-decisions.json"
+  },
+  "ledger_runtime": {
+    "ledger_schema_version": 11,
+    "journal_mode": "wal",
+    "synchronous": 2,
+    "busy_timeout_ms": 5000
+  },
+  "risk_summary": {
+    "checks_total": 10,
+    "checks_passed": 10,
+    "checks_failed": 0,
+    "critical_failed": 0,
+    "risk_posture": "accepted"
+  },
+  "checks": [
+    {
+      "check_id": "open_questions_closed",
+      "passed": true,
+      "severity": "high",
+      "observed": 5,
+      "expected": 5,
+      "reason_code": null
+    }
+  ],
+  "open_question_decisions": {
+    "decision_schema_version": 1,
+    "required_decisions_total": 5,
+    "closed_decisions_total": 5,
+    "status_counts": { "resolved": 3, "accepted": 1, "deferred": 1 }
+  },
+  "decision": {
+    "status": "accepted",
+    "allowed": true,
+    "reason_code": "RISK_ASSESSMENT_ACCEPTED",
+    "failed_checks": []
+  },
+  "source_refs": {
+    "authorization_decision": { "record_kind": "enterprise_access_decision" },
+    "input_records": []
+  }
+}
+```
+
+Blocked assessments persist `decision.status=blocked` and a non-empty
+`failed_checks[]`, then the CLI exits non-zero with
+`RISK_ASSESSMENT_BLOCKED`. Invalid decision files or unauthorized principals
+do not create a `risk_assessment` row. Unauthorized attempts still persist the
+denied `enterprise_access_decision`.
 
 ## EvidencePacket (Phase 4, shipped)
 

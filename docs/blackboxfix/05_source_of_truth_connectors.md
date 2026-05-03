@@ -25,7 +25,12 @@ Phase 14 adds `blackbox_release_gate_v1`, which reads scorecard, verifier,
 evidence, incident, enterprise RBAC, and privacy rows and verifies release
 gate append readback. Phase 15 adds `blackbox_packaging_v1`, which reads the
 physical ledger, package files, and usage/eval JSONL outputs, then verifies
-`pilot_package` append readback.
+`pilot_package` append readback. Phase 16 adds `blackbox_risk_v1`, which reads
+the physical ledger, SQLite runtime state, package/risk/dashboard rows, and a
+required decision-register JSON file, then verifies `risk_assessment` append
+readback. Phase 17 adds `blackbox_http_server_v1`, which reads the physical
+ledger and verifies durable `http_request_audit` rows produced by the
+authenticated HTTP server.
 
 ## Connector Contract
 
@@ -163,6 +168,29 @@ Deferred examples:
 - `gha_artifact_present_v1`
 - `gha_test_report_no_failures_v1`
 
+### Phase 17: Authenticated HTTP Server — shipped
+
+Source of truth:
+
+- real HTTP request/response traffic to `blackbox server serve`;
+- SQLite `ledger_records` rows for business records and `http_request_audit`;
+- SQLite `blackbox_metadata` count/tip rows.
+
+Readback specs:
+
+- `http_request_audit_v1`;
+- `tenant_scoped_dashboard_v1`.
+
+Connector properties:
+
+- API key is read from an environment variable only and compared by hash;
+- protected endpoints require `X-Blackbox-Tenant`;
+- request body tenant must match the tenant header;
+- POST bodies are limited to 64 KiB;
+- all protected requests write an audit row, including auth/schema failures;
+- non-loopback binds fail closed unless explicitly paired with
+  `--allow-remote-bind --tls-terminated-by NAME`.
+
 ### Phase 8: Enterprise Controls — shipped
 
 Source of truth:
@@ -259,6 +287,37 @@ temporary directory, parse every JSON/JSONL artifact back, verify manifest
 hashes, append `pilot_package`, read the row back by id/hash/sequence, then
 promote and re-verify final files. Unmet pilot success criteria create a
 durable package row/files and return `PILOT_PACKAGE_CRITERIA_NOT_MET`.
+
+### Phase 16: Risk Register And Open Question Closure — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for tenant evidence, incidents, scorecards,
+  release gates, pilot packages, enterprise RBAC, and `risk_assessment`;
+- SQLite runtime PRAGMAs: WAL journal mode, `synchronous=FULL`, and
+  `busy_timeout >= 5000`;
+- a real decision-register JSON file containing every required Phase 16
+  open-question decision;
+- dashboard/API readback files, including `api/risk-assessments.json`.
+
+Shipped connector:
+
+- `blackbox_risk_v1`
+
+Readback specs:
+
+- `blackbox_risk_assessment_v1`;
+- `blackbox_open_question_decisions_v1`.
+
+The connector is fail-closed. Empty or malformed tenant/principal/agent
+fields, missing ledgers, unknown or duplicate decision ids, open decisions,
+expired review dates, unknown severities, extra schema keys, and secret-like
+decision text fail before a `risk_assessment` row is written. Unauthorized
+principals persist only the denied `enterprise_access_decision`. Authorized
+assessments read the physical ledger and runtime state, evaluate the required
+risk checks, append an accepted or blocked `risk_assessment`, and read the row
+back by id/hash/sequence. Blocked risk posture is durable evidence and exits
+non-zero with `RISK_ASSESSMENT_BLOCKED`.
 
 ### Phase 10: Package And Vulnerability Scanner Artifacts — shipped
 
@@ -363,4 +422,7 @@ subject digest match the test plan. For release gates shipped in Phase 14,
 `blackbox_release_gate_v1` reads and counts physical `release_gate` rows. For
 pilot packaging shipped in Phase 15, `blackbox_packaging_v1` reads and counts
 physical `pilot_package` rows and package FSV must also read package JSON/JSONL
-files and manifest hashes directly. Anything else is hearsay.
+files and manifest hashes directly. For risk assessment shipped in Phase 16,
+`blackbox_risk_v1` reads and counts physical `risk_assessment` rows, while
+manual FSV must also read the decision-register JSON and dashboard
+`api/risk-assessments.json` directly. Anything else is hearsay.

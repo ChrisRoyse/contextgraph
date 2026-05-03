@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 15)
+## Concrete Layout (shipped through Phase 17)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -39,10 +39,12 @@ agent runtime
 | Privacy controls | RBAC-gated retention and erasure-request decisions over enterprise config/directory rows | `blackbox privacy ...` |
 | Release gates | RBAC-gated release/promotion approval or block decisions over scorecards, evidence, incidents, and privacy state | `blackbox gate evaluate` |
 | Pilot packaging | RBAC-gated pilot report, usage-meter JSONL, eval-candidate JSONL, and manifest over physical ledger rows | `blackbox package pilot-report` |
-| FSV harness | Phase 1-15 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Risk assessment | RBAC-gated risk/open-question assessment over ledger, runtime, package, incident/eval, and decision-register evidence | `blackbox risk evaluate` |
+| HTTP server | Authenticated loopback HTTP server, single-writer ledger path, tenant-scoped dashboard reads, request audit rows | `blackbox server serve` |
+| FSV harness | Phase 1-17 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-15 is **not yet implemented**. Hosted multi-tenant
-serving remains reserved for later work.
+Anything outside Phases 1-17 is **not yet implemented**. Public multi-tenant
+SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)
 
@@ -75,7 +77,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -93,7 +95,7 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15)
+### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15/16)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`
@@ -162,6 +164,7 @@ JSON files:
 - `api/errors.json`;
 - `api/exports.json`;
 - `api/pilot-packages.json`;
+- `api/risk-assessments.json`;
 - `api/timeline_<run_id>.json`.
 
 `blackbox dashboard build` verifies the SQLite hash chain, verifies
@@ -228,6 +231,18 @@ hashes. Packages with unmet success criteria are durable evidence and exit
 non-zero; invalid requests and unauthorized principals create no package row
 or files.
 
+### Risk Assessments (Phase 16)
+
+`blackbox risk evaluate` closes the prose-risk gap. It validates a real
+decision-register JSON file, verifies the physical ledger and SQLite runtime
+durability settings, persists and reads back a `risk.review` authorization
+decision, checks source-of-truth coverage, verifier/policy status, enterprise
+controls, release gates, pilot-package evidence, incident-to-eval conversion,
+secret findings, and required open-question closure, appends a
+`risk_assessment` row, and reads it back by sequence/id/hash. Accepted and
+blocked assessments are both durable rows; invalid decision files and
+unauthorized principals create no risk row.
+
 ## Deployment Patterns
 
 ### Local Developer Mode (Phase 1)
@@ -270,7 +285,9 @@ Phase 11 shipped GitHub issue evidence-link readback for ticket proof. Phase
 12 shipped deterministic scorecards. Phase 13 shipped privacy retention and
 erasure decisions. Phase 14 shipped release/promotion gates over the verified
 ledger state. Phase 15 shipped pilot packaging, usage-meter rows, eval
-candidate rows, and dashboard package read models.
+candidate rows, and dashboard package read models. Phase 16 shipped
+risk-assessment rows, required open-question decision closure, and dashboard
+risk read models.
 
 ## Design Constraint
 

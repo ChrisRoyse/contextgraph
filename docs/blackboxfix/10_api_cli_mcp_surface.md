@@ -3,7 +3,7 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 15 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+Phase 17 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
 decision rows, a capability registry, a machine-readable HTTP API surface
 registry, a static dashboard/API bundle, and enterprise-control commands for
 SSO metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, and
@@ -13,10 +13,14 @@ deterministic run scorecards. Phase 13 adds authorized privacy retention and
 erasure-request decision rows. Phase 14 adds an authorized release/promotion
 gate that persists approved and blocked gate decisions. Phase 15 adds
 authorized pilot packaging, usage-meter JSONL, eval-candidate JSONL, package
-manifests, and dashboard package readback.
-SDKs and hosted HTTP serving are reserved for later phases.
+manifests, and dashboard package readback. Phase 16 adds authorized
+risk/open-question assessment, `risk_assessment` ledger rows, and dashboard
+risk readback. Phase 17 adds an authenticated loopback HTTP server, a
+single-writer ledger path, tenant-scoped dashboard reads, and durable
+`http_request_audit` rows for every protected HTTP request.
+SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 15)
+## CLI (shipped Phase 17)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -46,6 +50,7 @@ blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_P
 blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_release_gate_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_packaging_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_http_server_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -119,6 +124,14 @@ blackbox package pilot-report  --ledger PATH --tenant TENANT
                                --principal-id PRINCIPAL --pilot-id PILOT
                                --min-actions N --out DIR [--force]
                                --agent AGENT [--model MODEL]
+blackbox risk evaluate         --ledger PATH --tenant TENANT
+                               --principal-id PRINCIPAL
+                               --decisions DECISIONS_JSON
+                               --agent AGENT [--model MODEL]
+blackbox server serve          --ledger PATH
+                               [--bind 127.0.0.1:7607]
+                               [--api-key-env BLACKBOX_API_KEY]
+                               [--allow-remote-bind --tls-terminated-by NAME]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
                                [--mutating] [--verifier-id VERIFIER]
@@ -208,7 +221,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 9,
+  "schema_version": 11,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -236,8 +249,8 @@ after reading all files back from disk.
 `manifest.json`, `api/`, run/evidence/incident counts, manifest sha256, and
 ledger tip after reading every generated file back from disk. `dashboard api`
 returns one dashboard read model (`summary`, `runs`, `timeline`, `evidence`,
-`verifiers`, `errors`, `exports`, or `pilot-packages`) after verifying the
-source ledger.
+`verifiers`, `errors`, `exports`, `pilot-packages`, or `risk-assessments`)
+after verifying the source ledger.
 
 `enterprise configure` writes `enterprise_tenant_config` after validating
 OIDC/SAML metadata, RBAC roles, retention classes, private deployment
@@ -290,6 +303,18 @@ reading the appended package row back by sequence, `pilot_package_id`,
 persisted and exits non-zero with `PILOT_PACKAGE_CRITERIA_NOT_MET`; invalid
 requests and unauthorized principals create no package row/files.
 
+`risk evaluate` writes one `risk_assessment` row after validating a real
+decision-register JSON file, reading the physical ledger and SQLite runtime
+PRAGMAs, persisting and checking a `risk.review` authorization decision,
+evaluating ledger integrity, runtime durability, secret-scan, enterprise
+controls, source-of-truth coverage, verifier/policy status, release gates,
+pilot package success, incident-to-eval conversion, and required
+open-question closure, then reading the appended row back by sequence,
+`risk_assessment_id`, `payload_sha256`, and `record_sha256`. Blocked risk
+posture is persisted and exits non-zero with `RISK_ASSESSMENT_BLOCKED`;
+invalid decision registers and unauthorized principals create no
+`risk_assessment` row.
+
 `connector test --connector gitlab_ci_v1` reads GitLab project metadata and
 the latest pipeline from GitLab REST API v4. `gitlab_pipeline_status_v1`
 passes only when the expected pipeline id exists and the status, ref, and SHA
@@ -324,11 +349,57 @@ read from `ledger_records`.
 verifies the hash chains, and returns the total persisted `pilot_package` rows
 read from `ledger_records`.
 
-## HTTP API Surface (Phase 6 shipped as registry)
+`connector test --connector blackbox_risk_v1` opens the SQLite ledger,
+verifies the hash chains, and returns the total persisted `risk_assessment`
+rows read from `ledger_records`.
+
+`connector test --connector blackbox_http_server_v1` opens the SQLite ledger,
+verifies the hash chains, and returns the total persisted
+`http_request_audit` rows read from `ledger_records`.
+
+## HTTP API Surface (Phase 17 shipped server)
 
 `blackbox api surface [--ledger PATH]` returns the HTTP endpoint registry below
-as JSON, after verifying the ledger when `--ledger` is supplied. A network HTTP
-server remains reserved for a later hosted deployment.
+as JSON, after verifying the ledger when `--ledger` is supplied. Phase 17 also
+ships `blackbox server serve`, an authenticated JSON server over one local
+ledger. The server refuses non-loopback binds unless the operator explicitly
+passes `--allow-remote-bind --tls-terminated-by NAME`; API keys are read only
+from an environment variable and are compared by hash in memory.
+
+Protected routes require:
+
+```text
+Authorization: Bearer <BLACKBOX_API_KEY>
+X-Blackbox-Tenant: tenant_...
+Content-Type: application/json   # for POST bodies
+```
+
+Phase 17 served endpoints:
+
+```text
+GET  /v1/health
+POST /v1/runs
+GET  /v1/runs/{run_id}
+POST /v1/runs/{run_id}/steps
+POST /v1/tool-calls
+GET  /v1/dashboard/summary
+GET  /v1/dashboard/runs
+GET  /v1/dashboard/runs/{run_id}/timeline
+GET  /v1/dashboard/evidence
+GET  /v1/dashboard/verifier-status
+GET  /v1/dashboard/errors
+GET  /v1/dashboard/exports
+GET  /v1/dashboard/pilot-packages
+GET  /v1/dashboard/risk-assessments
+```
+
+Every protected request writes a `http_request_audit` row after acquiring the
+single-writer ledger lock. Authentication failures, tenant mismatches,
+schema errors, and 64 KiB body-limit failures are also audited. The source of
+truth is `sqlite:PATH#ledger_records`; return values are not considered proof
+without reading that table.
+
+Full registry endpoints:
 
 ```text
 POST /v1/runs
@@ -352,6 +423,7 @@ POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate
 POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests
 POST /v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate
 POST /v1/commercial/tenants/{tenant_id}/pilot-packages
+POST /v1/risk/tenants/{tenant_id}/assessments
 GET  /v1/dashboard/summary
 GET  /v1/dashboard/runs
 GET  /v1/dashboard/runs/{run_id}/timeline
@@ -360,6 +432,7 @@ GET  /v1/dashboard/verifier-status
 GET  /v1/dashboard/errors
 GET  /v1/dashboard/exports
 GET  /v1/dashboard/pilot-packages
+GET  /v1/dashboard/risk-assessments
 ```
 
 Write endpoints return the created ledger ids. They must not claim the action
@@ -418,7 +491,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 15)
+## OpenTelemetry Export (reserved after Phase 16)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -435,12 +508,14 @@ artifact readbacks, Phase 11 shipped GitHub ticket evidence-link readbacks,
 Phase 12 shipped deterministic scorecards, Phase 13 shipped privacy
 retention/erasure decision audit rows, and Phase 14 shipped release-gate
 decision rows. Phase 15 shipped usage-meter JSONL package output and kept
-OpenTelemetry emission as a later export path.
+OpenTelemetry emission as a later export path. Phase 16 shipped
+risk-assessment rows and dashboard risk readbacks while keeping OpenTelemetry
+as an export-only path.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 9 in Phase 15).
+- Ledger records include `schema_version` (= 11 in Phase 17).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -465,12 +540,17 @@ OpenTelemetry emission as a later export path.
 - Phase 15 bumps the ledger schema to 9 for the new `pilot_package` record
   kind and writes package artifacts outside the ledger with
   `pilot_package_schema_version = 1`.
+- Phase 16 bumps the ledger schema to 10 for the new `risk_assessment` record
+  kind with `risk_assessment_schema_version = 1`.
+- Phase 17 bumps the ledger schema to 11 for the new `http_request_audit`
+  record kind with `http_request_audit_schema_version = 1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
   `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
   `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
-  `blackbox_release_gate_v1`, `blackbox_packaging_v1` today).
+  `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
+  `blackbox_risk_v1`, `blackbox_http_server_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -498,8 +578,9 @@ Concrete inputs and expected outputs live in
 `30_phase11_state_and_invariants.md`,
 `31_phase12_state_and_invariants.md`,
 `32_phase13_state_and_invariants.md`,
-`33_phase14_state_and_invariants.md`, and
-`34_phase15_state_and_invariants.md`. The automated equivalents are
+`33_phase14_state_and_invariants.md`,
+`34_phase15_state_and_invariants.md`, and
+`35_phase16_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -523,4 +604,6 @@ integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase14_release_gate_fsv.rs`
 (1 local integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase15_pilot_package_fsv.rs`
+(1 local integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase16_risk_register_fsv.rs`
 (1 local integration test, PASS).

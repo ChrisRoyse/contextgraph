@@ -162,6 +162,8 @@ The platform fails closed if:
   Phase 13 emits `PRIVACY_*` errors and writes no privacy decision row.
 - pilot package files or rows cannot be written/read back — Phase 15 emits
   `PILOT_PACKAGE_*` errors and does not substitute a partial package.
+- risk decision registers or risk rows cannot be validated/appended/read back
+  — Phase 16 emits `RISK_*` errors and does not synthesize fallback closure.
 
 Phase 14 consumes these privacy rows in release gates when
 `blackbox gate evaluate --require-privacy` is used. The gate reads the

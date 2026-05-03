@@ -14,7 +14,7 @@ implementation.
 | Git edge fixture | real `.git` object DB and refs read through the installed `git` binary |
 
 Phase 4 shipped `LEDGER_SCHEMA_VERSION = 3`. The current live ledger schema is
-`LEDGER_SCHEMA_VERSION = 9` after Phase 15. `blackbox init` removes older ledger
+`LEDGER_SCHEMA_VERSION = 11` after Phase 17. `blackbox init` removes older ledger
 files (`.sqlite`, `-wal`, `-shm`) before initializing the current schema. There
 is no migration shim.
 

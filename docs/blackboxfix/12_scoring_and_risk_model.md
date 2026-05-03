@@ -13,6 +13,10 @@ export commands. Phase 14 release gates consume the latest scorecard but are
 not scoring inputs themselves. Phase 15 pilot packages consume scorecards and
 release gates as buyer proof inputs, but package rows are excluded from
 scorecard inputs so packaging cannot rewrite the score evidence it reports.
+Phase 16 risk assessments consume scorecards, release gates, packages, and
+incident/eval evidence as readiness inputs, but risk rows are also excluded
+from scorecard inputs so a risk review cannot rewrite the score evidence it
+evaluates.
 
 ## Score Dimensions
 
@@ -153,8 +157,8 @@ Phase 7 ships these metrics through `blackbox dashboard build` and
 
 The dashboard read models also expose verifier status by connector, agent,
 tenant, and tool; policy decision counts; unverified action count; evidence
-packet totals; incident totals; scorecard totals; and export commands for
-evidence/episodes/scorecards.
+packet totals; incident totals; scorecard totals; pilot package totals; risk
+assessment totals; and export commands for evidence/episodes/scorecards.
 Mean time to remediation, high-risk autonomous action trends, eval generation
 counts, and regression recurrence rate remain later aggregate metrics because
 they require additional lifecycle records.

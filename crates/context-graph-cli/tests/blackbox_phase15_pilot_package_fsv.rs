@@ -216,7 +216,7 @@ fn new_case() -> Phase15Case {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 9);
+    assert_eq!(init["schema_version"], 11);
     init_git_repo(&repo);
 
     let config_path = root.join("enterprise-config.json");

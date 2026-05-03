@@ -38,6 +38,15 @@ writing a line of code:
 | 6 | Phase 5 + MCP tool registry contents + `policy_decision`, `agent_step`, `model_decision` rows + physical Git state for gateway mutations |
 | 7 | Phase 6 + dashboard bundle files (`index.html`, `manifest.json`, `api/*.json`) and dashboard API responses |
 | 8 | Phase 7 + `enterprise_tenant_config`, `enterprise_directory_snapshot`, `enterprise_access_decision` rows + audit export files (`audit.jsonl`, `siem-rfc5424.log`, `controls.json`, `manifest.json`) |
+| 9 | Phase 8 + live GitLab REST project/pipeline/job API readbacks |
+| 10 | Phase 9 + physical OSV report, Cargo lockfile, and CycloneDX SBOM files |
+| 11 | Phase 10 + live GitHub issue body/comment API readbacks |
+| 12 | Phase 11 + `scorecard` rows read directly from SQLite |
+| 13 | Phase 12 + `retention_decision` and `evidence_deletion` rows read directly from SQLite |
+| 14 | Phase 13 + `release_gate` rows read directly from SQLite |
+| 15 | Phase 14 + `pilot_package` rows and package/dashboard JSON/JSONL files |
+| 16 | Phase 15 + `risk_assessment` rows and real decision-register JSON files |
+| 17 | Phase 16 + real HTTP requests to `blackbox server serve` and `http_request_audit` rows read directly from SQLite |
 
 If you cannot name the source of truth in one sentence, stop and design the
 data model first.

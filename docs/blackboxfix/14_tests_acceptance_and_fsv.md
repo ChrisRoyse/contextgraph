@@ -26,6 +26,8 @@ The mandatory operator-side protocol lives in
 | Privacy retention/deletion rows (Phase 13) | physical SQLite enterprise config/directory/access rows and run rows read independently, then persisted as `retention_decision` and `evidence_deletion` rows |
 | Release gate decisions (Phase 14) | physical SQLite scorecard/evidence/policy/privacy/incident/access rows read independently, then persisted as `release_gate` rows |
 | Pilot package rows and files (Phase 15) | physical SQLite tenant evidence/access rows read independently, then persisted as `pilot_package`; package JSON/JSONL files and dashboard package API files read back from disk with manifest hashes |
+| Risk assessment rows and decisions (Phase 16) | physical SQLite tenant evidence/runtime/access/package rows and a real decision-register JSON file read independently, then persisted as `risk_assessment`; dashboard risk API files read back from disk |
+| HTTP request audit rows (Phase 17) | real HTTP requests to `blackbox server serve`, physical SQLite business rows, and `http_request_audit` rows read independently after each request |
 
 ## Test Levels
 
@@ -91,6 +93,15 @@ real SQLite ledger with real enterprise, Git verifier, scorecard, privacy,
 and release-gate rows, appends real `pilot_package` rows, reads them directly
 from `ledger_records`, and reads package/dashboard JSON/JSONL files directly
 from disk.
+Phase 16 adds `tests/blackbox_phase16_risk_register_fsv.rs`, which uses a
+real SQLite ledger with real enterprise, Git verifier, scorecard, privacy,
+release-gate, package, and decision-register state, appends real
+`risk_assessment` rows, reads them directly from `ledger_records`, and reads
+dashboard/API risk files directly from disk.
+Phase 17 adds `tests/blackbox_phase17_http_server_fsv.rs`, which starts the
+real HTTP server process, sends real authenticated HTTP requests, appends
+real `agent_run`, `agent_step`, `tool_call`, and `http_request_audit` rows,
+and reads those rows directly from `ledger_records`.
 
 ## Acceptance Criteria
 
@@ -212,6 +223,11 @@ Concretely, that means:
   specs such as malformed evidence URLs, unsupported link scopes, invalid
   issue numbers, or invalid repository source segments are blocked before
   source reads and therefore do not create readback rows.
+- Phase 17 FSV starts a real `blackbox server serve` process, sends real
+  HTTP requests through `reqwest`, then opens the physical SQLite ledger to
+  prove business rows and `http_request_audit` rows exist only where expected.
+  Invalid auth, tenant mismatch, and oversized-body requests create no
+  business rows and do create typed audit rows.
 - Phase 12 FSV scores real ledger rows produced by real CLI commands and a
   real local Git verifier. It then opens the physical SQLite ledger to prove
   `scorecard` rows exist only where expected and contain the exact trust level,
@@ -243,6 +259,14 @@ Concretely, that means:
   disk, verifies manifest hashes/byte counts, and checks unmet-criteria,
   unauthorized-principal, and invalid-minimum-actions edges without
   fabricating success.
+- Phase 16 FSV reads a real decision-register JSON file plus physical
+  SQLite/Git/enterprise/score/privacy/release-gate/package rows, then opens
+  the physical SQLite ledger to prove `risk_assessment` and
+  `enterprise_access_decision` rows exist only where expected. It reads
+  dashboard `api/risk-assessments.json`, `api/summary.json`, and
+  `api/errors.json` directly from disk, and checks blocked posture, accepted
+  posture, unauthorized principal, and invalid-decision-register edges without
+  fabricating success.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -254,7 +278,7 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11/12/13/14/15 inputs/outputs are
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11/12/13/14/15/16 inputs/outputs are
 enumerated in `23_phase4_state_and_invariants.md`,
 `24_phase5_state_and_invariants.md`,
 `25_phase6_state_and_invariants.md`, and
@@ -265,8 +289,9 @@ enumerated in `23_phase4_state_and_invariants.md`,
 `30_phase11_state_and_invariants.md`, and
 `31_phase12_state_and_invariants.md`, and
 `32_phase13_state_and_invariants.md`,
-`33_phase14_state_and_invariants.md`, and
-`34_phase15_state_and_invariants.md`.
+`33_phase14_state_and_invariants.md`,
+`34_phase15_state_and_invariants.md`, and
+`35_phase16_state_and_invariants.md`.
 
 A synthetic test must include:
 

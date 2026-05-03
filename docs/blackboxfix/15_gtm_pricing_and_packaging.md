@@ -45,9 +45,11 @@ blackbox package pilot-report \
 Source of truth:
 
 - SQLite `ledger_records` row with `record_kind='pilot_package'`;
+- SQLite `ledger_records` row with `record_kind='risk_assessment'`;
 - package directory files `pilot-report.json`, `usage-meter-events.jsonl`,
   `eval-candidates.jsonl`, and `manifest.json`;
-- dashboard read model `api/pilot-packages.json`.
+- dashboard read models `api/pilot-packages.json` and
+  `api/risk-assessments.json`.
 
 The command is fail-closed. Invalid request fields create no rows/files.
 Unauthorized principals create only the denied `enterprise_access_decision`.
@@ -105,8 +107,9 @@ The demo must show physical evidence:
 3. Score the run.
 4. Evaluate privacy/release gates.
 5. Build the pilot package.
-6. Query SQLite for the `pilot_package` row.
-7. Read `manifest.json`, `usage-meter-events.jsonl`, and
+6. Evaluate risk/open-question closure.
+7. Query SQLite for the `pilot_package` and `risk_assessment` rows.
+8. Read `manifest.json`, `usage-meter-events.jsonl`, and
    `eval-candidates.jsonl` from disk.
 
 Screenshots are secondary. The artifact is accepted only when the buyer can
