@@ -109,8 +109,10 @@ const REQUEST_TIMEOUT_MS: u64 = 30000;
 /// Fast path connection timeout (500ms) - for time-critical hooks.
 const FAST_CONNECTION_TIMEOUT_MS: u64 = 500;
 
-/// Fast path request timeout (800ms) - for time-critical hooks like user_prompt_submit.
-const FAST_REQUEST_TIMEOUT_MS: u64 = 800;
+/// Fast path request timeout for time-critical hooks like user_prompt_submit.
+/// The shell hook deadline is 2s including process startup, JSON parsing, and
+/// logging, so optional MCP calls must fail quickly when the server is slow.
+const FAST_REQUEST_TIMEOUT_MS: u64 = 300;
 
 // =============================================================================
 // JSON-RPC Types
@@ -457,7 +459,7 @@ impl McpClient {
 
     /// Fast-path search for time-critical hooks (user_prompt_submit).
     ///
-    /// Uses shorter timeouts (500ms connection, 800ms request) to ensure
+    /// Uses shorter timeouts (500ms connection, 300ms request) to ensure
     /// the hook completes within its 2-second budget.
     ///
     /// # R8: Strategy Selection
@@ -746,7 +748,7 @@ impl McpClient {
 
     /// Fast-path call for time-critical hooks (user_prompt_submit).
     ///
-    /// Uses shorter timeouts (500ms connection, 800ms request) to ensure
+    /// Uses shorter timeouts (500ms connection, 300ms request) to ensure
     /// the hook completes within its 2-second budget.
     pub async fn call_tool_fast(
         &self,

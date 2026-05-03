@@ -58,6 +58,14 @@ const MIN_QUERY_LENGTH_FOR_SEARCH: usize = 10;
 /// Filters out low-relevance matches (e.g., pre-compaction markers, generic hook logs).
 const MIN_MEMORY_SIMILARITY: f32 = 0.4;
 
+/// Reserve time for JSON serialization, logging flushes, and shell wrapper
+/// overhead before Claude Code's 2s user-prompt hook deadline.
+const OPTIONAL_MCP_DEADLINE_RESERVE_MS: u64 = 450;
+
+/// One fast MCP request can take up to 300ms in `McpClient`; require a small
+/// extra margin before starting optional MCP work.
+const OPTIONAL_MCP_FAST_CALL_BUDGET_MS: u64 = 350;
+
 // ============================================================================
 // Identity Marker Types
 // ============================================================================
@@ -242,7 +250,9 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
 
     // 7b. Search knowledge graph for relevant memories via MCP
     //    Also cache them for pre_tool_use to access without network calls
-    let retrieved_memories = if mcp_available {
+    let retrieved_memories = if mcp_available
+        && optional_mcp_budget_available(&start, OPTIONAL_MCP_FAST_CALL_BUDGET_MS, "memory search")
+    {
         search_memories_for_prompt_with_client(&client, &args.session_id, &prompt, search_strategy)
             .await
     } else {
@@ -257,7 +267,12 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     // 8. E11 Entity Extraction and Search (KEPLER Integration)
     //    E11 finds what E1 misses - entity-relationship-aware discovery
     //    Example: Query "Diesel" → E11 knows it's a database ORM → surfaces ORM memories
-    let (extracted_entities, e11_discovered_memories) = if mcp_available {
+    let (extracted_entities, e11_discovered_memories) = if mcp_available
+        && optional_mcp_budget_available(
+            &start,
+            OPTIONAL_MCP_FAST_CALL_BUDGET_MS,
+            "E11 entity extraction",
+        ) {
         // Extract entities from prompt
         let entities = extract_entities_from_prompt_with_client(&client, &prompt)
             .await
@@ -267,7 +282,12 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
             });
 
         // If entities found, search with E11
-        let e11_memories = if !entities.is_empty() {
+        let e11_memories = if !entities.is_empty()
+            && optional_mcp_budget_available(
+                &start,
+                OPTIONAL_MCP_FAST_CALL_BUDGET_MS,
+                "E11 entity search",
+            ) {
             search_with_e11_entities(&client, &entities).await
         } else {
             Vec::new()
@@ -289,7 +309,13 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     }
 
     // 9. R10: Causal intent detection — E5 search for "why"/"because" prompts
-    let causal_memories = if mcp_available && has_causal_intent(&prompt) {
+    let causal_memories = if mcp_available
+        && has_causal_intent(&prompt)
+        && optional_mcp_budget_available(
+            &start,
+            OPTIONAL_MCP_FAST_CALL_BUDGET_MS,
+            "causal memory search",
+        ) {
         info!("PROMPT_SUBMIT: R10 causal intent detected, adding E5 causal search");
         match client
             .search_causal_fast(&prompt, "effect", Some(3), true)
@@ -320,7 +346,13 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
     let time_budget_remaining = USER_PROMPT_SUBMIT_TIMEOUT_MS.saturating_sub(elapsed_so_far_ms);
     const MIN_TIME_FOR_DIVERGENCE_MS: u64 = 500; // Need at least 500ms headroom
 
-    let divergence_alerts = if mcp_available && time_budget_remaining > MIN_TIME_FOR_DIVERGENCE_MS {
+    let divergence_alerts = if mcp_available
+        && time_budget_remaining > MIN_TIME_FOR_DIVERGENCE_MS
+        && optional_mcp_budget_available(
+            &start,
+            OPTIONAL_MCP_FAST_CALL_BUDGET_MS,
+            "divergence alert fetch",
+        ) {
         debug!(
             elapsed_so_far_ms,
             time_budget_remaining, "PROMPT_SUBMIT: Fetching divergence alerts"
@@ -409,6 +441,25 @@ pub async fn execute(args: PromptSubmitArgs) -> HookResult<HookOutput> {
         .with_coherence_state(coherence_state)
         .with_stability_classification(stability_classification)
         .with_context_injection(context_injection))
+}
+
+fn optional_mcp_budget_available(start: &Instant, required_ms: u64, operation: &str) -> bool {
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    let remaining_ms = USER_PROMPT_SUBMIT_TIMEOUT_MS.saturating_sub(elapsed_ms);
+    let required_with_reserve = required_ms + OPTIONAL_MCP_DEADLINE_RESERVE_MS;
+    if remaining_ms <= required_with_reserve {
+        warn!(
+            elapsed_ms,
+            remaining_ms,
+            required_ms,
+            reserve_ms = OPTIONAL_MCP_DEADLINE_RESERVE_MS,
+            operation,
+            "PROMPT_SUBMIT: skipping optional MCP operation because hook deadline budget is insufficient"
+        );
+        false
+    } else {
+        true
+    }
 }
 
 // ============================================================================
@@ -751,7 +802,7 @@ async fn search_memories_for_prompt_with_client(
     debug!("PROMPT_SUBMIT: Searching for memories via MCP (fast path)");
 
     // Search with includeContent=true to get memory text
-    // Using fast path (800ms timeout) to stay within 2s hook budget
+    // Using fast path (300ms timeout) to stay within 2s hook budget
     // minSimilarity filters out low-relevance noise (pre-compaction markers, generic logs)
     let memories = client
         .search_graph_fast(prompt, Some(MAX_MEMORIES_TO_RETRIEVE), true, Some(MIN_MEMORY_SIMILARITY), strategy)
@@ -1101,7 +1152,7 @@ async fn fetch_divergence_alerts_with_client(client: &McpClient) -> Vec<Divergen
     debug!("PROMPT_SUBMIT: Fetching divergence alerts via MCP (fast path)");
 
     // Fetch divergence alerts with 2-hour lookback (default)
-    // Using fast path (800ms timeout) to stay within 2s hook budget
+    // Using fast path (300ms timeout) to stay within 2s hook budget
     match client.get_divergence_alerts_fast(Some(2)).await {
         Ok(result) => parse_divergence_alerts(&result),
         Err(e) => {

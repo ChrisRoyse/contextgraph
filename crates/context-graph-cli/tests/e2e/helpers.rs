@@ -57,7 +57,7 @@ pub enum E2EError {
     #[error("Script not found: {0}")]
     ScriptNotFound(String),
 
-    #[error("CLI binary not found. Run: cargo build --release -p context-graph-cli")]
+    #[error("Cargo did not provide the context-graph-cli test binary path")]
     CliBinaryNotFound,
 
     #[error("Database error: {0}")]
@@ -95,15 +95,11 @@ fn hook_script_path(script_name: &str) -> PathBuf {
     workspace_root().join(".claude/hooks").join(script_name)
 }
 
-/// Get CLI binary path (prefers release, falls back to debug)
+/// Get the exact CLI binary path Cargo built for this test run.
 fn cli_binary_path() -> Result<PathBuf, E2EError> {
-    let release = workspace_root().join("target/release/context-graph-cli");
-    let debug = workspace_root().join("target/debug/context-graph-cli");
-
-    if release.exists() {
-        Ok(release)
-    } else if debug.exists() {
-        Ok(debug)
+    let cargo_bin = PathBuf::from(env!("CARGO_BIN_EXE_context-graph-cli"));
+    if cargo_bin.is_file() {
+        Ok(cargo_bin)
     } else {
         Err(E2EError::CliBinaryNotFound)
     }

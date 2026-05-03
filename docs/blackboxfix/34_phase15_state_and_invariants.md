@@ -161,7 +161,7 @@ Source of truth:
 - dashboard files under `/tmp/bbx-phase15-manual-fsv.QTDxYH/dashboard`
 - log: `/tmp/bbx-phase15-manual-fsv.QTDxYH/fsv.log`
 - log SHA-256:
-  `a4139d8c64904d957872fe29f3c86228d36553ad3a5b13dd981655b8f4351aa8`
+  `4ef2c4f5099cf48c759fdc6f74a2c0ccf2b50eba914ce16a7d582cd3ba35bf75`
 
 Happy path direct readback:
 

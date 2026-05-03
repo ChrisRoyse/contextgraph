@@ -42,7 +42,7 @@ fn fsv_b1_bge_m3_dense_module_contract() {
     section("B1. BgeM3DenseModel module contract (constants + construction)");
 
     println!(
-        "BEFORE expected: DIM=1024, MAX_TOKENS=8192, LATENCY=50ms, BOS=0, PAD=1, POS_OFFSET=2, PREFIX='roberta.'"
+        "BEFORE expected: DIM=1024, MAX_TOKENS=8192, LATENCY=50ms, BOS=0, PAD=1, POS_OFFSET=2, PREFIX=''"
     );
     println!(
         "AFTER  actual:   DIM={}, MAX_TOKENS={}, LATENCY={}ms, BOS={}, PAD={}, POS_OFFSET={}, PREFIX='{}'",
@@ -61,7 +61,7 @@ fn fsv_b1_bge_m3_dense_module_contract() {
     assert_eq!(XLM_R_BOS_TOKEN_ID, 0);
     assert_eq!(XLM_R_PAD_TOKEN_ID, 1);
     assert_eq!(XLM_R_POSITION_OFFSET, 2);
-    assert_eq!(XLM_R_WEIGHT_PREFIX, "roberta.");
+    assert_eq!(XLM_R_WEIGHT_PREFIX, "");
 
     // Construction: `new` succeeds with defaults; `is_initialized` is false.
     let path = PathBuf::from("./models/bge-m3-dense");
