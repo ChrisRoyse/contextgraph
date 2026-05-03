@@ -67,7 +67,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 10);
+  after Phase 11);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 
@@ -273,6 +273,8 @@ References:
 - <https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api?apiVersion=2022-11-28>
 - <https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28>
 - <https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/issues/comments?apiVersion=2022-11-28>
+- <https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api?apiVersion=2022-11-28>
 - <https://docs.github.com/en/rest/commits/commits?apiVersion=2022-11-28>
 - <https://docs.github.com/en/rest/checks/suites?apiVersion=2022-11-28>
 - <https://docs.github.com/en/rest/actions/workflow-runs?apiVersion=2022-11-28>
@@ -289,6 +291,12 @@ Design implication:
   responses such as commit/check-suite `422` are captured as verifier failures
   only where the endpoint contract and live readback prove they mean “target
   absent.”
+- every pull request is also an issue in GitHub's issue/comment APIs, so
+  ticket verifiers must reject issue payloads that contain a `pull_request`
+  marker instead of treating a PR body as ticket evidence;
+- issue comments are paginated with `per_page` up to 100 and `Link` headers,
+  so a ticket evidence verifier must persist comment page evidence and block
+  malformed or incomplete pagination rather than silently ignoring comments.
 
 ### GitLab REST API, Pipelines, And Jobs
 

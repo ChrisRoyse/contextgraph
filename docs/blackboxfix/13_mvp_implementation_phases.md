@@ -76,7 +76,7 @@ Deliverables (all shipped):
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
     **wiped** the ledger — no migration shim; current shipped schema is v5 after
-  Phase 10).
+  Phase 11).
 
 Exit criteria (verified):
 
@@ -454,6 +454,62 @@ artifact hashes persisted in readbacks:
   `sha256:52bada329ad56a72d75c80ecb7698a96f21ee0a6c071c5b745fdb960b2cad8a8`.
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
+keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
+
+## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
+
+Deliverables (all shipped):
+
+- `github_issue_evidence_link_v1` verifier on the existing `github_v1`
+  connector surface;
+- GitHub issue body readback through
+  `GET /repos/{owner}/{repo}/issues/{issue_number}`;
+- GitHub issue-comments readback through
+  `GET /repos/{owner}/{repo}/issues/{issue_number}/comments` with
+  `Link`-header pagination;
+- exact evidence URL validation for `http`/`https` URLs only;
+- `expected.link_scope` support for `body`, `comments`, and
+  `body_or_comments`;
+- pull-request guard: issue API responses that contain `pull_request` fail as
+  `GITHUB_ISSUE_IS_PULL_REQUEST`, so PRs cannot satisfy ticket evidence;
+- Phase 11 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`).
+
+Exit criteria (met):
+
+- remediation evidence can be verified against the real ticket body/comments
+  rather than the agent transcript;
+- missing issues, missing evidence links, PR-vs-issue ambiguity, invalid
+  evidence URLs, invalid scopes, schema drift, malformed pagination, and
+  permission/rate-limit errors fail closed with typed evidence;
+- readback snapshots persist issue metadata, issue body SHA/length, comment
+  page snapshots, pagination headers, matched locations, and the requested
+  evidence URL;
+- blocked invalid specs write expected/verifier/evidence rows without
+  readback rows, making it explicit that no source read occurred.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The live integration test independently
+discovers a real public GitHub issue whose body contains an `http(s)` URL,
+executes the real `context-graph blackbox` binary, then opens the physical
+SQLite ledger with `rusqlite`. It covers connector exposure, the happy
+evidence-link verifier, missing issue, wrong evidence URL, issue endpoint
+returning a pull request, invalid evidence URL, and invalid link scope.
+
+Manual FSV completed against `/tmp/bbx-phase11-manual-fsv.zftsp_oa/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=6`, `readback_snapshot=4`, `verifier_result=6`,
+`evidence_packet=6`, `incident_packet=3`. Direct GitHub readback proved
+`actions/checkout#2424` was an open issue whose body contained
+`https://github.com/xxxxx/xxxxx` with issue body SHA
+`sha256:06f5ae49bd5152ec5da468bda6d879e37f0e002e59277fcc5f11ebeb659bc4e5`.
+
+No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
 
 ## Phase Sequencing Rules

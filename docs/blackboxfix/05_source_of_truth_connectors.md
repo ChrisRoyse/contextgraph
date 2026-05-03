@@ -15,7 +15,9 @@ physical source of truth for the first verified gateway mutation. Phase 8 adds
 RBAC/tenant-isolation decisions, and audit/SIEM export readback. Phase 9 adds
 `gitlab_ci_v1` for hosted GitLab pipeline and job-state readback. Phase 10
 adds `scanner_artifact_v1` for physical OSV report, Cargo lockfile, and
-CycloneDX SBOM readback.
+CycloneDX SBOM readback. Phase 11 extends `github_v1` with
+`github_issue_evidence_link_v1` for ticket evidence-link verification through
+GitHub issue bodies and comments.
 
 ## Connector Contract
 
@@ -109,11 +111,20 @@ Shipped verifiers:
 - `github_branch_head_matches_commit_v1`
 - `github_check_suite_passed_v1`
 - `github_issue_state_changed_v1`
+- `github_issue_evidence_link_v1`
 
 The connector uses GitHub REST API `GET` endpoints only. It sends
 `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`,
 and a stable user agent. `BBX_GITHUB_TOKEN` or `GITHUB_TOKEN` is optional for
 public resources and required by operators for private resources.
+
+`github_issue_evidence_link_v1` reads the issue endpoint and, when requested,
+the issue-comments endpoint across all `Link`-paginated pages. It verifies an
+exact absolute `http(s)` evidence URL in the issue body, comments, or either
+location. API responses that include `pull_request` are failed as
+`GITHUB_ISSUE_IS_PULL_REQUEST`; pull requests cannot satisfy ticket evidence.
+Malformed/incomplete pagination, invalid evidence URLs, and invalid scopes are
+blocked typed errors, not partial passes.
 
 ### Phase 3/9: CI Providers — GitHub Actions + GitLab CI shipped
 
@@ -200,7 +211,7 @@ a physical source are blocked before a readback row is written.
   `tf_state_attribute_v1`, `cloud_resource_present_v1`,
   `cloud_audit_principal_action_v1`.
 - Ticketing: `jira_ticket_state_v1`, `linear_ticket_state_v1`,
-  `servicenow_ticket_state_v1`, `github_issue_evidence_link_v1`.
+  `servicenow_ticket_state_v1`.
 
 ## Connector Lifecycle
 
@@ -218,7 +229,7 @@ Every new connector lands as a single PR that includes:
 
 A connector PR that lacks any of items 1–7 must not merge.
 
-## First Connector Set (Phase 2 + 3 + 10 demo)
+## First Connector Set (Phase 2 + 3 + 10 + 11 demo)
 
 For the first product demo (`18_first_wedge_demo.md`):
 
@@ -226,6 +237,7 @@ For the first product demo (`18_first_wedge_demo.md`):
 - GitHub PRs / checks / issues;
 - local test command verifier;
 - OSV JSON report, Cargo lockfile, and CycloneDX SBOM artifacts;
+- GitHub issue evidence-link verification for ticket proof;
 - JSONL evidence exporter (Phase 5).
 
 This produces a credible DevSecOps agent governance workflow with inspectable
@@ -247,10 +259,12 @@ PY
 ```
 
 For GitHub/GHA shipped in Phase 3, `<fixture>` is `OWNER/REPO` and the test
-suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it. For
-GitLab CI shipped in Phase 9, `<fixture>` is `GROUP/PROJECT` and the test
-suite uses `gitlab-org/gitlab-runner` unless `BBX_GITLAB_TEST_PROJECT`
-overrides it. For scanner artifacts shipped in Phase 10, `<fixture>` is an
-OSV JSON report path, and verifier specs point at real OSV JSON,
-`Cargo.lock`, and CycloneDX JSON files. Confirm the row counts match the test
-plan. Anything else is hearsay.
+suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it.
+Phase 11 uses the same `github_v1` fixture and independently discovers a real
+issue whose body contains an `http(s)` URL before verifying
+`github_issue_evidence_link_v1`. For GitLab CI shipped in Phase 9,
+`<fixture>` is `GROUP/PROJECT` and the test suite uses
+`gitlab-org/gitlab-runner` unless `BBX_GITLAB_TEST_PROJECT` overrides it. For
+scanner artifacts shipped in Phase 10, `<fixture>` is an OSV JSON report path,
+and verifier specs point at real OSV JSON, `Cargo.lock`, and CycloneDX JSON
+files. Confirm the row counts match the test plan. Anything else is hearsay.

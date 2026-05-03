@@ -21,6 +21,7 @@ The mandatory operator-side protocol lives in
 | Enterprise controls and audit export (Phase 8) | SSO/RBAC/retention/key config rows, SCIM directory rows, access decision rows, `audit.jsonl`, `siem-rfc5424.log`, `controls.json`, and `manifest.json` read back directly |
 | GitLab CI API + ledger evidence rows (Phase 9) | live GitLab project/pipeline/job state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
 | Scanner artifact files + ledger evidence rows (Phase 10) | OSV JSON reports, Cargo lockfiles, CycloneDX JSON SBOM files, and physical SQLite rows read directly |
+| GitHub Issues API + ledger evidence rows (Phase 11) | live GitHub issue body/comment state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
 
 ## Test Levels
 
@@ -67,6 +68,9 @@ discovers live GitLab source-of-truth state with `curl`, runs the real CLI,
 and reads SQLite rows directly. Phase 10 adds
 `tests/blackbox_phase10_scanner_fsv.rs`, which writes real scanner artifact
 files, runs the real CLI, and reads SQLite rows plus artifact files directly.
+Phase 11 adds `tests/blackbox_phase11_github_issue_evidence_fsv.rs`, which
+discovers live GitHub issue source-of-truth state with `curl`, verifies the
+evidence link through the real CLI, and reads SQLite rows directly.
 
 ## Acceptance Criteria
 
@@ -179,6 +183,12 @@ Concretely, that means:
   Invalid verifier specs such as unsupported lockfile formats or
   `minimum_components=0` are blocked before source reads and therefore do not
   create readback rows.
+- Phase 11 FSV reads a real public GitHub issue and issue-comments endpoint,
+  verifies an exact `http(s)` evidence link in the issue body/comments, then
+  opens the physical SQLite ledger to prove expected, readback, verifier,
+  evidence, and incident rows exist only where expected. Invalid verifier
+  specs such as malformed evidence URLs or unsupported link scopes are blocked
+  before source reads and therefore do not create readback rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -190,14 +200,15 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10 inputs/outputs are
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11 inputs/outputs are
 enumerated in `23_phase4_state_and_invariants.md`,
 `24_phase5_state_and_invariants.md`,
 `25_phase6_state_and_invariants.md`, and
 `26_phase7_state_and_invariants.md`, and
 `27_phase8_state_and_invariants.md`, and
 `28_phase9_state_and_invariants.md`, and
-`29_phase10_state_and_invariants.md`.
+`29_phase10_state_and_invariants.md`, and
+`30_phase11_state_and_invariants.md`.
 
 A synthetic test must include:
 

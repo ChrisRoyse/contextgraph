@@ -3,12 +3,13 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-The CLI/MCP/dashboard/enterprise/scanner demo is now viable through
-**Phase 10**:
+The CLI/MCP/dashboard/enterprise/scanner/ticket-evidence demo is now viable
+through **Phase 11**:
 Git + GitHub + CI verifiers, evidence packets, forensic replay, evidence
 export, episode/eval export, a policy-governed MCP gateway for verified Git
 patch application, tenant-scoped enterprise audit/SIEM export, and scanner
-artifact verification for vulnerability remediation.
+artifact verification for vulnerability remediation, plus GitHub issue
+evidence-link verification for ticket proof.
 
 ## Demo Thesis
 
@@ -36,7 +37,7 @@ the ticketing system, then exports verified and failed episodes for evals.
 | GitHub | API | `GET /repos/.../pulls/N`, `GET /repos/.../check-suites` |
 | CI | GitHub Actions API | `GET /repos/.../actions/runs/M` |
 | Scanner | OSV JSON / Cargo lockfile / CycloneDX SBOM | artifact file readback + lockfile parse |
-| Ticketing | Jira/Linear/GitHub Issues API | issue state + linked PR |
+| Ticketing | GitHub Issues API | issue state + exact evidence link in body/comments |
 | Ledger | BlackBoxFix SQLite | `sqlite3 <ledger> "SELECT … FROM ledger_records …"` |
 
 ## Happy Path Expected Deltas
@@ -97,8 +98,8 @@ Expected:
 
 The recorder-only commands still work end-to-end against synthetic input.
 Use this only when the goal is to demonstrate redaction and hash-chain
-integrity without external source systems. The full Phase 10 surface below is
-the current verified vulnerability-remediation demo path.
+integrity without external source systems. The Phase 11 shipped surface below
+is the current verified vulnerability-remediation demo path.
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
@@ -137,13 +138,14 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 10 shipped surface)
+## Demo Commands (Phase 11 shipped surface)
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
 context-graph blackbox connector test --connector github_v1 --source org/service
 context-graph blackbox connector test --connector scanner_artifact_v1 --source osv-report.json
 context-graph blackbox verify --ledger "$ledger" --input verify-spec.json
+context-graph blackbox verify --ledger "$ledger" --input github-issue-evidence-spec.json
 context-graph blackbox replay --ledger "$ledger" --run-id "$RUN"
 context-graph blackbox export evidence --ledger "$ledger" --run-id "$RUN" --out evidence.json
 context-graph blackbox export episodes --ledger "$ledger" --out episodes-export

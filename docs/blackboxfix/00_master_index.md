@@ -29,7 +29,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 10; old ledgers are
+    ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 11; old ledgers are
     wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
@@ -41,7 +41,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
   - Phase 3 added no new record kinds. Current ledgers run under schema v5
-    after Phase 10.
+    after Phase 11.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -69,7 +69,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `blackbox api surface`.
   - New record kinds originally added under schema v4: `policy_decision`,
     `agent_step`, `model_decision`. Current ledgers run under schema v5 after
-    Phase 10.
+    Phase 11.
   - Gateway first workflow: `verified_git_apply_patch` applies a real Git patch
     and returns verifier evidence from `git_file_diff_matches_patch_v1`.
   - FSV test suite:
@@ -125,6 +125,18 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     (1 local integration test covering 3 happy verifiers + 9 edge checks; run
     with
     `cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv`).
+- **Phase 11 (GitHub Issue Evidence-Link Verification)**: COMPLETE and verified.
+  - Connector surface: existing `github_v1`.
+  - Verifier: `github_issue_evidence_link_v1`.
+  - Source of truth: GitHub Issues REST API issue body and issue comments,
+    plus local SQLite ledger evidence rows. Pull requests returned by the
+    Issues endpoint are rejected as ticket evidence. No schema bump; current
+    ledgers remain `LEDGER_SCHEMA_VERSION = 5`.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`
+    (1 live integration test covering connector exposure, 1 happy verifier,
+    and 5 edge checks; run with
+    `cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv`).
 
 ## Build And Test Quick Reference
 
@@ -162,6 +174,9 @@ cargo test --package context-graph-cli --test blackbox_phase9_gitlab_ci_fsv -- -
 # Phase 10 FSV tests (real scanner files + real SQLite ledger)
 cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv -- --nocapture
 
+# Phase 11 FSV tests (live GitHub issue/comments API + real SQLite ledger)
+cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -176,7 +191,7 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 10
+- `04_event_ledger_schema.md` — record contracts and the current Phase 11
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped
   local/GitHub/GitLab/enterprise/scanner-artifact connectors.
@@ -184,10 +199,10 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 10 scanner artifacts shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 11 GitHub ticket evidence shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–10 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–11 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -217,6 +232,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   verifiers, live tests, and manual FSV evidence.
 - `29_phase10_state_and_invariants.md` — shipped Phase 10 scanner artifact
   connector, verifiers, local tests, and manual FSV evidence.
+- `30_phase11_state_and_invariants.md` — shipped Phase 11 GitHub issue
+  evidence-link verifier, live tests, and manual FSV evidence.
 
 ## Build Doctrine
 

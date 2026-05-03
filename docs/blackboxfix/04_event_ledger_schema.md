@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 10 Physical Schema (shipped; unchanged from Phase 8)
+## Phase 11 Physical Schema (shipped; unchanged from Phase 8)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 5 in Phase 10
+  schema_version              INTEGER NOT NULL,   -- 5 in Phase 11
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-10 ship the following `record_kind` values. The remaining families
+Phases 1-11 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -394,10 +394,11 @@ Typed failure example:
 
 Phase 3 reuses these same three evidence record kinds for GitHub/GitHub
 Actions readbacks. Phase 9 reuses them again for GitLab CI pipeline/job
-readbacks. Phase 10 reuses them again for scanner artifact readbacks. No new
-table or schema version was required because the existing payloads already
-include connector id, operation, source locator, observed state, typed error
-fields, and remediation.
+readbacks. Phase 10 reuses them again for scanner artifact readbacks. Phase 11
+reuses them again for GitHub issue evidence-link readbacks. No new table or
+schema version was required because the existing payloads already include
+connector id, operation, source locator, observed state, typed error fields,
+and remediation.
 
 ## EvidencePacket (Phase 4, shipped)
 

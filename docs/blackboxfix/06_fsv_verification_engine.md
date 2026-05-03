@@ -9,7 +9,8 @@ outcome verifiers. Phase 3 shipped GitHub/GitHub Actions outcome verifiers.
 Phase 4 shipped evidence packets, incident packets, read-only replay, and
 evidence export. Phase 9 shipped GitLab CI hosted pipeline/job verifiers.
 Phase 10 shipped scanner artifact verifiers for OSV JSON, Cargo lockfiles,
-and CycloneDX JSON SBOMs.
+and CycloneDX JSON SBOMs. Phase 11 shipped GitHub issue evidence-link
+verification for ticket proof.
 
 ## Full-State Verification Protocol
 
@@ -49,7 +50,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2/3/9/10 verifier ids:
+Shipped Phase 2/3/9/10/11 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -61,6 +62,7 @@ Shipped Phase 2/3/9/10 verifier ids:
 | `github_pr_state_v1` | `github_v1` | GitHub pull request API | PR exists and state equals expected |
 | `github_branch_head_matches_commit_v1` | `github_v1` | GitHub commit API for `heads/<branch>` | branch/ref resolves to expected commit SHA |
 | `github_issue_state_changed_v1` | `github_v1` | GitHub issue API | issue exists, is not a PR, and state equals expected |
+| `github_issue_evidence_link_v1` | `github_v1` | GitHub issue and issue-comments APIs | issue exists, is not a PR, and exact evidence URL appears in the requested body/comment scope |
 | `github_check_suite_passed_v1` | `github_v1` | GitHub check suites API | at least one suite exists and all suite conclusions match expected |
 | `gha_workflow_run_completed_v1` | `gha_v1` | GitHub Actions workflow run API | workflow run status and conclusion match expected |
 | `gitlab_pipeline_status_v1` | `gitlab_ci_v1` | GitLab REST API `GET /projects/:id/pipelines/:pipeline_id` | pipeline id exists and status, ref, and SHA all match expected |
@@ -171,6 +173,15 @@ invalid JSON, schema drift, zero-minimum SBOM expectations, and vulnerability
 still-present failures. Artifact parse failures are blocked with source-path
 and parse/schema details; outcome mismatches are failed and create incidents.
 
+Phase 11 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`:
+the live integration test discovers a real public GitHub issue with an
+`http(s)` URL in its body, verifies that exact evidence link through
+`github_issue_evidence_link_v1`, then covers missing issues, missing evidence
+links, PR-vs-issue ambiguity, invalid evidence URLs, and invalid link scopes.
+Issue-comments pagination is persisted in `readback_snapshot`; malformed or
+incomplete pagination is `blocked`, not silently treated as complete.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -221,7 +232,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4/9/10 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10/11 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -250,17 +261,20 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3/4/9/10 happy paths use real Git/local-command, live
-# GitHub/GHA/GitLab sources, real scanner artifact files, and real exported
-# evidence files; see tests/blackbox_phase2_fsv.rs,
+# Phase 2/3/4/9/10/11 happy paths use real Git/local-command, live
+# GitHub/GHA/GitLab sources, real scanner artifact files, real exported
+# evidence files, and real GitHub issue/comment readbacks; see
+# tests/blackbox_phase2_fsv.rs,
 # tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs,
 # tests/blackbox_phase9_gitlab_ci_fsv.rs,
-# tests/blackbox_phase10_scanner_fsv.rs, and
+# tests/blackbox_phase10_scanner_fsv.rs,
+# tests/blackbox_phase11_github_issue_evidence_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
 # docs/blackboxfix/22_phase3_state_and_invariants.md /
 # docs/blackboxfix/23_phase4_state_and_invariants.md /
 # docs/blackboxfix/28_phase9_state_and_invariants.md /
-# docs/blackboxfix/29_phase10_state_and_invariants.md.
+# docs/blackboxfix/29_phase10_state_and_invariants.md /
+# docs/blackboxfix/30_phase11_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.
