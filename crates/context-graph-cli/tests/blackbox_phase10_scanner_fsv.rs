@@ -31,6 +31,7 @@ struct Phase10Case {
     invalid_sbom: PathBuf,
     missing_report: PathBuf,
     missing_sbom: PathBuf,
+    directory_artifact: PathBuf,
 }
 
 fn context_graph_bin() -> PathBuf {
@@ -146,6 +147,7 @@ fn new_phase10_case() -> Phase10Case {
     let invalid_sbom = root.join("invalid-bom.json");
     let missing_report = root.join("missing-osv.json");
     let missing_sbom = root.join("missing-bom.json");
+    let directory_artifact = root.join("artifact-directory");
 
     let clean_osv = json!({
         "results": [{
@@ -222,6 +224,7 @@ checksum = "phase10serdechecksum"
     );
     write_json(&sbom, &cyclonedx);
     write_json(&invalid_sbom, &invalid_cyclonedx);
+    fs::create_dir(&directory_artifact).expect("create directory artifact fixture");
 
     init_ledger(&ledger);
     let tool_input = root.join("tool-input.json");
@@ -257,6 +260,7 @@ checksum = "phase10serdechecksum"
         invalid_sbom,
         missing_report,
         missing_sbom,
+        directory_artifact,
     }
 }
 
@@ -519,6 +523,26 @@ fn phase10_scanner_artifact_fsv() {
         false
     );
 
+    let unmatched_report_package = assert_edge(
+        &case,
+        "scanner_vulnerability_absent_v1",
+        source_report(&case.clean_report),
+        json!({
+            "vulnerability_id": VULN_ID,
+            "package": "package-not-in-report",
+            "ecosystem": "crates.io",
+            "version": "1.10.3"
+        }),
+        "failed",
+        "SCANNER_REPORT_PACKAGE_NOT_FOUND",
+        1,
+        1,
+    );
+    assert_eq!(
+        unmatched_report_package["actual_readback"]["matching_packages_count"],
+        0
+    );
+
     let invalid_json = assert_edge(
         &case,
         "scanner_vulnerability_absent_v1",
@@ -560,6 +584,17 @@ fn phase10_scanner_artifact_fsv() {
         1,
     );
     assert_eq!(missing_package["actual_readback"]["matching_count"], 0);
+
+    assert_edge(
+        &case,
+        "scanner_vulnerability_absent_v1",
+        source_report(&case.directory_artifact),
+        json!({ "vulnerability_id": VULN_ID }),
+        "blocked",
+        "SCANNER_ARTIFACT_NOT_FILE",
+        0,
+        0,
+    );
 
     assert_edge(
         &case,
@@ -622,9 +657,23 @@ fn phase10_scanner_artifact_fsv() {
         0,
     );
 
-    assert_kind_count(&case.ledger, "expected_delta", 12);
-    assert_kind_count(&case.ledger, "readback_snapshot", 10);
-    assert_kind_count(&case.ledger, "verifier_result", 12);
-    assert_kind_count(&case.ledger, "evidence_packet", 12);
-    assert_kind_count(&case.ledger, "incident_packet", 5);
+    assert_edge(
+        &case,
+        "scanner_sbom_artifact_present_v1",
+        source_sbom(&case.sbom),
+        json!({
+            "minimum_components": 1,
+            "component_version": "1.10.3"
+        }),
+        "blocked",
+        "SCANNER_SBOM_COMPONENT_VERSION_WITHOUT_NAME",
+        0,
+        0,
+    );
+
+    assert_kind_count(&case.ledger, "expected_delta", 15);
+    assert_kind_count(&case.ledger, "readback_snapshot", 11);
+    assert_kind_count(&case.ledger, "verifier_result", 15);
+    assert_kind_count(&case.ledger, "evidence_packet", 15);
+    assert_kind_count(&case.ledger, "incident_packet", 6);
 }

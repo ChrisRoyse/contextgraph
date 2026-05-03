@@ -122,7 +122,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     schema bump; current ledgers remain `LEDGER_SCHEMA_VERSION = 5`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs`
-    (1 local integration test covering 3 happy verifiers + 9 edge checks; run
+    (1 local integration test covering 3 happy verifiers + 12 edge checks; run
     with
     `cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv`).
 - **Phase 11 (GitHub Issue Evidence-Link Verification)**: COMPLETE and verified.
@@ -135,7 +135,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`
     (1 live integration test covering connector exposure, 1 happy verifier,
-    and 5 edge checks; run with
+    and 7 edge checks; run with
     `cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv`).
 
 ## Build And Test Quick Reference

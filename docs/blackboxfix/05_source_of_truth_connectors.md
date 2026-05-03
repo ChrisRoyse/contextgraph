@@ -123,8 +123,9 @@ the issue-comments endpoint across all `Link`-paginated pages. It verifies an
 exact absolute `http(s)` evidence URL in the issue body, comments, or either
 location. API responses that include `pull_request` are failed as
 `GITHUB_ISSUE_IS_PULL_REQUEST`; pull requests cannot satisfy ticket evidence.
-Malformed/incomplete pagination, invalid evidence URLs, and invalid scopes are
-blocked typed errors, not partial passes.
+Invalid owner/repo source segments, invalid issue numbers, malformed/incomplete
+pagination, invalid evidence URLs, and invalid scopes are blocked typed errors,
+not partial passes.
 
 ### Phase 3/9: CI Providers — GitHub Actions + GitLab CI shipped
 

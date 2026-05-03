@@ -180,15 +180,18 @@ Concretely, that means:
   CycloneDX JSON SBOM files; verifies vulnerability absence, lockfile pinning,
   and SBOM presence; then opens the physical SQLite ledger to prove expected,
   readback, verifier, evidence, and incident rows exist only where expected.
-  Invalid verifier specs such as unsupported lockfile formats or
-  `minimum_components=0` are blocked before source reads and therefore do not
-  create readback rows.
+  Invalid verifier specs such as unsupported lockfile formats,
+  `minimum_components=0`, directory artifact paths, and component versions
+  without component names are blocked before source reads and therefore do not
+  create readback rows. A clean OSV report for the wrong package filters
+  fails and creates incident evidence.
 - Phase 11 FSV reads a real public GitHub issue and issue-comments endpoint,
   verifies an exact `http(s)` evidence link in the issue body/comments, then
   opens the physical SQLite ledger to prove expected, readback, verifier,
   evidence, and incident rows exist only where expected. Invalid verifier
-  specs such as malformed evidence URLs or unsupported link scopes are blocked
-  before source reads and therefore do not create readback rows.
+  specs such as malformed evidence URLs, unsupported link scopes, invalid
+  issue numbers, or invalid repository source segments are blocked before
+  source reads and therefore do not create readback rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth

@@ -417,6 +417,8 @@ Exit criteria (met):
 
 - vulnerability remediation can be verified against the scanner report rather
   than the agent transcript;
+- filtered vulnerability absence requires the OSV report to contain at least
+  one package matching the requested package/ecosystem/version filters;
 - lockfile pinning proves the durable dependency version in `Cargo.lock`;
 - SBOM presence proves a CycloneDX artifact exists and contains expected
   components;
@@ -433,10 +435,16 @@ cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv -- --
 Current result: 1/1 passing. The suite writes real OSV JSON reports, a real
 Cargo lockfile, and real CycloneDX JSON SBOM files into a temporary directory,
 executes the real `context-graph blackbox` binary, then opens the physical
-SQLite ledger with `rusqlite`. It covers 3 happy paths and 9 edge checks:
-vulnerability still present, missing report, invalid report JSON, wrong
-lockfile version, missing lockfile package, unsupported lockfile format,
-missing SBOM, invalid SBOM schema, and invalid zero component minimum.
+SQLite ledger with `rusqlite`. It covers 3 happy paths and 12 edge checks:
+vulnerability still present, missing report, report package-filter miss,
+directory artifact path, invalid report JSON, wrong lockfile version, missing
+lockfile package, unsupported lockfile format, missing SBOM, invalid SBOM
+schema, invalid zero component minimum, and component version without
+component name.
+
+Automated hardened FSV now asserts final verifier/evidence counts of
+`expected_delta=15`, `readback_snapshot=11`, `verifier_result=15`,
+`evidence_packet=15`, and `incident_packet=6`.
 
 Manual FSV completed against `/tmp/bbx-phase10-manual-fsv.Ww4wd6/fsv.log`.
 Final physical SQLite state: `agent_run=1`, `tool_call=1`,
@@ -452,6 +460,13 @@ artifact hashes persisted in readbacks:
   `sha256:2f8d405ca4fe677428530293e9be3420df45d436fe501eaf429e79e18c92b20e`;
 - CycloneDX SBOM:
   `sha256:52bada329ad56a72d75c80ecb7698a96f21ee0a6c071c5b745fdb960b2cad8a8`.
+
+Focused hardening manual FSV completed against
+`/tmp/bbx-hardening-fsv.ch1qc2hp/fsv.log`. It proved the new
+`SCANNER_REPORT_PACKAGE_NOT_FOUND`, `SCANNER_ARTIFACT_NOT_FILE`, and
+`SCANNER_SBOM_COMPONENT_VERSION_WITHOUT_NAME` cases with final focused counts
+`expected_delta=4`, `readback_snapshot=2`, `verifier_result=4`,
+`evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
@@ -480,8 +495,9 @@ Exit criteria (met):
 - remediation evidence can be verified against the real ticket body/comments
   rather than the agent transcript;
 - missing issues, missing evidence links, PR-vs-issue ambiguity, invalid
-  evidence URLs, invalid scopes, schema drift, malformed pagination, and
-  permission/rate-limit errors fail closed with typed evidence;
+  issue numbers, invalid repository source segments, invalid evidence URLs,
+  invalid scopes, schema drift, malformed pagination, and permission/rate-limit
+  errors fail closed with typed evidence;
 - readback snapshots persist issue metadata, issue body SHA/length, comment
   page snapshots, pagination headers, matched locations, and the requested
   evidence URL;
@@ -499,7 +515,12 @@ discovers a real public GitHub issue whose body contains an `http(s)` URL,
 executes the real `context-graph blackbox` binary, then opens the physical
 SQLite ledger with `rusqlite`. It covers connector exposure, the happy
 evidence-link verifier, missing issue, wrong evidence URL, issue endpoint
-returning a pull request, invalid evidence URL, and invalid link scope.
+returning a pull request, invalid evidence URL, invalid link scope, invalid
+issue number, and invalid repository source segments.
+
+Automated hardened FSV now asserts final verifier/evidence counts of
+`expected_delta=8`, `readback_snapshot=4`, `verifier_result=8`,
+`evidence_packet=8`, and `incident_packet=3`.
 
 Manual FSV completed against `/tmp/bbx-phase11-manual-fsv.zftsp_oa/fsv.log`.
 Final physical SQLite state: `agent_run=1`, `tool_call=1`,
@@ -508,6 +529,13 @@ Final physical SQLite state: `agent_run=1`, `tool_call=1`,
 `actions/checkout#2424` was an open issue whose body contained
 `https://github.com/xxxxx/xxxxx` with issue body SHA
 `sha256:06f5ae49bd5152ec5da468bda6d879e37f0e002e59277fcc5f11ebeb659bc4e5`.
+
+Focused hardening manual FSV completed against
+`/tmp/bbx-hardening-fsv.ch1qc2hp/fsv.log`. It proved
+`GITHUB_ISSUE_NUMBER_INVALID` and `GITHUB_REPO_LOCATOR_INVALID` block before
+source reads, plus a wrong-link failure with incident evidence, with final
+focused counts `expected_delta=4`, `readback_snapshot=2`,
+`verifier_result=4`, `evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.

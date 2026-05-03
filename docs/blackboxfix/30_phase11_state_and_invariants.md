@@ -72,6 +72,10 @@ The verifier passes only when:
 
 - GitHub issue readback uses the documented REST API, recommended media type,
   explicit API version header, and stable user agent.
+- `source.owner` and `source.repo` must be single GitHub path segments without
+  slashes, query strings, fragments, whitespace, or path traversal segments.
+- `expected.issue_number` must be positive and is blocked before source reads
+  when it is `0`.
 - Pull requests returned through the Issues API are rejected as
   `GITHUB_ISSUE_IS_PULL_REQUEST`.
 - Comment readback uses `per_page=100` and follows `Link rel="next"` until
@@ -84,6 +88,10 @@ The verifier passes only when:
   body SHA/length summaries, matched locations, and normalized issue state.
 - Invalid evidence URLs and invalid link scopes are blocked before source
   reads, so they write no `readback_snapshot`.
+- Successful issue readbacks must contain the requested issue number, a string
+  state, and a string/null body; successful comment readbacks must contain a
+  numeric id and string body. Schema drift blocks instead of producing a weak
+  mismatch.
 - Missing or mismatched ticket state is failed and produces an
   `incident_packet`; invalid verifier specs are blocked and produce no
   incident packet.
@@ -95,7 +103,9 @@ The verifier passes only when:
 - `GITHUB_ISSUE_EVIDENCE_LINK_NOT_FOUND`
 - `GITHUB_ISSUE_EVIDENCE_URL_INVALID`
 - `GITHUB_ISSUE_EVIDENCE_SCOPE_INVALID`
+- `GITHUB_ISSUE_NUMBER_INVALID`
 - `GITHUB_ISSUE_COMMENTS_NOT_FOUND`
+- `GITHUB_REPO_LOCATOR_INVALID`
 - `GITHUB_PAGINATION_INVALID`
 - `GITHUB_PAGINATION_INCOMPLETE`
 - `GITHUB_RATE_LIMITED`
@@ -128,6 +138,8 @@ Coverage:
 - issue endpoint returning a pull request fails;
 - invalid evidence URL blocks;
 - invalid link scope blocks.
+- invalid issue number blocks;
+- invalid repository source segments block.
 
 ## Manual FSV Evidence
 
@@ -168,8 +180,10 @@ Edge-case proof from physical SQLite:
 | issue endpoint returns a pull request | `failed`, `GITHUB_ISSUE_IS_PULL_REQUEST` | sequence `19` |
 | malformed evidence URL | `blocked`, `GITHUB_ISSUE_EVIDENCE_URL_INVALID` | sequence `23` |
 | unsupported `link_scope` | `blocked`, `GITHUB_ISSUE_EVIDENCE_SCOPE_INVALID` | sequence `26` |
+| `issue_number=0` | `blocked`, `GITHUB_ISSUE_NUMBER_INVALID` | hardened FSV |
+| invalid owner/repo source segment | `blocked`, `GITHUB_REPO_LOCATOR_INVALID` | hardened FSV |
 
-Final physical SQLite counts:
+Final physical SQLite counts from the original full manual FSV:
 
 ```json
 {
@@ -196,3 +210,24 @@ Final metadata:
 Invalid URL and invalid scope wrote `expected_delta`, `verifier_result`, and
 `evidence_packet` rows, but no `readback_snapshot` rows. That is the intended
 fail-closed behavior because the verifier blocked before any source read.
+
+Hardening addendum:
+
+- log: `/tmp/bbx-hardening-fsv.ch1qc2hp/fsv.log`;
+- SQLite source of truth:
+  `sqlite:/tmp/bbx-hardening-fsv.ch1qc2hp/phase11/github-ticket.sqlite#ledger_records`;
+- GitHub source of truth:
+  `github:actions/checkout#issues/2424/evidence-link`;
+- issue body SHA:
+  `sha256:06f5ae49bd5152ec5da468bda6d879e37f0e002e59277fcc5f11ebeb659bc4e5`;
+- final focused counts: `agent_run=1`, `tool_call=1`,
+  `expected_delta=4`, `readback_snapshot=2`, `verifier_result=4`,
+  `evidence_packet=4`, `incident_packet=1`;
+- verifier rows: passed evidence link at sequence `5`, blocked
+  `GITHUB_ISSUE_NUMBER_INVALID` at sequence `8`, blocked
+  `GITHUB_REPO_LOCATOR_INVALID` at sequence `11`, and failed
+  `GITHUB_ISSUE_EVIDENCE_LINK_NOT_FOUND` at sequence `15`.
+
+The automated hardened FSV asserts the complete Phase 11 suite final counts:
+`expected_delta=8`, `readback_snapshot=4`, `verifier_result=8`,
+`evidence_packet=8`, `incident_packet=3`.

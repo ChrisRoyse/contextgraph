@@ -1145,10 +1145,10 @@ fn connector_list() -> BbxResult<Value> {
                 "source_kind": "github",
                 "readback_specs": [
                     "github_pr_state_v1",
-                "github_branch_head_matches_commit_v1",
-                "github_check_suite_passed_v1",
-                "github_issue_state_changed_v1",
-                "github_issue_evidence_link_v1"
+                    "github_branch_head_matches_commit_v1",
+                    "github_check_suite_passed_v1",
+                    "github_issue_state_changed_v1",
+                    "github_issue_evidence_link_v1"
                 ],
                 "fail_closed": true
             },
@@ -10783,7 +10783,21 @@ fn scanner_file_state(
             None,
         ));
     }
-    if !path.exists() || !path.is_file() {
+    if path.exists() && !path.is_file() {
+        return Err(VerificationOutcome::blocked(
+            SCANNER_CONNECTOR_ID,
+            source.to_string(),
+            "SCANNER_ARTIFACT_NOT_FILE",
+            field_path,
+            format!(
+                "scanner artifact path {} is not a regular file",
+                path.display()
+            ),
+            "provide the exact scanner artifact file path, not a directory or special file",
+            None,
+        ));
+    }
+    if !path.exists() {
         return Ok(ScannerFileState {
             path: path.to_path_buf(),
             artifact_kind,
@@ -10920,6 +10934,7 @@ fn normalize_osv_report(report: &Value) -> Result<Value, String> {
         return Err("$.results must be an array for OSV JSON output".to_string());
     };
     let mut packages_total = 0usize;
+    let mut packages_normalized = Vec::new();
     let mut vulnerabilities = Vec::new();
     for (result_index, result) in results.iter().enumerate() {
         let source_path = result
@@ -10949,6 +10964,15 @@ fn normalize_osv_report(report: &Value) -> Result<Value, String> {
                 .get("ecosystem")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            packages_normalized.push(json!({
+                "name": package_name,
+                "version": package_version,
+                "ecosystem": package_ecosystem,
+                "source": {
+                    "path": source_path,
+                    "type": source_type,
+                },
+            }));
             let vulnerabilities_value = package_result.get("vulnerabilities");
             let vulnerabilities_array = match vulnerabilities_value {
                 Some(Value::Array(items)) => items.as_slice(),
@@ -10959,11 +10983,15 @@ fn normalize_osv_report(report: &Value) -> Result<Value, String> {
                     ))
                 }
             };
-            let groups = package_result
-                .get("groups")
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default();
+            let groups = match package_result.get("groups") {
+                Some(Value::Array(items)) => items.clone(),
+                None => Vec::new(),
+                Some(_) => {
+                    return Err(format!(
+                    "$.results[{result_index}].packages[{package_index}].groups must be an array"
+                ))
+                }
+            };
             for (vuln_index, vulnerability) in vulnerabilities_array.iter().enumerate() {
                 let id = vulnerability.get("id").and_then(Value::as_str).ok_or_else(|| {
                     format!("$.results[{result_index}].packages[{package_index}].vulnerabilities[{vuln_index}].id is required")
@@ -11009,6 +11037,7 @@ fn normalize_osv_report(report: &Value) -> Result<Value, String> {
         "format": "osv-json",
         "results_total": results.len(),
         "packages_total": packages_total,
+        "packages": packages_normalized,
         "vulnerabilities_total": vulnerabilities.len(),
         "vulnerabilities": vulnerabilities,
     }))
@@ -11095,17 +11124,32 @@ fn gha_source_of_truth_from_parts(owner: &str, repo: &str, locator: &str) -> Str
 fn parse_github_repo_locator(locator: &str) -> BbxResult<(String, String)> {
     let trimmed = locator.trim().trim_matches('/');
     let parts = trimmed.split('/').collect::<Vec<_>>();
-    if parts.len() != 2 || parts.iter().any(|part| part.trim().is_empty()) {
+    if parts.len() != 2
+        || parts
+            .iter()
+            .any(|part| !github_repo_path_segment_is_valid(part))
+    {
         return Err(BlackboxError::connector_blocked(
             "GITHUB_REPO_LOCATOR_INVALID",
             GITHUB_CONNECTOR_ID,
             github_source_of_truth_from_locator(locator, "repository"),
             "--source",
-            "GitHub connector source must be OWNER/REPO",
-            "pass a repository locator like actions/checkout",
+            "GitHub connector source must be OWNER/REPO with valid path segments",
+            "pass a repository locator like actions/checkout without query strings, fragments, or path traversal segments",
         ));
     }
     Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
+fn github_repo_path_segment_is_valid(segment: &str) -> bool {
+    let trimmed = segment.trim();
+    !trimmed.is_empty()
+        && trimmed == segment
+        && trimmed != "."
+        && trimmed != ".."
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
 }
 
 fn github_api_url(segments: &[&str], query: &[(&str, String)]) -> Url {
@@ -11942,7 +11986,10 @@ fn github_comment_summary(body: &Value) -> Result<Value, String> {
         .and_then(Value::as_u64)
         .ok_or_else(|| "comment.id is required".to_string())?;
     let html_url = body.get("html_url").and_then(Value::as_str).unwrap_or("");
-    let body_text = body.get("body").and_then(Value::as_str).unwrap_or("");
+    let body_text = body
+        .get("body")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "comment.body is required as a string".to_string())?;
     Ok(json!({
         "id": id,
         "html_url": html_url,
@@ -11996,7 +12043,45 @@ fn github_owner_repo_from_spec(
 ) -> Result<(String, String), VerificationOutcome> {
     let owner = required_source_string(spec, "owner", "$.source.owner", connector, source_hint)?;
     let repo = required_source_string(spec, "repo", "$.source.repo", connector, source_hint)?;
+    for (field_path, value) in [("$.source.owner", &owner), ("$.source.repo", &repo)] {
+        if !github_repo_path_segment_is_valid(value) {
+            return Err(VerificationOutcome::blocked(
+                connector,
+                source_hint.to_string(),
+                "GITHUB_REPO_LOCATOR_INVALID",
+                field_path,
+                format!("{field_path} contains unsupported GitHub repository path characters"),
+                "use owner and repo path segments without slashes, query strings, fragments, whitespace, or path traversal segments",
+                None,
+            ));
+        }
+    }
     Ok((owner, repo))
+}
+
+fn required_github_issue_number(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<u64, VerificationOutcome> {
+    let issue_number = required_expected_u64(
+        spec,
+        "issue_number",
+        "$.expected.issue_number",
+        GITHUB_CONNECTOR_ID,
+        source_hint,
+    )?;
+    if issue_number == 0 {
+        return Err(VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source_hint.to_string(),
+            "GITHUB_ISSUE_NUMBER_INVALID",
+            "$.expected.issue_number",
+            "GitHub issue verifiers require issue_number to be a positive GitHub issue number",
+            "set $.expected.issue_number to the positive issue number shown in GitHub",
+            None,
+        ));
+    }
+    Ok(issue_number)
 }
 
 fn github_readback_payload(
@@ -12502,6 +12587,36 @@ fn verify_scanner_vulnerability_absent(spec: &VerifySpec) -> VerificationOutcome
             );
         }
     };
+    let package_filter_supplied =
+        package_filter.is_some() || ecosystem_filter.is_some() || version_filter.is_some();
+    let matching_packages_for_filter = normalized
+        .get("packages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|package| {
+            let package_matches = package_filter
+                .as_ref()
+                .map(|expected| {
+                    package.get("name").and_then(Value::as_str) == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            let ecosystem_matches = ecosystem_filter
+                .as_ref()
+                .map(|expected| {
+                    package.get("ecosystem").and_then(Value::as_str) == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            let version_matches = version_filter
+                .as_ref()
+                .map(|expected| {
+                    package.get("version").and_then(Value::as_str) == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            package_matches && ecosystem_matches && version_matches
+        })
+        .collect::<Vec<_>>();
     let matched_vulnerabilities = normalized
         .get("vulnerabilities")
         .and_then(Value::as_array)
@@ -12555,6 +12670,8 @@ fn verify_scanner_vulnerability_absent(spec: &VerifySpec) -> VerificationOutcome
         "ecosystem_filter": ecosystem_filter,
         "version_filter": version_filter,
         "packages_total": normalized.get("packages_total").cloned().unwrap_or(Value::Null),
+        "matching_packages_count": matching_packages_for_filter.len(),
+        "matching_packages_for_filter": matching_packages_for_filter,
         "vulnerabilities_total": normalized.get("vulnerabilities_total").cloned().unwrap_or(Value::Null),
         "matched_count": matched_vulnerabilities.len(),
         "matched_vulnerabilities": matched_vulnerabilities,
@@ -12565,7 +12682,24 @@ fn verify_scanner_vulnerability_absent(spec: &VerifySpec) -> VerificationOutcome
         operation,
         &actual,
     );
-    if actual
+    if package_filter_supplied
+        && actual
+            .get("matching_packages_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            == 0
+    {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_REPORT_PACKAGE_NOT_FOUND",
+            "actual_readback.matching_packages_for_filter",
+            "scanner report did not contain any package matching the expected package/ecosystem/version filters",
+            "rerun the scanner against the intended artifact or correct the expected package filters before claiming vulnerability absence",
+            readback,
+            actual,
+        )
+    } else if actual
         .get("matched_count")
         .and_then(Value::as_u64)
         .unwrap_or(0)
@@ -12898,6 +13032,17 @@ fn verify_scanner_sbom_artifact_present(spec: &VerifySpec) -> VerificationOutcom
     }
     let expected_component = expected_optional_string(spec, "component_name");
     let expected_component_version = expected_optional_string(spec, "component_version");
+    if expected_component_version.is_some() && expected_component.is_none() {
+        return VerificationOutcome::blocked(
+            SCANNER_CONNECTOR_ID,
+            source_hint,
+            "SCANNER_SBOM_COMPONENT_VERSION_WITHOUT_NAME",
+            "$.expected.component_version",
+            "scanner_sbom_artifact_present_v1 requires component_name when component_version is supplied",
+            "set $.expected.component_name with the exact component name whose version must be verified",
+            None,
+        );
+    }
     let source = scanner_source_of_truth(&sbom_path, "cyclonedx-sbom");
     let operation = "read CycloneDX JSON SBOM";
     let state = match scanner_file_state(&sbom_path, "cyclonedx-sbom", &source, "$.source.sbom") {
@@ -13670,13 +13815,7 @@ async fn verify_github_issue_state_changed(spec: &VerifySpec) -> VerificationOut
         Ok(parts) => parts,
         Err(outcome) => return outcome,
     };
-    let issue_number = match required_expected_u64(
-        spec,
-        "issue_number",
-        "$.expected.issue_number",
-        GITHUB_CONNECTOR_ID,
-        &source_hint,
-    ) {
+    let issue_number = match required_github_issue_number(spec, &source_hint) {
         Ok(number) => number,
         Err(outcome) => return outcome,
     };
@@ -13791,13 +13930,7 @@ async fn verify_github_issue_evidence_link(spec: &VerifySpec) -> VerificationOut
         Ok(parts) => parts,
         Err(outcome) => return outcome,
     };
-    let issue_number = match required_expected_u64(
-        spec,
-        "issue_number",
-        "$.expected.issue_number",
-        GITHUB_CONNECTOR_ID,
-        &source_hint,
-    ) {
+    let issue_number = match required_github_issue_number(spec, &source_hint) {
         Ok(number) => number,
         Err(outcome) => return outcome,
     };
@@ -13864,17 +13997,100 @@ async fn verify_github_issue_evidence_link(spec: &VerifySpec) -> VerificationOut
         );
     }
 
+    let observed_issue_number = responses[0].body.get("number").and_then(Value::as_u64);
+    if observed_issue_number != Some(issue_number) {
+        let actual = json!({
+            "issue_number": issue_number,
+            "observed_issue_number": observed_issue_number,
+            "schema_error": "GitHub issue response number did not match the requested issue number",
+            "evidence_url": evidence_url,
+            "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+            "link_scope": link_scope,
+        });
+        let readback = github_readback_pages_payload(
+            "github_issue_evidence_link_v1",
+            GITHUB_CONNECTOR_ID,
+            &source,
+            "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+            &responses,
+            &actual,
+        );
+        return VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "READBACK_SCHEMA_DRIFT",
+            "response.body.number",
+            "GitHub issue endpoint returned a success body without the requested issue number",
+            "inspect the response and update the connector only if GitHub changed the issue API contract",
+            Some(readback),
+        );
+    }
+    if responses[0]
+        .body
+        .get("state")
+        .and_then(Value::as_str)
+        .is_none()
+    {
+        let actual = json!({
+            "issue_number": issue_number,
+            "schema_error": "GitHub issue response state was missing or not a string",
+            "evidence_url": evidence_url,
+            "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+            "link_scope": link_scope,
+        });
+        let readback = github_readback_pages_payload(
+            "github_issue_evidence_link_v1",
+            GITHUB_CONNECTOR_ID,
+            &source,
+            "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+            &responses,
+            &actual,
+        );
+        return VerificationOutcome::blocked(
+            GITHUB_CONNECTOR_ID,
+            source,
+            "READBACK_SCHEMA_DRIFT",
+            "response.body.state",
+            "GitHub issue endpoint returned a success body without a string state field",
+            "inspect the response and update the connector only if GitHub changed the issue API contract",
+            Some(readback),
+        );
+    }
+    let issue_body = match responses[0].body.get("body") {
+        Some(Value::String(value)) => value.clone(),
+        Some(Value::Null) => String::new(),
+        Some(_) | None => {
+            let actual = json!({
+                "issue_number": issue_number,
+                "schema_error": "GitHub issue response body was missing or not a string/null",
+                "evidence_url": evidence_url,
+                "evidence_url_sha256": sha256_hex(evidence_url.as_bytes()),
+                "link_scope": link_scope,
+            });
+            let readback = github_readback_pages_payload(
+                "github_issue_evidence_link_v1",
+                GITHUB_CONNECTOR_ID,
+                &source,
+                "GET /repos/{owner}/{repo}/issues/{issue_number} + GET /comments pages",
+                &responses,
+                &actual,
+            );
+            return VerificationOutcome::blocked(
+                GITHUB_CONNECTOR_ID,
+                source,
+                "READBACK_SCHEMA_DRIFT",
+                "response.body.body",
+                "GitHub issue endpoint returned a success body without a string/null issue body",
+                "inspect the response and update the connector only if GitHub changed the issue API contract",
+                Some(readback),
+            );
+        }
+    };
     let summary = github_issue_summary(&responses[0].body);
     let is_pull_request = summary
         .get("is_pull_request")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let issue_body = responses[0]
-        .body
-        .get("body")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
     let mut matched_locations = Vec::new();
     if matches!(link_scope.as_str(), "body" | "body_or_comments")
         && issue_body.contains(&evidence_url)

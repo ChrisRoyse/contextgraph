@@ -409,13 +409,33 @@ fn assert_edge(
     readback_delta: i64,
     incident_delta: i64,
 ) -> Value {
+    assert_edge_with_source(
+        case,
+        source(fixture),
+        expected,
+        status,
+        error_code,
+        readback_delta,
+        incident_delta,
+    )
+}
+
+fn assert_edge_with_source(
+    case: &Phase11Case,
+    source_value: Value,
+    expected: Value,
+    status: &str,
+    error_code: &str,
+    readback_delta: i64,
+    incident_delta: i64,
+) -> Value {
     let before = ledger_kind_counts(&case.ledger);
     let output = run_verify(
         case,
         verifier_spec(
             case,
             "github_issue_evidence_link_v1",
-            source(fixture),
+            source_value,
             expected,
         ),
     );
@@ -594,9 +614,40 @@ fn phase11_live_github_issue_evidence_link_fsv() {
         0,
     );
 
-    assert_kind_count(&case.ledger, "expected_delta", 6);
+    assert_edge(
+        &case,
+        &fixture,
+        json!({
+            "issue_number": 0,
+            "evidence_url": fixture.evidence_url,
+            "link_scope": "body_or_comments"
+        }),
+        "blocked",
+        "GITHUB_ISSUE_NUMBER_INVALID",
+        0,
+        0,
+    );
+
+    assert_edge_with_source(
+        &case,
+        json!({
+            "owner": format!("{}/{}", fixture.owner, fixture.repo),
+            "repo": "checkout?fragment=true",
+        }),
+        json!({
+            "issue_number": fixture.issue_number,
+            "evidence_url": fixture.evidence_url,
+            "link_scope": "body_or_comments"
+        }),
+        "blocked",
+        "GITHUB_REPO_LOCATOR_INVALID",
+        0,
+        0,
+    );
+
+    assert_kind_count(&case.ledger, "expected_delta", 8);
     assert_kind_count(&case.ledger, "readback_snapshot", 4);
-    assert_kind_count(&case.ledger, "verifier_result", 6);
-    assert_kind_count(&case.ledger, "evidence_packet", 6);
+    assert_kind_count(&case.ledger, "verifier_result", 8);
+    assert_kind_count(&case.ledger, "evidence_packet", 8);
     assert_kind_count(&case.ledger, "incident_packet", 3);
 }

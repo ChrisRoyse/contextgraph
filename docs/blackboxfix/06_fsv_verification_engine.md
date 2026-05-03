@@ -169,16 +169,19 @@ Phase 10 follows the same rule in
 integration test writes real OSV JSON reports, a real Cargo lockfile, and
 real CycloneDX JSON SBOM files, verifies all three scanner happy paths, then
 covers missing artifacts, wrong observed artifact state, unsupported formats,
-invalid JSON, schema drift, zero-minimum SBOM expectations, and vulnerability
-still-present failures. Artifact parse failures are blocked with source-path
-and parse/schema details; outcome mismatches are failed and create incidents.
+invalid JSON, schema drift, wrong-artifact package filters, non-file artifact
+paths, zero-minimum SBOM expectations, ambiguous SBOM component-version specs,
+and vulnerability still-present failures. Artifact parse failures are blocked
+with source-path and parse/schema details; outcome mismatches are failed and
+create incidents.
 
 Phase 11 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`:
 the live integration test discovers a real public GitHub issue with an
 `http(s)` URL in its body, verifies that exact evidence link through
 `github_issue_evidence_link_v1`, then covers missing issues, missing evidence
-links, PR-vs-issue ambiguity, invalid evidence URLs, and invalid link scopes.
+links, PR-vs-issue ambiguity, invalid issue numbers, invalid repository source
+segments, invalid evidence URLs, and invalid link scopes.
 Issue-comments pagination is persisted in `readback_snapshot`; malformed or
 incomplete pagination is `blocked`, not silently treated as complete.
 
