@@ -29,7 +29,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 20; old ledgers are
+    ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 21; old ledgers are
     wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
@@ -41,7 +41,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
   - Phase 3 added no new record kinds. Current ledgers run under schema v13
-    after Phase 20.
+    after Phase 21.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -267,6 +267,24 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     rollout verification, missing Deployment, wrong digest, invalid JSON, and
     direct SQLite proof; run with
     `cargo test --package context-graph-cli --test blackbox_phase20_k8s_deployment_fsv -- --nocapture`).
+- **Phase 21 (Terraform And Cloud Artifact Verification)**: COMPLETE and verified.
+  - Connector: `terraform_cloud_artifact_v1`.
+  - Verifiers: `tf_plan_only_approved_changes_v1`,
+    `tf_state_attribute_v1`, `cloud_resource_present_v1`,
+    `cloud_audit_principal_action_v1`.
+  - Source of truth: physical Terraform JSON artifacts produced by
+    `terraform show -json <planfile>` and `terraform show -json <statefile>`,
+    normalized cloud inventory JSON, normalized cloud audit JSONL, plus local
+    SQLite verifier/evidence rows.
+  - Phase 21 adds no new ledger record kind and does not bump the physical
+    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase21_terraform_cloud_fsv.rs`
+    (1 integration test covering connector readback, happy Terraform plan,
+    state, cloud inventory, cloud audit verification, unapproved plan change,
+    state attribute mismatch, invalid audit JSONL, and direct SQLite proof;
+    run with
+    `cargo test --package context-graph-cli --test blackbox_phase21_terraform_cloud_fsv -- --nocapture`).
 
 ## Build And Test Quick Reference
 
@@ -334,6 +352,9 @@ cargo test --package context-graph-cli --test blackbox_phase19_fsv_protocol_fsv 
 # Phase 20 FSV tests (real Kubernetes JSON snapshot files + SQLite readback)
 cargo test --package context-graph-cli --test blackbox_phase20_k8s_deployment_fsv -- --nocapture
 
+# Phase 21 FSV tests (real Terraform/cloud artifact files + SQLite readback)
+cargo test --package context-graph-cli --test blackbox_phase21_terraform_cloud_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -348,18 +369,18 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 20
+- `04_event_ledger_schema.md` — record contracts and the current Phase 21
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped
-  local/GitHub/GitLab/enterprise/scanner-artifact/scoring/privacy/release-gate/packaging/risk/HTTP/demo/FSV connectors.
+  local/GitHub/GitLab/enterprise/scanner-artifact/Kubernetes/Terraform-cloud/scoring/privacy/release-gate/packaging/risk/HTTP/demo/FSV connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped verifier registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 20 Kubernetes verification shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 21 Terraform/cloud verification shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–20 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–21 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -413,6 +434,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   checklist.
 - `39_phase20_state_and_invariants.md` — shipped Phase 20 Kubernetes
   Deployment snapshot connector, verifiers, tests, and manual FSV checklist.
+- `40_phase21_state_and_invariants.md` — shipped Phase 21 Terraform/cloud
+  artifact connector, verifiers, tests, and manual FSV checklist.
 
 ## Build Doctrine
 

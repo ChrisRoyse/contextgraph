@@ -47,7 +47,8 @@ lives. Examples:
 - CI provider API for workflow status;
 - database tables for application records;
 - Kubernetes API for cluster objects;
-- Terraform state plus cloud API for infrastructure;
+- Terraform plan/state artifacts plus normalized cloud inventory/audit
+  artifacts for infrastructure;
 - ticketing API for issue state.
 - package output files for pilot reports, usage meters, eval candidates, and
   manifests.
@@ -85,6 +86,10 @@ Shipped Phase 2/3/9/10/11/20 verifier ids:
 | `k8s_deployment_image_digest_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | target Deployment/container exists and image is pinned to the expected `sha256` digest |
 | `k8s_replicas_match_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | spec/status replica counters match exact expected values |
 | `k8s_rollout_completed_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | observed generation and Deployment conditions/counters prove rollout completion |
+| `tf_plan_only_approved_changes_v1` | `terraform_cloud_artifact_v1` | Terraform plan JSON from `terraform show -json` | every non-`no-op` resource/output change exactly matches the explicit approval set |
+| `tf_state_attribute_v1` | `terraform_cloud_artifact_v1` | Terraform state JSON from `terraform show -json` | target resource address exists and a non-sensitive attribute path equals the expected JSON value |
+| `cloud_resource_present_v1` | `terraform_cloud_artifact_v1` | normalized cloud inventory JSON | target provider/type/id/region exists and required attributes match exactly |
+| `cloud_audit_principal_action_v1` | `terraform_cloud_artifact_v1` | normalized cloud audit JSONL | at least one event proves the expected principal/action/resource/outcome |
 | `blackbox_pilot_package_v1` | `blackbox_packaging_v1` | SQLite `ledger_records` + package files | package row id/hash/readback and manifest file hashes match |
 | `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
 | `blackbox_risk_assessment_v1` | `blackbox_risk_v1` | SQLite `ledger_records` | risk row id/hash/readback and accepted/blocked checks match physical ledger state |

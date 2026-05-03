@@ -139,6 +139,34 @@ Design implication:
   `observedGeneration`, and replica counters instead of treating CLI success
   as proof of cluster state.
 
+### Terraform JSON, State, And Cloud Audit Evidence
+
+References:
+
+- <https://developer.hashicorp.com/terraform/internals/json-format>
+- <https://developer.hashicorp.com/terraform/cli/commands/show>
+- <https://developer.hashicorp.com/terraform/cli/commands/plan>
+- <https://developer.hashicorp.com/terraform/language/state>
+- <https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-event-reference-record-contents.html>
+- <https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html>
+
+Design implication:
+
+- Terraform verification should consume `terraform show -json` artifacts, not
+  CLI human output or an apply return value;
+- JSON `format_version` major versions must be rejected when unsupported,
+  while minor-version additions can be ignored if core fields still parse;
+- plan verification needs to inspect `resource_changes` and output changes
+  directly and compare non-`no-op` actions against explicit approval state;
+- state verification should read the `values.root_module` resource tree and
+  reject sensitive paths rather than leaking or comparing redacted values;
+- cloud audit proof must retain principal, action, resource, time, region, and
+  outcome because provider logs are the durable record of who did what to
+  which cloud resource;
+- provider-specific logs should be normalized into a strict JSONL artifact for
+  deterministic local FSV, while the raw provider export remains the upstream
+  source for production capture.
+
 ### Usage-Based Billing Meter Events
 
 References:

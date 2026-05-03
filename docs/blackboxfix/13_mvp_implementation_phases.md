@@ -394,7 +394,7 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 20,
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 21,
 fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
@@ -1025,6 +1025,57 @@ physical SQLite ledger to prove expected/readback/verifier/evidence/incident
 rows exist.
 
 Phase 20 adds no new ledger record kind and does not bump the physical schema;
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+
+## Phase 21: Terraform And Cloud Artifact Verification — DONE (2026-05-03)
+
+Deliverables:
+
+- connector `terraform_cloud_artifact_v1`;
+- connector test against a physical Terraform plan JSON file produced by
+  `terraform show -json`;
+- verifiers `tf_plan_only_approved_changes_v1`,
+  `tf_state_attribute_v1`, `cloud_resource_present_v1`, and
+  `cloud_audit_principal_action_v1`;
+- strict parsing for Terraform JSON format major version `1`, Terraform plan
+  `resource_changes`/`output_changes`, Terraform state `values.root_module`
+  resources and child modules, normalized cloud inventory JSON, and normalized
+  cloud audit JSONL;
+- fail-closed errors for missing artifacts, invalid JSON/JSONL, Terraform
+  schema drift, unsupported format versions, unapproved plan changes, missing
+  approved changes, missing state resources/attributes, sensitive state paths,
+  cloud resource absence, attribute mismatch, and missing audit proof.
+
+Exit criteria (verified):
+
+- connector list/test exposes the Terraform/cloud artifact connector and reads
+  physical plan path, byte count, SHA-256, Terraform format version, changed
+  resource count, and changed output count;
+- plan verification passes only when every non-`no-op` resource/output change
+  exactly matches the explicit approval set;
+- state verification reads physical Terraform state JSON and compares the
+  exact non-sensitive attribute value at the declared path;
+- cloud inventory verification reads a physical normalized inventory artifact
+  and checks exact provider/type/id/region plus required attributes;
+- cloud audit verification reads physical JSONL and requires a matching
+  principal/action/resource/outcome event;
+- failed mismatches persist `incident_packet` rows, while blocked schema
+  failures persist verifier/evidence rows without hiding the failure.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase21_terraform_cloud_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The test writes real Terraform plan/state JSON,
+cloud inventory JSON, and cloud audit JSONL artifacts, runs the real CLI,
+verifies happy Terraform plan/state/cloud resource/cloud audit paths, exercises
+unapproved plan, wrong state attribute, and invalid audit JSONL edges, and
+reads the physical SQLite ledger to prove expected/readback/verifier/evidence/
+incident rows exist.
+
+Phase 21 adds no new ledger record kind and does not bump the physical schema;
 current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
 
 ## Phase Sequencing Rules

@@ -23659,6 +23659,1941 @@ fn verify_scanner_sbom_artifact_present(spec: &VerifySpec) -> VerificationOutcom
     }
 }
 
+#[derive(Debug)]
+struct TfCloudArtifactState {
+    path: PathBuf,
+    artifact_kind: &'static str,
+    exists: bool,
+    size_bytes: Option<usize>,
+    sha256: Option<String>,
+    bytes: Option<Vec<u8>>,
+}
+
+impl TfCloudArtifactState {
+    fn base_json(&self) -> Value {
+        json!({
+            "path": self.path.display().to_string(),
+            "artifact_kind": self.artifact_kind,
+            "exists": self.exists,
+            "size_bytes": self.size_bytes,
+            "sha256": self.sha256,
+            "read_at": Utc::now().to_rfc3339(),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+enum TfAttributePathSegment {
+    Key(String),
+    Index(usize),
+}
+
+impl TfAttributePathSegment {
+    fn to_json(&self) -> Value {
+        match self {
+            Self::Key(value) => Value::String(value.clone()),
+            Self::Index(value) => json!(value),
+        }
+    }
+
+    fn display(&self) -> String {
+        match self {
+            Self::Key(value) => value.clone(),
+            Self::Index(value) => format!("[{value}]"),
+        }
+    }
+}
+
+fn tf_cloud_file_state(
+    path: &Path,
+    artifact_kind: &'static str,
+    source: &str,
+    field_path: &'static str,
+) -> Result<TfCloudArtifactState, VerificationOutcome> {
+    if path.as_os_str().is_empty() {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source.to_string(),
+            "TF_CLOUD_ARTIFACT_PATH_MISSING",
+            field_path,
+            format!("{field_path} must be a non-empty Terraform or cloud artifact path"),
+            "persist the source-of-truth artifact and pass its exact path",
+            None,
+        ));
+    }
+    if path.exists() && !path.is_file() {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source.to_string(),
+            "TF_CLOUD_ARTIFACT_NOT_FILE",
+            field_path,
+            format!("artifact path {} is not a regular file", path.display()),
+            "pass the exact artifact file path, not a directory or special file",
+            None,
+        ));
+    }
+    if !path.exists() {
+        return Ok(TfCloudArtifactState {
+            path: path.to_path_buf(),
+            artifact_kind,
+            exists: false,
+            size_bytes: None,
+            sha256: None,
+            bytes: None,
+        });
+    }
+    let bytes = fs::read(path).map_err(|err| {
+        VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source.to_string(),
+            "TF_CLOUD_ARTIFACT_READ_FAILED",
+            field_path,
+            format!("failed to read artifact {}: {err}", path.display()),
+            "fix filesystem permissions and rerun verification",
+            None,
+        )
+    })?;
+    Ok(TfCloudArtifactState {
+        path: path.to_path_buf(),
+        artifact_kind,
+        exists: true,
+        size_bytes: Some(bytes.len()),
+        sha256: Some(sha256_hex(&bytes)),
+        bytes: Some(bytes),
+    })
+}
+
+fn tf_cloud_readback_payload(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        TF_CLOUD_CONNECTOR_ID,
+        source,
+        operation,
+        actual.clone(),
+    )
+}
+
+fn tf_cloud_schema_blocked(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+    actual: Value,
+) -> VerificationOutcome {
+    let readback = tf_cloud_readback_payload(verifier_id, source, operation, &actual);
+    VerificationOutcome::blocked(
+        TF_CLOUD_CONNECTOR_ID,
+        source.to_string(),
+        error_code,
+        field_path,
+        message,
+        remediation,
+        Some(readback),
+    )
+}
+
+fn parse_tf_cloud_json(
+    state: &TfCloudArtifactState,
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: &'static str,
+    error_code: &'static str,
+    remediation: &'static str,
+) -> Result<Value, VerificationOutcome> {
+    let bytes = state
+        .bytes
+        .as_ref()
+        .expect("parse_tf_cloud_json called only for existing artifacts");
+    serde_json::from_slice(bytes).map_err(|err| {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "parse_error": err.to_string(),
+        });
+        tf_cloud_schema_blocked(
+            verifier_id,
+            source,
+            operation,
+            field_path,
+            error_code,
+            format!("artifact JSON could not be parsed: {err}"),
+            remediation,
+            actual,
+        )
+    })
+}
+
+fn require_tf_cloud_source_path(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    source_hint: &str,
+) -> Result<PathBuf, VerificationOutcome> {
+    required_source_string(spec, key, field_path, TF_CLOUD_CONNECTOR_ID, source_hint)
+        .map(PathBuf::from)
+}
+
+fn require_tf_cloud_source_format(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    expected: &'static str,
+    source_hint: &str,
+) -> Result<(), VerificationOutcome> {
+    let actual = required_source_string(spec, key, field_path, TF_CLOUD_CONNECTOR_ID, source_hint)?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "TF_CLOUD_SOURCE_FORMAT_UNSUPPORTED",
+            field_path,
+            format!("{field_path} must be {expected:?}, got {actual:?}"),
+            "capture the documented Phase 21 source artifact format and rerun verification",
+            None,
+        ))
+    }
+}
+
+fn tf_required_str(value: &Value, pointer: &str, field_path: &str) -> Result<String, String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| format!("{field_path} is required and must be a non-empty string"))
+}
+
+fn tf_optional_str(value: &Value, pointer: &str) -> Option<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn terraform_format_version(value: &Value) -> Result<String, String> {
+    let version = tf_required_str(value, "/format_version", "$.format_version")?;
+    let major = version
+        .split('.')
+        .next()
+        .ok_or_else(|| "$.format_version must contain a major version".to_string())?
+        .parse::<u64>()
+        .map_err(|err| format!("$.format_version major version was invalid: {err}"))?;
+    if major != 1 {
+        return Err(format!(
+            "$.format_version major version {major} is unsupported; only Terraform JSON format major 1 is supported"
+        ));
+    }
+    Ok(version)
+}
+
+fn tf_actions_valid(actions: &[String]) -> bool {
+    match actions {
+        [one] => matches!(
+            one.as_str(),
+            "no-op" | "create" | "read" | "update" | "delete"
+        ),
+        [first, second] => {
+            (first == "delete" && second == "create") || (first == "create" && second == "delete")
+        }
+        _ => false,
+    }
+}
+
+fn tf_actions_are_noop(actions: &[String]) -> bool {
+    actions.len() == 1 && actions.first().map(String::as_str) == Some("no-op")
+}
+
+fn tf_actions_from_value(value: &Value, field_path: &str) -> Result<Vec<String>, String> {
+    let Some(items) = value.as_array() else {
+        return Err(format!("{field_path} must be an array of action strings"));
+    };
+    if items.is_empty() {
+        return Err(format!("{field_path} must contain at least one action"));
+    }
+    let mut actions = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(action) = item.as_str().filter(|text| !text.trim().is_empty()) else {
+            return Err(format!("{field_path}[{index}] must be a non-empty string"));
+        };
+        actions.push(action.to_string());
+    }
+    if !tf_actions_valid(&actions) {
+        return Err(format!(
+            "{field_path} contained unsupported Terraform action sequence {actions:?}"
+        ));
+    }
+    Ok(actions)
+}
+
+fn normalize_tf_plan(plan: &Value) -> Result<Value, String> {
+    let format_version = terraform_format_version(plan)?;
+    let terraform_version = tf_optional_str(plan, "/terraform_version");
+    let errored = plan
+        .get("errored")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let Some(resource_changes) = plan.get("resource_changes").and_then(Value::as_array) else {
+        return Err("$.resource_changes must be an array".to_string());
+    };
+    let mut resources = Vec::with_capacity(resource_changes.len());
+    for (index, item) in resource_changes.iter().enumerate() {
+        let address = tf_required_str(
+            item,
+            "/address",
+            &format!("$.resource_changes[{index}].address"),
+        )?;
+        let actions = item
+            .pointer("/change/actions")
+            .ok_or_else(|| format!("$.resource_changes[{index}].change.actions is required"))
+            .and_then(|value| {
+                tf_actions_from_value(
+                    value,
+                    &format!("$.resource_changes[{index}].change.actions"),
+                )
+            })?;
+        resources.push(json!({
+            "address": address,
+            "mode": tf_optional_str(item, "/mode"),
+            "type": tf_optional_str(item, "/type"),
+            "name": tf_optional_str(item, "/name"),
+            "provider_name": tf_optional_str(item, "/provider_name"),
+            "actions": actions,
+            "action_reason": tf_optional_str(item, "/action_reason"),
+        }));
+    }
+    resources.sort_by(|left, right| {
+        left.get("address")
+            .and_then(Value::as_str)
+            .cmp(&right.get("address").and_then(Value::as_str))
+    });
+    let changed_resources = resources
+        .iter()
+        .filter(|item| {
+            let actions = item
+                .get("actions")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            !tf_actions_are_noop(&actions)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut output_changes = Vec::new();
+    if let Some(outputs) = plan.get("output_changes") {
+        let Some(map) = outputs.as_object() else {
+            return Err("$.output_changes must be an object when present".to_string());
+        };
+        for (name, item) in map {
+            if name.trim().is_empty() {
+                return Err("$.output_changes contains an empty output name".to_string());
+            }
+            let actions = item
+                .pointer("/actions")
+                .or_else(|| item.pointer("/change/actions"))
+                .ok_or_else(|| format!("$.output_changes.{name}.actions is required"))
+                .and_then(|value| {
+                    tf_actions_from_value(value, &format!("$.output_changes.{name}.actions"))
+                })?;
+            output_changes.push(json!({
+                "name": name,
+                "actions": actions,
+            }));
+        }
+    }
+    output_changes.sort_by(|left, right| {
+        left.get("name")
+            .and_then(Value::as_str)
+            .cmp(&right.get("name").and_then(Value::as_str))
+    });
+    let changed_outputs = output_changes
+        .iter()
+        .filter(|item| {
+            let actions = item
+                .get("actions")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            !tf_actions_are_noop(&actions)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "format": "terraform-show-json-plan",
+        "format_version": format_version,
+        "terraform_version": terraform_version,
+        "errored": errored,
+        "resource_changes_total": resources.len(),
+        "changed_resources_total": changed_resources.len(),
+        "resource_changes": resources,
+        "changed_resources": changed_resources,
+        "output_changes_total": output_changes.len(),
+        "changed_outputs_total": changed_outputs.len(),
+        "output_changes": output_changes,
+        "changed_outputs": changed_outputs,
+    }))
+}
+
+fn tf_plan_connector_readback(path: &Path) -> BbxResult<Value> {
+    let source = tf_source_of_truth(path, "plan");
+    let state = tf_cloud_file_state(path, "terraform-show-json-plan", &source, "--source")
+        .map_err(tf_connector_error_from_outcome)?;
+    if !state.exists {
+        return Err(BlackboxError::connector_blocked(
+            "TF_PLAN_NOT_FOUND",
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "--source",
+            "Terraform plan artifact does not exist",
+            "run `terraform show -json <planfile> > tfplan.json` before testing the connector",
+        ));
+    }
+    let plan = parse_tf_cloud_json(
+        &state,
+        "tf_plan_connector_test_v1",
+        &source,
+        "read Terraform plan JSON artifact",
+        "--source",
+        "TF_PLAN_JSON_INVALID",
+        "write valid JSON from `terraform show -json <planfile>` and retry",
+    )
+    .map_err(tf_connector_error_from_outcome)?;
+    let normalized = normalize_tf_plan(&plan).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "TF_PLAN_SCHEMA_DRIFT",
+            TF_CLOUD_CONNECTOR_ID,
+            tf_source_of_truth(path, "plan"),
+            "--source",
+            format!("Terraform plan JSON did not match the documented format: {err}"),
+            "regenerate the plan JSON with Terraform or update the connector for a documented format change",
+        )
+    })?;
+    Ok(json!({
+        "artifact": state.base_json(),
+        "normalized": normalized,
+    }))
+}
+
+fn tf_connector_error_from_outcome(outcome: VerificationOutcome) -> BlackboxError {
+    BlackboxError::connector_blocked(
+        outcome
+            .error_code
+            .unwrap_or("TF_CLOUD_ARTIFACT_READ_FAILED"),
+        TF_CLOUD_CONNECTOR_ID,
+        outcome.source_of_truth,
+        outcome.field_path.unwrap_or_else(|| "--source".to_string()),
+        outcome
+            .message
+            .unwrap_or_else(|| "Terraform/cloud artifact readback failed".to_string()),
+        outcome
+            .remediation
+            .unwrap_or_else(|| "inspect the artifact and retry".to_string()),
+    )
+}
+
+fn parse_tf_expected_change_set(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    identifier_key: &'static str,
+    source_hint: &str,
+) -> Result<BTreeMap<String, Vec<String>>, VerificationOutcome> {
+    let Some(value) = spec.expected.get(key) else {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+            field_path,
+            format!(
+                "{} requires {field_path} as an explicit array",
+                spec.verifier_id
+            ),
+            format!("set {field_path} to an array, using [] when no changes are approved"),
+            None,
+        ));
+    };
+    let Some(items) = value.as_array() else {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+            field_path,
+            format!("{field_path} must be an array"),
+            "replace the value with an array of approved change objects",
+            None,
+        ));
+    };
+    let mut parsed = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        let Some(object) = item.as_object() else {
+            return Err(VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                source_hint.to_string(),
+                "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                format!("{field_path}[{index}]"),
+                "approved change entries must be JSON objects",
+                "replace each approved change entry with an object containing an identifier and actions",
+                None,
+            ));
+        };
+        let id_path = format!("{field_path}[{index}].{identifier_key}");
+        let Some(identifier) = object
+            .get(identifier_key)
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+        else {
+            return Err(VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                source_hint.to_string(),
+                "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                id_path,
+                format!("approved change must include non-empty {identifier_key:?}"),
+                "use the exact Terraform resource address or output name from the plan JSON",
+                None,
+            ));
+        };
+        let action_path = format!("{field_path}[{index}].actions");
+        let Some(actions_value) = object.get("actions") else {
+            return Err(VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                source_hint.to_string(),
+                "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                action_path,
+                "approved change must include actions",
+                "copy the exact Terraform change.actions array into the approval list",
+                None,
+            ));
+        };
+        let actions = match tf_actions_from_value(actions_value, &action_path) {
+            Ok(actions) if !tf_actions_are_noop(&actions) => actions,
+            Ok(_) => {
+                return Err(VerificationOutcome::blocked(
+                    TF_CLOUD_CONNECTOR_ID,
+                    source_hint.to_string(),
+                    "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                    action_path,
+                    "approved changes cannot use no-op actions",
+                    "remove no-op approvals and approve only planned non-no-op changes",
+                    None,
+                ))
+            }
+            Err(err) => {
+                return Err(VerificationOutcome::blocked(
+                    TF_CLOUD_CONNECTOR_ID,
+                    source_hint.to_string(),
+                    "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                    action_path,
+                    err,
+                    "copy an exact Terraform action sequence from the plan JSON",
+                    None,
+                ))
+            }
+        };
+        if parsed.insert(identifier.to_string(), actions).is_some() {
+            return Err(VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                source_hint.to_string(),
+                "TF_PLAN_APPROVAL_SCHEMA_INVALID",
+                format!("{field_path}[{index}].{identifier_key}"),
+                format!("duplicate approval for {identifier:?}"),
+                "deduplicate the approval list before verifying the plan",
+                None,
+            ));
+        }
+    }
+    Ok(parsed)
+}
+
+fn tf_changed_map(
+    changes: &[Value],
+    identifier_key: &'static str,
+) -> BTreeMap<String, Vec<String>> {
+    let mut parsed = BTreeMap::new();
+    for item in changes {
+        let Some(identifier) = item.get(identifier_key).and_then(Value::as_str) else {
+            continue;
+        };
+        let actions = item
+            .get("actions")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        parsed.insert(identifier.to_string(), actions);
+    }
+    parsed
+}
+
+fn tf_plan_change_diffs(
+    actual: &BTreeMap<String, Vec<String>>,
+    approved: &BTreeMap<String, Vec<String>>,
+    identifier_key: &'static str,
+) -> (Vec<Value>, Vec<Value>) {
+    let mut unapproved = Vec::new();
+    let mut missing = Vec::new();
+    for (identifier, actions) in actual {
+        match approved.get(identifier) {
+            Some(expected_actions) if expected_actions == actions => {}
+            Some(expected_actions) => unapproved.push(json!({
+                identifier_key: identifier,
+                "actual_actions": actions,
+                "approved_actions": expected_actions,
+                "reason": "actions_mismatch",
+            })),
+            None => unapproved.push(json!({
+                identifier_key: identifier,
+                "actual_actions": actions,
+                "approved_actions": null,
+                "reason": "not_approved",
+            })),
+        }
+    }
+    for (identifier, actions) in approved {
+        if !actual.contains_key(identifier) {
+            missing.push(json!({
+                identifier_key: identifier,
+                "approved_actions": actions,
+                "reason": "approved_change_not_in_plan",
+            }));
+        }
+    }
+    (unapproved, missing)
+}
+
+fn normalize_tf_state(state: &Value) -> Result<Value, String> {
+    let format_version = terraform_format_version(state)?;
+    let terraform_version = tf_optional_str(state, "/terraform_version");
+    let values = state
+        .get("values")
+        .ok_or_else(|| "$.values is required".to_string())?;
+    let root_module = values
+        .get("root_module")
+        .ok_or_else(|| "$.values.root_module is required".to_string())?;
+    let mut resources = Vec::new();
+    collect_tf_state_module_resources(root_module, "$.values.root_module", &mut resources)?;
+    resources.sort_by(|left, right| {
+        left.get("address")
+            .and_then(Value::as_str)
+            .cmp(&right.get("address").and_then(Value::as_str))
+    });
+    Ok(json!({
+        "format": "terraform-show-json-state",
+        "format_version": format_version,
+        "terraform_version": terraform_version,
+        "resources_total": resources.len(),
+        "resources": resources,
+    }))
+}
+
+fn collect_tf_state_module_resources(
+    module: &Value,
+    field_path: &str,
+    resources: &mut Vec<Value>,
+) -> Result<(), String> {
+    if let Some(items) = module.get("resources") {
+        let Some(items) = items.as_array() else {
+            return Err(format!(
+                "{field_path}.resources must be an array when present"
+            ));
+        };
+        for (index, item) in items.iter().enumerate() {
+            let item_path = format!("{field_path}.resources[{index}]");
+            let address = tf_required_str(item, "/address", &format!("{item_path}.address"))?;
+            let values = item
+                .get("values")
+                .and_then(Value::as_object)
+                .ok_or_else(|| format!("{item_path}.values must be an object"))?;
+            resources.push(json!({
+                "address": address,
+                "mode": tf_optional_str(item, "/mode"),
+                "type": tf_optional_str(item, "/type"),
+                "name": tf_optional_str(item, "/name"),
+                "provider_name": tf_optional_str(item, "/provider_name"),
+                "module_address": tf_optional_str(item, "/module_address"),
+                "values": Value::Object(values.clone()),
+                "sensitive_values": item.get("sensitive_values").cloned().unwrap_or_else(|| json!({})),
+            }));
+        }
+    }
+    if let Some(children) = module.get("child_modules") {
+        let Some(children) = children.as_array() else {
+            return Err(format!(
+                "{field_path}.child_modules must be an array when present"
+            ));
+        };
+        for (index, child) in children.iter().enumerate() {
+            collect_tf_state_module_resources(
+                child,
+                &format!("{field_path}.child_modules[{index}]"),
+                resources,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_tf_attribute_path(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<Vec<TfAttributePathSegment>, VerificationOutcome> {
+    let Some(value) = spec.expected.get("attribute_path") else {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            "$.expected.attribute_path",
+            "tf_state_attribute_v1 requires attribute_path as a non-empty JSON array",
+            "set $.expected.attribute_path to the path inside the Terraform resource values object",
+            None,
+        ));
+    };
+    let Some(items) = value.as_array() else {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            "$.expected.attribute_path",
+            "$.expected.attribute_path must be an array of strings and non-negative integer indexes",
+            "replace attribute_path with an array such as [\"versioning\", 0, \"enabled\"]",
+            None,
+        ));
+    };
+    if items.is_empty() {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "TF_STATE_ATTRIBUTE_PATH_INVALID",
+            "$.expected.attribute_path",
+            "tf_state_attribute_v1 requires a non-empty attribute_path",
+            "specify at least one path segment under the resource values object",
+            None,
+        ));
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            Value::String(value) if !value.trim().is_empty() => {
+                parsed.push(TfAttributePathSegment::Key(value.clone()));
+            }
+            Value::Number(value) => {
+                let Some(number) = value.as_u64().and_then(|value| usize::try_from(value).ok())
+                else {
+                    return Err(VerificationOutcome::blocked(
+                        TF_CLOUD_CONNECTOR_ID,
+                        source_hint.to_string(),
+                        "TF_STATE_ATTRIBUTE_PATH_INVALID",
+                        format!("$.expected.attribute_path[{index}]"),
+                        "attribute_path numeric segments must be non-negative integers that fit usize",
+                        "replace the path segment with a valid array index",
+                        None,
+                    ));
+                };
+                parsed.push(TfAttributePathSegment::Index(number));
+            }
+            _ => return Err(VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                source_hint.to_string(),
+                "TF_STATE_ATTRIBUTE_PATH_INVALID",
+                format!("$.expected.attribute_path[{index}]"),
+                "attribute_path entries must be non-empty strings or non-negative integer indexes",
+                "replace the invalid path segment and rerun verification",
+                None,
+            )),
+        }
+    }
+    Ok(parsed)
+}
+
+fn tf_path_json(path: &[TfAttributePathSegment]) -> Value {
+    Value::Array(path.iter().map(TfAttributePathSegment::to_json).collect())
+}
+
+fn tf_path_display(path: &[TfAttributePathSegment]) -> String {
+    let mut output = String::new();
+    for segment in path {
+        match segment {
+            TfAttributePathSegment::Key(value) => {
+                if !output.is_empty() {
+                    output.push('.');
+                }
+                output.push_str(value);
+            }
+            TfAttributePathSegment::Index(_) => output.push_str(&segment.display()),
+        }
+    }
+    output
+}
+
+fn tf_value_at_path<'a>(root: &'a Value, path: &[TfAttributePathSegment]) -> Option<&'a Value> {
+    let mut current = root;
+    for segment in path {
+        match segment {
+            TfAttributePathSegment::Key(key) => current = current.get(key)?,
+            TfAttributePathSegment::Index(index) => current = current.get(*index)?,
+        }
+    }
+    Some(current)
+}
+
+fn tf_sensitive_at_path(root: &Value, path: &[TfAttributePathSegment]) -> bool {
+    let mut current = root;
+    if current.as_bool() == Some(true) {
+        return true;
+    }
+    for segment in path {
+        current = match segment {
+            TfAttributePathSegment::Key(key) => match current.get(key) {
+                Some(value) => value,
+                None => return false,
+            },
+            TfAttributePathSegment::Index(index) => match current.get(*index) {
+                Some(value) => value,
+                None => return false,
+            },
+        };
+        if current.as_bool() == Some(true) {
+            return true;
+        }
+    }
+    false
+}
+
+fn expected_json_value<'a>(
+    spec: &'a VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    source_hint: &str,
+) -> Result<&'a Value, VerificationOutcome> {
+    spec.expected.get(key).ok_or_else(|| {
+        VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            field_path,
+            format!("{} requires {field_path}", spec.verifier_id),
+            format!("set {field_path} to the exact expected JSON value"),
+            None,
+        )
+    })
+}
+
+fn normalize_cloud_inventory(inventory: &Value) -> Result<Value, String> {
+    if inventory.get("format").and_then(Value::as_str) != Some("blackbox-cloud-inventory-json-v1") {
+        return Err("$.format must equal \"blackbox-cloud-inventory-json-v1\"".to_string());
+    }
+    let provider = tf_required_str(inventory, "/provider", "$.provider")?;
+    let resources_value = inventory
+        .get("resources")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "$.resources must be an array".to_string())?;
+    let mut resources = Vec::with_capacity(resources_value.len());
+    for (index, item) in resources_value.iter().enumerate() {
+        let resource_path = format!("$.resources[{index}]");
+        let item_provider =
+            tf_required_str(item, "/provider", &format!("{resource_path}.provider"))?;
+        let resource_type = tf_required_str(
+            item,
+            "/resource_type",
+            &format!("{resource_path}.resource_type"),
+        )?;
+        let resource_id = tf_required_str(
+            item,
+            "/resource_id",
+            &format!("{resource_path}.resource_id"),
+        )?;
+        let attributes = item
+            .get("attributes")
+            .and_then(Value::as_object)
+            .ok_or_else(|| format!("{resource_path}.attributes must be an object"))?;
+        resources.push(json!({
+            "provider": item_provider,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "region": tf_optional_str(item, "/region"),
+            "attributes": Value::Object(attributes.clone()),
+        }));
+    }
+    resources.sort_by(|left, right| {
+        (
+            left.get("provider").and_then(Value::as_str),
+            left.get("resource_type").and_then(Value::as_str),
+            left.get("resource_id").and_then(Value::as_str),
+            left.get("region").and_then(Value::as_str),
+        )
+            .cmp(&(
+                right.get("provider").and_then(Value::as_str),
+                right.get("resource_type").and_then(Value::as_str),
+                right.get("resource_id").and_then(Value::as_str),
+                right.get("region").and_then(Value::as_str),
+            ))
+    });
+    Ok(json!({
+        "format": "blackbox-cloud-inventory-json-v1",
+        "provider": provider,
+        "generated_at": tf_optional_str(inventory, "/generated_at"),
+        "resources_total": resources.len(),
+        "resources": resources,
+    }))
+}
+
+fn expected_cloud_required_attributes(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<Map<String, Value>, VerificationOutcome> {
+    let Some(value) = spec.expected.get("required_attributes") else {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_MISSING_FIELD",
+            "$.expected.required_attributes",
+            "cloud_resource_present_v1 requires required_attributes as an explicit object",
+            "set $.expected.required_attributes to {}, or to exact attributes that must match",
+            None,
+        ));
+    };
+    value.as_object().cloned().ok_or_else(|| {
+        VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            source_hint.to_string(),
+            "VERIFIER_SPEC_FIELD_TYPE",
+            "$.expected.required_attributes",
+            "$.expected.required_attributes must be a JSON object",
+            "replace required_attributes with an object of exact expected attribute values",
+            None,
+        )
+    })
+}
+
+fn parse_cloud_audit_jsonl(
+    state: &TfCloudArtifactState,
+    source: &str,
+    operation: &str,
+) -> Result<Value, VerificationOutcome> {
+    let bytes = state
+        .bytes
+        .as_ref()
+        .expect("parse_cloud_audit_jsonl called only for existing artifacts");
+    let text = std::str::from_utf8(bytes).map_err(|err| {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "parse_error": err.to_string(),
+        });
+        tf_cloud_schema_blocked(
+            "cloud_audit_principal_action_v1",
+            source,
+            operation,
+            "$.source.audit_log",
+            "CLOUD_AUDIT_JSONL_INVALID",
+            "cloud audit artifact was not valid UTF-8",
+            "write newline-delimited UTF-8 JSON audit events and rerun verification",
+            actual,
+        )
+    })?;
+    let mut events = Vec::new();
+    let mut event_ids = BTreeSet::new();
+    for (line_index, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "line": line_index + 1,
+                "parse_error": "blank lines are not allowed in cloud audit JSONL",
+            });
+            return Err(tf_cloud_schema_blocked(
+                "cloud_audit_principal_action_v1",
+                source,
+                operation,
+                format!("$.source.audit_log.line{}", line_index + 1),
+                "CLOUD_AUDIT_JSONL_INVALID",
+                "cloud audit JSONL contained a blank line",
+                "remove blank lines so every line is one complete audit event",
+                actual,
+            ));
+        }
+        let event: Value = serde_json::from_str(line).map_err(|err| {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "line": line_index + 1,
+                "parse_error": err.to_string(),
+            });
+            tf_cloud_schema_blocked(
+                "cloud_audit_principal_action_v1",
+                source,
+                operation,
+                format!("$.source.audit_log.line{}", line_index + 1),
+                "CLOUD_AUDIT_JSONL_INVALID",
+                format!(
+                    "cloud audit JSONL line {} could not be parsed: {err}",
+                    line_index + 1
+                ),
+                "write valid one-object-per-line JSONL and rerun verification",
+                actual,
+            )
+        })?;
+        let normalized = normalize_cloud_audit_event(&event, line_index)?;
+        let event_id = normalized
+            .get("event_id")
+            .and_then(Value::as_str)
+            .expect("normalized audit event has event_id");
+        if !event_ids.insert(event_id.to_string()) {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "line": line_index + 1,
+                "event_id": event_id,
+            });
+            return Err(tf_cloud_schema_blocked(
+                "cloud_audit_principal_action_v1",
+                source,
+                operation,
+                format!("$.source.audit_log.line{}", line_index + 1),
+                "CLOUD_AUDIT_SCHEMA_DRIFT",
+                "cloud audit JSONL contained a duplicate event_id",
+                "deduplicate audit events before verifying principal actions",
+                actual,
+            ));
+        }
+        events.push(normalized);
+    }
+    Ok(json!({
+        "format": "blackbox-cloud-audit-jsonl-v1",
+        "events_total": events.len(),
+        "events": events,
+    }))
+}
+
+fn normalize_cloud_audit_event(event: &Value, index: usize) -> Result<Value, VerificationOutcome> {
+    if event.get("format").and_then(Value::as_str) != Some("blackbox-cloud-audit-event-json-v1") {
+        return Err(VerificationOutcome::blocked(
+            TF_CLOUD_CONNECTOR_ID,
+            "cloud:audit-log#line".to_string(),
+            "CLOUD_AUDIT_SCHEMA_DRIFT",
+            format!("$.source.audit_log.line{}.format", index + 1),
+            "cloud audit event format was not blackbox-cloud-audit-event-json-v1",
+            "normalize provider audit events into the documented Phase 21 event shape",
+            None,
+        ));
+    }
+    let field = |name: &'static str| {
+        tf_required_str(
+            event,
+            &format!("/{name}"),
+            &format!("$.source.audit_log.line{}.{}", index + 1, name),
+        )
+        .map_err(|err| {
+            VerificationOutcome::blocked(
+                TF_CLOUD_CONNECTOR_ID,
+                "cloud:audit-log#line".to_string(),
+                "CLOUD_AUDIT_SCHEMA_DRIFT",
+                format!("$.source.audit_log.line{}.{}", index + 1, name),
+                err,
+                "normalize provider audit events into the documented Phase 21 event shape",
+                None,
+            )
+        })
+    };
+    Ok(json!({
+        "format": "blackbox-cloud-audit-event-json-v1",
+        "provider": field("provider")?,
+        "event_id": field("event_id")?,
+        "principal_id": field("principal_id")?,
+        "action": field("action")?,
+        "resource_id": field("resource_id")?,
+        "event_time": field("event_time")?,
+        "outcome": field("outcome")?,
+        "region": tf_optional_str(event, "/region"),
+    }))
+}
+
+fn verify_tf_plan_only_approved_changes(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = tf_source_of_truth(
+        Path::new(optional_str(&spec.source, "plan").unwrap_or("")),
+        "plan",
+    );
+    if let Err(outcome) = require_tf_cloud_source_format(
+        spec,
+        "plan_format",
+        "$.source.plan_format",
+        "terraform-show-json",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let plan_path = match require_tf_cloud_source_path(spec, "plan", "$.source.plan", &source_hint)
+    {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let approved_resources = match parse_tf_expected_change_set(
+        spec,
+        "approved_changes",
+        "$.expected.approved_changes",
+        "address",
+        &source_hint,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let approved_outputs = match parse_tf_expected_change_set(
+        spec,
+        "approved_output_changes",
+        "$.expected.approved_output_changes",
+        "name",
+        &source_hint,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let source = tf_source_of_truth(&plan_path, "plan");
+    let operation = "read Terraform plan JSON artifact";
+    let state = match tf_cloud_file_state(
+        &plan_path,
+        "terraform-show-json-plan",
+        &source,
+        "$.source.plan",
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-plan",
+            "changed_resources": [],
+            "changed_outputs": [],
+        });
+        let readback = tf_cloud_readback_payload(
+            "tf_plan_only_approved_changes_v1",
+            &source,
+            operation,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_PLAN_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "Terraform plan artifact does not exist",
+            "run `terraform show -json <planfile> > tfplan.json` before claiming plan approval",
+            readback,
+            actual,
+        );
+    }
+    let plan = match parse_tf_cloud_json(
+        &state,
+        "tf_plan_only_approved_changes_v1",
+        &source,
+        operation,
+        "$.source.plan",
+        "TF_PLAN_JSON_INVALID",
+        "write valid JSON from `terraform show -json <planfile>` and retry",
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let normalized = match normalize_tf_plan(&plan) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "terraform-show-json-plan",
+                "schema_error": err,
+            });
+            return tf_cloud_schema_blocked(
+                "tf_plan_only_approved_changes_v1",
+                &source,
+                operation,
+                "$.source.plan",
+                "TF_PLAN_SCHEMA_DRIFT",
+                "Terraform plan JSON did not match the documented JSON output format",
+                "regenerate the plan JSON with Terraform or update the connector for a documented format change",
+                actual,
+            );
+        }
+    };
+    if normalized.get("errored").and_then(Value::as_bool) == Some(true) {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "normalized": normalized,
+        });
+        return tf_cloud_schema_blocked(
+            "tf_plan_only_approved_changes_v1",
+            &source,
+            operation,
+            "actual_readback.normalized.errored",
+            "TF_PLAN_ERRORED",
+            "Terraform plan JSON records an errored plan",
+            "fix the Terraform planning error and capture a non-errored plan before verifying approved changes",
+            actual,
+        );
+    }
+    let changed_resources = normalized
+        .get("changed_resources")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let changed_outputs = normalized
+        .get("changed_outputs")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let actual_resources = tf_changed_map(&changed_resources, "address");
+    let actual_outputs = tf_changed_map(&changed_outputs, "name");
+    let (unapproved_resources, missing_resources) =
+        tf_plan_change_diffs(&actual_resources, &approved_resources, "address");
+    let (unapproved_outputs, missing_outputs) =
+        tf_plan_change_diffs(&actual_outputs, &approved_outputs, "name");
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "terraform-show-json-plan",
+        "normalized": normalized,
+        "approved_changes": approved_resources.iter().map(|(address, actions)| {
+            json!({ "address": address, "actions": actions })
+        }).collect::<Vec<_>>(),
+        "approved_output_changes": approved_outputs.iter().map(|(name, actions)| {
+            json!({ "name": name, "actions": actions })
+        }).collect::<Vec<_>>(),
+        "unapproved_changes": unapproved_resources,
+        "missing_approved_changes": missing_resources,
+        "unapproved_output_changes": unapproved_outputs,
+        "missing_approved_output_changes": missing_outputs,
+    });
+    let readback = tf_cloud_readback_payload(
+        "tf_plan_only_approved_changes_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if actual
+        .get("unapproved_changes")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+        || actual
+            .get("unapproved_output_changes")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    {
+        VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_PLAN_UNAPPROVED_CHANGES",
+            "actual_readback.unapproved_changes",
+            "Terraform plan contains non-no-op changes that were not explicitly approved",
+            "review the physical plan JSON and update either the plan or the explicit approval set",
+            readback,
+            actual,
+        )
+    } else if actual
+        .get("missing_approved_changes")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+        || actual
+            .get("missing_approved_output_changes")
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    {
+        VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_PLAN_APPROVED_CHANGE_MISSING",
+            "actual_readback.missing_approved_changes",
+            "Terraform plan does not contain every explicitly approved change",
+            "capture the intended plan or remove stale approvals before claiming plan verification",
+            readback,
+            actual,
+        )
+    } else {
+        VerificationOutcome::passed(TF_CLOUD_CONNECTOR_ID, source, readback, actual)
+    }
+}
+
+fn verify_tf_state_attribute(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = tf_source_of_truth(
+        Path::new(optional_str(&spec.source, "state").unwrap_or("")),
+        "state",
+    );
+    if let Err(outcome) = require_tf_cloud_source_format(
+        spec,
+        "state_format",
+        "$.source.state_format",
+        "terraform-show-json",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let state_path =
+        match require_tf_cloud_source_path(spec, "state", "$.source.state", &source_hint) {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+    let resource_address = match required_expected_string(
+        spec,
+        "resource_address",
+        "$.expected.resource_address",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let attribute_path = match parse_tf_attribute_path(spec, &source_hint) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let expected_value = match expected_json_value(
+        spec,
+        "expected_value",
+        "$.expected.expected_value",
+        &source_hint,
+    ) {
+        Ok(value) => value.clone(),
+        Err(outcome) => return outcome,
+    };
+    let source = tf_source_of_truth(&state_path, "state");
+    let operation = "read Terraform state JSON artifact";
+    let state = match tf_cloud_file_state(
+        &state_path,
+        "terraform-show-json-state",
+        &source,
+        "$.source.state",
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-state",
+            "resource_address": resource_address,
+            "attribute_path": tf_path_json(&attribute_path),
+            "resource_found": false,
+        });
+        let readback =
+            tf_cloud_readback_payload("tf_state_attribute_v1", &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_STATE_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "Terraform state artifact does not exist",
+            "run `terraform show -json <statefile> > tfstate.json` before claiming applied state",
+            readback,
+            actual,
+        );
+    }
+    let raw_state = match parse_tf_cloud_json(
+        &state,
+        "tf_state_attribute_v1",
+        &source,
+        operation,
+        "$.source.state",
+        "TF_STATE_JSON_INVALID",
+        "write valid JSON from `terraform show -json <statefile>` and retry",
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let normalized = match normalize_tf_state(&raw_state) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "terraform-show-json-state",
+                "schema_error": err,
+            });
+            return tf_cloud_schema_blocked(
+                "tf_state_attribute_v1",
+                &source,
+                operation,
+                "$.source.state",
+                "TF_STATE_SCHEMA_DRIFT",
+                "Terraform state JSON did not match the documented JSON output format",
+                "regenerate the state JSON with Terraform or update the connector for a documented format change",
+                actual,
+            );
+        }
+    };
+    let resources = normalized
+        .get("resources")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let matching = resources
+        .iter()
+        .filter(|item| {
+            item.get("address").and_then(Value::as_str) == Some(resource_address.as_str())
+        })
+        .collect::<Vec<_>>();
+    if matching.is_empty() {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-state",
+            "resources_total": normalized["resources_total"].clone(),
+            "resource_address": resource_address,
+            "attribute_path": tf_path_json(&attribute_path),
+            "resource_found": false,
+            "resource_addresses": resources.iter().filter_map(|item| {
+                item.get("address").and_then(Value::as_str).map(ToOwned::to_owned)
+            }).collect::<Vec<_>>(),
+        });
+        let readback =
+            tf_cloud_readback_payload("tf_state_attribute_v1", &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_STATE_RESOURCE_NOT_FOUND",
+            "actual_readback.resource_found",
+            "Terraform state artifact does not contain the expected resource address",
+            "inspect the physical state JSON and verify the resource address before claiming applied state",
+            readback,
+            actual,
+        );
+    }
+    if matching.len() > 1 {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-state",
+            "resource_address": resource_address,
+            "matching_count": matching.len(),
+        });
+        return tf_cloud_schema_blocked(
+            "tf_state_attribute_v1",
+            &source,
+            operation,
+            "actual_readback.matching_count",
+            "TF_STATE_RESOURCE_AMBIGUOUS",
+            "Terraform state artifact contains duplicate resource addresses",
+            "deduplicate or regenerate the Terraform state JSON before verifying attributes",
+            actual,
+        );
+    }
+    let resource = matching[0];
+    let values = resource
+        .get("values")
+        .expect("normalized Terraform resource contains values");
+    let sensitive_values = resource.get("sensitive_values").unwrap_or(&Value::Null);
+    if tf_sensitive_at_path(sensitive_values, &attribute_path) {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-state",
+            "resource_address": resource_address,
+            "attribute_path": tf_path_json(&attribute_path),
+            "attribute_path_display": tf_path_display(&attribute_path),
+            "resource_found": true,
+            "attribute_sensitive": true,
+        });
+        return tf_cloud_schema_blocked(
+            "tf_state_attribute_v1",
+            &source,
+            operation,
+            "actual_readback.attribute_sensitive",
+            "TF_STATE_ATTRIBUTE_SENSITIVE",
+            "Terraform state marks the requested attribute path as sensitive",
+            "verify the attribute through a non-sensitive source of truth or remove the sensitive expectation",
+            actual,
+        );
+    }
+    let Some(actual_value) = tf_value_at_path(values, &attribute_path).cloned() else {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "terraform-show-json-state",
+            "resource_address": resource_address,
+            "attribute_path": tf_path_json(&attribute_path),
+            "attribute_path_display": tf_path_display(&attribute_path),
+            "resource_found": true,
+            "attribute_found": false,
+            "expected_value": expected_value,
+        });
+        let readback =
+            tf_cloud_readback_payload("tf_state_attribute_v1", &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_STATE_ATTRIBUTE_NOT_FOUND",
+            "actual_readback.attribute_found",
+            "Terraform state resource values do not contain the expected attribute path",
+            "inspect the state JSON values object and correct the expected attribute_path",
+            readback,
+            actual,
+        );
+    };
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "terraform-show-json-state",
+        "resource_address": resource_address,
+        "attribute_path": tf_path_json(&attribute_path),
+        "attribute_path_display": tf_path_display(&attribute_path),
+        "resource_found": true,
+        "attribute_found": true,
+        "attribute_sensitive": false,
+        "expected_value": expected_value,
+        "actual_value": actual_value,
+    });
+    let readback = tf_cloud_readback_payload("tf_state_attribute_v1", &source, operation, &actual);
+    if actual.get("actual_value") == actual.get("expected_value") {
+        VerificationOutcome::passed(TF_CLOUD_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "TF_STATE_ATTRIBUTE_MISMATCH",
+            "actual_readback.actual_value",
+            "Terraform state attribute value did not match the expected value",
+            "apply the intended Terraform change or correct the expected value before claiming state verification",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_cloud_resource_present(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = cloud_source_of_truth(
+        Path::new(optional_str(&spec.source, "inventory").unwrap_or("")),
+        "inventory",
+    );
+    if let Err(outcome) = require_tf_cloud_source_format(
+        spec,
+        "inventory_format",
+        "$.source.inventory_format",
+        "blackbox-cloud-inventory-json-v1",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let inventory_path =
+        match require_tf_cloud_source_path(spec, "inventory", "$.source.inventory", &source_hint) {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+    let provider = match required_expected_string(
+        spec,
+        "provider",
+        "$.expected.provider",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let resource_type = match required_expected_string(
+        spec,
+        "resource_type",
+        "$.expected.resource_type",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let resource_id = match required_expected_string(
+        spec,
+        "resource_id",
+        "$.expected.resource_id",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let region = expected_optional_string(spec, "region");
+    let required_attributes = match expected_cloud_required_attributes(spec, &source_hint) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let source = cloud_source_of_truth(&inventory_path, "inventory");
+    let operation = "read normalized cloud inventory artifact";
+    let state = match tf_cloud_file_state(
+        &inventory_path,
+        "blackbox-cloud-inventory-json-v1",
+        &source,
+        "$.source.inventory",
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "blackbox-cloud-inventory-json-v1",
+            "provider": provider,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "region": region,
+            "resource_found": false,
+        });
+        let readback =
+            tf_cloud_readback_payload("cloud_resource_present_v1", &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "CLOUD_INVENTORY_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "cloud inventory artifact does not exist",
+            "capture normalized cloud inventory before claiming resource state",
+            readback,
+            actual,
+        );
+    }
+    let raw_inventory = match parse_tf_cloud_json(
+        &state,
+        "cloud_resource_present_v1",
+        &source,
+        operation,
+        "$.source.inventory",
+        "CLOUD_INVENTORY_JSON_INVALID",
+        "write valid normalized cloud inventory JSON and retry",
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let normalized = match normalize_cloud_inventory(&raw_inventory) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "blackbox-cloud-inventory-json-v1",
+                "schema_error": err,
+            });
+            return tf_cloud_schema_blocked(
+                "cloud_resource_present_v1",
+                &source,
+                operation,
+                "$.source.inventory",
+                "CLOUD_INVENTORY_SCHEMA_DRIFT",
+                "cloud inventory artifact did not match the Phase 21 normalized schema",
+                "regenerate normalized inventory from the provider API and rerun verification",
+                actual,
+            );
+        }
+    };
+    let resources = normalized
+        .get("resources")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let matches = resources
+        .iter()
+        .filter(|item| {
+            item.get("provider").and_then(Value::as_str) == Some(provider.as_str())
+                && item.get("resource_type").and_then(Value::as_str) == Some(resource_type.as_str())
+                && item.get("resource_id").and_then(Value::as_str) == Some(resource_id.as_str())
+                && region
+                    .as_ref()
+                    .map(|expected| {
+                        item.get("region").and_then(Value::as_str) == Some(expected.as_str())
+                    })
+                    .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if matches.len() > 1 {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "blackbox-cloud-inventory-json-v1",
+            "matching_count": matches.len(),
+            "matches": matches,
+        });
+        return tf_cloud_schema_blocked(
+            "cloud_resource_present_v1",
+            &source,
+            operation,
+            "actual_readback.matching_count",
+            "CLOUD_INVENTORY_RESOURCE_AMBIGUOUS",
+            "cloud inventory contains duplicate resource identity rows",
+            "deduplicate inventory resources before verifying cloud state",
+            actual,
+        );
+    }
+    if matches.is_empty() {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "blackbox-cloud-inventory-json-v1",
+            "provider": provider,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "region": region,
+            "resource_found": false,
+            "resources_total": normalized["resources_total"].clone(),
+        });
+        let readback =
+            tf_cloud_readback_payload("cloud_resource_present_v1", &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "CLOUD_RESOURCE_NOT_FOUND",
+            "actual_readback.resource_found",
+            "cloud inventory does not contain the expected resource identity",
+            "query the provider API for the intended account/region and regenerate inventory",
+            readback,
+            actual,
+        );
+    }
+    let resource = matches[0].clone();
+    let attributes = resource
+        .get("attributes")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mismatches = required_attributes
+        .iter()
+        .filter_map(|(key, expected)| {
+            let actual = attributes.get(key);
+            if actual == Some(expected) {
+                None
+            } else {
+                Some(json!({
+                    "attribute": key,
+                    "expected": expected,
+                    "actual": actual.cloned().unwrap_or(Value::Null),
+                }))
+            }
+        })
+        .collect::<Vec<_>>();
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "blackbox-cloud-inventory-json-v1",
+        "provider": provider,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "region": region,
+        "resource_found": true,
+        "resource": resource,
+        "required_attributes": Value::Object(required_attributes.clone()),
+        "attribute_mismatches": mismatches,
+    });
+    let readback =
+        tf_cloud_readback_payload("cloud_resource_present_v1", &source, operation, &actual);
+    if actual
+        .get("attribute_mismatches")
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.is_empty())
+    {
+        VerificationOutcome::passed(TF_CLOUD_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "CLOUD_RESOURCE_ATTRIBUTE_MISMATCH",
+            "actual_readback.attribute_mismatches",
+            "cloud inventory resource attributes did not match expected values",
+            "apply the intended cloud change or correct the expected required_attributes",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_cloud_audit_principal_action(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = cloud_source_of_truth(
+        Path::new(optional_str(&spec.source, "audit_log").unwrap_or("")),
+        "audit-log",
+    );
+    if let Err(outcome) = require_tf_cloud_source_format(
+        spec,
+        "audit_log_format",
+        "$.source.audit_log_format",
+        "blackbox-cloud-audit-jsonl-v1",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let audit_path =
+        match require_tf_cloud_source_path(spec, "audit_log", "$.source.audit_log", &source_hint) {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+    let provider = match required_expected_string(
+        spec,
+        "provider",
+        "$.expected.provider",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let principal_id = match required_expected_string(
+        spec,
+        "principal_id",
+        "$.expected.principal_id",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let action = match required_expected_string(
+        spec,
+        "action",
+        "$.expected.action",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let resource_id = match required_expected_string(
+        spec,
+        "resource_id",
+        "$.expected.resource_id",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let outcome_filter = match required_expected_string(
+        spec,
+        "outcome",
+        "$.expected.outcome",
+        TF_CLOUD_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let region = expected_optional_string(spec, "region");
+    let source = cloud_source_of_truth(&audit_path, "audit-log");
+    let operation = "read normalized cloud audit JSONL artifact";
+    let state = match tf_cloud_file_state(
+        &audit_path,
+        "blackbox-cloud-audit-jsonl-v1",
+        &source,
+        "$.source.audit_log",
+    ) {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "blackbox-cloud-audit-jsonl-v1",
+            "provider": provider,
+            "principal_id": principal_id,
+            "action": action,
+            "resource_id": resource_id,
+            "outcome": outcome_filter,
+            "region": region,
+            "matched_events": [],
+        });
+        let readback = tf_cloud_readback_payload(
+            "cloud_audit_principal_action_v1",
+            &source,
+            operation,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "CLOUD_AUDIT_LOG_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "cloud audit JSONL artifact does not exist",
+            "export provider audit events into normalized JSONL before claiming audit proof",
+            readback,
+            actual,
+        );
+    }
+    let normalized = match parse_cloud_audit_jsonl(&state, &source, operation) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let events = normalized
+        .get("events")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let matched_events = events
+        .iter()
+        .filter(|event| {
+            event.get("provider").and_then(Value::as_str) == Some(provider.as_str())
+                && event.get("principal_id").and_then(Value::as_str) == Some(principal_id.as_str())
+                && event.get("action").and_then(Value::as_str) == Some(action.as_str())
+                && event.get("resource_id").and_then(Value::as_str) == Some(resource_id.as_str())
+                && event.get("outcome").and_then(Value::as_str) == Some(outcome_filter.as_str())
+                && region
+                    .as_ref()
+                    .map(|expected| {
+                        event.get("region").and_then(Value::as_str) == Some(expected.as_str())
+                    })
+                    .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "blackbox-cloud-audit-jsonl-v1",
+        "events_total": normalized["events_total"].clone(),
+        "provider": provider,
+        "principal_id": principal_id,
+        "action": action,
+        "resource_id": resource_id,
+        "outcome": outcome_filter,
+        "region": region,
+        "matched_count": matched_events.len(),
+        "matched_events": matched_events,
+    });
+    let readback = tf_cloud_readback_payload(
+        "cloud_audit_principal_action_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if actual
+        .get("matched_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        > 0
+    {
+        VerificationOutcome::passed(TF_CLOUD_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            TF_CLOUD_CONNECTOR_ID,
+            source,
+            "CLOUD_AUDIT_EVENT_NOT_FOUND",
+            "actual_readback.matched_events",
+            "cloud audit JSONL does not contain the expected principal/action/resource/outcome event",
+            "query the provider audit log for the correct account, region, time window, and principal before claiming audit proof",
+            readback,
+            actual,
+        )
+    }
+}
+
 struct K8sNormalizedSnapshot {
     artifact: Value,
     normalized: Value,

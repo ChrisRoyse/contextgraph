@@ -31,6 +31,7 @@ The mandatory operator-side protocol lives in
 | First-wedge demo package rows and files (Phase 18) | real Git/scanner/GitHub/GHA verifier evidence, physical SQLite `first_wedge_demo` rows, and demo package JSON/JSONL files read back from disk with manifest hashes |
 | Executable FSV certification rows and files (Phase 19) | physical SQLite state, SQLite `PRAGMA integrity_check`, FSV evidence JSON, declared artifact files, `full_state_verification` rows, and FSV package JSON/JSONL files read back from disk with manifest hashes |
 | Kubernetes Deployment snapshot files + ledger evidence rows (Phase 20) | physical kubectl-style JSON files and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
+| Terraform/cloud artifact files + ledger evidence rows (Phase 21) | physical Terraform plan/state JSON files, normalized cloud inventory JSON, cloud audit JSONL, and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 
 ## Test Levels
 
@@ -119,6 +120,12 @@ physical kubectl-style Deployment JSON snapshots, runs image digest, replica,
 and rollout verifiers, then reads SQLite directly to prove happy rows,
 missing Deployment incidents, wrong-digest incidents, and invalid JSON
 blocked evidence are all persisted.
+Phase 21 adds `tests/blackbox_phase21_terraform_cloud_fsv.rs`, which writes
+physical Terraform plan/state JSON, normalized cloud inventory JSON, and cloud
+audit JSONL artifacts, runs Terraform plan/state and cloud inventory/audit
+verifiers, then reads SQLite directly to prove happy rows, unapproved-plan
+incidents, state-mismatch incidents, and invalid JSONL blocked evidence are
+all persisted.
 
 ## Acceptance Criteria
 
