@@ -1477,9 +1477,10 @@ reader);
 \code{20260501T\_local\_smoke\_b\_free\_gate\_v3\_hp\_sweep\_batch\_size}
 (120-event HP sweep proxy that failed at
 \code{batch\_size=32} A2);
-\code{mejepa\_5090\_artifact\_v1.0.0\_rc1} (release-candidate v1
-missing a packaged verifier binary). All preserved intentionally
-as part of the artifact's evidence chain.
+\code{mejepa\_5090\_artifact\_v1.0.0\_rc1} (the v1.0.0-rc1
+release-candidate, missing a packaged verifier binary; not to be
+confused with the published v2.0.0-rc1 archive). All preserved
+intentionally as part of the artifact's evidence chain.
 
 % ============================================================================
 \section{Reproducibility Artifact}
@@ -1650,11 +1651,13 @@ Each was found through FSV and persisted as a failed bundle.
       \code{--gpus all}.
 \item Stale release reference. Fix: reference recaptured from a
       preserved passed five-seed aggregate.
-\item Initial release-candidate (rc1) missing a packaged verifier
-      binary. Fix: packager requires \code{CONTEXT\_GRAPH\_BIN}
-      and copies it into \code{bin/context-graph} with a
-      recorded \code{manifests/context\_graph\_ldd.txt} dynamic-
-      link readback.
+\item v1.0.0-rc1 missing a packaged verifier binary. Fix: packager
+      requires \code{CONTEXT\_GRAPH\_BIN} and copies it into
+      \code{bin/context-graph} with a recorded
+      \code{manifests/context\_graph\_ldd.txt} dynamic-link
+      readback. (This is unrelated to the published v2.0.0-rc1
+      archive, which packages the verifier and was caught by the
+      v2 packager gate before the v1 fix landed.)
 \item SIF passed without runtime verification. Fix: packager
       requires \code{singularity inspect --json}, \code{sif list},
       and \code{exec --nv --cleanenv --no-home ... verify-aggregate}.
