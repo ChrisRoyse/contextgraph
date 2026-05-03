@@ -55,7 +55,7 @@ Pilot success metric:
 
 | Tier | Mechanism |
 |---|---|
-| Developer | free or low-cost local recorder (Phase 1 today); JSONL exporter; local Git/file verifiers |
+| Developer | free or low-cost local recorder (Phase 1); JSONL exporter; local Git/file verifiers |
 | Team | per active agent **or** per verified run volume; shared dashboard; GitHub/CI/ticket integrations |
 | Enterprise | annual platform fee + usage tier for verified tool calls; private deployment premium; retention premium; custom connector package; compliance/audit export package |
 | Vendor / OEM | SDK license; per end-customer deployment; white-label enterprise controls |

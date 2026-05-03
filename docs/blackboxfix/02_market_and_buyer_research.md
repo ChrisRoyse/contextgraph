@@ -114,7 +114,7 @@ Example workflow (also detailed in `18_first_wedge_demo.md`):
 
 | Tier | Surface |
 |---|---|
-| **Developer** | Local recorder (Phase 1 today), CLI, file/Git verifier (Phase 2), JSONL exporter (Phase 5) |
+| **Developer** | Local recorder (Phase 1), CLI, file/Git verifier (Phase 2), JSONL exporter (Phase 5) |
 | **Team** | Shared ledger, GitHub/CI/ticketing connectors, dashboards |
 | **Enterprise** | SSO, RBAC, tenant isolation, retention, SIEM export, private deployment, custom connectors |
 | **Vendor/OEM** | SDK and embedded verification layer for agent products |

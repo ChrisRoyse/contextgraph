@@ -13,7 +13,9 @@ filesystem sources of truth. Phase 6 adds MCP/policy surfaces
 physical source of truth for the first verified gateway mutation. Phase 8 adds
 `enterprise_controls_v1` for tenant config, SCIM directory snapshots,
 RBAC/tenant-isolation decisions, and audit/SIEM export readback. Phase 9 adds
-`gitlab_ci_v1` for hosted GitLab pipeline and job-state readback.
+`gitlab_ci_v1` for hosted GitLab pipeline and job-state readback. Phase 10
+adds `scanner_artifact_v1` for physical OSV report, Cargo lockfile, and
+CycloneDX SBOM readback.
 
 ## Connector Contract
 
@@ -162,13 +164,33 @@ error, malformed SSO/SCIM/RBAC/retention/deployment input writes no row, and
 unauthorized audit export creates no files but still persists the denied
 `enterprise_access_decision`.
 
-### Phase 3: Package And Vulnerability Scanners
+### Phase 10: Package And Vulnerability Scanner Artifacts — shipped
 
-Initial targets: OSV-Scanner, `cargo audit`, `npm audit`, Trivy. Verifiers:
+Source of truth:
+
+- OSV-Scanner JSON report files (`source.report`,
+  `source.report_format="osv-json"`);
+- Cargo lockfiles (`source.lockfile`, `source.lockfile_format="cargo"`);
+- CycloneDX JSON SBOM files (`source.sbom`,
+  `source.sbom_format="cyclonedx-json"`).
+
+Shipped connector:
+
+- `scanner_artifact_v1`
+
+Shipped verifiers:
 
 - `scanner_vulnerability_absent_v1`
 - `scanner_lockfile_pinned_to_version_v1`
 - `scanner_sbom_artifact_present_v1`
+
+The connector reads artifacts from disk and stores file existence, byte count,
+SHA-256, parse/schema status, and normalized observed state in
+`readback_snapshot`. It does not shell out to scanner binaries and does not
+trust scanner exit codes as the source of truth. Missing files and readback
+mismatches are failed verifier results; malformed JSON, unsupported formats,
+and schema drift are blocked typed errors. Invalid specs that cannot identify
+a physical source are blocked before a readback row is written.
 
 ### Later Phases (deferred)
 
@@ -196,14 +218,14 @@ Every new connector lands as a single PR that includes:
 
 A connector PR that lacks any of items 1–7 must not merge.
 
-## First Connector Set (Phase 2 + 3 demo)
+## First Connector Set (Phase 2 + 3 + 10 demo)
 
 For the first product demo (`18_first_wedge_demo.md`):
 
 - local Git;
 - GitHub PRs / checks / issues;
 - local test command verifier;
-- OSV-Scanner / cargo audit;
+- OSV JSON report, Cargo lockfile, and CycloneDX SBOM artifacts;
 - JSONL evidence exporter (Phase 5).
 
 This produces a credible DevSecOps agent governance workflow with inspectable
@@ -228,5 +250,7 @@ For GitHub/GHA shipped in Phase 3, `<fixture>` is `OWNER/REPO` and the test
 suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it. For
 GitLab CI shipped in Phase 9, `<fixture>` is `GROUP/PROJECT` and the test
 suite uses `gitlab-org/gitlab-runner` unless `BBX_GITLAB_TEST_PROJECT`
-overrides it. Confirm the row counts match the test plan. Anything else is
-hearsay.
+overrides it. For scanner artifacts shipped in Phase 10, `<fixture>` is an
+OSV JSON report path, and verifier specs point at real OSV JSON,
+`Cargo.lock`, and CycloneDX JSON files. Confirm the row counts match the test
+plan. Anything else is hearsay.

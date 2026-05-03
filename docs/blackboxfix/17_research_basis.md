@@ -67,7 +67,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 9);
+  after Phase 10);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 
@@ -313,6 +313,29 @@ Design implication:
 - store request id, ETag, rate-limit headers, pagination headers, response
   body hash, and normalized observed state in `readback_snapshot` so operators
   can diagnose API/schema/rate-limit failures from the ledger.
+
+### Scanner Artifact Standards
+
+References:
+
+- <https://google.github.io/osv-scanner/output/>
+- <https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html>
+- <https://cyclonedx.org/docs/1.6/json/>
+- <https://github.com/CycloneDX/specification/blob/master/schema/bom-1.6.schema.json>
+
+Design implication:
+
+- OSV-Scanner JSON output is the machine-readable source for vulnerability
+  package, ecosystem, version, id, alias, and grouped-id evidence;
+- `Cargo.lock` is the durable exact dependency-resolution artifact for Rust,
+  so lockfile version checks must parse the TOML package table rather than
+  scan prose or command output;
+- CycloneDX JSON SBOM evidence must require `bomFormat="CycloneDX"`,
+  `specVersion`, and component entries before any SBOM verifier can pass;
+- Phase 10 reads physical artifact files, stores byte counts and SHA-256
+  hashes in `readback_snapshot`, and treats missing files, schema drift, and
+  malformed JSON as typed verifier failures/blocks instead of falling back to
+  scanner process return values.
 
 ## Internal Project References
 

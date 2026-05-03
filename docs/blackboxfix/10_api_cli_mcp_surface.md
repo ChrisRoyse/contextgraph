@@ -3,14 +3,15 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 9 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+Phase 10 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
 decision rows, a capability registry, a machine-readable HTTP API surface
 registry, a static dashboard/API bundle, and enterprise-control commands for
 SSO metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, and
-audit/SIEM export. It also ships the GitLab CI hosted connector. SDKs and
-hosted HTTP serving are reserved for later phases.
+audit/SIEM export. It also ships the GitLab CI hosted connector and the local
+scanner artifact connector. SDKs and hosted HTTP serving are reserved for
+later phases.
 
-## CLI (shipped Phase 9)
+## CLI (shipped Phase 10)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -34,6 +35,7 @@ blackbox connector test        --connector cmd_local_v1 --source CWD
 blackbox connector test        --connector github_v1 --source OWNER/REPO
 blackbox connector test        --connector gha_v1 --source OWNER/REPO
 blackbox connector test        --connector gitlab_ci_v1 --source GROUP/PROJECT
+blackbox connector test        --connector scanner_artifact_v1 --source OSV_REPORT_JSON
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
@@ -96,7 +98,7 @@ The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
 `-v`/`-vv`/`-vvv` increase log verbosity (warn/info/debug/trace, written to
 stderr). Stdout always carries the JSON result on success.
 
-### Verifier Spec Input (Phase 2/3/9)
+### Verifier Spec Input (Phase 2/3/9/10)
 
 `blackbox verify --input` takes a JSON object:
 
@@ -110,7 +112,7 @@ stderr). Stdout always carries the JSON result on success.
 }
 ```
 
-Supported Phase 2/3/9 verifier ids:
+Supported Phase 2/3/9/10 verifier ids:
 
 - `git_branch_exists_v1`
 - `git_commit_exists_v1`
@@ -124,6 +126,9 @@ Supported Phase 2/3/9 verifier ids:
 - `gha_workflow_run_completed_v1`
 - `gitlab_pipeline_status_v1`
 - `gitlab_pipeline_jobs_completed_v1`
+- `scanner_vulnerability_absent_v1`
+- `scanner_lockfile_pinned_to_version_v1`
+- `scanner_sbom_artifact_present_v1`
 
 Every verifier writes `expected_delta`, then a `readback_snapshot` when the
 connector was able to read physical state, then `verifier_result`, then an
@@ -217,6 +222,18 @@ has a non-zero expected minimum job count, every GitLab jobs page has been
 read through pagination, and every job status is explicitly allowed, with
 optional explicit handling for `allow_failure` failed jobs.
 
+`connector test --connector scanner_artifact_v1` reads an OSV JSON report
+from disk and returns the physical artifact path, byte count, SHA-256,
+package count, vulnerability count, alias/group ids, and normalized packages.
+`scanner_vulnerability_absent_v1` passes only when the requested
+vulnerability id is absent from the OSV report after optional
+package/ecosystem/version filters. `scanner_lockfile_pinned_to_version_v1`
+passes only when a real Cargo lockfile contains the requested package and all
+matching package entries have the expected version.
+`scanner_sbom_artifact_present_v1` passes only when a real CycloneDX JSON
+SBOM has `bomFormat="CycloneDX"`, a `specVersion`, enough components, and the
+expected component/version when provided.
+
 ## HTTP API Surface (Phase 6 shipped as registry)
 
 `blackbox api surface [--ledger PATH]` returns the HTTP endpoint registry below
@@ -305,7 +322,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 9)
+## OpenTelemetry Export (reserved after Phase 10)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -317,13 +334,13 @@ OpenTelemetry is an export path, not the primary source of truth. Emit:
 The ledger remains authoritative.
 
 Phase 7 shipped local dashboard metrics, Phase 8 shipped audit/SIEM files, and
-Phase 9 shipped hosted GitLab CI readbacks. OpenTelemetry emission remains a
-later export path.
+Phase 9 shipped hosted GitLab CI readbacks and Phase 10 shipped local scanner
+artifact readbacks. OpenTelemetry emission remains a later export path.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 5 in Phase 9).
+- Ledger records include `schema_version` (= 5 in Phase 10).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -336,10 +353,13 @@ later export path.
   `enterprise_directory_snapshot`, and `enterprise_access_decision`.
 - Phase 9 does not bump the ledger schema. It reuses Phase 2-4 verifier and
   evidence records for GitLab CI readbacks.
+- Phase 10 does not bump the ledger schema. It reuses Phase 2-4 verifier and
+  evidence records for scanner artifact readbacks.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
-  `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1` today).
+  `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
+  `scanner_artifact_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -356,8 +376,14 @@ For each shipped command, the FSV protocol is:
 Concrete inputs and expected outputs live in
 `20_phase1_state_and_invariants.md`,
 `21_phase2_state_and_invariants.md`,
-`22_phase3_state_and_invariants.md`, and
-`23_phase4_state_and_invariants.md`. The automated equivalents are
+`22_phase3_state_and_invariants.md`,
+`23_phase4_state_and_invariants.md`,
+`24_phase5_state_and_invariants.md`,
+`25_phase6_state_and_invariants.md`,
+`26_phase7_state_and_invariants.md`,
+`27_phase8_state_and_invariants.md`,
+`28_phase9_state_and_invariants.md`, and
+`29_phase10_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -367,4 +393,8 @@ integration test, PASS) and
 PASS), `crates/context-graph-cli/tests/blackbox_phase6_mcp_policy_fsv.rs`
 (4 tests, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase7_dashboard_fsv.rs` (5 tests,
-PASS).
+PASS), `crates/context-graph-cli/tests/blackbox_phase8_enterprise_fsv.rs`
+(6 tests, PASS), `crates/context-graph-cli/tests/blackbox_phase9_gitlab_ci_fsv.rs`
+(1 live integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs` (1 local
+integration test, PASS).

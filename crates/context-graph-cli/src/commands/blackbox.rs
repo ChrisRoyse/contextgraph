@@ -31,6 +31,7 @@ const CMD_CONNECTOR_ID: &str = "cmd_local_v1";
 const GITHUB_CONNECTOR_ID: &str = "github_v1";
 const GHA_CONNECTOR_ID: &str = "gha_v1";
 const GITLAB_CI_CONNECTOR_ID: &str = "gitlab_ci_v1";
+const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
@@ -1166,6 +1167,16 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": SCANNER_CONNECTOR_ID,
+                "source_kind": "scanner_artifact",
+                "readback_specs": [
+                    "scanner_vulnerability_absent_v1",
+                    "scanner_lockfile_pinned_to_version_v1",
+                    "scanner_sbom_artifact_present_v1"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -1304,6 +1315,25 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": GITLAB_CI_CONNECTOR_ID,
                 "source_of_truth": gitlab_source_of_truth(&project, "project"),
+                "readback": readback,
+            }))
+        }
+        SCANNER_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    SCANNER_CONNECTOR_ID,
+                    scanner_source_of_truth(&args.source, "osv-report"),
+                    "--command",
+                    "scanner_artifact_v1 connector test does not accept --command",
+                    "remove --command and pass an OSV JSON report path through --source",
+                ));
+            }
+            let readback = scanner_osv_report_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": SCANNER_CONNECTOR_ID,
+                "source_of_truth": scanner_source_of_truth(&args.source, "osv-report"),
                 "readback": readback,
             }))
         }
@@ -9900,6 +9930,18 @@ impl VerifySpec {
                     .unwrap_or_else(|| "unknown".to_string());
                 gitlab_source_of_truth_from_parts(project, &format!("pipelines/{pipeline}"))
             }
+            "scanner_vulnerability_absent_v1" => scanner_source_of_truth(
+                Path::new(optional_str(&self.source, "report").unwrap_or("")),
+                "osv-report",
+            ),
+            "scanner_lockfile_pinned_to_version_v1" => scanner_source_of_truth(
+                Path::new(optional_str(&self.source, "lockfile").unwrap_or("")),
+                "cargo-lock",
+            ),
+            "scanner_sbom_artifact_present_v1" => scanner_source_of_truth(
+                Path::new(optional_str(&self.source, "sbom").unwrap_or("")),
+                "cyclonedx-sbom",
+            ),
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -9937,6 +9979,9 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
         "gha_workflow_run_completed_v1" => verify_gha_workflow_run_completed(spec).await,
         "gitlab_pipeline_status_v1" => verify_gitlab_pipeline_status(spec).await,
         "gitlab_pipeline_jobs_completed_v1" => verify_gitlab_pipeline_jobs_completed(spec).await,
+        "scanner_vulnerability_absent_v1" => verify_scanner_vulnerability_absent(spec),
+        "scanner_lockfile_pinned_to_version_v1" => verify_scanner_lockfile_pinned_to_version(spec),
+        "scanner_sbom_artifact_present_v1" => verify_scanner_sbom_artifact_present(spec),
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
@@ -10677,6 +10722,339 @@ fn cmd_source_of_truth(cwd: &Path, command: &[String]) -> String {
             .expect("command argv arrays of JSON strings serialize canonically"),
     );
     format!("cmd:{}#{digest}", cwd.display())
+}
+
+fn scanner_source_of_truth(path: &Path, locator: &str) -> String {
+    format!("scanner:{}#{locator}", path.display())
+}
+
+#[derive(Debug)]
+struct ScannerFileState {
+    path: PathBuf,
+    artifact_kind: &'static str,
+    exists: bool,
+    size_bytes: Option<usize>,
+    sha256: Option<String>,
+    bytes: Option<Vec<u8>>,
+}
+
+impl ScannerFileState {
+    fn base_json(&self) -> Value {
+        json!({
+            "path": self.path.display().to_string(),
+            "artifact_kind": self.artifact_kind,
+            "exists": self.exists,
+            "size_bytes": self.size_bytes,
+            "sha256": self.sha256,
+            "read_at": Utc::now().to_rfc3339(),
+        })
+    }
+}
+
+fn scanner_file_state(
+    path: &Path,
+    artifact_kind: &'static str,
+    source: &str,
+    field_path: &'static str,
+) -> Result<ScannerFileState, VerificationOutcome> {
+    if path.as_os_str().is_empty() {
+        return Err(VerificationOutcome::blocked(
+            SCANNER_CONNECTOR_ID,
+            source.to_string(),
+            "SCANNER_ARTIFACT_PATH_MISSING",
+            field_path,
+            format!("{field_path} must be a non-empty artifact path"),
+            "provide the scanner artifact path and rerun verification",
+            None,
+        ));
+    }
+    if !path.exists() || !path.is_file() {
+        return Ok(ScannerFileState {
+            path: path.to_path_buf(),
+            artifact_kind,
+            exists: false,
+            size_bytes: None,
+            sha256: None,
+            bytes: None,
+        });
+    }
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            return Err(VerificationOutcome::blocked(
+                SCANNER_CONNECTOR_ID,
+                source.to_string(),
+                "SCANNER_ARTIFACT_READ_FAILED",
+                field_path,
+                format!("failed to read scanner artifact {}: {err}", path.display()),
+                "fix filesystem permissions and rerun verification",
+                None,
+            ))
+        }
+    };
+    Ok(ScannerFileState {
+        path: path.to_path_buf(),
+        artifact_kind,
+        exists: true,
+        size_bytes: Some(bytes.len()),
+        sha256: Some(sha256_hex(&bytes)),
+        bytes: Some(bytes),
+    })
+}
+
+fn scanner_readback_payload(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        SCANNER_CONNECTOR_ID,
+        source,
+        operation,
+        actual.clone(),
+    )
+}
+
+fn require_source_path(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    source_hint: &str,
+) -> Result<PathBuf, VerificationOutcome> {
+    required_source_string(spec, key, field_path, SCANNER_CONNECTOR_ID, source_hint)
+        .map(PathBuf::from)
+}
+
+fn require_source_format(
+    spec: &VerifySpec,
+    key: &'static str,
+    field_path: &'static str,
+    expected: &'static str,
+    source_hint: &str,
+) -> Result<(), VerificationOutcome> {
+    let actual = required_source_string(spec, key, field_path, SCANNER_CONNECTOR_ID, source_hint)?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(VerificationOutcome::blocked(
+            SCANNER_CONNECTOR_ID,
+            source_hint.to_string(),
+            "SCANNER_ARTIFACT_FORMAT_UNSUPPORTED",
+            field_path,
+            format!("{field_path} must be {expected:?}, got {actual:?}"),
+            "use the documented Phase 10 artifact format and rerun verification",
+            None,
+        ))
+    }
+}
+
+fn parse_scanner_json(
+    state: &ScannerFileState,
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: &'static str,
+) -> Result<Value, VerificationOutcome> {
+    let bytes = state
+        .bytes
+        .as_ref()
+        .expect("parse_scanner_json called only for existing scanner artifacts");
+    match serde_json::from_slice(bytes) {
+        Ok(value) => Ok(value),
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "parse_error": err.to_string(),
+            });
+            let readback = scanner_readback_payload(verifier_id, source, operation, &actual);
+            Err(VerificationOutcome::blocked(
+                SCANNER_CONNECTOR_ID,
+                source.to_string(),
+                "SCANNER_ARTIFACT_JSON_INVALID",
+                field_path,
+                format!("scanner artifact JSON could not be parsed: {err}"),
+                "write valid JSON in the scanner artifact and rerun verification",
+                Some(readback),
+            ))
+        }
+    }
+}
+
+fn string_array_from_value(value: Option<&Value>, field: &str) -> Result<Vec<String>, String> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let Some(items) = value.as_array() else {
+        return Err(format!("{field} must be an array of strings"));
+    };
+    let mut parsed = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let Some(text) = item.as_str() else {
+            return Err(format!("{field}[{index}] must be a string"));
+        };
+        parsed.push(text.to_string());
+    }
+    Ok(parsed)
+}
+
+fn normalize_osv_report(report: &Value) -> Result<Value, String> {
+    let Some(results) = report.get("results").and_then(Value::as_array) else {
+        return Err("$.results must be an array for OSV JSON output".to_string());
+    };
+    let mut packages_total = 0usize;
+    let mut vulnerabilities = Vec::new();
+    for (result_index, result) in results.iter().enumerate() {
+        let source_path = result
+            .pointer("/source/path")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let source_type = result
+            .pointer("/source/type")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let packages = result
+            .get("packages")
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("$.results[{result_index}].packages must be an array"))?;
+        for (package_index, package_result) in packages.iter().enumerate() {
+            packages_total += 1;
+            let package = package_result.get("package").ok_or_else(|| {
+                format!("$.results[{result_index}].packages[{package_index}].package is required")
+            })?;
+            let package_name = package.get("name").and_then(Value::as_str).ok_or_else(|| {
+                format!(
+                    "$.results[{result_index}].packages[{package_index}].package.name is required"
+                )
+            })?;
+            let package_version = package.get("version").and_then(Value::as_str).unwrap_or("");
+            let package_ecosystem = package
+                .get("ecosystem")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let vulnerabilities_value = package_result.get("vulnerabilities");
+            let vulnerabilities_array = match vulnerabilities_value {
+                Some(Value::Array(items)) => items.as_slice(),
+                None => &[],
+                Some(_) => {
+                    return Err(format!(
+                        "$.results[{result_index}].packages[{package_index}].vulnerabilities must be an array"
+                    ))
+                }
+            };
+            let groups = package_result
+                .get("groups")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for (vuln_index, vulnerability) in vulnerabilities_array.iter().enumerate() {
+                let id = vulnerability.get("id").and_then(Value::as_str).ok_or_else(|| {
+                    format!("$.results[{result_index}].packages[{package_index}].vulnerabilities[{vuln_index}].id is required")
+                })?;
+                let aliases = string_array_from_value(
+                    vulnerability.get("aliases"),
+                    &format!(
+                        "$.results[{result_index}].packages[{package_index}].vulnerabilities[{vuln_index}].aliases"
+                    ),
+                )?;
+                let mut all_ids = BTreeSet::new();
+                all_ids.insert(id.to_string());
+                all_ids.extend(aliases.iter().cloned());
+                for (group_index, group) in groups.iter().enumerate() {
+                    let ids = string_array_from_value(
+                        group.get("ids"),
+                        &format!(
+                            "$.results[{result_index}].packages[{package_index}].groups[{group_index}].ids"
+                        ),
+                    )?;
+                    if ids.iter().any(|group_id| all_ids.contains(group_id)) {
+                        all_ids.extend(ids);
+                    }
+                }
+                vulnerabilities.push(json!({
+                    "id": id,
+                    "aliases": aliases,
+                    "all_ids": all_ids.into_iter().collect::<Vec<_>>(),
+                    "package": {
+                        "name": package_name,
+                        "version": package_version,
+                        "ecosystem": package_ecosystem,
+                    },
+                    "source": {
+                        "path": source_path,
+                        "type": source_type,
+                    },
+                }));
+            }
+        }
+    }
+    Ok(json!({
+        "format": "osv-json",
+        "results_total": results.len(),
+        "packages_total": packages_total,
+        "vulnerabilities_total": vulnerabilities.len(),
+        "vulnerabilities": vulnerabilities,
+    }))
+}
+
+fn scanner_osv_report_readback(path: &Path) -> BbxResult<Value> {
+    let source = scanner_source_of_truth(path, "osv-report");
+    let state = scanner_file_state(path, "osv-report", &source, "--source").map_err(|outcome| {
+        BlackboxError::connector_blocked(
+            outcome.error_code.unwrap_or("SCANNER_ARTIFACT_READ_FAILED"),
+            SCANNER_CONNECTOR_ID,
+            outcome.source_of_truth,
+            outcome.field_path.unwrap_or_else(|| "--source".to_string()),
+            outcome
+                .message
+                .unwrap_or_else(|| "scanner readback failed".to_string()),
+            outcome
+                .remediation
+                .unwrap_or_else(|| "inspect the scanner artifact and retry".to_string()),
+        )
+    })?;
+    if !state.exists {
+        return Err(BlackboxError::connector_blocked(
+            "SCANNER_REPORT_NOT_FOUND",
+            SCANNER_CONNECTOR_ID,
+            source,
+            "--source",
+            "scanner report artifact does not exist",
+            "write the OSV JSON scanner report before testing the connector",
+        ));
+    }
+    let report: Value = serde_json::from_slice(
+        state
+            .bytes
+            .as_ref()
+            .expect("existing scanner artifact has bytes"),
+    )
+    .map_err(|err| {
+        BlackboxError::connector_blocked(
+            "SCANNER_ARTIFACT_JSON_INVALID",
+            SCANNER_CONNECTOR_ID,
+            scanner_source_of_truth(path, "osv-report"),
+            "--source",
+            format!("scanner report JSON could not be parsed: {err}"),
+            "write valid OSV JSON output and retry",
+        )
+    })?;
+    let normalized = normalize_osv_report(&report).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "SCANNER_REPORT_SCHEMA_DRIFT",
+            SCANNER_CONNECTOR_ID,
+            scanner_source_of_truth(path, "osv-report"),
+            "--source",
+            format!("scanner report did not match OSV JSON output shape: {err}"),
+            "regenerate the report with osv-scanner --format json or update the connector for a documented schema change",
+        )
+    })?;
+    Ok(json!({
+        "artifact": state.base_json(),
+        "normalized": normalized,
+    }))
 }
 
 fn github_source_of_truth(owner: &str, repo: &str, locator: &str) -> String {
@@ -11813,6 +12191,687 @@ fn gitlab_next_page(
         ));
     }
     Ok(Some(next_page))
+}
+
+fn expected_optional_string(spec: &VerifySpec, key: &'static str) -> Option<String> {
+    spec.expected
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn scanner_schema_blocked(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: &'static str,
+    error_code: &'static str,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+    actual: Value,
+) -> VerificationOutcome {
+    let readback = scanner_readback_payload(verifier_id, source, operation, &actual);
+    VerificationOutcome::blocked(
+        SCANNER_CONNECTOR_ID,
+        source.to_string(),
+        error_code,
+        field_path,
+        message,
+        remediation,
+        Some(readback),
+    )
+}
+
+fn verify_scanner_vulnerability_absent(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = scanner_source_of_truth(
+        Path::new(optional_str(&spec.source, "report").unwrap_or("")),
+        "osv-report",
+    );
+    if let Err(outcome) = require_source_format(
+        spec,
+        "report_format",
+        "$.source.report_format",
+        "osv-json",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let report_path = match require_source_path(spec, "report", "$.source.report", &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let vulnerability_id = match required_expected_string(
+        spec,
+        "vulnerability_id",
+        "$.expected.vulnerability_id",
+        SCANNER_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let package_filter = expected_optional_string(spec, "package");
+    let ecosystem_filter = expected_optional_string(spec, "ecosystem");
+    let version_filter = expected_optional_string(spec, "version");
+    let source = scanner_source_of_truth(&report_path, "osv-report");
+    let operation = "read OSV scanner JSON report";
+    let state = match scanner_file_state(&report_path, "osv-report", &source, "$.source.report") {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "osv-json",
+            "vulnerability_id": vulnerability_id,
+            "matched_vulnerabilities": [],
+        });
+        let readback = scanner_readback_payload(
+            "scanner_vulnerability_absent_v1",
+            &source,
+            operation,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_REPORT_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "scanner report artifact does not exist",
+            "run the scanner and persist its OSV JSON report before claiming vulnerability state",
+            readback,
+            actual,
+        );
+    }
+    let report = match parse_scanner_json(
+        &state,
+        "scanner_vulnerability_absent_v1",
+        &source,
+        operation,
+        "$.source.report",
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let normalized = match normalize_osv_report(&report) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "osv-json",
+                "schema_error": err,
+            });
+            return scanner_schema_blocked(
+                "scanner_vulnerability_absent_v1",
+                &source,
+                operation,
+                "$.source.report",
+                "SCANNER_REPORT_SCHEMA_DRIFT",
+                "scanner report did not match OSV JSON output shape",
+                "regenerate the report with osv-scanner --format json or update the connector for a documented schema change",
+                actual,
+            );
+        }
+    };
+    let matched_vulnerabilities = normalized
+        .get("vulnerabilities")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|vulnerability| {
+            let ids_match = vulnerability
+                .get("all_ids")
+                .and_then(Value::as_array)
+                .map(|ids| {
+                    ids.iter()
+                        .any(|id| id.as_str() == Some(vulnerability_id.as_str()))
+                })
+                .unwrap_or(false);
+            let package_matches = package_filter
+                .as_ref()
+                .map(|expected| {
+                    vulnerability
+                        .pointer("/package/name")
+                        .and_then(Value::as_str)
+                        == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            let ecosystem_matches = ecosystem_filter
+                .as_ref()
+                .map(|expected| {
+                    vulnerability
+                        .pointer("/package/ecosystem")
+                        .and_then(Value::as_str)
+                        == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            let version_matches = version_filter
+                .as_ref()
+                .map(|expected| {
+                    vulnerability
+                        .pointer("/package/version")
+                        .and_then(Value::as_str)
+                        == Some(expected.as_str())
+                })
+                .unwrap_or(true);
+            ids_match && package_matches && ecosystem_matches && version_matches
+        })
+        .collect::<Vec<_>>();
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "osv-json",
+        "vulnerability_id": vulnerability_id,
+        "package_filter": package_filter,
+        "ecosystem_filter": ecosystem_filter,
+        "version_filter": version_filter,
+        "packages_total": normalized.get("packages_total").cloned().unwrap_or(Value::Null),
+        "vulnerabilities_total": normalized.get("vulnerabilities_total").cloned().unwrap_or(Value::Null),
+        "matched_count": matched_vulnerabilities.len(),
+        "matched_vulnerabilities": matched_vulnerabilities,
+    });
+    let readback = scanner_readback_payload(
+        "scanner_vulnerability_absent_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if actual
+        .get("matched_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        VerificationOutcome::passed(SCANNER_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_VULNERABILITY_STILL_PRESENT",
+            "actual_readback.matched_vulnerabilities",
+            "scanner report still contains the expected-absent vulnerability",
+            "fix or suppress the vulnerability in the scanner source of truth before claiming remediation",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn normalize_cargo_lock(lockfile: &toml::Value) -> Result<Value, String> {
+    let Some(packages) = lockfile.get("package").and_then(toml::Value::as_array) else {
+        return Err("Cargo.lock must contain a [[package]] array".to_string());
+    };
+    let mut normalized = Vec::with_capacity(packages.len());
+    for (index, package) in packages.iter().enumerate() {
+        let name = package
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| format!("package[{index}].name is required"))?;
+        let version = package
+            .get("version")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| format!("package[{index}].version is required"))?;
+        normalized.push(json!({
+            "name": name,
+            "version": version,
+            "source": package.get("source").and_then(toml::Value::as_str),
+            "checksum": package.get("checksum").and_then(toml::Value::as_str),
+        }));
+    }
+    Ok(json!({
+        "format": "cargo-lock",
+        "packages_total": normalized.len(),
+        "packages": normalized,
+    }))
+}
+
+fn verify_scanner_lockfile_pinned_to_version(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = scanner_source_of_truth(
+        Path::new(optional_str(&spec.source, "lockfile").unwrap_or("")),
+        "cargo-lock",
+    );
+    if let Err(outcome) = require_source_format(
+        spec,
+        "lockfile_format",
+        "$.source.lockfile_format",
+        "cargo",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let lockfile_path =
+        match require_source_path(spec, "lockfile", "$.source.lockfile", &source_hint) {
+            Ok(path) => path,
+            Err(outcome) => return outcome,
+        };
+    let package = match required_expected_string(
+        spec,
+        "package",
+        "$.expected.package",
+        SCANNER_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let expected_version = match required_expected_string(
+        spec,
+        "version",
+        "$.expected.version",
+        SCANNER_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let source = scanner_source_of_truth(&lockfile_path, "cargo-lock");
+    let operation = "read Cargo.lock package versions";
+    let state = match scanner_file_state(&lockfile_path, "cargo-lock", &source, "$.source.lockfile")
+    {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "cargo-lock",
+            "package": package,
+            "expected_version": expected_version,
+            "matching_packages": [],
+        });
+        let readback = scanner_readback_payload(
+            "scanner_lockfile_pinned_to_version_v1",
+            &source,
+            operation,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_LOCKFILE_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "Cargo.lock artifact does not exist",
+            "generate or restore Cargo.lock before claiming the package version is pinned",
+            readback,
+            actual,
+        );
+    }
+    let text = match std::str::from_utf8(
+        state
+            .bytes
+            .as_ref()
+            .expect("existing scanner artifact has bytes"),
+    ) {
+        Ok(text) => text,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "cargo-lock",
+                "parse_error": err.to_string(),
+            });
+            return scanner_schema_blocked(
+                "scanner_lockfile_pinned_to_version_v1",
+                &source,
+                operation,
+                "$.source.lockfile",
+                "SCANNER_LOCKFILE_UTF8_INVALID",
+                "Cargo.lock was not valid UTF-8",
+                "regenerate Cargo.lock with Cargo and rerun verification",
+                actual,
+            );
+        }
+    };
+    let lockfile: toml::Value = match toml::from_str(text) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "cargo-lock",
+                "parse_error": err.to_string(),
+            });
+            return scanner_schema_blocked(
+                "scanner_lockfile_pinned_to_version_v1",
+                &source,
+                operation,
+                "$.source.lockfile",
+                "SCANNER_LOCKFILE_TOML_INVALID",
+                "Cargo.lock TOML could not be parsed",
+                "regenerate Cargo.lock with Cargo and rerun verification",
+                actual,
+            );
+        }
+    };
+    let normalized = match normalize_cargo_lock(&lockfile) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "cargo-lock",
+                "schema_error": err,
+            });
+            return scanner_schema_blocked(
+                "scanner_lockfile_pinned_to_version_v1",
+                &source,
+                operation,
+                "$.source.lockfile",
+                "SCANNER_LOCKFILE_SCHEMA_DRIFT",
+                "Cargo.lock did not match the expected package lockfile shape",
+                "regenerate Cargo.lock with Cargo or update the connector for a documented format change",
+                actual,
+            );
+        }
+    };
+    let matching_packages = normalized
+        .get("packages")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| item.get("name").and_then(Value::as_str) == Some(package.as_str()))
+        .collect::<Vec<_>>();
+    let mismatched_packages = matching_packages
+        .iter()
+        .filter(|item| {
+            item.get("version").and_then(Value::as_str) != Some(expected_version.as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "cargo-lock",
+        "package": package,
+        "expected_version": expected_version,
+        "packages_total": normalized.get("packages_total").cloned().unwrap_or(Value::Null),
+        "matching_count": matching_packages.len(),
+        "matching_packages": matching_packages,
+        "mismatched_count": mismatched_packages.len(),
+        "mismatched_packages": mismatched_packages,
+    });
+    let readback = scanner_readback_payload(
+        "scanner_lockfile_pinned_to_version_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if actual
+        .get("matching_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_LOCKFILE_PACKAGE_NOT_FOUND",
+            "actual_readback.matching_packages",
+            "Cargo.lock does not contain the expected package",
+            "update the lockfile and rerun verification before claiming the dependency was pinned",
+            readback,
+            actual,
+        )
+    } else if actual
+        .get("mismatched_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        VerificationOutcome::passed(SCANNER_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_LOCKFILE_VERSION_MISMATCH",
+            "actual_readback.mismatched_packages",
+            "Cargo.lock contains the package at a version other than the expected pinned version",
+            "run the dependency update and verify every lockfile entry for the package is pinned to the expected version",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn normalize_cyclonedx_bom(bom: &Value) -> Result<Value, String> {
+    if bom.get("bomFormat").and_then(Value::as_str) != Some("CycloneDX") {
+        return Err("$.bomFormat must equal \"CycloneDX\"".to_string());
+    }
+    let spec_version = bom
+        .get("specVersion")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "$.specVersion is required".to_string())?;
+    let components = bom
+        .get("components")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "$.components must be an array".to_string())?;
+    let mut normalized = Vec::with_capacity(components.len());
+    for (index, component) in components.iter().enumerate() {
+        let name = component
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("$.components[{index}].name is required"))?;
+        normalized.push(json!({
+            "name": name,
+            "version": component.get("version").and_then(Value::as_str),
+            "type": component.get("type").and_then(Value::as_str),
+            "bom_ref": component.get("bom-ref").and_then(Value::as_str),
+            "purl": component.get("purl").and_then(Value::as_str),
+        }));
+    }
+    Ok(json!({
+        "format": "cyclonedx-json",
+        "bom_format": "CycloneDX",
+        "spec_version": spec_version,
+        "components_total": normalized.len(),
+        "components": normalized,
+    }))
+}
+
+fn verify_scanner_sbom_artifact_present(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = scanner_source_of_truth(
+        Path::new(optional_str(&spec.source, "sbom").unwrap_or("")),
+        "cyclonedx-sbom",
+    );
+    if let Err(outcome) = require_source_format(
+        spec,
+        "sbom_format",
+        "$.source.sbom_format",
+        "cyclonedx-json",
+        &source_hint,
+    ) {
+        return outcome;
+    }
+    let sbom_path = match require_source_path(spec, "sbom", "$.source.sbom", &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let minimum_components = match required_expected_u64(
+        spec,
+        "minimum_components",
+        "$.expected.minimum_components",
+        SCANNER_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    if minimum_components == 0 {
+        return VerificationOutcome::blocked(
+            SCANNER_CONNECTOR_ID,
+            source_hint,
+            "SCANNER_SBOM_MINIMUM_COMPONENTS_INVALID",
+            "$.expected.minimum_components",
+            "scanner_sbom_artifact_present_v1 requires minimum_components to be at least 1",
+            "set $.expected.minimum_components to the minimum non-zero component count expected in the SBOM",
+            None,
+        );
+    }
+    let expected_component = expected_optional_string(spec, "component_name");
+    let expected_component_version = expected_optional_string(spec, "component_version");
+    let source = scanner_source_of_truth(&sbom_path, "cyclonedx-sbom");
+    let operation = "read CycloneDX JSON SBOM";
+    let state = match scanner_file_state(&sbom_path, "cyclonedx-sbom", &source, "$.source.sbom") {
+        Ok(state) => state,
+        Err(outcome) => return outcome,
+    };
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": "cyclonedx-json",
+            "minimum_components": minimum_components,
+            "components_total": 0,
+            "matching_components": [],
+        });
+        let readback = scanner_readback_payload(
+            "scanner_sbom_artifact_present_v1",
+            &source,
+            operation,
+            &actual,
+        );
+        return VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_SBOM_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "SBOM artifact does not exist",
+            "generate and persist a CycloneDX JSON SBOM before claiming SBOM evidence exists",
+            readback,
+            actual,
+        );
+    }
+    let bom = match parse_scanner_json(
+        &state,
+        "scanner_sbom_artifact_present_v1",
+        &source,
+        operation,
+        "$.source.sbom",
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let normalized = match normalize_cyclonedx_bom(&bom) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": "cyclonedx-json",
+                "schema_error": err,
+            });
+            return scanner_schema_blocked(
+                "scanner_sbom_artifact_present_v1",
+                &source,
+                operation,
+                "$.source.sbom",
+                "SCANNER_SBOM_SCHEMA_DRIFT",
+                "SBOM did not match the expected CycloneDX JSON shape",
+                "regenerate the SBOM as CycloneDX JSON or update the connector for a documented schema change",
+                actual,
+            );
+        }
+    };
+    let components = normalized
+        .get("components")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let matching_components = components
+        .iter()
+        .filter(|component| {
+            expected_component
+                .as_ref()
+                .map(|name| component.get("name").and_then(Value::as_str) == Some(name.as_str()))
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let component_required = expected_component.is_some();
+    let version_mismatches = matching_components
+        .iter()
+        .filter(|component| {
+            expected_component_version
+                .as_ref()
+                .map(|version| {
+                    component.get("version").and_then(Value::as_str) != Some(version.as_str())
+                })
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let actual = json!({
+        "artifact": state.base_json(),
+        "format": "cyclonedx-json",
+        "bom_format": normalized.get("bom_format").cloned().unwrap_or(Value::Null),
+        "spec_version": normalized.get("spec_version").cloned().unwrap_or(Value::Null),
+        "minimum_components": minimum_components,
+        "components_total": normalized.get("components_total").cloned().unwrap_or(Value::Null),
+        "component_name": expected_component,
+        "component_version": expected_component_version,
+        "matching_count": matching_components.len(),
+        "matching_components": matching_components,
+        "version_mismatch_count": version_mismatches.len(),
+        "version_mismatches": version_mismatches,
+    });
+    let readback = scanner_readback_payload(
+        "scanner_sbom_artifact_present_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if actual
+        .get("components_total")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        < minimum_components
+    {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_SBOM_COMPONENTS_MISSING",
+            "actual_readback.components_total",
+            "CycloneDX SBOM contained fewer components than expected",
+            "regenerate the SBOM and verify it includes the expected dependency graph",
+            readback,
+            actual,
+        )
+    } else if component_required
+        && actual
+            .get("matching_count")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            == 0
+    {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_SBOM_COMPONENT_NOT_FOUND",
+            "actual_readback.matching_components",
+            "CycloneDX SBOM does not contain the expected component",
+            "regenerate the SBOM after the dependency update and verify the component is present",
+            readback,
+            actual,
+        )
+    } else if actual
+        .get("version_mismatch_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        VerificationOutcome::passed(SCANNER_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            SCANNER_CONNECTOR_ID,
+            source,
+            "SCANNER_SBOM_COMPONENT_VERSION_MISMATCH",
+            "actual_readback.version_mismatches",
+            "CycloneDX SBOM contains the expected component at a different version",
+            "regenerate the SBOM after pinning the dependency to the expected version",
+            readback,
+            actual,
+        )
+    }
 }
 
 async fn verify_gitlab_pipeline_status(spec: &VerifySpec) -> VerificationOutcome {

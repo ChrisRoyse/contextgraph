@@ -3,10 +3,12 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-The CLI/MCP/dashboard/enterprise demo is now viable through **Phase 8**:
+The CLI/MCP/dashboard/enterprise/scanner demo is now viable through
+**Phase 10**:
 Git + GitHub + CI verifiers, evidence packets, forensic replay, evidence
 export, episode/eval export, a policy-governed MCP gateway for verified Git
-patch application, and tenant-scoped enterprise audit/SIEM export.
+patch application, tenant-scoped enterprise audit/SIEM export, and scanner
+artifact verification for vulnerability remediation.
 
 ## Demo Thesis
 
@@ -33,7 +35,7 @@ the ticketing system, then exports verified and failed episodes for evals.
 | Git | local repository | `git log`, `git diff`, `git rev-parse`, `git status` |
 | GitHub | API | `GET /repos/.../pulls/N`, `GET /repos/.../check-suites` |
 | CI | GitHub Actions API | `GET /repos/.../actions/runs/M` |
-| Scanner | OSV-Scanner / `cargo audit` | scanner CLI output + lockfile read |
+| Scanner | OSV JSON / Cargo lockfile / CycloneDX SBOM | artifact file readback + lockfile parse |
 | Ticketing | Jira/Linear/GitHub Issues API | issue state + linked PR |
 | Ledger | BlackBoxFix SQLite | `sqlite3 <ledger> "SELECT … FROM ledger_records …"` |
 
@@ -91,11 +93,12 @@ Expected:
 - no success claim;
 - remediation asks for required read scope.
 
-## Demo Commands (Phase 1 today)
+## Demo Commands (Recorder-only baseline)
 
-The Phase 1 commands work end-to-end against synthetic input. Show this
-during early sales conversations to demonstrate the recorder and hash chain;
-swap to the full Phase 3 workflow once verifiers exist.
+The recorder-only commands still work end-to-end against synthetic input.
+Use this only when the goal is to demonstrate redaction and hash-chain
+integrity without external source systems. The full Phase 10 surface below is
+the current verified vulnerability-remediation demo path.
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
@@ -134,11 +137,12 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 8 shipped surface)
+## Demo Commands (Phase 10 shipped surface)
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
 context-graph blackbox connector test --connector github_v1 --source org/service
+context-graph blackbox connector test --connector scanner_artifact_v1 --source osv-report.json
 context-graph blackbox verify --ledger "$ledger" --input verify-spec.json
 context-graph blackbox replay --ledger "$ledger" --run-id "$RUN"
 context-graph blackbox export evidence --ledger "$ledger" --run-id "$RUN" --out evidence.json

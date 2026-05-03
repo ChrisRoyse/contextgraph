@@ -99,7 +99,7 @@ Risk: long procurement slows learning.
 
 Mitigation:
 
-- local developer recorder (Phase 1 today);
+- local developer recorder (Phase 1);
 - team-tier SaaS pilot (Phase 7);
 - security review packet;
 - private deployment path metadata shipped in Phase 8; provider-specific

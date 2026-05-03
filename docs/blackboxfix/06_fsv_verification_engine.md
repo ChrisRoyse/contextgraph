@@ -8,6 +8,8 @@ across the SQLite source of truth). Phase 2 shipped local Git/file/command
 outcome verifiers. Phase 3 shipped GitHub/GitHub Actions outcome verifiers.
 Phase 4 shipped evidence packets, incident packets, read-only replay, and
 evidence export. Phase 9 shipped GitLab CI hosted pipeline/job verifiers.
+Phase 10 shipped scanner artifact verifiers for OSV JSON, Cargo lockfiles,
+and CycloneDX JSON SBOMs.
 
 ## Full-State Verification Protocol
 
@@ -47,7 +49,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2/3 verifier ids:
+Shipped Phase 2/3/9/10 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -63,6 +65,9 @@ Shipped Phase 2/3 verifier ids:
 | `gha_workflow_run_completed_v1` | `gha_v1` | GitHub Actions workflow run API | workflow run status and conclusion match expected |
 | `gitlab_pipeline_status_v1` | `gitlab_ci_v1` | GitLab REST API `GET /projects/:id/pipelines/:pipeline_id` | pipeline id exists and status, ref, and SHA all match expected |
 | `gitlab_pipeline_jobs_completed_v1` | `gitlab_ci_v1` | GitLab REST API `GET /projects/:id/pipelines/:pipeline_id/jobs` across all pages | `minimum_jobs >= 1`, jobs exist, pagination is complete, and every job matches explicit allowed statuses |
+| `scanner_vulnerability_absent_v1` | `scanner_artifact_v1` | OSV JSON report file | target vulnerability id/alias/group id is absent after optional package/ecosystem/version filters |
+| `scanner_lockfile_pinned_to_version_v1` | `scanner_artifact_v1` | Cargo lockfile | package exists and every matching lockfile package entry has the expected version |
+| `scanner_sbom_artifact_present_v1` | `scanner_artifact_v1` | CycloneDX JSON SBOM file | SBOM is valid CycloneDX JSON and contains enough components plus the expected component/version when supplied |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;
@@ -157,6 +162,15 @@ stores every GitLab API page in the `readback_snapshot`; malformed pagination
 headers or full pages without a usable `Link`/`x-next-page` next-page signal
 are `blocked`, not silently ignored.
 
+Phase 10 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs`: the local
+integration test writes real OSV JSON reports, a real Cargo lockfile, and
+real CycloneDX JSON SBOM files, verifies all three scanner happy paths, then
+covers missing artifacts, wrong observed artifact state, unsupported formats,
+invalid JSON, schema drift, zero-minimum SBOM expectations, and vulnerability
+still-present failures. Artifact parse failures are blocked with source-path
+and parse/schema details; outcome mismatches are failed and create incidents.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -207,7 +221,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -236,14 +250,17 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3/4/9 happy paths use real Git/local-command, live GitHub/GHA/GitLab
-# sources, and real exported evidence files; see tests/blackbox_phase2_fsv.rs,
+# Phase 2/3/4/9/10 happy paths use real Git/local-command, live
+# GitHub/GHA/GitLab sources, real scanner artifact files, and real exported
+# evidence files; see tests/blackbox_phase2_fsv.rs,
 # tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs,
-# tests/blackbox_phase9_gitlab_ci_fsv.rs, and
+# tests/blackbox_phase9_gitlab_ci_fsv.rs,
+# tests/blackbox_phase10_scanner_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
 # docs/blackboxfix/22_phase3_state_and_invariants.md /
 # docs/blackboxfix/23_phase4_state_and_invariants.md /
-# docs/blackboxfix/28_phase9_state_and_invariants.md.
+# docs/blackboxfix/28_phase9_state_and_invariants.md /
+# docs/blackboxfix/29_phase10_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

@@ -12,7 +12,7 @@ implementation.
 | GitHub Actions runs | GitHub REST API workflow-run endpoints for the target `OWNER/REPO` |
 
 Phase 3 reused `LEDGER_SCHEMA_VERSION = 2`; it added no new record kinds. The
-current live ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 9.
+current live ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 10.
 `blackbox verify` writes `expected_delta`, `readback_snapshot` when a source
 read occurred, `verifier_result`, and then Phase 4 evidence packet rows.
 

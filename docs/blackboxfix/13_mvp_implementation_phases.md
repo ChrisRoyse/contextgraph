@@ -75,8 +75,8 @@ Deliverables (all shipped):
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
-  **wiped** the ledger — no migration shim; current shipped schema is v5 after
-  Phase 9).
+    **wiped** the ledger — no migration shim; current shipped schema is v5 after
+  Phase 10).
 
 Exit criteria (verified):
 
@@ -395,6 +395,66 @@ blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
 the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
+
+## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
+
+Deliverables (all shipped):
+
+- local scanner artifact connector `scanner_artifact_v1`;
+- `blackbox connector test --connector scanner_artifact_v1 --source REPORT`;
+- OSV JSON report readback that normalizes packages, vulnerability ids,
+  aliases, and grouped ids;
+- Cargo lockfile readback through TOML parsing, not ad-hoc string matching;
+- CycloneDX JSON SBOM readback with explicit `bomFormat`, `specVersion`, and
+  component validation;
+- verifiers `scanner_vulnerability_absent_v1`,
+  `scanner_lockfile_pinned_to_version_v1`, and
+  `scanner_sbom_artifact_present_v1`;
+- Phase 10 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs`).
+
+Exit criteria (met):
+
+- vulnerability remediation can be verified against the scanner report rather
+  than the agent transcript;
+- lockfile pinning proves the durable dependency version in `Cargo.lock`;
+- SBOM presence proves a CycloneDX artifact exists and contains expected
+  components;
+- malformed JSON, schema drift, missing files, unsupported formats, missing
+  packages, wrong versions, and vulnerability-still-present cases fail closed
+  with typed evidence.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The suite writes real OSV JSON reports, a real
+Cargo lockfile, and real CycloneDX JSON SBOM files into a temporary directory,
+executes the real `context-graph blackbox` binary, then opens the physical
+SQLite ledger with `rusqlite`. It covers 3 happy paths and 9 edge checks:
+vulnerability still present, missing report, invalid report JSON, wrong
+lockfile version, missing lockfile package, unsupported lockfile format,
+missing SBOM, invalid SBOM schema, and invalid zero component minimum.
+
+Manual FSV completed against `/tmp/bbx-phase10-manual-fsv.Ww4wd6/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=12`, `readback_snapshot=10`, `verifier_result=12`,
+`evidence_packet=12`, `incident_packet=5`. Direct file readback proved the
+artifact hashes persisted in readbacks:
+
+- clean OSV report:
+  `sha256:0cf3d92ab61968b557143878af6bebb17d66c1b0927f38e3a197a669b1850a0b`;
+- vulnerable OSV report:
+  `sha256:0c15bcc3437d8e19545e80aeee3595f56db157236047c7e74107f13b647b387e`;
+- Cargo lockfile:
+  `sha256:2f8d405ca4fe677428530293e9be3420df45d436fe501eaf429e79e18c92b20e`;
+- CycloneDX SBOM:
+  `sha256:52bada329ad56a72d75c80ecb7698a96f21ee0a6c071c5b745fdb960b2cad8a8`.
+
+No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
+keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
 
 ## Phase Sequencing Rules
 
