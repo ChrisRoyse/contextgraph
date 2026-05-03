@@ -6,10 +6,9 @@ know exactly what exists on disk, what each command does, and how to verify
 it physically.
 
 Historical note: later phases have bumped the live ledger schema to version
-`3` and added verifier/evidence record kinds. This file preserves the Phase 1
-baseline. For the current surface, read
-`21_phase2_state_and_invariants.md`, `22_phase3_state_and_invariants.md`, and
-`23_phase4_state_and_invariants.md`.
+`7` and added verifier/evidence/enterprise/score/privacy record kinds. This
+file preserves the Phase 1 baseline. For the current surface, read the phase
+state files through `32_phase13_state_and_invariants.md`.
 
 Source of truth for the implementation: commit `1cf89284` plus the files at
 `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -28,7 +27,7 @@ and `crates/context-graph-cli/src/main.rs:136-139,210`.
 | `crates/context-graph-cli/src/commands/blackbox.rs` | full Phase 1 implementation (≈1600 lines, single file) |
 | `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` | FSV harness (10 tests, all pass) |
 
-## Phase 1 Constants (superseded by current schema version 6)
+## Phase 1 Constants (superseded by current schema version 7)
 
 ```rust
 const LEDGER_SCHEMA_VERSION: i64 = 1;

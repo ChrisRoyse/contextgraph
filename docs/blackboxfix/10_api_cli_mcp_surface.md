@@ -3,16 +3,17 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 12 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+Phase 13 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
 decision rows, a capability registry, a machine-readable HTTP API surface
 registry, a static dashboard/API bundle, and enterprise-control commands for
 SSO metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, and
 audit/SIEM export. It also ships the GitLab CI hosted connector and the local
 scanner artifact connector, GitHub issue evidence-link verification, and
-deterministic run scorecards.
+deterministic run scorecards. Phase 13 adds authorized privacy retention and
+erasure-request decision rows.
 SDKs and hosted HTTP serving are reserved for later phases.
 
-## CLI (shipped Phase 12)
+## CLI (shipped Phase 13)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -39,6 +40,7 @@ blackbox connector test        --connector gitlab_ci_v1 --source GROUP/PROJECT
 blackbox connector test        --connector scanner_artifact_v1 --source OSV_REPORT_JSON
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -88,6 +90,18 @@ blackbox enterprise export-audit
 blackbox score run             --ledger PATH --run-id RUN_ID
                                [--tenant TENANT] [--agent AGENT]
                                [--model MODEL]
+blackbox privacy evaluate-retention
+                               --ledger PATH --tenant TENANT --run-id RUN_ID
+                               --principal-id PRINCIPAL
+                               --retention-class CLASS
+                               --data-subject SUBJECT --purpose PURPOSE
+                               --agent AGENT [--model MODEL]
+blackbox privacy request-erasure
+                               --ledger PATH --tenant TENANT --run-id RUN_ID
+                               --principal-id PRINCIPAL
+                               --retention-class CLASS
+                               --data-subject SUBJECT --reason REASON
+                               --agent AGENT [--model MODEL]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
                                [--mutating] [--verifier-id VERIFIER]
@@ -177,7 +191,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 6,
+  "schema_version": 7,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -225,6 +239,16 @@ every file back and validates hashes before reporting success.
 evidence packet references, computing deterministic score dimensions, and then
 reading the appended `scorecard` row back by sequence, `scorecard_id`,
 `run_id`, `payload_sha256`, and `record_sha256`.
+
+`privacy evaluate-retention` writes one `retention_decision` row after reading
+the physical ledger, verifying the parent run, persisting and checking an
+authorized `enterprise_access_decision` for `privacy.review`, resolving the
+configured tenant retention class, hashing the data subject, and reading the
+appended row back by sequence, `privacy_decision_id`, `run_id`,
+`payload_sha256`, and `record_sha256`. `privacy request-erasure` uses the same
+flow with `privacy.erase` and writes `evidence_deletion`; legal hold or
+incident evidence produces a durable denied decision instead of deleting
+append-only ledger rows.
 
 `connector test --connector gitlab_ci_v1` reads GitLab project metadata and
 the latest pipeline from GitLab REST API v4. `gitlab_pipeline_status_v1`
@@ -276,6 +300,8 @@ POST /v1/enterprise/tenants/{tenant_id}/directory-sync
 POST /v1/enterprise/tenants/{tenant_id}/access/evaluate
 POST /v1/enterprise/tenants/{tenant_id}/audit-export
 POST /v1/runs/{run_id}/scorecard
+POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate
+POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests
 GET  /v1/dashboard/summary
 GET  /v1/dashboard/runs
 GET  /v1/dashboard/runs/{run_id}/timeline
@@ -341,7 +367,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 12)
+## OpenTelemetry Export (reserved after Phase 13)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -355,13 +381,14 @@ The ledger remains authoritative.
 Phase 7 shipped local dashboard metrics, Phase 8 shipped audit/SIEM files,
 Phase 9 shipped hosted GitLab CI readbacks, Phase 10 shipped local scanner
 artifact readbacks, Phase 11 shipped GitHub ticket evidence-link readbacks,
-and Phase 12 shipped deterministic scorecards. OpenTelemetry emission remains
-a later export path.
+Phase 12 shipped deterministic scorecards, and Phase 13 shipped privacy
+retention/erasure decision audit rows. OpenTelemetry emission remains a later
+export path.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 6 in Phase 12).
+- Ledger records include `schema_version` (= 7 in Phase 13).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -379,11 +406,13 @@ a later export path.
 - Phase 11 does not bump the ledger schema. It reuses Phase 2-4 verifier and
   evidence records for GitHub issue evidence-link readbacks.
 - Phase 12 bumps the ledger schema to 6 for the new `scorecard` record kind.
+- Phase 13 bumps the ledger schema to 7 for `retention_decision` and
+  `evidence_deletion`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
   `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
-  `scanner_artifact_v1`, `blackbox_scoring_v1` today).
+  `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 

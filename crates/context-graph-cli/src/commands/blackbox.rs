@@ -2806,11 +2806,8 @@ fn append_privacy_decision(args: PrivacyDecisionRequest<'_>) -> BbxResult<Value>
     require_non_empty_for_ledger(args.ledger, "--agent", args.agent)?;
 
     let data_subject_sha256 = privacy_data_subject_sha256(args.ledger, args.data_subject)?;
-    let request_note = privacy_request_note(
-        args.ledger,
-        args.request_note_field,
-        args.request_note,
-    )?;
+    let request_note =
+        privacy_request_note(args.ledger, args.request_note_field, args.request_note)?;
 
     let mut conn = open_initialized_ledger(args.ledger)?;
     let inspection_before = verify_ledger_integrity(&conn, args.ledger)?;
@@ -3014,7 +3011,9 @@ fn privacy_trimmed_text<'a>(
             ledger_path,
             "PRIVACY_REQUEST_INVALID",
             field_path,
-            format!("{field_path} must be non-empty and must not contain leading/trailing whitespace"),
+            format!(
+                "{field_path} must be non-empty and must not contain leading/trailing whitespace"
+            ),
             "normalize the request field before evaluating privacy policy",
         ));
     }
@@ -3097,8 +3096,16 @@ fn privacy_run_summary(
     for record in &records {
         *counts.entry(record.record_kind.clone()).or_insert(0) += 1;
     }
-    let first_sequence = records.iter().map(|record| record.sequence).min().unwrap_or(0);
-    let last_sequence = records.iter().map(|record| record.sequence).max().unwrap_or(0);
+    let first_sequence = records
+        .iter()
+        .map(|record| record.sequence)
+        .min()
+        .unwrap_or(0);
+    let last_sequence = records
+        .iter()
+        .map(|record| record.sequence)
+        .max()
+        .unwrap_or(0);
     let input_record_refs = records
         .iter()
         .copied()
@@ -3175,15 +3182,18 @@ fn privacy_retention_class_from_config(
                     "persist a corrected enterprise tenant config before evaluating privacy policy",
                 )
             })?;
-        let legal_hold = class.get("legal_hold").and_then(Value::as_bool).ok_or_else(|| {
-            privacy_invalid(
-                ledger_path,
-                "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
-                format!("$.retention.classes[{index}].legal_hold"),
-                "retention class legal_hold must be a boolean",
-                "persist a corrected enterprise tenant config before evaluating privacy policy",
-            )
-        })?;
+        let legal_hold = class
+            .get("legal_hold")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                privacy_invalid(
+                    ledger_path,
+                    "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
+                    format!("$.retention.classes[{index}].legal_hold"),
+                    "retention class legal_hold must be a boolean",
+                    "persist a corrected enterprise tenant config before evaluating privacy policy",
+                )
+            })?;
         return Ok(PrivacyRetentionClass {
             class_id: class_id.to_string(),
             retain_days,
@@ -3298,7 +3308,10 @@ fn readback_privacy_append(
         })?;
     if row.record_kind != record_kind
         || row.run_id.as_deref() != Some(run_id)
-        || row.payload.get("privacy_decision_id").and_then(Value::as_str)
+        || row
+            .payload
+            .get("privacy_decision_id")
+            .and_then(Value::as_str)
             != Some(privacy_decision_id)
         || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
         || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
@@ -8448,7 +8461,11 @@ fn build_dashboard_errors(
         let include_privacy_denial = matches!(
             record.record_kind.as_str(),
             "retention_decision" | "evidence_deletion"
-        ) && record.payload.pointer("/decision/status").and_then(Value::as_str) == Some("denied");
+        ) && record
+            .payload
+            .pointer("/decision/status")
+            .and_then(Value::as_str)
+            == Some("denied");
         let Some(code) = error_code.filter(|code| !code.trim().is_empty()) else {
             if include_policy_denial || include_privacy_denial {
                 return Err(dashboard_schema_error(

@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 12,
-fresh ledgers initialize at schema version 6.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 13,
+fresh ledgers initialize at schema version 7.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-12, fresh ledgers initialize at schema version 6.
+13, fresh ledgers initialize at schema version 7.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-12, fresh ledgers initialize at schema version 6.
+13, fresh ledgers initialize at schema version 7.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -604,6 +604,72 @@ Phase 12 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 6` for
 the new `scorecard` record kind. The physical table shape is unchanged, but
 older schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
+
+## Phase 13: Privacy Retention And Erasure Decisions — DONE (2026-05-03)
+
+Deliverables (all shipped):
+
+- privacy connector `blackbox_privacy_v1`;
+- `blackbox privacy evaluate-retention --ledger PATH --tenant TENANT --run-id RUN_ID`;
+- `blackbox privacy request-erasure --ledger PATH --tenant TENANT --run-id RUN_ID`;
+- RBAC-gated authorization through `enterprise_access_decision` with
+  `privacy.review` and `privacy.erase` permissions;
+- append-only `retention_decision` and `evidence_deletion` ledger rows with
+  `privacy_schema_version = 1`;
+- data-subject minimization: raw `--data-subject` is rejected if empty or
+  secret-like and is persisted only as `data_subject_sha256`;
+- legal-hold and incident-evidence erasure denials with durable reason codes;
+- connector/API/dashboard surface additions for privacy decision rows;
+- Phase 13 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase13_privacy_retention_fsv.rs`).
+
+Exit criteria (met):
+
+- privacy commands read the physical SQLite ledger after hash-chain
+  verification and never trust command return values alone;
+- the parent run must exist for the tenant before any privacy decision row is
+  created;
+- every authorized attempt appends and reads back an
+  `enterprise_access_decision`; unauthorized attempts fail closed with
+  `PRIVACY_RBAC_DENIED` and create no privacy decision row;
+- retention classes are resolved from the latest
+  `enterprise_tenant_config.retention`; unknown classes fail as
+  `PRIVACY_RETENTION_CLASS_NOT_FOUND`;
+- successful privacy appends are immediately read back from `ledger_records`
+  and matched by sequence, `privacy_decision_id`, `run_id`, `payload_sha256`,
+  and `record_sha256`;
+- raw data subjects are not present in persisted `payload_json`.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase13_privacy_retention_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The suite executes the real binary against a real
+SQLite ledger with real enterprise config and SCIM directory rows. It covers a
+retention happy path, approved erasure, legal-hold erasure denial, missing
+retention class, incident-evidence erasure denial, unauthorized principal,
+missing run, and empty data subject.
+Final physical SQLite counts were `enterprise_tenant_config=1`,
+`enterprise_directory_snapshot=1`, `agent_run=6`,
+`enterprise_access_decision=6`, `retention_decision=1`,
+`evidence_deletion=3`, `tool_call=1`, `expected_delta=1`,
+`readback_snapshot=1`, `verifier_result=1`, `evidence_packet=1`, and
+`incident_packet=1`.
+
+Manual FSV completed against `/tmp/bbx-phase13-manual-fsv.ve11jv/fsv.log`
+with log SHA-256
+`91f0a2dd062ddc50d59eca23a719c0ca8590a378cb90a31b38182b86008350b7`.
+The final direct SQLite readback proved `retention_decision=1`,
+`evidence_deletion=3`, `enterprise_access_decision=6`, `incident_packet=1`,
+no raw data subject in `payload_json`, and the expected data-subject digest
+present in 4 privacy rows.
+
+Phase 13 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 7` for
+`retention_decision` and `evidence_deletion`. The physical table shape is
+unchanged, but older schema-version ledgers are wiped on `blackbox init`; no
+migration shim is provided.
 
 ## Phase Sequencing Rules
 

@@ -88,6 +88,8 @@ Retention is policy-driven. Phase 8 persists tenant retention policy in
 `enterprise_tenant_config.retention` with a named default class and explicit
 `retain_days` / `legal_hold` fields. Evidence packets remain immutable; later
 artifact-tier storage can stamp the selected retention class on each artifact.
+Phase 13 applies those configured classes through authorized
+`retention_decision` and `evidence_deletion` ledger rows.
 
 ## Privacy Controls
 
@@ -106,14 +108,27 @@ Phase 8 shipped:
 - audit exports include `controls.json` so security review can inspect the
   tenant key id, data residency, and retention policy used for the export.
 
+Phase 13 shipped:
+
+- RBAC-gated privacy review via `privacy.review` and erasure request review via
+  `privacy.erase`;
+- `retention_decision` rows that apply a named tenant retention class to a
+  run after verifying the physical ledger;
+- `evidence_deletion` rows that approve or deny erasure requests without
+  deleting append-only ledger evidence;
+- data-subject minimization: the raw subject is accepted only as CLI input and
+  persisted as `data_subject_sha256`;
+- fail-closed legal-hold and incident-evidence denials with typed reason codes
+  (`LEGAL_HOLD_ACTIVE`, `INCIDENT_EVIDENCE_LOCKED`).
+
 To add later:
 
 - envelope encryption for sensitive artifacts;
 - data classification tags;
 - export approval workflow;
-- deletion workflow for data subject requests where legally required;
-- immutable audit record for deletion actions (an `evidence_deletion`
-  record kind that is itself append-only).
+- artifact-store deletion execution for data subject requests where legally
+  required. Phase 13 records the decision and audit trail; a future artifact
+  store must perform and verify the external delete.
 
 ## Data Minimization
 
@@ -139,6 +154,8 @@ The platform fails closed if:
   `verify_ledger_integrity` inside the transaction; corruption refuses
   further writes.
 - source-of-truth readback cannot be persisted — Phase 2+.
+- privacy decision cannot be authorized, classified, appended, or read back —
+  Phase 13 emits `PRIVACY_*` errors and writes no privacy decision row.
 
 Fail-closed means **no fallback**. Do not silently switch to in-memory
 storage or write to a degraded path; emit the typed error and exit non-zero.

@@ -11,7 +11,8 @@ evidence export. Phase 9 shipped GitLab CI hosted pipeline/job verifiers.
 Phase 10 shipped scanner artifact verifiers for OSV JSON, Cargo lockfiles,
 and CycloneDX JSON SBOMs. Phase 11 shipped GitHub issue evidence-link
 verification for ticket proof. Phase 12 shipped deterministic scorecards over
-physical ledger evidence.
+physical ledger evidence. Phase 13 shipped privacy retention and erasure
+decision verification over physical ledger and enterprise-control rows.
 
 ## Full-State Verification Protocol
 
@@ -193,6 +194,15 @@ passed and failed evidence, runs `blackbox score run`, and then reads physical
 SQLite `scorecard` rows directly. It covers a verified happy path, no-tool
 recorded state, unverified high-risk tool-call state, failed-verifier incident
 state, and missing-run fail-closed behavior.
+
+Phase 13 follows the same doctrine for privacy decisions in
+`crates/context-graph-cli/tests/blackbox_phase13_privacy_retention_fsv.rs`:
+the test writes real enterprise config and SCIM directory rows, records real
+runs, runs the privacy commands, and then reads physical SQLite
+`enterprise_access_decision`, `retention_decision`, and `evidence_deletion`
+rows directly. It covers retention review, approved erasure, legal-hold denial,
+missing retention class, unauthorized principal, missing run, and empty data
+subject.
 
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real

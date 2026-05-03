@@ -67,9 +67,25 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 12);
+  after Phase 13);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
+
+### NIST Privacy Framework And SP 800-53 Privacy/Audit Controls
+
+References:
+
+- <https://www.nist.gov/privacy-framework>
+- <https://csrc.nist.gov/Pubs/sp/800/53/r5/upd1/Final>
+
+Design implication:
+
+- privacy review/deletion workflows need explicit policy, authorization, and
+  durable audit evidence;
+- audit records must be protected from unauthorized modification/deletion, so
+  data subject erasure requests cannot silently remove append-only ledger rows;
+- raw data-subject identifiers should be minimized in the ledger; stable
+  digests are sufficient for equality/proof without persisting raw PII.
 
 ### W3C PROV
 

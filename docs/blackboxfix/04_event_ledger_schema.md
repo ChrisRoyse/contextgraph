@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 12 Physical Schema (shipped)
+## Phase 13 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 6 in Phase 12
+  schema_version              INTEGER NOT NULL,   -- 7 in Phase 13
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `6` | constant |
+| `schema_version` | `7` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-12 ship the following `record_kind` values. The remaining families
+Phases 1-13 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -119,6 +119,8 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 8 | `enterprise_directory_snapshot` | validated SCIM user/group/role snapshot for one tenant |
 | 8 | `enterprise_access_decision` | persisted RBAC and tenant-isolation access decision |
 | 12 | `scorecard` | deterministic run-level trust/risk/training-value score snapshot |
+| 13 | `retention_decision` | authorized retention review decision for one run and data-subject digest |
+| 13 | `evidence_deletion` | append-only erasure/deletion-request approval or denial audit row |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -130,7 +132,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -442,6 +444,67 @@ hash before reporting success.
   ]
 }
 ```
+
+## Privacy Retention And Erasure Decisions (Phase 13, shipped)
+
+`blackbox privacy evaluate-retention` and `blackbox privacy request-erasure`
+both start by verifying the physical ledger, checking the parent `agent_run`,
+and persisting an `enterprise_access_decision` for the required RBAC
+permission (`privacy.review` or `privacy.erase`). Only authorized requests can
+append a privacy decision row. The raw `--data-subject` value is never stored;
+the payload stores only `data_subject_sha256`.
+
+```json
+{
+  "record_kind": "retention_decision",
+  "privacy_schema_version": 1,
+  "privacy_decision_id": "privacy_retention_<uuid_simple>",
+  "tenant_id": "tenant_...",
+  "run_id": "run_...",
+  "request": {
+    "request_kind": "retention_review",
+    "principal_id": "user_privacy",
+    "permission": "privacy.review",
+    "resource": "tenant:tenant_...:privacy/run_...",
+    "data_subject_sha256": "sha256:<hex>",
+    "data_subject_storage": "sha256_only_raw_value_not_persisted",
+    "purpose": "case-id-or-purpose"
+  },
+  "retention_policy": {
+    "class_id": "standard",
+    "retain_days": 365,
+    "legal_hold": false,
+    "config_record_ref": { "record_kind": "enterprise_tenant_config" }
+  },
+  "run_evidence_summary": {
+    "record_count": 1,
+    "record_kind_counts": { "agent_run": 1 },
+    "evidence_packets_total": 0,
+    "incident_packets_total": 0,
+    "input_record_refs_sha256": "sha256:..."
+  },
+  "decision": {
+    "status": "retained",
+    "allowed": true,
+    "reason_code": "RETENTION_POLICY_APPLIED",
+    "ledger_action": "retain_append_only_audit",
+    "artifact_action": "none",
+    "deletes_ledger_rows": false
+  },
+  "source_refs": {
+    "tenant_config": { "record_sha256": "sha256:..." },
+    "authorization_decision": { "record_kind": "enterprise_access_decision" },
+    "input_records": []
+  }
+}
+```
+
+For erasure requests the record kind is `evidence_deletion`. A request can be
+`approved` only when the configured retention class has `legal_hold=false` and
+the run has no incident packet. Legal hold and incident evidence produce a
+durable `denied` decision with `LEGAL_HOLD_ACTIVE` or
+`INCIDENT_EVIDENCE_LOCKED`. The ledger remains append-only in every case; the
+decision records whether matching external artifact stores may proceed.
 
 ## EvidencePacket (Phase 4, shipped)
 

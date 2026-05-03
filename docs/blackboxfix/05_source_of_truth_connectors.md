@@ -18,7 +18,9 @@ adds `scanner_artifact_v1` for physical OSV report, Cargo lockfile, and
 CycloneDX SBOM readback. Phase 11 extends `github_v1` with
 `github_issue_evidence_link_v1` for ticket evidence-link verification through
 GitHub issue bodies and comments. Phase 12 adds `blackbox_scoring_v1`, which
-reads the physical SQLite ledger and verifies scorecard append readback.
+reads the physical SQLite ledger and verifies scorecard append readback. Phase
+13 adds `blackbox_privacy_v1`, which reads the physical ledger plus enterprise
+tenant retention/RBAC rows and verifies privacy decision append readback.
 
 ## Connector Contract
 
@@ -177,6 +179,31 @@ error, malformed SSO/SCIM/RBAC/retention/deployment input writes no row, and
 unauthorized audit export creates no files but still persists the denied
 `enterprise_access_decision`.
 
+### Phase 13: Privacy Retention And Erasure Decisions — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for `enterprise_tenant_config`,
+  `enterprise_directory_snapshot`, `enterprise_access_decision`,
+  `retention_decision`, and `evidence_deletion`;
+- parent run rows and their immutable evidence/incident/scorecard rows.
+
+Shipped connector:
+
+- `blackbox_privacy_v1`
+
+Readback specs:
+
+- `blackbox_retention_decision_v1`;
+- `blackbox_evidence_deletion_decision_v1`.
+
+The connector is fail-closed: missing runs, missing tenant config/directory,
+unknown retention classes, unauthorized principals, empty data subjects, and
+secret-like request fields fail with typed errors. Authorized attempts first
+persist an `enterprise_access_decision`; successful privacy decisions are then
+read back from SQLite by sequence, decision id, run id, and hashes. Raw data
+subjects are not persisted; only `sha256:<hex>` digests are stored.
+
 ### Phase 10: Package And Vulnerability Scanner Artifacts — shipped
 
 Source of truth:
@@ -271,5 +298,9 @@ scanner artifacts shipped in Phase 10, `<fixture>` is an OSV JSON report path,
 and verifier specs point at real OSV JSON, `Cargo.lock`, and CycloneDX JSON
 files. For scoring shipped in Phase 12, `<fixture>` is the SQLite ledger path;
 `blackbox_scoring_v1` reads `ledger_records`, verifies hash chains and evidence
-references, appends a `scorecard`, and reads the appended row back. Confirm the
-row counts match the test plan. Anything else is hearsay.
+references, appends a `scorecard`, and reads the appended row back. For privacy
+shipped in Phase 13, `<fixture>` is also the SQLite ledger path;
+`blackbox_privacy_v1` reads the enterprise config/directory, appends an
+authorization decision, appends `retention_decision` or `evidence_deletion`,
+and reads the appended privacy row back. Confirm the row counts and data
+subject digest match the test plan. Anything else is hearsay.

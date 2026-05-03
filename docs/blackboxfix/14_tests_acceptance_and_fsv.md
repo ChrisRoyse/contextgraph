@@ -23,6 +23,7 @@ The mandatory operator-side protocol lives in
 | Scanner artifact files + ledger evidence rows (Phase 10) | OSV JSON reports, Cargo lockfiles, CycloneDX JSON SBOM files, and physical SQLite rows read directly |
 | GitHub Issues API + ledger evidence rows (Phase 11) | live GitHub issue body/comment state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
 | Scorecard rows (Phase 12) | physical SQLite verifier/evidence/policy/incident/tool-call rows read independently and persisted as `scorecard` rows |
+| Privacy retention/deletion rows (Phase 13) | physical SQLite enterprise config/directory/access rows and run rows read independently, then persisted as `retention_decision` and `evidence_deletion` rows |
 
 ## Test Levels
 
@@ -75,6 +76,10 @@ evidence link through the real CLI, and reads SQLite rows directly.
 Phase 12 adds `tests/blackbox_phase12_scorecard_fsv.rs`, which uses a real
 SQLite ledger and real local Git verifier evidence, appends real `scorecard`
 rows, and reads those rows directly from `ledger_records`.
+Phase 13 adds `tests/blackbox_phase13_privacy_retention_fsv.rs`, which uses a
+real SQLite ledger with real enterprise config/directory rows, appends real
+authorization, retention, and erasure-decision rows, and reads them directly
+from `ledger_records`.
 
 ## Acceptance Criteria
 
@@ -202,6 +207,14 @@ Concretely, that means:
   correctness, risk, confidence, training value, score inputs, and readback
   hashes expected from the source rows. Missing run ids fail as
   `SCORECARD_RUN_NOT_FOUND` and do not create scorecard rows.
+- Phase 13 FSV writes real enterprise tenant config and SCIM directory rows,
+  records real runs, then drives `blackbox privacy evaluate-retention` and
+  `blackbox privacy request-erasure`. It opens the physical SQLite ledger to
+  prove authorization rows, `retention_decision`, and `evidence_deletion` rows
+  exist only where expected; legal hold, missing class, unauthorized principal,
+  missing run, and empty subject edge cases produce typed errors or durable
+  denials. The raw data subject is checked absent from `payload_json`, while
+  the expected SHA-256 digest is present.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -213,7 +226,7 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11/12 inputs/outputs are
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11/12/13 inputs/outputs are
 enumerated in `23_phase4_state_and_invariants.md`,
 `24_phase5_state_and_invariants.md`,
 `25_phase6_state_and_invariants.md`, and
@@ -222,7 +235,8 @@ enumerated in `23_phase4_state_and_invariants.md`,
 `28_phase9_state_and_invariants.md`, and
 `29_phase10_state_and_invariants.md`, and
 `30_phase11_state_and_invariants.md`, and
-`31_phase12_state_and_invariants.md`.
+`31_phase12_state_and_invariants.md`, and
+`32_phase13_state_and_invariants.md`.
 
 A synthetic test must include:
 
