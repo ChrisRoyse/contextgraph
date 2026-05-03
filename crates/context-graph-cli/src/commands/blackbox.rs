@@ -8430,17 +8430,32 @@ fn build_dashboard_errors(
         record.record_kind == "verifier_result"
             || record.record_kind == "incident_packet"
             || record.record_kind == "policy_decision"
+            || record.record_kind == "retention_decision"
+            || record.record_kind == "evidence_deletion"
     }) {
-        let error_code = record.payload.get("error_code").and_then(Value::as_str);
+        let error_code = record
+            .payload
+            .get("error_code")
+            .and_then(Value::as_str)
+            .or_else(|| {
+                record
+                    .payload
+                    .pointer("/decision/reason_code")
+                    .and_then(Value::as_str)
+            });
         let include_policy_denial = record.record_kind == "policy_decision"
             && record.payload.get("status").and_then(Value::as_str) == Some("denied");
+        let include_privacy_denial = matches!(
+            record.record_kind.as_str(),
+            "retention_decision" | "evidence_deletion"
+        ) && record.payload.pointer("/decision/status").and_then(Value::as_str) == Some("denied");
         let Some(code) = error_code.filter(|code| !code.trim().is_empty()) else {
-            if include_policy_denial {
+            if include_policy_denial || include_privacy_denial {
                 return Err(dashboard_schema_error(
                     ledger_path,
                     record,
                     "payload.error_code",
-                    "denied policy_decision is missing error_code",
+                    "denied policy/privacy decision is missing an error or reason code",
                 ));
             }
             continue;
@@ -10437,6 +10452,7 @@ fn dashboard_timeline_record_status(record: &Value) -> String {
         "/payload/status",
         "/payload/verifier_status",
         "/payload/execution/status",
+        "/payload/decision/status",
         "/payload/score/trust_level",
         "/payload/trigger",
     ] {
@@ -10473,6 +10489,9 @@ fn dashboard_timeline_record_source(record: &Value) -> String {
     if let Some(source) = record.pointer("/payload/source_of_truth") {
         return dashboard_display_value(source);
     }
+    if let Some(source) = record.pointer("/payload/source_refs/tenant_config/record_sha256") {
+        return dashboard_display_value(source);
+    }
     if let Some(source) = record.pointer("/payload/source_of_truth/locator") {
         return dashboard_display_value(source);
     }
@@ -10493,6 +10512,8 @@ fn dashboard_timeline_record_detail(record: &Value) -> String {
         "/payload/incident_packet_id",
         "/payload/score/trust_level",
         "/payload/scorecard_id",
+        "/payload/privacy_decision_id",
+        "/payload/decision/reason_code",
     ] {
         if let Some(value) = record.pointer(pointer) {
             let rendered = dashboard_display_value(value);
