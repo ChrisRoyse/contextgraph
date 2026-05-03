@@ -26,6 +26,9 @@
 \usepackage{titlesec}
 \usepackage{abstract}
 \usepackage[colorlinks=true,linkcolor=black,citecolor=NavyBlue,urlcolor=NavyBlue]{hyperref}
+% --- APA-style citations via natbib + apalike ------------------------------
+\usepackage[round,authoryear]{natbib}
+\bibpunct{(}{)}{;}{a}{,}{,}
 
 % --- Tighter section spacing ------------------------------------------------
 \titlespacing*{\section}{0pt}{1.4ex plus .5ex minus .2ex}{0.6ex plus .2ex}
@@ -182,7 +185,7 @@ That gap is the motivation for this work.
 
 This paper does not propose a new JEPA representation objective.
 The premise of latent prediction is taken as established
-\cite{assran2023ijepa,bardes2024vjepa,lecun2022path}. The question
+\citep{assran2023ijepa,bardes2024vjepa,lecun2022path}. The question
 is one level up:
 \begin{quote}
 \itshape
@@ -200,9 +203,9 @@ column families plus an append-only audit log capture every
 persistent state. A structurally separate verifier code path reads
 everything back. Three domains are instantiated by domain pack
 alone, including a new public-taxonomy career benchmark grounded in
-O*NET 30.2 \cite{onet2026}. Five seeds with bias-corrected and
+O*NET 30.2 \citep{onet2026}. Five seeds with bias-corrected and
 accelerated bootstrap confidence intervals
-\cite{efron2020automatic} and paired sign-flip permutation tests
+\citep{efron2020automatic} and paired sign-flip permutation tests
 give the headline numbers in \S\ref{sec:results}. A
 deterministically built Docker + Singularity (SIF) artifact ships
 with full SHA-256 chains in \S\ref{sec:repro}.
@@ -214,7 +217,7 @@ log, the typed edge-case rows, the ablation rows, and the failed-
 run records make a bundle a candidate \emph{training-data artifact}
 in its own right. \S\ref{sec:training-data} argues that bundles
 form a new class of training data and that this class carries lower
-recursion-replacement collapse hazard \cite{shumailov2024nature}
+recursion-replacement collapse hazard \citep{shumailov2024nature}
 than typical synthetic data because most of the bytes are
 deterministic functions of a public source rather than model
 outputs.
@@ -309,21 +312,21 @@ This work sits at the intersection of four lines of literature.
 
 \subsection{Joint-Embedding Predictive Architectures}
 
-I-JEPA \cite{assran2023ijepa} predicts the representations of
+I-JEPA \citep{assran2023ijepa} predicts the representations of
 target image blocks from a context block, in a self-distilled
-latent space. V-JEPA \cite{bardes2024vjepa} extends the idea to
+latent space. V-JEPA \citep{bardes2024vjepa} extends the idea to
 video by feature prediction, with downstream evaluations showing
 that latent prediction recovers strong representations without
 reconstruction, negatives, or text supervision. The official Meta /
 FAIR V-JEPA repository is the reference engineering implementation
-\cite{metafair2024vjepa}. LeCun's "A Path Towards Autonomous
+\citep{metafair2024vjepa}. LeCun's "A Path Towards Autonomous
 Machine Intelligence" frames the family as a step toward
 predictive systems that reason in abstract representation space
-\cite{lecun2022path}. Recent JEPA work continues to refine the
+\citep{lecun2022path}. Recent JEPA work continues to refine the
 training-stability and modality-coverage axes: LeWorldModel
-\cite{maes2026leworldmodel} demonstrates stable end-to-end
+\citep{maes2026leworldmodel} demonstrates stable end-to-end
 JEPA training from raw pixels with a single regularizer, and
-VL-JEPA \cite{chen2026vljepa} extends the predictive-latent
+VL-JEPA \citep{chen2026vljepa} extends the predictive-latent
 formulation to vision-language with parameter-efficiency gains
 over token-space objectives. The Dynamic / ME-JEPA contribution is
 orthogonal to both. We do not propose a new representation
@@ -338,19 +341,19 @@ externally-defined per-domain instruments declared by the domain
 pack (\S\ref{sec:method}). The narrower claim is that external
 frozen targets eliminate target-encoder collapse but do not
 eliminate predictor degeneracy, so VICReg-style diagnostics
-\cite{bardes2022vicreg} and explicit ablations are still
+\citep{bardes2022vicreg} and explicit ablations are still
 required.
 
 Self-supervised pre-cursors that inform the regularization choices:
-BYOL \cite{grill2020byol} (asymmetric online/target with
+BYOL \citep{grill2020byol} (asymmetric online/target with
 stop-gradient as collapse mitigation) and Contrastive Predictive
-Coding \cite{vandenoord2019cpc} (latent forecast objective).
+Coding \citep{vandenoord2019cpc} (latent forecast objective).
 
 \subsection{World Models and Latent Planning}
 
 The planning, surprise, and guard plane is informed by World Models
-\cite{ha2018worldmodels}, the Dreamer line including DreamerV3
-\cite{hafner2023dreamerv3}, and MuZero \cite{schrittwieser2019muzero}.
+\citep{ha2018worldmodels}, the Dreamer line including DreamerV3
+\citep{hafner2023dreamerv3}, and MuZero \citep{schrittwieser2019muzero}.
 The imagined-rollout idea conceptually informs the candidate-action
 planner (\S\ref{sec:method}), but rollouts are constrained to one
 step in the present runtime; multi-step ($H{>}1$) rollouts are an
@@ -358,9 +361,9 @@ explicit deferred axis (\S\ref{sec:limits}).
 
 \subsection{Generalist and Multi-Modal Architectures}
 
-Gato \cite{reed2022gato} demonstrated multi-modal multi-task multi-
+Gato \citep{reed2022gato} demonstrated multi-modal multi-task multi-
 embodiment tokenized policies; Perceiver IO
-\cite{jaegle2022perceiverio} showed that one attention-based
+\citep{jaegle2022perceiverio} showed that one attention-based
 architecture handles arbitrary structured inputs and outputs.
 Dynamic / ME-JEPA borrows neither as engineering, but inherits the
 constraint they imposed: a general-purpose latent runtime must not
@@ -369,26 +372,26 @@ hard-code modality. The domain-pack abstraction is the answer.
 \subsection{Career and Occupational Taxonomies}
 
 The U.S. Department of Labor and Employment Training
-Administration's O*NET database \cite{onet2026} is the canonical
+Administration's O*NET database \citep{onet2026} is the canonical
 public occupation taxonomy used here, currently at release 30.2,
 distributed under CC BY 4.0. The European Skills, Competences,
 Qualifications and Occupations classification (ESCO)
-\cite{esco2025} is the EU counterpart and a planned cross-walk
+\citep{esco2025} is the EU counterpart and a planned cross-walk
 replication source. Recent career-trajectory dataset papers including KARRIEREWEGE
-\cite{senger2024karrierewege} and JobHop \cite{johary2025jobhop}
+\citep{senger2024karrierewege} and JobHop \citep{johary2025jobhop}
 are relevant as future extensions. The only ingested source in the
 present runtime is O*NET 30.2.
 
 \subsection{Auditable ML Systems}
 
 The runtime's evidence-bundle design is informed by MLflow Tracking
-\cite{mlflow2024} (run, experiment, artifact, metric lineage). The
+\citep{mlflow2024} (run, experiment, artifact, metric lineage). The
 reproducibility ladder follows Docker reproducible-build guidance
-\cite{docker2025reproducible} and Apptainer
-SIF-from-docker-archive guidance \cite{apptainer2025buildsif}: a
+\citep{docker2025reproducible} and Apptainer
+SIF-from-docker-archive guidance \citep{apptainer2025buildsif}: a
 pinned base image digest, a deterministic build, a deterministic
 tar export, and a container DOI. PyTorch's reproducibility notes
-\cite{pytorch2026reproducibility} are inherited as a caveat. Exact
+\citep{pytorch2026reproducibility} are inherited as a caveat. Exact
 GPU result reproducibility across releases or platforms is not
 guaranteed, so cross-run comparisons use structural and tolerance
 checks rather than byte-equal model-file diffs.
@@ -397,12 +400,11 @@ checks rather than byte-equal model-file diffs.
 
 Recent work establishes a non-trivial taxonomy of training-data
 classes and their effect on model quality under recursive
-training. Shumailov et al.\ introduced \emph{model collapse}:
-training generative models on recursively generated data leads to
-irreversible loss of distribution tails and eventual convergence to
-a degenerate distribution \cite{shumailov2023curse,
-shumailov2024nature}. Gerstgrasser et al.\
-\cite{gerstgrasser2024accumulate} subsequently showed that
+training. \citet{shumailov2023curse,shumailov2024nature} introduced
+\emph{model collapse}: training generative models on recursively
+generated data leads to irreversible loss of distribution tails and
+eventual convergence to a degenerate distribution.
+\citet{gerstgrasser2024accumulate} subsequently showed that
 accumulating real and synthetic data avoids the collapse pattern
 that replacement triggers. The dangerous recursion-with-replacement
 case is distinct from the safer accumulation case.
@@ -410,10 +412,10 @@ case is distinct from the safer accumulation case.
 In parallel, the highest-quality synthetic reasoning corpora have
 moved away from pure LLM generation toward verifier-grounded data:
 process supervision and the PRM800K dataset of step-level labels
-\cite{lightman2023verify}; code-execution-grounded supervision
-\cite{jung2025codeexec}; SYNTHETIC-1
-\cite{primeintellect2025synthetic1} (1.4M verified reasoning
-traces); and Enigmata \cite{seed2025enigmata}.
+\citep{lightman2023verify}; code-execution-grounded supervision
+\citep{jung2025codeexec}; SYNTHETIC-1
+\citep{primeintellect2025synthetic1} (1.4M verified reasoning
+traces); and Enigmata \citep{seed2025enigmata}.
 Section~\ref{sec:training-data} extends this taxonomy with a class
 of training data the Dynamic / ME-JEPA runtime produces by
 construction.
@@ -1047,17 +1049,16 @@ risk has four operative categories.
       against which collapse is measured.
 \item Pure model-generated synthetic data: outputs of a generative
       model fed back as training data with no external validator.
-      Shumailov et al.\
-      \cite{shumailov2023curse,shumailov2024nature} showed that
+      \citet{shumailov2023curse,shumailov2024nature} showed that
       this pattern, under recursive replacement, irreversibly
       removes distribution tails.
 \item Verifier-grounded synthetic data: model outputs filtered by
       an external validator (math checker, unit test, physics
       envelope, step-level human label). Process supervision and
-      the PRM800K corpus \cite{lightman2023verify},
-      code-execution-grounded supervision \cite{jung2025codeexec},
-      SYNTHETIC-1 \cite{primeintellect2025synthetic1}, and
-      Enigmata \cite{seed2025enigmata} sit here.
+      the PRM800K corpus \citep{lightman2023verify},
+      code-execution-grounded supervision \citep{jung2025codeexec},
+      SYNTHETIC-1 \citep{primeintellect2025synthetic1}, and
+      Enigmata \citep{seed2025enigmata} sit here.
 \item Process-trace data anchored to a deterministic system over
       real source: execution traces, code-execution-grounded
       supervision, world-model rollouts, and other settings where
@@ -1068,7 +1069,7 @@ risk has four operative categories.
 \end{enumerate}
 
 The collapse-vs-retain distinction matters: Gerstgrasser et al.\
-\cite{gerstgrasser2024accumulate} showed that even with the same
+\citep{gerstgrasser2024accumulate} showed that even with the same
 generators, accumulating synthetic data alongside real data avoids
 the collapse Shumailov demonstrated for replacement. The pattern
 that breaks generative models is recursive replacement of real
@@ -1178,9 +1179,9 @@ reference dataset} than to \emph{recursive synthesis}.
 
 \textbf{Reason 2: Accumulation, not replacement.} The intended use
 is to \emph{accumulate} bundle data alongside existing corpora.
-Per Gerstgrasser et al.\ \cite{gerstgrasser2024accumulate},
-accumulation does not collapse even with the same generators that
-cause collapse under replacement.
+Per \citet{gerstgrasser2024accumulate}, accumulation does not
+collapse even with the same generators that cause collapse under
+replacement.
 
 \textbf{Reason 3: Tails are explicitly preserved.} The defining
 symptom of model collapse is loss of distribution tails. Bundles
@@ -1209,7 +1210,7 @@ Ranked by where it would be worth investing first:
       loop on a typed action space.
 \item \textbf{Process-supervised reasoning anchored to a verifier.}
       Lightman-style step-by-step supervision
-      \cite{lightman2023verify}, but where the verifier is a
+      \citep{lightman2023verify}, but where the verifier is a
       separate code path that physically re-reads the source of
       truth rather than an LLM-judge.
 \item \textbf{Audit / FSV-style reasoning.} Teaching a model to
@@ -1230,7 +1231,7 @@ Ranked by where it would be worth investing first:
       are MuZero / Dreamer-style imagined-rollout data on a typed
       action space.
 \item \textbf{Code-execution-grounded supervision over a domain
-      runtime.} In the spirit of \cite{jung2025codeexec}, but
+      runtime.} In the spirit of \citep{jung2025codeexec}, but
       grounding supervision in runtime operation rather than
       program execution.
 \end{enumerate}
@@ -1261,7 +1262,7 @@ failures are persisted; every record carries a SHA-256 chain back
 to the source.
 \end{quote}
 The closest existing class is code-execution-grounded supervision
-\cite{jung2025codeexec}. ME-JEPA bundles generalize that idea from
+\citep{jung2025codeexec}. ME-JEPA bundles generalize that idea from
 program execution to typed domain-pack runtime execution and add
 three properties code-execution traces do not routinely carry:
 cryptographic provenance to a public source ZIP, independent
@@ -1283,12 +1284,12 @@ biases while preserving the data class's strengths:
       supervised label for next-state is the deterministic observed
       next-state from the same record; predictions and guards are
       auxiliary targets used for process-reward modeling
-      \cite{lightman2023verify}.
+      \citep{lightman2023verify}.
 \item \textbf{Keep failed bundles in the corpus.} They are
       precisely the tail-preserving slice that prevents
       distribution narrowing under the Shumailov pattern.
 \item \textbf{Mix with real corpora rather than replacing.} Per
-      \cite{gerstgrasser2024accumulate}, accumulation avoids the
+      \citep{gerstgrasser2024accumulate}, accumulation avoids the
       collapse pattern that replacement triggers.
 \item \textbf{Bound the claim to the runtime's competence.} A model
       trained on bundle data has learned the runtime's behavior on
@@ -1534,7 +1535,7 @@ for both \code{image\_1.tar} and \code{image\_2.tar}.
 
 The Apptainer SIF is built from the Docker tar via the
 \code{docker-archive} bootstrap agent
-\cite{apptainer2025buildsif} and run with
+\citep{apptainer2025buildsif} and run with
 \code{--cleanenv --no-home --nv}. Resulting SIF: $3.37$~GiB,
 SHA-256
 \sha{78c87c55406996d711f4ecff7c12fe66610dc8d53110766784cf7ed80f386bad}.
@@ -1550,7 +1551,7 @@ the verified host and copied in (no
 \code{apt update \&\& apt install} inside the Dockerfile); two
 consecutive exports must be byte-identical. There is no claim of
 byte-equality across hosts or sm versions: per
-\cite{pytorch2026reproducibility}, GPU training can produce small
+\citep{pytorch2026reproducibility}, GPU training can produce small
 numeric differences across releases, platforms, or even reruns on
 the same host. The release reference therefore uses a
 structural-plus-numeric-tolerance schema; cross-run model-weight
@@ -1676,7 +1677,7 @@ multi-step rollouts are a deferred axis. The runtime is latent-
 only; top-k occupation prediction and skill-vector reconstruction
 require a decoder that is also a deferred axis. All numbers come
 from one RTX 5090 host; per
-\cite{pytorch2026reproducibility} exact GPU bit-reproducibility
+\citep{pytorch2026reproducibility} exact GPU bit-reproducibility
 across releases or platforms is not guaranteed, so cross-run
 comparisons use tolerance-based comparison.
 
@@ -1749,7 +1750,7 @@ resolves to the latest version.
 
 The career-taxonomy data substrate
 (\S\ref{sec:bench}) derives from O*NET 30.2
-\cite{onet2026} under CC BY 4.0; the source ZIP SHA-256 and
+\citep{onet2026} under CC BY 4.0; the source ZIP SHA-256 and
 per-edge walk hash are recorded in every generated bundle and
 are therefore deterministically reproducible from the public
 source. A public companion implementation that demonstrates the
@@ -1773,35 +1774,34 @@ The author received no external funding for this work and
 declares no competing interests.
 
 The runtime builds on prior JEPA work
-\cite{assran2023ijepa,bardes2024vjepa,maes2026leworldmodel,chen2026vljepa}
+\citep{assran2023ijepa,bardes2024vjepa,maes2026leworldmodel,chen2026vljepa}
 for the latent-prediction premise; on VICReg
-\cite{bardes2022vicreg} for the variance / covariance
+\citep{bardes2022vicreg} for the variance / covariance
 regularization; on World Models
-\cite{ha2018worldmodels}, Dreamer \cite{hafner2023dreamerv3}, and
-MuZero \cite{schrittwieser2019muzero} for the planning-with-a-
+\citep{ha2018worldmodels}, Dreamer \citep{hafner2023dreamerv3}, and
+MuZero \citep{schrittwieser2019muzero} for the planning-with-a-
 learned-model framing; and on Perceiver IO
-\cite{jaegle2022perceiverio} and Gato \cite{reed2022gato} for the
+\citep{jaegle2022perceiverio} and Gato \citep{reed2022gato} for the
 generality argument. The career-taxonomy substrate uses O*NET 30.2
-\cite{onet2026} under CC BY 4.0; ESCO \cite{esco2025} is a planned
+\citep{onet2026} under CC BY 4.0; ESCO \citep{esco2025} is a planned
 cross-walk source. The training-data analysis in
-\S\ref{sec:training-data} builds on Shumailov et al.\
-\cite{shumailov2023curse, shumailov2024nature} for the model-
-collapse phenomenon, Gerstgrasser et al.\
-\cite{gerstgrasser2024accumulate} for the accumulation-versus-
-replacement distinction, Lightman et al.\
-\cite{lightman2023verify} for process supervision, Jung et al.\
-\cite{jung2025codeexec} for code-execution-grounded supervision,
-and the SYNTHETIC-1 \cite{primeintellect2025synthetic1} and
-Enigmata \cite{seed2025enigmata} corpora as reference points. The
+\S\ref{sec:training-data} builds on
+\citet{shumailov2023curse,shumailov2024nature} for the
+model-collapse phenomenon, \citet{gerstgrasser2024accumulate} for
+the accumulation-versus-replacement distinction,
+\citet{lightman2023verify} for process supervision, and
+\citet{jung2025codeexec} for code-execution-grounded supervision,
+and the SYNTHETIC-1 \citep{primeintellect2025synthetic1} and
+Enigmata \citep{seed2025enigmata} corpora as reference points. The
 reproducibility chain follows Docker reproducible-build guidance
-\cite{docker2025reproducible, docker2024bestpractices}, Apptainer
-SIF documentation \cite{apptainer2025buildsif}, and MLflow
-Tracking \cite{mlflow2024} artifact-lineage patterns. Statistical
-reporting follows BCa bootstrap \cite{efron2020automatic} and the
-PyTorch reproducibility caveats \cite{pytorch2026reproducibility}.
+\citep{docker2025reproducible, docker2024bestpractices}, Apptainer
+SIF documentation \citep{apptainer2025buildsif}, and MLflow
+Tracking \citep{mlflow2024} artifact-lineage patterns. Statistical
+reporting follows BCa bootstrap \citep{efron2020automatic} and the
+PyTorch reproducibility caveats \citep{pytorch2026reproducibility}.
 
 % ============================================================================
-\bibliographystyle{plain}
+\bibliographystyle{apalike}
 \bibliography{references}
 
 % ============================================================================

@@ -1,199 +1,195 @@
-\begin{thebibliography}{10}
+\begin{thebibliography}{}
 
-\bibitem{apptainer2025buildsif}
-{Apptainer / SingularityCE Project}.
+\bibitem[{Apptainer / SingularityCE Project}, 2025]{apptainer2025buildsif}
+{Apptainer / SingularityCE Project} (2025).
 \newblock Build a container; appendix (\code{docker-archive} bootstrap).
 \newblock \url{https://apptainer.org/docs/user/main/build_a_container.html};
-  \url{https://apptainer.org/docs/user/main/appendix.html}, 2025.
+  \url{https://apptainer.org/docs/user/main/appendix.html}.
 
-\bibitem{assran2023ijepa}
-Mahmoud Assran, Quentin Duval, Ishan Misra, Piotr Bojanowski, Pascal Vincent,
-  Michael Rabbat, Yann LeCun, and Nicolas Ballas.
+\bibitem[Assran et~al., 2023]{assran2023ijepa}
+Assran, M., Duval, Q., Misra, I., Bojanowski, P., Vincent, P., Rabbat, M.,
+  LeCun, Y., and Ballas, N. (2023).
 \newblock Self-supervised learning from images with a joint-embedding
   predictive architecture.
-\newblock {\em arXiv preprint arXiv:2301.08243}, 2023.
+\newblock {\em arXiv preprint arXiv:2301.08243}.
 
-\bibitem{bardes2024vjepa}
-Adrien Bardes, Quentin Garrido, Jean Ponce, Michael Rabbat, Yann LeCun, Mahmoud
-  Assran, and Nicolas Ballas.
+\bibitem[Bardes et~al., 2024]{bardes2024vjepa}
+Bardes, A., Garrido, Q., Ponce, J., Rabbat, M., LeCun, Y., Assran, M., and
+  Ballas, N. (2024).
 \newblock Revisiting feature prediction for learning visual representations
   from video.
-\newblock {\em arXiv preprint arXiv:2404.08471}, 2024.
+\newblock {\em arXiv preprint arXiv:2404.08471}.
 
-\bibitem{bardes2022vicreg}
-Adrien Bardes, Jean Ponce, and Yann LeCun.
+\bibitem[Bardes et~al., 2022]{bardes2022vicreg}
+Bardes, A., Ponce, J., and LeCun, Y. (2022).
 \newblock {VICReg}: Variance-invariance-covariance regularization for
   self-supervised learning.
-\newblock {\em arXiv preprint arXiv:2105.04906}, 2022.
+\newblock {\em arXiv preprint arXiv:2105.04906}.
 
-\bibitem{chen2026vljepa}
-Delong Chen, others, and Yann LeCun.
+\bibitem[Chen et~al., 2026]{chen2026vljepa}
+Chen, D., others, and LeCun, Y. (2026).
 \newblock {VL-JEPA}: Joint embedding predictive architecture for
   vision-language.
-\newblock {\em arXiv preprint arXiv:2512.10942}, 2026.
+\newblock {\em arXiv preprint arXiv:2512.10942}.
 
-\bibitem{docker2024bestpractices}
-{Docker, Inc.}
+\bibitem[{Docker, Inc.}, 2024]{docker2024bestpractices}
+{Docker, Inc.} (2024).
 \newblock Build best practices.
-\newblock \url{https://docs.docker.com/build/building/best-practices/}, 2024.
+\newblock \url{https://docs.docker.com/build/building/best-practices/}.
 
-\bibitem{docker2025reproducible}
-{Docker, Inc.}
+\bibitem[{Docker, Inc.}, 2025]{docker2025reproducible}
+{Docker, Inc.} (2025).
 \newblock Reproducible builds --- {GitHub} actions.
 \newblock
-  \url{https://docs.docker.com/build/ci/github-actions/reproducible-builds/},
-  2025.
+  \url{https://docs.docker.com/build/ci/github-actions/reproducible-builds/}.
 
-\bibitem{efron2020automatic}
-Bradley Efron and Balasubramanian Narasimhan.
+\bibitem[Efron and Narasimhan, 2020]{efron2020automatic}
+Efron, B. and Narasimhan, B. (2020).
 \newblock The automatic construction of bootstrap confidence intervals.
-\newblock {\em Journal of Computational and Graphical Statistics (PMC7958418)},
-  2020.
+\newblock {\em Journal of Computational and Graphical Statistics (PMC7958418)}.
 
-\bibitem{esco2025}
+\bibitem[{European Commission, Directorate-General for Employment, Social
+  Affairs and Inclusion}, 2025]{esco2025}
 {European Commission, Directorate-General for Employment, Social Affairs and
-  Inclusion}.
+  Inclusion} (2025).
 \newblock {ESCO} classification, v1.2.1.
-\newblock \url{https://esco.ec.europa.eu/en/use-esco/download}, 2025.
+\newblock \url{https://esco.ec.europa.eu/en/use-esco/download}.
 
-\bibitem{gerstgrasser2024accumulate}
-Matthias Gerstgrasser, Rylan Schaeffer, Apratim Dey, Rafael Rafailov, Henry
-  Sleight, John Hughes, Tomasz Korbak, Rajashree Agrawal, Dhruv Pai, Andrey
-  Gromov, Daniel~A.\ Roberts, Diyi Yang, David~L.\ Donoho, and Sanmi Koyejo.
+\bibitem[Gerstgrasser et~al., 2024]{gerstgrasser2024accumulate}
+Gerstgrasser, M., Schaeffer, R., Dey, A., Rafailov, R., Sleight, H., Hughes,
+  J., Korbak, T., Agrawal, R., Pai, D., Gromov, A., Roberts, D.~A., Yang, D.,
+  Donoho, D.~L., and Koyejo, S. (2024).
 \newblock Is model collapse inevitable? breaking the curse of recursion by
   accumulating real and synthetic data.
-\newblock {\em arXiv preprint arXiv:2404.01413}, 2024.
+\newblock {\em arXiv preprint arXiv:2404.01413}.
 
-\bibitem{grill2020byol}
-Jean-Bastien Grill, Florian Strub, Florent Altch{\'e}, Corentin Tallec,
-  Pierre~H.\ Richemond, Elena Buchatskaya, Carl Doersch, Bernardo Avila~Pires,
-  Zhaohan~Daniel Guo, Mohammad Gheshlaghi~Azar, Bilal Piot, Koray Kavukcuoglu,
-  R{\'e}mi Munos, and Michal Valko.
+\bibitem[Grill et~al., 2020]{grill2020byol}
+Grill, J.-B., Strub, F., Altch{\'e}, F., Tallec, C., Richemond, P.~H.,
+  Buchatskaya, E., Doersch, C., Avila~Pires, B., Guo, Z.~D., Gheshlaghi~Azar,
+  M., Piot, B., Kavukcuoglu, K., Munos, R., and Valko, M. (2020).
 \newblock Bootstrap your own latent: A new approach to self-supervised
   learning.
-\newblock {\em arXiv preprint arXiv:2006.07733}, 2020.
+\newblock {\em arXiv preprint arXiv:2006.07733}.
 
-\bibitem{ha2018worldmodels}
-David Ha and J{\"u}rgen Schmidhuber.
+\bibitem[Ha and Schmidhuber, 2018]{ha2018worldmodels}
+Ha, D. and Schmidhuber, J. (2018).
 \newblock World models.
-\newblock {\em arXiv preprint arXiv:1803.10122}, 2018.
+\newblock {\em arXiv preprint arXiv:1803.10122}.
 
-\bibitem{hafner2023dreamerv3}
-Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap.
+\bibitem[Hafner et~al., 2023]{hafner2023dreamerv3}
+Hafner, D., Pasukonis, J., Ba, J., and Lillicrap, T. (2023).
 \newblock Mastering diverse domains through world models.
-\newblock {\em arXiv preprint arXiv:2301.04104}, 2023.
+\newblock {\em arXiv preprint arXiv:2301.04104}.
 
-\bibitem{jaegle2022perceiverio}
-Andrew Jaegle, Sebastian Borgeaud, Jean-Baptiste Alayrac, Carl Doersch, Catalin
-  Ionescu, David Ding, Skanda Koppula, Daniel Zoran, Andrew Brock, Evan
-  Shelhamer, Olivier H{\'e}naff, Matthew~M.\ Botvinick, Andrew Zisserman, Oriol
-  Vinyals, and Jo{\~a}o Carreira.
+\bibitem[Jaegle et~al., 2022]{jaegle2022perceiverio}
+Jaegle, A., Borgeaud, S., Alayrac, J.-B., Doersch, C., Ionescu, C., Ding, D.,
+  Koppula, S., Zoran, D., Brock, A., Shelhamer, E., H{\'e}naff, O., Botvinick,
+  M.~M., Zisserman, A., Vinyals, O., and Carreira, J. (2022).
 \newblock Perceiver io: A general architecture for structured inputs and
   outputs.
-\newblock {\em arXiv preprint arXiv:2107.14795}, 2022.
+\newblock {\em arXiv preprint arXiv:2107.14795}.
 
-\bibitem{johary2025jobhop}
-Iman Johary, Raphael Romero, Alexandru~C.\ Mara, and Tijl De~Bie.
+\bibitem[Johary et~al., 2025]{johary2025jobhop}
+Johary, I., Romero, R., Mara, A.~C., and De~Bie, T. (2025).
 \newblock {JobHop}: A large-scale dataset of career trajectories.
-\newblock {\em arXiv preprint arXiv:2505.07653}, 2025.
+\newblock {\em arXiv preprint arXiv:2505.07653}.
 
-\bibitem{jung2025codeexec}
-Dongwon Jung, Wenxuan Zhou, and Muhao Chen.
+\bibitem[Jung et~al., 2025]{jung2025codeexec}
+Jung, D., Zhou, W., and Chen, M. (2025).
 \newblock Code execution as grounded supervision for {LLM} reasoning.
-\newblock {\em EMNLP 2025; arXiv:2506.10343}, 2025.
+\newblock {\em EMNLP 2025; arXiv:2506.10343}.
 
-\bibitem{lecun2022path}
-Yann LeCun.
+\bibitem[LeCun, 2022]{lecun2022path}
+LeCun, Y. (2022).
 \newblock A path towards autonomous machine intelligence.
 \newblock OpenReview / Meta AI position paper.
-  \url{https://openreview.net/forum?id=BZ5a1r-kVsf}, 2022.
+  \url{https://openreview.net/forum?id=BZ5a1r-kVsf}.
 
-\bibitem{lightman2023verify}
-Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy
-  Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe.
+\bibitem[Lightman et~al., 2023]{lightman2023verify}
+Lightman, H., Kosaraju, V., Burda, Y., Edwards, H., Baker, B., Lee, T., Leike,
+  J., Schulman, J., Sutskever, I., and Cobbe, K. (2023).
 \newblock Let's verify step by step.
-\newblock {\em arXiv preprint arXiv:2305.20050}, 2023.
+\newblock {\em arXiv preprint arXiv:2305.20050}.
 
-\bibitem{maes2026leworldmodel}
-Lucas Maes, Quentin Le~Lidec, Damien Scieur, Yann LeCun, and Randall
-  Balestriero.
+\bibitem[Maes et~al., 2026]{maes2026leworldmodel}
+Maes, L., Le~Lidec, Q., Scieur, D., LeCun, Y., and Balestriero, R. (2026).
 \newblock {LeWorldModel}: Stable end-to-end joint-embedding predictive
   architecture from pixels.
-\newblock {\em arXiv preprint arXiv:2603.19312}, 2026.
+\newblock {\em arXiv preprint arXiv:2603.19312}.
 
-\bibitem{metafair2024vjepa}
-{Meta AI Research / FAIR}.
+\bibitem[{Meta AI Research / FAIR}, 2024]{metafair2024vjepa}
+{Meta AI Research / FAIR} (2024).
 \newblock V-jepa: Pytorch code and models for v-jepa self-supervised learning
   from video.
-\newblock \url{https://github.com/facebookresearch/jepa}, 2024.
+\newblock \url{https://github.com/facebookresearch/jepa}.
 
-\bibitem{mlflow2024}
-{MLflow Project}.
+\bibitem[{MLflow Project}, 2024]{mlflow2024}
+{MLflow Project} (2024).
 \newblock {MLflow} tracking documentation.
-\newblock \url{https://mlflow.org/docs/latest/ml/tracking/}, 2024.
+\newblock \url{https://mlflow.org/docs/latest/ml/tracking/}.
 
-\bibitem{primeintellect2025synthetic1}
-{Prime Intellect}.
+\bibitem[{Prime Intellect}, 2025]{primeintellect2025synthetic1}
+{Prime Intellect} (2025).
 \newblock {SYNTHETIC-1}: Scaling distributed synthetic data generation for
   verified reasoning.
-\newblock \url{https://www.primeintellect.ai/blog/synthetic-1}, 2025.
+\newblock \url{https://www.primeintellect.ai/blog/synthetic-1}.
 
-\bibitem{pytorch2026reproducibility}
-{PyTorch}.
+\bibitem[{PyTorch}, 2026]{pytorch2026reproducibility}
+{PyTorch} (2026).
 \newblock Reproducibility notes (v2.11).
-\newblock \url{https://docs.pytorch.org/docs/2.11/notes/randomness.html}, 2026.
+\newblock \url{https://docs.pytorch.org/docs/2.11/notes/randomness.html}.
 
-\bibitem{reed2022gato}
-Scott Reed, Konrad Zolna, Emilio Parisotto, Sergio Gomez~Colmenarejo, Alexander
-  Novikov, Gabriel Barth-Maron, Mai Gimenez, Yury Sulsky, Jackie Kay,
-  Jost~Tobias Springenberg, Tom Eccles, Jake Bruce, Ali Razavi, Ashley Edwards,
-  Nicolas Heess, Yutian Chen, Raia Hadsell, Oriol Vinyals, Mahyar Bordbar, and
-  Nando de~Freitas.
+\bibitem[Reed et~al., 2022]{reed2022gato}
+Reed, S., Zolna, K., Parisotto, E., Gomez~Colmenarejo, S., Novikov, A.,
+  Barth-Maron, G., Gimenez, M., Sulsky, Y., Kay, J., Springenberg, J.~T.,
+  Eccles, T., Bruce, J., Razavi, A., Edwards, A., Heess, N., Chen, Y., Hadsell,
+  R., Vinyals, O., Bordbar, M., and de~Freitas, N. (2022).
 \newblock A generalist agent.
-\newblock {\em arXiv preprint arXiv:2205.06175}, 2022.
+\newblock {\em arXiv preprint arXiv:2205.06175}.
 
-\bibitem{schrittwieser2019muzero}
-Julian Schrittwieser, Ioannis Antonoglou, Thomas Hubert, Karen Simonyan,
-  Laurent Sifre, Simon Schmitt, Arthur Guez, Edward Lockhart, Demis Hassabis,
-  Thore Graepel, Timothy Lillicrap, and David Silver.
+\bibitem[Schrittwieser et~al., 2019]{schrittwieser2019muzero}
+Schrittwieser, J., Antonoglou, I., Hubert, T., Simonyan, K., Sifre, L.,
+  Schmitt, S., Guez, A., Lockhart, E., Hassabis, D., Graepel, T., Lillicrap,
+  T., and Silver, D. (2019).
 \newblock Mastering atari, go, chess and shogi by planning with a learned
   model.
-\newblock {\em arXiv preprint arXiv:1911.08265}, 2019.
+\newblock {\em arXiv preprint arXiv:1911.08265}.
 
-\bibitem{seed2025enigmata}
-{Seed}.
+\bibitem[{Seed}, 2025]{seed2025enigmata}
+{Seed} (2025).
 \newblock Enigmata: Scaling logical reasoning in large language models with
   synthetic verifiable puzzles.
-\newblock \url{https://seed-enigmata.github.io/}, 2025.
+\newblock \url{https://seed-enigmata.github.io/}.
 
-\bibitem{senger2024karrierewege}
-Elena Senger, Yuri Campbell, Rob van~der Goot, and Barbara Plank.
+\bibitem[Senger et~al., 2024]{senger2024karrierewege}
+Senger, E., Campbell, Y., van~der Goot, R., and Plank, B. (2024).
 \newblock {KARRIEREWEGE}: A large scale career path prediction dataset.
-\newblock {\em arXiv preprint arXiv:2412.14612}, 2024.
+\newblock {\em arXiv preprint arXiv:2412.14612}.
 
-\bibitem{shumailov2023curse}
-Ilia Shumailov, Zakhar Shumaylov, Yiren Zhao, Yarin Gal, Nicolas Papernot, and
-  Ross Anderson.
+\bibitem[Shumailov et~al., 2023]{shumailov2023curse}
+Shumailov, I., Shumaylov, Z., Zhao, Y., Gal, Y., Papernot, N., and Anderson, R.
+  (2023).
 \newblock The curse of recursion: Training on generated data makes models
   forget.
-\newblock {\em arXiv preprint arXiv:2305.17493}, 2023.
+\newblock {\em arXiv preprint arXiv:2305.17493}.
 
-\bibitem{shumailov2024nature}
-Ilia Shumailov, Zakhar Shumaylov, Yiren Zhao, Nicolas Papernot, Ross Anderson,
-  and Yarin Gal.
+\bibitem[Shumailov et~al., 2024]{shumailov2024nature}
+Shumailov, I., Shumaylov, Z., Zhao, Y., Papernot, N., Anderson, R., and Gal, Y.
+  (2024).
 \newblock {AI} models collapse when trained on recursively generated data.
-\newblock {\em Nature}, 631:755--759, 2024.
+\newblock {\em Nature}, 631:755--759.
 
-\bibitem{onet2026}
-{U.S. Department of Labor / Employment and Training Administration}.
+\bibitem[{U.S. Department of Labor / Employment and Training Administration},
+  2026]{onet2026}
+{U.S. Department of Labor / Employment and Training Administration} (2026).
 \newblock O*net 30.2 database.
 \newblock \url{https://www.onetcenter.org/database.html}; License:
   \url{https://www.onetcenter.org/license_db.html}; Text ZIP:
-  \url{https://www.onetcenter.org/dl_files/database/db_30_2_text.zip}, 2026.
+  \url{https://www.onetcenter.org/dl_files/database/db_30_2_text.zip}.
 
-\bibitem{vandenoord2019cpc}
-Aaron van~den Oord, Yazhe Li, and Oriol Vinyals.
+\bibitem[van~den Oord et~al., 2019]{vandenoord2019cpc}
+van~den Oord, A., Li, Y., and Vinyals, O. (2019).
 \newblock Representation learning with contrastive predictive coding.
-\newblock {\em arXiv preprint arXiv:1807.03748}, 2019.
+\newblock {\em arXiv preprint arXiv:1807.03748}.
 
 \end{thebibliography}
