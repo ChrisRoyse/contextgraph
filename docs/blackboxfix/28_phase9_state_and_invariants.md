@@ -4,7 +4,7 @@ Phase 9 ships the first hosted CI connector after GitHub Actions:
 `gitlab_ci_v1`. It verifies GitLab pipeline and job state through GitLab REST
 API v4 and persists proof in the existing SQLite ledger evidence path. There
 was no schema bump in Phase 9; `LEDGER_SCHEMA_VERSION` remained `5` then.
-The current live schema after Phase 19 is `13`.
+The current live schema after Phase 20 is `13`.
 
 ## Source Of Truth
 

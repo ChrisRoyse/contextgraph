@@ -48,6 +48,7 @@ const GHA_CONNECTOR_ID: &str = "gha_v1";
 const GITLAB_CI_CONNECTOR_ID: &str = "gitlab_ci_v1";
 const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
 const K8S_CONNECTOR_ID: &str = "k8s_deployment_snapshot_v1";
+const TF_CLOUD_CONNECTOR_ID: &str = "terraform_cloud_artifact_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
@@ -2930,6 +2931,25 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": TF_CLOUD_CONNECTOR_ID,
+                "source_kind": "terraform_cloud_artifact",
+                "readback_specs": [
+                    "tf_plan_only_approved_changes_v1",
+                    "tf_state_attribute_v1",
+                    "cloud_resource_present_v1",
+                    "cloud_audit_principal_action_v1"
+                ],
+                "source_commands": [
+                    "terraform show -json <planfile> > tfplan.json",
+                    "terraform show -json <statefile> > tfstate.json"
+                ],
+                "cloud_artifact_formats": [
+                    "blackbox-cloud-inventory-json-v1",
+                    "blackbox-cloud-audit-jsonl-v1"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -3175,6 +3195,25 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": K8S_CONNECTOR_ID,
                 "source_of_truth": k8s_source_of_truth(&args.source, "deployment-snapshot"),
+                "readback": readback,
+            }))
+        }
+        TF_CLOUD_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    TF_CLOUD_CONNECTOR_ID,
+                    tf_source_of_truth(&args.source, "plan"),
+                    "--command",
+                    "terraform_cloud_artifact_v1 connector test does not accept --command",
+                    "remove --command and pass a terraform show -json plan artifact path through --source",
+                ));
+            }
+            let readback = tf_plan_connector_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": TF_CLOUD_CONNECTOR_ID,
+                "source_of_truth": tf_source_of_truth(&args.source, "plan"),
                 "readback": readback,
             }))
         }
@@ -4213,6 +4252,34 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
                 "missing_target_state",
                 "wrong_target_state",
                 "permission_or_schema_failure"
+            ],
+            "fail_closed": true
+        },
+        "phase20_kubernetes_verification": {
+            "command": "blackbox verify --ledger PATH --input k8s-verify-spec.json",
+            "connector": K8S_CONNECTOR_ID,
+            "record_kinds": ["expected_delta", "readback_snapshot", "verifier_result", "evidence_packet", "incident_packet"],
+            "source_command": "kubectl get deployments.v1.apps --namespace <namespace> -o json > deployment-snapshot.json",
+            "verifiers": [
+                "k8s_deployment_image_digest_v1",
+                "k8s_replicas_match_v1",
+                "k8s_rollout_completed_v1"
+            ],
+            "fail_closed": true
+        },
+        "phase21_terraform_cloud_verification": {
+            "command": "blackbox verify --ledger PATH --input terraform-cloud-verify-spec.json",
+            "connector": TF_CLOUD_CONNECTOR_ID,
+            "record_kinds": ["expected_delta", "readback_snapshot", "verifier_result", "evidence_packet", "incident_packet"],
+            "source_commands": [
+                "terraform show -json <planfile> > tfplan.json",
+                "terraform show -json <statefile> > tfstate.json"
+            ],
+            "verifiers": [
+                "tf_plan_only_approved_changes_v1",
+                "tf_state_attribute_v1",
+                "cloud_resource_present_v1",
+                "cloud_audit_principal_action_v1"
             ],
             "fail_closed": true
         },
@@ -19896,6 +19963,22 @@ impl VerifySpec {
                 Path::new(optional_str(&self.source, "snapshot").unwrap_or("")),
                 "deployment-snapshot",
             ),
+            "tf_plan_only_approved_changes_v1" => tf_source_of_truth(
+                Path::new(optional_str(&self.source, "plan").unwrap_or("")),
+                "plan",
+            ),
+            "tf_state_attribute_v1" => tf_source_of_truth(
+                Path::new(optional_str(&self.source, "state").unwrap_or("")),
+                "state",
+            ),
+            "cloud_resource_present_v1" => cloud_source_of_truth(
+                Path::new(optional_str(&self.source, "inventory").unwrap_or("")),
+                "inventory",
+            ),
+            "cloud_audit_principal_action_v1" => cloud_source_of_truth(
+                Path::new(optional_str(&self.source, "audit_log").unwrap_or("")),
+                "audit-log",
+            ),
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -19940,6 +20023,10 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
         "k8s_deployment_image_digest_v1" => verify_k8s_deployment_image_digest(spec),
         "k8s_replicas_match_v1" => verify_k8s_replicas_match(spec),
         "k8s_rollout_completed_v1" => verify_k8s_rollout_completed(spec),
+        "tf_plan_only_approved_changes_v1" => verify_tf_plan_only_approved_changes(spec),
+        "tf_state_attribute_v1" => verify_tf_state_attribute(spec),
+        "cloud_resource_present_v1" => verify_cloud_resource_present(spec),
+        "cloud_audit_principal_action_v1" => verify_cloud_audit_principal_action(spec),
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
@@ -20685,6 +20772,421 @@ fn cmd_source_of_truth(cwd: &Path, command: &[String]) -> String {
 
 fn scanner_source_of_truth(path: &Path, locator: &str) -> String {
     format!("scanner:{}#{locator}", path.display())
+}
+
+fn k8s_source_of_truth(path: &Path, locator: &str) -> String {
+    format!("k8s:{}#{locator}", path.display())
+}
+
+fn tf_source_of_truth(path: &Path, locator: &str) -> String {
+    format!("tf:{}#{locator}", path.display())
+}
+
+fn cloud_source_of_truth(path: &Path, locator: &str) -> String {
+    format!("cloud:{}#{locator}", path.display())
+}
+
+#[derive(Debug)]
+struct K8sSnapshotState {
+    path: PathBuf,
+    exists: bool,
+    size_bytes: Option<usize>,
+    sha256: Option<String>,
+    bytes: Option<Vec<u8>>,
+}
+
+impl K8sSnapshotState {
+    fn base_json(&self) -> Value {
+        json!({
+            "path": self.path.display().to_string(),
+            "artifact_kind": "kubectl-deployment-json",
+            "exists": self.exists,
+            "size_bytes": self.size_bytes,
+            "sha256": self.sha256,
+            "read_at": Utc::now().to_rfc3339(),
+        })
+    }
+}
+
+fn k8s_snapshot_state(
+    path: &Path,
+    source: &str,
+    field_path: &'static str,
+) -> Result<K8sSnapshotState, VerificationOutcome> {
+    if path.as_os_str().is_empty() {
+        return Err(VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            source.to_string(),
+            "K8S_SNAPSHOT_PATH_MISSING",
+            field_path,
+            format!("{field_path} must be a non-empty kubectl JSON snapshot path"),
+            "run `kubectl get deployments.v1.apps --namespace <namespace> -o json > snapshot.json` and pass that file path",
+            None,
+        ));
+    }
+    if path.exists() && !path.is_file() {
+        return Err(VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            source.to_string(),
+            "K8S_SNAPSHOT_NOT_FILE",
+            field_path,
+            format!(
+                "Kubernetes snapshot path {} is not a regular file",
+                path.display()
+            ),
+            "pass the exact kubectl JSON output file, not a directory or special file",
+            None,
+        ));
+    }
+    if !path.exists() {
+        return Ok(K8sSnapshotState {
+            path: path.to_path_buf(),
+            exists: false,
+            size_bytes: None,
+            sha256: None,
+            bytes: None,
+        });
+    }
+    let bytes = fs::read(path).map_err(|err| {
+        VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            source.to_string(),
+            "K8S_SNAPSHOT_READ_FAILED",
+            field_path,
+            format!(
+                "failed to read Kubernetes snapshot {}: {err}",
+                path.display()
+            ),
+            "fix filesystem permissions and rerun verification",
+            None,
+        )
+    })?;
+    Ok(K8sSnapshotState {
+        path: path.to_path_buf(),
+        exists: true,
+        size_bytes: Some(bytes.len()),
+        sha256: Some(sha256_hex(&bytes)),
+        bytes: Some(bytes),
+    })
+}
+
+fn k8s_snapshot_connector_readback(path: &Path) -> BbxResult<Value> {
+    let source = k8s_source_of_truth(path, "deployment-snapshot");
+    let state = k8s_snapshot_state(path, &source, "--source").map_err(|outcome| {
+        BlackboxError::connector_blocked(
+            outcome.error_code.unwrap_or("K8S_SNAPSHOT_READ_FAILED"),
+            K8S_CONNECTOR_ID,
+            outcome.source_of_truth,
+            outcome.field_path.unwrap_or_else(|| "--source".to_string()),
+            outcome
+                .message
+                .unwrap_or_else(|| "Kubernetes snapshot readback failed".to_string()),
+            outcome
+                .remediation
+                .unwrap_or_else(|| "inspect the Kubernetes snapshot and retry".to_string()),
+        )
+    })?;
+    if !state.exists {
+        return Err(BlackboxError::connector_blocked(
+            "K8S_SNAPSHOT_NOT_FOUND",
+            K8S_CONNECTOR_ID,
+            source,
+            "--source",
+            "Kubernetes deployment snapshot does not exist",
+            "write a kubectl Deployment JSON snapshot before testing the connector",
+        ));
+    }
+    let snapshot = parse_k8s_snapshot_json(&state, &source, "--source").map_err(|outcome| {
+        BlackboxError::connector_blocked(
+            outcome.error_code.unwrap_or("K8S_SNAPSHOT_JSON_INVALID"),
+            K8S_CONNECTOR_ID,
+            outcome.source_of_truth,
+            outcome.field_path.unwrap_or_else(|| "--source".to_string()),
+            outcome
+                .message
+                .unwrap_or_else(|| "Kubernetes snapshot JSON parse failed".to_string()),
+            outcome
+                .remediation
+                .unwrap_or_else(|| "write valid Kubernetes JSON and retry".to_string()),
+        )
+    })?;
+    let normalized = normalize_k8s_snapshot(&snapshot).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "K8S_SNAPSHOT_SCHEMA_DRIFT",
+            K8S_CONNECTOR_ID,
+            k8s_source_of_truth(path, "deployment-snapshot"),
+            "--source",
+            format!("Kubernetes snapshot did not match apps/v1 Deployment JSON: {err}"),
+            "regenerate the source with `kubectl get deployments.v1.apps -o json` or update the connector for a documented Kubernetes API change",
+        )
+    })?;
+    Ok(json!({
+        "artifact": state.base_json(),
+        "normalized": normalized,
+    }))
+}
+
+fn parse_k8s_snapshot_json(
+    state: &K8sSnapshotState,
+    source: &str,
+    field_path: &'static str,
+) -> Result<Value, VerificationOutcome> {
+    let bytes = state
+        .bytes
+        .as_ref()
+        .expect("parse_k8s_snapshot_json called only for existing snapshots");
+    serde_json::from_slice(bytes).map_err(|err| {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "parse_error": err.to_string(),
+        });
+        let readback = k8s_readback_payload(
+            "k8s_snapshot_parse_v1",
+            source,
+            "read kubectl Deployment JSON snapshot",
+            &actual,
+        );
+        VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            source.to_string(),
+            "K8S_SNAPSHOT_JSON_INVALID",
+            field_path,
+            format!("Kubernetes snapshot JSON could not be parsed: {err}"),
+            "write valid JSON from kubectl and rerun verification",
+            Some(readback),
+        )
+    })
+}
+
+fn normalize_k8s_snapshot(snapshot: &Value) -> Result<Value, String> {
+    let kind = k8s_required_str(snapshot, "/kind", "$.kind")?;
+    let api_version = k8s_required_str(snapshot, "/apiVersion", "$.apiVersion")?;
+    if api_version != "apps/v1" {
+        return Err(format!(
+            "$.apiVersion must equal \"apps/v1\", got {api_version:?}"
+        ));
+    }
+    let mut deployments = Vec::new();
+    match kind {
+        "Deployment" => deployments.push(normalize_k8s_deployment(snapshot, "$")?),
+        "DeploymentList" => {
+            let items = snapshot
+                .get("items")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "$.items must be an array for DeploymentList".to_string())?;
+            for (index, item) in items.iter().enumerate() {
+                deployments.push(normalize_k8s_deployment(
+                    item,
+                    &format!("$.items[{index}]"),
+                )?);
+            }
+        }
+        other => {
+            return Err(format!(
+                "$.kind must be Deployment or DeploymentList, got {other:?}"
+            ));
+        }
+    }
+    Ok(json!({
+        "format": "kubectl-deployment-json",
+        "api_version": api_version,
+        "snapshot_kind": kind,
+        "deployments_total": deployments.len(),
+        "deployments": deployments,
+    }))
+}
+
+fn normalize_k8s_deployment(deployment: &Value, base: &str) -> Result<Value, String> {
+    let kind = k8s_required_str(deployment, "/kind", &format!("{base}.kind"))?;
+    let api_version = k8s_required_str(deployment, "/apiVersion", &format!("{base}.apiVersion"))?;
+    if kind != "Deployment" {
+        return Err(format!(
+            "{base}.kind must equal \"Deployment\", got {kind:?}"
+        ));
+    }
+    if api_version != "apps/v1" {
+        return Err(format!(
+            "{base}.apiVersion must equal \"apps/v1\", got {api_version:?}"
+        ));
+    }
+    let name = k8s_required_str(
+        deployment,
+        "/metadata/name",
+        &format!("{base}.metadata.name"),
+    )?;
+    let namespace = k8s_required_str(
+        deployment,
+        "/metadata/namespace",
+        &format!("{base}.metadata.namespace"),
+    )?;
+    let generation = k8s_required_u64(
+        deployment,
+        "/metadata/generation",
+        &format!("{base}.metadata.generation"),
+    )?;
+    let spec_replicas = k8s_required_u64(
+        deployment,
+        "/spec/replicas",
+        &format!("{base}.spec.replicas"),
+    )?;
+    let containers = normalize_k8s_containers(
+        deployment,
+        "/spec/template/spec/containers",
+        &format!("{base}.spec.template.spec.containers"),
+        "container",
+    )?;
+    if containers.is_empty() {
+        return Err(format!(
+            "{base}.spec.template.spec.containers must contain at least one container"
+        ));
+    }
+    let init_containers = normalize_k8s_containers(
+        deployment,
+        "/spec/template/spec/initContainers",
+        &format!("{base}.spec.template.spec.initContainers"),
+        "init_container",
+    )?;
+    Ok(json!({
+        "api_version": api_version,
+        "kind": kind,
+        "metadata": {
+            "name": name,
+            "namespace": namespace,
+            "uid": k8s_optional_str(deployment, "/metadata/uid"),
+            "resource_version": k8s_optional_str(deployment, "/metadata/resourceVersion"),
+            "generation": generation,
+        },
+        "spec": {
+            "replicas": spec_replicas,
+            "containers": containers,
+            "init_containers": init_containers,
+        },
+        "status": {
+            "observed_generation": k8s_optional_u64(deployment, "/status/observedGeneration")?,
+            "replicas": k8s_optional_u64(deployment, "/status/replicas")?.unwrap_or(0),
+            "updated_replicas": k8s_optional_u64(deployment, "/status/updatedReplicas")?.unwrap_or(0),
+            "ready_replicas": k8s_optional_u64(deployment, "/status/readyReplicas")?.unwrap_or(0),
+            "available_replicas": k8s_optional_u64(deployment, "/status/availableReplicas")?.unwrap_or(0),
+            "unavailable_replicas": k8s_optional_u64(deployment, "/status/unavailableReplicas")?.unwrap_or(0),
+            "conditions": normalize_k8s_conditions(deployment, base)?,
+        },
+    }))
+}
+
+fn normalize_k8s_containers(
+    deployment: &Value,
+    pointer: &str,
+    field_path: &str,
+    container_type: &'static str,
+) -> Result<Vec<Value>, String> {
+    let Some(value) = deployment.pointer(pointer) else {
+        return Ok(Vec::new());
+    };
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("{field_path} must be an array"))?;
+    let mut containers = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        let name = k8s_required_str(item, "/name", &format!("{field_path}[{index}].name"))?;
+        let image = k8s_required_str(item, "/image", &format!("{field_path}[{index}].image"))?;
+        let image_ref = parse_k8s_image_reference(image);
+        containers.push(json!({
+            "container_type": container_type,
+            "name": name,
+            "image": image,
+            "image_repository": image_ref.repository,
+            "image_digest": image_ref.digest,
+            "image_digest_valid": image_ref.digest_valid,
+        }));
+    }
+    Ok(containers)
+}
+
+fn normalize_k8s_conditions(deployment: &Value, base: &str) -> Result<Vec<Value>, String> {
+    let Some(value) = deployment.pointer("/status/conditions") else {
+        return Ok(Vec::new());
+    };
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("{base}.status.conditions must be an array"))?;
+    let mut conditions = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        conditions.push(json!({
+            "type": k8s_required_str(item, "/type", &format!("{base}.status.conditions[{index}].type"))?,
+            "status": k8s_required_str(item, "/status", &format!("{base}.status.conditions[{index}].status"))?,
+            "reason": k8s_optional_str(item, "/reason"),
+            "message": k8s_optional_str(item, "/message"),
+        }));
+    }
+    Ok(conditions)
+}
+
+#[derive(Debug)]
+struct K8sImageRef {
+    repository: String,
+    digest: Option<String>,
+    digest_valid: bool,
+}
+
+fn parse_k8s_image_reference(image: &str) -> K8sImageRef {
+    if let Some((repository, digest)) = image.rsplit_once('@') {
+        let digest = digest.to_string();
+        K8sImageRef {
+            repository: repository.to_string(),
+            digest_valid: k8s_digest_is_valid(&digest),
+            digest: Some(digest),
+        }
+    } else {
+        K8sImageRef {
+            repository: image.to_string(),
+            digest: None,
+            digest_valid: false,
+        }
+    }
+}
+
+fn k8s_digest_is_valid(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+fn k8s_required_str<'a>(
+    value: &'a Value,
+    pointer: &str,
+    field_path: &str,
+) -> Result<&'a str, String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| format!("{field_path} is required and must be a non-empty string"))
+}
+
+fn k8s_optional_str(value: &Value, pointer: &str) -> Option<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn k8s_required_u64(value: &Value, pointer: &str, field_path: &str) -> Result<u64, String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("{field_path} is required and must be a non-negative integer"))
+}
+
+fn k8s_optional_u64(value: &Value, pointer: &str) -> Result<Option<u64>, String> {
+    match value.pointer(pointer) {
+        None | Some(Value::Null) => Ok(None),
+        Some(number) => number
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| format!("{pointer} must be a non-negative integer when present")),
+    }
 }
 
 #[derive(Debug)]
@@ -23151,6 +23653,861 @@ fn verify_scanner_sbom_artifact_present(spec: &VerifySpec) -> VerificationOutcom
             "actual_readback.version_mismatches",
             "CycloneDX SBOM contains the expected component at a different version",
             "regenerate the SBOM after pinning the dependency to the expected version",
+            readback,
+            actual,
+        )
+    }
+}
+
+struct K8sNormalizedSnapshot {
+    artifact: Value,
+    normalized: Value,
+}
+
+#[derive(Clone)]
+struct K8sDeploymentIdentity {
+    namespace: String,
+    deployment: String,
+}
+
+#[derive(Clone)]
+struct K8sReplicaCounts {
+    spec_replicas: u64,
+    status_replicas: u64,
+    updated_replicas: u64,
+    ready_replicas: u64,
+    available_replicas: u64,
+    unavailable_replicas: u64,
+}
+
+impl K8sReplicaCounts {
+    fn from_deployment(deployment: &Value) -> Self {
+        Self {
+            spec_replicas: deployment["spec"]["replicas"].as_u64().unwrap_or(0),
+            status_replicas: deployment["status"]["replicas"].as_u64().unwrap_or(0),
+            updated_replicas: deployment["status"]["updated_replicas"]
+                .as_u64()
+                .unwrap_or(0),
+            ready_replicas: deployment["status"]["ready_replicas"].as_u64().unwrap_or(0),
+            available_replicas: deployment["status"]["available_replicas"]
+                .as_u64()
+                .unwrap_or(0),
+            unavailable_replicas: deployment["status"]["unavailable_replicas"]
+                .as_u64()
+                .unwrap_or(0),
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "spec_replicas": self.spec_replicas,
+            "status_replicas": self.status_replicas,
+            "updated_replicas": self.updated_replicas,
+            "ready_replicas": self.ready_replicas,
+            "available_replicas": self.available_replicas,
+            "unavailable_replicas": self.unavailable_replicas,
+        })
+    }
+
+    fn mismatches(&self, actual: &Self) -> Vec<Value> {
+        let pairs = [
+            ("spec_replicas", self.spec_replicas, actual.spec_replicas),
+            (
+                "status_replicas",
+                self.status_replicas,
+                actual.status_replicas,
+            ),
+            (
+                "updated_replicas",
+                self.updated_replicas,
+                actual.updated_replicas,
+            ),
+            ("ready_replicas", self.ready_replicas, actual.ready_replicas),
+            (
+                "available_replicas",
+                self.available_replicas,
+                actual.available_replicas,
+            ),
+            (
+                "unavailable_replicas",
+                self.unavailable_replicas,
+                actual.unavailable_replicas,
+            ),
+        ];
+        pairs
+            .into_iter()
+            .filter(|(_, expected, actual)| expected != actual)
+            .map(|(field, expected, actual)| {
+                json!({
+                    "field": field,
+                    "expected": expected,
+                    "actual": actual,
+                })
+            })
+            .collect()
+    }
+}
+
+struct K8sRolloutAssessment {
+    completed: bool,
+    failure_code: Option<&'static str>,
+    failure_field_path: Option<&'static str>,
+    failure_message: Option<&'static str>,
+}
+
+fn require_k8s_source_format(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<(), VerificationOutcome> {
+    let actual = required_source_string(
+        spec,
+        "snapshot_format",
+        "$.source.snapshot_format",
+        K8S_CONNECTOR_ID,
+        source_hint,
+    )?;
+    if actual == "kubectl-deployment-json" {
+        Ok(())
+    } else {
+        Err(VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            source_hint.to_string(),
+            "K8S_SNAPSHOT_FORMAT_UNSUPPORTED",
+            "$.source.snapshot_format",
+            format!(
+                "$.source.snapshot_format must be \"kubectl-deployment-json\", got {actual:?}"
+            ),
+            "capture the source with `kubectl get deployments.v1.apps -o json` and set snapshot_format accordingly",
+            None,
+        ))
+    }
+}
+
+fn require_k8s_source_path(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<PathBuf, VerificationOutcome> {
+    required_source_string(
+        spec,
+        "snapshot",
+        "$.source.snapshot",
+        K8S_CONNECTOR_ID,
+        source_hint,
+    )
+    .map(PathBuf::from)
+}
+
+fn require_k8s_deployment_identity(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<K8sDeploymentIdentity, VerificationOutcome> {
+    let namespace = required_expected_string(
+        spec,
+        "namespace",
+        "$.expected.namespace",
+        K8S_CONNECTOR_ID,
+        source_hint,
+        false,
+    )?;
+    let deployment = required_expected_string(
+        spec,
+        "deployment",
+        "$.expected.deployment",
+        K8S_CONNECTOR_ID,
+        source_hint,
+        false,
+    )?;
+    Ok(K8sDeploymentIdentity {
+        namespace,
+        deployment,
+    })
+}
+
+fn require_k8s_expected_replicas(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<K8sReplicaCounts, VerificationOutcome> {
+    Ok(K8sReplicaCounts {
+        spec_replicas: required_expected_u64(
+            spec,
+            "spec_replicas",
+            "$.expected.spec_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+        status_replicas: required_expected_u64(
+            spec,
+            "status_replicas",
+            "$.expected.status_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+        updated_replicas: required_expected_u64(
+            spec,
+            "updated_replicas",
+            "$.expected.updated_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+        ready_replicas: required_expected_u64(
+            spec,
+            "ready_replicas",
+            "$.expected.ready_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+        available_replicas: required_expected_u64(
+            spec,
+            "available_replicas",
+            "$.expected.available_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+        unavailable_replicas: required_expected_u64(
+            spec,
+            "unavailable_replicas",
+            "$.expected.unavailable_replicas",
+            K8S_CONNECTOR_ID,
+            source_hint,
+        )?,
+    })
+}
+
+fn k8s_normalized_snapshot_for_verify(
+    _spec: &VerifySpec,
+    snapshot_path: &Path,
+    source: &str,
+    verifier_id: &'static str,
+    operation: &'static str,
+) -> Result<K8sNormalizedSnapshot, VerificationOutcome> {
+    let state = k8s_snapshot_state(snapshot_path, source, "$.source.snapshot")?;
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "snapshot_format": "kubectl-deployment-json",
+            "deployments_total": 0,
+        });
+        let readback = k8s_readback_payload(verifier_id, source, operation, &actual);
+        return Err(VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source.to_string(),
+            "K8S_SNAPSHOT_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "Kubernetes deployment snapshot does not exist",
+            "write a kubectl Deployment JSON snapshot before claiming Kubernetes state",
+            readback,
+            actual,
+        ));
+    }
+    let snapshot = parse_k8s_snapshot_json(&state, source, "$.source.snapshot")?;
+    let normalized = normalize_k8s_snapshot(&snapshot).map_err(|err| {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "snapshot_format": "kubectl-deployment-json",
+            "schema_error": err,
+        });
+        k8s_schema_blocked(verifier_id, source, operation, actual)
+    })?;
+    Ok(K8sNormalizedSnapshot {
+        artifact: state.base_json(),
+        normalized,
+    })
+}
+
+fn k8s_schema_blocked(
+    verifier_id: &'static str,
+    source: &str,
+    operation: &'static str,
+    actual: Value,
+) -> VerificationOutcome {
+    let readback = k8s_readback_payload(verifier_id, source, operation, &actual);
+    VerificationOutcome::blocked(
+        K8S_CONNECTOR_ID,
+        source.to_string(),
+        "K8S_SNAPSHOT_SCHEMA_DRIFT",
+        "$.source.snapshot",
+        "Kubernetes snapshot did not match apps/v1 Deployment JSON",
+        "regenerate the source with `kubectl get deployments.v1.apps -o json` or update the connector for a documented Kubernetes API change",
+        Some(readback),
+    )
+}
+
+fn k8s_find_deployment<'a>(
+    normalized: &'a Value,
+    namespace: &str,
+    deployment: &str,
+) -> Option<&'a Value> {
+    normalized
+        .get("deployments")
+        .and_then(Value::as_array)
+        .and_then(|deployments| {
+            deployments.iter().find(|item| {
+                item.pointer("/metadata/namespace").and_then(Value::as_str) == Some(namespace)
+                    && item.pointer("/metadata/name").and_then(Value::as_str) == Some(deployment)
+            })
+        })
+}
+
+fn k8s_find_container<'a>(
+    deployment: &'a Value,
+    container: &str,
+) -> Result<Option<&'a Value>, VerificationOutcome> {
+    let mut matches = Vec::new();
+    for pointer in ["/spec/containers", "/spec/init_containers"] {
+        if let Some(items) = deployment.pointer(pointer).and_then(Value::as_array) {
+            for item in items {
+                if item.get("name").and_then(Value::as_str) == Some(container) {
+                    matches.push(item);
+                }
+            }
+        }
+    }
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.into_iter().next()),
+        _ => Err(VerificationOutcome::blocked(
+            K8S_CONNECTOR_ID,
+            "k8s:deployment-snapshot#container".to_string(),
+            "K8S_CONTAINER_AMBIGUOUS",
+            "$.expected.container",
+            format!("container name {container:?} appears in both containers and initContainers"),
+            "use distinct container names in the Deployment pod template before verifying image state",
+            None,
+        )),
+    }
+}
+
+fn k8s_condition<'a>(deployment: &'a Value, condition_type: &str) -> Option<&'a Value> {
+    deployment
+        .pointer("/status/conditions")
+        .and_then(Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("type").and_then(Value::as_str) == Some(condition_type))
+        })
+}
+
+fn assess_k8s_rollout(deployment: &Value) -> K8sRolloutAssessment {
+    let generation = deployment["metadata"]["generation"].as_u64().unwrap_or(0);
+    let observed = deployment["status"]["observed_generation"].as_u64();
+    if observed.map(|value| value < generation).unwrap_or(true) {
+        return K8sRolloutAssessment {
+            completed: false,
+            failure_code: Some("K8S_DEPLOYMENT_GENERATION_STALE"),
+            failure_field_path: Some("actual_readback.status.observed_generation"),
+            failure_message: Some(
+                "Deployment status has not observed the latest metadata generation",
+            ),
+        };
+    }
+    if let Some(replica_failure) = k8s_condition(deployment, "ReplicaFailure") {
+        if replica_failure.get("status").and_then(Value::as_str) == Some("True") {
+            return K8sRolloutAssessment {
+                completed: false,
+                failure_code: Some("K8S_ROLLOUT_REPLICA_FAILURE"),
+                failure_field_path: Some("actual_readback.status.conditions.ReplicaFailure"),
+                failure_message: Some("Deployment status reports ReplicaFailure=True"),
+            };
+        }
+    }
+    if let Some(progressing) = k8s_condition(deployment, "Progressing") {
+        if progressing.get("status").and_then(Value::as_str) == Some("False")
+            && progressing.get("reason").and_then(Value::as_str) == Some("ProgressDeadlineExceeded")
+        {
+            return K8sRolloutAssessment {
+                completed: false,
+                failure_code: Some("K8S_ROLLOUT_PROGRESS_DEADLINE_EXCEEDED"),
+                failure_field_path: Some("actual_readback.status.conditions.Progressing"),
+                failure_message: Some("Deployment rollout exceeded its progress deadline"),
+            };
+        }
+    }
+    let available = k8s_condition(deployment, "Available");
+    if available
+        .and_then(|item| item.get("status"))
+        .and_then(Value::as_str)
+        != Some("True")
+    {
+        return K8sRolloutAssessment {
+            completed: false,
+            failure_code: Some("K8S_ROLLOUT_NOT_AVAILABLE"),
+            failure_field_path: Some("actual_readback.status.conditions.Available"),
+            failure_message: Some("Deployment is not Available=True"),
+        };
+    }
+    let progressing = k8s_condition(deployment, "Progressing");
+    if progressing
+        .and_then(|item| item.get("status"))
+        .and_then(Value::as_str)
+        != Some("True")
+        || progressing
+            .and_then(|item| item.get("reason"))
+            .and_then(Value::as_str)
+            != Some("NewReplicaSetAvailable")
+    {
+        return K8sRolloutAssessment {
+            completed: false,
+            failure_code: Some("K8S_ROLLOUT_NOT_COMPLETED"),
+            failure_field_path: Some("actual_readback.status.conditions.Progressing"),
+            failure_message: Some(
+                "Deployment is not Progressing=True with reason NewReplicaSetAvailable",
+            ),
+        };
+    }
+    let replicas = K8sReplicaCounts::from_deployment(deployment);
+    let desired = replicas.spec_replicas;
+    if replicas.updated_replicas != desired
+        || replicas.available_replicas != desired
+        || replicas.ready_replicas != desired
+        || replicas.unavailable_replicas != 0
+    {
+        return K8sRolloutAssessment {
+            completed: false,
+            failure_code: Some("K8S_ROLLOUT_REPLICA_COUNTS_INCOMPLETE"),
+            failure_field_path: Some("actual_readback.status"),
+            failure_message: Some("Deployment status counters do not show all desired replicas updated, ready, and available"),
+        };
+    }
+    K8sRolloutAssessment {
+        completed: true,
+        failure_code: None,
+        failure_field_path: None,
+        failure_message: None,
+    }
+}
+
+fn k8s_readback_payload(verifier_id: &str, source: &str, operation: &str, actual: &Value) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        K8S_CONNECTOR_ID,
+        source,
+        operation,
+        actual.clone(),
+    )
+}
+
+fn verify_k8s_deployment_image_digest(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = k8s_source_of_truth(
+        Path::new(optional_str(&spec.source, "snapshot").unwrap_or("")),
+        "deployment-snapshot",
+    );
+    if let Err(outcome) = require_k8s_source_format(spec, &source_hint) {
+        return outcome;
+    }
+    let snapshot_path = match require_k8s_source_path(spec, &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let identity = match require_k8s_deployment_identity(spec, &source_hint) {
+        Ok(identity) => identity,
+        Err(outcome) => return outcome,
+    };
+    let container = match required_expected_string(
+        spec,
+        "container",
+        "$.expected.container",
+        K8S_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(container) => container,
+        Err(outcome) => return outcome,
+    };
+    let expected_digest =
+        match required_expected_string(
+            spec,
+            "image_digest",
+            "$.expected.image_digest",
+            K8S_CONNECTOR_ID,
+            &source_hint,
+            false,
+        ) {
+            Ok(digest) if k8s_digest_is_valid(&digest) => digest,
+            Ok(_) => return VerificationOutcome::blocked(
+                K8S_CONNECTOR_ID,
+                source_hint,
+                "K8S_EXPECTED_IMAGE_DIGEST_INVALID",
+                "$.expected.image_digest",
+                "k8s_deployment_image_digest_v1 requires image_digest to be sha256:<64 hex chars>",
+                "pin the expected image to an immutable sha256 digest and rerun verification",
+                None,
+            ),
+            Err(outcome) => return outcome,
+        };
+    let expected_repository = expected_optional_string(spec, "image_repository");
+    let source = k8s_source_of_truth(&snapshot_path, "deployment-snapshot");
+    let operation = "read kubectl Deployment JSON snapshot";
+    let snapshot = match k8s_normalized_snapshot_for_verify(
+        spec,
+        &snapshot_path,
+        &source,
+        "k8s_deployment_image_digest_v1",
+        operation,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(outcome) => return outcome,
+    };
+    let deployment_value = match k8s_find_deployment(
+        &snapshot.normalized,
+        &identity.namespace,
+        &identity.deployment,
+    ) {
+        Some(value) => value,
+        None => {
+            let actual = json!({
+                "artifact": snapshot.artifact,
+                "snapshot_format": "kubectl-deployment-json",
+                "namespace": identity.namespace,
+                "deployment": identity.deployment,
+                "deployment_found": false,
+                "deployments_total": snapshot.normalized["deployments_total"].clone(),
+            });
+            let readback = k8s_readback_payload(
+                "k8s_deployment_image_digest_v1",
+                &source,
+                operation,
+                &actual,
+            );
+            return VerificationOutcome::failed(
+                    K8S_CONNECTOR_ID,
+                    source,
+                    "K8S_DEPLOYMENT_NOT_FOUND",
+                    "actual_readback.deployment_found",
+                    "Kubernetes snapshot does not contain the expected Deployment",
+                    "read the target namespace with kubectl and verify the Deployment name before claiming image state",
+                    readback,
+                    actual,
+                );
+        }
+    };
+    let matched_container = match k8s_find_container(deployment_value, &container) {
+        Ok(Some(value)) => value,
+        Ok(None) => {
+            let actual = json!({
+                "artifact": snapshot.artifact,
+                "snapshot_format": "kubectl-deployment-json",
+                "namespace": identity.namespace,
+                "deployment": identity.deployment,
+                "deployment_found": true,
+                "container": container,
+                "container_found": false,
+                "containers": deployment_value["spec"]["containers"].clone(),
+                "init_containers": deployment_value["spec"]["init_containers"].clone(),
+            });
+            let readback = k8s_readback_payload(
+                "k8s_deployment_image_digest_v1",
+                &source,
+                operation,
+                &actual,
+            );
+            return VerificationOutcome::failed(
+                K8S_CONNECTOR_ID,
+                source,
+                "K8S_CONTAINER_NOT_FOUND",
+                "actual_readback.container_found",
+                "Kubernetes Deployment does not contain the expected container",
+                "verify the container name in the Deployment pod template before claiming image state",
+                readback,
+                actual,
+            );
+        }
+        Err(outcome) => return outcome,
+    };
+    let actual_repository = matched_container
+        .get("image_repository")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let actual_digest = matched_container
+        .get("image_digest")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let actual = json!({
+        "artifact": snapshot.artifact,
+        "snapshot_format": "kubectl-deployment-json",
+        "namespace": identity.namespace,
+        "deployment": identity.deployment,
+        "deployment_found": true,
+        "container": container,
+        "container_found": true,
+        "container_readback": matched_container,
+        "expected_image_repository": expected_repository.clone(),
+        "expected_image_digest": expected_digest.clone(),
+        "actual_image_repository": actual_repository,
+        "actual_image_digest": actual_digest.clone(),
+    });
+    let readback = k8s_readback_payload(
+        "k8s_deployment_image_digest_v1",
+        &source,
+        operation,
+        &actual,
+    );
+    if matched_container
+        .get("image_digest")
+        .and_then(Value::as_str)
+        .is_none()
+    {
+        return VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source,
+            "K8S_IMAGE_DIGEST_MISSING",
+            "actual_readback.container_readback.image",
+            "Kubernetes Deployment container image is not pinned by digest",
+            "update the Deployment image to include @sha256:<digest> and reread the cluster state",
+            readback,
+            actual,
+        );
+    }
+    if matched_container
+        .get("image_digest_valid")
+        .and_then(Value::as_bool)
+        != Some(true)
+    {
+        return VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source,
+            "K8S_IMAGE_DIGEST_INVALID",
+            "actual_readback.container_readback.image_digest",
+            "Kubernetes Deployment container image digest is not a valid sha256 digest",
+            "replace the image reference with a valid OCI sha256 digest",
+            readback,
+            actual,
+        );
+    }
+    if let Some(expected_repository) = expected_repository.as_deref() {
+        if actual_repository != expected_repository {
+            return VerificationOutcome::failed(
+                K8S_CONNECTOR_ID,
+                source,
+                "K8S_IMAGE_REPOSITORY_MISMATCH",
+                "actual_readback.actual_image_repository",
+                "Kubernetes Deployment container image repository did not match expected repository",
+                "verify the target Deployment and container image before claiming this rollout",
+                readback,
+                actual,
+            );
+        }
+    }
+    if actual_digest.as_deref() == Some(expected_digest.as_str()) {
+        VerificationOutcome::passed(K8S_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source,
+            "K8S_IMAGE_DIGEST_MISMATCH",
+            "actual_readback.actual_image_digest",
+            "Kubernetes Deployment container image digest did not match expected digest",
+            "wait for the rollout to apply the expected image or correct the expected digest",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_k8s_replicas_match(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = k8s_source_of_truth(
+        Path::new(optional_str(&spec.source, "snapshot").unwrap_or("")),
+        "deployment-snapshot",
+    );
+    if let Err(outcome) = require_k8s_source_format(spec, &source_hint) {
+        return outcome;
+    }
+    let snapshot_path = match require_k8s_source_path(spec, &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let identity = match require_k8s_deployment_identity(spec, &source_hint) {
+        Ok(identity) => identity,
+        Err(outcome) => return outcome,
+    };
+    let expected = match require_k8s_expected_replicas(spec, &source_hint) {
+        Ok(expected) => expected,
+        Err(outcome) => return outcome,
+    };
+    let source = k8s_source_of_truth(&snapshot_path, "deployment-snapshot");
+    let operation = "read kubectl Deployment JSON snapshot";
+    let snapshot = match k8s_normalized_snapshot_for_verify(
+        spec,
+        &snapshot_path,
+        &source,
+        "k8s_replicas_match_v1",
+        operation,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(outcome) => return outcome,
+    };
+    let deployment_value = match k8s_find_deployment(
+        &snapshot.normalized,
+        &identity.namespace,
+        &identity.deployment,
+    ) {
+        Some(value) => value,
+        None => {
+            let actual = json!({
+                "artifact": snapshot.artifact,
+                "namespace": identity.namespace,
+                "deployment": identity.deployment,
+                "deployment_found": false,
+                "expected": expected.to_json(),
+            });
+            let readback =
+                k8s_readback_payload("k8s_replicas_match_v1", &source, operation, &actual);
+            return VerificationOutcome::failed(
+                    K8S_CONNECTOR_ID,
+                    source,
+                    "K8S_DEPLOYMENT_NOT_FOUND",
+                    "actual_readback.deployment_found",
+                    "Kubernetes snapshot does not contain the expected Deployment",
+                    "read the target namespace with kubectl and verify the Deployment name before claiming replica state",
+                    readback,
+                    actual,
+                );
+        }
+    };
+    let actual_counts = K8sReplicaCounts::from_deployment(deployment_value);
+    let mismatches = expected.mismatches(&actual_counts);
+    let actual = json!({
+        "artifact": snapshot.artifact,
+        "snapshot_format": "kubectl-deployment-json",
+        "namespace": identity.namespace,
+        "deployment": identity.deployment,
+        "deployment_found": true,
+        "expected": expected.to_json(),
+        "actual": actual_counts.to_json(),
+        "mismatches": mismatches,
+        "status": deployment_value["status"].clone(),
+    });
+    let readback = k8s_readback_payload("k8s_replicas_match_v1", &source, operation, &actual);
+    if actual
+        .get("mismatches")
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.is_empty())
+    {
+        VerificationOutcome::passed(K8S_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source,
+            "K8S_REPLICA_COUNT_MISMATCH",
+            "actual_readback.mismatches",
+            "Kubernetes Deployment replica counters did not match expected state",
+            "wait for the Deployment controller to reconcile or correct the expected replica counts",
+            readback,
+            actual,
+        )
+    }
+}
+
+fn verify_k8s_rollout_completed(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = k8s_source_of_truth(
+        Path::new(optional_str(&spec.source, "snapshot").unwrap_or("")),
+        "deployment-snapshot",
+    );
+    if let Err(outcome) = require_k8s_source_format(spec, &source_hint) {
+        return outcome;
+    }
+    let snapshot_path = match require_k8s_source_path(spec, &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let identity = match require_k8s_deployment_identity(spec, &source_hint) {
+        Ok(identity) => identity,
+        Err(outcome) => return outcome,
+    };
+    let expected_status = match required_expected_string(
+        spec,
+        "rollout_status",
+        "$.expected.rollout_status",
+        K8S_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) if value == "completed" => value,
+        Ok(value) => {
+            return VerificationOutcome::blocked(
+                K8S_CONNECTOR_ID,
+                source_hint,
+                "K8S_ROLLOUT_STATUS_UNSUPPORTED",
+                "$.expected.rollout_status",
+                format!("unsupported rollout_status {value:?}; only \"completed\" is supported"),
+                "set $.expected.rollout_status to \"completed\"",
+                None,
+            )
+        }
+        Err(outcome) => return outcome,
+    };
+    let source = k8s_source_of_truth(&snapshot_path, "deployment-snapshot");
+    let operation = "read kubectl Deployment JSON snapshot";
+    let snapshot = match k8s_normalized_snapshot_for_verify(
+        spec,
+        &snapshot_path,
+        &source,
+        "k8s_rollout_completed_v1",
+        operation,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(outcome) => return outcome,
+    };
+    let deployment_value = match k8s_find_deployment(
+        &snapshot.normalized,
+        &identity.namespace,
+        &identity.deployment,
+    ) {
+        Some(value) => value,
+        None => {
+            let actual = json!({
+                "artifact": snapshot.artifact,
+                "namespace": identity.namespace,
+                "deployment": identity.deployment,
+                "deployment_found": false,
+                "expected_rollout_status": expected_status,
+            });
+            let readback =
+                k8s_readback_payload("k8s_rollout_completed_v1", &source, operation, &actual);
+            return VerificationOutcome::failed(
+                    K8S_CONNECTOR_ID,
+                    source,
+                    "K8S_DEPLOYMENT_NOT_FOUND",
+                    "actual_readback.deployment_found",
+                    "Kubernetes snapshot does not contain the expected Deployment",
+                    "read the target namespace with kubectl and verify the Deployment name before claiming rollout state",
+                    readback,
+                    actual,
+                );
+        }
+    };
+    let assessment = assess_k8s_rollout(deployment_value);
+    let actual = json!({
+        "artifact": snapshot.artifact,
+        "snapshot_format": "kubectl-deployment-json",
+        "namespace": identity.namespace,
+        "deployment": identity.deployment,
+        "deployment_found": true,
+        "expected_rollout_status": expected_status,
+        "rollout_completed": assessment.completed,
+        "failure_code": assessment.failure_code,
+        "failure_field_path": assessment.failure_field_path,
+        "failure_message": assessment.failure_message,
+        "generation": deployment_value["metadata"]["generation"].clone(),
+        "status": deployment_value["status"].clone(),
+    });
+    let readback = k8s_readback_payload("k8s_rollout_completed_v1", &source, operation, &actual);
+    if assessment.completed {
+        VerificationOutcome::passed(K8S_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            K8S_CONNECTOR_ID,
+            source,
+            assessment.failure_code.unwrap_or("K8S_ROLLOUT_NOT_COMPLETED"),
+            assessment
+                .failure_field_path
+                .unwrap_or("actual_readback.rollout_completed"),
+            assessment
+                .failure_message
+                .unwrap_or("Kubernetes Deployment rollout is not complete"),
+            "inspect the Deployment status.conditions and rerun after the rollout reaches Available=True and Progressing=True/NewReplicaSetAvailable",
             readback,
             actual,
         )

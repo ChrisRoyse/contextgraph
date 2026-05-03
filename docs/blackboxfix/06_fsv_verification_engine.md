@@ -62,7 +62,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2/3/9/10/11 verifier ids:
+Shipped Phase 2/3/9/10/11/20 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -82,6 +82,9 @@ Shipped Phase 2/3/9/10/11 verifier ids:
 | `scanner_vulnerability_absent_v1` | `scanner_artifact_v1` | OSV JSON report file | target vulnerability id/alias/group id is absent after optional package/ecosystem/version filters |
 | `scanner_lockfile_pinned_to_version_v1` | `scanner_artifact_v1` | Cargo lockfile | package exists and every matching lockfile package entry has the expected version |
 | `scanner_sbom_artifact_present_v1` | `scanner_artifact_v1` | CycloneDX JSON SBOM file | SBOM is valid CycloneDX JSON and contains enough components plus the expected component/version when supplied |
+| `k8s_deployment_image_digest_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | target Deployment/container exists and image is pinned to the expected `sha256` digest |
+| `k8s_replicas_match_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | spec/status replica counters match exact expected values |
+| `k8s_rollout_completed_v1` | `k8s_deployment_snapshot_v1` | kubectl Deployment JSON snapshot file | observed generation and Deployment conditions/counters prove rollout completion |
 | `blackbox_pilot_package_v1` | `blackbox_packaging_v1` | SQLite `ledger_records` + package files | package row id/hash/readback and manifest file hashes match |
 | `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
 | `blackbox_risk_assessment_v1` | `blackbox_risk_v1` | SQLite `ledger_records` | risk row id/hash/readback and accepted/blocked checks match physical ledger state |

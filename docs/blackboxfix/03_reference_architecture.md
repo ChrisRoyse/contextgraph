@@ -17,7 +17,7 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 18)
+## Concrete Layout (shipped through Phase 20)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
@@ -43,9 +43,10 @@ agent runtime
 | HTTP server | Authenticated loopback HTTP server, single-writer ledger path, tenant-scoped dashboard reads, request audit rows | `blackbox server serve` |
 | First-wedge demo package | Manifest-verified buyer-demo package over real Git/scanner/GitHub/GHA evidence and required failure demos | `blackbox demo first-wedge` |
 | Executable FSV certification | Validates captured FSV evidence against physical SQLite/file state and persists certification rows | `blackbox fsv certify` |
-| FSV harness | Phase 1-19 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Kubernetes deployment readback | Physical `kubectl get deployments.v1.apps -o json` snapshots for image digest, replica, and rollout verification | `k8s_deployment_snapshot_v1` |
+| FSV harness | Phase 1-20 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-19 is **not yet implemented**. Public multi-tenant
+Anything outside Phases 1-20 is **not yet implemented**. Public multi-tenant
 SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)
@@ -79,7 +80,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18/20)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -90,14 +91,14 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - GitHub PRs / checks / reviews / issues / deployments;
 - CI provider job and artifact state;
 - package scanners and SBOM outputs;
-- Kubernetes objects;
+- Kubernetes Deployment objects from physical JSON snapshots;
 - Terraform plan/apply state;
 - relational databases;
 - object storage;
 - ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15/16)
+### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15/16/20)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`

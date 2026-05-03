@@ -394,7 +394,7 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 19,
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 20,
 fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
@@ -981,6 +981,51 @@ Phase 19 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 13` for
 `full_state_verification`. The physical table shape is unchanged, but older
 schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
+
+## Phase 20: Kubernetes Deployment Verification — DONE (2026-05-03)
+
+Deliverables:
+
+- connector `k8s_deployment_snapshot_v1`;
+- connector test against a physical `kubectl get deployments.v1.apps -o json`
+  snapshot file;
+- verifiers `k8s_deployment_image_digest_v1`,
+  `k8s_replicas_match_v1`, and `k8s_rollout_completed_v1`;
+- strict parsing for `apps/v1` `Deployment` and `DeploymentList` JSON;
+- fail-closed errors for missing snapshot, invalid JSON, schema drift,
+  missing Deployment/container, unpinned images, digest mismatch, replica
+  mismatch, stale observed generation, failed rollout conditions, and
+  unsupported expected rollout states.
+
+Exit criteria (verified):
+
+- connector list/test exposes the Kubernetes connector and reads physical file
+  path, byte count, SHA-256, Deployment metadata/spec/status, containers, and
+  conditions;
+- image verification passes only when the target container image is pinned to
+  the exact expected OCI `sha256` digest;
+- replica verification requires exact expected spec/status counters;
+- rollout verification requires `Available=True`, `Progressing=True` with
+  `reason=NewReplicaSetAvailable`, no `ReplicaFailure=True`, current
+  observed generation, all desired replicas updated/ready/available, and zero
+  unavailable replicas;
+- failed mismatches persist `incident_packet` rows, while blocked schema
+  failures persist verifier/evidence rows without hiding the failure.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase20_k8s_deployment_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The test writes real kubectl-style JSON files,
+runs the real CLI, verifies happy image/replica/rollout paths, exercises
+missing Deployment, wrong digest, and invalid JSON edges, and reads the
+physical SQLite ledger to prove expected/readback/verifier/evidence/incident
+rows exist.
+
+Phase 20 adds no new ledger record kind and does not bump the physical schema;
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
 
 ## Phase Sequencing Rules
 

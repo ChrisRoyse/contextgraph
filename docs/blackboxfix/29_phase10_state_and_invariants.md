@@ -4,7 +4,7 @@ Phase 10 ships `scanner_artifact_v1`, the local artifact connector for
 vulnerability-remediation proof. It verifies scanner and dependency artifacts
 from physical files and persists proof in the existing SQLite ledger evidence
 path. There was no schema bump in Phase 10; `LEDGER_SCHEMA_VERSION` remained
-`5` then. The current live schema after Phase 19 is `13`.
+`5` then. The current live schema after Phase 20 is `13`.
 
 ## Source Of Truth
 

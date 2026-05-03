@@ -119,6 +119,26 @@ Design implication:
   dimensions and keep high-cardinality uniqueness in the idempotency
   identifier/source ref, not metric dimensions.
 
+### Kubernetes Deployment Status And Image Digests
+
+References:
+
+- <https://kubernetes.io/docs/reference/kubectl/generated/kubectl_get/>
+- <https://kubernetes.io/docs/concepts/workloads/controllers/deployment/>
+- <https://kubernetes.io/docs/concepts/containers/images/>
+- <https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/>
+
+Design implication:
+
+- Phase 20 uses physical `kubectl get deployments.v1.apps -o json` output as
+  the read path so verifier evidence is independent of apply/rollout command
+  return values;
+- image verification requires OCI `sha256` digests because Kubernetes
+  documents tags as movable while digests uniquely identify image content;
+- rollout verification reads Deployment `status.conditions`,
+  `observedGeneration`, and replica counters instead of treating CLI success
+  as proof of cluster state.
+
 ### Usage-Based Billing Meter Events
 
 References:

@@ -30,6 +30,7 @@ The mandatory operator-side protocol lives in
 | HTTP request audit rows (Phase 17) | real HTTP requests to `blackbox server serve`, physical SQLite business rows, and `http_request_audit` rows read independently after each request |
 | First-wedge demo package rows and files (Phase 18) | real Git/scanner/GitHub/GHA verifier evidence, physical SQLite `first_wedge_demo` rows, and demo package JSON/JSONL files read back from disk with manifest hashes |
 | Executable FSV certification rows and files (Phase 19) | physical SQLite state, SQLite `PRAGMA integrity_check`, FSV evidence JSON, declared artifact files, `full_state_verification` rows, and FSV package JSON/JSONL files read back from disk with manifest hashes |
+| Kubernetes Deployment snapshot files + ledger evidence rows (Phase 20) | physical kubectl-style JSON files and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 
 ## Test Levels
 
@@ -113,6 +114,11 @@ real FSV evidence against a real SQLite ledger and real artifact files,
 appends a `full_state_verification` row, verifies package manifest hashes,
 checks connector readback, and proves missing evidence, wrong post-state, bad
 artifact hash, and output-exists edges do not append certification rows.
+Phase 20 adds `tests/blackbox_phase20_k8s_deployment_fsv.rs`, which writes
+physical kubectl-style Deployment JSON snapshots, runs image digest, replica,
+and rollout verifiers, then reads SQLite directly to prove happy rows,
+missing Deployment incidents, wrong-digest incidents, and invalid JSON
+blocked evidence are all persisted.
 
 ## Acceptance Criteria
 

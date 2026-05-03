@@ -21,10 +21,12 @@ single-writer ledger path, tenant-scoped dashboard reads, and durable
 first executable buyer-demo package command, `first_wedge_demo` ledger rows,
 and manifest-verified demo artifacts. Phase 19 adds executable FSV
 certification, `full_state_verification` ledger rows, a provenance-shaped FSV
-package, and `blackbox_fsv_protocol_v1` connector readback.
+package, and `blackbox_fsv_protocol_v1` connector readback. Phase 20 adds
+Kubernetes Deployment snapshot verification through
+`k8s_deployment_snapshot_v1`.
 SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 19)
+## CLI (shipped Phase 20)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -49,6 +51,8 @@ blackbox connector test        --connector github_v1 --source OWNER/REPO
 blackbox connector test        --connector gha_v1 --source OWNER/REPO
 blackbox connector test        --connector gitlab_ci_v1 --source GROUP/PROJECT
 blackbox connector test        --connector scanner_artifact_v1 --source OSV_REPORT_JSON
+blackbox connector test        --connector k8s_deployment_snapshot_v1
+                               --source DEPLOYMENT_SNAPSHOT_JSON
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
@@ -534,7 +538,7 @@ package and durable `first_wedge_demo` rows.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 13 in Phase 19).
+- Ledger records include `schema_version` (= 13 in Phase 20).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -565,6 +569,10 @@ package and durable `first_wedge_demo` rows.
   record kind with `http_request_audit_schema_version = 1`.
 - Phase 18 bumps the ledger schema to 12 for the new `first_wedge_demo`
   record kind with `first_wedge_demo_schema_version = 1`.
+- Phase 19 bumps the ledger schema to 13 for the new
+  `full_state_verification` record kind.
+- Phase 20 does not bump the ledger schema. It reuses Phase 2-4 verifier and
+  evidence records for Kubernetes Deployment snapshot readbacks.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -572,7 +580,8 @@ package and durable `first_wedge_demo` rows.
   `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
   `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
   `blackbox_risk_v1`, `blackbox_http_server_v1`, and
-  `blackbox_first_wedge_demo_v1` today).
+  `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`, and
+  `k8s_deployment_snapshot_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -601,8 +610,12 @@ Concrete inputs and expected outputs live in
 `31_phase12_state_and_invariants.md`,
 `32_phase13_state_and_invariants.md`,
 `33_phase14_state_and_invariants.md`,
-`34_phase15_state_and_invariants.md`, and
-`35_phase16_state_and_invariants.md`. The automated equivalents are
+`34_phase15_state_and_invariants.md`,
+`35_phase16_state_and_invariants.md`,
+`36_phase17_state_and_invariants.md`,
+`37_phase18_state_and_invariants.md`,
+`38_phase19_state_and_invariants.md`, and
+`39_phase20_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -628,4 +641,12 @@ integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase15_pilot_package_fsv.rs`
 (1 local integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase16_risk_register_fsv.rs`
+(1 local integration test, PASS),
+`crates/context-graph-cli/tests/blackbox_phase17_http_server_fsv.rs`
+(1 local integration test, PASS),
+`crates/context-graph-cli/tests/blackbox_phase18_first_wedge_demo_fsv.rs`
+(1 local integration test, PASS),
+`crates/context-graph-cli/tests/blackbox_phase19_fsv_protocol_fsv.rs`
+(1 local integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase20_k8s_deployment_fsv.rs`
 (1 local integration test, PASS).

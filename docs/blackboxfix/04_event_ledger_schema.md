@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 19 Physical Schema (shipped)
+## Phase 20 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 13 in Phase 19
+  schema_version              INTEGER NOT NULL,   -- 13 in Phase 20
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-19 ship the following `record_kind` values. The remaining families
+Phases 1-20 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -333,6 +333,68 @@ SQLite ledger and physical artifact files. It fails closed unless:
   }
 }
 ```
+
+## Kubernetes Deployment Verification Rows (Phase 20, shipped)
+
+Phase 20 adds no new `record_kind`. It uses the existing verifier row family:
+
+- `expected_delta`
+- `readback_snapshot`
+- `verifier_result`
+- `evidence_packet`
+- `incident_packet` for failed mismatches
+
+The `readback_snapshot` row for `k8s_deployment_snapshot_v1` stores physical
+file readback and normalized Deployment state:
+
+```json
+{
+  "record_kind": "readback_snapshot",
+  "verifier_id": "k8s_rollout_completed_v1",
+  "source_of_truth": {
+    "kind": "k8s_deployment_snapshot_v1",
+    "locator": "k8s:/tmp/deployment-snapshot.json#deployment-snapshot"
+  },
+  "read_path": {
+    "connector_id": "k8s_deployment_snapshot_v1",
+    "operation": "read kubectl Deployment JSON snapshot",
+    "credential_key_id": null
+  },
+  "observed_state": {
+    "artifact": {
+      "path": "/tmp/deployment-snapshot.json",
+      "artifact_kind": "kubectl-deployment-json",
+      "exists": true,
+      "size_bytes": 1234,
+      "sha256": "sha256:..."
+    },
+    "namespace": "prod",
+    "deployment": "payments-api",
+    "rollout_completed": true,
+    "status": {
+      "observed_generation": 7,
+      "updated_replicas": 3,
+      "ready_replicas": 3,
+      "available_replicas": 3,
+      "unavailable_replicas": 0,
+      "conditions": [
+        {"type": "Available", "status": "True", "reason": "MinimumReplicasAvailable"},
+        {"type": "Progressing", "status": "True", "reason": "NewReplicaSetAvailable"}
+      ]
+    }
+  }
+}
+```
+
+The source snapshot must be produced by:
+
+```bash
+kubectl get deployments.v1.apps --namespace <namespace> -o json
+```
+
+The ledger remains append-only and hash-chained; Kubernetes verification
+success is proven only by persisted verifier/evidence rows plus a physical
+readback of the snapshot file.
 
 ## EnterpriseTenantConfig Payload (Phase 8, shipped)
 
