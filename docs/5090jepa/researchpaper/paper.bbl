@@ -105,7 +105,8 @@ Dongwon Jung, Wenxuan Zhou, and Muhao Chen.
 \bibitem{lecun2022path}
 Yann LeCun.
 \newblock A path towards autonomous machine intelligence.
-\newblock OpenReview / Meta AI position paper, 2022.
+\newblock OpenReview / Meta AI position paper.
+  \url{https://openreview.net/forum?id=BZ5a1r-kVsf}, 2022.
 
 \bibitem{lightman2023verify}
 Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy

@@ -111,12 +111,13 @@
   \noindent
   Joint-embedding predictive architectures (JEPA) learn to predict
   latent representations of the future instead of reconstructing
-  pixels or tokens. Most JEPA work focuses on representational
-  quality on natural images or video. This paper takes a different
-  angle: \emph{what does it take to make every step of a JEPA
-  runtime --- data ingest, panel materialization, action-conditioned
-  training, planning, surprise recording, and artifact provenance ---
-  physically auditable on a single commodity GPU?}\par\vspace{3pt}\noindent
+  pixels or tokens. Most JEPA work targets representational quality
+  on natural images or video. We ask a different question.
+  \emph{What does it take to make every step of a JEPA runtime
+  physically auditable on a single commodity GPU? Data ingest,
+  panel materialization, action-conditioned training, planning,
+  surprise recording, and artifact provenance, all of
+  it.}\par\vspace{3pt}\noindent
   %
   Dynamic / ME-JEPA is one Rust binary that does all of it. A new
   domain ships only as a TOML manifest. Every operation writes typed
@@ -168,30 +169,28 @@
 \section{Introduction}
 \label{sec:intro}
 
-Imagine that someone hands you a paper claiming a new latent
-world-model trains on a single GPU and beats baselines on a career-
-domain task. You want to reproduce it. You go through the motions:
-download the model weights, find the dataset (somewhere), spin up
-a few-machine cluster, hope your CUDA versions match, and then
-realize that the path from raw event $\to$ training row $\to$
-predictor weights $\to$ planning trace $\to$ verified output is not
-written down anywhere as a single deterministic pipeline. You can
-\emph{rerun} the model. You cannot \emph{prove} the entire pipeline
-behaves the way the paper says it does.
+Suppose a paper claims a new latent world-model trains on a single
+GPU and beats baselines on a career-domain task. You try to
+reproduce it. You download the weights, hunt down the dataset, spin
+up a few-machine cluster, hope your CUDA versions match, and then
+notice that the path from raw event $\to$ training row $\to$
+predictor weights $\to$ planning trace $\to$ verified output is
+nowhere written down as one deterministic pipeline. The model
+reruns. The pipeline does not get proven.
 
 That gap is the motivation for this work.
 
-This paper is \textbf{not} a representational-quality contribution
-to the JEPA family. The premise of latent prediction is taken as
-established \cite{assran2023ijepa,bardes2024vjepa,lecun2022path}.
-The question is one level up:
+This paper does not propose a new JEPA representation objective.
+The premise of latent prediction is taken as established
+\cite{assran2023ijepa,bardes2024vjepa,lecun2022path}. The question
+is one level up:
 \begin{quote}
 \itshape
-What would it take to make a complete latent world-model runtime ---
-data ingest, multi-instrument latent panel materialization,
+What would it take to make a complete latent world-model runtime
+physically auditable end-to-end on a single commodity GPU? Data
+ingest, multi-instrument latent panel materialization,
 action-conditioned training, planning, surprise recording, and
-artifact provenance --- physically auditable end-to-end on a single
-commodity GPU?
+artifact provenance, all auditable.
 \end{quote}
 
 \textbf{Dynamic / ME-JEPA} is one Rust binary that answers it.
@@ -220,35 +219,35 @@ than typical synthetic data because most of the bytes are
 deterministic functions of a public source rather than model
 outputs.
 
-\subsection{Why a Domain-Portable Runtime}
+\subsection{A Domain-Portable Runtime}
 
 The dominant pattern in JEPA papers is a representational claim
-backed by a custom training stack. Useful for the claim. Hard to
+backed by a custom training stack. Good for the claim, hard to
 extend. Each new domain rebuilds the audit and provenance
-infrastructure from scratch, if it builds them at all. The
-domain-pack abstraction in \S\ref{sec:method} makes that
+infrastructure from scratch, if it builds it at all. The
+domain-pack abstraction in \S\ref{sec:method} writes that
 infrastructure once and reuses it everywhere a TOML manifest can
 be written.
 
-\subsection{Why a Public-Taxonomy Career Benchmark}
+\subsection{A Public-Taxonomy Career Benchmark}
 
-The career-domain has the property that data pipelines benefit from
-provenance recorded inline, even when the model is small. O*NET
-30.2 is the canonical public occupation taxonomy in the United
-States, distributed under CC BY 4.0 with explicit attribution
-requirements. Constructing a benchmark that walks O*NET's related-
-occupation graph deterministically gives a substrate where every
-generated transition can be traced back to a public source row by
-SHA-256 hash. Section~\ref{sec:bench} specifies the benchmark.
+Career data pipelines benefit from provenance recorded inline, even
+when the model is small. O*NET 30.2 is the canonical public
+occupation taxonomy in the United States, distributed under CC BY
+4.0 with explicit attribution requirements. A benchmark that walks
+O*NET's related-occupation graph deterministically yields a
+substrate where every generated transition traces back to a public
+source row by SHA-256 hash. Section~\ref{sec:bench} specifies the
+benchmark.
 
-\subsection{Why Single-GPU Feasibility}
+\subsection{Single-GPU Feasibility}
 
 Restricting compute to a single host does two useful things at
-once. It removes the "hidden cluster" reproduction barrier that
-makes most public ML results expensive to verify, and it forces
-training-budget honesty: a five-seed paper-small ladder plus
-container build plus container verify plus manual edge-case audits
-fits in roughly two hours of wall time on the RTX 5090 used here.
+once. The ``hidden cluster'' reproduction barrier that makes most
+public ML results expensive to verify is gone. Training-budget
+honesty is forced: a five-seed paper-small ladder, plus container
+build, plus container verify, plus manual edge-case audits, fits in
+roughly two hours of wall time on the RTX 5090 used here.
 
 \subsection{Contributions}
 
@@ -297,10 +296,10 @@ In order:
 \subsection{Scope}
 
 The trained models are deliberately small: $480$, $16{,}960$, and
-$15{,}344$ trainable parameters. The point is not "small model
-beats large model"; it is that every stage of a portable JEPA
-system can be physically verified on commodity hardware, and that
-this verification produces a structured corpus as a side effect.
+$15{,}344$ trainable parameters. The claim being made here is
+about verifiability, not scale. Every stage of a portable JEPA
+system can be physically verified on commodity hardware, and the
+verification itself produces a structured corpus.
 
 % ============================================================================
 \section{Related Work}
@@ -326,20 +325,21 @@ training-stability and modality-coverage axes: LeWorldModel
 JEPA training from raw pixels with a single regularizer, and
 VL-JEPA \cite{chen2026vljepa} extends the predictive-latent
 formulation to vision-language with parameter-efficiency gains
-over token-space objectives. The Dynamic / ME-JEPA contribution
-is orthogonal to both: it does not propose a new representation
-objective, and instead asks what infrastructure is required to
-make a complete JEPA runtime --- including data, training,
-planning, and provenance --- physically auditable end-to-end.
+over token-space objectives. The Dynamic / ME-JEPA contribution is
+orthogonal to both. We do not propose a new representation
+objective, and instead ask what infrastructure is required to make
+a complete JEPA runtime physically auditable end-to-end, including
+data, training, planning, and provenance.
 
-The Dynamic / ME-JEPA architectural change is in \emph{how target
-representations are sourced}: instead of an exponential-moving-
-average target encoder, ME-JEPA uses a panel of frozen, externally-
-defined per-domain instruments declared by the domain pack
-(\S\ref{sec:method}). The narrower claim is that external frozen
-targets eliminate target-encoder collapse but \emph{do not}
-eliminate predictor degeneracy --- so VICReg-style diagnostics
-\cite{bardes2022vicreg} and explicit ablations are still required.
+The Dynamic / ME-JEPA architectural change is in how target
+representations are sourced. Instead of an exponential-moving-
+average target encoder, ME-JEPA uses a panel of frozen,
+externally-defined per-domain instruments declared by the domain
+pack (\S\ref{sec:method}). The narrower claim is that external
+frozen targets eliminate target-encoder collapse but do not
+eliminate predictor degeneracy, so VICReg-style diagnostics
+\cite{bardes2022vicreg} and explicit ablations are still
+required.
 
 Self-supervised pre-cursors that inform the regularization choices:
 BYOL \cite{grill2020byol} (asymmetric online/target with
@@ -374,24 +374,24 @@ public occupation taxonomy used here, currently at release 30.2,
 distributed under CC BY 4.0. The European Skills, Competences,
 Qualifications and Occupations classification (ESCO)
 \cite{esco2025} is the EU counterpart and a planned cross-walk
-replication source. Recent career-trajectory dataset papers ---
-KARRIEREWEGE \cite{senger2024karrierewege} and JobHop
-\cite{johary2025jobhop} --- are relevant as future extensions; the
-only ingested source in the present runtime is O*NET 30.2.
+replication source. Recent career-trajectory dataset papers including KARRIEREWEGE
+\cite{senger2024karrierewege} and JobHop \cite{johary2025jobhop}
+are relevant as future extensions. The only ingested source in the
+present runtime is O*NET 30.2.
 
 \subsection{Auditable ML Systems}
 
 The runtime's evidence-bundle design is informed by MLflow Tracking
 \cite{mlflow2024} (run, experiment, artifact, metric lineage). The
-reproducibility ladder --- pinned base image digest, deterministic
-build, deterministic tar export, container DOI --- follows
-Docker reproducible-build guidance \cite{docker2025reproducible} and
-Apptainer SIF-from-docker-archive guidance
-\cite{apptainer2025buildsif}. PyTorch's reproducibility notes
-\cite{pytorch2026reproducibility} are inherited as a caveat: exact
+reproducibility ladder follows Docker reproducible-build guidance
+\cite{docker2025reproducible} and Apptainer
+SIF-from-docker-archive guidance \cite{apptainer2025buildsif}: a
+pinned base image digest, a deterministic build, a deterministic
+tar export, and a container DOI. PyTorch's reproducibility notes
+\cite{pytorch2026reproducibility} are inherited as a caveat. Exact
 GPU result reproducibility across releases or platforms is not
-guaranteed; cross-run comparisons therefore use structural plus
-tolerance checks, not byte-equal model-file diffs.
+guaranteed, so cross-run comparisons use structural and tolerance
+checks rather than byte-equal model-file diffs.
 
 \subsection{Synthetic Data, Model Collapse, Process Supervision}
 
@@ -403,10 +403,9 @@ irreversible loss of distribution tails and eventual convergence to
 a degenerate distribution \cite{shumailov2023curse,
 shumailov2024nature}. Gerstgrasser et al.\
 \cite{gerstgrasser2024accumulate} subsequently showed that
-\emph{accumulating} real and synthetic data avoids the collapse
-pattern that \emph{replacement} triggers --- distinguishing the
-dangerous recursion-with-replacement case from the safer
-accumulation case.
+accumulating real and synthetic data avoids the collapse pattern
+that replacement triggers. The dangerous recursion-with-replacement
+case is distinct from the safer accumulation case.
 
 In parallel, the highest-quality synthetic reasoning corpora have
 moved away from pure LLM generation toward verifier-grounded data:
@@ -743,9 +742,9 @@ and fails closed if any of these invariants fail:
 \begin{itemize}
 \item archive entry count = 42, file count = 41;
 \item root prefix = \code{db\_30\_2\_text/};
-\item release marker text "O*NET 30.2 Database" present;
-\item license marker "Creative Commons Attribution 4.0
-      International License" present;
+\item release marker text ``O*NET 30.2 Database'' present;
+\item license marker ``Creative Commons Attribution 4.0
+      International License'' present;
 \item per-file row counts: \code{Occupation Data.txt} = 1{,}016,
       \code{Job Zones.txt} = 923, \code{Skills.txt} = 62{,}580,
       \code{Related Occupations.txt} = 18{,}460;
@@ -1043,39 +1042,38 @@ replacement collapse risk.
 The current consensus on training-data quality and model-collapse
 risk has four operative categories.
 \begin{enumerate}[leftmargin=1.2em]
-\item \textbf{Real source data} --- text, images, audio, structured
-      records captured from human or natural processes. The
-      substrate against which collapse is measured.
-\item \textbf{Pure model-generated synthetic data} --- outputs of
-      a generative model fed back as training data with no external
-      validator. Shumailov et al.\
+\item Real source data: text, images, audio, structured records
+      captured from human or natural processes. The substrate
+      against which collapse is measured.
+\item Pure model-generated synthetic data: outputs of a generative
+      model fed back as training data with no external validator.
+      Shumailov et al.\
       \cite{shumailov2023curse,shumailov2024nature} showed that
       this pattern, under recursive replacement, irreversibly
       removes distribution tails.
-\item \textbf{Verifier-grounded synthetic data} --- model outputs
-      filtered by an external validator (math checker, unit test,
-      physics envelope, step-level human label). Process
-      supervision and the PRM800K corpus
-      \cite{lightman2023verify}, code-execution-grounded
-      supervision \cite{jung2025codeexec}, SYNTHETIC-1
-      \cite{primeintellect2025synthetic1}, and Enigmata
-      \cite{seed2025enigmata} sit here.
-\item \textbf{Process-trace data anchored to a deterministic system
-      over real source} --- execution traces, code-execution-
-      grounded supervision, world-model rollouts, and other
-      settings where the bytes of the dataset are deterministic
-      functions of a real source plus a runtime, with model outputs
-      forming only a small slice of the record and paired with
-      independent verification.
+\item Verifier-grounded synthetic data: model outputs filtered by
+      an external validator (math checker, unit test, physics
+      envelope, step-level human label). Process supervision and
+      the PRM800K corpus \cite{lightman2023verify},
+      code-execution-grounded supervision \cite{jung2025codeexec},
+      SYNTHETIC-1 \cite{primeintellect2025synthetic1}, and
+      Enigmata \cite{seed2025enigmata} sit here.
+\item Process-trace data anchored to a deterministic system over
+      real source: execution traces, code-execution-grounded
+      supervision, world-model rollouts, and other settings where
+      the bytes of the dataset are deterministic functions of a
+      real source plus a runtime, with model outputs forming only a
+      small slice of the record and paired with independent
+      verification.
 \end{enumerate}
 
 The collapse-vs-retain distinction matters: Gerstgrasser et al.\
 \cite{gerstgrasser2024accumulate} showed that even with the same
 generators, accumulating synthetic data alongside real data avoids
 the collapse Shumailov demonstrated for replacement. The pattern
-that breaks generative models is not "synthetic" per se; it is
-recursive replacement of real distributions by model-induced
-distributions.
+that breaks generative models is recursive replacement of real
+distributions by model-induced distributions, not synthetic data
+as such.
 
 \subsection{Anatomy of a Bundle as Training Signal}
 
@@ -1134,11 +1132,11 @@ Rejection sampling \emph{throws away} the negative samples; the
 data the next-generation model sees is the validator-passing slice
 only, which is precisely how the distribution narrows over
 iterations even with a validator. ME-JEPA bundles persist the
-failures (the seed-43 / seed-45 ablation failures, the rc1
-missing-binary release-candidate failure, the A3 negative-control
-ablation that deliberately collapses to validation cosine 0.790).
-Failures are not noise; they are the tail of the distribution
-preserved by construction.
+failures (the seed-43 and seed-45 ablation failures, the
+v1.0.0-rc1 missing-binary release-candidate failure, and the A3
+negative-control ablation that deliberately collapses to validation
+cosine 0.790). Failures are not noise. They are the tail of the
+distribution, preserved by construction.
 
 \begin{table*}[t]
 \caption{Properties of ME-JEPA bundles relative to existing
@@ -1164,10 +1162,10 @@ Recursion-replace risk               & n/a  & high  & med-low    & low          
 
 \subsection{Collapse-Hazard Analysis}
 
-For the dangerous sense of model collapse --- the
+For the dangerous sense of model collapse, the
 Shumailov / Curse-of-Recursion phenomenon in which recursively
 generated content displaces real source data and the resulting
-model loses distribution tails --- ME-JEPA bundles have a
+model loses distribution tails, ME-JEPA bundles have a
 substantially lower hazard than typical synthetic data. Three
 reasons.
 
@@ -1240,7 +1238,7 @@ Ranked by where it would be worth investing first:
 \subsection{What This Data Class Is \emph{Not} Useful For}
 
 A bundle teaches the runtime's behavior on a bounded slice of
-O*NET, not "careers." Specifically: not for general world
+O*NET, not careers in general. Specifically: not for general world
 knowledge (218 selected occupations, 4 clusters, 5 actions); not
 for continuous-time or fine-grained temporal dynamics (events are
 step-indexed integers); not for modalities outside the declared
@@ -1300,9 +1298,9 @@ biases while preserving the data class's strengths:
 
 The result is a downstream model that has learned to operate the
 audit-aware runtime: predict, plan, guard, log, verify, fail
-closed, and emit typed errors with field paths --- a skill set
-orthogonal to general world knowledge and currently under-
-represented in public training corpora.
+closed, and emit typed errors with field paths. That skill set is
+orthogonal to general world knowledge and currently
+under-represented in public training corpora.
 
 % ============================================================================
 \section{Results}
@@ -1332,10 +1330,10 @@ confidence 0.95. Career-taxonomy headline:
 \end{itemize}
 
 The trained predictor's BCa lower bound for validation cosine
-$(0.861)$ exceeds the shuffled-target's BCa upper bound
-$(0.838)$ by $0.023$ --- the BCa CIs do not overlap. Random-init's
-BCa upper $(0.370)$ is far below the trained model's BCa lower
-$(0.861)$; this is a clean positive-versus-random comparison.
+$(0.861)$ exceeds the shuffled-target's BCa upper bound $(0.838)$
+by $0.023$. The two BCa CIs do not overlap. Random-init's BCa
+upper $(0.370)$ is far below the trained model's BCa lower
+$(0.861)$, which is a clean positive-versus-random comparison.
 
 For the two sanity domains: \code{counter\_world} reaches
 validation / test cosine $0.99963$ / $0.99916$ at 480 trainable
@@ -1424,8 +1422,8 @@ generalization gap (test cosine $= 0.868$) is the most relevant
 downstream signal.
 
 \textbf{A4 (pairwise features added) improves test cosine} from
-A2's $0.897$ to $0.927$ --- the largest test-set gain in the
-matrix --- at the cost of $1{,}280$ additional parameters
+A2's $0.897$ to $0.927$. That is the largest test-set gain in the
+matrix, at the cost of $1{,}280$ additional parameters
 ($16{,}688$ vs $15{,}408$).
 
 \textbf{A5 (VICReg removed) does not collapse} validation cosine
@@ -1443,10 +1441,10 @@ sign assignments. The smallest possible two-sided $p$ at $n=5$ is
 $2/32 = 0.0625$, which sits above the conventional
 $\alpha=0.05$ threshold.
 Per the protocol, deltas are reported with BCa CI and explicit
-sign-flip $p$ rather than as "significantly different".
+sign-flip $p$ rather than as ``significantly different''.
 
-The economically meaningful comparison --- A3 vs A0 on validation
-cosine --- has mean delta $-0.18549$, BCa CI identically
+The economically meaningful comparison, A3 vs A0 on validation
+cosine, has mean delta $-0.18549$, BCa CI identically
 \([-0.18549, -0.18549]\), sign-flip $p = 0.0625$. The largest delta
 in the matrix and the one most directly tied to the design
 hypothesis (action conditioning matters).
@@ -1458,10 +1456,10 @@ verification domains, $11$ edge cases, $6$ ablations. Paper-small
 (1{,}000 events): per-seed runs bounded by training; the
 integration FSV suite passes in $190.92$~s. Release-C gate
 (5 seeds + aggregate + container build + container verify + manual
-edges): $\sim$2 hours wall time. Peak VRAM is far below the
-RTX~5090's $32$~GiB --- the trainer's working set never exceeds
-$\sim$8~GiB during career-taxonomy training. Headline numbers are
-time- and quality-bound, not memory-bound.
+edges): $\sim$2 hours wall time. Peak VRAM is far below the RTX~5090's
+$32$~GiB. The trainer's working set never exceeds $\sim$8~GiB
+during career-taxonomy training. Headline numbers are time- and
+quality-bound, not memory-bound.
 
 \subsection{Failed Runs as Evidence}
 
@@ -1606,8 +1604,9 @@ licenses (\code{data\_manifest.json}); compute budget
 \item Twenty-five RocksDB column families plus an append-only
       audit log capture every persistent state; readbacks are a
       separate code path.
-\item Action-conditioned latent prediction is verifiable end-to-
-      end on a single RTX 5090 in under two hours of wall time.
+\item Action-conditioned latent prediction is verifiable
+      end-to-end on a single RTX 5090 in under two hours of wall
+      time.
 \item Multi-seed BCa CIs and paired sign-flip permutation tests
       are reported uniformly; every paper-cited number reads from
       a CSV in the aggregate bundle, not a hand-typed cell.
@@ -1686,7 +1685,7 @@ comparisons use tolerance-based comparison.
 The paired sign-flip permutation test floor at $n=5$ is
 $p = 2/32 = 0.0625$, above the conventional $\alpha=0.05$
 threshold. Deltas are therefore reported with BCa CI and explicit
-sign-flip $p$ rather than as "significantly different". A sample-
+sign-flip $p$ rather than as ``significantly different''. A sample-
 size increase to $n=6$ would lower the floor to $p = 0.03125$ and
 resolve the threshold.
 
@@ -1699,8 +1698,8 @@ across-ablations comparison is the informative one.
 
 A0--A5 are each compared against A0; A$_i$ vs A$_j$ for
 $i,j \neq 0$ are not multiple-tested. The paper-safe consequence
-is that no claim is made of "A$_i$ significantly outperforms
-A$_j$" for $i,j \neq 0$.
+is that no claim is made of ``A$_i$ significantly outperforms
+A$_j$'' for $i,j \neq 0$.
 
 \subsection{Data}
 
