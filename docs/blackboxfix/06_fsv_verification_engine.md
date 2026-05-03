@@ -19,7 +19,10 @@ Phase 15 shipped pilot packaging verification over physical ledger rows and
 package files, including usage-meter and eval-candidate JSONL readback.
 Phase 16 shipped risk/open-question assessment over physical ledger rows,
 SQLite runtime PRAGMAs, package evidence, incident/eval conversion state, and
-a required decision-register JSON file.
+a required decision-register JSON file. Phase 20 shipped Kubernetes Deployment
+snapshot verification, Phase 21 shipped Terraform/cloud artifact verification,
+and Phase 22 shipped ticketing artifact verification for Jira, Linear, and
+ServiceNow.
 
 ## Full-State Verification Protocol
 
@@ -49,7 +52,7 @@ lives. Examples:
 - Kubernetes API for cluster objects;
 - Terraform plan/state artifacts plus normalized cloud inventory/audit
   artifacts for infrastructure;
-- ticketing API for issue state.
+- ticketing API artifacts for issue state;
 - package output files for pilot reports, usage meters, eval candidates, and
   manifests.
 - decision-register JSON files for required risk/open-question closure.
@@ -63,7 +66,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2/3/9/10/11/20 verifier ids:
+Shipped Phase 2/3/9/10/11/20/21/22 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -90,6 +93,9 @@ Shipped Phase 2/3/9/10/11/20 verifier ids:
 | `tf_state_attribute_v1` | `terraform_cloud_artifact_v1` | Terraform state JSON from `terraform show -json` | target resource address exists and a non-sensitive attribute path equals the expected JSON value |
 | `cloud_resource_present_v1` | `terraform_cloud_artifact_v1` | normalized cloud inventory JSON | target provider/type/id/region exists and required attributes match exactly |
 | `cloud_audit_principal_action_v1` | `terraform_cloud_artifact_v1` | normalized cloud audit JSONL | at least one event proves the expected principal/action/resource/outcome |
+| `jira_ticket_state_v1` | `ticketing_artifact_v1` | Jira REST issue/search JSON artifact | exact issue key exists, `fields.status.name` equals expected status, and optional evidence URL is present |
+| `linear_ticket_state_v1` | `ticketing_artifact_v1` | Linear GraphQL issue JSON artifact | exact issue identifier exists, `state.name` equals expected state, and optional evidence URL is present |
+| `servicenow_ticket_state_v1` | `ticketing_artifact_v1` | ServiceNow Table API record/list JSON artifact | exact record number exists, state display/value equals expected state, and optional evidence URL is present |
 | `blackbox_pilot_package_v1` | `blackbox_packaging_v1` | SQLite `ledger_records` + package files | package row id/hash/readback and manifest file hashes match |
 | `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
 | `blackbox_risk_assessment_v1` | `blackbox_risk_v1` | SQLite `ledger_records` | risk row id/hash/readback and accepted/blocked checks match physical ledger state |

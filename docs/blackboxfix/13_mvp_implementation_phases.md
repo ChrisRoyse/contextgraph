@@ -75,8 +75,8 @@ Deliverables (all shipped):
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
-  **wiped** the ledger — no migration shim; current shipped schema is v8 after
-  Phase 14).
+  **wiped** the ledger — no migration shim; current shipped schema is v13
+  after Phase 19).
 
 Exit criteria (verified):
 
@@ -394,7 +394,7 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 21,
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 22,
 fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
@@ -1076,6 +1076,54 @@ reads the physical SQLite ledger to prove expected/readback/verifier/evidence/
 incident rows exist.
 
 Phase 21 adds no new ledger record kind and does not bump the physical schema;
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+
+## Phase 22: Ticketing Artifact Verification — DONE (2026-05-03)
+
+Deliverables:
+
+- connector `ticketing_artifact_v1`;
+- connector test against a physical Jira REST issue/search JSON artifact,
+  Linear GraphQL issue JSON artifact, or ServiceNow Table API record JSON
+  artifact;
+- verifiers `jira_ticket_state_v1`, `linear_ticket_state_v1`, and
+  `servicenow_ticket_state_v1`;
+- strict parsing for documented Jira issue/search shapes, Linear GraphQL
+  issue/nodes/edges shapes, and ServiceNow `result` record/list shapes;
+- exact ticket identity/status checks plus optional exact evidence URL
+  verification across all string fields in the captured API artifact;
+- fail-closed errors for missing artifacts, invalid JSON, schema drift,
+  unsupported source formats, duplicate ticket identities, missing tickets,
+  status mismatches, and missing evidence links.
+
+Exit criteria (verified):
+
+- connector list/test exposes the ticketing connector and reads physical file
+  path, byte count, SHA-256, normalized provider, ticket identity, status,
+  assignee, update time, URL, and evidence links;
+- Jira verification passes only when `fields.status.name` for the exact issue
+  key matches the expected status and the optional evidence URL is present;
+- Linear verification passes only when `state.name` for the exact issue
+  identifier matches the expected state and the optional evidence URL is
+  present;
+- ServiceNow verification passes only when the exact record number has the
+  expected state display/value and the optional evidence URL is present;
+- failed mismatches persist `incident_packet` rows, while blocked schema
+  failures persist verifier/evidence rows without hiding the failure.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase22_ticketing_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The test writes real Jira, Linear, and
+ServiceNow-shaped JSON artifacts, runs the real CLI, verifies happy Jira,
+Linear, and ServiceNow ticket state paths, exercises missing ticket, wrong
+state, and invalid JSON edges, and reads the physical SQLite ledger to prove
+expected/readback/verifier/evidence/incident rows exist.
+
+Phase 22 adds no new ledger record kind and does not bump the physical schema;
 current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
 
 ## Phase Sequencing Rules

@@ -25,10 +25,11 @@ package, and `blackbox_fsv_protocol_v1` connector readback. Phase 20 adds
 Kubernetes Deployment snapshot verification through
 `k8s_deployment_snapshot_v1`. Phase 21 adds Terraform plan/state, cloud
 inventory, and cloud audit artifact verification through
-`terraform_cloud_artifact_v1`.
+`terraform_cloud_artifact_v1`. Phase 22 adds Jira, Linear, and ServiceNow
+ticketing artifact verification through `ticketing_artifact_v1`.
 SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 21)
+## CLI (shipped Phase 22)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -57,6 +58,8 @@ blackbox connector test        --connector k8s_deployment_snapshot_v1
                                --source DEPLOYMENT_SNAPSHOT_JSON
 blackbox connector test        --connector terraform_cloud_artifact_v1
                                --source TERRAFORM_PLAN_JSON
+blackbox connector test        --connector ticketing_artifact_v1
+                               --source TICKETING_API_JSON
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
@@ -542,7 +545,7 @@ package and durable `first_wedge_demo` rows.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 13 in Phase 21).
+- Ledger records include `schema_version` (= 13 in Phase 22).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -579,6 +582,8 @@ package and durable `first_wedge_demo` rows.
   evidence records for Kubernetes Deployment snapshot readbacks.
 - Phase 21 does not bump the ledger schema. It reuses Phase 2-4 verifier and
   evidence records for Terraform/cloud artifact readbacks.
+- Phase 22 does not bump the ledger schema. It reuses Phase 2-4 verifier and
+  evidence records for ticketing artifact readbacks.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -586,8 +591,9 @@ package and durable `first_wedge_demo` rows.
   `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
   `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
   `blackbox_risk_v1`, `blackbox_http_server_v1`, and
-  `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`, and
-  `k8s_deployment_snapshot_v1`, and `terraform_cloud_artifact_v1` today).
+  `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`,
+  `k8s_deployment_snapshot_v1`, `terraform_cloud_artifact_v1`, and
+  `ticketing_artifact_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -621,8 +627,9 @@ Concrete inputs and expected outputs live in
 `36_phase17_state_and_invariants.md`,
 `37_phase18_state_and_invariants.md`,
 `38_phase19_state_and_invariants.md`,
-`39_phase20_state_and_invariants.md`, and
-`40_phase21_state_and_invariants.md`. The automated equivalents are
+`39_phase20_state_and_invariants.md`,
+`40_phase21_state_and_invariants.md`, and
+`41_phase22_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -658,4 +665,6 @@ integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase20_k8s_deployment_fsv.rs`
 (1 local integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase21_terraform_cloud_fsv.rs`
+(1 local integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase22_ticketing_fsv.rs`
 (1 local integration test, PASS).

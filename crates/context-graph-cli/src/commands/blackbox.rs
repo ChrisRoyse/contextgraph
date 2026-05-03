@@ -49,6 +49,7 @@ const GITLAB_CI_CONNECTOR_ID: &str = "gitlab_ci_v1";
 const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
 const K8S_CONNECTOR_ID: &str = "k8s_deployment_snapshot_v1";
 const TF_CLOUD_CONNECTOR_ID: &str = "terraform_cloud_artifact_v1";
+const TICKETING_CONNECTOR_ID: &str = "ticketing_artifact_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
@@ -2950,6 +2951,21 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": TICKETING_CONNECTOR_ID,
+                "source_kind": "ticketing_artifact",
+                "readback_specs": [
+                    "jira_ticket_state_v1",
+                    "linear_ticket_state_v1",
+                    "servicenow_ticket_state_v1"
+                ],
+                "artifact_formats": [
+                    "jira-rest-api-issue-json",
+                    "linear-graphql-issue-json",
+                    "servicenow-table-api-record-json"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -3214,6 +3230,25 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": TF_CLOUD_CONNECTOR_ID,
                 "source_of_truth": tf_source_of_truth(&args.source, "plan"),
+                "readback": readback,
+            }))
+        }
+        TICKETING_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    TICKETING_CONNECTOR_ID,
+                    ticketing_source_of_truth(&args.source, "artifact"),
+                    "--command",
+                    "ticketing_artifact_v1 connector test does not accept --command",
+                    "remove --command and pass a captured ticketing API JSON artifact path through --source",
+                ));
+            }
+            let readback = ticketing_connector_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": TICKETING_CONNECTOR_ID,
+                "source_of_truth": ticketing_source_of_truth(&args.source, "artifact"),
                 "readback": readback,
             }))
         }
@@ -4280,6 +4315,22 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
                 "tf_state_attribute_v1",
                 "cloud_resource_present_v1",
                 "cloud_audit_principal_action_v1"
+            ],
+            "fail_closed": true
+        },
+        "phase22_ticketing_verification": {
+            "command": "blackbox verify --ledger PATH --input ticketing-verify-spec.json",
+            "connector": TICKETING_CONNECTOR_ID,
+            "record_kinds": ["expected_delta", "readback_snapshot", "verifier_result", "evidence_packet", "incident_packet"],
+            "source_artifacts": [
+                "Jira REST issue JSON",
+                "Linear GraphQL issue JSON",
+                "ServiceNow Table API record JSON"
+            ],
+            "verifiers": [
+                "jira_ticket_state_v1",
+                "linear_ticket_state_v1",
+                "servicenow_ticket_state_v1"
             ],
             "fail_closed": true
         },
@@ -19979,6 +20030,12 @@ impl VerifySpec {
                 Path::new(optional_str(&self.source, "audit_log").unwrap_or("")),
                 "audit-log",
             ),
+            "jira_ticket_state_v1" | "linear_ticket_state_v1" | "servicenow_ticket_state_v1" => {
+                ticketing_source_of_truth(
+                    Path::new(optional_str(&self.source, "ticket").unwrap_or("")),
+                    "ticket",
+                )
+            }
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -20027,6 +20084,9 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
         "tf_state_attribute_v1" => verify_tf_state_attribute(spec),
         "cloud_resource_present_v1" => verify_cloud_resource_present(spec),
         "cloud_audit_principal_action_v1" => verify_cloud_audit_principal_action(spec),
+        "jira_ticket_state_v1" => verify_jira_ticket_state(spec),
+        "linear_ticket_state_v1" => verify_linear_ticket_state(spec),
+        "servicenow_ticket_state_v1" => verify_servicenow_ticket_state(spec),
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
@@ -20784,6 +20844,10 @@ fn tf_source_of_truth(path: &Path, locator: &str) -> String {
 
 fn cloud_source_of_truth(path: &Path, locator: &str) -> String {
     format!("cloud:{}#{locator}", path.display())
+}
+
+fn ticketing_source_of_truth(path: &Path, locator: &str) -> String {
+    format!("ticketing:{}#{locator}", path.display())
 }
 
 #[derive(Debug)]
@@ -25592,6 +25656,810 @@ fn verify_cloud_audit_principal_action(spec: &VerifySpec) -> VerificationOutcome
             actual,
         )
     }
+}
+
+#[derive(Debug)]
+struct TicketingArtifactState {
+    path: PathBuf,
+    artifact_kind: &'static str,
+    exists: bool,
+    size_bytes: Option<usize>,
+    sha256: Option<String>,
+    bytes: Option<Vec<u8>>,
+}
+
+impl TicketingArtifactState {
+    fn base_json(&self) -> Value {
+        json!({
+            "path": self.path.display().to_string(),
+            "artifact_kind": self.artifact_kind,
+            "exists": self.exists,
+            "size_bytes": self.size_bytes,
+            "sha256": self.sha256,
+            "read_at": Utc::now().to_rfc3339(),
+        })
+    }
+}
+
+fn ticketing_file_state(
+    path: &Path,
+    artifact_kind: &'static str,
+    source: &str,
+    field_path: &'static str,
+) -> Result<TicketingArtifactState, VerificationOutcome> {
+    if path.as_os_str().is_empty() {
+        return Err(VerificationOutcome::blocked(
+            TICKETING_CONNECTOR_ID,
+            source.to_string(),
+            "TICKETING_ARTIFACT_PATH_MISSING",
+            field_path,
+            format!("{field_path} must be a non-empty ticketing API artifact path"),
+            "capture the ticketing API readback JSON and pass its exact path",
+            None,
+        ));
+    }
+    if path.exists() && !path.is_file() {
+        return Err(VerificationOutcome::blocked(
+            TICKETING_CONNECTOR_ID,
+            source.to_string(),
+            "TICKETING_ARTIFACT_NOT_FILE",
+            field_path,
+            format!(
+                "ticketing artifact path {} is not a regular file",
+                path.display()
+            ),
+            "pass the exact ticketing API JSON artifact file path, not a directory or special file",
+            None,
+        ));
+    }
+    if !path.exists() {
+        return Ok(TicketingArtifactState {
+            path: path.to_path_buf(),
+            artifact_kind,
+            exists: false,
+            size_bytes: None,
+            sha256: None,
+            bytes: None,
+        });
+    }
+    let bytes = fs::read(path).map_err(|err| {
+        VerificationOutcome::blocked(
+            TICKETING_CONNECTOR_ID,
+            source.to_string(),
+            "TICKETING_ARTIFACT_READ_FAILED",
+            field_path,
+            format!(
+                "failed to read ticketing artifact {}: {err}",
+                path.display()
+            ),
+            "fix filesystem permissions and rerun verification",
+            None,
+        )
+    })?;
+    Ok(TicketingArtifactState {
+        path: path.to_path_buf(),
+        artifact_kind,
+        exists: true,
+        size_bytes: Some(bytes.len()),
+        sha256: Some(sha256_hex(&bytes)),
+        bytes: Some(bytes),
+    })
+}
+
+fn ticketing_readback_payload(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        TICKETING_CONNECTOR_ID,
+        source,
+        operation,
+        actual.clone(),
+    )
+}
+
+fn ticketing_schema_blocked(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+    actual: Value,
+) -> VerificationOutcome {
+    let readback = ticketing_readback_payload(verifier_id, source, operation, &actual);
+    VerificationOutcome::blocked(
+        TICKETING_CONNECTOR_ID,
+        source.to_string(),
+        error_code,
+        field_path,
+        message,
+        remediation,
+        Some(readback),
+    )
+}
+
+fn parse_ticketing_json(
+    state: &TicketingArtifactState,
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    field_path: &'static str,
+) -> Result<Value, VerificationOutcome> {
+    let bytes = state
+        .bytes
+        .as_ref()
+        .expect("parse_ticketing_json called only for existing artifacts");
+    serde_json::from_slice(bytes).map_err(|err| {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "parse_error": err.to_string(),
+        });
+        ticketing_schema_blocked(
+            verifier_id,
+            source,
+            operation,
+            field_path,
+            "TICKETING_ARTIFACT_JSON_INVALID",
+            format!("ticketing API artifact JSON could not be parsed: {err}"),
+            "write valid JSON captured from the ticketing API and rerun verification",
+            actual,
+        )
+    })
+}
+
+fn ticketing_connector_error_from_outcome(outcome: VerificationOutcome) -> BlackboxError {
+    BlackboxError::connector_blocked(
+        outcome
+            .error_code
+            .unwrap_or("TICKETING_ARTIFACT_READ_FAILED"),
+        TICKETING_CONNECTOR_ID,
+        outcome.source_of_truth,
+        outcome.field_path.unwrap_or_else(|| "--source".to_string()),
+        outcome
+            .message
+            .unwrap_or_else(|| "ticketing artifact readback failed".to_string()),
+        outcome
+            .remediation
+            .unwrap_or_else(|| "inspect the ticketing artifact and retry".to_string()),
+    )
+}
+
+fn ticketing_connector_readback(path: &Path) -> BbxResult<Value> {
+    let source = ticketing_source_of_truth(path, "artifact");
+    let state = ticketing_file_state(path, "ticketing-api-json", &source, "--source")
+        .map_err(ticketing_connector_error_from_outcome)?;
+    if !state.exists {
+        return Err(BlackboxError::connector_blocked(
+            "TICKETING_ARTIFACT_NOT_FOUND",
+            TICKETING_CONNECTOR_ID,
+            source,
+            "--source",
+            "ticketing API artifact does not exist",
+            "capture a Jira, Linear, or ServiceNow ticket API JSON artifact before testing the connector",
+        ));
+    }
+    let raw = parse_ticketing_json(
+        &state,
+        "ticketing_connector_test_v1",
+        &source,
+        "read ticketing API JSON artifact",
+        "--source",
+    )
+    .map_err(ticketing_connector_error_from_outcome)?;
+    let format = infer_ticketing_format(&raw).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "TICKETING_ARTIFACT_SCHEMA_DRIFT",
+            TICKETING_CONNECTOR_ID,
+            ticketing_source_of_truth(path, "artifact"),
+            "--source",
+            format!("ticketing API artifact did not match a supported provider shape: {err}"),
+            "capture one Jira issue/search response, Linear issue response, or ServiceNow Table API record response",
+        )
+    })?;
+    let normalized = normalize_ticketing_artifact(&raw, format).map_err(|err| {
+        BlackboxError::connector_blocked(
+            "TICKETING_ARTIFACT_SCHEMA_DRIFT",
+            TICKETING_CONNECTOR_ID,
+            ticketing_source_of_truth(path, "artifact"),
+            "--source",
+            format!("ticketing API artifact schema was unsupported: {err}"),
+            "regenerate the source artifact from the supported API endpoint or update the connector for a documented API change",
+        )
+    })?;
+    Ok(json!({
+        "artifact": state.base_json(),
+        "normalized": normalized,
+    }))
+}
+
+fn infer_ticketing_format(value: &Value) -> Result<&'static str, String> {
+    if value.get("key").and_then(Value::as_str).is_some() && value.get("fields").is_some() {
+        return Ok("jira-rest-api-issue-json");
+    }
+    if value.get("issues").and_then(Value::as_array).is_some() {
+        return Ok("jira-rest-api-issue-json");
+    }
+    if value.pointer("/data/issue").is_some()
+        || value.pointer("/data/issues").is_some()
+        || (value.get("identifier").is_some() && value.get("state").is_some())
+    {
+        return Ok("linear-graphql-issue-json");
+    }
+    if value.get("result").is_some()
+        || value.get("sys_id").is_some()
+        || value.get("number").is_some()
+    {
+        return Ok("servicenow-table-api-record-json");
+    }
+    Err("unrecognized ticketing artifact shape".to_string())
+}
+
+fn normalize_ticketing_artifact(value: &Value, format: &str) -> Result<Value, String> {
+    let tickets = match format {
+        "jira-rest-api-issue-json" => normalize_jira_tickets(value)?,
+        "linear-graphql-issue-json" => normalize_linear_tickets(value)?,
+        "servicenow-table-api-record-json" => normalize_servicenow_tickets(value)?,
+        other => return Err(format!("unsupported ticketing artifact format {other:?}")),
+    };
+    let provider = tickets
+        .first()
+        .and_then(|item| item.get("provider"))
+        .and_then(Value::as_str)
+        .unwrap_or(match format {
+            "jira-rest-api-issue-json" => "jira",
+            "linear-graphql-issue-json" => "linear",
+            "servicenow-table-api-record-json" => "servicenow",
+            _ => "unknown",
+        });
+    Ok(json!({
+        "format": format,
+        "provider": provider,
+        "tickets_total": tickets.len(),
+        "tickets": tickets,
+    }))
+}
+
+fn normalize_jira_tickets(value: &Value) -> Result<Vec<Value>, String> {
+    let issues = if let Some(items) = value.get("issues").and_then(Value::as_array) {
+        items.iter().collect::<Vec<_>>()
+    } else {
+        vec![value]
+    };
+    let mut tickets = Vec::with_capacity(issues.len());
+    for (index, issue) in issues.into_iter().enumerate() {
+        let key = tf_required_str(issue, "/key", &format!("$.issues[{index}].key"))?;
+        let fields = issue
+            .get("fields")
+            .and_then(Value::as_object)
+            .ok_or_else(|| format!("Jira issue {key} must contain fields object"))?;
+        let status = issue
+            .pointer("/fields/status/name")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .ok_or_else(|| format!("Jira issue {key} must contain fields.status.name"))?;
+        let mut evidence_links = Vec::new();
+        collect_http_links(issue, &mut evidence_links);
+        tickets.push(json!({
+            "provider": "jira",
+            "ticket_id": issue.get("id").and_then(Value::as_str),
+            "ticket_key": key,
+            "status": status,
+            "status_id": issue.pointer("/fields/status/id").and_then(Value::as_str),
+            "title": fields.get("summary").and_then(Value::as_str),
+            "updated_at": fields.get("updated").and_then(Value::as_str),
+            "assignee_id": issue.pointer("/fields/assignee/accountId").and_then(Value::as_str),
+            "assignee_name": issue.pointer("/fields/assignee/displayName").and_then(Value::as_str),
+            "url": issue.get("self").and_then(Value::as_str),
+            "evidence_links": unique_sorted_strings(evidence_links),
+        }));
+    }
+    Ok(tickets)
+}
+
+fn normalize_linear_tickets(value: &Value) -> Result<Vec<Value>, String> {
+    let mut issues = Vec::new();
+    if let Some(issue) = value.pointer("/data/issue") {
+        issues.push(issue);
+    } else if let Some(items) = value
+        .pointer("/data/issues/nodes")
+        .and_then(Value::as_array)
+    {
+        issues.extend(items.iter());
+    } else if let Some(edges) = value
+        .pointer("/data/issues/edges")
+        .and_then(Value::as_array)
+    {
+        for edge in edges {
+            let node = edge
+                .get("node")
+                .ok_or_else(|| "Linear issues.edges[] entries must contain node".to_string())?;
+            issues.push(node);
+        }
+    } else {
+        issues.push(value);
+    }
+    let mut tickets = Vec::with_capacity(issues.len());
+    for (index, issue) in issues.into_iter().enumerate() {
+        let identifier = tf_required_str(
+            issue,
+            "/identifier",
+            &format!("$.data.issues[{index}].identifier"),
+        )?;
+        let issue_id = tf_required_str(issue, "/id", &format!("$.data.issues[{index}].id"))?;
+        let state = issue
+            .pointer("/state/name")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .ok_or_else(|| format!("Linear issue {identifier} must contain state.name"))?;
+        let mut evidence_links = Vec::new();
+        collect_http_links(issue, &mut evidence_links);
+        tickets.push(json!({
+            "provider": "linear",
+            "ticket_id": issue_id,
+            "ticket_key": identifier,
+            "status": state,
+            "status_id": issue.pointer("/state/id").and_then(Value::as_str),
+            "title": issue.get("title").and_then(Value::as_str),
+            "updated_at": issue.get("updatedAt").and_then(Value::as_str),
+            "assignee_id": issue.pointer("/assignee/id").and_then(Value::as_str),
+            "assignee_name": issue.pointer("/assignee/name").and_then(Value::as_str),
+            "url": issue.get("url").and_then(Value::as_str),
+            "evidence_links": unique_sorted_strings(evidence_links),
+        }));
+    }
+    Ok(tickets)
+}
+
+fn normalize_servicenow_tickets(value: &Value) -> Result<Vec<Value>, String> {
+    let records = match value.get("result") {
+        Some(Value::Array(items)) => items.iter().collect::<Vec<_>>(),
+        Some(item) => vec![item],
+        None => vec![value],
+    };
+    let mut tickets = Vec::with_capacity(records.len());
+    for (index, record) in records.into_iter().enumerate() {
+        let number = servicenow_field_string(record, "number")
+            .ok_or_else(|| format!("ServiceNow record {index} must contain number"))?;
+        let sys_id = servicenow_field_string(record, "sys_id")
+            .ok_or_else(|| format!("ServiceNow record {number} must contain sys_id"))?;
+        let status = servicenow_field_string(record, "state")
+            .or_else(|| servicenow_field_string(record, "incident_state"))
+            .ok_or_else(|| {
+                format!("ServiceNow record {number} must contain state or incident_state")
+            })?;
+        let mut evidence_links = Vec::new();
+        collect_http_links(record, &mut evidence_links);
+        tickets.push(json!({
+            "provider": "servicenow",
+            "ticket_id": sys_id,
+            "ticket_key": number,
+            "status": status,
+            "status_id": servicenow_field_value(record, "state")
+                .or_else(|| servicenow_field_value(record, "incident_state")),
+            "title": servicenow_field_string(record, "short_description"),
+            "updated_at": servicenow_field_string(record, "sys_updated_on")
+                .or_else(|| servicenow_field_string(record, "updated_on")),
+            "assignee_id": servicenow_reference_value(record, "assigned_to"),
+            "assignee_name": servicenow_reference_display(record, "assigned_to"),
+            "url": record.get("link").and_then(Value::as_str),
+            "evidence_links": unique_sorted_strings(evidence_links),
+        }));
+    }
+    Ok(tickets)
+}
+
+fn servicenow_field_string(record: &Value, key: &str) -> Option<String> {
+    match record.get(key) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(Value::Object(object)) => object
+            .get("display_value")
+            .or_else(|| object.get("displayValue"))
+            .or_else(|| object.get("value"))
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .map(ToOwned::to_owned),
+        _ => None,
+    }
+}
+
+fn servicenow_field_value(record: &Value, key: &str) -> Option<String> {
+    match record.get(key) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(Value::Object(object)) => object
+            .get("value")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .map(ToOwned::to_owned),
+        _ => None,
+    }
+}
+
+fn servicenow_reference_value(record: &Value, key: &str) -> Option<String> {
+    record
+        .get(key)
+        .and_then(Value::as_object)
+        .and_then(|object| object.get("value"))
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn servicenow_reference_display(record: &Value, key: &str) -> Option<String> {
+    record
+        .get(key)
+        .and_then(Value::as_object)
+        .and_then(|object| {
+            object
+                .get("display_value")
+                .or_else(|| object.get("displayValue"))
+        })
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn collect_http_links(value: &Value, links: &mut Vec<String>) {
+    match value {
+        Value::String(text) => {
+            for token in text.split(|ch: char| {
+                ch.is_whitespace()
+                    || matches!(
+                        ch,
+                        '"' | '\'' | '<' | '>' | ')' | '(' | '[' | ']' | '{' | '}' | ','
+                    )
+            }) {
+                let trimmed =
+                    token.trim_matches(|ch: char| matches!(ch, '.' | ';' | ':' | '!' | '?'));
+                if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+                    links.push(trimmed.to_string());
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_http_links(item, links);
+            }
+        }
+        Value::Object(object) => {
+            for item in object.values() {
+                collect_http_links(item, links);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn unique_sorted_strings(items: Vec<String>) -> Vec<String> {
+    items
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn required_ticket_source_format(
+    spec: &VerifySpec,
+    expected: &'static str,
+    source_hint: &str,
+) -> Result<(), VerificationOutcome> {
+    let actual = required_source_string(
+        spec,
+        "ticket_format",
+        "$.source.ticket_format",
+        TICKETING_CONNECTOR_ID,
+        source_hint,
+    )?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(VerificationOutcome::blocked(
+            TICKETING_CONNECTOR_ID,
+            source_hint.to_string(),
+            "TICKETING_SOURCE_FORMAT_UNSUPPORTED",
+            "$.source.ticket_format",
+            format!("$.source.ticket_format must be {expected:?}, got {actual:?}"),
+            "capture the documented Phase 22 ticketing source artifact and rerun verification",
+            None,
+        ))
+    }
+}
+
+fn required_ticket_source_path(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<PathBuf, VerificationOutcome> {
+    required_source_string(
+        spec,
+        "ticket",
+        "$.source.ticket",
+        TICKETING_CONNECTOR_ID,
+        source_hint,
+    )
+    .map(PathBuf::from)
+}
+
+fn normalized_ticketing_for_verify(
+    ticket_path: &Path,
+    expected_format: &'static str,
+    source: &str,
+    verifier_id: &'static str,
+    operation: &'static str,
+) -> Result<(Value, Value), VerificationOutcome> {
+    let state = ticketing_file_state(ticket_path, expected_format, source, "$.source.ticket")?;
+    if !state.exists {
+        let actual = json!({
+            "artifact": state.base_json(),
+            "format": expected_format,
+            "tickets_total": 0,
+        });
+        let readback = ticketing_readback_payload(verifier_id, source, operation, &actual);
+        return Err(VerificationOutcome::failed(
+            TICKETING_CONNECTOR_ID,
+            source.to_string(),
+            "TICKETING_ARTIFACT_NOT_FOUND",
+            "actual_readback.artifact.exists",
+            "ticketing API artifact does not exist",
+            "capture the ticketing API readback JSON before claiming ticket state",
+            readback,
+            actual,
+        ));
+    }
+    let raw = parse_ticketing_json(&state, verifier_id, source, operation, "$.source.ticket")?;
+    let normalized = match normalize_ticketing_artifact(&raw, expected_format) {
+        Ok(value) => value,
+        Err(err) => {
+            let actual = json!({
+                "artifact": state.base_json(),
+                "format": expected_format,
+                "schema_error": err,
+            });
+            return Err(ticketing_schema_blocked(
+                verifier_id,
+                source,
+                operation,
+                "$.source.ticket",
+                "TICKETING_ARTIFACT_SCHEMA_DRIFT",
+                "ticketing API artifact did not match the documented provider response shape",
+                "regenerate the source artifact from the supported API endpoint or update the connector for a documented API change",
+                actual,
+            ));
+        }
+    };
+    Ok((state.base_json(), normalized))
+}
+
+fn find_ticket_by_key<'a>(
+    normalized: &'a Value,
+    provider: &str,
+    ticket_key: &str,
+) -> Vec<&'a Value> {
+    normalized
+        .get("tickets")
+        .and_then(Value::as_array)
+        .map(|tickets| {
+            tickets
+                .iter()
+                .filter(|ticket| {
+                    ticket.get("provider").and_then(Value::as_str) == Some(provider)
+                        && ticket.get("ticket_key").and_then(Value::as_str) == Some(ticket_key)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn verify_ticket_state_common(
+    spec: &VerifySpec,
+    verifier_id: &'static str,
+    provider: &'static str,
+    expected_format: &'static str,
+    expected_key_field: &'static str,
+    expected_key_path: &'static str,
+    expected_status_field: &'static str,
+    expected_status_path: &'static str,
+) -> VerificationOutcome {
+    let source_hint = ticketing_source_of_truth(
+        Path::new(optional_str(&spec.source, "ticket").unwrap_or("")),
+        "ticket",
+    );
+    if let Err(outcome) = required_ticket_source_format(spec, expected_format, &source_hint) {
+        return outcome;
+    }
+    let ticket_path = match required_ticket_source_path(spec, &source_hint) {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    let expected_key = match required_expected_string(
+        spec,
+        expected_key_field,
+        expected_key_path,
+        TICKETING_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let expected_status = match required_expected_string(
+        spec,
+        expected_status_field,
+        expected_status_path,
+        TICKETING_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let expected_evidence_url = expected_optional_string(spec, "evidence_url");
+    let source = ticketing_source_of_truth(&ticket_path, "ticket");
+    let operation = "read ticketing API JSON artifact";
+    let (artifact, normalized) = match normalized_ticketing_for_verify(
+        &ticket_path,
+        expected_format,
+        &source,
+        verifier_id,
+        operation,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let matches = find_ticket_by_key(&normalized, provider, &expected_key);
+    if matches.len() > 1 {
+        let actual = json!({
+            "artifact": artifact,
+            "format": expected_format,
+            "provider": provider,
+            "ticket_key": expected_key,
+            "matching_count": matches.len(),
+        });
+        return ticketing_schema_blocked(
+            verifier_id,
+            &source,
+            operation,
+            "actual_readback.matching_count",
+            "TICKETING_TICKET_AMBIGUOUS",
+            "ticketing artifact contains duplicate ticket identities",
+            "capture a single ticket readback or deduplicate the ticket list before verification",
+            actual,
+        );
+    }
+    if matches.is_empty() {
+        let actual = json!({
+            "artifact": artifact,
+            "format": expected_format,
+            "provider": provider,
+            "ticket_key": expected_key,
+            "expected_status": expected_status,
+            "ticket_found": false,
+            "tickets_total": normalized["tickets_total"].clone(),
+            "ticket_keys": normalized.get("tickets").and_then(Value::as_array).map(|tickets| {
+                tickets.iter().filter_map(|ticket| {
+                    ticket.get("ticket_key").and_then(Value::as_str).map(ToOwned::to_owned)
+                }).collect::<Vec<_>>()
+            }).unwrap_or_default(),
+        });
+        let readback = ticketing_readback_payload(verifier_id, &source, operation, &actual);
+        return VerificationOutcome::failed(
+            TICKETING_CONNECTOR_ID,
+            source,
+            "TICKETING_TICKET_NOT_FOUND",
+            "actual_readback.ticket_found",
+            "ticketing artifact does not contain the expected ticket identity",
+            "read the exact ticket from the provider API and retry verification with that artifact",
+            readback,
+            actual,
+        );
+    }
+    let ticket = matches[0].clone();
+    let actual_status = ticket
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let evidence_links = ticket
+        .get("evidence_links")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let evidence_found = expected_evidence_url
+        .as_ref()
+        .map(|url| {
+            evidence_links
+                .iter()
+                .any(|item| item.as_str() == Some(url.as_str()))
+        })
+        .unwrap_or(true);
+    let actual = json!({
+        "artifact": artifact,
+        "format": expected_format,
+        "provider": provider,
+        "ticket_key": expected_key,
+        "ticket_found": true,
+        "expected_status": expected_status,
+        "actual_status": actual_status,
+        "ticket": ticket,
+        "expected_evidence_url": expected_evidence_url,
+        "evidence_found": evidence_found,
+        "evidence_links": evidence_links,
+    });
+    let readback = ticketing_readback_payload(verifier_id, &source, operation, &actual);
+    if actual.get("actual_status").and_then(Value::as_str)
+        != actual.get("expected_status").and_then(Value::as_str)
+    {
+        VerificationOutcome::failed(
+            TICKETING_CONNECTOR_ID,
+            source,
+            "TICKETING_TICKET_STATUS_MISMATCH",
+            "actual_readback.actual_status",
+            "ticketing API artifact reports a different status/state than expected",
+            "transition the ticket in the provider or correct the expected status before claiming ticket state",
+            readback,
+            actual,
+        )
+    } else if !actual
+        .get("evidence_found")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        VerificationOutcome::failed(
+            TICKETING_CONNECTOR_ID,
+            source,
+            "TICKETING_EVIDENCE_LINK_NOT_FOUND",
+            "actual_readback.evidence_links",
+            "ticketing API artifact does not contain the expected evidence URL",
+            "write the evidence URL into the ticket description/comment and recapture provider readback",
+            readback,
+            actual,
+        )
+    } else {
+        VerificationOutcome::passed(TICKETING_CONNECTOR_ID, source, readback, actual)
+    }
+}
+
+fn verify_jira_ticket_state(spec: &VerifySpec) -> VerificationOutcome {
+    verify_ticket_state_common(
+        spec,
+        "jira_ticket_state_v1",
+        "jira",
+        "jira-rest-api-issue-json",
+        "issue_key",
+        "$.expected.issue_key",
+        "status",
+        "$.expected.status",
+    )
+}
+
+fn verify_linear_ticket_state(spec: &VerifySpec) -> VerificationOutcome {
+    verify_ticket_state_common(
+        spec,
+        "linear_ticket_state_v1",
+        "linear",
+        "linear-graphql-issue-json",
+        "issue_identifier",
+        "$.expected.issue_identifier",
+        "state",
+        "$.expected.state",
+    )
+}
+
+fn verify_servicenow_ticket_state(spec: &VerifySpec) -> VerificationOutcome {
+    verify_ticket_state_common(
+        spec,
+        "servicenow_ticket_state_v1",
+        "servicenow",
+        "servicenow-table-api-record-json",
+        "number",
+        "$.expected.number",
+        "state",
+        "$.expected.state",
+    )
 }
 
 struct K8sNormalizedSnapshot {

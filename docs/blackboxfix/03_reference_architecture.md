@@ -17,7 +17,7 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 21)
+## Concrete Layout (shipped through Phase 22)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
@@ -45,9 +45,10 @@ agent runtime
 | Executable FSV certification | Validates captured FSV evidence against physical SQLite/file state and persists certification rows | `blackbox fsv certify` |
 | Kubernetes deployment readback | Physical `kubectl get deployments.v1.apps -o json` snapshots for image digest, replica, and rollout verification | `k8s_deployment_snapshot_v1` |
 | Terraform/cloud artifact readback | Physical `terraform show -json` plan/state files plus normalized cloud inventory JSON and audit JSONL artifacts | `terraform_cloud_artifact_v1` |
-| FSV harness | Phase 1-21 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Ticketing artifact readback | Physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON artifacts for ticket state and evidence-link verification | `ticketing_artifact_v1` |
+| FSV harness | Phase 1-22 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-21 is **not yet implemented**. Public multi-tenant
+Anything outside Phases 1-22 is **not yet implemented**. Public multi-tenant
 SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)
@@ -81,7 +82,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18/20/21)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18/20/21/22)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -95,12 +96,12 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - Kubernetes Deployment objects from physical JSON snapshots;
 - Terraform plan/apply state from physical `terraform show -json` artifacts;
 - normalized cloud inventory and audit artifacts;
+- ticketing API artifacts from Jira, Linear, and ServiceNow;
 - relational databases;
 - object storage;
-- ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15/16/20/21)
+### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15/16/20/21/22)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`

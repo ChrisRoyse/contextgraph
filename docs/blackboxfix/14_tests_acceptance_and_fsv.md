@@ -32,6 +32,7 @@ The mandatory operator-side protocol lives in
 | Executable FSV certification rows and files (Phase 19) | physical SQLite state, SQLite `PRAGMA integrity_check`, FSV evidence JSON, declared artifact files, `full_state_verification` rows, and FSV package JSON/JSONL files read back from disk with manifest hashes |
 | Kubernetes Deployment snapshot files + ledger evidence rows (Phase 20) | physical kubectl-style JSON files and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | Terraform/cloud artifact files + ledger evidence rows (Phase 21) | physical Terraform plan/state JSON files, normalized cloud inventory JSON, cloud audit JSONL, and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
+| Ticketing API artifact files + ledger evidence rows (Phase 22) | physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON files plus SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 
 ## Test Levels
 
@@ -126,6 +127,11 @@ audit JSONL artifacts, runs Terraform plan/state and cloud inventory/audit
 verifiers, then reads SQLite directly to prove happy rows, unapproved-plan
 incidents, state-mismatch incidents, and invalid JSONL blocked evidence are
 all persisted.
+Phase 22 adds `tests/blackbox_phase22_ticketing_fsv.rs`, which writes
+physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON artifacts,
+runs all three ticket state verifiers, then reads SQLite directly to prove
+happy rows, missing-ticket incidents, wrong-state incidents, and invalid JSON
+blocked evidence are all persisted.
 
 ## Acceptance Criteria
 

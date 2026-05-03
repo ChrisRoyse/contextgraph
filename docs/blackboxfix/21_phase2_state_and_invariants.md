@@ -13,7 +13,7 @@ implementation.
 | Command verifier | real process exit code/stdout/stderr plus declared artifact files on disk |
 
 Phase 2 originally shipped `LEDGER_SCHEMA_VERSION = 2`. The current live
-ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 21; `blackbox init`
+ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 22; `blackbox init`
 removes older ledger files (`.sqlite`, `-wal`, `-shm`) before initializing the
 current schema. There is no migration shim.
 

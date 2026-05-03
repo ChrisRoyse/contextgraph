@@ -119,6 +119,28 @@ Design implication:
   dimensions and keep high-cardinality uniqueness in the idempotency
   identifier/source ref, not metric dimensions.
 
+### Ticketing API Readback
+
+References:
+
+- Jira Cloud REST API, Get issue:
+  <https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/>
+- Linear GraphQL API getting started and issue examples:
+  <https://linear.app/developers/graphql>
+- ServiceNow Table API:
+  <https://www.servicenow.com/docs/bundle/yokohama-api-reference/page/integrate/inbound-rest/concept/c_TableAPI.html>
+
+Design implication:
+
+- Phase 22 verifies ticket state from captured provider API artifacts rather
+  than agent text or ticketing-tool return values.
+- The connector normalizes only provider-documented readback shapes: Jira
+  issue/search fields, Linear GraphQL issue fields including workflow state,
+  and ServiceNow Table API `result` records/lists.
+- Ticket state proof fails closed on missing identities, mismatched status,
+  duplicate ticket identities, invalid JSON, schema drift, or missing evidence
+  URL so ticketing cannot become an unverifiable governance checkbox.
+
 ### Kubernetes Deployment Status And Image Digests
 
 References:

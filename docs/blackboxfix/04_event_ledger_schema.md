@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 21 Physical Schema (shipped)
+## Phase 22 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 13 in Phase 21
+  schema_version              INTEGER NOT NULL,   -- 13 in Phase 22
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-21 ship the following `record_kind` values. The remaining families
+Phases 1-22 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -457,6 +457,68 @@ formats so provider-specific APIs can be captured once and verified
 deterministically. The ledger remains append-only and hash-chained; Terraform
 and cloud verification success is proven only by persisted verifier/evidence
 rows plus a physical readback of the artifact file.
+
+## Ticketing Artifact Verification Rows (Phase 22, shipped)
+
+Phase 22 adds no new `record_kind`. It uses the same verifier row family:
+
+- `expected_delta`
+- `readback_snapshot`
+- `verifier_result`
+- `evidence_packet`
+- `incident_packet` for failed mismatches
+
+The `readback_snapshot` row for `ticketing_artifact_v1` stores physical
+artifact metadata, normalized ticket state, and the comparison result:
+
+```json
+{
+  "record_kind": "readback_snapshot",
+  "verifier_id": "jira_ticket_state_v1",
+  "source_of_truth": {
+    "kind": "ticketing_artifact_v1",
+    "locator": "ticketing:/tmp/jira-issue.json#ticket"
+  },
+  "read_path": {
+    "connector_id": "ticketing_artifact_v1",
+    "operation": "read ticketing API JSON artifact",
+    "credential_key_id": null
+  },
+  "observed_state": {
+    "artifact": {
+      "path": "/tmp/jira-issue.json",
+      "artifact_kind": "jira-rest-api-issue-json",
+      "exists": true,
+      "size_bytes": 1234,
+      "sha256": "sha256:..."
+    },
+    "format": "jira-rest-api-issue-json",
+    "provider": "jira",
+    "ticket_key": "BBX-22",
+    "ticket_found": true,
+    "expected_status": "Done",
+    "actual_status": "Done",
+    "evidence_found": true,
+    "evidence_links": ["https://evidence.example.com/bbx/phase22"]
+  }
+}
+```
+
+Ticketing source artifacts must be captured from a supported provider API:
+
+```bash
+curl -H 'Accept: application/json' \
+  'https://example.atlassian.net/rest/api/3/issue/BBX-22' > jira-issue.json
+curl -H 'Content-Type: application/json' \
+  -d '{"query":"query { issue(id: \"ENG-22\") { id identifier title state { id name } url updatedAt description } }"}' \
+  https://api.linear.app/graphql > linear-issue.json
+curl -H 'Accept: application/json' \
+  'https://instance.service-now.com/api/now/table/incident/<sys_id>' > servicenow-record.json
+```
+
+The ledger remains append-only and hash-chained; ticketing verification
+success is proven only by persisted verifier/evidence rows plus a physical
+readback of the captured provider artifact file.
 
 ## EnterpriseTenantConfig Payload (Phase 8, shipped)
 
