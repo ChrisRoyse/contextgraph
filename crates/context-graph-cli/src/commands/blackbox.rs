@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 6;
+const LEDGER_SCHEMA_VERSION: i64 = 7;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -36,6 +36,7 @@ const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
 const SCORING_CONNECTOR_ID: &str = "blackbox_scoring_v1";
+const PRIVACY_CONNECTOR_ID: &str = "blackbox_privacy_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -46,6 +47,7 @@ const DASHBOARD_SCHEMA_VERSION: i64 = 1;
 const ENTERPRISE_CONTROL_SCHEMA_VERSION: i64 = 1;
 const SIEM_EXPORT_SCHEMA_VERSION: i64 = 1;
 const SCORECARD_SCHEMA_VERSION: i64 = 1;
+const PRIVACY_SCHEMA_VERSION: i64 = 1;
 const SCORE_RULE_VERSION: &str = "score_v1";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
@@ -118,6 +120,11 @@ pub enum BlackboxCommands {
     Score {
         #[command(subcommand)]
         action: ScoreCommands,
+    },
+    /// Evaluate Phase 13 privacy, retention, and erasure requests.
+    Privacy {
+        #[command(subcommand)]
+        action: PrivacyCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -670,6 +677,14 @@ pub enum ScoreCommands {
     Run(ScoreRunArgs),
 }
 
+#[derive(Subcommand, Debug)]
+pub enum PrivacyCommands {
+    /// Persist a retention-class decision for one run.
+    EvaluateRetention(PrivacyEvaluateRetentionArgs),
+    /// Persist an append-only erasure/deletion-request decision for one run.
+    RequestErasure(PrivacyRequestErasureArgs),
+}
+
 #[derive(Args, Debug)]
 pub struct ScoreRunArgs {
     /// SQLite ledger database path.
@@ -686,6 +701,84 @@ pub struct ScoreRunArgs {
 
     /// Scoring actor identifier.
     #[arg(long, default_value = "blackbox_scoring")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct PrivacyEvaluateRetentionArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id governed by the latest enterprise configuration.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Existing run id being classified.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Principal id that must have privacy.review permission through SCIM/RBAC.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Retention class id from enterprise_tenant_config.retention.classes.
+    #[arg(long)]
+    pub retention_class: String,
+
+    /// Data subject identifier. The raw value is never persisted; only SHA-256 is stored.
+    #[arg(long)]
+    pub data_subject: String,
+
+    /// Business purpose for applying the retention policy.
+    #[arg(long)]
+    pub purpose: String,
+
+    /// Agent or operator identity evaluating the request.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct PrivacyRequestErasureArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id governed by the latest enterprise configuration.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Existing run id being evaluated for erasure.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Principal id that must have privacy.erase permission through SCIM/RBAC.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Retention class id from enterprise_tenant_config.retention.classes.
+    #[arg(long)]
+    pub retention_class: String,
+
+    /// Data subject identifier. The raw value is never persisted; only SHA-256 is stored.
+    #[arg(long)]
+    pub data_subject: String,
+
+    /// Erasure request reason.
+    #[arg(long)]
+    pub reason: String,
+
+    /// Agent or operator identity evaluating the request.
+    #[arg(long)]
     pub agent: String,
 
     /// Optional model identifier.
@@ -1147,6 +1240,10 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Score { action } => match action {
             ScoreCommands::Run(args) => score_run(args),
         },
+        BlackboxCommands::Privacy { action } => match action {
+            PrivacyCommands::EvaluateRetention(args) => privacy_evaluate_retention(args),
+            PrivacyCommands::RequestErasure(args) => privacy_request_erasure(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -1232,6 +1329,15 @@ fn connector_list() -> BbxResult<Value> {
                 "connector_id": SCORING_CONNECTOR_ID,
                 "source_kind": "sqlite_ledger_scorecard",
                 "readback_specs": ["blackbox_scorecard_run_v1"],
+                "fail_closed": true
+            },
+            {
+                "connector_id": PRIVACY_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_privacy_retention",
+                "readback_specs": [
+                    "blackbox_retention_decision_v1",
+                    "blackbox_evidence_deletion_decision_v1"
+                ],
                 "fail_closed": true
             }
         ]
@@ -1445,6 +1551,32 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                     "ledger_record_count": inspection.record_count,
                     "ledger_tip_sha256": inspection.ledger_tip_sha256,
                     "scorecard_records_total": inspection.records.iter().filter(|record| record.record_kind == "scorecard").count(),
+                },
+            }))
+        }
+        PRIVACY_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    PRIVACY_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_privacy_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": PRIVACY_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "retention_decisions_total": inspection.records.iter().filter(|record| record.record_kind == "retention_decision").count(),
+                    "evidence_deletions_total": inspection.records.iter().filter(|record| record.record_kind == "evidence_deletion").count(),
                 },
             }))
         }
@@ -2190,7 +2322,9 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" }
+            { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" },
+            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate", "ledger_record_kind": "retention_decision" },
+            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -2550,6 +2684,762 @@ fn score_run(args: ScoreRunArgs) -> BbxResult<Value> {
         "score_inputs": scorecard_payload["score_inputs"].clone(),
         "readback": readback,
     }))
+}
+
+fn privacy_evaluate_retention(args: PrivacyEvaluateRetentionArgs) -> BbxResult<Value> {
+    append_privacy_decision(PrivacyDecisionRequest {
+        ledger: &args.ledger,
+        tenant: &args.tenant,
+        run_id: &args.run_id,
+        principal_id: &args.principal_id,
+        retention_class: &args.retention_class,
+        data_subject: &args.data_subject,
+        request_note: &args.purpose,
+        request_note_field: "--purpose",
+        agent: &args.agent,
+        model: args.model.as_deref(),
+        operation: PrivacyOperationKind::RetentionReview,
+    })
+}
+
+fn privacy_request_erasure(args: PrivacyRequestErasureArgs) -> BbxResult<Value> {
+    append_privacy_decision(PrivacyDecisionRequest {
+        ledger: &args.ledger,
+        tenant: &args.tenant,
+        run_id: &args.run_id,
+        principal_id: &args.principal_id,
+        retention_class: &args.retention_class,
+        data_subject: &args.data_subject,
+        request_note: &args.reason,
+        request_note_field: "--reason",
+        agent: &args.agent,
+        model: args.model.as_deref(),
+        operation: PrivacyOperationKind::ErasureRequest,
+    })
+}
+
+#[derive(Copy, Clone, Debug)]
+enum PrivacyOperationKind {
+    RetentionReview,
+    ErasureRequest,
+}
+
+impl PrivacyOperationKind {
+    fn command(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "blackbox privacy evaluate-retention",
+            Self::ErasureRequest => "blackbox privacy request-erasure",
+        }
+    }
+
+    fn permission(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "privacy.review",
+            Self::ErasureRequest => "privacy.erase",
+        }
+    }
+
+    fn record_kind(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "retention_decision",
+            Self::ErasureRequest => "evidence_deletion",
+        }
+    }
+
+    fn request_kind(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "retention_review",
+            Self::ErasureRequest => "erasure_request",
+        }
+    }
+
+    fn decision_id_prefix(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "privacy_retention",
+            Self::ErasureRequest => "privacy_erasure",
+        }
+    }
+
+    fn record_id_prefix(self) -> &'static str {
+        match self {
+            Self::RetentionReview => "bbx_retention",
+            Self::ErasureRequest => "bbx_deletion",
+        }
+    }
+}
+
+struct PrivacyDecisionRequest<'a> {
+    ledger: &'a Path,
+    tenant: &'a str,
+    run_id: &'a str,
+    principal_id: &'a str,
+    retention_class: &'a str,
+    data_subject: &'a str,
+    request_note: &'a str,
+    request_note_field: &'static str,
+    agent: &'a str,
+    model: Option<&'a str>,
+    operation: PrivacyOperationKind,
+}
+
+#[derive(Debug, Clone)]
+struct PrivacyRetentionClass {
+    class_id: String,
+    retain_days: i64,
+    legal_hold: bool,
+}
+
+#[derive(Debug)]
+struct PrivacyRunSummary {
+    value: Value,
+    input_record_refs: Vec<Value>,
+    incident_packets_total: i64,
+    evidence_packets_total: i64,
+}
+
+fn append_privacy_decision(args: PrivacyDecisionRequest<'_>) -> BbxResult<Value> {
+    validate_ledger_path(args.ledger)?;
+    require_non_empty_for_ledger(args.ledger, "--tenant", args.tenant)?;
+    require_non_empty_for_ledger(args.ledger, "--run-id", args.run_id)?;
+    require_non_empty_for_ledger(args.ledger, "--principal-id", args.principal_id)?;
+    require_non_empty_for_ledger(args.ledger, "--retention-class", args.retention_class)?;
+    require_non_empty_for_ledger(args.ledger, "--agent", args.agent)?;
+
+    let data_subject_sha256 = privacy_data_subject_sha256(args.ledger, args.data_subject)?;
+    let request_note = privacy_request_note(
+        args.ledger,
+        args.request_note_field,
+        args.request_note,
+    )?;
+
+    let mut conn = open_initialized_ledger(args.ledger)?;
+    let inspection_before = verify_ledger_integrity(&conn, args.ledger)?;
+    let run_summary =
+        privacy_run_summary(args.ledger, &inspection_before, args.run_id, args.tenant)?;
+    let resource = format!("tenant:{}:privacy/{}", args.tenant, args.run_id);
+    let authorization = enterprise_access_outcome(
+        args.ledger,
+        &inspection_before,
+        args.tenant,
+        args.principal_id,
+        args.operation.permission(),
+        &resource,
+    )?;
+    let authorization_append = append_enterprise_access_decision(
+        &mut conn,
+        args.ledger,
+        args.tenant,
+        args.principal_id,
+        args.operation.permission(),
+        &resource,
+        args.agent,
+        args.model,
+        &authorization,
+    )?;
+    if !authorization.allowed {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "PRIVACY_RBAC_DENIED",
+            format!(
+                "principal {} is not authorized to evaluate {} for tenant {}",
+                args.principal_id,
+                args.operation.request_kind(),
+                args.tenant
+            ),
+            Some(source_of_truth(args.ledger)),
+            PRIVACY_CONNECTOR_ID,
+            authorization.field_path.clone(),
+            authorization.remediation.clone().unwrap_or_else(|| {
+                format!(
+                    "grant {} through a SCIM group role and retry",
+                    args.operation.permission()
+                )
+            }),
+        ));
+    }
+
+    let inspection_after_auth = verify_ledger_integrity(&conn, args.ledger)?;
+    let config_record = latest_enterprise_record(
+        args.ledger,
+        &inspection_after_auth,
+        args.tenant,
+        "enterprise_tenant_config",
+    )?;
+    let retention_class = privacy_retention_class_from_config(
+        args.ledger,
+        &config_record.payload,
+        args.retention_class,
+    )?;
+    let config_ref = privacy_record_ref_from_output(args.ledger, "tenant_config", config_record)?;
+    let authorization_ref = ledger_record_ref_json(
+        "authorization_decision",
+        authorization_append.sequence,
+        &authorization_append.record_id,
+        "enterprise_access_decision",
+        &authorization_append.payload_sha256,
+        &authorization_append.record_sha256,
+    );
+    let privacy_decision_id = prefixed_id(args.operation.decision_id_prefix());
+    let decision = build_privacy_decision_value(
+        args.operation,
+        &retention_class,
+        run_summary.incident_packets_total,
+        run_summary.evidence_packets_total,
+    );
+    let payload = json!({
+        "record_kind": args.operation.record_kind(),
+        "privacy_schema_version": PRIVACY_SCHEMA_VERSION,
+        "privacy_decision_id": privacy_decision_id,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "request": {
+            "request_kind": args.operation.request_kind(),
+            "principal_id": args.principal_id,
+            "permission": args.operation.permission(),
+            "resource": resource,
+            "data_subject_sha256": data_subject_sha256,
+            "data_subject_storage": "sha256_only_raw_value_not_persisted",
+            args.request_note_field.trim_start_matches("--"): request_note,
+        },
+        "retention_policy": {
+            "class_id": retention_class.class_id,
+            "retain_days": retention_class.retain_days,
+            "legal_hold": retention_class.legal_hold,
+            "config_record_ref": config_ref,
+        },
+        "run_evidence_summary": run_summary.value,
+        "decision": decision,
+        "source_refs": {
+            "tenant_config": config_ref,
+            "authorization_decision": authorization_ref,
+            "input_records": run_summary.input_record_refs,
+        },
+        "standards_basis": [
+            "NIST Privacy Framework Control-P policies for review/deletion and retention",
+            "NIST SP 800-53 Audit and Accountability retention and protection controls"
+        ],
+        "evaluated_at": Utc::now().to_rfc3339(),
+    });
+    let record_id = prefixed_id(args.operation.record_id_prefix());
+    let record_count_before_privacy = inspection_after_auth.record_count;
+    let append = append_record(
+        &mut conn,
+        args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: args.operation.record_kind().to_string(),
+            tenant_id: args.tenant.to_string(),
+            run_id: Some(args.run_id.to_string()),
+            step_id: None,
+            actor: actor_json(args.agent, args.model),
+            payload: payload.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_privacy_append(
+        &conn,
+        args.ledger,
+        args.operation.record_kind(),
+        args.run_id,
+        payload["privacy_decision_id"]
+            .as_str()
+            .expect("privacy_decision_id is static string"),
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before_privacy,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": args.operation.command(),
+        "connector": PRIVACY_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(args.ledger),
+        "record_id": record_id,
+        "record_kind": args.operation.record_kind(),
+        "privacy_decision_id": payload["privacy_decision_id"],
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "principal_id": args.principal_id,
+        "retention_class": args.retention_class,
+        "decision": payload["decision"],
+        "authorization_record": authorization_ref,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "readback": readback,
+    }))
+}
+
+fn privacy_data_subject_sha256(ledger_path: &Path, value: &str) -> BbxResult<String> {
+    let subject = privacy_trimmed_text(ledger_path, "--data-subject", value, 2048)?;
+    if looks_like_secret_literal(subject) {
+        return Err(privacy_invalid(
+            ledger_path,
+            "PRIVACY_SECRET_MATERIAL_REFUSED",
+            "--data-subject",
+            "data subject identifier contains secret-like material",
+            "pass a stable subject identifier such as an account id or email, never a credential",
+        ));
+    }
+    Ok(sha256_hex(subject.as_bytes()))
+}
+
+fn privacy_request_note(
+    ledger_path: &Path,
+    field_path: &'static str,
+    value: &str,
+) -> BbxResult<String> {
+    let note = privacy_trimmed_text(ledger_path, field_path, value, 2048)?;
+    if looks_like_secret_literal(note) {
+        return Err(privacy_invalid(
+            ledger_path,
+            "PRIVACY_SECRET_MATERIAL_REFUSED",
+            field_path,
+            "privacy request text contains secret-like material",
+            "replace credentials or tokens with non-sensitive references before retrying",
+        ));
+    }
+    Ok(note.to_string())
+}
+
+fn privacy_trimmed_text<'a>(
+    ledger_path: &Path,
+    field_path: &'static str,
+    value: &'a str,
+    max_len: usize,
+) -> BbxResult<&'a str> {
+    if value.trim() != value || value.is_empty() {
+        return Err(privacy_invalid(
+            ledger_path,
+            "PRIVACY_REQUEST_INVALID",
+            field_path,
+            format!("{field_path} must be non-empty and must not contain leading/trailing whitespace"),
+            "normalize the request field before evaluating privacy policy",
+        ));
+    }
+    if value.len() > max_len {
+        return Err(privacy_invalid(
+            ledger_path,
+            "PRIVACY_REQUEST_INVALID",
+            field_path,
+            format!("{field_path} must be at most {max_len} bytes"),
+            "store bulky request detail in an external case system and reference it by id",
+        ));
+    }
+    Ok(value)
+}
+
+fn privacy_run_summary(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_id: &str,
+    tenant: &str,
+) -> BbxResult<PrivacyRunSummary> {
+    let records = inspection
+        .records
+        .iter()
+        .filter(|record| record.run_id.as_deref() == Some(run_id))
+        .collect::<Vec<_>>();
+    if records.is_empty() {
+        return Err(privacy_not_found(
+            ledger_path,
+            "PRIVACY_RUN_NOT_FOUND",
+            "ledger_records.run_id",
+            format!("run_id {run_id} does not exist in ledger_records"),
+            "record the parent agent_run before evaluating retention or erasure",
+        ));
+    }
+    let run_records = records
+        .iter()
+        .copied()
+        .filter(|record| record.record_kind == "agent_run")
+        .collect::<Vec<_>>();
+    let run_record = match run_records.as_slice() {
+        [record] => *record,
+        [] => {
+            return Err(privacy_schema_error(
+                ledger_path,
+                records[0],
+                "record_kind",
+                format!("run_id {run_id} has ledger rows but no agent_run parent"),
+            ));
+        }
+        _ => {
+            return Err(privacy_schema_error(
+                ledger_path,
+                run_records[1],
+                "record_kind",
+                format!("run_id {run_id} has multiple agent_run rows"),
+            ));
+        }
+    };
+    if run_record.tenant_id != tenant {
+        return Err(BlackboxError::tenant_mismatch(
+            ledger_path,
+            run_id,
+            &run_record.tenant_id,
+            tenant,
+        ));
+    }
+    for record in &records {
+        if record.tenant_id != tenant {
+            return Err(BlackboxError::tenant_mismatch(
+                ledger_path,
+                run_id,
+                &record.tenant_id,
+                tenant,
+            ));
+        }
+    }
+
+    let mut counts = BTreeMap::<String, i64>::new();
+    for record in &records {
+        *counts.entry(record.record_kind.clone()).or_insert(0) += 1;
+    }
+    let first_sequence = records.iter().map(|record| record.sequence).min().unwrap_or(0);
+    let last_sequence = records.iter().map(|record| record.sequence).max().unwrap_or(0);
+    let input_record_refs = records
+        .iter()
+        .copied()
+        .map(|record| privacy_record_ref_from_output(ledger_path, "privacy_input", record))
+        .collect::<BbxResult<Vec<_>>>()?;
+    let input_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(input_record_refs))?);
+    let evidence_packets_total = counts.get("evidence_packet").copied().unwrap_or(0);
+    let incident_packets_total = counts.get("incident_packet").copied().unwrap_or(0);
+    let value = json!({
+        "record_count": records.len(),
+        "record_kind_counts": counts,
+        "first_sequence": first_sequence,
+        "last_sequence": last_sequence,
+        "evidence_packets_total": evidence_packets_total,
+        "incident_packets_total": incident_packets_total,
+        "scorecards_total": counts.get("scorecard").copied().unwrap_or(0),
+        "retention_decisions_total": counts.get("retention_decision").copied().unwrap_or(0),
+        "evidence_deletions_total": counts.get("evidence_deletion").copied().unwrap_or(0),
+        "input_record_refs_sha256": input_refs_sha256,
+        "run_record_ref": privacy_record_ref_from_output(ledger_path, "run", run_record)?,
+    });
+    Ok(PrivacyRunSummary {
+        value,
+        input_record_refs,
+        incident_packets_total,
+        evidence_packets_total,
+    })
+}
+
+fn privacy_retention_class_from_config(
+    ledger_path: &Path,
+    payload: &Value,
+    requested_class: &str,
+) -> BbxResult<PrivacyRetentionClass> {
+    let classes = payload
+        .pointer("/retention/classes")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            privacy_invalid(
+                ledger_path,
+                "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
+                "$.retention.classes",
+                "enterprise tenant config payload is missing retention.classes",
+                "persist a corrected enterprise tenant config before evaluating privacy policy",
+            )
+        })?;
+    for (index, class) in classes.iter().enumerate() {
+        let class_id = class
+            .get("class_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                privacy_invalid(
+                    ledger_path,
+                    "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
+                    format!("$.retention.classes[{index}].class_id"),
+                    "retention class is missing class_id",
+                    "persist a corrected enterprise tenant config before evaluating privacy policy",
+                )
+            })?;
+        if class_id != requested_class {
+            continue;
+        }
+        let retain_days = class
+            .get("retain_days")
+            .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                privacy_invalid(
+                    ledger_path,
+                    "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
+                    format!("$.retention.classes[{index}].retain_days"),
+                    "retention class retain_days must be a positive integer",
+                    "persist a corrected enterprise tenant config before evaluating privacy policy",
+                )
+            })?;
+        let legal_hold = class.get("legal_hold").and_then(Value::as_bool).ok_or_else(|| {
+            privacy_invalid(
+                ledger_path,
+                "PRIVACY_TENANT_CONFIG_SCHEMA_INVALID",
+                format!("$.retention.classes[{index}].legal_hold"),
+                "retention class legal_hold must be a boolean",
+                "persist a corrected enterprise tenant config before evaluating privacy policy",
+            )
+        })?;
+        return Ok(PrivacyRetentionClass {
+            class_id: class_id.to_string(),
+            retain_days,
+            legal_hold,
+        });
+    }
+    Err(privacy_not_found(
+        ledger_path,
+        "PRIVACY_RETENTION_CLASS_NOT_FOUND",
+        "$.retention.classes[].class_id",
+        format!("retention class {requested_class:?} is not configured for this tenant"),
+        "choose a class id from enterprise_tenant_config.retention.classes",
+    ))
+}
+
+fn build_privacy_decision_value(
+    operation: PrivacyOperationKind,
+    retention_class: &PrivacyRetentionClass,
+    incident_packets_total: i64,
+    evidence_packets_total: i64,
+) -> Value {
+    match operation {
+        PrivacyOperationKind::RetentionReview => json!({
+            "status": "retained",
+            "allowed": true,
+            "reason_code": "RETENTION_POLICY_APPLIED",
+            "ledger_action": "retain_append_only_audit",
+            "artifact_action": "none",
+            "retain_days": retention_class.retain_days,
+            "legal_hold": retention_class.legal_hold,
+            "deletes_ledger_rows": false,
+            "explanation": "run evidence remains in the append-only ledger under the configured retention class"
+        }),
+        PrivacyOperationKind::ErasureRequest if retention_class.legal_hold => json!({
+            "status": "denied",
+            "allowed": false,
+            "reason_code": "LEGAL_HOLD_ACTIVE",
+            "ledger_action": "retain_append_only_audit",
+            "artifact_action": "none",
+            "retain_days": retention_class.retain_days,
+            "legal_hold": true,
+            "deletes_ledger_rows": false,
+            "explanation": "configured retention class has legal_hold=true; erasure is blocked and the denial is audited"
+        }),
+        PrivacyOperationKind::ErasureRequest if incident_packets_total > 0 => json!({
+            "status": "denied",
+            "allowed": false,
+            "reason_code": "INCIDENT_EVIDENCE_LOCKED",
+            "ledger_action": "retain_append_only_audit",
+            "artifact_action": "none",
+            "retain_days": retention_class.retain_days,
+            "legal_hold": retention_class.legal_hold,
+            "incident_packets_total": incident_packets_total,
+            "deletes_ledger_rows": false,
+            "explanation": "run contains incident evidence; erasure is blocked so forensic evidence remains auditable"
+        }),
+        PrivacyOperationKind::ErasureRequest => json!({
+            "status": "approved",
+            "allowed": true,
+            "reason_code": "ERASURE_APPROVED_BY_POLICY",
+            "ledger_action": "retain_append_only_audit",
+            "artifact_action": "delete_matching_external_artifacts",
+            "retain_days": retention_class.retain_days,
+            "legal_hold": false,
+            "evidence_packets_total": evidence_packets_total,
+            "deletes_ledger_rows": false,
+            "requires_artifact_source_of_truth_execution": evidence_packets_total > 0,
+            "explanation": "the append-only ledger keeps this audit decision; matching external artifacts may be deleted by their source-of-truth store"
+        }),
+    }
+}
+
+fn readback_privacy_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    record_kind: &str,
+    run_id: &str,
+    privacy_decision_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PRIVACY_DECISION_READBACK_MISMATCH",
+            PRIVACY_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "privacy append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun privacy evaluation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PRIVACY_DECISION_READBACK_MISMATCH",
+                PRIVACY_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("privacy decision sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun privacy evaluation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != record_kind
+        || row.run_id.as_deref() != Some(run_id)
+        || row.payload.get("privacy_decision_id").and_then(Value::as_str)
+            != Some(privacy_decision_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PRIVACY_DECISION_READBACK_MISMATCH",
+            PRIVACY_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.privacy_decision",
+            "privacy row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun privacy evaluation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_privacy_decision": inspection_after.record_count,
+        "ledger_tip_sha256_after_privacy_decision": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "run_id": row.run_id,
+        "privacy_decision_id": row.payload["privacy_decision_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "decision": row.payload["decision"].clone(),
+    }))
+}
+
+fn privacy_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let payload_sha256 = record
+        .hash
+        .get("payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            privacy_schema_error(
+                ledger_path,
+                record,
+                "hash.payload_sha256",
+                format!("{} row is missing payload_sha256", record.record_kind),
+            )
+        })?;
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            privacy_schema_error(
+                ledger_path,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        payload_sha256,
+        record_sha256,
+    ))
+}
+
+fn privacy_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    privacy_error(
+        ledger_path,
+        ErrorKind::InvalidInput,
+        error_code,
+        field_path,
+        message,
+        remediation,
+    )
+}
+
+fn privacy_not_found(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    privacy_error(
+        ledger_path,
+        ErrorKind::NotFound,
+        error_code,
+        field_path,
+        message,
+        remediation,
+    )
+}
+
+fn privacy_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::Schema,
+        "PRIVACY_RECORD_SCHEMA_DRIFT",
+        message,
+        Some(source_of_truth(ledger_path)),
+        PRIVACY_CONNECTOR_ID,
+        Some(format!(
+            "ledger_records[{}].{}",
+            record.sequence,
+            field_path.into()
+        )),
+        "inspect the physical ledger row; privacy evaluation never guesses across malformed ledger payloads",
+    )
+}
+
+fn privacy_error(
+    ledger_path: &Path,
+    kind: ErrorKind,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        kind,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        PRIVACY_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
 }
 
 fn ensure_score_run_exists_for_tenant(
@@ -3162,6 +4052,7 @@ fn score_connector_reliability(
         GITLAB_CI_CONNECTOR_ID => Ok(0.90),
         SCANNER_CONNECTOR_ID => Ok(0.92),
         ENTERPRISE_CONNECTOR_ID => Ok(0.93),
+        PRIVACY_CONNECTOR_ID => Ok(0.93),
         SQLITE_CONNECTOR_ID => Ok(0.96),
         POLICY_CONNECTOR_ID => Ok(0.88),
         other => Err(scorecard_schema_error(
@@ -7286,6 +8177,8 @@ fn build_dashboard_summary(
         json!({"label": "Evidence packets", "value": kind_counts.get("evidence_packet").copied().unwrap_or(0)}),
         json!({"label": "Incidents", "value": kind_counts.get("incident_packet").copied().unwrap_or(0)}),
         json!({"label": "Scorecards", "value": kind_counts.get("scorecard").copied().unwrap_or(0)}),
+        json!({"label": "Retention decisions", "value": kind_counts.get("retention_decision").copied().unwrap_or(0)}),
+        json!({"label": "Erasure decisions", "value": kind_counts.get("evidence_deletion").copied().unwrap_or(0)}),
         json!({"label": "Verifier passed", "value": passed}),
         json!({"label": "Verifier failed", "value": failed}),
         json!({"label": "Verifier blocked", "value": blocked}),
@@ -7312,6 +8205,8 @@ fn build_dashboard_summary(
             "evidence_packets_total": kind_counts.get("evidence_packet").copied().unwrap_or(0),
             "incident_packets_total": kind_counts.get("incident_packet").copied().unwrap_or(0),
             "scorecards_total": kind_counts.get("scorecard").copied().unwrap_or(0),
+            "retention_decisions_total": kind_counts.get("retention_decision").copied().unwrap_or(0),
+            "evidence_deletions_total": kind_counts.get("evidence_deletion").copied().unwrap_or(0),
             "verifier_results_total": verifier_total,
             "verifier_statuses": verifier_status_counts,
             "policy_decisions": policy_decision_counts,
@@ -9429,7 +10324,7 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option><option value=\"retention_decision\">retention_decision</option><option value=\"evidence_deletion\">evidence_deletion</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"approved\">approved</option><option value=\"retained\">retained</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
     for (_, _, timeline) in &data.timelines {
         let run_id = timeline.get("run_id").and_then(Value::as_str).unwrap_or("");
         for record in dashboard_array(timeline, "/report/timeline")? {
