@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 4;
+const LEDGER_SCHEMA_VERSION: i64 = 5;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -32,11 +32,14 @@ const GITHUB_CONNECTOR_ID: &str = "github_v1";
 const GHA_CONNECTOR_ID: &str = "gha_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
+const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
 const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
 const DASHBOARD_SCHEMA_VERSION: i64 = 1;
+const ENTERPRISE_CONTROL_SCHEMA_VERSION: i64 = 1;
+const SIEM_EXPORT_SCHEMA_VERSION: i64 = 1;
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -98,6 +101,11 @@ pub enum BlackboxCommands {
     Dashboard {
         #[command(subcommand)]
         action: DashboardCommands,
+    },
+    /// Configure and verify Phase 8 enterprise controls.
+    Enterprise {
+        #[command(subcommand)]
+        action: EnterpriseCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -522,6 +530,126 @@ pub enum DashboardView {
     Verifiers,
     Errors,
     Exports,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum EnterpriseCommands {
+    /// Persist a tenant enterprise-control configuration.
+    Configure(EnterpriseConfigureArgs),
+    /// Persist a SCIM directory snapshot for a configured tenant.
+    SyncDirectory(EnterpriseDirectorySyncArgs),
+    /// Persist an RBAC and tenant-isolation access decision.
+    AccessEvaluate(EnterpriseAccessEvaluateArgs),
+    /// Export tenant audit records and SIEM events from the verified ledger.
+    ExportAudit(EnterpriseAuditExportArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct EnterpriseConfigureArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Enterprise tenant config JSON file.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant id the config must bind to.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Agent or operator identity writing the config.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model id for AI-agent initiated config writes.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct EnterpriseDirectorySyncArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// SCIM directory snapshot JSON file.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant id the directory snapshot must bind to.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Agent or operator identity writing the snapshot.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model id for AI-agent initiated directory writes.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct EnterpriseAccessEvaluateArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id for the governed action.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Principal id from the latest SCIM directory snapshot.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Permission required by the governed action.
+    #[arg(long)]
+    pub permission: String,
+
+    /// Tenant-scoped resource locator, e.g. tenant:tenant_a:audit/export.
+    #[arg(long)]
+    pub resource: String,
+
+    /// Agent or operator identity evaluating access.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model id for AI-agent initiated decisions.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct EnterpriseAuditExportArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id to export.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Principal id that must have audit.export permission.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Output directory. The exporter writes audit.jsonl, siem-rfc5424.log, controls.json, and manifest.json.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing audit export directory.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Agent or operator identity exporting audit data.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model id for AI-agent initiated exports.
+    #[arg(long)]
+    pub model: Option<String>,
 }
 
 impl DashboardView {
@@ -969,6 +1097,12 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             DashboardCommands::Build(args) => dashboard_build(args),
             DashboardCommands::Api(args) => dashboard_api(args),
         },
+        BlackboxCommands::Enterprise { action } => match action {
+            EnterpriseCommands::Configure(args) => enterprise_configure(args),
+            EnterpriseCommands::SyncDirectory(args) => enterprise_sync_directory(args),
+            EnterpriseCommands::AccessEvaluate(args) => enterprise_access_evaluate(args),
+            EnterpriseCommands::ExportAudit(args) => enterprise_export_audit(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -1017,6 +1151,17 @@ fn connector_list() -> BbxResult<Value> {
                 "connector_id": GHA_CONNECTOR_ID,
                 "source_kind": "github_actions",
                 "readback_specs": ["gha_workflow_run_completed_v1"],
+                "fail_closed": true
+            },
+            {
+                "connector_id": ENTERPRISE_CONNECTOR_ID,
+                "source_kind": "enterprise_controls",
+                "readback_specs": [
+                    "enterprise_tenant_config_v1",
+                    "enterprise_scim_directory_v1",
+                    "enterprise_rbac_tenant_isolation_v1",
+                    "enterprise_audit_siem_export_v1"
+                ],
                 "fail_closed": true
             }
         ]
@@ -1127,6 +1272,45 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "connector": GHA_CONNECTOR_ID,
                 "source_of_truth": gha_source_of_truth(&owner, &repo, "actions/runs"),
                 "readback": readback,
+            }))
+        }
+        ENTERPRISE_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    ENTERPRISE_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "enterprise_controls_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            let counts = ledger_record_kind_counts(&inspection.records);
+            let tenant_configs = counts.get("enterprise_tenant_config").copied().unwrap_or(0);
+            let directory_snapshots = counts
+                .get("enterprise_directory_snapshot")
+                .copied()
+                .unwrap_or(0);
+            let access_decisions = counts
+                .get("enterprise_access_decision")
+                .copied()
+                .unwrap_or(0);
+            Ok(json!({
+                "status": "ok",
+                "connector": ENTERPRISE_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "record_kinds": counts,
+                    "enterprise_controls": {
+                        "tenant_configs": tenant_configs,
+                        "directory_snapshots": directory_snapshots,
+                        "access_decisions": access_decisions
+                    }
+                },
             }))
         }
         other => Err(BlackboxError::connector_blocked(
@@ -1859,12 +2043,2504 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "GET", "path": "/v1/connectors", "ledger_record_kind": null },
             { "method": "POST", "path": "/v1/connectors/{connector_id}/test", "ledger_record_kind": null },
             { "method": "GET", "path": "/v1/policies", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/policies/evaluate", "ledger_record_kind": "policy_decision" }
+            { "method": "POST", "path": "/v1/policies/evaluate", "ledger_record_kind": "policy_decision" },
+            { "method": "GET", "path": "/v1/dashboard/summary", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/runs", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/runs/{run_id}/timeline", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/evidence", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/verifier-status", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/errors", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/exports", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/config", "ledger_record_kind": "enterprise_tenant_config" },
+            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
+            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
+            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
         "fail_closed": true,
     }))
+}
+
+fn enterprise_configure(args: EnterpriseConfigureArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let raw = read_json_file(&args.input, "enterprise tenant config JSON")?;
+    let payload = validate_enterprise_config_payload(&args.ledger, &raw, &args.tenant)?;
+    let record_id = prefixed_id("bbx_ent_cfg");
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "enterprise_tenant_config".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let stored = latest_enterprise_record(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        "enterprise_tenant_config",
+    )?;
+    verify_enterprise_append_readback(&args.ledger, stored, append.sequence, &record_id)?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox enterprise configure",
+        "connector": ENTERPRISE_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "enterprise_tenant_config",
+        "tenant_id": args.tenant,
+        "ledger_sequence": append.sequence,
+        "record_sha256": append.record_sha256,
+        "payload_sha256": append.payload_sha256,
+    }))
+}
+
+fn enterprise_sync_directory(args: EnterpriseDirectorySyncArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let raw = read_json_file(&args.input, "enterprise SCIM directory JSON")?;
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let config_record = latest_enterprise_record(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        "enterprise_tenant_config",
+    )?;
+    let config_ref = enterprise_record_ref("tenant_config", config_record);
+    let roles = enterprise_roles_from_config_payload(&args.ledger, &config_record.payload)?;
+    let payload = validate_enterprise_directory_payload(
+        &args.ledger,
+        &raw,
+        &args.tenant,
+        &roles,
+        config_ref,
+    )?;
+    let users_total = payload
+        .get("users")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let groups_total = payload
+        .get("groups")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let record_id = prefixed_id("bbx_ent_dir");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "enterprise_directory_snapshot".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let stored = latest_enterprise_record(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        "enterprise_directory_snapshot",
+    )?;
+    verify_enterprise_append_readback(&args.ledger, stored, append.sequence, &record_id)?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox enterprise sync-directory",
+        "connector": ENTERPRISE_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "enterprise_directory_snapshot",
+        "tenant_id": args.tenant,
+        "ledger_sequence": append.sequence,
+        "record_sha256": append.record_sha256,
+        "payload_sha256": append.payload_sha256,
+        "users_total": users_total,
+        "groups_total": groups_total,
+    }))
+}
+
+fn enterprise_access_evaluate(args: EnterpriseAccessEvaluateArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--principal-id", &args.principal_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--permission", &args.permission)?;
+    require_non_empty_for_ledger(&args.ledger, "--resource", &args.resource)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let outcome = enterprise_access_outcome(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        &args.principal_id,
+        &args.permission,
+        &args.resource,
+    )?;
+    let access_append = append_enterprise_access_decision(
+        &mut conn,
+        &args.ledger,
+        &args.tenant,
+        &args.principal_id,
+        &args.permission,
+        &args.resource,
+        &args.agent,
+        args.model.as_deref(),
+        &outcome,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox enterprise access-evaluate",
+        "connector": ENTERPRISE_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": access_append.record_id,
+        "record_kind": "enterprise_access_decision",
+        "access_decision_id": access_append.access_decision_id,
+        "tenant_id": args.tenant,
+        "principal_id": args.principal_id,
+        "permission": args.permission,
+        "resource": args.resource,
+        "allowed": outcome.allowed,
+        "decision": if outcome.allowed { "allowed" } else { "denied" },
+        "reason_code": outcome.reason_code,
+        "roles": outcome.roles,
+        "ledger_sequence": access_append.sequence,
+        "record_sha256": access_append.record_sha256,
+        "payload_sha256": access_append.payload_sha256,
+    }))
+}
+
+fn enterprise_export_audit(args: EnterpriseAuditExportArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--principal-id", &args.principal_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let resource = format!("tenant:{}:audit/export", args.tenant);
+    let authorization = enterprise_access_outcome(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        &args.principal_id,
+        "audit.export",
+        &resource,
+    )?;
+    let access_append = append_enterprise_access_decision(
+        &mut conn,
+        &args.ledger,
+        &args.tenant,
+        &args.principal_id,
+        "audit.export",
+        &resource,
+        &args.agent,
+        args.model.as_deref(),
+        &authorization,
+    )?;
+    if !authorization.allowed {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "ENTERPRISE_RBAC_DENIED",
+            format!(
+                "principal {} is not authorized to export audit data for tenant {}",
+                args.principal_id, args.tenant
+            ),
+            Some(source_of_truth(&args.ledger)),
+            ENTERPRISE_CONNECTOR_ID,
+            authorization.field_path.clone(),
+            authorization.remediation.clone().unwrap_or_else(|| {
+                "grant audit.export through a SCIM group role and retry".to_string()
+            }),
+        ));
+    }
+    validate_enterprise_export_directory_path(&args.out, args.force)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let config_record = latest_enterprise_record(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        "enterprise_tenant_config",
+    )?;
+    let directory_record = latest_enterprise_record(
+        &args.ledger,
+        &inspection,
+        &args.tenant,
+        "enterprise_directory_snapshot",
+    )?;
+    let events = build_enterprise_audit_events(&args.ledger, &inspection, &args.tenant)?;
+    if events.is_empty() {
+        return Err(enterprise_invalid(
+            &args.ledger,
+            "ENTERPRISE_AUDIT_EMPTY",
+            "ledger_records.tenant_id",
+            format!("tenant {} has no ledger records to export", args.tenant),
+            "configure the tenant and record at least one governed action before exporting audit evidence",
+        ));
+    }
+
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_enterprise_temp_dir(&temp_dir)?;
+    let write_result = write_enterprise_audit_directory(
+        &args,
+        &inspection,
+        &authorization,
+        &access_append,
+        config_record,
+        directory_record,
+        &events,
+        &temp_dir,
+    );
+    if let Err(err) = write_result {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(err);
+    }
+
+    let manifest_path = args.out.join("manifest.json");
+    let final_manifest = read_json_file(&manifest_path, "enterprise audit manifest readback")?;
+    if final_manifest["format"] != "blackbox_enterprise_audit_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_AUDIT_MANIFEST_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(&manifest_path),
+            "manifest.json.format",
+            "final enterprise audit manifest readback did not preserve the expected format",
+            "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    verify_enterprise_manifest_files(&args.out, &final_manifest)?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox enterprise export-audit",
+        "connector": ENTERPRISE_CONNECTOR_ID,
+        "source_of_truth": file_source_of_truth(&args.out),
+        "ledger_source_of_truth": source_of_truth(&args.ledger),
+        "tenant_id": args.tenant,
+        "principal_id": args.principal_id,
+        "out": args.out,
+        "audit_events_total": events.len(),
+        "ledger_record_count": inspection.record_count,
+        "ledger_tip_sha256": inspection.ledger_tip_sha256,
+        "access_decision_id": access_append.access_decision_id,
+        "access_decision_sequence": access_append.sequence,
+        "access_decision_record_sha256": access_append.record_sha256,
+        "manifest_sha256": sha256_file(&manifest_path)?,
+    }))
+}
+
+#[derive(Debug)]
+struct EnterprisePrincipal {
+    user_name: String,
+    active: bool,
+    groups: Vec<String>,
+}
+
+#[derive(Debug)]
+struct EnterpriseDirectoryState {
+    users: BTreeMap<String, EnterprisePrincipal>,
+    groups: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Debug)]
+struct EnterpriseAccessOutcome {
+    allowed: bool,
+    reason_code: Option<String>,
+    field_path: Option<String>,
+    remediation: Option<String>,
+    roles: Vec<String>,
+    permissions: Vec<String>,
+    principal_state: Value,
+    source_refs: Value,
+}
+
+#[derive(Debug)]
+struct EnterpriseAccessAppend {
+    access_decision_id: String,
+    record_id: String,
+    sequence: i64,
+    payload_sha256: String,
+    record_sha256: String,
+}
+
+impl EnterpriseAccessAppend {
+    fn to_json(&self) -> Value {
+        json!({
+            "access_decision_id": self.access_decision_id,
+            "record_id": self.record_id,
+            "record_kind": "enterprise_access_decision",
+            "sequence": self.sequence,
+            "payload_sha256": self.payload_sha256,
+            "record_sha256": self.record_sha256,
+        })
+    }
+}
+
+fn validate_enterprise_config_payload(
+    ledger_path: &Path,
+    raw: &Value,
+    tenant: &str,
+) -> BbxResult<Value> {
+    validate_no_enterprise_secret_material(ledger_path, raw)?;
+    let object = enterprise_object(
+        ledger_path,
+        raw,
+        "$",
+        "ENTERPRISE_CONFIG_INVALID",
+        "enterprise config root must be a JSON object",
+    )?;
+    enterprise_reject_unknown_keys(
+        ledger_path,
+        object,
+        &["tenant_id", "sso", "rbac", "retention", "deployment"],
+        "$",
+        "ENTERPRISE_CONFIG_INVALID",
+    )?;
+    let tenant_id = enterprise_required_str(
+        ledger_path,
+        raw,
+        "tenant_id",
+        "$.tenant_id",
+        "ENTERPRISE_CONFIG_INVALID",
+    )?;
+    validate_enterprise_atom(ledger_path, "$.tenant_id", tenant_id)?;
+    if tenant_id != tenant {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_TENANT_MISMATCH",
+            "$.tenant_id",
+            format!("config tenant_id {tenant_id} does not match --tenant {tenant}"),
+            "write the config under the tenant id that owns it",
+        ));
+    }
+
+    let sso = raw.get("sso").ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_SSO_CONFIG_INVALID",
+            "$.sso",
+            "enterprise config is missing sso object",
+            "provide explicit oidc or saml metadata; no default identity provider is assumed",
+        )
+    })?;
+    validate_enterprise_sso(ledger_path, sso)?;
+
+    let rbac = raw.get("rbac").ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_RBAC_CONFIG_INVALID",
+            "$.rbac",
+            "enterprise config is missing rbac object",
+            "provide explicit roles and permissions before syncing a directory",
+        )
+    })?;
+    validate_enterprise_rbac(ledger_path, rbac)?;
+
+    let retention = raw.get("retention").ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+            "$.retention",
+            "enterprise config is missing retention object",
+            "provide explicit retention classes; no implicit retention policy is used",
+        )
+    })?;
+    validate_enterprise_retention(ledger_path, retention)?;
+
+    let deployment = raw.get("deployment").ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+            "$.deployment",
+            "enterprise config is missing deployment object",
+            "provide private deployment, data residency, key, and SIEM settings",
+        )
+    })?;
+    validate_enterprise_deployment(ledger_path, deployment)?;
+
+    Ok(json!({
+        "record_kind": "enterprise_tenant_config",
+        "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+        "tenant_id": tenant_id,
+        "sso": sso,
+        "rbac": rbac,
+        "retention": retention,
+        "deployment": deployment,
+        "tenant_key_store": {
+            "customer_managed": true,
+            "key_scope": "tenant",
+            "tenant_id": tenant_id,
+            "kms_key_id": deployment.get("kms_key_id").cloned().unwrap_or(Value::Null),
+            "data_residency": deployment.get("data_residency").cloned().unwrap_or(Value::Null)
+        },
+        "configured_at": Utc::now().to_rfc3339(),
+        "standards_basis": {
+            "oidc": "OpenID Connect Core 1.0",
+            "saml": "OASIS SAML 2.0 Core",
+            "scim": "RFC 7644",
+            "rbac": "NIST RBAC",
+            "siem": "RFC 5424"
+        }
+    }))
+}
+
+fn validate_enterprise_directory_payload(
+    ledger_path: &Path,
+    raw: &Value,
+    tenant: &str,
+    roles: &BTreeMap<String, BTreeSet<String>>,
+    config_ref: Value,
+) -> BbxResult<Value> {
+    validate_no_enterprise_secret_material(ledger_path, raw)?;
+    let object = enterprise_object(
+        ledger_path,
+        raw,
+        "$",
+        "ENTERPRISE_DIRECTORY_INVALID",
+        "SCIM directory snapshot root must be a JSON object",
+    )?;
+    enterprise_reject_unknown_keys(
+        ledger_path,
+        object,
+        &["tenant_id", "schemas", "users", "groups"],
+        "$",
+        "ENTERPRISE_DIRECTORY_INVALID",
+    )?;
+    let tenant_id = enterprise_required_str(
+        ledger_path,
+        raw,
+        "tenant_id",
+        "$.tenant_id",
+        "ENTERPRISE_DIRECTORY_INVALID",
+    )?;
+    validate_enterprise_atom(ledger_path, "$.tenant_id", tenant_id)?;
+    if tenant_id != tenant {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_TENANT_MISMATCH",
+            "$.tenant_id",
+            format!("directory tenant_id {tenant_id} does not match --tenant {tenant}"),
+            "sync the directory snapshot under the tenant id that owns it",
+        ));
+    }
+    let schemas = enterprise_required_array(
+        ledger_path,
+        raw,
+        "schemas",
+        "$.schemas",
+        "ENTERPRISE_DIRECTORY_INVALID",
+    )?;
+    let schema_values = schemas
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for required in [
+        "urn:ietf:params:scim:schemas:core:2.0:User",
+        "urn:ietf:params:scim:schemas:core:2.0:Group",
+    ] {
+        if !schema_values.contains(required) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_INVALID",
+                "$.schemas",
+                format!("SCIM directory snapshot is missing required schema {required}"),
+                "include both SCIM User and Group schema URNs in the directory snapshot",
+            ));
+        }
+    }
+    let users = enterprise_required_array(
+        ledger_path,
+        raw,
+        "users",
+        "$.users",
+        "ENTERPRISE_DIRECTORY_INVALID",
+    )?;
+    let groups = enterprise_required_array(
+        ledger_path,
+        raw,
+        "groups",
+        "$.groups",
+        "ENTERPRISE_DIRECTORY_INVALID",
+    )?;
+    if users.is_empty() {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_DIRECTORY_INVALID",
+            "$.users",
+            "SCIM directory snapshot must include at least one user",
+            "sync a real non-empty directory snapshot for the tenant",
+        ));
+    }
+    if groups.is_empty() {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_DIRECTORY_INVALID",
+            "$.groups",
+            "SCIM directory snapshot must include at least one group",
+            "sync group membership and role assignments before evaluating access",
+        ));
+    }
+
+    let mut group_ids = BTreeSet::new();
+    for (index, group) in groups.iter().enumerate() {
+        enterprise_object(
+            ledger_path,
+            group,
+            &format!("$.groups[{index}]"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+            "SCIM group must be a JSON object",
+        )?;
+        let id = enterprise_required_str(
+            ledger_path,
+            group,
+            "id",
+            &format!("$.groups[{index}].id"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        validate_enterprise_atom(ledger_path, &format!("$.groups[{index}].id"), id)?;
+        if !group_ids.insert(id.to_string()) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_INVALID",
+                format!("$.groups[{index}].id"),
+                format!("duplicate SCIM group id {id}"),
+                "deduplicate group ids before syncing the directory snapshot",
+            ));
+        }
+        enterprise_required_str(
+            ledger_path,
+            group,
+            "displayName",
+            &format!("$.groups[{index}].displayName"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        let assigned_roles = enterprise_required_array(
+            ledger_path,
+            group,
+            "roles",
+            &format!("$.groups[{index}].roles"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        if assigned_roles.is_empty() {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_INVALID",
+                format!("$.groups[{index}].roles"),
+                format!("SCIM group {id} must map to at least one configured role"),
+                "assign an explicit RBAC role to every group used for authorization",
+            ));
+        }
+        let mut seen_roles = BTreeSet::new();
+        for (role_index, role_value) in assigned_roles.iter().enumerate() {
+            let Some(role_id) = role_value.as_str().filter(|value| !value.trim().is_empty()) else {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.groups[{index}].roles[{role_index}]"),
+                    "SCIM group role assignments must be non-empty strings",
+                    "replace malformed role assignments with configured role ids",
+                ));
+            };
+            validate_enterprise_atom(
+                ledger_path,
+                &format!("$.groups[{index}].roles[{role_index}]"),
+                role_id,
+            )?;
+            if !roles.contains_key(role_id) {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.groups[{index}].roles[{role_index}]"),
+                    format!("SCIM group {id} references unknown role {role_id}"),
+                    "configure the role first or remove the assignment from the directory snapshot",
+                ));
+            }
+            if !seen_roles.insert(role_id.to_string()) {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.groups[{index}].roles[{role_index}]"),
+                    format!("SCIM group {id} repeats role {role_id}"),
+                    "deduplicate role assignments before syncing",
+                ));
+            }
+        }
+    }
+
+    let mut user_ids = BTreeSet::new();
+    for (index, user) in users.iter().enumerate() {
+        enterprise_object(
+            ledger_path,
+            user,
+            &format!("$.users[{index}]"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+            "SCIM user must be a JSON object",
+        )?;
+        let id = enterprise_required_str(
+            ledger_path,
+            user,
+            "id",
+            &format!("$.users[{index}].id"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        validate_enterprise_atom(ledger_path, &format!("$.users[{index}].id"), id)?;
+        if !user_ids.insert(id.to_string()) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_INVALID",
+                format!("$.users[{index}].id"),
+                format!("duplicate SCIM user id {id}"),
+                "deduplicate user ids before syncing the directory snapshot",
+            ));
+        }
+        enterprise_required_str(
+            ledger_path,
+            user,
+            "userName",
+            &format!("$.users[{index}].userName"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        enterprise_required_bool(
+            ledger_path,
+            user,
+            "active",
+            &format!("$.users[{index}].active"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        let memberships = enterprise_required_array(
+            ledger_path,
+            user,
+            "groups",
+            &format!("$.users[{index}].groups"),
+            "ENTERPRISE_DIRECTORY_INVALID",
+        )?;
+        let mut seen_groups = BTreeSet::new();
+        for (group_index, group_value) in memberships.iter().enumerate() {
+            let Some(group_id) = group_value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+            else {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.users[{index}].groups[{group_index}]"),
+                    "SCIM user group memberships must be non-empty strings",
+                    "replace malformed group memberships with known SCIM group ids",
+                ));
+            };
+            validate_enterprise_atom(
+                ledger_path,
+                &format!("$.users[{index}].groups[{group_index}]"),
+                group_id,
+            )?;
+            if !group_ids.contains(group_id) {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.users[{index}].groups[{group_index}]"),
+                    format!("SCIM user {id} references unknown group {group_id}"),
+                    "sync the group before assigning users to it",
+                ));
+            }
+            if !seen_groups.insert(group_id.to_string()) {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_INVALID",
+                    format!("$.users[{index}].groups[{group_index}]"),
+                    format!("SCIM user {id} repeats group {group_id}"),
+                    "deduplicate user group memberships before syncing",
+                ));
+            }
+        }
+    }
+
+    Ok(json!({
+        "record_kind": "enterprise_directory_snapshot",
+        "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+        "tenant_id": tenant_id,
+        "schemas": schemas,
+        "users": users,
+        "groups": groups,
+        "source_refs": {
+            "tenant_config": config_ref
+        },
+        "synced_at": Utc::now().to_rfc3339()
+    }))
+}
+
+fn validate_enterprise_sso(ledger_path: &Path, sso: &Value) -> BbxResult<()> {
+    let object = enterprise_object(
+        ledger_path,
+        sso,
+        "$.sso",
+        "ENTERPRISE_SSO_CONFIG_INVALID",
+        "sso must be a JSON object",
+    )?;
+    let protocol = enterprise_required_str(
+        ledger_path,
+        sso,
+        "protocol",
+        "$.sso.protocol",
+        "ENTERPRISE_SSO_CONFIG_INVALID",
+    )?;
+    match protocol {
+        "oidc" => {
+            enterprise_reject_unknown_keys(
+                ledger_path,
+                object,
+                &[
+                    "protocol",
+                    "issuer",
+                    "client_id",
+                    "jwks_sha256",
+                    "required_claims",
+                ],
+                "$.sso",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let issuer = enterprise_required_str(
+                ledger_path,
+                sso,
+                "issuer",
+                "$.sso.issuer",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            validate_https_url(
+                ledger_path,
+                "$.sso.issuer",
+                issuer,
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let client_id = enterprise_required_str(
+                ledger_path,
+                sso,
+                "client_id",
+                "$.sso.client_id",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            validate_enterprise_atom(ledger_path, "$.sso.client_id", client_id)?;
+            let jwks_sha = enterprise_required_str(
+                ledger_path,
+                sso,
+                "jwks_sha256",
+                "$.sso.jwks_sha256",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            validate_sha256_digest(
+                ledger_path,
+                "$.sso.jwks_sha256",
+                jwks_sha,
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let claims = enterprise_required_array(
+                ledger_path,
+                sso,
+                "required_claims",
+                "$.sso.required_claims",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let claim_set = claims
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<BTreeSet<_>>();
+            for required in ["iss", "sub", "aud", "exp"] {
+                if !claim_set.contains(required) {
+                    return Err(enterprise_invalid(
+                        ledger_path,
+                        "ENTERPRISE_SSO_CONFIG_INVALID",
+                        "$.sso.required_claims",
+                        format!("OIDC config must require ID token claim {required}"),
+                        "require iss, sub, aud, and exp so ID tokens can be validated fail-closed",
+                    ));
+                }
+            }
+            for (index, claim) in claims.iter().enumerate() {
+                let Some(claim) = claim.as_str().filter(|value| !value.trim().is_empty()) else {
+                    return Err(enterprise_invalid(
+                        ledger_path,
+                        "ENTERPRISE_SSO_CONFIG_INVALID",
+                        format!("$.sso.required_claims[{index}]"),
+                        "OIDC required_claims entries must be non-empty strings",
+                        "replace malformed claim entries with claim names",
+                    ));
+                };
+                validate_enterprise_atom(
+                    ledger_path,
+                    &format!("$.sso.required_claims[{index}]"),
+                    claim,
+                )?;
+            }
+            Ok(())
+        }
+        "saml" => {
+            enterprise_reject_unknown_keys(
+                ledger_path,
+                object,
+                &[
+                    "protocol",
+                    "entity_id",
+                    "sso_url",
+                    "audience",
+                    "x509_cert_sha256",
+                ],
+                "$.sso",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            enterprise_required_str(
+                ledger_path,
+                sso,
+                "entity_id",
+                "$.sso.entity_id",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let sso_url = enterprise_required_str(
+                ledger_path,
+                sso,
+                "sso_url",
+                "$.sso.sso_url",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            validate_https_url(
+                ledger_path,
+                "$.sso.sso_url",
+                sso_url,
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            enterprise_required_str(
+                ledger_path,
+                sso,
+                "audience",
+                "$.sso.audience",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            let cert_sha = enterprise_required_str(
+                ledger_path,
+                sso,
+                "x509_cert_sha256",
+                "$.sso.x509_cert_sha256",
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            validate_sha256_digest(
+                ledger_path,
+                "$.sso.x509_cert_sha256",
+                cert_sha,
+                "ENTERPRISE_SSO_CONFIG_INVALID",
+            )?;
+            Ok(())
+        }
+        other => Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_SSO_CONFIG_INVALID",
+            "$.sso.protocol",
+            format!("unsupported SSO protocol {other:?}"),
+            "set sso.protocol to oidc or saml explicitly",
+        )),
+    }
+}
+
+fn validate_enterprise_rbac(ledger_path: &Path, rbac: &Value) -> BbxResult<()> {
+    let object = enterprise_object(
+        ledger_path,
+        rbac,
+        "$.rbac",
+        "ENTERPRISE_RBAC_CONFIG_INVALID",
+        "rbac must be a JSON object",
+    )?;
+    enterprise_reject_unknown_keys(
+        ledger_path,
+        object,
+        &["roles"],
+        "$.rbac",
+        "ENTERPRISE_RBAC_CONFIG_INVALID",
+    )?;
+    let roles = enterprise_required_array(
+        ledger_path,
+        rbac,
+        "roles",
+        "$.rbac.roles",
+        "ENTERPRISE_RBAC_CONFIG_INVALID",
+    )?;
+    if roles.is_empty() {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_RBAC_CONFIG_INVALID",
+            "$.rbac.roles",
+            "rbac.roles must include at least one role",
+            "configure explicit roles before syncing SCIM group assignments",
+        ));
+    }
+    let mut role_ids = BTreeSet::new();
+    for (index, role) in roles.iter().enumerate() {
+        enterprise_object(
+            ledger_path,
+            role,
+            &format!("$.rbac.roles[{index}]"),
+            "ENTERPRISE_RBAC_CONFIG_INVALID",
+            "RBAC role must be a JSON object",
+        )?;
+        let role_id = enterprise_required_str(
+            ledger_path,
+            role,
+            "role_id",
+            &format!("$.rbac.roles[{index}].role_id"),
+            "ENTERPRISE_RBAC_CONFIG_INVALID",
+        )?;
+        validate_enterprise_atom(
+            ledger_path,
+            &format!("$.rbac.roles[{index}].role_id"),
+            role_id,
+        )?;
+        if !role_ids.insert(role_id.to_string()) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_RBAC_CONFIG_INVALID",
+                format!("$.rbac.roles[{index}].role_id"),
+                format!("duplicate RBAC role_id {role_id}"),
+                "deduplicate RBAC roles before persisting the enterprise config",
+            ));
+        }
+        let permissions = enterprise_required_array(
+            ledger_path,
+            role,
+            "permissions",
+            &format!("$.rbac.roles[{index}].permissions"),
+            "ENTERPRISE_RBAC_CONFIG_INVALID",
+        )?;
+        if permissions.is_empty() {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_RBAC_CONFIG_INVALID",
+                format!("$.rbac.roles[{index}].permissions"),
+                format!("RBAC role {role_id} has no permissions"),
+                "assign at least one explicit permission to every role",
+            ));
+        }
+        let mut seen_permissions = BTreeSet::new();
+        for (permission_index, permission_value) in permissions.iter().enumerate() {
+            let Some(permission) = permission_value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+            else {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_RBAC_CONFIG_INVALID",
+                    format!("$.rbac.roles[{index}].permissions[{permission_index}]"),
+                    "RBAC permissions must be non-empty strings",
+                    "replace malformed permissions with explicit permission ids",
+                ));
+            };
+            validate_enterprise_atom(
+                ledger_path,
+                &format!("$.rbac.roles[{index}].permissions[{permission_index}]"),
+                permission,
+            )?;
+            if !seen_permissions.insert(permission.to_string()) {
+                return Err(enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_RBAC_CONFIG_INVALID",
+                    format!("$.rbac.roles[{index}].permissions[{permission_index}]"),
+                    format!("RBAC role {role_id} repeats permission {permission}"),
+                    "deduplicate permissions before persisting the enterprise config",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_enterprise_retention(ledger_path: &Path, retention: &Value) -> BbxResult<()> {
+    let object = enterprise_object(
+        ledger_path,
+        retention,
+        "$.retention",
+        "ENTERPRISE_RETENTION_CONFIG_INVALID",
+        "retention must be a JSON object",
+    )?;
+    enterprise_reject_unknown_keys(
+        ledger_path,
+        object,
+        &["default_class", "classes"],
+        "$.retention",
+        "ENTERPRISE_RETENTION_CONFIG_INVALID",
+    )?;
+    let default_class = enterprise_required_str(
+        ledger_path,
+        retention,
+        "default_class",
+        "$.retention.default_class",
+        "ENTERPRISE_RETENTION_CONFIG_INVALID",
+    )?;
+    validate_enterprise_atom(ledger_path, "$.retention.default_class", default_class)?;
+    let classes = enterprise_required_array(
+        ledger_path,
+        retention,
+        "classes",
+        "$.retention.classes",
+        "ENTERPRISE_RETENTION_CONFIG_INVALID",
+    )?;
+    if classes.is_empty() {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+            "$.retention.classes",
+            "retention.classes must include at least one class",
+            "define explicit retention classes; the system does not apply implicit retention",
+        ));
+    }
+    let mut class_ids = BTreeSet::new();
+    for (index, class) in classes.iter().enumerate() {
+        enterprise_object(
+            ledger_path,
+            class,
+            &format!("$.retention.classes[{index}]"),
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+            "retention class must be a JSON object",
+        )?;
+        let class_id = enterprise_required_str(
+            ledger_path,
+            class,
+            "class_id",
+            &format!("$.retention.classes[{index}].class_id"),
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+        )?;
+        validate_enterprise_atom(
+            ledger_path,
+            &format!("$.retention.classes[{index}].class_id"),
+            class_id,
+        )?;
+        if !class_ids.insert(class_id.to_string()) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_RETENTION_CONFIG_INVALID",
+                format!("$.retention.classes[{index}].class_id"),
+                format!("duplicate retention class {class_id}"),
+                "deduplicate retention classes before persisting the enterprise config",
+            ));
+        }
+        let retain_days = enterprise_required_i64(
+            ledger_path,
+            class,
+            "retain_days",
+            &format!("$.retention.classes[{index}].retain_days"),
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+        )?;
+        if retain_days <= 0 {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_RETENTION_CONFIG_INVALID",
+                format!("$.retention.classes[{index}].retain_days"),
+                "retention retain_days must be greater than zero",
+                "set an explicit positive retention period for the class",
+            ));
+        }
+        enterprise_required_bool(
+            ledger_path,
+            class,
+            "legal_hold",
+            &format!("$.retention.classes[{index}].legal_hold"),
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+        )?;
+    }
+    if !class_ids.contains(default_class) {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_RETENTION_CONFIG_INVALID",
+            "$.retention.default_class",
+            format!("default retention class {default_class} is not defined"),
+            "make retention.default_class match one configured retention class_id",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_enterprise_deployment(ledger_path: &Path, deployment: &Value) -> BbxResult<()> {
+    let object = enterprise_object(
+        ledger_path,
+        deployment,
+        "$.deployment",
+        "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+        "deployment must be a JSON object",
+    )?;
+    enterprise_reject_unknown_keys(
+        ledger_path,
+        object,
+        &[
+            "mode",
+            "region",
+            "data_residency",
+            "kms_key_id",
+            "siem_format",
+        ],
+        "$.deployment",
+        "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+    )?;
+    let mode = enterprise_required_str(
+        ledger_path,
+        deployment,
+        "mode",
+        "$.deployment.mode",
+        "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+    )?;
+    if mode != "private_vpc" {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+            "$.deployment.mode",
+            format!("unsupported enterprise deployment mode {mode:?}"),
+            "set deployment.mode to private_vpc for the Phase 8 controlled pilot",
+        ));
+    }
+    for (key, field) in [
+        ("region", "$.deployment.region"),
+        ("data_residency", "$.deployment.data_residency"),
+        ("kms_key_id", "$.deployment.kms_key_id"),
+    ] {
+        let value = enterprise_required_str(
+            ledger_path,
+            deployment,
+            key,
+            field,
+            "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+        )?;
+        validate_enterprise_atom(ledger_path, field, value)?;
+    }
+    let siem = enterprise_required_str(
+        ledger_path,
+        deployment,
+        "siem_format",
+        "$.deployment.siem_format",
+        "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+    )?;
+    if siem != "rfc5424_jsonl" {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_DEPLOYMENT_CONFIG_INVALID",
+            "$.deployment.siem_format",
+            format!("unsupported SIEM export format {siem:?}"),
+            "set deployment.siem_format to rfc5424_jsonl",
+        ));
+    }
+    Ok(())
+}
+
+fn enterprise_access_outcome(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    tenant: &str,
+    principal_id: &str,
+    permission: &str,
+    resource: &str,
+) -> BbxResult<EnterpriseAccessOutcome> {
+    validate_enterprise_atom(ledger_path, "--principal-id", principal_id)?;
+    validate_enterprise_atom(ledger_path, "--permission", permission)?;
+
+    let config_record =
+        latest_enterprise_record(ledger_path, inspection, tenant, "enterprise_tenant_config")?;
+    let directory_record = latest_enterprise_record(
+        ledger_path,
+        inspection,
+        tenant,
+        "enterprise_directory_snapshot",
+    )?;
+    let roles_by_id = enterprise_roles_from_config_payload(ledger_path, &config_record.payload)?;
+    let directory =
+        enterprise_directory_state_from_payload(ledger_path, &directory_record.payload)?;
+    let source_refs = json!({
+        "tenant_config": enterprise_record_ref("tenant_config", config_record),
+        "directory_snapshot": enterprise_record_ref("directory_snapshot", directory_record),
+    });
+
+    let resource_tenant = enterprise_resource_tenant(resource);
+    if resource_tenant != Some(tenant) {
+        return Ok(EnterpriseAccessOutcome::denied(
+            "TENANT_SCOPE_DENIED",
+            "$.resource",
+            "resource tenant scope does not match the requested tenant",
+            "use a tenant-scoped resource locator formatted as tenant:<tenant_id>:<resource>",
+            Vec::new(),
+            Vec::new(),
+            json!({
+                "principal_id": principal_id,
+                "resource_tenant": resource_tenant,
+                "expected_tenant": tenant
+            }),
+            source_refs,
+        ));
+    }
+
+    let Some(principal) = directory.users.get(principal_id) else {
+        return Ok(EnterpriseAccessOutcome::denied(
+            "PRINCIPAL_NOT_FOUND",
+            "$.principal_id",
+            "principal does not exist in the latest SCIM directory snapshot",
+            "sync the principal through SCIM before evaluating access",
+            Vec::new(),
+            Vec::new(),
+            json!({
+                "principal_id": principal_id,
+                "exists": false
+            }),
+            source_refs,
+        ));
+    };
+    if !principal.active {
+        return Ok(EnterpriseAccessOutcome::denied(
+            "PRINCIPAL_INACTIVE",
+            "$.principal_id",
+            "principal exists but is inactive in the latest SCIM directory snapshot",
+            "reactivate the principal in the identity provider and sync SCIM before retrying",
+            Vec::new(),
+            Vec::new(),
+            json!({
+                "principal_id": principal_id,
+                "userName": principal.user_name.clone(),
+                "active": principal.active,
+                "groups": principal.groups.clone()
+            }),
+            source_refs,
+        ));
+    }
+
+    let mut role_ids = BTreeSet::new();
+    for group_id in &principal.groups {
+        let Some(group_roles) = directory.groups.get(group_id) else {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                "$.users[].groups",
+                format!("SCIM principal {principal_id} references missing group {group_id}"),
+                "resync the directory snapshot from the identity provider",
+            ));
+        };
+        for role_id in group_roles {
+            role_ids.insert(role_id.clone());
+        }
+    }
+    let mut permissions = BTreeSet::new();
+    for role_id in &role_ids {
+        let Some(role_permissions) = roles_by_id.get(role_id) else {
+            return Err(enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_CONFIG_SCHEMA_INVALID",
+                "$.rbac.roles",
+                format!("directory references role {role_id}, but config does not define it"),
+                "persist a corrected enterprise config and resync the directory",
+            ));
+        };
+        for role_permission in role_permissions {
+            permissions.insert(role_permission.clone());
+        }
+    }
+    let role_vec = role_ids.into_iter().collect::<Vec<_>>();
+    let permission_vec = permissions.iter().cloned().collect::<Vec<_>>();
+    let principal_state = json!({
+        "principal_id": principal_id,
+        "userName": principal.user_name.clone(),
+        "active": principal.active,
+        "groups": principal.groups.clone(),
+        "roles": role_vec.clone(),
+        "permissions": permission_vec.clone()
+    });
+    if permissions.contains(permission) {
+        Ok(EnterpriseAccessOutcome {
+            allowed: true,
+            reason_code: None,
+            field_path: None,
+            remediation: None,
+            roles: role_vec,
+            permissions: permission_vec,
+            principal_state,
+            source_refs,
+        })
+    } else {
+        Ok(EnterpriseAccessOutcome::denied(
+            "RBAC_PERMISSION_DENIED",
+            "$.permission",
+            format!("principal {principal_id} lacks permission {permission}"),
+            "grant the permission through an RBAC role assigned by a SCIM group and resync",
+            role_vec,
+            permission_vec,
+            principal_state,
+            source_refs,
+        ))
+    }
+}
+
+impl EnterpriseAccessOutcome {
+    fn denied(
+        reason_code: impl Into<String>,
+        field_path: impl Into<String>,
+        message: impl Into<String>,
+        remediation: impl Into<String>,
+        roles: Vec<String>,
+        permissions: Vec<String>,
+        principal_state: Value,
+        source_refs: Value,
+    ) -> Self {
+        Self {
+            allowed: false,
+            reason_code: Some(reason_code.into()),
+            field_path: Some(field_path.into()),
+            remediation: Some(remediation.into()),
+            roles,
+            permissions,
+            principal_state: json!({
+                "message": message.into(),
+                "observed": principal_state
+            }),
+            source_refs,
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "allowed": self.allowed,
+            "decision": if self.allowed { "allowed" } else { "denied" },
+            "reason_code": self.reason_code,
+            "field_path": self.field_path,
+            "remediation": self.remediation,
+            "roles": self.roles,
+            "permissions": self.permissions,
+            "principal_state": self.principal_state,
+            "source_refs": self.source_refs,
+        })
+    }
+}
+
+fn enterprise_access_payload(
+    access_decision_id: &str,
+    tenant: &str,
+    principal_id: &str,
+    permission: &str,
+    resource: &str,
+    outcome: &EnterpriseAccessOutcome,
+) -> Value {
+    json!({
+        "record_kind": "enterprise_access_decision",
+        "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+        "access_decision_id": access_decision_id,
+        "tenant_id": tenant,
+        "principal_id": principal_id,
+        "permission": permission,
+        "resource": resource,
+        "allowed": outcome.allowed,
+        "decision": if outcome.allowed { "allowed" } else { "denied" },
+        "reason_code": outcome.reason_code,
+        "field_path": outcome.field_path,
+        "remediation": outcome.remediation,
+        "roles": outcome.roles,
+        "permissions": outcome.permissions,
+        "principal_state": outcome.principal_state,
+        "source_refs": outcome.source_refs,
+        "evaluated_at": Utc::now().to_rfc3339()
+    })
+}
+
+fn append_enterprise_access_decision(
+    conn: &mut Connection,
+    ledger_path: &Path,
+    tenant: &str,
+    principal_id: &str,
+    permission: &str,
+    resource: &str,
+    agent: &str,
+    model: Option<&str>,
+    outcome: &EnterpriseAccessOutcome,
+) -> BbxResult<EnterpriseAccessAppend> {
+    let access_decision_id = prefixed_id("enterprise_access");
+    let payload = enterprise_access_payload(
+        &access_decision_id,
+        tenant,
+        principal_id,
+        permission,
+        resource,
+        outcome,
+    );
+    let record_id = prefixed_id("bbx_ent_access");
+    let append = append_record(
+        conn,
+        ledger_path,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "enterprise_access_decision".to_string(),
+            tenant_id: tenant.to_string(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json(agent, model),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let inspection = verify_ledger_integrity(conn, ledger_path)?;
+    let stored = latest_enterprise_record(
+        ledger_path,
+        &inspection,
+        tenant,
+        "enterprise_access_decision",
+    )?;
+    verify_enterprise_append_readback(ledger_path, stored, append.sequence, &record_id)?;
+    Ok(EnterpriseAccessAppend {
+        access_decision_id,
+        record_id,
+        sequence: append.sequence,
+        payload_sha256: append.payload_sha256,
+        record_sha256: append.record_sha256,
+    })
+}
+
+fn latest_enterprise_record<'a>(
+    ledger_path: &Path,
+    inspection: &'a LedgerInspection,
+    tenant: &str,
+    record_kind: &'static str,
+) -> BbxResult<&'a LedgerRecordOutput> {
+    inspection
+        .records
+        .iter()
+        .rev()
+        .find(|record| record.tenant_id == tenant && record.record_kind == record_kind)
+        .ok_or_else(|| {
+            let (code, field, remediation) = match record_kind {
+                "enterprise_tenant_config" => (
+                    "ENTERPRISE_CONFIG_MISSING",
+                    "ledger_records.record_kind",
+                    "run `blackbox enterprise configure` for the tenant before this operation",
+                ),
+                "enterprise_directory_snapshot" => (
+                    "ENTERPRISE_DIRECTORY_MISSING",
+                    "ledger_records.record_kind",
+                    "run `blackbox enterprise sync-directory` for the tenant before evaluating access",
+                ),
+                _ => (
+                    "ENTERPRISE_RECORD_MISSING",
+                    "ledger_records.record_kind",
+                    "create the required enterprise ledger record before retrying",
+                ),
+            };
+            BlackboxError::new_with_connector(
+                ErrorKind::NotFound,
+                code,
+                format!("tenant {tenant} has no latest {record_kind} row"),
+                Some(source_of_truth(ledger_path)),
+                ENTERPRISE_CONNECTOR_ID,
+                Some(field.to_string()),
+                remediation,
+            )
+        })
+}
+
+fn verify_enterprise_append_readback(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    expected_sequence: i64,
+    expected_record_id: &str,
+) -> BbxResult<()> {
+    if record.sequence != expected_sequence || record.record_id != expected_record_id {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_APPEND_READBACK_MISMATCH",
+            ENTERPRISE_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records",
+            "enterprise append readback did not return the row that was just written",
+            "inspect the ledger for concurrent writes or storage inconsistency before retrying",
+        ));
+    }
+    Ok(())
+}
+
+fn enterprise_roles_from_config_payload(
+    ledger_path: &Path,
+    payload: &Value,
+) -> BbxResult<BTreeMap<String, BTreeSet<String>>> {
+    let roles = payload
+        .pointer("/rbac/roles")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_CONFIG_SCHEMA_INVALID",
+                "$.rbac.roles",
+                "enterprise config payload is missing rbac.roles array",
+                "persist a corrected enterprise tenant config",
+            )
+        })?;
+    let mut out = BTreeMap::new();
+    for (index, role) in roles.iter().enumerate() {
+        let role_id = role
+            .get("role_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_CONFIG_SCHEMA_INVALID",
+                    format!("$.rbac.roles[{index}].role_id"),
+                    "enterprise config role is missing role_id",
+                    "persist a corrected enterprise tenant config",
+                )
+            })?;
+        let permissions = role
+            .get("permissions")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_CONFIG_SCHEMA_INVALID",
+                    format!("$.rbac.roles[{index}].permissions"),
+                    "enterprise config role is missing permissions array",
+                    "persist a corrected enterprise tenant config",
+                )
+            })?;
+        out.insert(
+            role_id.to_string(),
+            permissions
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect(),
+        );
+    }
+    Ok(out)
+}
+
+fn enterprise_directory_state_from_payload(
+    ledger_path: &Path,
+    payload: &Value,
+) -> BbxResult<EnterpriseDirectoryState> {
+    let groups = payload
+        .get("groups")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                "$.groups",
+                "enterprise directory payload is missing groups array",
+                "resync the directory snapshot",
+            )
+        })?;
+    let users = payload
+        .get("users")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                "$.users",
+                "enterprise directory payload is missing users array",
+                "resync the directory snapshot",
+            )
+        })?;
+    let mut group_map = BTreeMap::new();
+    for (index, group) in groups.iter().enumerate() {
+        let id = group
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                    format!("$.groups[{index}].id"),
+                    "directory group is missing id",
+                    "resync the directory snapshot",
+                )
+            })?;
+        let roles = group
+            .get("roles")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                    format!("$.groups[{index}].roles"),
+                    "directory group is missing roles array",
+                    "resync the directory snapshot",
+                )
+            })?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        group_map.insert(id.to_string(), roles);
+    }
+    let mut user_map = BTreeMap::new();
+    for (index, user) in users.iter().enumerate() {
+        let id = user
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                    format!("$.users[{index}].id"),
+                    "directory user is missing id",
+                    "resync the directory snapshot",
+                )
+            })?;
+        let user_name = user
+            .get("userName")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                    format!("$.users[{index}].userName"),
+                    "directory user is missing userName",
+                    "resync the directory snapshot",
+                )
+            })?;
+        let active = user.get("active").and_then(Value::as_bool).ok_or_else(|| {
+            enterprise_invalid(
+                ledger_path,
+                "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                format!("$.users[{index}].active"),
+                "directory user is missing active boolean",
+                "resync the directory snapshot",
+            )
+        })?;
+        let groups = user
+            .get("groups")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                enterprise_invalid(
+                    ledger_path,
+                    "ENTERPRISE_DIRECTORY_SCHEMA_INVALID",
+                    format!("$.users[{index}].groups"),
+                    "directory user is missing groups array",
+                    "resync the directory snapshot",
+                )
+            })?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        user_map.insert(
+            id.to_string(),
+            EnterprisePrincipal {
+                user_name: user_name.to_string(),
+                active,
+                groups,
+            },
+        );
+    }
+    Ok(EnterpriseDirectoryState {
+        users: user_map,
+        groups: group_map,
+    })
+}
+
+fn enterprise_resource_tenant(resource: &str) -> Option<&str> {
+    let rest = resource.strip_prefix("tenant:")?;
+    let (tenant, suffix) = rest.split_once(':')?;
+    if tenant.trim().is_empty() || suffix.trim().is_empty() {
+        return None;
+    }
+    Some(tenant)
+}
+
+fn enterprise_record_ref(role: &str, record: &LedgerRecordOutput) -> Value {
+    json!({
+        "role": role,
+        "sequence": record.sequence,
+        "record_id": record.record_id,
+        "record_kind": record.record_kind,
+        "tenant_id": record.tenant_id,
+        "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+        "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn build_enterprise_audit_events(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    tenant: &str,
+) -> BbxResult<Vec<Value>> {
+    let mut events = Vec::new();
+    for record in inspection
+        .records
+        .iter()
+        .filter(|record| record.tenant_id == tenant)
+    {
+        events.push(json!({
+            "format": "blackbox_enterprise_audit_event_json_v1",
+            "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+            "tenant_id": tenant,
+            "sequence": record.sequence,
+            "record_id": record.record_id,
+            "record_kind": record.record_kind,
+            "run_id": record.run_id,
+            "step_id": record.step_id,
+            "created_at": record.created_at,
+            "actor": record.actor,
+            "payload": record.payload,
+            "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+            "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+            "source_of_truth": source_of_truth(ledger_path),
+            "event_action": record.record_kind,
+        }));
+    }
+    Ok(events)
+}
+
+fn write_enterprise_audit_directory(
+    args: &EnterpriseAuditExportArgs,
+    inspection: &LedgerInspection,
+    authorization: &EnterpriseAccessOutcome,
+    authorization_record: &EnterpriseAccessAppend,
+    config_record: &LedgerRecordOutput,
+    directory_record: &LedgerRecordOutput,
+    events: &[Value],
+    temp_dir: &Path,
+) -> BbxResult<()> {
+    fs::create_dir_all(temp_dir).map_err(|err| {
+        BlackboxError::io(temp_dir, "create enterprise audit temp directory", err)
+    })?;
+
+    let audit_path = temp_dir.join("audit.jsonl");
+    let siem_path = temp_dir.join("siem-rfc5424.log");
+    let controls_path = temp_dir.join("controls.json");
+    write_enterprise_audit_jsonl(&audit_path, events, &args.tenant)?;
+    write_enterprise_siem_log(&siem_path, events, &args.tenant)?;
+
+    let directory_state =
+        enterprise_directory_state_from_payload(&args.ledger, &directory_record.payload)?;
+    let active_users_total = directory_state
+        .users
+        .values()
+        .filter(|principal| principal.active)
+        .count();
+    let controls = json!({
+        "format": "blackbox_enterprise_controls_json_v1",
+        "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+        "tenant_id": args.tenant,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": {
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "record_count": inspection.record_count,
+            "ledger_tip_sha256": inspection.ledger_tip_sha256
+        },
+        "authorization": authorization.to_json(),
+        "authorization_record": authorization_record.to_json(),
+        "tenant_config_ref": enterprise_record_ref("tenant_config", config_record),
+        "directory_snapshot_ref": enterprise_record_ref("directory_snapshot", directory_record),
+        "tenant_config": config_record.payload,
+        "directory_summary": {
+            "users_total": directory_state.users.len(),
+            "active_users_total": active_users_total,
+            "groups_total": directory_state.groups.len()
+        },
+        "tenant_key_store": config_record.payload.get("tenant_key_store").cloned().unwrap_or(Value::Null),
+        "retention": config_record.payload.get("retention").cloned().unwrap_or(Value::Null),
+        "deployment": config_record.payload.get("deployment").cloned().unwrap_or(Value::Null)
+    });
+    write_enterprise_json_file(&controls_path, &controls)?;
+
+    let audit_readback = read_enterprise_audit_jsonl(&audit_path, &args.tenant)?;
+    let siem_readback = read_enterprise_siem_log(&siem_path, events.len())?;
+    let files = vec![
+        enterprise_file_entry(temp_dir, Path::new("audit.jsonl"))?,
+        enterprise_file_entry(temp_dir, Path::new("siem-rfc5424.log"))?,
+        enterprise_file_entry(temp_dir, Path::new("controls.json"))?,
+    ];
+    let manifest = json!({
+        "format": "blackbox_enterprise_audit_manifest_json_v1",
+        "enterprise_control_schema_version": ENTERPRISE_CONTROL_SCHEMA_VERSION,
+        "siem_export_schema_version": SIEM_EXPORT_SCHEMA_VERSION,
+        "tenant_id": args.tenant,
+        "principal_id": args.principal_id,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": source_of_truth(&args.ledger),
+        "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+        "ledger_record_count": inspection.record_count,
+        "ledger_tip_sha256": inspection.ledger_tip_sha256,
+        "audit_events_total": audit_readback.0,
+        "siem_events_total": siem_readback.0,
+        "audit_jsonl_sha256": audit_readback.1,
+        "siem_log_sha256": siem_readback.1,
+        "authorization": authorization.to_json(),
+        "authorization_record": authorization_record.to_json(),
+        "files": files
+    });
+    write_enterprise_json_file(&temp_dir.join("manifest.json"), &manifest)?;
+    promote_enterprise_export_dir(temp_dir, &args.out, args.force)?;
+    Ok(())
+}
+
+fn write_enterprise_audit_jsonl(path: &Path, events: &[Value], tenant: &str) -> BbxResult<()> {
+    let mut text = String::new();
+    for event in events {
+        text.push_str(&canonical_json_string(event)?);
+        text.push('\n');
+    }
+    write_enterprise_text_file(path, &text, "write enterprise audit JSONL")?;
+    let (line_count, _) = read_enterprise_audit_jsonl(path, tenant)?;
+    if line_count != events.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_AUDIT_JSONL_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "audit.jsonl",
+            "audit JSONL readback line count does not match the event count written",
+            "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn read_enterprise_audit_jsonl(path: &Path, tenant: &str) -> BbxResult<(usize, String)> {
+    let file = File::open(path).map_err(|err| BlackboxError::io(path, "open audit JSONL", err))?;
+    let reader = BufReader::new(file);
+    let mut count = 0;
+    for (index, line_result) in reader.lines().enumerate() {
+        let line = line_result.map_err(|err| BlackboxError::io(path, "read audit JSONL", err))?;
+        if line.trim().is_empty() {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_JSONL_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("audit.jsonl:{}", index + 1),
+                "blank audit JSONL lines are invalid",
+                "regenerate the audit export from the verified ledger",
+            ));
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_JSONL_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("audit.jsonl:{}", index + 1),
+                format!("audit JSONL line does not parse as JSON: {err}"),
+                "regenerate the audit export from the verified ledger",
+            )
+        })?;
+        if value.get("format").and_then(Value::as_str)
+            != Some("blackbox_enterprise_audit_event_json_v1")
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_JSONL_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("audit.jsonl:{}", index + 1),
+                "audit event format marker is missing or unsupported",
+                "regenerate the audit export from the verified ledger",
+            ));
+        }
+        if value.get("tenant_id").and_then(Value::as_str) != Some(tenant) {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_TENANT_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("audit.jsonl:{}", index + 1),
+                "audit event tenant does not match the requested export tenant",
+                "discard the export and regenerate it from a verified tenant-scoped ledger scan",
+            ));
+        }
+        count += 1;
+    }
+    Ok((count, sha256_file(path)?))
+}
+
+fn write_enterprise_siem_log(path: &Path, events: &[Value], tenant: &str) -> BbxResult<()> {
+    let mut text = String::new();
+    for event in events {
+        let timestamp = event
+            .get("created_at")
+            .and_then(Value::as_str)
+            .unwrap_or("1970-01-01T00:00:00Z");
+        let record_kind = event
+            .get("record_kind")
+            .and_then(Value::as_str)
+            .unwrap_or("enterprise_audit_event");
+        let sequence = event
+            .get("sequence")
+            .and_then(Value::as_i64)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "0".to_string());
+        let record_sha = event
+            .get("record_sha256")
+            .and_then(Value::as_str)
+            .unwrap_or("sha256:missing");
+        let structured = format!(
+            "[blackboxfix@64200 tenant_id=\"{}\" record_kind=\"{}\" sequence=\"{}\" record_sha256=\"{}\"]",
+            syslog_escape(tenant),
+            syslog_escape(record_kind),
+            syslog_escape(&sequence),
+            syslog_escape(record_sha)
+        );
+        text.push_str(&format!(
+            "<134>1 {timestamp} contextgraph blackboxfix - {record_kind} {structured} {}\n",
+            canonical_json_string(event)?
+        ));
+    }
+    write_enterprise_text_file(path, &text, "write enterprise SIEM log")?;
+    let (line_count, _) = read_enterprise_siem_log(path, events.len())?;
+    if line_count != events.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_SIEM_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "siem-rfc5424.log",
+            "SIEM log readback line count does not match the event count written",
+            "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn read_enterprise_siem_log(path: &Path, expected_count: usize) -> BbxResult<(usize, String)> {
+    let file = File::open(path).map_err(|err| BlackboxError::io(path, "open SIEM log", err))?;
+    let reader = BufReader::new(file);
+    let mut count = 0;
+    for (index, line_result) in reader.lines().enumerate() {
+        let line = line_result.map_err(|err| BlackboxError::io(path, "read SIEM log", err))?;
+        if !line.starts_with("<134>1 ") || !line.contains(" [blackboxfix@64200 ") {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_SIEM_RFC5424_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("siem-rfc5424.log:{}", index + 1),
+                "SIEM log line is not in the expected RFC5424-style format",
+                "regenerate the audit export and inspect the malformed SIEM line",
+            ));
+        }
+        count += 1;
+    }
+    if count != expected_count {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_SIEM_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "siem-rfc5424.log",
+            format!("SIEM log contained {count} lines, expected {expected_count}"),
+            "regenerate the audit export from the verified ledger",
+        ));
+    }
+    Ok((count, sha256_file(path)?))
+}
+
+fn syslog_escape(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace(']', "\\]")
+}
+
+fn write_enterprise_json_file(path: &Path, value: &Value) -> BbxResult<()> {
+    write_json_file_new(path, value, "enterprise audit JSON")?;
+    let readback = read_json_file(path, "enterprise audit JSON readback")?;
+    if &readback != value {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_JSON_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "enterprise audit JSON readback does not match the value written",
+            "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn write_enterprise_text_file(path: &Path, text: &str, label: &'static str) -> BbxResult<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let readback = fs::read_to_string(path)
+        .map_err(|err| BlackboxError::io(path, "read enterprise text", err))?;
+    if readback != text {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "ENTERPRISE_TEXT_READBACK_MISMATCH",
+            FS_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "enterprise text file readback does not match the value written",
+            "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn enterprise_file_entry(base: &Path, relative: &Path) -> BbxResult<Value> {
+    let path = base.join(relative);
+    let bytes = fs::metadata(&path)
+        .map_err(|err| BlackboxError::io(&path, "stat enterprise audit file", err))?
+        .len();
+    Ok(json!({
+        "path": relative.to_string_lossy(),
+        "sha256": sha256_file(&path)?,
+        "bytes": bytes,
+    }))
+}
+
+fn validate_enterprise_export_directory_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty enterprise audit output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "enterprise audit output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this audit export directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "enterprise audit parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the audit export",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_enterprise_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|err| {
+            BlackboxError::io(path, "remove stale enterprise audit temp directory", err)
+        })?;
+    }
+    Ok(())
+}
+
+fn promote_enterprise_export_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "enterprise audit output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this audit export directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out).map_err(|err| {
+            BlackboxError::io(out, "replace existing enterprise audit directory", err)
+        })?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote enterprise audit temp directory", err))?;
+    Ok(())
+}
+
+fn verify_enterprise_manifest_files(out: &Path, manifest: &Value) -> BbxResult<()> {
+    let files = manifest
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files",
+                "enterprise audit manifest is missing files array",
+                "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+    for file in files {
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "enterprise audit manifest file entry is missing path",
+                "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_MANIFEST_PATH_INVALID",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("enterprise audit manifest file path is not a safe relative path: {rel}"),
+                "regenerate the audit manifest from trusted code",
+            ));
+        }
+        let path = out.join(rel_path);
+        let expected_sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].sha256",
+                "enterprise audit manifest file entry is missing sha256",
+                "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let expected_bytes = file.get("bytes").and_then(Value::as_u64).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_MANIFEST_READBACK_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].bytes",
+                "enterprise audit manifest file entry is missing byte count",
+                "delete the corrupt audit export and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let actual_sha = sha256_file(&path)?;
+        let actual_bytes = fs::metadata(&path)
+            .map_err(|err| BlackboxError::io(&path, "stat final enterprise audit file", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "ENTERPRISE_AUDIT_FILE_HASH_MISMATCH",
+                FS_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                rel,
+                "enterprise audit file hash or byte count changed after promotion",
+                "treat the audit export directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn enterprise_object<'a>(
+    ledger_path: &Path,
+    value: &'a Value,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+    message: impl Into<String>,
+) -> BbxResult<&'a Map<String, Value>> {
+    let field_path = field_path.into();
+    value.as_object().ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            message,
+            "provide a JSON object with the required enterprise-control fields",
+        )
+    })
+}
+
+fn enterprise_required_str<'a>(
+    ledger_path: &Path,
+    value: &'a Value,
+    key: &'static str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+) -> BbxResult<&'a str> {
+    let field_path = field_path.into();
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            enterprise_invalid(
+                ledger_path,
+                error_code,
+                field_path,
+                format!("{key} must be a non-empty string"),
+                "provide the required enterprise-control field explicitly",
+            )
+        })
+}
+
+fn enterprise_required_array<'a>(
+    ledger_path: &Path,
+    value: &'a Value,
+    key: &'static str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+) -> BbxResult<&'a Vec<Value>> {
+    let field_path = field_path.into();
+    value.get(key).and_then(Value::as_array).ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            format!("{key} must be an array"),
+            "provide the required enterprise-control array explicitly",
+        )
+    })
+}
+
+fn enterprise_required_bool(
+    ledger_path: &Path,
+    value: &Value,
+    key: &'static str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+) -> BbxResult<bool> {
+    let field_path = field_path.into();
+    value.get(key).and_then(Value::as_bool).ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            format!("{key} must be a boolean"),
+            "provide the required enterprise-control boolean explicitly",
+        )
+    })
+}
+
+fn enterprise_required_i64(
+    ledger_path: &Path,
+    value: &Value,
+    key: &'static str,
+    field_path: impl Into<String>,
+    error_code: &'static str,
+) -> BbxResult<i64> {
+    let field_path = field_path.into();
+    value.get(key).and_then(Value::as_i64).ok_or_else(|| {
+        enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            format!("{key} must be an integer"),
+            "provide the required enterprise-control integer explicitly",
+        )
+    })
+}
+
+fn enterprise_reject_unknown_keys(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    allowed: &[&str],
+    field_path: impl Into<String>,
+    error_code: &'static str,
+) -> BbxResult<()> {
+    let field_path = field_path.into();
+    let allowed = allowed.iter().copied().collect::<BTreeSet<_>>();
+    for key in object.keys() {
+        if !allowed.contains(key.as_str()) {
+            return Err(enterprise_invalid(
+                ledger_path,
+                error_code,
+                format!("{field_path}.{key}"),
+                format!("unsupported enterprise-control field {key}"),
+                "remove unsupported fields so the persisted control state is unambiguous",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_enterprise_atom(ledger_path: &Path, field_path: &str, value: &str) -> BbxResult<()> {
+    if value.trim() != value || value.is_empty() || value.len() > 256 {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_FIELD_INVALID",
+            field_path,
+            "enterprise-control identifiers must be non-empty, trimmed, and at most 256 bytes",
+            "normalize the identifier before writing enterprise control state",
+        ));
+    }
+    if value
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(enterprise_invalid(
+            ledger_path,
+            "ENTERPRISE_FIELD_INVALID",
+            field_path,
+            format!("enterprise-control identifier contains whitespace or control characters: {value:?}"),
+            "use stable ASCII-compatible identifiers without embedded whitespace",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_https_url(
+    ledger_path: &Path,
+    field_path: &str,
+    value: &str,
+    error_code: &'static str,
+) -> BbxResult<()> {
+    let parsed = Url::parse(value).map_err(|err| {
+        enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            format!("URL does not parse: {err}"),
+            "provide a valid https URL for enterprise identity metadata",
+        )
+    })?;
+    if parsed.scheme() != "https" || parsed.host_str().is_none() {
+        return Err(enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            "enterprise identity metadata URLs must use https and include a host",
+            "publish the identity provider metadata behind an https URL",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_sha256_digest(
+    ledger_path: &Path,
+    field_path: &str,
+    value: &str,
+    error_code: &'static str,
+) -> BbxResult<()> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            "digest must start with sha256:",
+            "store only the SHA-256 fingerprint, never raw key or certificate material",
+        ));
+    };
+    if hex.len() != 64 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(enterprise_invalid(
+            ledger_path,
+            error_code,
+            field_path,
+            "digest must contain exactly 64 hexadecimal SHA-256 characters",
+            "recompute the SHA-256 fingerprint and retry",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_no_enterprise_secret_material(ledger_path: &Path, value: &Value) -> BbxResult<()> {
+    fn walk(ledger_path: &Path, value: &Value, path: &str) -> BbxResult<()> {
+        match value {
+            Value::Object(map) => {
+                for (key, child) in map {
+                    let child_path = if path == "$" {
+                        format!("$.{key}")
+                    } else {
+                        format!("{path}.{key}")
+                    };
+                    if is_sensitive_field_name(key) {
+                        return Err(enterprise_invalid(
+                            ledger_path,
+                            "ENTERPRISE_SECRET_MATERIAL_REFUSED",
+                            child_path,
+                            format!("enterprise control input contains secret-like field {key}"),
+                            "store key ids and SHA-256 fingerprints only; do not persist credential material",
+                        ));
+                    }
+                    walk(ledger_path, child, &child_path)?;
+                }
+            }
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    walk(ledger_path, child, &format!("{path}[{index}]"))?;
+                }
+            }
+            Value::String(text) => {
+                if looks_like_secret_literal(text) {
+                    return Err(enterprise_invalid(
+                        ledger_path,
+                        "ENTERPRISE_SECRET_MATERIAL_REFUSED",
+                        path,
+                        "enterprise control input contains a secret-like literal",
+                        "replace secret material with a credential key id or SHA-256 fingerprint",
+                    ));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    walk(ledger_path, value, "$")
+}
+
+fn enterprise_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        ENTERPRISE_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -6407,7 +9083,7 @@ fn open_initialized_ledger(path: &Path) -> BbxResult<Connection> {
 }
 
 fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
-    conn.execute_batch(
+    let schema_sql = format!(
         "BEGIN IMMEDIATE;
          CREATE TABLE IF NOT EXISTS blackbox_metadata (
              key TEXT PRIMARY KEY,
@@ -6446,7 +9122,7 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
                  SELECT RAISE(ABORT, 'ledger_records is append-only; deletes are forbidden');
              END;
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
-             VALUES ('schema_version', '4');
+             VALUES ('schema_version', '{}');
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
              VALUES ('ledger_id', lower(hex(randomblob(16))));
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
@@ -6458,8 +9134,10 @@ fn initialize_schema(conn: &mut Connection, path: &Path) -> BbxResult<()> {
          INSERT OR IGNORE INTO blackbox_metadata(key, value)
              VALUES ('ledger_tip_sha256', '');
          COMMIT;",
-    )
-    .map_err(|err| BlackboxError::sqlite(path, "initialize ledger schema", err))?;
+        LEDGER_SCHEMA_VERSION
+    );
+    conn.execute_batch(&schema_sql)
+        .map_err(|err| BlackboxError::sqlite(path, "initialize ledger schema", err))?;
     ensure_schema(conn, path)
 }
 
