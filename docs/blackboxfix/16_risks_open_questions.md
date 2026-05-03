@@ -27,13 +27,14 @@ Mitigation:
 
 Risk: agent traces can contain secrets, PII, customer data.
 
-Mitigation (already partly shipped in Phase 1):
+Mitigation:
 
 - redaction before persistence (`redact_v1`, post-scan);
-- field-level classification (Phase 8);
-- encrypted artifacts (Phase 8);
-- tenant keys (Phase 8);
-- export approval workflow (Phase 8).
+- raw credential material refused in Phase 8 enterprise-control input;
+- tenant customer-managed key ids persisted in Phase 8;
+- export approval workflow remains open for later enterprise workflow work;
+- field-level classification and encrypted artifact storage remain later
+  storage-layer work.
 
 ### Verifier Gaps
 
@@ -55,7 +56,8 @@ Mitigation (Phase 1 baseline):
 - dual hash chain (per-record + per-run);
 - `BBX_HASH_CHAIN_BROKEN` aborts further writes;
 - evidence packet row-reference hashes and export file hashes (Phase 4);
-- signed export manifests (Phase 5).
+- signed export manifests (later key-management work);
+- audit/SIEM export manifests with physical file hashes (Phase 8).
 
 ### SQLite Concurrency
 
@@ -89,7 +91,7 @@ Mitigation:
 
 - ship one end-to-end workflow first;
 - use local CLI and GitHub/CI before adding more sources;
-- delay broad connector marketplace until Phase 8.
+- delay broad connector marketplace until after enterprise controls are proven.
 
 ### Enterprise Sales Cycle
 
@@ -100,7 +102,8 @@ Mitigation:
 - local developer recorder (Phase 1 today);
 - team-tier SaaS pilot (Phase 7);
 - security review packet;
-- private deployment path only after wedge validation (Phase 8).
+- private deployment path metadata shipped in Phase 8; provider-specific
+  deployment automation remains pilot-driven.
 
 ## Business Risks
 

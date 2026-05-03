@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 7)
+## Concrete Layout (shipped through Phase 8)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -32,11 +32,11 @@ agent runtime
 | Evidence/replay/export | `evidence_packet`, `incident_packet`, JSON evidence, JSONL episodes, eval fixtures | `blackbox replay`, `blackbox export evidence`, `blackbox export episodes` |
 | MCP/policy gateway | JSON-RPC stdio MCP recorder/gateway, policy rows, capability registry | `blackbox mcp recorder`, `blackbox mcp gateway`, `blackbox policy ...` |
 | Dashboard | Static dashboard bundle plus dashboard API JSON files over the verified ledger | `blackbox dashboard build`, `blackbox dashboard api` |
-| FSV harness | Phase 1-7 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Enterprise controls | SSO/OIDC/SAML metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, audit/SIEM export | `blackbox enterprise ...` |
+| FSV harness | Phase 1-8 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-7 is **not yet implemented**. Do not assume RBAC,
-SSO, SIEM export, hosted multi-tenant serving, or enterprise controls exist
-until their phase docs are marked complete.
+Anything outside Phases 1-8 is **not yet implemented**. Hosted multi-tenant
+serving remains reserved for later work.
 
 ## Components (target architecture)
 
@@ -163,6 +163,25 @@ each JSON/HTML file back, records sha256/byte counts in the manifest, promotes
 the directory, then re-reads the final manifest and files before returning
 success.
 
+### Enterprise Controls (Phase 8)
+
+Phase 8 persists enterprise controls in the same append-only ledger:
+
+- `enterprise_tenant_config` for SSO/OIDC/SAML metadata, RBAC roles,
+  retention classes, private deployment metadata, SIEM format, and tenant
+  customer-managed key id;
+- `enterprise_directory_snapshot` for SCIM User/Group snapshots and group to
+  role assignments;
+- `enterprise_access_decision` for allowed and denied RBAC/tenant-isolation
+  decisions.
+
+`blackbox enterprise export-audit` first appends and reads back an
+`enterprise_access_decision` for the export authorization attempt. It creates
+no files unless an active SCIM principal has `audit.export`; when authorized,
+it writes tenant-scoped `audit.jsonl`, `siem-rfc5424.log`, `controls.json`,
+and `manifest.json`, then reads files back and verifies hashes before
+returning success.
+
 ## Deployment Patterns
 
 ### Local Developer Mode (Phase 1)
@@ -197,7 +216,8 @@ source-of-truth readback and verification for Git, filesystem, and command
 artifacts. Hosted GitHub/CI readback shipped in Phase 3. Policy/gateway
 pre-state orchestration shipped in Phase 6 for the local
 `verified_git_apply_patch` workflow. Phase 7 shipped dashboard read models and
-static UI artifacts over the verified ledger.
+static UI artifacts over the verified ledger. Phase 8 shipped enterprise
+control rows and audit/SIEM export over tenant-scoped verified ledger state.
 
 ## Design Constraint
 

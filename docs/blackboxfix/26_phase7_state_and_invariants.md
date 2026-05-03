@@ -12,8 +12,9 @@ implementation.
 | Dashboard API | JSON files under `api/` plus `blackbox dashboard api` read models |
 | File integrity | `manifest.json.files[]` sha256 and byte counts matched against physical file bytes |
 
-Phase 7 does not bump `LEDGER_SCHEMA_VERSION`; the live ledger remains schema
-4. Dashboard artifacts use `dashboard_schema_version = 1`.
+Phase 7 did not bump `LEDGER_SCHEMA_VERSION`. The current live ledger schema
+is `LEDGER_SCHEMA_VERSION = 5` after Phase 8. Dashboard artifacts use
+`dashboard_schema_version = 1`.
 
 ## Shipped Commands
 

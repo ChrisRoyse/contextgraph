@@ -3,9 +3,10 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-The CLI/MCP/dashboard demo is now viable through **Phase 7**: Git + GitHub + CI
-verifiers, evidence packets, forensic replay, evidence export, episode/eval
-export, and a policy-governed MCP gateway for verified Git patch application.
+The CLI/MCP/dashboard/enterprise demo is now viable through **Phase 8**:
+Git + GitHub + CI verifiers, evidence packets, forensic replay, evidence
+export, episode/eval export, a policy-governed MCP gateway for verified Git
+patch application, and tenant-scoped enterprise audit/SIEM export.
 
 ## Demo Thesis
 
@@ -133,7 +134,7 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 7 shipped surface)
+## Demo Commands (Phase 8 shipped surface)
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
@@ -144,6 +145,10 @@ context-graph blackbox export evidence --ledger "$ledger" --run-id "$RUN" --out 
 context-graph blackbox export episodes --ledger "$ledger" --out episodes-export
 context-graph blackbox dashboard build --ledger "$ledger" --out dashboard
 context-graph blackbox mcp gateway --ledger "$ledger" --policy-mode bounded_autonomous
+context-graph blackbox enterprise configure --ledger "$ledger" --tenant tenant_demo --input enterprise-config.json --agent demo_agent
+context-graph blackbox enterprise sync-directory --ledger "$ledger" --tenant tenant_demo --input enterprise-directory.json --agent demo_agent
+context-graph blackbox enterprise access-evaluate --ledger "$ledger" --tenant tenant_demo --principal-id user_alice --permission audit.export --resource tenant:tenant_demo:audit/export --agent demo_agent
+context-graph blackbox enterprise export-audit --ledger "$ledger" --tenant tenant_demo --principal-id user_alice --out audit-export --agent demo_agent
 ```
 
 ## Evidence To Show Buyer

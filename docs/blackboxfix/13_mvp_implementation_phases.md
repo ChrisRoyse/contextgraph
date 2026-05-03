@@ -75,8 +75,8 @@ Deliverables (all shipped):
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
-  **wiped** the ledger — no migration shim; current shipped schema is v4 after
-  Phase 6).
+  **wiped** the ledger — no migration shim; current shipped schema is v5 after
+  Phase 8).
 
 Exit criteria (verified):
 
@@ -305,21 +305,43 @@ Manifest readback proved `api/summary.json` hash
 and `index.html` hash
 `sha256:554870febfa02a6ece9b45f4a4619cda32f120c3731bc82570d85f5eb796f930`.
 
-## Phase 8: Enterprise Controls
+## Phase 8: Enterprise Controls — DONE (2026-05-02)
 
-Deliverables:
+Deliverables (all shipped):
 
-- SSO/SAML/OIDC;
-- RBAC;
-- tenant isolation;
-- SIEM export;
-- retention policies;
-- private deployment path.
+- SSO/SAML/OIDC metadata validation via `blackbox enterprise configure`;
+- SCIM-shaped directory snapshots via `blackbox enterprise sync-directory`;
+- RBAC and tenant isolation decisions via
+  `blackbox enterprise access-evaluate`;
+- SIEM export via `blackbox enterprise export-audit`
+  (`siem-rfc5424.log`);
+- retention policies persisted on `enterprise_tenant_config`;
+- private deployment path persisted as private VPC, region, data residency,
+  SIEM format, and tenant customer-managed key id.
 
-Exit criteria:
+Exit criteria (met):
 
-- enterprise pilot can run in a controlled environment;
-- audit export satisfies a security review.
+- enterprise pilot can run in a controlled environment using a local append-only
+  ledger, explicit identity metadata, explicit SCIM directory state, and
+  fail-closed RBAC decisions;
+- audit export satisfies a security review by producing tenant-scoped
+  `audit.jsonl`, `siem-rfc5424.log`, `controls.json`, and `manifest.json`,
+  with readback hash verification against the physical files.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase8_enterprise_fsv -- --nocapture
+```
+
+Current result: 6/6 passing. The suite executes the real binary against real
+SQLite ledgers and real export files, then reads `ledger_records`,
+`audit.jsonl`, `siem-rfc5424.log`, `controls.json`, and `manifest.json`
+directly. It covers the happy path plus invalid OIDC claims, unknown SCIM
+role assignment, cross-tenant resource denial, unauthorized audit export, and
+hash-chain tamper blocking before export files are written. The hardened
+export path persists an `enterprise_access_decision` for both allowed and
+denied `export-audit` attempts.
 
 ## Phase Sequencing Rules
 

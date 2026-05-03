@@ -32,6 +32,24 @@ Design implication:
 - build tool authorization and source-of-truth verification around excessive
   agency risks.
 
+### OWASP Authorization And Logging Guidance
+
+References:
+
+- <https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html>
+- <https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
+- <https://owasp.org/Top10/2021/A09_2021-Security_Logging_and_Monitoring_Failures/>
+
+Design implication:
+
+- validate permissions for each governed operation;
+- deny by default when no explicit permission grants the action;
+- log access-control failures with enough context for investigation;
+- Phase 8 hardening persists `enterprise_access_decision` rows for
+  `export-audit` authorization attempts before creating any export files, so
+  allowed and denied export attempts are both inspectable in the append-only
+  ledger.
+
 ### MITRE ATLAS
 
 Reference: <https://atlas.mitre.org/>
@@ -49,7 +67,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 7);
+  after Phase 8);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 
@@ -148,6 +166,62 @@ Design implication:
   malformed protocol requests;
 - enforce least-privilege capability scope and authorization for MCP tools;
 - treat tool descriptions as untrusted unless from trusted servers.
+
+### OpenID Connect Core
+
+Reference: <https://openid.net/specs/openid-connect-core-1_0-18.html>
+
+Design implication:
+
+- OIDC tenant config must bind to explicit issuer and client id metadata;
+- ID-token validation needs required `iss`, `sub`, `aud`, and `exp` claims;
+- Phase 8 persists only metadata and SHA-256 fingerprints, not tokens or
+  client secrets.
+
+### SAML 2.0 Core
+
+Reference: <https://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf>
+
+Design implication:
+
+- SAML tenant config must bind to explicit entity id, SSO URL, audience, and
+  signing-certificate fingerprint;
+- Phase 8 refuses raw certificate/key material and stores only SHA-256
+  fingerprints needed for security review.
+
+### SCIM Protocol
+
+Reference: <https://www.rfc-editor.org/rfc/rfc7644>
+
+Design implication:
+
+- directory snapshots are modeled as SCIM User and Group state;
+- user/group references and group-to-role assignments are validated before
+  persistence;
+- malformed directory snapshots fail before writing ledger rows.
+
+### NIST RBAC
+
+Reference: <https://csrc.nist.gov/projects/role-based-access-control>
+
+Design implication:
+
+- permissions are assigned through roles, and principals inherit roles through
+  directory groups;
+- allowed and denied decisions persist as explicit audit rows.
+
+### Computer Security Log Management
+
+References:
+
+- <https://csrc.nist.gov/pubs/sp/800/92/final>
+- <https://www.rfc-editor.org/rfc/rfc5424>
+
+Design implication:
+
+- audit export must support security review and SIEM ingestion;
+- Phase 8 writes both JSONL audit events and RFC5424-style SIEM lines, then
+  reads both files back and verifies hashes before reporting success.
 
 ### SQLite WAL And Triggers
 

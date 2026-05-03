@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 7 Physical Schema (shipped)
+## Phase 8 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 4 in Phase 7
+  schema_version              INTEGER NOT NULL,   -- 5 in Phase 8
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `4` | constant |
+| `schema_version` | `5` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,8 +99,8 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-7 ship nine `record_kind` values. The remaining families are reserved
-for later phases and **must not be invented ad-hoc**:
+Phases 1-8 ship the following `record_kind` values. The remaining families
+are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
 |---|---|---|
@@ -115,6 +115,9 @@ for later phases and **must not be invented ad-hoc**:
 | 5 | `episode_record` | reserved future ledger-side export audit row; Phase 5 currently emits JSONL rows outside the ledger |
 | 6 | `agent_step` | one reasoning/action step inside a run |
 | 6 | `model_decision` | model output, tool choice, confidence, policy context |
+| 8 | `enterprise_tenant_config` | validated SSO/RBAC/retention/deployment/key metadata for one tenant |
+| 8 | `enterprise_directory_snapshot` | validated SCIM user/group/role snapshot for one tenant |
+| 8 | `enterprise_access_decision` | persisted RBAC and tenant-isolation access decision |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -126,7 +129,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -150,6 +153,120 @@ The physical columns reify this envelope. JSON-shape view:
     "policy_id": "redact_v1",
     "redacted_fields": ["$.api_key"],
     "secret_digest_fields": {"$.api_key": "sha256:..."}
+  }
+}
+```
+
+## EnterpriseTenantConfig Payload (Phase 8, shipped)
+
+`blackbox enterprise configure --ledger PATH --tenant TENANT --input FILE`
+validates and persists a fail-closed enterprise-control baseline. The input
+must contain either OIDC or SAML metadata, explicit RBAC roles, retention
+classes, private deployment metadata, and a tenant key id. Raw credential
+material is refused; only key ids and SHA-256 fingerprints are stored.
+
+```json
+{
+  "record_kind": "enterprise_tenant_config",
+  "enterprise_control_schema_version": 1,
+  "tenant_id": "tenant_...",
+  "sso": {
+    "protocol": "oidc",
+    "issuer": "https://idp.example.test/tenant",
+    "client_id": "blackboxfix-enterprise",
+    "jwks_sha256": "sha256:<64-hex>",
+    "required_claims": ["iss", "sub", "aud", "exp"]
+  },
+  "rbac": {
+    "roles": [
+      { "role_id": "security_admin", "permissions": ["audit.export"] }
+    ]
+  },
+  "retention": {
+    "default_class": "standard",
+    "classes": [
+      { "class_id": "standard", "retain_days": 365, "legal_hold": false }
+    ]
+  },
+  "deployment": {
+    "mode": "private_vpc",
+    "region": "us-test-1",
+    "data_residency": "us",
+    "kms_key_id": "kms_tenant_key_id",
+    "siem_format": "rfc5424_jsonl"
+  },
+  "tenant_key_store": {
+    "customer_managed": true,
+    "key_scope": "tenant",
+    "tenant_id": "tenant_...",
+    "kms_key_id": "kms_tenant_key_id",
+    "data_residency": "us"
+  }
+}
+```
+
+## EnterpriseDirectorySnapshot Payload (Phase 8, shipped)
+
+`blackbox enterprise sync-directory` persists a SCIM-shaped snapshot only after
+the tenant config exists. Users must reference known groups, and groups must
+reference configured roles.
+
+```json
+{
+  "record_kind": "enterprise_directory_snapshot",
+  "enterprise_control_schema_version": 1,
+  "tenant_id": "tenant_...",
+  "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:User",
+    "urn:ietf:params:scim:schemas:core:2.0:Group"
+  ],
+  "users": [
+    {
+      "id": "user_alice",
+      "userName": "alice@example.test",
+      "active": true,
+      "groups": ["group_secops"]
+    }
+  ],
+  "groups": [
+    {
+      "id": "group_secops",
+      "displayName": "SecOps",
+      "roles": ["security_admin"]
+    }
+  ],
+  "source_refs": {
+    "tenant_config": {
+      "record_kind": "enterprise_tenant_config",
+      "record_sha256": "sha256:..."
+    }
+  }
+}
+```
+
+## EnterpriseAccessDecision Payload (Phase 8, shipped)
+
+`blackbox enterprise access-evaluate` always persists a decision row when the
+tenant config and directory snapshot are valid. Denials are durable evidence,
+not hidden return values.
+
+```json
+{
+  "record_kind": "enterprise_access_decision",
+  "enterprise_control_schema_version": 1,
+  "access_decision_id": "enterprise_access_<uuid>",
+  "tenant_id": "tenant_...",
+  "principal_id": "user_alice",
+  "permission": "audit.export",
+  "resource": "tenant:tenant_...:audit/export",
+  "allowed": true,
+  "decision": "allowed",
+  "reason_code": null,
+  "roles": ["security_admin"],
+  "permissions": ["audit.export"],
+  "source_refs": {
+    "tenant_config": { "record_sha256": "sha256:..." },
+    "directory_snapshot": { "record_sha256": "sha256:..." }
   }
 }
 ```

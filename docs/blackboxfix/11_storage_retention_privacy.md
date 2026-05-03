@@ -70,8 +70,9 @@ Two chains exist (both already enforced in Phase 1):
   by `previous_record_sha256` → `record_sha256`.
 
 This gives local investigation and enterprise audit a way to detect tampering.
-A Phase 8 enhancement adds a daily checkpoint (e.g. signed Merkle root of the
-day's `record_sha256` values) for cross-tenant attestation.
+Phase 8 adds tenant enterprise-control rows and audit/SIEM exports. A later
+enhancement can add a daily checkpoint (e.g. signed Merkle root of the day's
+`record_sha256` values) for cross-tenant attestation.
 
 ## Retention Classes (Phase 8)
 
@@ -83,7 +84,10 @@ day's `record_sha256` values) for cross-tenant attestation.
 | `incident` | high-priority security/compliance record |
 | `training` | approved redacted export rows |
 
-Retention is policy-driven and visible on each evidence packet.
+Retention is policy-driven. Phase 8 persists tenant retention policy in
+`enterprise_tenant_config.retention` with a named default class and explicit
+`retain_days` / `legal_hold` fields. Evidence packets remain immutable; later
+artifact-tier storage can stamp the selected retention class on each artifact.
 
 ## Privacy Controls
 
@@ -94,10 +98,17 @@ Already shipped (Phase 1):
 - `redaction_json.secret_digest_fields` preserves equality checks without the
   raw secret.
 
+Phase 8 shipped:
+
+- tenant-scoped customer-managed key ids in
+  `enterprise_tenant_config.tenant_key_store`;
+- raw secret/key/certificate material is refused in enterprise-control input;
+- audit exports include `controls.json` so security review can inspect the
+  tenant key id, data residency, and retention policy used for the export.
+
 To add later:
 
 - envelope encryption for sensitive artifacts;
-- tenant-scoped keys;
 - data classification tags;
 - export approval workflow;
 - deletion workflow for data subject requests where legally required;
@@ -136,12 +147,13 @@ storage or write to a degraded path; emit the typed error and exit non-zero.
 
 Enterprise storage supports:
 
-- private VPC deployment;
-- customer-managed keys;
-- region selection;
+- private VPC deployment (`deployment.mode=private_vpc`);
+- customer-managed keys (`tenant_key_store.customer_managed=true`);
+- region selection and data residency in tenant config;
 - backup and restore;
 - retention lock;
-- audit export;
+- audit export (`audit.jsonl`, `siem-rfc5424.log`, `controls.json`,
+  `manifest.json`);
 - disaster recovery tests;
 - tenant migration.
 

@@ -13,8 +13,9 @@ implementation.
 | Gateway mutation | real Git working tree and `.git` object database |
 | Gateway evidence | `expected_delta`, `readback_snapshot`, `verifier_result`, and `evidence_packet` rows |
 
-Phase 6 bumps the live ledger schema to `LEDGER_SCHEMA_VERSION = 4`. Older
-ledgers are wiped on `blackbox init`, never migrated in place.
+Phase 6 originally bumped the live ledger schema to `LEDGER_SCHEMA_VERSION = 4`.
+The current live ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 8.
+Older ledgers are wiped on `blackbox init`, never migrated in place.
 
 ## Shipped Commands
 

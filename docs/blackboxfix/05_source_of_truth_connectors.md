@@ -10,7 +10,9 @@ GitHub + GitHub Actions readbacks: `github_v1` and `gha_v1`. Phase 4 reuses
 those connectors and adds replay/export behavior over the SQLite and
 filesystem sources of truth. Phase 6 adds MCP/policy surfaces
 `mcp_stdio_v1` and `blackbox_policy_v1`, and uses `git_local_v1` as the
-physical source of truth for the first verified gateway mutation.
+physical source of truth for the first verified gateway mutation. Phase 8 adds
+`enterprise_controls_v1` for tenant config, SCIM directory snapshots,
+RBAC/tenant-isolation decisions, and audit/SIEM export readback.
 
 ## Connector Contract
 
@@ -123,6 +125,27 @@ Deferred examples:
 - `gha_required_jobs_passed_v1`
 - `gha_artifact_present_v1`
 - `gha_test_report_no_failures_v1`
+
+### Phase 8: Enterprise Controls — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for `enterprise_tenant_config`,
+  `enterprise_directory_snapshot`, and `enterprise_access_decision`;
+- tenant audit export files: `audit.jsonl`, `siem-rfc5424.log`,
+  `controls.json`, `manifest.json`.
+
+Readback specs:
+
+- `enterprise_tenant_config_v1`;
+- `enterprise_scim_directory_v1`;
+- `enterprise_rbac_tenant_isolation_v1`;
+- `enterprise_audit_siem_export_v1`.
+
+The connector is fail-closed: missing tenant config/directory state is a typed
+error, malformed SSO/SCIM/RBAC/retention/deployment input writes no row, and
+unauthorized audit export creates no files but still persists the denied
+`enterprise_access_decision`.
 
 ### Phase 3: Package And Vulnerability Scanners
 

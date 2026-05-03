@@ -37,7 +37,7 @@ writing a line of code:
 | 5 | Phase 4 + exported `episodes.jsonl`, `manifest.json`, and `evals/` on disk |
 | 6 | Phase 5 + MCP tool registry contents + `policy_decision`, `agent_step`, `model_decision` rows + physical Git state for gateway mutations |
 | 7 | Phase 6 + dashboard bundle files (`index.html`, `manifest.json`, `api/*.json`) and dashboard API responses |
-| 8 | Phase 7 + SSO/SCIM directory state + tenant key store |
+| 8 | Phase 7 + `enterprise_tenant_config`, `enterprise_directory_snapshot`, `enterprise_access_decision` rows + audit export files (`audit.jsonl`, `siem-rfc5424.log`, `controls.json`, `manifest.json`) |
 
 If you cannot name the source of truth in one sentence, stop and design the
 data model first.

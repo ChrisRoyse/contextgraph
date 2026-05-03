@@ -115,15 +115,17 @@ Example denial:
 }
 ```
 
-## Audit Exports (Phase 8)
+## Audit Exports (Phase 8 shipped)
 
 Enterprise buyers need:
 
-- evidence packet PDF/JSON export;
-- SIEM events;
-- SOC investigation packet;
-- risk dashboard;
-- CSV export for control testing;
+- evidence packet JSON export (Phase 4);
+- SIEM events (`blackbox enterprise export-audit` writes
+  `siem-rfc5424.log`);
+- SOC investigation packet source material (`audit.jsonl`, `controls.json`,
+  and the append-only ledger);
+- risk dashboard (Phase 7);
+- CSV export for control testing (reserved; JSONL is shipped first);
 - immutable ledger range hash (already computable from Phase 1's
   `ledger_tip_sha256` between two `inspect ledger` snapshots).
 
@@ -133,18 +135,31 @@ BlackBoxFix does **not** make a customer compliant by itself. It provides
 operational evidence that supports AI governance, security monitoring,
 incident response, and audit controls.
 
-## Enterprise Security Baseline (Phase 8)
+## Enterprise Security Baseline (Phase 8 shipped)
 
-- SSO/SAML/OIDC.
-- SCIM user provisioning.
-- RBAC and service accounts.
-- Tenant isolation.
-- Customer-managed encryption keys for enterprise tier.
+- SSO/SAML/OIDC: tenant config accepts `protocol=oidc` with issuer/client id,
+  JWKS SHA-256, and required `iss`/`sub`/`aud`/`exp` claims, or
+  `protocol=saml` with entity id, SSO URL, audience, and X.509 certificate
+  SHA-256.
+- SCIM user provisioning: directory snapshots require SCIM User and Group
+  schema URNs, non-empty users/groups, and valid user/group references.
+- RBAC and service accounts: roles and permissions are explicit in the tenant
+  config; principals inherit roles only through synced groups.
+- Tenant isolation: governed resources must be scoped as
+  `tenant:<tenant_id>:<resource>`; cross-tenant attempts persist denied
+  `enterprise_access_decision` rows.
+- Audit export authorization: `blackbox enterprise export-audit` persists an
+  `enterprise_access_decision` before creating files. Denied export attempts
+  create no files but remain inspectable in the append-only ledger.
+- Customer-managed encryption keys for enterprise tier: tenant config persists
+  `tenant_key_store.customer_managed=true` and a tenant `kms_key_id`; raw key
+  material is refused.
 - Append-only audit ledger (Phase 1).
-- Configurable retention.
-- SIEM export.
-- Data residency option.
-- Private deployment option.
+- Configurable retention: tenant config persists named retention classes and
+  a default class.
+- SIEM export: `siem-rfc5424.log` is generated and read back before success.
+- Data residency option: tenant config persists region and data residency.
+- Private deployment option: tenant config requires `deployment.mode=private_vpc`.
 
 ## FSV Of Redaction (Phase 1)
 
