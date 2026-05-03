@@ -31,6 +31,9 @@ Design implication:
 - Phase 14 applies that release-control pattern to agent runs by requiring
   physical ledger evidence, scorecards, RBAC, and incident/privacy checks
   before a run can be approved for promotion.
+- Phase 15 applies the same archive-and-provenance pattern to buyer proof:
+  package files are hashed in a manifest and tied back to source ledger refs
+  instead of being free-floating collateral.
 
 ### OWASP Top 10 For LLM And GenAI Applications
 
@@ -82,9 +85,29 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 14);
+  after Phase 15);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
+- Phase 15 package usage dimensions intentionally avoid per-event UUID-style
+  dimensions and keep high-cardinality uniqueness in the idempotency
+  identifier/source ref, not metric dimensions.
+
+### Usage-Based Billing Meter Events
+
+References:
+
+- <https://docs.stripe.com/billing/subscriptions/usage-based/recording-usage-api>
+- <https://docs.stripe.com/api/billing/meter-event/create>
+
+Design implication:
+
+- usage package rows need an event name, customer identifier, numeric value,
+  timestamp, and idempotency identifier before they are suitable for billing
+  analysis;
+- usage events should be generated from immutable ledger rows so retries and
+  rebuilds produce stable identifiers;
+- Phase 15 writes usage-meter rows to JSONL package files only; it does not
+  call a billing API from the CLI.
 
 ### NIST Privacy Framework And SP 800-53 Privacy/Audit Controls
 
@@ -143,6 +166,9 @@ Design implication:
 - include a line terminator after each row to make future concatenation safe.
 - Phase 5 implements this by writing `episodes.jsonl`, re-reading every line,
   validating required fields, and hashing the exact bytes written.
+- Phase 15 reuses the same rule for `usage-meter-events.jsonl` and
+  `eval-candidates.jsonl`; blank lines and invalid per-line JSON are package
+  integrity failures.
 
 ### in-toto
 
@@ -178,6 +204,9 @@ Design implication:
 - Phase 14 release gates preserve the evaluated input record references and
   source ledger tip so a downstream promotion can be tied back to the exact
   evidence state that was approved or blocked.
+- Phase 15 package manifests preserve file hashes and input record refs so a
+  buyer-facing report can be traced to the exact physical ledger state that
+  produced it.
 
 ### Model Context Protocol
 

@@ -23,7 +23,9 @@ The ledger holds:
 - evidence packets (Phase 4);
 - policy decisions (Phase 6);
 - incident packets (Phase 4);
-- export manifests (Phase 5).
+- export manifests (Phase 5);
+- scorecards, privacy decisions, release gates, and pilot package rows
+  (Phases 12-15).
 
 ### Evidence Artifact Store (Phase 4)
 
@@ -36,6 +38,8 @@ are reserved for later connector/export phases:
 - diffs;
 - screenshots if UI automation is used;
 - signed audit packets.
+- pilot package reports, usage-meter JSONL, eval-candidate JSONL, and
+  manifests.
 
 Artifact records must store SHA-256 hashes, MIME types, sizes, and retention
 policies. The ledger should hold only the hash + locator. Phase 4 already
@@ -156,6 +160,8 @@ The platform fails closed if:
 - source-of-truth readback cannot be persisted — Phase 2+.
 - privacy decision cannot be authorized, classified, appended, or read back —
   Phase 13 emits `PRIVACY_*` errors and writes no privacy decision row.
+- pilot package files or rows cannot be written/read back — Phase 15 emits
+  `PILOT_PACKAGE_*` errors and does not substitute a partial package.
 
 Phase 14 consumes these privacy rows in release gates when
 `blackbox gate evaluate --require-privacy` is used. The gate reads the

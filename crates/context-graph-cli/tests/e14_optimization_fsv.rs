@@ -543,17 +543,62 @@ fn fsv_c8_semantic_role_doc_exists_and_covers_key_topics() {
 // TRACK 7 — Regression guard: other embedders undisturbed
 // ============================================================================
 
-/// Source of Truth: the weight-profile array lengths + sums for all 17 profiles.
-/// Post-Phase-C, the count jumps from 14 → 17 (added 3 new profiles), but the
-/// 14 original profiles' weights must be unchanged.
+/// Source of Truth: the weight-profile array lengths + sums for the named
+/// profile inventory. Post-Phase-C added 3 E14-aware profiles; later
+/// learner-state routing added 3 affect profiles. The test verifies the
+/// complete intentional inventory by name so missing or duplicate profiles
+/// fail explicitly.
 #[test]
-fn fsv_c9_profile_count_grew_by_exactly_three() {
-    section("C9. WEIGHT_PROFILES count grew 14 → 17 (added 3 E14-aware profiles)");
+fn fsv_c9_profile_inventory_preserves_legacy_and_declares_new_sets() {
+    section("C9. WEIGHT_PROFILES inventory preserves legacy plus declared new profiles");
 
     let count = WEIGHT_PROFILES.len();
-    println!("BEFORE expected: 17 profiles total");
+    let legacy_profiles = [
+        "semantic_search",
+        "causal_reasoning",
+        "code_search",
+        "fact_checking",
+        "graph_reasoning",
+        "temporal_navigation",
+        "sequence_navigation",
+        "conversation_history",
+        "category_weighted",
+        "typo_tolerant",
+        "pipeline_stage1_recall",
+        "pipeline_stage2_scoring",
+        "pipeline_full",
+        "balanced",
+    ];
+    let e14_profiles = ["multilingual_search", "long_context", "translation_finder"];
+    let learner_state_profiles = ["affect_repair", "affect_priming", "affect_neutral"];
+    let expected_total = legacy_profiles.len() + e14_profiles.len() + learner_state_profiles.len();
+    let names: HashSet<&str> = get_profile_names().into_iter().collect();
+
+    println!("BEFORE expected: {} profiles total", expected_total);
     println!("AFTER  actual:   {}", count);
-    assert_eq!(count, 17, "expected 14 legacy + 3 E14 = 17");
+    assert_eq!(
+        names.len(),
+        count,
+        "duplicate names detected in WEIGHT_PROFILES"
+    );
+    assert_eq!(
+        count, expected_total,
+        "expected 14 legacy + 3 E14 + 3 learner-state profiles"
+    );
+
+    for profile in legacy_profiles
+        .iter()
+        .chain(e14_profiles.iter())
+        .chain(learner_state_profiles.iter())
+    {
+        let present = names.contains(profile);
+        println!("  profile '{}' -> {}", profile, present);
+        assert!(
+            present,
+            "profile '{}' missing from WEIGHT_PROFILES",
+            profile
+        );
+    }
 
     // Every profile must still satisfy the basic invariants.
     for (name, weights) in WEIGHT_PROFILES {
@@ -566,7 +611,7 @@ fn fsv_c9_profile_count_grew_by_exactly_three() {
             sum
         );
     }
-    println!("  all 17 profiles satisfy [len==14, sum≈1.0]");
+    println!("  all {} profiles satisfy [len==14, sum approx 1.0]", count);
 }
 
 // ============================================================================

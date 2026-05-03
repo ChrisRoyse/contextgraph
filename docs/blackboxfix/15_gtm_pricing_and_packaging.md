@@ -2,15 +2,9 @@
 
 ## Category
 
-Position BlackBoxFix as **Verified AgentOps**:
-
-- not just LLM observability;
-- not just evals;
-- not just policy gateway;
-- not just audit logs.
-
-The category claim is **operational proof for AI agent actions** — every
-action shipped with an expected delta and a physical readback.
+Position BlackBoxFix as **Verified AgentOps**: operational proof for AI agent
+actions, where every shipped claim has an expected delta and a physical
+readback.
 
 ## Initial Wedge
 
@@ -19,94 +13,113 @@ DevOps/SecOps agent governance:
 - coding agents;
 - dependency remediation agents;
 - CI repair agents;
-- cloud change agents;
-- vulnerability triage agents.
+- vulnerability triage agents;
+- ticket/evidence agents.
 
-This wedge is concrete, budgeted, and verifiable.
+This wedge is concrete, budgeted, and verifiable with the shipped local CLI.
 
 ## Buyer Personas
 
 | Persona | Cares about |
 |---|---|
-| AI platform lead | reusable controls for many agent teams; SDK, APIs, eval exports, model-provider neutrality |
+| AI platform lead | reusable controls for many agent teams; APIs; eval exports; model-provider neutrality |
 | CISO / security architect | authorization, audit, incident response, SIEM, data controls |
 | Engineering leader | shipping agents without breaking production |
 | Agent vendor | enterprise trust, embedded SDK, customer proof |
 
-## Offer
+## Shipped Pilot Package
 
-30-day pilot:
+Phase 15 turns the GTM claim into an executable artifact:
 
-- one workflow;
-- one agent runtime;
-- first connector set (Git + GitHub + CI + scanner);
-- evidence dashboard;
-- training/eval export;
-- security review packet.
+```bash
+blackbox package pilot-report \
+  --ledger PATH \
+  --tenant TENANT \
+  --principal-id PRINCIPAL_WITH_COMMERCIAL_PACKAGE \
+  --pilot-id PILOT_ID \
+  --min-actions 20 \
+  --out pilot-package \
+  --agent commercial_operator
+```
 
-Pilot success metric:
+Source of truth:
 
-- ≥ 20 real agent actions recorded;
-- 100 % of mutating actions verified or blocked;
-- ≥ 1 failed/blocked episode converted into an eval;
-- buyer can replay a run and inspect source-of-truth evidence.
+- SQLite `ledger_records` row with `record_kind='pilot_package'`;
+- package directory files `pilot-report.json`, `usage-meter-events.jsonl`,
+  `eval-candidates.jsonl`, and `manifest.json`;
+- dashboard read model `api/pilot-packages.json`.
+
+The command is fail-closed. Invalid request fields create no rows/files.
+Unauthorized principals create only the denied `enterprise_access_decision`.
+Unmet success criteria still create durable package evidence, then return
+`PILOT_PACKAGE_CRITERIA_NOT_MET`.
+
+## Pilot Success Metric
+
+A package passes only when all criteria are true:
+
+- observed `agent_run` rows are at least `--min-actions`;
+- every mutating `tool_call` has an `evidence_packet`;
+- at least one failure/block/incident/gate block becomes an eval candidate;
+- at least one `release_gate` decision exists.
+
+The output report stores both the summary and the exact failed criteria.
+
+## Pricing Meter Rows
+
+`usage-meter-events.jsonl` emits independently parseable rows with:
+
+- `event_name`;
+- `customer_identifier`;
+- numeric `value`;
+- source timestamp;
+- stable idempotency `identifier`;
+- low-cardinality dimensions;
+- ledger source ref.
+
+Initial meter names:
+
+- `blackbox_agent_run`;
+- `blackbox_verified_tool_call`;
+- `blackbox_evidence_packet`;
+- `blackbox_incident_packet`;
+- `blackbox_release_gate`.
+
+These are package artifacts for pricing analysis, not live billing calls.
 
 ## Pricing Hypotheses
 
 | Tier | Mechanism |
 |---|---|
-| Developer | free or low-cost local recorder (Phase 1); JSONL exporter; local Git/file verifiers |
-| Team | per active agent **or** per verified run volume; shared dashboard; GitHub/CI/ticket integrations |
-| Enterprise | annual platform fee + usage tier for verified tool calls; private deployment premium; retention premium; custom connector package; compliance/audit export package |
+| Developer | free or low-cost local recorder; JSONL exporter; local Git/file verifiers |
+| Team | per active agent or verified run volume; shared dashboard; GitHub/CI/ticket/scanner integrations |
+| Enterprise | annual platform fee plus usage tier for verified tool calls; private deployment; retention and compliance packages |
 | Vendor / OEM | SDK license; per end-customer deployment; white-label enterprise controls |
 
-## Metrics That Sell
+## Sales Proof
 
-- percentage of agent actions verified;
-- number of blocked unsafe actions;
-- mean time to root cause;
-- evals generated from real failures;
-- reduction in manual audit work;
-- number of workflows allowed to move from supervised to bounded-autonomous.
+The demo must show physical evidence:
 
-## Sales Proof (live demo script)
+1. Run a real agent workflow.
+2. Verify source-of-truth state.
+3. Score the run.
+4. Evaluate privacy/release gates.
+5. Build the pilot package.
+6. Query SQLite for the `pilot_package` row.
+7. Read `manifest.json`, `usage-meter-events.jsonl`, and
+   `eval-candidates.jsonl` from disk.
 
-1. Agent performs useful operational work.
-2. BlackBoxFix records the action.
-3. Source-of-truth readback proves success.
-4. A controlled failure produces a typed incident.
-5. The failure becomes an eval/training row.
-
-Use the wedge demo in `18_first_wedge_demo.md` end-to-end. Always show the
-actual SQLite query / `git log` / GitHub API response — never a screenshot.
-
-## Expansion Paths
-
-- add more connectors;
-- move from observe-only to governed mode;
-- expand from DevOps to data operations;
-- expand from one agent team to enterprise platform;
-- sell training/eval corpus export to model improvement teams.
-
-## What Not To Sell Yet
-
-Until each phase lands, do not promise:
-
-- live MCP gateway (Phase 6);
-- local dashboard bundle (Phase 7) and hosted dashboard later;
-- enterprise SSO/RBAC/private deploy (Phase 8);
-- non-Git/non-GitHub connectors (Phase 3+).
-
-Selling unbuilt capability turns Phase 0/1 evidence into a credibility
-liability. Stick to what is physically demoable.
+Screenshots are secondary. The artifact is accepted only when the buyer can
+run the commands and inspect the same rows/files.
 
 ## FSV Of GTM Claims
 
-A GTM claim is FSV-passing only if it can be supported by:
+A GTM claim is FSV-passing only if it has:
 
-1. A reproducible CLI command sequence the buyer can run today.
-2. The exact `sqlite3 …` query that proves the state.
-3. A code path under `crates/context-graph-cli/` that produced the artifact.
+1. A reproducible CLI command sequence.
+2. A direct SQLite query proving the ledger row.
+3. Direct file reads proving package outputs and manifest hashes.
+4. A test path under `crates/context-graph-cli/tests/`.
 
-If any of those three is missing, the claim is unverified and must not appear
+If any of those four are missing, the claim is unverified and must not appear
 in collateral.

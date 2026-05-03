@@ -14,7 +14,7 @@ implementation.
 | Evidence linkage | physical `ledger_records` rows with matching `evidence_packet_id` |
 
 Phase 5 did not change the live ledger schema. Current ledger records now use
-`LEDGER_SCHEMA_VERSION = 8` after Phase 14; exported rows still add
+`LEDGER_SCHEMA_VERSION = 9` after Phase 15; exported rows still add
 `episode_schema_version = 1`.
 
 ## Shipped Command

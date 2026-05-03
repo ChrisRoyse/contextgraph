@@ -15,6 +15,8 @@ physical ledger evidence. Phase 13 shipped privacy retention and erasure
 decision verification over physical ledger and enterprise-control rows. Phase
 14 shipped release/promotion gate verification over scorecards, verifier
 evidence, policy decisions, incident packets, privacy decisions, and RBAC.
+Phase 15 shipped pilot packaging verification over physical ledger rows and
+package files, including usage-meter and eval-candidate JSONL readback.
 
 ## Full-State Verification Protocol
 
@@ -44,6 +46,8 @@ lives. Examples:
 - Kubernetes API for cluster objects;
 - Terraform state plus cloud API for infrastructure;
 - ticketing API for issue state.
+- package output files for pilot reports, usage meters, eval candidates, and
+  manifests.
 
 For Phase 1 the durable system is the SQLite `ledger_records` table itself.
 A verifier of the ledger reads back the rows and recomputes both hash chains.
@@ -74,6 +78,8 @@ Shipped Phase 2/3/9/10/11 verifier ids:
 | `scanner_vulnerability_absent_v1` | `scanner_artifact_v1` | OSV JSON report file | target vulnerability id/alias/group id is absent after optional package/ecosystem/version filters |
 | `scanner_lockfile_pinned_to_version_v1` | `scanner_artifact_v1` | Cargo lockfile | package exists and every matching lockfile package entry has the expected version |
 | `scanner_sbom_artifact_present_v1` | `scanner_artifact_v1` | CycloneDX JSON SBOM file | SBOM is valid CycloneDX JSON and contains enough components plus the expected component/version when supplied |
+| `blackbox_pilot_package_v1` | `blackbox_packaging_v1` | SQLite `ledger_records` + package files | package row id/hash/readback and manifest file hashes match |
+| `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;

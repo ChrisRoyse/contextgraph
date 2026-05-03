@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 8;
+const LEDGER_SCHEMA_VERSION: i64 = 9;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -38,6 +38,7 @@ const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
 const SCORING_CONNECTOR_ID: &str = "blackbox_scoring_v1";
 const PRIVACY_CONNECTOR_ID: &str = "blackbox_privacy_v1";
 const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
+const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -50,8 +51,10 @@ const SIEM_EXPORT_SCHEMA_VERSION: i64 = 1;
 const SCORECARD_SCHEMA_VERSION: i64 = 1;
 const PRIVACY_SCHEMA_VERSION: i64 = 1;
 const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
+const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
 const SCORE_RULE_VERSION: &str = "score_v1";
 const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
+const PILOT_PACKAGE_RULE_VERSION: &str = "pilot_package_v1";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -133,6 +136,11 @@ pub enum BlackboxCommands {
     Gate {
         #[command(subcommand)]
         action: GateCommands,
+    },
+    /// Build Phase 15 pilot packaging and usage-meter proof.
+    Package {
+        #[command(subcommand)]
+        action: PackageCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -557,6 +565,7 @@ pub enum DashboardView {
     Verifiers,
     Errors,
     Exports,
+    PilotPackages,
 }
 
 #[derive(Subcommand, Debug)]
@@ -697,6 +706,12 @@ pub enum PrivacyCommands {
 pub enum GateCommands {
     /// Evaluate and persist a release/promotion gate decision for one run.
     Evaluate(GateEvaluateArgs),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PackageCommands {
+    /// Build and persist a buyer-facing pilot report and usage package.
+    PilotReport(PackagePilotReportArgs),
 }
 
 #[derive(Args, Debug)]
@@ -847,6 +862,45 @@ pub struct GateEvaluateArgs {
     pub model: Option<String>,
 }
 
+#[derive(Args, Debug)]
+pub struct PackagePilotReportArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id governed by the latest enterprise configuration.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Principal id that must have commercial.package permission through SCIM/RBAC.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Stable buyer/pilot identifier for this package.
+    #[arg(long, default_value = "pilot_local")]
+    pub pilot_id: String,
+
+    /// Minimum real agent runs required for the pilot success criterion.
+    #[arg(long, default_value_t = 20)]
+    pub min_actions: u64,
+
+    /// Output directory. The packager writes pilot-report.json, usage-meter-events.jsonl, eval-candidates.jsonl, and manifest.json.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing package output directory after validation.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Agent or operator identity building the package.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
 impl DashboardView {
     fn as_str(self) -> &'static str {
         match self {
@@ -857,6 +911,7 @@ impl DashboardView {
             Self::Verifiers => "verifiers",
             Self::Errors => "errors",
             Self::Exports => "exports",
+            Self::PilotPackages => "pilot-packages",
         }
     }
 }
@@ -1308,6 +1363,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Gate { action } => match action {
             GateCommands::Evaluate(args) => gate_evaluate(args),
         },
+        BlackboxCommands::Package { action } => match action {
+            PackageCommands::PilotReport(args) => package_pilot_report(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -1409,6 +1467,15 @@ fn connector_list() -> BbxResult<Value> {
                 "source_kind": "sqlite_ledger_release_gate",
                 "readback_specs": [
                     "blackbox_release_gate_decision_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": PACKAGING_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_pilot_package",
+                "readback_specs": [
+                    "blackbox_pilot_package_v1",
+                    "blackbox_usage_meter_events_jsonl_v1"
                 ],
                 "fail_closed": true
             }
@@ -1674,6 +1741,31 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                     "ledger_record_count": inspection.record_count,
                     "ledger_tip_sha256": inspection.ledger_tip_sha256,
                     "release_gate_records_total": inspection.records.iter().filter(|record| record.record_kind == "release_gate").count(),
+                },
+            }))
+        }
+        PACKAGING_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    PACKAGING_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_packaging_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": PACKAGING_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "pilot_package_records_total": inspection.records.iter().filter(|record| record.record_kind == "pilot_package").count(),
                 },
             }))
         }
@@ -2415,6 +2507,7 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "GET", "path": "/v1/dashboard/verifier-status", "ledger_record_kind": null },
             { "method": "GET", "path": "/v1/dashboard/errors", "ledger_record_kind": null },
             { "method": "GET", "path": "/v1/dashboard/exports", "ledger_record_kind": null },
+            { "method": "GET", "path": "/v1/dashboard/pilot-packages", "ledger_record_kind": null },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/config", "ledger_record_kind": "enterprise_tenant_config" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
@@ -2422,7 +2515,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" },
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate", "ledger_record_kind": "retention_decision" },
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" },
-            { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" }
+            { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" },
+            { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -4120,6 +4214,1151 @@ fn readback_release_gate_append(
     }))
 }
 
+fn package_pilot_report(args: PackagePilotReportArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--principal-id", &args.principal_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    validate_package_atom(&args.ledger, "--pilot-id", &args.pilot_id)?;
+    validate_package_min_actions(&args.ledger, args.min_actions)?;
+    validate_package_directory_path(&args.out, args.force)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection_before_auth = verify_ledger_integrity(&conn, &args.ledger)?;
+    let resource = format!("tenant:{}:commercial/pilot/{}", args.tenant, args.pilot_id);
+    let authorization = enterprise_access_outcome(
+        &args.ledger,
+        &inspection_before_auth,
+        &args.tenant,
+        &args.principal_id,
+        "commercial.package",
+        &resource,
+    )?;
+    let authorization_append = append_enterprise_access_decision(
+        &mut conn,
+        &args.ledger,
+        &args.tenant,
+        &args.principal_id,
+        "commercial.package",
+        &resource,
+        &args.agent,
+        args.model.as_deref(),
+        &authorization,
+    )?;
+    if !authorization.allowed {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "PILOT_PACKAGE_RBAC_DENIED",
+            format!(
+                "principal {} is not authorized to build pilot packages for tenant {}",
+                args.principal_id, args.tenant
+            ),
+            Some(source_of_truth(&args.ledger)),
+            PACKAGING_CONNECTOR_ID,
+            authorization.field_path.clone(),
+            authorization.remediation.clone().unwrap_or_else(|| {
+                "grant commercial.package through a SCIM group role and retry".to_string()
+            }),
+        ));
+    }
+
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let pilot_package_id = prefixed_id("pilot_package");
+    let authorization_ref = ledger_record_ref_json(
+        "authorization_decision",
+        authorization_append.sequence,
+        &authorization_append.record_id,
+        "enterprise_access_decision",
+        &authorization_append.payload_sha256,
+        &authorization_append.record_sha256,
+    );
+    let mut material = build_pilot_package_material(
+        &args,
+        &inspection,
+        &ledger_id,
+        &pilot_package_id,
+        authorization_ref,
+    )?;
+
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_package_temp_dir(&temp_dir)?;
+    material.file_manifest = match write_pilot_package_directory(&args, &material, &temp_dir) {
+        Ok(file_manifest) => file_manifest,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(err);
+        }
+    };
+
+    let package_record_id = prefixed_id("bbx_pilot_pkg");
+    let package_payload = build_pilot_package_payload(&args, &material, &pilot_package_id)?;
+    let record_count_before_package = inspection.record_count;
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: package_record_id.clone(),
+            record_kind: "pilot_package".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: None,
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: package_payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_pilot_package_append(
+        &conn,
+        &args.ledger,
+        &pilot_package_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before_package,
+    )?;
+
+    promote_package_export_dir(&temp_dir, &args.out, args.force)?;
+    let manifest_path = args.out.join("manifest.json");
+    let final_manifest = read_json_file(&manifest_path, "pilot package manifest readback")?;
+    verify_package_manifest_files(&args.out, &final_manifest)?;
+    let manifest_sha256 = sha256_file(&manifest_path)?;
+    if material.overall_status != "passed" {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "PILOT_PACKAGE_CRITERIA_NOT_MET",
+            format!(
+                "pilot package {} did not satisfy all success criteria: {}",
+                pilot_package_id,
+                material.failed_criteria.join(",")
+            ),
+            Some(source_of_truth(&args.ledger)),
+            PACKAGING_CONNECTOR_ID,
+            Some("pilot_package.pilot_success.failed_criteria".to_string()),
+            "inspect the persisted pilot_package row and package files, collect the missing evidence, then rebuild the package",
+        ));
+    }
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox package pilot-report",
+        "connector": PACKAGING_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "file_source_of_truth": file_source_of_truth(&args.out),
+        "tenant_id": args.tenant,
+        "principal_id": args.principal_id,
+        "pilot_id": args.pilot_id,
+        "pilot_package_id": pilot_package_id,
+        "pilot_package_schema_version": PILOT_PACKAGE_SCHEMA_VERSION,
+        "pilot_package_rule_version": PILOT_PACKAGE_RULE_VERSION,
+        "out": args.out,
+        "manifest_sha256": manifest_sha256,
+        "pilot_success": material.pilot_success,
+        "usage_summary": material.usage_summary,
+        "pricing_meter_summary": material.pricing_meter_summary,
+        "readback": readback,
+    }))
+}
+
+struct PilotPackageMaterial {
+    report: Value,
+    usage_meter_events: Vec<Value>,
+    eval_candidates: Vec<Value>,
+    file_manifest: Value,
+    usage_summary: Value,
+    pricing_meter_summary: Value,
+    pilot_success: Value,
+    source_refs: Value,
+    overall_status: String,
+    failed_criteria: Vec<String>,
+}
+
+fn build_pilot_package_material(
+    args: &PackagePilotReportArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    pilot_package_id: &str,
+    authorization_ref: Value,
+) -> BbxResult<PilotPackageMaterial> {
+    let tenant_records = inspection
+        .records
+        .iter()
+        .filter(|record| record.tenant_id == args.tenant && record.record_kind != "pilot_package")
+        .collect::<Vec<_>>();
+    let input_record_refs = tenant_records
+        .iter()
+        .copied()
+        .map(|record| package_record_ref_from_output(&args.ledger, "pilot_package_input", record))
+        .collect::<BbxResult<Vec<_>>>()?;
+    let input_record_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(input_record_refs))?);
+    let mut record_kind_counts = BTreeMap::<String, i64>::new();
+    for record in &tenant_records {
+        *record_kind_counts
+            .entry(record.record_kind.clone())
+            .or_insert(0) += 1;
+    }
+
+    let mut tool_call_ids = BTreeSet::new();
+    let mut evidence_tool_call_ids = BTreeSet::new();
+    let mut verifier_status_counts = initialized_status_counts();
+    let mut policy_counts = BTreeMap::new();
+    policy_counts.insert("allowed".to_string(), 0_i64);
+    policy_counts.insert("denied".to_string(), 0_i64);
+    policy_counts.insert("unknown".to_string(), 0_i64);
+    let mut release_gate_counts = BTreeMap::new();
+    release_gate_counts.insert("approved".to_string(), 0_i64);
+    release_gate_counts.insert("blocked".to_string(), 0_i64);
+    release_gate_counts.insert("unknown".to_string(), 0_i64);
+    let mut active_agents = BTreeSet::new();
+    let mut usage_meter_events = Vec::new();
+    let mut eval_candidates = Vec::new();
+
+    for record in &tenant_records {
+        if let Some(agent_id) = record
+            .actor
+            .get("agent_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+        {
+            active_agents.insert(agent_id.to_string());
+        }
+        match record.record_kind.as_str() {
+            "agent_run" => usage_meter_events.push(package_meter_event(
+                args,
+                record,
+                "blackbox_agent_run",
+                "agent_run",
+            )?),
+            "tool_call" => {
+                let tool_call_id =
+                    required_package_payload_str(&args.ledger, record, "tool_call_id")?;
+                tool_call_ids.insert(tool_call_id.to_string());
+            }
+            "evidence_packet" => {
+                let tool_call_id =
+                    required_package_payload_str(&args.ledger, record, "tool_call_id")?;
+                evidence_tool_call_ids.insert(tool_call_id.to_string());
+                usage_meter_events.push(package_meter_event(
+                    args,
+                    record,
+                    "blackbox_evidence_packet",
+                    "evidence_packet",
+                )?);
+            }
+            "verifier_result" => {
+                let status = required_package_payload_str(&args.ledger, record, "status")?;
+                match status {
+                    "passed" | "failed" | "blocked" => {
+                        *verifier_status_counts
+                            .entry(status.to_string())
+                            .or_insert(0) += 1;
+                    }
+                    other => {
+                        return Err(package_schema_error(
+                            &args.ledger,
+                            record,
+                            "status",
+                            format!("unsupported verifier_result status {other:?}"),
+                        ));
+                    }
+                }
+                if status == "failed" || status == "blocked" {
+                    eval_candidates.push(package_eval_candidate(
+                        &args.ledger,
+                        record,
+                        "verifier_result",
+                        status,
+                    )?);
+                }
+            }
+            "policy_decision" => {
+                let status = required_package_payload_str(&args.ledger, record, "status")?;
+                match status {
+                    "allowed" | "denied" => {
+                        *policy_counts.entry(status.to_string()).or_insert(0) += 1;
+                    }
+                    _ => {
+                        *policy_counts.entry("unknown".to_string()).or_insert(0) += 1;
+                    }
+                }
+                if status == "denied" {
+                    eval_candidates.push(package_eval_candidate(
+                        &args.ledger,
+                        record,
+                        "policy_decision",
+                        status,
+                    )?);
+                }
+            }
+            "incident_packet" => {
+                usage_meter_events.push(package_meter_event(
+                    args,
+                    record,
+                    "blackbox_incident_packet",
+                    "incident_packet",
+                )?);
+                eval_candidates.push(package_eval_candidate(
+                    &args.ledger,
+                    record,
+                    "incident_packet",
+                    "incident",
+                )?);
+            }
+            "release_gate" => {
+                let status =
+                    required_package_payload_pointer_str(&args.ledger, record, "/decision/status")?;
+                match status {
+                    "approved" | "blocked" => {
+                        *release_gate_counts.entry(status.to_string()).or_insert(0) += 1;
+                    }
+                    _ => {
+                        *release_gate_counts
+                            .entry("unknown".to_string())
+                            .or_insert(0) += 1;
+                    }
+                }
+                usage_meter_events.push(package_meter_event(
+                    args,
+                    record,
+                    "blackbox_release_gate",
+                    "release_gate",
+                )?);
+                if status == "blocked" {
+                    eval_candidates.push(package_eval_candidate(
+                        &args.ledger,
+                        record,
+                        "release_gate",
+                        status,
+                    )?);
+                }
+            }
+            _ => {}
+        }
+    }
+    for tool_call_id in &tool_call_ids {
+        if evidence_tool_call_ids.contains(tool_call_id) {
+            if let Some(record) = tenant_records.iter().find(|record| {
+                record.record_kind == "tool_call"
+                    && record.payload.get("tool_call_id").and_then(Value::as_str)
+                        == Some(tool_call_id.as_str())
+            }) {
+                usage_meter_events.push(package_meter_event(
+                    args,
+                    record,
+                    "blackbox_verified_tool_call",
+                    "verified_tool_call",
+                )?);
+            }
+        }
+    }
+
+    let agent_runs_total = record_kind_counts.get("agent_run").copied().unwrap_or(0);
+    let tool_calls_total = tool_call_ids.len() as i64;
+    let tool_calls_with_evidence =
+        tool_call_ids.intersection(&evidence_tool_call_ids).count() as i64;
+    let verified_or_blocked_ratio = ratio_f64(tool_calls_with_evidence, tool_calls_total);
+    let incidents_total = record_kind_counts
+        .get("incident_packet")
+        .copied()
+        .unwrap_or(0);
+    let release_gates_total = record_kind_counts.get("release_gate").copied().unwrap_or(0);
+    let eval_candidates_total = eval_candidates.len() as i64;
+
+    let mut failed_criteria = Vec::new();
+    if agent_runs_total < args.min_actions as i64 {
+        failed_criteria.push("PILOT_MIN_ACTIONS_NOT_MET".to_string());
+    }
+    if tool_calls_total > 0 && tool_calls_with_evidence != tool_calls_total {
+        failed_criteria.push("PILOT_VERIFICATION_COVERAGE_INCOMPLETE".to_string());
+    }
+    if eval_candidates_total < 1 {
+        failed_criteria.push("PILOT_FAILURE_EVAL_MISSING".to_string());
+    }
+    if release_gates_total < 1 {
+        failed_criteria.push("PILOT_RELEASE_GATE_MISSING".to_string());
+    }
+    let overall_status = if failed_criteria.is_empty() {
+        "passed".to_string()
+    } else {
+        "needs_more_evidence".to_string()
+    };
+    let pilot_success = json!({
+        "status": overall_status.clone(),
+        "minimum_real_actions": {
+            "required": args.min_actions,
+            "observed": agent_runs_total,
+            "passed": agent_runs_total >= args.min_actions as i64,
+        },
+        "mutating_actions_verified_or_blocked": {
+            "tool_calls_total": tool_calls_total,
+            "tool_calls_with_evidence": tool_calls_with_evidence,
+            "coverage_ratio": verified_or_blocked_ratio,
+            "passed": tool_calls_total == 0 || tool_calls_with_evidence == tool_calls_total,
+        },
+        "failure_converted_to_eval": {
+            "eval_candidates_total": eval_candidates_total,
+            "passed": eval_candidates_total >= 1,
+        },
+        "release_gate_decision_present": {
+            "release_gates_total": release_gates_total,
+            "passed": release_gates_total >= 1,
+        },
+        "failed_criteria": failed_criteria.clone(),
+    });
+    let mut meter_counts = BTreeMap::<String, i64>::new();
+    for event in &usage_meter_events {
+        if let Some(event_name) = event.get("event_name").and_then(Value::as_str) {
+            *meter_counts.entry(event_name.to_string()).or_insert(0) += 1;
+        }
+    }
+    let pricing_meter_summary = json!({
+        "schema": "blackbox_usage_meter_events_jsonl_v1",
+        "events_total": usage_meter_events.len(),
+        "meter_counts": meter_counts,
+        "aggregation": "sum(value) by event_name, customer_identifier, and billing period",
+        "idempotency": "identifier is derived from ledger sequence and record_sha256",
+    });
+    let usage_summary = json!({
+        "tenant_id": args.tenant,
+        "pilot_id": args.pilot_id,
+        "agent_runs_total": agent_runs_total,
+        "active_agents_total": active_agents.len(),
+        "active_agents": active_agents,
+        "tool_calls_total": tool_calls_total,
+        "tool_calls_with_evidence": tool_calls_with_evidence,
+        "verified_or_blocked_ratio": verified_or_blocked_ratio,
+        "verifier_status_counts": verifier_status_counts,
+        "policy_decision_counts": policy_counts,
+        "incidents_total": incidents_total,
+        "scorecards_total": record_kind_counts.get("scorecard").copied().unwrap_or(0),
+        "release_gate_counts": release_gate_counts,
+        "release_gates_total": release_gates_total,
+        "retention_decisions_total": record_kind_counts.get("retention_decision").copied().unwrap_or(0),
+        "evidence_deletions_total": record_kind_counts.get("evidence_deletion").copied().unwrap_or(0),
+        "eval_candidates_total": eval_candidates_total,
+        "record_kind_counts": record_kind_counts,
+    });
+    let source_refs = json!({
+        "authorization_decision": authorization_ref,
+        "input_records": input_record_refs,
+        "input_record_refs_sha256": input_record_refs_sha256,
+    });
+    let report = json!({
+        "format": "blackbox_pilot_report_json_v1",
+        "pilot_package_schema_version": PILOT_PACKAGE_SCHEMA_VERSION,
+        "pilot_package_rule_version": PILOT_PACKAGE_RULE_VERSION,
+        "pilot_package_id": pilot_package_id,
+        "tenant_id": args.tenant,
+        "pilot_id": args.pilot_id,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": {
+            "ledger_id": ledger_id,
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_package": inspection.record_count,
+            "ledger_tip_sha256_before_package": inspection.ledger_tip_sha256,
+        },
+        "request": {
+            "principal_id": args.principal_id,
+            "permission": "commercial.package",
+            "pilot_id": args.pilot_id,
+            "min_actions": args.min_actions,
+        },
+        "usage_summary": usage_summary.clone(),
+        "pilot_success": pilot_success.clone(),
+        "pricing_meter_summary": pricing_meter_summary.clone(),
+        "source_refs": source_refs.clone(),
+        "standards_basis": [
+            "Usage-meter events use explicit event_name, customer identifier, numeric value, timestamp, and idempotency identifier",
+            "OpenTelemetry semantic conventions motivated stable, low-cardinality usage dimensions",
+            "JSON Lines keeps meter and eval rows independently parseable and streamable"
+        ],
+    });
+    Ok(PilotPackageMaterial {
+        report,
+        usage_meter_events,
+        eval_candidates,
+        file_manifest: Value::Null,
+        usage_summary,
+        pricing_meter_summary,
+        pilot_success,
+        source_refs,
+        overall_status,
+        failed_criteria,
+    })
+}
+
+fn build_pilot_package_payload(
+    args: &PackagePilotReportArgs,
+    material: &PilotPackageMaterial,
+    pilot_package_id: &str,
+) -> BbxResult<Value> {
+    Ok(json!({
+        "record_kind": "pilot_package",
+        "pilot_package_schema_version": PILOT_PACKAGE_SCHEMA_VERSION,
+        "pilot_package_rule_version": PILOT_PACKAGE_RULE_VERSION,
+        "pilot_package_id": pilot_package_id,
+        "tenant_id": args.tenant,
+        "pilot_id": args.pilot_id,
+        "request": {
+            "principal_id": args.principal_id,
+            "permission": "commercial.package",
+            "resource": format!("tenant:{}:commercial/pilot/{}", args.tenant, args.pilot_id),
+            "min_actions": args.min_actions,
+            "out": args.out,
+        },
+        "source_ledger": material.report["source_ledger"].clone(),
+        "usage_summary": material.usage_summary.clone(),
+        "pilot_success": material.pilot_success.clone(),
+        "pricing_meter_summary": material.pricing_meter_summary.clone(),
+        "file_manifest": material.file_manifest.clone(),
+        "source_refs": material.source_refs.clone(),
+        "packaged_at": Utc::now().to_rfc3339(),
+    }))
+}
+
+fn package_meter_event(
+    args: &PackagePilotReportArgs,
+    record: &LedgerRecordOutput,
+    event_name: &str,
+    usage_kind: &str,
+) -> BbxResult<Value> {
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            package_schema_error(
+                &args.ledger,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(json!({
+        "format": "blackbox_usage_meter_event_json_v1",
+        "event_name": event_name,
+        "customer_identifier": args.tenant,
+        "value": 1,
+        "timestamp": record.created_at,
+        "identifier": format!("bbx:{}:{}:{}", args.tenant, record.sequence, record_sha256),
+        "dimensions": {
+            "tenant_id": args.tenant,
+            "pilot_id": args.pilot_id,
+            "usage_kind": usage_kind,
+            "record_kind": record.record_kind,
+            "ledger_sequence": record.sequence,
+        },
+        "source_ref": package_record_ref_from_output(&args.ledger, "meter_source", record)?,
+    }))
+}
+
+fn package_eval_candidate(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    candidate_kind: &str,
+    status: &str,
+) -> BbxResult<Value> {
+    Ok(json!({
+        "format": "blackbox_eval_candidate_json_v1",
+        "candidate_kind": candidate_kind,
+        "status": status,
+        "sequence": record.sequence,
+        "record_kind": record.record_kind,
+        "run_id": record.run_id,
+        "error_code": record.payload.get("error_code").cloned()
+            .or_else(|| record.payload.pointer("/decision/reason_code").cloned())
+            .or_else(|| record.payload.pointer("/decision/primary_reason_code").cloned())
+            .unwrap_or(Value::Null),
+        "source_ref": package_record_ref_from_output(ledger_path, "eval_candidate_source", record)?,
+    }))
+}
+
+fn write_pilot_package_directory(
+    args: &PackagePilotReportArgs,
+    material: &PilotPackageMaterial,
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir_all(temp_dir)
+        .map_err(|err| BlackboxError::io(temp_dir, "create pilot package temp directory", err))?;
+    let report_path = temp_dir.join("pilot-report.json");
+    let usage_path = temp_dir.join("usage-meter-events.jsonl");
+    let eval_path = temp_dir.join("eval-candidates.jsonl");
+    write_package_json_file(&report_path, &material.report)?;
+    write_package_jsonl(
+        &usage_path,
+        &material.usage_meter_events,
+        "blackbox_usage_meter_event_json_v1",
+        "usage meter events JSONL",
+    )?;
+    write_package_jsonl(
+        &eval_path,
+        &material.eval_candidates,
+        "blackbox_eval_candidate_json_v1",
+        "eval candidates JSONL",
+    )?;
+    let usage_readback = read_package_jsonl(
+        &usage_path,
+        "blackbox_usage_meter_event_json_v1",
+        "usage meter events JSONL readback",
+    )?;
+    let eval_readback = read_package_jsonl(
+        &eval_path,
+        "blackbox_eval_candidate_json_v1",
+        "eval candidates JSONL readback",
+    )?;
+    let files = vec![
+        package_file_entry(temp_dir, Path::new("pilot-report.json"))?,
+        package_file_entry(temp_dir, Path::new("usage-meter-events.jsonl"))?,
+        package_file_entry(temp_dir, Path::new("eval-candidates.jsonl"))?,
+    ];
+    let manifest = json!({
+        "format": "blackbox_pilot_package_manifest_json_v1",
+        "pilot_package_schema_version": PILOT_PACKAGE_SCHEMA_VERSION,
+        "pilot_package_rule_version": PILOT_PACKAGE_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "pilot_id": args.pilot_id,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": material.report["source_ledger"].clone(),
+        "pilot_success": material.pilot_success.clone(),
+        "pricing_meter_summary": material.pricing_meter_summary.clone(),
+        "usage_meter_events": {
+            "line_count": usage_readback.0,
+            "sha256": usage_readback.1,
+        },
+        "eval_candidates": {
+            "line_count": eval_readback.0,
+            "sha256": eval_readback.1,
+        },
+        "files": files,
+    });
+    write_package_json_file(&temp_dir.join("manifest.json"), &manifest)?;
+    Ok(manifest)
+}
+
+fn write_package_json_file(path: &Path, value: &Value) -> BbxResult<()> {
+    write_json_file_new(path, value, "pilot package JSON")?;
+    let readback = read_json_file(path, "pilot package JSON readback")?;
+    if &readback != value {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PILOT_PACKAGE_JSON_READBACK_MISMATCH",
+            PACKAGING_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "pilot package JSON readback does not match the value written",
+            "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn write_package_jsonl(
+    path: &Path,
+    rows: &[Value],
+    expected_format: &'static str,
+    label: &'static str,
+) -> BbxResult<()> {
+    let mut text = String::new();
+    for row in rows {
+        if row.get("format").and_then(Value::as_str) != Some(expected_format) {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_JSONL_SCHEMA_INVALID",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(path),
+                "format",
+                format!("{label} row does not use format {expected_format}"),
+                "regenerate the package from trusted ledger rows",
+            ));
+        }
+        text.push_str(&canonical_json_string(row)?);
+        text.push('\n');
+    }
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, label, err))?;
+    let (line_count, _) = read_package_jsonl(path, expected_format, label)?;
+    if line_count != rows.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PILOT_PACKAGE_JSONL_READBACK_MISMATCH",
+            PACKAGING_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            format!("{label} line count changed after write"),
+            "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn read_package_jsonl(
+    path: &Path,
+    expected_format: &'static str,
+    label: &'static str,
+) -> BbxResult<(usize, String)> {
+    let file = File::open(path).map_err(|err| BlackboxError::io(path, label, err))?;
+    let reader = BufReader::new(file);
+    let mut count = 0_usize;
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|err| BlackboxError::io(path, label, err))?;
+        if line.trim().is_empty() {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_JSONL_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {}", index + 1),
+                "pilot package JSONL contains a blank line",
+                "regenerate the package after inspecting filesystem/storage consistency",
+            ));
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_JSONL_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {}", index + 1),
+                format!("pilot package JSONL line does not parse: {err}"),
+                "regenerate the package after inspecting filesystem/storage consistency",
+            )
+        })?;
+        if value.get("format").and_then(Value::as_str) != Some(expected_format) {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_JSONL_SCHEMA_INVALID",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {} format", index + 1),
+                format!("pilot package JSONL line does not use format {expected_format}"),
+                "regenerate the package from trusted ledger rows",
+            ));
+        }
+        count += 1;
+    }
+    Ok((count, sha256_file(path)?))
+}
+
+fn package_file_entry(base: &Path, relative: &Path) -> BbxResult<Value> {
+    let path = base.join(relative);
+    let bytes = fs::metadata(&path)
+        .map_err(|err| BlackboxError::io(&path, "stat pilot package file", err))?
+        .len();
+    Ok(json!({
+        "path": relative.to_string_lossy(),
+        "sha256": sha256_file(&path)?,
+        "bytes": bytes,
+    }))
+}
+
+fn readback_pilot_package_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    pilot_package_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PILOT_PACKAGE_READBACK_MISMATCH",
+            PACKAGING_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "pilot package append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun package generation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("pilot package sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun package generation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "pilot_package"
+        || row.payload.get("pilot_package_id").and_then(Value::as_str) != Some(pilot_package_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PILOT_PACKAGE_READBACK_MISMATCH",
+            PACKAGING_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.pilot_package",
+            "pilot_package row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun package generation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_pilot_package": inspection_after.record_count,
+        "ledger_tip_sha256_after_pilot_package": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "pilot_package_id": row.payload["pilot_package_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "pilot_success": row.payload["pilot_success"].clone(),
+    }))
+}
+
+fn package_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let payload_sha256 = record
+        .hash
+        .get("payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            package_schema_error(
+                ledger_path,
+                record,
+                "hash.payload_sha256",
+                format!("{} row is missing payload_sha256", record.record_kind),
+            )
+        })?;
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            package_schema_error(
+                ledger_path,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        payload_sha256,
+        record_sha256,
+    ))
+}
+
+fn required_package_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            package_schema_error(
+                ledger_path,
+                record,
+                field,
+                format!("{} row is missing string field {field}", record.record_kind),
+            )
+        })
+}
+
+fn required_package_payload_pointer_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    pointer: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            package_schema_error(
+                ledger_path,
+                record,
+                pointer,
+                format!(
+                    "{} row is missing string field at {pointer}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn validate_package_atom(
+    ledger_path: &Path,
+    field_path: &'static str,
+    value: &str,
+) -> BbxResult<()> {
+    if value.trim() != value || value.is_empty() || value.len() > 128 {
+        return Err(package_invalid(
+            ledger_path,
+            "PILOT_PACKAGE_REQUEST_INVALID",
+            field_path,
+            format!("{field_path} must be non-empty, trimmed, and at most 128 bytes"),
+            "normalize the package request field before rebuilding the pilot package",
+        ));
+    }
+    if value
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(package_invalid(
+            ledger_path,
+            "PILOT_PACKAGE_REQUEST_INVALID",
+            field_path,
+            format!("{field_path} contains whitespace or control characters"),
+            "use stable ASCII-compatible identifiers without embedded whitespace",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_package_min_actions(ledger_path: &Path, min_actions: u64) -> BbxResult<()> {
+    if min_actions == 0 || min_actions > 1_000_000 {
+        return Err(package_invalid(
+            ledger_path,
+            "PILOT_PACKAGE_MIN_ACTIONS_INVALID",
+            "--min-actions",
+            format!("--min-actions must be in [1,1000000], found {min_actions}"),
+            "choose a positive finite pilot threshold that can be proven from ledger rows",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_package_directory_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FS_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty pilot package output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!("pilot package output directory already exists: {}", path.display()),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this pilot package directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "pilot package parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the package export",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_package_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|err| {
+            BlackboxError::io(path, "remove stale pilot package temp directory", err)
+        })?;
+    }
+    Ok(())
+}
+
+fn promote_package_export_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!("pilot package output directory already exists: {}", out.display()),
+                Some(file_source_of_truth(out)),
+                FS_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this pilot package directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out).map_err(|err| {
+            BlackboxError::io(out, "replace existing pilot package directory", err)
+        })?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote pilot package temp directory", err))?;
+    Ok(())
+}
+
+fn verify_package_manifest_files(out: &Path, manifest: &Value) -> BbxResult<()> {
+    if manifest["format"] != "blackbox_pilot_package_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "PILOT_PACKAGE_MANIFEST_READBACK_MISMATCH",
+            PACKAGING_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.format",
+            "final pilot package manifest readback did not preserve the expected format",
+            "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    let files = manifest
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_MANIFEST_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files",
+                "pilot package manifest is missing files array",
+                "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+    for file in files {
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_MANIFEST_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "pilot package manifest file entry is missing path",
+                "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_MANIFEST_PATH_INVALID",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("pilot package manifest file path is not safe relative path: {rel}"),
+                "regenerate the package manifest from trusted code",
+            ));
+        }
+        let path = out.join(rel_path);
+        let expected_sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_MANIFEST_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].sha256",
+                "pilot package manifest file entry is missing sha256",
+                "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let expected_bytes = file.get("bytes").and_then(Value::as_u64).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_MANIFEST_READBACK_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].bytes",
+                "pilot package manifest file entry is missing byte count",
+                "delete the corrupt pilot package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let actual_sha = sha256_file(&path)?;
+        let actual_bytes = fs::metadata(&path)
+            .map_err(|err| BlackboxError::io(&path, "stat final pilot package file", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "PILOT_PACKAGE_FILE_HASH_MISMATCH",
+                PACKAGING_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                rel,
+                "pilot package file hash or byte count changed after promotion",
+                "treat the pilot package directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn package_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        PACKAGING_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn package_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "PILOT_PACKAGE_RECORD_SCHEMA_DRIFT",
+        PACKAGING_CONNECTOR_ID,
+        source_of_truth(ledger_path),
+        format!("ledger_records[{}].{}", record.sequence, field_path.into()),
+        message,
+        "inspect the persisted source row and rebuild the pilot package after correcting ledger state",
+    )
+}
+
 fn gate_check(
     check_id: &'static str,
     passed: bool,
@@ -5068,6 +6307,7 @@ fn score_connector_reliability(
         ENTERPRISE_CONNECTOR_ID => Ok(0.93),
         PRIVACY_CONNECTOR_ID => Ok(0.93),
         RELEASE_GATE_CONNECTOR_ID => Ok(0.94),
+        PACKAGING_CONNECTOR_ID => Ok(0.90),
         SQLITE_CONNECTOR_ID => Ok(0.96),
         POLICY_CONNECTOR_ID => Ok(0.88),
         other => Err(scorecard_schema_error(
@@ -8889,6 +10129,7 @@ fn dashboard_api(args: DashboardApiArgs) -> BbxResult<Value> {
         DashboardView::Verifiers => data.verifiers,
         DashboardView::Errors => data.errors,
         DashboardView::Exports => data.exports,
+        DashboardView::PilotPackages => data.packages,
         DashboardView::Timeline => {
             let run_id = args.run_id.as_deref().ok_or_else(|| {
                 BlackboxError::new_with_connector(
@@ -8954,6 +10195,7 @@ struct DashboardData {
     verifiers: Value,
     errors: Value,
     exports: Value,
+    packages: Value,
     timelines: Vec<(String, String, Value)>,
 }
 
@@ -9033,6 +10275,13 @@ fn build_dashboard_data(
         &generated_at,
         &run_records,
     )?;
+    let packages = build_dashboard_packages(
+        ledger_path,
+        inspection,
+        ledger_id,
+        &generated_at,
+        &inspection.records,
+    )?;
     let timelines = build_dashboard_timelines(ledger_path, inspection, &run_records)?;
     Ok(DashboardData {
         generated_at,
@@ -9042,6 +10291,7 @@ fn build_dashboard_data(
         verifiers,
         errors,
         exports,
+        packages,
         timelines,
     })
 }
@@ -9064,6 +10314,7 @@ fn write_dashboard_directory(
     write_dashboard_json_file(&api_dir.join("verifier-status.json"), &data.verifiers)?;
     write_dashboard_json_file(&api_dir.join("errors.json"), &data.errors)?;
     write_dashboard_json_file(&api_dir.join("exports.json"), &data.exports)?;
+    write_dashboard_json_file(&api_dir.join("pilot-packages.json"), &data.packages)?;
 
     let mut timeline_files = BTreeSet::new();
     for (_, file_name, timeline) in &data.timelines {
@@ -9091,6 +10342,7 @@ fn write_dashboard_directory(
         dashboard_file_entry(temp_dir, Path::new("api/verifier-status.json"))?,
         dashboard_file_entry(temp_dir, Path::new("api/errors.json"))?,
         dashboard_file_entry(temp_dir, Path::new("api/exports.json"))?,
+        dashboard_file_entry(temp_dir, Path::new("api/pilot-packages.json"))?,
     ];
     for (_, file_name, _) in &data.timelines {
         files.push(dashboard_file_entry(
@@ -9122,6 +10374,7 @@ fn write_dashboard_directory(
             "runs_total": data.summary["counts"]["runs_total"].clone(),
             "evidence_packets_total": data.summary["counts"]["evidence_packets_total"].clone(),
             "incident_packets_total": data.summary["counts"]["incident_packets_total"].clone(),
+            "pilot_packages_total": data.summary["counts"]["pilot_packages_total"].clone(),
             "timeline_files_total": data.timelines.len(),
             "files_total": files.len() + 1,
         },
@@ -9195,6 +10448,7 @@ fn build_dashboard_summary(
         json!({"label": "Retention decisions", "value": kind_counts.get("retention_decision").copied().unwrap_or(0)}),
         json!({"label": "Erasure decisions", "value": kind_counts.get("evidence_deletion").copied().unwrap_or(0)}),
         json!({"label": "Release gates", "value": kind_counts.get("release_gate").copied().unwrap_or(0)}),
+        json!({"label": "Pilot packages", "value": kind_counts.get("pilot_package").copied().unwrap_or(0)}),
         json!({"label": "Verifier passed", "value": passed}),
         json!({"label": "Verifier failed", "value": failed}),
         json!({"label": "Verifier blocked", "value": blocked}),
@@ -9224,6 +10478,7 @@ fn build_dashboard_summary(
             "retention_decisions_total": kind_counts.get("retention_decision").copied().unwrap_or(0),
             "evidence_deletions_total": kind_counts.get("evidence_deletion").copied().unwrap_or(0),
             "release_gates_total": kind_counts.get("release_gate").copied().unwrap_or(0),
+            "pilot_packages_total": kind_counts.get("pilot_package").copied().unwrap_or(0),
             "verifier_results_total": verifier_total,
             "verifier_statuses": verifier_status_counts,
             "policy_decisions": policy_decision_counts,
@@ -9450,17 +10705,55 @@ fn build_dashboard_errors(
             || record.record_kind == "retention_decision"
             || record.record_kind == "evidence_deletion"
             || record.record_kind == "release_gate"
+            || record.record_kind == "pilot_package"
     }) {
-        let error_code = record
-            .payload
-            .get("error_code")
-            .and_then(Value::as_str)
-            .or_else(|| {
-                record
-                    .payload
-                    .pointer("/decision/reason_code")
-                    .and_then(Value::as_str)
-            });
+        if record.record_kind == "pilot_package"
+            && record
+                .payload
+                .pointer("/pilot_success/status")
+                .and_then(Value::as_str)
+                == Some("needs_more_evidence")
+        {
+            let criteria = record
+                .payload
+                .pointer("/pilot_success/failed_criteria")
+                .and_then(Value::as_array)
+                .ok_or_else(|| {
+                    dashboard_schema_error(
+                        ledger_path,
+                        record,
+                        "payload.pilot_success.failed_criteria",
+                        "pilot_package needs_more_evidence row is missing failed criteria",
+                    )
+                })?;
+            for criterion in criteria {
+                let code = criterion
+                    .as_str()
+                    .filter(|code| !code.trim().is_empty())
+                    .ok_or_else(|| {
+                        dashboard_schema_error(
+                            ledger_path,
+                            record,
+                            "payload.pilot_success.failed_criteria",
+                            "pilot_package failed criteria must be non-empty strings",
+                        )
+                    })?;
+                let group = groups
+                    .entry(code.to_string())
+                    .or_insert_with(|| DashboardErrorGroup::new(code));
+                group.count += 1;
+                group.record_kinds.insert(record.record_kind.clone());
+                group.first_sequence = group.first_sequence.min(record.sequence);
+                group.last_sequence = group.last_sequence.max(record.sequence);
+                group.remediations.insert(
+                    "collect the missing pilot evidence and rebuild the package".to_string(),
+                );
+                if let Some(source) = record.payload.pointer("/source_ledger/source_of_truth") {
+                    group.source_examples.push(source.clone());
+                }
+            }
+            continue;
+        }
         let include_policy_denial = record.record_kind == "policy_decision"
             && record.payload.get("status").and_then(Value::as_str) == Some("denied");
         let include_privacy_denial = matches!(
@@ -9477,13 +10770,46 @@ fn build_dashboard_errors(
                 .pointer("/decision/status")
                 .and_then(Value::as_str)
                 == Some("blocked");
+        let error_code = match record.record_kind.as_str() {
+            "verifier_result" | "incident_packet" => {
+                record.payload.get("error_code").and_then(Value::as_str)
+            }
+            "policy_decision" if include_policy_denial => record
+                .payload
+                .get("error_code")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    record
+                        .payload
+                        .pointer("/decision/reason_code")
+                        .and_then(Value::as_str)
+                }),
+            "retention_decision" | "evidence_deletion" if include_privacy_denial => record
+                .payload
+                .pointer("/decision/reason_code")
+                .and_then(Value::as_str),
+            "release_gate" if include_gate_block => record
+                .payload
+                .pointer("/decision/failed_checks")
+                .and_then(Value::as_array)
+                .and_then(|checks| checks.first())
+                .and_then(|check| check.get("reason_code"))
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    record
+                        .payload
+                        .pointer("/decision/reason_code")
+                        .and_then(Value::as_str)
+                }),
+            _ => None,
+        };
         let Some(code) = error_code.filter(|code| !code.trim().is_empty()) else {
             if include_policy_denial || include_privacy_denial || include_gate_block {
                 return Err(dashboard_schema_error(
                     ledger_path,
                     record,
                     "payload.error_code",
-                    "denied policy/privacy decision is missing an error or reason code",
+                    "denied or blocked decision is missing an error or reason code",
                 ));
             }
             continue;
@@ -9499,6 +10825,8 @@ fn build_dashboard_errors(
             group.remediations.insert(remediation.to_string());
         }
         if let Some(source) = record.payload.get("source_of_truth") {
+            group.source_examples.push(source.clone());
+        } else if let Some(source) = record.payload.pointer("/source_ledger/source_of_truth") {
             group.source_examples.push(source.clone());
         }
         if let Some(tool_call_id) = record.payload.get("tool_call_id").and_then(Value::as_str) {
@@ -9572,6 +10900,16 @@ fn build_dashboard_exports(
                 "--ledger", ledger_path.display().to_string(),
                 "--out", "episodes-export"
             ],
+            "pilot_package_command": [
+                "blackbox", "package", "pilot-report",
+                "--ledger", ledger_path.display().to_string(),
+                "--tenant", "TENANT_ID",
+                "--principal-id", "USER_WITH_COMMERCIAL_PACKAGE",
+                "--pilot-id", "PILOT_ID",
+                "--min-actions", "20",
+                "--out", "pilot-package",
+                "--agent", "commercial_operator"
+            ],
             "dashboard_files": [
                 "index.html",
                 "manifest.json",
@@ -9580,9 +10918,73 @@ fn build_dashboard_exports(
                 "api/evidence.json",
                 "api/verifier-status.json",
                 "api/errors.json",
-                "api/exports.json"
+                "api/exports.json",
+                "api/pilot-packages.json"
             ],
         },
+    }))
+}
+
+fn build_dashboard_packages(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    generated_at: &str,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<Value> {
+    let mut packages = Vec::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "pilot_package")
+    {
+        let status = record
+            .payload
+            .pointer("/pilot_success/status")
+            .and_then(Value::as_str)
+            .filter(|status| !status.trim().is_empty())
+            .ok_or_else(|| {
+                dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.pilot_success.status",
+                    "pilot_package row is missing pilot success status",
+                )
+            })?;
+        let usage_events_total = record
+            .payload
+            .pointer("/pricing_meter_summary/events_total")
+            .and_then(Value::as_i64)
+            .ok_or_else(|| {
+                dashboard_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.pricing_meter_summary.events_total",
+                    "pilot_package row is missing usage meter event count",
+                )
+            })?;
+        packages.push(json!({
+            "pilot_package_id": required_dashboard_payload_str(ledger_path, record, "pilot_package_id")?,
+            "tenant_id": record.tenant_id,
+            "pilot_id": required_dashboard_payload_str(ledger_path, record, "pilot_id")?,
+            "sequence": record.sequence,
+            "created_at": record.created_at,
+            "status": status,
+            "failed_criteria": record.payload.pointer("/pilot_success/failed_criteria").cloned().unwrap_or(Value::Null),
+            "usage_events_total": usage_events_total,
+            "usage_summary": record.payload.get("usage_summary").cloned().unwrap_or(Value::Null),
+            "pricing_meter_summary": record.payload.get("pricing_meter_summary").cloned().unwrap_or(Value::Null),
+            "file_manifest": record.payload.get("file_manifest").cloned().unwrap_or(Value::Null),
+            "source_ledger": record.payload.get("source_ledger").cloned().unwrap_or(Value::Null),
+            "payload_sha256": record.hash.get("payload_sha256").cloned().unwrap_or(Value::Null),
+            "record_sha256": record.hash.get("record_sha256").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    Ok(json!({
+        "format": "blackbox_dashboard_pilot_packages_json_v1",
+        "dashboard_schema_version": DASHBOARD_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "source_ledger": dashboard_source_ledger(ledger_path, inspection, ledger_id),
+        "pilot_packages": packages,
     }))
 }
 
@@ -11324,14 +12726,14 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     html.push_str("<title>BlackBoxFix Team Dashboard</title>\n");
     html.push_str("<style>\n");
     html.push_str(":root{color-scheme:light;--ink:#17212b;--muted:#5a6673;--line:#c9d1d9;--panel:#f7f9fb;--ok:#1b7f3a;--fail:#b42318;--warn:#9a5b00;--bg:#ffffff;}\n");
-    html.push_str("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}header,main{max-width:1280px;margin:0 auto;padding:20px}header{border-bottom:1px solid var(--line)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 10px}.source{color:var(--muted);word-break:break-all}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}a{color:#075985}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff}th,td{border:1px solid var(--line);padding:8px;vertical-align:top;overflow-wrap:anywhere}th{background:var(--panel);text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.metric{border:1px solid var(--line);padding:10px;background:var(--panel);min-height:70px}.metric b{display:block;font-size:22px}.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px}.filters label{display:grid;gap:4px;color:var(--muted)}select,input{border:1px solid var(--line);background:#fff;color:var(--ink);min-height:34px;padding:5px 8px;min-width:150px}.status-passed{color:var(--ok);font-weight:700}.status-failed{color:var(--fail);font-weight:700}.status-blocked,.status-needs_verification{color:var(--warn);font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}@media(max-width:760px){header,main{padding:14px}table{font-size:12px}.wide{overflow-x:auto}th,td{min-width:130px}select,input{width:100%}.filters label{width:100%}}\n");
+    html.push_str("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}header,main{max-width:1280px;margin:0 auto;padding:20px}header{border-bottom:1px solid var(--line)}h1{font-size:24px;margin:0 0 8px}h2{font-size:18px;margin:24px 0 10px}.source{color:var(--muted);word-break:break-all}nav{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}a{color:#075985}table{width:100%;border-collapse:collapse;table-layout:fixed;background:#fff}th,td{border:1px solid var(--line);padding:8px;vertical-align:top;overflow-wrap:anywhere}th{background:var(--panel);text-align:left}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}.metric{border:1px solid var(--line);padding:10px;background:var(--panel);min-height:70px}.metric b{display:block;font-size:22px}.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:0 0 10px}.filters label{display:grid;gap:4px;color:var(--muted)}select,input{border:1px solid var(--line);background:#fff;color:var(--ink);min-height:34px;padding:5px 8px;min-width:150px}.status-passed{color:var(--ok);font-weight:700}.status-failed{color:var(--fail);font-weight:700}.status-blocked,.status-needs_verification,.status-needs_more_evidence{color:var(--warn);font-weight:700}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}@media(max-width:760px){header,main{padding:14px}table{font-size:12px}.wide{overflow-x:auto}th,td{min-width:130px}select,input{width:100%}.filters label{width:100%}}\n");
     html.push_str("</style>\n</head>\n<body>\n<header>\n");
     html.push_str("<h1>BlackBoxFix Team Dashboard</h1>\n");
     html.push_str(&format!(
         "<div class=\"source\">Source of truth: <code>{}</code></div>\n",
         ledger_source
     ));
-    html.push_str("<nav aria-label=\"Dashboard API responses\"><a href=\"api/summary.json\">summary</a><a href=\"api/runs.json\">runs</a><a href=\"api/evidence.json\">evidence</a><a href=\"api/verifier-status.json\">verifiers</a><a href=\"api/errors.json\">errors</a><a href=\"api/exports.json\">exports</a></nav>\n");
+    html.push_str("<nav aria-label=\"Dashboard API responses\"><a href=\"api/summary.json\">summary</a><a href=\"api/runs.json\">runs</a><a href=\"api/evidence.json\">evidence</a><a href=\"api/verifier-status.json\">verifiers</a><a href=\"api/errors.json\">errors</a><a href=\"api/exports.json\">exports</a><a href=\"api/pilot-packages.json\">pilot packages</a></nav>\n");
     html.push_str("</header>\n<main>\n<div role=\"status\">Dashboard files read back and hash verified.</div>\n");
     html.push_str("<section aria-labelledby=\"metrics\"><h2 id=\"metrics\">Metrics</h2><div class=\"metric-grid\">\n");
     for metric in dashboard_array(summary, "/metrics")? {
@@ -11374,6 +12776,23 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
             verifier,
             source,
             timeline
+        ));
+    }
+    html.push_str("</tbody></table></div></section>\n");
+
+    html.push_str("<section aria-labelledby=\"packages\"><h2 id=\"packages\">Pilot Packages</h2><div class=\"wide\"><table><thead><tr><th>Package</th><th>Status</th><th>Tenant</th><th>Pilot</th><th>Usage Events</th><th>Failed Criteria</th><th>Record SHA256</th></tr></thead><tbody>\n");
+    for package in dashboard_array(&data.packages, "/pilot_packages")? {
+        let status = package.get("status").and_then(Value::as_str).unwrap_or("");
+        html.push_str(&format!(
+            "<tr><td><code>{}</code></td><td class=\"status-{}\">{}</td><td><code>{}</code></td><td><code>{}</code></td><td>{}</td><td><code>{}</code></td><td><code>{}</code></td></tr>\n",
+            html_escape(package.get("pilot_package_id").and_then(Value::as_str).unwrap_or("")),
+            safe_filename_fragment(status),
+            html_escape(status),
+            html_escape(package.get("tenant_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(package.get("pilot_id").and_then(Value::as_str).unwrap_or("")),
+            html_escape(&dashboard_display_value(package.get("usage_events_total").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(package.get("failed_criteria").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(package.get("record_sha256").unwrap_or(&Value::Null)))
         ));
     }
     html.push_str("</tbody></table></div></section>\n");
@@ -11451,13 +12870,31 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"exports\"><h2 id=\"exports\">Exports</h2><div class=\"wide\"><table><thead><tr><th>Run</th><th>Evidence Command</th><th>Score Command</th><th>Timeline API</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"exports\"><h2 id=\"exports\">Exports</h2><div class=\"wide\"><table><thead><tr><th>Artifact</th><th>Command</th></tr></thead><tbody>\n");
+    html.push_str(&format!(
+        "<tr><td>Pilot package</td><td><code>{}</code></td></tr>\n",
+        html_escape(&dashboard_display_value(
+            data.exports
+                .pointer("/exports/pilot_package_command")
+                .unwrap_or(&Value::Null)
+        ))
+    ));
+    html.push_str(&format!(
+        "<tr><td>Episodes</td><td><code>{}</code></td></tr>\n",
+        html_escape(&dashboard_display_value(
+            data.exports
+                .pointer("/exports/episodes_export_command")
+                .unwrap_or(&Value::Null)
+        ))
+    ));
+    html.push_str("</tbody></table></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Evidence Command</th><th>Score Command</th><th>Release Gate Command</th><th>Timeline API</th></tr></thead><tbody>\n");
     for export in dashboard_array(&data.exports, "/exports/evidence_by_run")? {
         html.push_str(&format!(
-            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
             html_escape(export.get("run_id").and_then(Value::as_str).unwrap_or("")),
             html_escape(&dashboard_display_value(export.get("evidence_export_command").unwrap_or(&Value::Null))),
             html_escape(&dashboard_display_value(export.get("scorecard_command").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(export.get("release_gate_command").unwrap_or(&Value::Null))),
             html_escape(export.get("timeline_api").and_then(Value::as_str).unwrap_or(""))
         ));
     }
@@ -11556,6 +12993,7 @@ fn dashboard_timeline_record_detail(record: &Value) -> String {
         "/payload/scorecard_id",
         "/payload/privacy_decision_id",
         "/payload/release_gate_id",
+        "/payload/pilot_package_id",
         "/payload/decision/reason_code",
     ] {
         if let Some(value) = record.pointer(pointer) {

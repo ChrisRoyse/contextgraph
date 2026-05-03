@@ -32,7 +32,9 @@ Ledger record kinds:
 Phase 13 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 7`. The
 physical SQLite table shape is unchanged, but old schema-version ledgers are
 wiped on `blackbox init`; there is no migration shim. Phase 14 later bumps the
-current live schema to `LEDGER_SCHEMA_VERSION = 8` for release-gate rows.
+live schema to `LEDGER_SCHEMA_VERSION = 8` for release-gate rows, and Phase 15
+later bumps the current live schema to `LEDGER_SCHEMA_VERSION = 9` for
+pilot-package rows.
 
 ## Source Of Truth
 

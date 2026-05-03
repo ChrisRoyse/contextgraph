@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 14,
-fresh ledgers initialize at schema version 8.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 15,
+fresh ledgers initialize at schema version 9.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-14, fresh ledgers initialize at schema version 8.
+15, fresh ledgers initialize at schema version 9.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-14, fresh ledgers initialize at schema version 8.
+15, fresh ledgers initialize at schema version 9.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -739,6 +739,59 @@ Final manual integrity was `schema_version=8`, `record_count=33`, and
 
 Phase 14 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 8` for
 `release_gate`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
+
+## Phase 15: Pilot Packaging And Usage Meter Proof — DONE (2026-05-03)
+
+Deliverables (all shipped):
+
+- `blackbox package pilot-report --ledger PATH --tenant TENANT
+  --principal-id PRINCIPAL --pilot-id PILOT --min-actions N --out DIR
+  [--force] --agent AGENT`;
+- connector `blackbox_packaging_v1`;
+- ledger record kind `pilot_package`;
+- package files `pilot-report.json`, `usage-meter-events.jsonl`,
+  `eval-candidates.jsonl`, and `manifest.json`;
+- dashboard package readback file `api/pilot-packages.json`;
+- usage meter events with stable `event_name`, `customer_identifier`, numeric
+  `value`, timestamp, idempotency `identifier`, dimensions, and ledger source
+  refs;
+- eval-candidate JSONL rows derived from failed/blocked verifier, incident,
+  policy denial, or blocked release-gate evidence.
+
+Exit criteria (verified):
+
+- authorized package builds persist one `enterprise_access_decision`, write
+  every package file, parse every JSON/JSONL file back, append one
+  `pilot_package` row, read the row back by id/hash/sequence, and verify final
+  manifest file hashes;
+- pilot success requires the configured minimum real actions, complete
+  mutating-tool evidence coverage, at least one eval candidate, and at least
+  one release-gate decision;
+- unmet success criteria produce durable package evidence and return
+  `PILOT_PACKAGE_CRITERIA_NOT_MET`;
+- unauthorized principals persist only a denied access decision and create no
+  `pilot_package` row/files;
+- invalid request fields such as `--min-actions 0` fail before authorization,
+  row writes, or file creation;
+- the dashboard exposes physical package rows through
+  `api/pilot-packages.json`.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase15_pilot_package_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. Coverage includes a successful package over real
+SQLite/Git/enterprise/score/privacy/release-gate rows, unmet minimum-action
+criteria, unauthorized package principal, invalid minimum actions, connector
+test readback, package manifest/hash readback, and dashboard package API
+readback.
+
+Phase 15 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 9` for
+`pilot_package`. The physical table shape is unchanged, but older
 schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
 

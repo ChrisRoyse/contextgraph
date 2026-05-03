@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 14)
+## Concrete Layout (shipped through Phase 15)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -38,9 +38,10 @@ agent runtime
 | Scorecards | Deterministic run-level trust/risk/readiness score over physical ledger rows | `blackbox score run` |
 | Privacy controls | RBAC-gated retention and erasure-request decisions over enterprise config/directory rows | `blackbox privacy ...` |
 | Release gates | RBAC-gated release/promotion approval or block decisions over scorecards, evidence, incidents, and privacy state | `blackbox gate evaluate` |
-| FSV harness | Phase 1-14 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Pilot packaging | RBAC-gated pilot report, usage-meter JSONL, eval-candidate JSONL, and manifest over physical ledger rows | `blackbox package pilot-report` |
+| FSV harness | Phase 1-15 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-14 is **not yet implemented**. Hosted multi-tenant
+Anything outside Phases 1-15 is **not yet implemented**. Hosted multi-tenant
 serving remains reserved for later work.
 
 ## Components (target architecture)
@@ -74,7 +75,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -92,7 +93,7 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3/9/10/11/12/13/14)
+### FSV Verifier (Phase 2/3/9/10/11/12/13/14/15)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`
@@ -160,6 +161,7 @@ JSON files:
 - `api/verifier-status.json`;
 - `api/errors.json`;
 - `api/exports.json`;
+- `api/pilot-packages.json`;
 - `api/timeline_<run_id>.json`.
 
 `blackbox dashboard build` verifies the SQLite hash chain, verifies
@@ -213,6 +215,19 @@ and optional privacy retention state. Approved and blocked gates both append a
 `release_gate` row and read it back. Invalid requests and unauthorized
 principals fail closed before any gate row is written.
 
+### Pilot Packaging (Phase 15)
+
+`blackbox package pilot-report` is the buyer-facing packaging path for a
+pilot. It verifies the ledger, persists and reads back a
+`commercial.package` authorization decision, computes pilot success metrics
+from physical tenant rows, writes `pilot-report.json`,
+`usage-meter-events.jsonl`, `eval-candidates.jsonl`, and `manifest.json`,
+re-reads each file, appends a `pilot_package` row, reads that row back by
+sequence/id/hash, promotes the package directory, and re-checks final file
+hashes. Packages with unmet success criteria are durable evidence and exit
+non-zero; invalid requests and unauthorized principals create no package row
+or files.
+
 ## Deployment Patterns
 
 ### Local Developer Mode (Phase 1)
@@ -254,7 +269,8 @@ readback for OSV JSON reports, Cargo lockfiles, and CycloneDX JSON SBOMs.
 Phase 11 shipped GitHub issue evidence-link readback for ticket proof. Phase
 12 shipped deterministic scorecards. Phase 13 shipped privacy retention and
 erasure decisions. Phase 14 shipped release/promotion gates over the verified
-ledger state.
+ledger state. Phase 15 shipped pilot packaging, usage-meter rows, eval
+candidate rows, and dashboard package read models.
 
 ## Design Constraint
 

@@ -10,7 +10,9 @@ ships deterministic run-level `scorecard` rows with correctness,
 verification confidence, risk, policy compliance, training value, and trust
 level. Phase 7 dashboard rollups now include `scorecard` rows in timelines and
 export commands. Phase 14 release gates consume the latest scorecard but are
-not scoring inputs themselves.
+not scoring inputs themselves. Phase 15 pilot packages consume scorecards and
+release gates as buyer proof inputs, but package rows are excluded from
+scorecard inputs so packaging cannot rewrite the score evidence it reports.
 
 ## Score Dimensions
 

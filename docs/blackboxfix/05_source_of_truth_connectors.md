@@ -23,7 +23,9 @@ reads the physical SQLite ledger and verifies scorecard append readback. Phase
 tenant retention/RBAC rows and verifies privacy decision append readback.
 Phase 14 adds `blackbox_release_gate_v1`, which reads scorecard, verifier,
 evidence, incident, enterprise RBAC, and privacy rows and verifies release
-gate append readback.
+gate append readback. Phase 15 adds `blackbox_packaging_v1`, which reads the
+physical ledger, package files, and usage/eval JSONL outputs, then verifies
+`pilot_package` append readback.
 
 ## Connector Contract
 
@@ -230,6 +232,34 @@ Gate decisions inspect physical score/risk/trust, evidence-ref integrity,
 failed or blocked verifiers, incident packets, and privacy retention/erasure
 state. An approved gate is possible only when every configured check passes.
 
+### Phase 15: Pilot Package And Usage Meter Proof — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for tenant evidence, scorecards, release gates,
+  privacy rows, enterprise config/directory/access rows, and `pilot_package`;
+- package files: `pilot-report.json`, `usage-meter-events.jsonl`,
+  `eval-candidates.jsonl`, and `manifest.json`.
+
+Shipped connector:
+
+- `blackbox_packaging_v1`
+
+Readback specs:
+
+- `blackbox_pilot_package_v1`;
+- `blackbox_usage_meter_events_jsonl_v1`.
+
+The connector is fail-closed. Invalid package ids, zero `--min-actions`,
+empty tenant/principal/agent values, and unsafe output paths fail before
+authorization or file creation. Unauthorized principals persist only the
+denied `enterprise_access_decision` and create no package row/files.
+Authorized package builds read real ledger rows, write package artifacts to a
+temporary directory, parse every JSON/JSONL artifact back, verify manifest
+hashes, append `pilot_package`, read the row back by id/hash/sequence, then
+promote and re-verify final files. Unmet pilot success criteria create a
+durable package row/files and return `PILOT_PACKAGE_CRITERIA_NOT_MET`.
+
 ### Phase 10: Package And Vulnerability Scanner Artifacts — shipped
 
 Source of truth:
@@ -329,4 +359,8 @@ shipped in Phase 13, `<fixture>` is also the SQLite ledger path;
 `blackbox_privacy_v1` reads the enterprise config/directory, appends an
 authorization decision, appends `retention_decision` or `evidence_deletion`,
 and reads the appended privacy row back. Confirm the row counts and data
-subject digest match the test plan. Anything else is hearsay.
+subject digest match the test plan. For release gates shipped in Phase 14,
+`blackbox_release_gate_v1` reads and counts physical `release_gate` rows. For
+pilot packaging shipped in Phase 15, `blackbox_packaging_v1` reads and counts
+physical `pilot_package` rows and package FSV must also read package JSON/JSONL
+files and manifest hashes directly. Anything else is hearsay.

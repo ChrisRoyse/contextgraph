@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 14 Physical Schema (shipped)
+## Phase 15 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 8 in Phase 14
+  schema_version              INTEGER NOT NULL,   -- 9 in Phase 15
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `8` | constant |
+| `schema_version` | `9` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-14 ship the following `record_kind` values. The remaining families
+Phases 1-15 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -122,6 +122,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 13 | `retention_decision` | authorized retention review decision for one run and data-subject digest |
 | 13 | `evidence_deletion` | append-only erasure/deletion-request approval or denial audit row |
 | 14 | `release_gate` | append-only release/promotion approval or block decision over score, evidence, incident, RBAC, and privacy state |
+| 15 | `pilot_package` | append-only pilot packaging/report row with usage meters, eval-candidate summary, file manifest, and source refs |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -133,7 +134,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -577,6 +578,73 @@ Blocked evaluations persist `decision.status=blocked` and a non-empty
 Invalid gate input, a missing parent run, or unauthorized principal does not
 create a `release_gate` row. Unauthorized attempts still persist the
 `enterprise_access_decision` denial.
+
+## Pilot Package (Phase 15, shipped)
+
+`blackbox package pilot-report` appends one `pilot_package` row for authorized
+pilot package builds. The command first verifies the physical ledger, persists
+and reads back an `enterprise_access_decision` for `commercial.package`,
+computes metrics from tenant rows excluding previous package rows, writes and
+reads back the package files, appends the package row, reads it back by
+sequence, `pilot_package_id`, `payload_sha256`, and `record_sha256`, then
+promotes and re-verifies the final package directory.
+
+```json
+{
+  "record_kind": "pilot_package",
+  "pilot_package_schema_version": 1,
+  "pilot_package_rule_version": "pilot_package_v1",
+  "pilot_package_id": "pilot_package_<uuid_simple>",
+  "tenant_id": "tenant_...",
+  "pilot_id": "pilot_...",
+  "request": {
+    "principal_id": "user_package",
+    "permission": "commercial.package",
+    "resource": "tenant:tenant_...:commercial/pilot/pilot_...",
+    "min_actions": 20,
+    "out": "/tmp/pilot-package"
+  },
+  "usage_summary": {
+    "agent_runs_total": 20,
+    "tool_calls_total": 20,
+    "tool_calls_with_evidence": 20,
+    "release_gates_total": 1,
+    "eval_candidates_total": 1
+  },
+  "pilot_success": {
+    "status": "passed",
+    "minimum_real_actions": {
+      "required": 20,
+      "observed": 20,
+      "passed": true
+    },
+    "failed_criteria": []
+  },
+  "pricing_meter_summary": {
+    "schema": "blackbox_usage_meter_events_jsonl_v1",
+    "events_total": 43,
+    "aggregation": "sum(value) by event_name, customer_identifier, and billing period",
+    "idempotency": "identifier is derived from ledger sequence and record_sha256"
+  },
+  "file_manifest": {
+    "format": "blackbox_pilot_package_manifest_json_v1",
+    "files": [
+      { "path": "pilot-report.json", "sha256": "sha256:...", "bytes": 1234 },
+      { "path": "usage-meter-events.jsonl", "sha256": "sha256:...", "bytes": 5678 },
+      { "path": "eval-candidates.jsonl", "sha256": "sha256:...", "bytes": 901 }
+    ]
+  },
+  "source_refs": {
+    "authorization_decision": { "record_kind": "enterprise_access_decision" },
+    "input_records": []
+  }
+}
+```
+
+If pilot success criteria are not met, the package row and files are still
+durable evidence with `pilot_success.status=needs_more_evidence`; the CLI
+then exits non-zero with `PILOT_PACKAGE_CRITERIA_NOT_MET`. Invalid request
+fields and unauthorized principals create no package row or package files.
 
 ## EvidencePacket (Phase 4, shipped)
 

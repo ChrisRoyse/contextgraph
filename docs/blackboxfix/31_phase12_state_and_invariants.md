@@ -24,8 +24,8 @@ Ledger record kind:
 Phase 12 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 6` for
 the new `scorecard` record kind. The physical SQLite table shape is unchanged,
 but old schema-version ledgers are wiped on `blackbox init`; there is no
-migration shim. Phase 14 later bumps the current live schema to
-`LEDGER_SCHEMA_VERSION = 8` for release-gate rows.
+migration shim. Phase 15 later bumps the current live schema to
+`LEDGER_SCHEMA_VERSION = 9` for pilot-package rows.
 
 ## Source Of Truth
 
