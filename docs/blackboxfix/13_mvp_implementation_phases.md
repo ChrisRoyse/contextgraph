@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 17,
-fresh ledgers initialize at schema version 11.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 18,
+fresh ledgers initialize at schema version 12.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-17, fresh ledgers initialize at schema version 11.
+18, fresh ledgers initialize at schema version 12.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-17, fresh ledgers initialize at schema version 11.
+18, fresh ledgers initialize at schema version 12.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -886,6 +886,52 @@ cases cover invalid auth, tenant mismatch, and oversized request bodies.
 
 Phase 17 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 11` for
 `http_request_audit`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
+
+## Phase 18: First-Wedge Demo Package — DONE (2026-05-03)
+
+Deliverables:
+
+- `blackbox demo first-wedge --ledger PATH --tenant TENANT --run-id RUN_ID
+  --out DIR [--force] --agent AGENT`;
+- connector `blackbox_first_wedge_demo_v1`;
+- ledger record kind `first_wedge_demo`;
+- package files `demo-report.json`, `evidence-index.json`,
+  `demo-script.jsonl`, and `manifest.json`;
+- required proof categories for the complete vulnerability-remediation buyer
+  demo: Git delta, CI success, scanner vulnerability absence, ticket evidence
+  link, CI failure demo, scanner-still-present failure demo, and permission
+  denied connector demo.
+
+Exit criteria (verified):
+
+- the command fails closed unless all seven required proof categories exist as
+  physical `verifier_result` plus `evidence_packet` rows for the selected run;
+- successful packages write every file, parse JSON/JSONL back, verify file
+  hashes/byte counts from `manifest.json`, append one `first_wedge_demo` row,
+  and read that row back from SQLite by sequence/id/hash;
+- missing runs, incomplete evidence, and existing output directories create no
+  `first_wedge_demo` row and no final package files;
+- source-of-truth proof covers a real local Git repository, real OSV JSON
+  scanner artifacts, live GitHub Actions run state, live GitHub issue evidence
+  links, and direct SQLite readback.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase18_first_wedge_demo_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The test builds a synthetic vulnerability
+remediation over a real local Git repository and scanner artifacts, discovers
+live GitHub/GitHub Actions fixture state, persists happy and required failure
+verifier evidence, builds the demo package, reads package files and manifest
+hashes back, tests the connector readback, and prints before/after SQLite
+state for the happy path plus three edge cases.
+
+Phase 18 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 12` for
+`first_wedge_demo`. The physical table shape is unchanged, but older
 schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
 

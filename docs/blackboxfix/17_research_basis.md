@@ -54,6 +54,9 @@ Design implication:
   invalid decisions, missing pilot evidence, unresolved incidents, and
   runtime durability drift block readiness with typed errors or durable
   blocked assessments.
+- Phase 18 applies the same traceable verification pattern to the first
+  buyer demo: the package is generated only from persisted verifier/evidence
+  rows and manifest-hashed files, not from an agent transcript.
 
 ### OWASP Top 10 For LLM And GenAI Applications
 
@@ -209,6 +212,9 @@ Design implication:
 - Phase 4 keeps evidence packets structured as explicit subject-like record
   references plus predicate-like verifier details, leaving room for a future
   signed envelope without changing the ledger's proof model.
+- Phase 18 packages the demo report, evidence index, and script as PROV-like
+  references to source ledger entities and verifier activities so the demo can
+  be inspected without trusting the presenter.
 
 ### SLSA Provenance
 
@@ -231,6 +237,9 @@ Design implication:
 - Phase 15 package manifests preserve file hashes and input record refs so a
   buyer-facing report can be traced to the exact physical ledger state that
   produced it.
+- Phase 18 reuses this artifact-verification discipline for the first-wedge
+  demo: unrecognized/missing proof categories block package creation, and the
+  output manifest is read back before the demo row is accepted.
 
 ### Model Context Protocol
 
@@ -431,6 +440,9 @@ Design implication:
   hashes in `readback_snapshot`, and treats missing files, schema drift, and
   malformed JSON as typed verifier failures/blocks instead of falling back to
   scanner process return values.
+- Phase 18 requires scanner absence and scanner-still-present demo evidence
+  to come from persisted OSV JSON readbacks before the buyer demo package can
+  pass.
 
 ### Authenticated HTTP API Serving
 

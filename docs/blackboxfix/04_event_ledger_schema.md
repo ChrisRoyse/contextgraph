@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 17 Physical Schema (shipped)
+## Phase 18 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 11 in Phase 17
+  schema_version              INTEGER NOT NULL,   -- 12 in Phase 18
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `11` | constant |
+| `schema_version` | `12` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-17 ship the following `record_kind` values. The remaining families
+Phases 1-18 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -125,6 +125,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 15 | `pilot_package` | append-only pilot packaging/report row with usage meters, eval-candidate summary, file manifest, and source refs |
 | 16 | `risk_assessment` | append-only risk/open-question readiness decision over ledger, runtime, package, incident, secret-scan, and required decision evidence |
 | 17 | `http_request_audit` | append-only authenticated HTTP request/response audit row for the Phase 17 single-writer server |
+| 18 | `first_wedge_demo` | append-only first-wedge buyer demo package row with required proof refs, demo manifest, and source-ledger readback |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -136,7 +137,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -207,6 +208,63 @@ server safety configuration.
 Authentication and schema failures use tenant id `tenant_http_gateway` so the
 failure itself is still auditable without trusting an unauthenticated tenant
 claim.
+
+## FirstWedgeDemo Payload (Phase 18, shipped)
+
+`blackbox demo first-wedge --ledger PATH --tenant TENANT --run-id RUN --out DIR`
+builds the buyer demo package only after the run has real verifier evidence
+for the happy path and required failure demos. It writes package files, reads
+them back, appends one `first_wedge_demo` row, then reads the row back from
+SQLite by sequence/hash.
+
+Required proof categories:
+
+- `git_delta`: passed `git_file_diff_matches_patch_v1`;
+- `ci_success`: passed GitHub Actions/GitHub Checks/GitLab CI verifier;
+- `scanner_absence`: passed `scanner_vulnerability_absent_v1`;
+- `ticket_evidence`: passed `github_issue_evidence_link_v1`;
+- `ci_failure_demo`: failed CI verifier with a shipped CI error code;
+- `scanner_failure_demo`: failed `SCANNER_VULNERABILITY_STILL_PRESENT`;
+- `permission_failure_demo`: blocked `CONNECTOR_PERMISSION_DENIED`.
+
+```json
+{
+  "record_kind": "first_wedge_demo",
+  "first_wedge_demo_id": "first_wedge_demo_<uuid_simple>",
+  "first_wedge_demo_schema_version": 1,
+  "first_wedge_demo_rule_version": "first_wedge_demo_v1",
+  "tenant_id": "tenant_...",
+  "run_id": "run_...",
+  "source_ledger": {
+    "path": "/tmp/bbx.sqlite",
+    "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
+    "ledger_schema_version": 12,
+    "ledger_record_count_before_demo": 30,
+    "ledger_tip_sha256_before_demo": "sha256:..."
+  },
+  "demo_success": {
+    "status": "passed",
+    "required_proofs_total": 7,
+    "failed_checks": [],
+    "source_refs_sha256": "sha256:..."
+  },
+  "required_proofs": {
+    "git_delta": {
+      "verifier_id": "git_file_diff_matches_patch_v1",
+      "status": "passed",
+      "source_refs": ["verifier_result ref", "evidence_packet ref"]
+    }
+  },
+  "file_manifest": {
+    "format": "blackbox_first_wedge_demo_manifest_json_v1",
+    "files": [
+      { "path": "demo-report.json", "sha256": "sha256:...", "bytes": 123 }
+    ]
+  },
+  "source_refs": ["ledger record refs used to build the package"],
+  "packaged_at": "2026-05-03T00:00:00Z"
+}
+```
 
 ## EnterpriseTenantConfig Payload (Phase 8, shipped)
 
@@ -716,7 +774,7 @@ sequence, `risk_assessment_id`, `payload_sha256`, and `record_sha256`.
     "decisions_path": "/tmp/phase16-decisions.json"
   },
   "ledger_runtime": {
-    "ledger_schema_version": 11,
+    "ledger_schema_version": 12,
     "journal_mode": "wal",
     "synchronous": 2,
     "busy_timeout_ms": 5000

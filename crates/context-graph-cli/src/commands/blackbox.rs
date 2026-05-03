@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 11;
+const LEDGER_SCHEMA_VERSION: i64 = 12;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -56,6 +56,7 @@ const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
 const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
 const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
 const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
+const FIRST_WEDGE_DEMO_CONNECTOR_ID: &str = "blackbox_first_wedge_demo_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -71,6 +72,7 @@ const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
 const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
 const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
 const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
+const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
 const HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
 const HTTP_API_KEY_MIN_CHARS: usize = 32;
 const HTTP_DEFAULT_API_KEY_ENV: &str = "BLACKBOX_API_KEY";
@@ -81,6 +83,7 @@ const SCORE_RULE_VERSION: &str = "score_v1";
 const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
 const PILOT_PACKAGE_RULE_VERSION: &str = "pilot_package_v1";
 const RISK_ASSESSMENT_RULE_VERSION: &str = "risk_register_v1";
+const FIRST_WEDGE_DEMO_RULE_VERSION: &str = "first_wedge_demo_v1";
 const REQUIRED_RISK_DECISION_IDS: [&str; 5] = [
     "next_hosted_ci_connector",
     "paid_pilot_dashboard_minimum",
@@ -184,6 +187,11 @@ pub enum BlackboxCommands {
     Risk {
         #[command(subcommand)]
         action: RiskCommands,
+    },
+    /// Build and persist the Phase 18 first-wedge buyer demo proof package.
+    Demo {
+        #[command(subcommand)]
+        action: DemoCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -793,6 +801,13 @@ pub enum RiskCommands {
     Evaluate(RiskEvaluateArgs),
 }
 
+#[derive(Subcommand, Debug)]
+pub enum DemoCommands {
+    /// Build the vulnerability-remediation first-wedge demo package from verified ledger evidence.
+    #[command(name = "first-wedge")]
+    FirstWedge(DemoFirstWedgeArgs),
+}
+
 #[derive(Args, Debug)]
 pub struct ScoreRunArgs {
     /// SQLite ledger database path.
@@ -999,6 +1014,37 @@ pub struct RiskEvaluateArgs {
     pub decisions: PathBuf,
 
     /// Agent or operator identity evaluating the risk register.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct DemoFirstWedgeArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id that owns the demo run and proof evidence.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Existing run id for the first-wedge vulnerability-remediation demo.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Output directory. The demo builder writes demo-report.json, evidence-index.json, demo-script.jsonl, and manifest.json.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing demo package directory after validation.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Agent or operator identity building the demo package.
     #[arg(long)]
     pub agent: String,
 
@@ -1480,6 +1526,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         },
         BlackboxCommands::Risk { action } => match action {
             RiskCommands::Evaluate(args) => risk_evaluate(args),
+        },
+        BlackboxCommands::Demo { action } => match action {
+            DemoCommands::FirstWedge(args) => demo_first_wedge(args),
         },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
@@ -2872,6 +2921,15 @@ fn connector_list() -> BbxResult<Value> {
                     "tenant_scoped_dashboard_v1"
                 ],
                 "fail_closed": true
+            },
+            {
+                "connector_id": FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_first_wedge_demo",
+                "readback_specs": [
+                    "blackbox_first_wedge_demo_v1",
+                    "first_wedge_demo_manifest_v1"
+                ],
+                "fail_closed": true
             }
         ]
     }))
@@ -3211,6 +3269,31 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                     "ledger_tip_sha256": inspection.ledger_tip_sha256,
                     "http_request_audit_records_total": inspection.records.iter().filter(|record| record.record_kind == "http_request_audit").count(),
                     "http_server_bind_is_runtime_state": true,
+                },
+            }))
+        }
+        FIRST_WEDGE_DEMO_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_first_wedge_demo_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "first_wedge_demo_records_total": inspection.records.iter().filter(|record| record.record_kind == "first_wedge_demo").count(),
                 },
             }))
         }
@@ -3981,6 +4064,22 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             "audit_record_kind": "http_request_audit",
             "fail_closed": true
         },
+        "phase18_first_wedge_demo": {
+            "command": "blackbox demo first-wedge --ledger PATH --tenant TENANT --run-id RUN_ID --out DIR",
+            "connector": FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            "record_kind": "first_wedge_demo",
+            "package_files": ["demo-report.json", "evidence-index.json", "demo-script.jsonl", "manifest.json"],
+            "required_proofs": [
+                "git_delta",
+                "ci_success",
+                "scanner_absence",
+                "ticket_evidence",
+                "ci_failure_demo",
+                "scanner_failure_demo",
+                "permission_failure_demo"
+            ],
+            "fail_closed": true
+        },
         "endpoints": [
             { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
             { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
@@ -4012,7 +4111,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" },
             { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" },
             { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" },
-            { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" }
+            { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" },
+            { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -6998,6 +7098,1047 @@ fn risk_evaluate(args: RiskEvaluateArgs) -> BbxResult<Value> {
             "inspect the persisted risk_assessment row, close the failed risk/open-question controls with physical evidence, then re-evaluate",
         ))
     }
+}
+
+struct FirstWedgeDemoMaterial {
+    report: Value,
+    evidence_index: Value,
+    script_rows: Vec<Value>,
+    source_refs: Vec<Value>,
+    manifest: Value,
+}
+
+fn demo_first_wedge(args: DemoFirstWedgeArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    validate_first_wedge_output_path(&args.out, args.force)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    ensure_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let first_wedge_demo_id = prefixed_id("first_wedge_demo");
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_first_wedge_temp_dir(&temp_dir)?;
+    let mut material = build_first_wedge_demo_material(
+        &args,
+        &inspection_before,
+        &ledger_id,
+        &first_wedge_demo_id,
+    )?;
+    material.manifest = match write_first_wedge_demo_directory(&args, &material, &temp_dir) {
+        Ok(manifest) => manifest,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(err);
+        }
+    };
+
+    let payload = json!({
+        "record_kind": "first_wedge_demo",
+        "first_wedge_demo_schema_version": FIRST_WEDGE_DEMO_SCHEMA_VERSION,
+        "first_wedge_demo_rule_version": FIRST_WEDGE_DEMO_RULE_VERSION,
+        "first_wedge_demo_id": first_wedge_demo_id,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "request": {
+            "out": args.out,
+        },
+        "source_ledger": material.report["source_ledger"].clone(),
+        "demo_success": material.report["demo_success"].clone(),
+        "required_proofs": material.report["required_proofs"].clone(),
+        "file_manifest": material.manifest.clone(),
+        "source_refs": material.source_refs.clone(),
+        "packaged_at": Utc::now().to_rfc3339(),
+    });
+    let record_count_before_demo = inspection_before.record_count;
+    let record_id = prefixed_id("bbx_demo");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "first_wedge_demo".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(args.run_id.clone()),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    promote_first_wedge_dir(&temp_dir, &args.out, args.force)?;
+    let manifest_path = args.out.join("manifest.json");
+    let final_manifest = read_json_file(&manifest_path, "first wedge demo manifest readback")?;
+    verify_first_wedge_manifest_files(&args.out, &final_manifest)?;
+    let readback = readback_first_wedge_demo_append(
+        &conn,
+        &args.ledger,
+        &first_wedge_demo_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before_demo,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox demo first-wedge",
+        "connector": FIRST_WEDGE_DEMO_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "output_source_of_truth": file_source_of_truth(&args.out),
+        "record_id": record_id,
+        "record_kind": "first_wedge_demo",
+        "first_wedge_demo_id": first_wedge_demo_id,
+        "first_wedge_demo_schema_version": FIRST_WEDGE_DEMO_SCHEMA_VERSION,
+        "first_wedge_demo_rule_version": FIRST_WEDGE_DEMO_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "out": args.out,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "manifest_sha256": sha256_file(&manifest_path)?,
+        "demo_success": material.report["demo_success"].clone(),
+        "readback": readback,
+    }))
+}
+
+fn build_first_wedge_demo_material(
+    args: &DemoFirstWedgeArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    first_wedge_demo_id: &str,
+) -> BbxResult<FirstWedgeDemoMaterial> {
+    let run_record = inspection
+        .records
+        .iter()
+        .find(|record| {
+            record.record_kind == "agent_run"
+                && record.tenant_id == args.tenant
+                && record.run_id.as_deref() == Some(args.run_id.as_str())
+        })
+        .ok_or_else(|| {
+            first_wedge_invalid(
+                &args.ledger,
+                "FIRST_WEDGE_RUN_NOT_FOUND",
+                "ledger_records.agent_run",
+                format!(
+                    "run_id {} for tenant {} is missing from ledger_records",
+                    args.run_id, args.tenant
+                ),
+                "record the first-wedge agent_run before building the demo package",
+            )
+        })?;
+    let tenant_run_records = inspection
+        .records
+        .iter()
+        .filter(|record| {
+            record.tenant_id == args.tenant
+                && record.run_id.as_deref() == Some(args.run_id.as_str())
+        })
+        .collect::<Vec<_>>();
+    let kind_counts = ledger_record_kind_counts_from_refs(&tenant_run_records);
+
+    let git_delta = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "git_delta",
+        &["git_file_diff_matches_patch_v1"],
+        &["passed"],
+        &[],
+    )?;
+    let ci_success = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "ci_success",
+        &[
+            "github_check_suite_passed_v1",
+            "gha_workflow_run_completed_v1",
+            "gitlab_pipeline_status_v1",
+            "gitlab_pipeline_jobs_completed_v1",
+        ],
+        &["passed"],
+        &[],
+    )?;
+    let scanner_absence = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "scanner_absence",
+        &["scanner_vulnerability_absent_v1"],
+        &["passed"],
+        &[],
+    )?;
+    let ticket_evidence = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "ticket_evidence",
+        &["github_issue_evidence_link_v1"],
+        &["passed"],
+        &[],
+    )?;
+    let ci_failure_demo = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "ci_failure_demo",
+        &[
+            "github_check_suite_passed_v1",
+            "gha_workflow_run_completed_v1",
+            "gitlab_pipeline_status_v1",
+            "gitlab_pipeline_jobs_completed_v1",
+        ],
+        &["failed"],
+        &[
+            "GITHUB_CHECK_SUITE_NOT_FOUND",
+            "GITHUB_CHECK_SUITE_CONCLUSION_MISMATCH",
+            "GHA_WORKFLOW_RUN_NOT_FOUND",
+            "GHA_WORKFLOW_RUN_STATUS_MISMATCH",
+            "GHA_WORKFLOW_RUN_CONCLUSION_MISMATCH",
+            "GITLAB_PIPELINE_NOT_FOUND",
+            "GITLAB_PIPELINE_STATUS_MISMATCH",
+            "GITLAB_PIPELINE_JOBS_INCOMPLETE",
+            "GITLAB_PIPELINE_JOB_STATUS_MISMATCH",
+        ],
+    )?;
+    let scanner_failure_demo = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "scanner_failure_demo",
+        &["scanner_vulnerability_absent_v1"],
+        &["failed"],
+        &["SCANNER_VULNERABILITY_STILL_PRESENT"],
+    )?;
+    let permission_failure_demo = first_wedge_find_proof(
+        &args.ledger,
+        &inspection.records,
+        &args.tenant,
+        &args.run_id,
+        "permission_failure_demo",
+        &[
+            "github_pr_state_v1",
+            "github_branch_head_matches_commit_v1",
+            "github_check_suite_passed_v1",
+            "gha_workflow_run_completed_v1",
+            "github_issue_state_changed_v1",
+            "github_issue_evidence_link_v1",
+            "gitlab_pipeline_status_v1",
+            "gitlab_pipeline_jobs_completed_v1",
+        ],
+        &["blocked"],
+        &["CONNECTOR_PERMISSION_DENIED"],
+    )?;
+
+    let proof_entries = vec![
+        ("git_delta", git_delta),
+        ("ci_success", ci_success),
+        ("scanner_absence", scanner_absence),
+        ("ticket_evidence", ticket_evidence),
+        ("ci_failure_demo", ci_failure_demo),
+        ("scanner_failure_demo", scanner_failure_demo),
+        ("permission_failure_demo", permission_failure_demo),
+    ];
+    let missing = proof_entries
+        .iter()
+        .filter(|(_, proof)| proof.is_none())
+        .map(|(proof_id, _)| *proof_id)
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "FIRST_WEDGE_DEMO_INCOMPLETE",
+            format!(
+                "first-wedge demo is missing required proof categories for run {}: {}",
+                args.run_id,
+                missing.join(",")
+            ),
+            Some(source_of_truth(&args.ledger)),
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            Some("ledger_records.verifier_result".to_string()),
+            "run the required Git, CI, scanner, ticket, and failure-demo verifiers against real sources of truth before building the first-wedge package",
+        ));
+    }
+
+    let mut required_proofs = Map::new();
+    let mut source_refs = vec![first_wedge_record_ref_from_output(
+        &args.ledger,
+        "demo_run",
+        run_record,
+    )?];
+    for (proof_id, proof) in proof_entries {
+        let proof = proof.expect("missing proofs were rejected above");
+        if let Some(refs) = proof.get("source_refs").and_then(Value::as_array) {
+            source_refs.extend(refs.iter().cloned());
+        }
+        required_proofs.insert(proof_id.to_string(), proof);
+    }
+
+    let source_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(source_refs))?);
+    let report = json!({
+        "format": "blackbox_first_wedge_demo_report_json_v1",
+        "first_wedge_demo_schema_version": FIRST_WEDGE_DEMO_SCHEMA_VERSION,
+        "first_wedge_demo_rule_version": FIRST_WEDGE_DEMO_RULE_VERSION,
+        "first_wedge_demo_id": first_wedge_demo_id,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_demo": inspection.record_count,
+            "ledger_tip_sha256_before_demo": inspection.ledger_tip_sha256,
+        },
+        "demo_success": {
+            "status": "passed",
+            "required_proofs_total": required_proofs.len(),
+            "failed_checks": [],
+            "source_refs_sha256": source_refs_sha256,
+        },
+        "run": {
+            "sequence": run_record.sequence,
+            "task": run_record.payload.get("task").cloned().unwrap_or(Value::Null),
+            "risk": run_record.payload.get("risk").cloned().unwrap_or(Value::Null),
+            "actor": run_record.actor,
+        },
+        "record_kind_counts": kind_counts,
+        "required_proofs": Value::Object(required_proofs.clone()),
+        "evidence_to_show_buyer": [
+            "agent run and tool timeline",
+            "exact Git diff readback",
+            "CI source-of-truth success and failure proof",
+            "scanner vulnerability absence and still-present failure proof",
+            "ticket evidence-link proof",
+            "permission-denied connector proof",
+            "append-only ledger manifest and record hashes"
+        ],
+        "standards_basis": [
+            "W3C PROV: use entities, activities, and agents to support reliability assessment",
+            "SLSA provenance: consumers must verify artifacts/provenance against expectations",
+            "NIST SSDF: preserve traceable verification evidence for software changes",
+            "OSV-Scanner JSON output: scanner state must be machine-readable and independently inspectable"
+        ],
+        "generated_at": Utc::now().to_rfc3339(),
+    });
+    let evidence_index = json!({
+        "format": "blackbox_first_wedge_evidence_index_json_v1",
+        "first_wedge_demo_id": first_wedge_demo_id,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "source_ledger": report["source_ledger"].clone(),
+        "source_refs": source_refs,
+        "source_refs_sha256": source_refs_sha256,
+        "required_proofs": Value::Object(required_proofs),
+        "generated_at": Utc::now().to_rfc3339(),
+    });
+    let script_rows = first_wedge_demo_script_rows(&report)?;
+    let material_source_refs = evidence_index["source_refs"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    Ok(FirstWedgeDemoMaterial {
+        report,
+        evidence_index,
+        script_rows,
+        source_refs: material_source_refs,
+        manifest: Value::Null,
+    })
+}
+
+fn first_wedge_find_proof(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+    tenant: &str,
+    run_id: &str,
+    proof_id: &'static str,
+    verifier_ids: &[&str],
+    statuses: &[&str],
+    error_codes: &[&str],
+) -> BbxResult<Option<Value>> {
+    for record in records.iter().rev().filter(|record| {
+        record.record_kind == "verifier_result"
+            && record.tenant_id == tenant
+            && record.run_id.as_deref() == Some(run_id)
+    }) {
+        let verifier_id = match record.payload.get("verifier_id").and_then(Value::as_str) {
+            Some(verifier_id) if verifier_ids.contains(&verifier_id) => verifier_id,
+            _ => continue,
+        };
+        let status = record
+            .payload
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                first_wedge_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.status",
+                    "verifier_result row is missing status",
+                )
+            })?;
+        if !statuses.contains(&status) {
+            continue;
+        }
+        let error_code = record.payload.get("error_code").and_then(Value::as_str);
+        if !error_codes.is_empty() && !error_code.is_some_and(|code| error_codes.contains(&code)) {
+            continue;
+        }
+        let verifier_result_id = record
+            .payload
+            .get("verifier_result_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                first_wedge_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.verifier_result_id",
+                    "verifier_result row is missing verifier_result_id",
+                )
+            })?;
+        let evidence = first_wedge_evidence_packet_for_verifier(
+            ledger_path,
+            records,
+            tenant,
+            run_id,
+            verifier_result_id,
+        )?
+        .ok_or_else(|| {
+            first_wedge_invalid(
+                ledger_path,
+                "FIRST_WEDGE_EVIDENCE_PACKET_MISSING",
+                "ledger_records.evidence_packet",
+                format!(
+                    "verifier_result {verifier_result_id} for proof {proof_id} has no evidence_packet"
+                ),
+                "rerun `blackbox verify` so the verifier result and evidence packet are both persisted",
+            )
+        })?;
+        let verifier_ref = first_wedge_record_ref_from_output(
+            ledger_path,
+            &format!("{proof_id}_verifier_result"),
+            record,
+        )?;
+        let evidence_ref = first_wedge_record_ref_from_output(
+            ledger_path,
+            &format!("{proof_id}_evidence_packet"),
+            evidence,
+        )?;
+        return Ok(Some(json!({
+            "proof_id": proof_id,
+            "verifier_id": verifier_id,
+            "connector": record.payload.get("connector").cloned().unwrap_or(Value::Null),
+            "status": status,
+            "error_code": error_code,
+            "source_of_truth": record.payload.get("source_of_truth").cloned().unwrap_or(Value::Null),
+            "field_path": record.payload.get("field_path").cloned().unwrap_or(Value::Null),
+            "remediation": record.payload.get("remediation").cloned().unwrap_or(Value::Null),
+            "actual_readback": record.payload.get("actual_readback").cloned().unwrap_or(Value::Null),
+            "source_refs": [verifier_ref, evidence_ref],
+        })));
+    }
+    Ok(None)
+}
+
+fn first_wedge_evidence_packet_for_verifier<'a>(
+    ledger_path: &Path,
+    records: &'a [LedgerRecordOutput],
+    tenant: &str,
+    run_id: &str,
+    verifier_result_id: &str,
+) -> BbxResult<Option<&'a LedgerRecordOutput>> {
+    for record in records.iter().rev().filter(|record| {
+        record.record_kind == "evidence_packet"
+            && record.tenant_id == tenant
+            && record.run_id.as_deref() == Some(run_id)
+    }) {
+        let packet_verifier_result_id = record
+            .payload
+            .get("verifier_result_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                first_wedge_schema_error(
+                    ledger_path,
+                    record,
+                    "payload.verifier_result_id",
+                    "evidence_packet row is missing verifier_result_id",
+                )
+            })?;
+        if packet_verifier_result_id == verifier_result_id {
+            return Ok(Some(record));
+        }
+    }
+    Ok(None)
+}
+
+fn first_wedge_demo_script_rows(report: &Value) -> BbxResult<Vec<Value>> {
+    let proofs = report
+        .get("required_proofs")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            first_wedge_invalid(
+                Path::new("first_wedge_demo"),
+                "FIRST_WEDGE_REPORT_SCHEMA_DRIFT",
+                "report.required_proofs",
+                "first wedge report is missing required_proofs",
+                "regenerate the demo report from verified ledger records",
+            )
+        })?;
+    let ordered = [
+        (
+            "01",
+            "git_delta",
+            "Show exact dependency edit from Git diff readback.",
+        ),
+        (
+            "02",
+            "ci_success",
+            "Show CI/check-suite success from the hosted source of truth.",
+        ),
+        (
+            "03",
+            "scanner_absence",
+            "Show scanner report proving the vulnerability is absent.",
+        ),
+        (
+            "04",
+            "ticket_evidence",
+            "Show ticket evidence link proof from the issue source of truth.",
+        ),
+        (
+            "05",
+            "ci_failure_demo",
+            "Show CI failure evidence and remediation.",
+        ),
+        (
+            "06",
+            "scanner_failure_demo",
+            "Show scanner still-present evidence and remediation.",
+        ),
+        (
+            "07",
+            "permission_failure_demo",
+            "Show missing-permission block without a success claim.",
+        ),
+    ];
+    let mut rows = Vec::new();
+    for (step_id, proof_id, title) in ordered {
+        let proof = proofs.get(proof_id).ok_or_else(|| {
+            first_wedge_invalid(
+                Path::new("first_wedge_demo"),
+                "FIRST_WEDGE_REPORT_SCHEMA_DRIFT",
+                format!("report.required_proofs.{proof_id}"),
+                format!("first wedge report is missing proof {proof_id}"),
+                "regenerate the demo report from verified ledger records",
+            )
+        })?;
+        rows.push(json!({
+            "format": "blackbox_first_wedge_demo_step_json_v1",
+            "first_wedge_demo_id": report["first_wedge_demo_id"].clone(),
+            "tenant_id": report["tenant_id"].clone(),
+            "run_id": report["run_id"].clone(),
+            "step_id": step_id,
+            "proof_id": proof_id,
+            "title": title,
+            "verifier_id": proof["verifier_id"].clone(),
+            "status": proof["status"].clone(),
+            "error_code": proof["error_code"].clone(),
+            "source_of_truth": proof["source_of_truth"].clone(),
+            "source_refs": proof["source_refs"].clone(),
+        }));
+    }
+    Ok(rows)
+}
+
+fn write_first_wedge_demo_directory(
+    args: &DemoFirstWedgeArgs,
+    material: &FirstWedgeDemoMaterial,
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir_all(temp_dir).map_err(|err| {
+        BlackboxError::io(temp_dir, "create first wedge demo temp directory", err)
+    })?;
+    let report_path = temp_dir.join("demo-report.json");
+    let evidence_path = temp_dir.join("evidence-index.json");
+    let script_path = temp_dir.join("demo-script.jsonl");
+    write_first_wedge_json_file(&report_path, &material.report)?;
+    write_first_wedge_json_file(&evidence_path, &material.evidence_index)?;
+    write_first_wedge_jsonl(&script_path, &material.script_rows)?;
+    let script_readback = read_first_wedge_jsonl(&script_path)?;
+    let files = vec![
+        first_wedge_file_entry(temp_dir, Path::new("demo-report.json"))?,
+        first_wedge_file_entry(temp_dir, Path::new("evidence-index.json"))?,
+        first_wedge_file_entry(temp_dir, Path::new("demo-script.jsonl"))?,
+    ];
+    let manifest = json!({
+        "format": "blackbox_first_wedge_demo_manifest_json_v1",
+        "first_wedge_demo_schema_version": FIRST_WEDGE_DEMO_SCHEMA_VERSION,
+        "first_wedge_demo_rule_version": FIRST_WEDGE_DEMO_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": material.report["source_ledger"].clone(),
+        "demo_success": material.report["demo_success"].clone(),
+        "demo_script": {
+            "line_count": script_readback.0,
+            "sha256": script_readback.1,
+        },
+        "files": files,
+    });
+    write_first_wedge_json_file(&temp_dir.join("manifest.json"), &manifest)?;
+    Ok(manifest)
+}
+
+fn write_first_wedge_json_file(path: &Path, value: &Value) -> BbxResult<()> {
+    write_json_file_new(path, value, "first wedge demo JSON")?;
+    let readback = read_json_file(path, "first wedge demo JSON readback")?;
+    if &readback != value {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_JSON_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "first wedge demo JSON readback does not match the value written",
+            "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn write_first_wedge_jsonl(path: &Path, rows: &[Value]) -> BbxResult<()> {
+    let mut text = String::new();
+    for row in rows {
+        if row.get("format").and_then(Value::as_str)
+            != Some("blackbox_first_wedge_demo_step_json_v1")
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_JSONL_SCHEMA_INVALID",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(path),
+                "format",
+                "first wedge demo JSONL row does not use blackbox_first_wedge_demo_step_json_v1",
+                "regenerate the demo package from trusted ledger rows",
+            ));
+        }
+        text.push_str(&canonical_json_string(row)?);
+        text.push('\n');
+    }
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, "first wedge demo JSONL", err))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(text.as_bytes())
+        .map_err(|err| BlackboxError::io(path, "first wedge demo JSONL", err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "first wedge demo JSONL", err))?;
+    let (line_count, _) = read_first_wedge_jsonl(path)?;
+    if line_count != rows.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_JSONL_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "first wedge demo JSONL line count changed after write",
+            "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn read_first_wedge_jsonl(path: &Path) -> BbxResult<(usize, String)> {
+    let file =
+        File::open(path).map_err(|err| BlackboxError::io(path, "read first wedge JSONL", err))?;
+    let reader = BufReader::new(file);
+    let mut count = 0_usize;
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|err| BlackboxError::io(path, "read first wedge JSONL", err))?;
+        if line.trim().is_empty() {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_JSONL_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {}", index + 1),
+                "first wedge demo JSONL contains a blank line",
+                "regenerate the package after inspecting filesystem/storage consistency",
+            ));
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_JSONL_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {}", index + 1),
+                format!("first wedge demo JSONL line does not parse: {err}"),
+                "regenerate the package after inspecting filesystem/storage consistency",
+            )
+        })?;
+        if value.get("format").and_then(Value::as_str)
+            != Some("blackbox_first_wedge_demo_step_json_v1")
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_JSONL_SCHEMA_INVALID",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("line {} format", index + 1),
+                "first wedge demo JSONL line does not use blackbox_first_wedge_demo_step_json_v1",
+                "regenerate the demo package from trusted ledger rows",
+            ));
+        }
+        count += 1;
+    }
+    Ok((count, sha256_file(path)?))
+}
+
+fn first_wedge_file_entry(base: &Path, relative: &Path) -> BbxResult<Value> {
+    let path = base.join(relative);
+    let bytes = fs::metadata(&path)
+        .map_err(|err| BlackboxError::io(&path, "stat first wedge demo file", err))?
+        .len();
+    Ok(json!({
+        "path": relative.to_string_lossy(),
+        "sha256": sha256_file(&path)?,
+        "bytes": bytes,
+    }))
+}
+
+fn readback_first_wedge_demo_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    first_wedge_demo_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_DEMO_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "first wedge demo append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun demo generation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_DEMO_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("first wedge demo sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun demo generation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "first_wedge_demo"
+        || row
+            .payload
+            .get("first_wedge_demo_id")
+            .and_then(Value::as_str)
+            != Some(first_wedge_demo_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_DEMO_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.first_wedge_demo",
+            "first_wedge_demo row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun demo generation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_first_wedge_demo": inspection_after.record_count,
+        "ledger_tip_sha256_after_first_wedge_demo": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "first_wedge_demo_id": row.payload["first_wedge_demo_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "demo_success": row.payload["demo_success"].clone(),
+    }))
+}
+
+fn first_wedge_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let payload_sha256 = record
+        .hash
+        .get("payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            first_wedge_schema_error(
+                ledger_path,
+                record,
+                "hash.payload_sha256",
+                format!("{} row is missing payload_sha256", record.record_kind),
+            )
+        })?;
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            first_wedge_schema_error(
+                ledger_path,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        payload_sha256,
+        record_sha256,
+    ))
+}
+
+fn validate_first_wedge_output_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty first-wedge demo output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "first-wedge demo output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this demo package directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "first-wedge demo parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the demo package build",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_first_wedge_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|err| {
+            BlackboxError::io(path, "remove stale first wedge demo temp directory", err)
+        })?;
+    }
+    Ok(())
+}
+
+fn promote_first_wedge_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "first-wedge demo output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this demo package directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out).map_err(|err| {
+            BlackboxError::io(out, "replace existing first wedge demo directory", err)
+        })?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote first wedge demo temp directory", err))?;
+    Ok(())
+}
+
+fn verify_first_wedge_manifest_files(out: &Path, manifest: &Value) -> BbxResult<()> {
+    if manifest["format"] != "blackbox_first_wedge_demo_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_MANIFEST_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.format",
+            "final first-wedge demo manifest readback did not preserve the expected format",
+            "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    let files = manifest.get("files").and_then(Value::as_array).ok_or_else(|| {
+        BlackboxError::evidence_integrity_for_connector(
+            "FIRST_WEDGE_MANIFEST_READBACK_MISMATCH",
+            FIRST_WEDGE_DEMO_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.files",
+            "first-wedge demo manifest is missing files array",
+            "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+        )
+    })?;
+    for file in files {
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_MANIFEST_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "first-wedge demo manifest file entry is missing path",
+                "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_MANIFEST_PATH_INVALID",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("first-wedge demo manifest file path is not safe relative path: {rel}"),
+                "regenerate the demo manifest from trusted code",
+            ));
+        }
+        let path = out.join(rel_path);
+        let expected_sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_MANIFEST_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].sha256",
+                "first-wedge demo manifest file entry is missing sha256",
+                "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let expected_bytes = file.get("bytes").and_then(Value::as_u64).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_MANIFEST_READBACK_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].bytes",
+                "first-wedge demo manifest file entry is missing byte count",
+                "delete the corrupt demo package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let actual_sha = sha256_file(&path)?;
+        let actual_bytes = fs::metadata(&path)
+            .map_err(|err| BlackboxError::io(&path, "stat final first wedge demo file", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FIRST_WEDGE_FILE_HASH_MISMATCH",
+                FIRST_WEDGE_DEMO_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                rel,
+                "first-wedge demo file hash or byte count changed after promotion",
+                "treat the demo package directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn first_wedge_invalid(
+    ledger_path: &Path,
+    code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        FIRST_WEDGE_DEMO_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn first_wedge_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "FIRST_WEDGE_RECORD_SCHEMA_DRIFT",
+        FIRST_WEDGE_DEMO_CONNECTOR_ID,
+        source_of_truth(ledger_path),
+        format!("ledger_records[{}].{}", record.sequence, field_path.into()),
+        message,
+        "inspect the persisted source row and rebuild the first-wedge demo after correcting ledger state",
+    )
 }
 
 fn build_risk_assessment_payload(

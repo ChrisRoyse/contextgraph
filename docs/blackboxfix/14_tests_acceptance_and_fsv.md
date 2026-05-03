@@ -28,6 +28,7 @@ The mandatory operator-side protocol lives in
 | Pilot package rows and files (Phase 15) | physical SQLite tenant evidence/access rows read independently, then persisted as `pilot_package`; package JSON/JSONL files and dashboard package API files read back from disk with manifest hashes |
 | Risk assessment rows and decisions (Phase 16) | physical SQLite tenant evidence/runtime/access/package rows and a real decision-register JSON file read independently, then persisted as `risk_assessment`; dashboard risk API files read back from disk |
 | HTTP request audit rows (Phase 17) | real HTTP requests to `blackbox server serve`, physical SQLite business rows, and `http_request_audit` rows read independently after each request |
+| First-wedge demo package rows and files (Phase 18) | real Git/scanner/GitHub/GHA verifier evidence, physical SQLite `first_wedge_demo` rows, and demo package JSON/JSONL files read back from disk with manifest hashes |
 
 ## Test Levels
 
@@ -102,6 +103,10 @@ Phase 17 adds `tests/blackbox_phase17_http_server_fsv.rs`, which starts the
 real HTTP server process, sends real authenticated HTTP requests, appends
 real `agent_run`, `agent_step`, `tool_call`, and `http_request_audit` rows,
 and reads those rows directly from `ledger_records`.
+Phase 18 adds `tests/blackbox_phase18_first_wedge_demo_fsv.rs`, which builds
+the first-wedge demo from a real local Git repository, real scanner artifact
+files, live GitHub/GitHub Actions readbacks, physical SQLite evidence rows,
+and package files whose manifest hashes are read back from disk.
 
 ## Acceptance Criteria
 
@@ -228,6 +233,13 @@ Concretely, that means:
   prove business rows and `http_request_audit` rows exist only where expected.
   Invalid auth, tenant mismatch, and oversized-body requests create no
   business rows and do create typed audit rows.
+- Phase 18 FSV builds a real first-wedge demo package only after a selected
+  run has physical proof for Git diff, CI success, scanner absence, ticket
+  evidence, CI failure, scanner-still-present failure, and permission-denied
+  failure. It opens SQLite to prove exactly one `first_wedge_demo` row exists,
+  reads the package files and manifest hashes from disk, and verifies
+  missing-run, incomplete-evidence, and output-exists edges create no demo
+  row or final package files.
 - Phase 12 FSV scores real ledger rows produced by real CLI commands and a
   real local Git verifier. It then opens the physical SQLite ledger to prove
   `scorecard` rows exist only where expected and contain the exact trust level,

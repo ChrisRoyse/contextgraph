@@ -47,6 +47,7 @@ writing a line of code:
 | 15 | Phase 14 + `pilot_package` rows and package/dashboard JSON/JSONL files |
 | 16 | Phase 15 + `risk_assessment` rows and real decision-register JSON files |
 | 17 | Phase 16 + real HTTP requests to `blackbox server serve` and `http_request_audit` rows read directly from SQLite |
+| 18 | Phase 17 + `first_wedge_demo` rows, real Git/scanner/GitHub/GHA verifier evidence, and demo package JSON/JSONL files with manifest hashes |
 
 If you cannot name the source of truth in one sentence, stop and design the
 data model first.

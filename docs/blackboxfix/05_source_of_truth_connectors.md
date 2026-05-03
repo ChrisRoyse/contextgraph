@@ -30,7 +30,9 @@ the physical ledger, SQLite runtime state, package/risk/dashboard rows, and a
 required decision-register JSON file, then verifies `risk_assessment` append
 readback. Phase 17 adds `blackbox_http_server_v1`, which reads the physical
 ledger and verifies durable `http_request_audit` rows produced by the
-authenticated HTTP server.
+authenticated HTTP server. Phase 18 adds `blackbox_first_wedge_demo_v1`,
+which reads the physical ledger and verifies durable `first_wedge_demo` rows
+plus demo package file manifests.
 
 ## Connector Contract
 
@@ -190,6 +192,33 @@ Connector properties:
 - all protected requests write an audit row, including auth/schema failures;
 - non-loopback binds fail closed unless explicitly paired with
   `--allow-remote-bind --tls-terminated-by NAME`.
+
+### Phase 18: First-Wedge Demo Package — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for the selected run;
+- evidence packets and verifier results for Git, CI, scanner, ticket, and
+  failure-demo proofs;
+- package files `demo-report.json`, `evidence-index.json`,
+  `demo-script.jsonl`, and `manifest.json`.
+
+Readback specs:
+
+- `blackbox_first_wedge_demo_v1`;
+- `first_wedge_demo_manifest_v1`.
+
+Connector properties:
+
+- fails closed unless all seven required proof categories exist;
+- requires passed Git diff, CI, scanner absence, and ticket evidence proofs;
+- requires failed/blocked CI, scanner-still-present, and permission-denied
+  proofs;
+- writes package files through a temp directory, reads every file back, hashes
+  files in the manifest, then appends and reads back one `first_wedge_demo`
+  row;
+- `blackbox connector test --connector blackbox_first_wedge_demo_v1 --source
+  LEDGER_PATH` verifies physical ledger integrity and reports demo row counts.
 
 ### Phase 8: Enterprise Controls — shipped
 

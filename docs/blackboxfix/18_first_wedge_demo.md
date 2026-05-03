@@ -3,13 +3,14 @@
 The first demo proves the product in a workflow where the source of truth is
 concrete and the business value is obvious.
 
-The CLI/MCP/dashboard/enterprise/scanner/ticket-evidence demo is now viable
-through **Phase 11**:
+The CLI/MCP/dashboard/enterprise/scanner/ticket-evidence demo is now
+executable and packageable through **Phase 18**:
 Git + GitHub + CI verifiers, evidence packets, forensic replay, evidence
 export, episode/eval export, a policy-governed MCP gateway for verified Git
-patch application, tenant-scoped enterprise audit/SIEM export, and scanner
-artifact verification for vulnerability remediation, plus GitHub issue
-evidence-link verification for ticket proof.
+patch application, tenant-scoped enterprise audit/SIEM export, scanner
+artifact verification for vulnerability remediation, GitHub issue
+evidence-link verification for ticket proof, and a first-class
+`first_wedge_demo` package row with manifest-verified demo artifacts.
 
 ## Demo Thesis
 
@@ -71,7 +72,9 @@ the ticketing system, then exports verified and failed episodes for evals.
 Expected:
 
 - verifier status `failed`;
-- error code `CI_REQUIRED_CHECK_FAILED`;
+- one of the shipped CI error codes, such as
+  `GHA_WORKFLOW_RUN_CONCLUSION_MISMATCH` or
+  `GITHUB_CHECK_SUITE_CONCLUSION_MISMATCH`;
 - readback shows failed job;
 - incident packet created;
 - episode exported with remediation.
@@ -81,7 +84,7 @@ Expected:
 Expected:
 
 - verifier status `failed`;
-- error code `VULNERABILITY_STILL_PRESENT`;
+- error code `SCANNER_VULNERABILITY_STILL_PRESENT`;
 - scanner report stored as evidence;
 - ticket is not marked resolved.
 
@@ -94,11 +97,59 @@ Expected:
 - no success claim;
 - remediation asks for required read scope.
 
+## Demo Package Command (Phase 18 shipped surface)
+
+The current first-wedge buyer proof is built from already-verified ledger
+evidence. It is not allowed to infer success from transcripts or return
+values.
+
+```bash
+context-graph blackbox demo first-wedge \
+  --ledger "$ledger" \
+  --tenant tenant_demo \
+  --run-id "$RUN" \
+  --out first-wedge-demo \
+  --agent demo_operator
+```
+
+The command fails closed unless the selected run has these physical
+`verifier_result` + `evidence_packet` proof categories:
+
+- passed `git_file_diff_matches_patch_v1`;
+- passed hosted CI verifier (`gha_workflow_run_completed_v1`,
+  `github_check_suite_passed_v1`, or GitLab CI);
+- passed `scanner_vulnerability_absent_v1`;
+- passed `github_issue_evidence_link_v1`;
+- failed CI verifier for the required failure demo;
+- failed `scanner_vulnerability_absent_v1` with
+  `SCANNER_VULNERABILITY_STILL_PRESENT`;
+- blocked GitHub/GitLab verifier with `CONNECTOR_PERMISSION_DENIED`.
+
+Output source of truth:
+
+- `first-wedge-demo/demo-report.json`;
+- `first-wedge-demo/evidence-index.json`;
+- `first-wedge-demo/demo-script.jsonl`;
+- `first-wedge-demo/manifest.json`;
+- SQLite `ledger_records` row where `record_kind='first_wedge_demo'`.
+
+Manual readback:
+
+```bash
+sqlite3 "$ledger" \
+  "SELECT sequence, record_kind, json_extract(payload_json, '$.demo_success.status')
+   FROM ledger_records
+   WHERE record_kind='first_wedge_demo';"
+
+jq .demo_success first-wedge-demo/demo-report.json
+jq .files first-wedge-demo/manifest.json
+```
+
 ## Demo Commands (Recorder-only baseline)
 
 The recorder-only commands still work end-to-end against synthetic input.
 Use this only when the goal is to demonstrate redaction and hash-chain
-integrity without external source systems. The Phase 11 shipped surface below
+integrity without external source systems. The Phase 18 shipped surface below
 is the current verified vulnerability-remediation demo path.
 
 ```bash
@@ -138,7 +189,7 @@ sqlite3 "$ledger" \
 # secret-named field and replaced its value with [REDACTED:sha256:...].
 ```
 
-## Demo Commands (Phase 11 shipped surface)
+## Demo Commands (Phase 18 shipped surface)
 
 ```bash
 ledger=/tmp/bbx-demo.sqlite
@@ -155,6 +206,7 @@ context-graph blackbox enterprise configure --ledger "$ledger" --tenant tenant_d
 context-graph blackbox enterprise sync-directory --ledger "$ledger" --tenant tenant_demo --input enterprise-directory.json --agent demo_agent
 context-graph blackbox enterprise access-evaluate --ledger "$ledger" --tenant tenant_demo --principal-id user_alice --permission audit.export --resource tenant:tenant_demo:audit/export --agent demo_agent
 context-graph blackbox enterprise export-audit --ledger "$ledger" --tenant tenant_demo --principal-id user_alice --out audit-export --agent demo_agent
+context-graph blackbox demo first-wedge --ledger "$ledger" --tenant tenant_demo --run-id "$RUN" --out first-wedge-demo --agent demo_agent
 ```
 
 ## Evidence To Show Buyer

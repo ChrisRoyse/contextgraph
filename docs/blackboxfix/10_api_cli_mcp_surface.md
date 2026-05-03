@@ -17,10 +17,12 @@ manifests, and dashboard package readback. Phase 16 adds authorized
 risk/open-question assessment, `risk_assessment` ledger rows, and dashboard
 risk readback. Phase 17 adds an authenticated loopback HTTP server, a
 single-writer ledger path, tenant-scoped dashboard reads, and durable
-`http_request_audit` rows for every protected HTTP request.
+`http_request_audit` rows for every protected HTTP request. Phase 18 adds the
+first executable buyer-demo package command, `first_wedge_demo` ledger rows,
+and manifest-verified demo artifacts.
 SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 17)
+## CLI (shipped Phase 18)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -51,6 +53,7 @@ blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_P
 blackbox connector test        --connector blackbox_release_gate_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_packaging_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_http_server_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_first_wedge_demo_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -132,6 +135,9 @@ blackbox server serve          --ledger PATH
                                [--bind 127.0.0.1:7607]
                                [--api-key-env BLACKBOX_API_KEY]
                                [--allow-remote-bind --tls-terminated-by NAME]
+blackbox demo first-wedge      --ledger PATH --tenant TENANT --run-id RUN_ID
+                               --out DIR [--force]
+                               --agent AGENT [--model MODEL]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
                                [--mutating] [--verifier-id VERIFIER]
@@ -221,7 +227,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 11,
+  "schema_version": 12,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -356,6 +362,10 @@ rows read from `ledger_records`.
 `connector test --connector blackbox_http_server_v1` opens the SQLite ledger,
 verifies the hash chains, and returns the total persisted
 `http_request_audit` rows read from `ledger_records`.
+
+`connector test --connector blackbox_first_wedge_demo_v1` opens the SQLite
+ledger, verifies the hash chains, and returns the total persisted
+`first_wedge_demo` rows read from `ledger_records`.
 
 ## HTTP API Surface (Phase 17 shipped server)
 
@@ -510,12 +520,13 @@ retention/erasure decision audit rows, and Phase 14 shipped release-gate
 decision rows. Phase 15 shipped usage-meter JSONL package output and kept
 OpenTelemetry emission as a later export path. Phase 16 shipped
 risk-assessment rows and dashboard risk readbacks while keeping OpenTelemetry
-as an export-only path.
+as an export-only path. Phase 18 shipped a manifest-verified first-wedge demo
+package and durable `first_wedge_demo` rows.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 11 in Phase 17).
+- Ledger records include `schema_version` (= 12 in Phase 18).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -544,13 +555,16 @@ as an export-only path.
   kind with `risk_assessment_schema_version = 1`.
 - Phase 17 bumps the ledger schema to 11 for the new `http_request_audit`
   record kind with `http_request_audit_schema_version = 1`.
+- Phase 18 bumps the ledger schema to 12 for the new `first_wedge_demo`
+  record kind with `first_wedge_demo_schema_version = 1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
   `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
   `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
   `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
-  `blackbox_risk_v1`, `blackbox_http_server_v1` today).
+  `blackbox_risk_v1`, `blackbox_http_server_v1`, and
+  `blackbox_first_wedge_demo_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 

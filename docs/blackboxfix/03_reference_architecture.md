@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 17)
+## Concrete Layout (shipped through Phase 18)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `demo ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -41,9 +41,10 @@ agent runtime
 | Pilot packaging | RBAC-gated pilot report, usage-meter JSONL, eval-candidate JSONL, and manifest over physical ledger rows | `blackbox package pilot-report` |
 | Risk assessment | RBAC-gated risk/open-question assessment over ledger, runtime, package, incident/eval, and decision-register evidence | `blackbox risk evaluate` |
 | HTTP server | Authenticated loopback HTTP server, single-writer ledger path, tenant-scoped dashboard reads, request audit rows | `blackbox server serve` |
-| FSV harness | Phase 1-17 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| First-wedge demo package | Manifest-verified buyer-demo package over real Git/scanner/GitHub/GHA evidence and required failure demos | `blackbox demo first-wedge` |
+| FSV harness | Phase 1-18 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-17 is **not yet implemented**. Public multi-tenant
+Anything outside Phases 1-18 is **not yet implemented**. Public multi-tenant
 SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)
@@ -77,7 +78,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
