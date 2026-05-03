@@ -42,9 +42,10 @@ agent runtime
 | Risk assessment | RBAC-gated risk/open-question assessment over ledger, runtime, package, incident/eval, and decision-register evidence | `blackbox risk evaluate` |
 | HTTP server | Authenticated loopback HTTP server, single-writer ledger path, tenant-scoped dashboard reads, request audit rows | `blackbox server serve` |
 | First-wedge demo package | Manifest-verified buyer-demo package over real Git/scanner/GitHub/GHA evidence and required failure demos | `blackbox demo first-wedge` |
-| FSV harness | Phase 1-18 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Executable FSV certification | Validates captured FSV evidence against physical SQLite/file state and persists certification rows | `blackbox fsv certify` |
+| FSV harness | Phase 1-19 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-18 is **not yet implemented**. Public multi-tenant
+Anything outside Phases 1-19 is **not yet implemented**. Public multi-tenant
 SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)

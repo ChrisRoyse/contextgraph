@@ -904,7 +904,7 @@ fn phase2_current_schema_init_wipes_v1_ledger_instead_of_migrating_silently() {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 12);
+    assert_eq!(init["schema_version"], 13);
     assert_eq!(init["wiped_existing_ledger"], true);
 
     let conn = Connection::open(&ledger).expect("open physical current ledger");
@@ -915,7 +915,7 @@ fn phase2_current_schema_init_wipes_v1_ledger_instead_of_migrating_silently() {
             |row| row.get(0),
         )
         .expect("read schema version");
-    assert_eq!(version, "12");
+    assert_eq!(version, "13");
     let record_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM ledger_records", [], |row| row.get(0))
         .expect("count physical current rows");

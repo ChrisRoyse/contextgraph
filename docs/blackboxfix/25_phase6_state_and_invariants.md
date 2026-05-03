@@ -14,7 +14,7 @@ implementation.
 | Gateway evidence | `expected_delta`, `readback_snapshot`, `verifier_result`, and `evidence_packet` rows |
 
 Phase 6 originally bumped the live ledger schema to `LEDGER_SCHEMA_VERSION = 4`.
-The current live ledger schema is `LEDGER_SCHEMA_VERSION = 12` after Phase 18.
+The current live ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 19.
 Older ledgers are wiped on `blackbox init`, never migrated in place.
 
 ## Shipped Commands

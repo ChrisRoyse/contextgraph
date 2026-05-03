@@ -444,6 +444,29 @@ Design implication:
   to come from persisted OSV JSON readbacks before the buyer demo package can
   pass.
 
+### Executable FSV Certification And Provenance
+
+References:
+
+- <https://csrc.nist.gov/pubs/sp/800/218/final>
+- <https://slsa.dev/spec/v1.2/provenance>
+- <https://github.com/in-toto/attestation/tree/main/spec>
+- <https://www.w3.org/TR/prov-dm/>
+- <https://www.sqlite.org/pragma.html#pragma_integrity_check>
+
+Design implication:
+
+- FSV evidence should be durable product state, not only an external PR note;
+- the certifier should use a provenance/attestation shape with subject
+  digests, materials, builder identity, and invocation parameters;
+- evidence packages must hash every file they emit and read those files back
+  after promotion;
+- database integrity needs an independent SQLite integrity check in addition
+  to BlackBoxFix's hash-chain verification;
+- the system must fail closed before appending `full_state_verification` when
+  evidence post-state, deltas, edge cases, or artifact hashes do not match
+  physical readback.
+
 ### Authenticated HTTP API Serving
 
 References:

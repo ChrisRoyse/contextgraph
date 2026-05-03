@@ -32,7 +32,10 @@ readback. Phase 17 adds `blackbox_http_server_v1`, which reads the physical
 ledger and verifies durable `http_request_audit` rows produced by the
 authenticated HTTP server. Phase 18 adds `blackbox_first_wedge_demo_v1`,
 which reads the physical ledger and verifies durable `first_wedge_demo` rows
-plus demo package file manifests.
+plus demo package file manifests. Phase 19 adds
+`blackbox_fsv_protocol_v1`, which reads the physical ledger, SQLite
+`PRAGMA integrity_check`, FSV evidence JSON, declared artifact files, package
+manifests, and durable `full_state_verification` rows.
 
 ## Connector Contract
 
@@ -219,6 +222,37 @@ Connector properties:
   row;
 - `blackbox connector test --connector blackbox_first_wedge_demo_v1 --source
   LEDGER_PATH` verifies physical ledger integrity and reports demo row counts.
+
+### Phase 19: Executable FSV Protocol — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` and `blackbox_metadata` rows;
+- SQLite `PRAGMA integrity_check`;
+- FSV evidence JSON supplied to `--evidence`;
+- declared physical artifact files with SHA-256 and byte counts;
+- package files `fsv-report.json`, `provenance.json`, `edge-cases.jsonl`,
+  and `manifest.json`.
+
+Readback specs:
+
+- `blackbox_full_state_verification_v1`;
+- `fsv_evidence_manifest_v1`;
+- `sqlite_integrity_check_v1`.
+
+Connector properties:
+
+- evidence `source_of_truth` must match the exact ledger path being certified;
+- evidence post-state must match a fresh physical SQLite read;
+- expected and actual deltas must match field by field;
+- all three mandatory edge categories must be present;
+- every declared artifact is read from disk and hash/byte checked;
+- package files are written to a temp directory, read back, manifest-checked,
+  then one `full_state_verification` row is appended and read back by
+  sequence/id/hash;
+- `blackbox connector test --connector blackbox_fsv_protocol_v1 --source
+  LEDGER_PATH` verifies ledger integrity, runs SQLite integrity check, and
+  reports FSV certification row counts.
 
 ### Phase 8: Enterprise Controls — shipped
 

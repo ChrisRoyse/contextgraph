@@ -19,10 +19,12 @@ risk readback. Phase 17 adds an authenticated loopback HTTP server, a
 single-writer ledger path, tenant-scoped dashboard reads, and durable
 `http_request_audit` rows for every protected HTTP request. Phase 18 adds the
 first executable buyer-demo package command, `first_wedge_demo` ledger rows,
-and manifest-verified demo artifacts.
+and manifest-verified demo artifacts. Phase 19 adds executable FSV
+certification, `full_state_verification` ledger rows, a provenance-shaped FSV
+package, and `blackbox_fsv_protocol_v1` connector readback.
 SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 18)
+## CLI (shipped Phase 19)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -54,6 +56,7 @@ blackbox connector test        --connector blackbox_release_gate_v1 --source LED
 blackbox connector test        --connector blackbox_packaging_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_http_server_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_first_wedge_demo_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_fsv_protocol_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -137,6 +140,11 @@ blackbox server serve          --ledger PATH
                                [--allow-remote-bind --tls-terminated-by NAME]
 blackbox demo first-wedge      --ledger PATH --tenant TENANT --run-id RUN_ID
                                --out DIR [--force]
+                               --agent AGENT [--model MODEL]
+blackbox fsv certify           --ledger PATH --tenant TENANT --phase N
+                               --evidence FSV_EVIDENCE_JSON
+                               --out DIR [--force]
+                               [--run-id RUN_ID]
                                --agent AGENT [--model MODEL]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
@@ -227,7 +235,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 12,
+  "schema_version": 13,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -526,7 +534,7 @@ package and durable `first_wedge_demo` rows.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 12 in Phase 18).
+- Ledger records include `schema_version` (= 13 in Phase 19).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside

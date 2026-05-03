@@ -304,7 +304,7 @@ fn init_ledger(ledger: &Path) {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 12);
+    assert_eq!(init["schema_version"], 13);
 }
 
 fn new_case() -> Phase18Case {

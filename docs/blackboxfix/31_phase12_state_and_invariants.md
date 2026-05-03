@@ -26,7 +26,7 @@ the new `scorecard` record kind. The physical SQLite table shape is unchanged,
 but old schema-version ledgers are wiped on `blackbox init`; there is no
 migration shim. Phase 15 later bumped the live schema to
 `LEDGER_SCHEMA_VERSION = 9` for pilot-package rows, and Phase 18 later bumps
-the current live schema to `LEDGER_SCHEMA_VERSION = 12` for first-wedge demo
+the current live schema to `LEDGER_SCHEMA_VERSION = 13` for executable FSV certification
 rows.
 
 ## Source Of Truth

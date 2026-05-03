@@ -294,7 +294,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4/9/10/11/12/13/14/15/16 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10/11/12/13/14/15/16/17/18/19 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -323,10 +323,11 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3/4/9/10/11/12/13/14 happy paths use real Git/local-command, live
-# GitHub/GHA/GitLab sources, real scanner artifact files, real exported
-# evidence files, real GitHub issue/comment readbacks, and real SQLite
-# score/privacy/release-gate rows; see
+# Phase 2/3/4/9/10/11/12/13/14/17/18/19 happy paths use real
+# Git/local-command, live GitHub/GHA/GitLab sources where applicable, real
+# scanner artifact files, real exported evidence/package files, real GitHub
+# issue/comment readbacks, real HTTP requests, and real SQLite
+# score/privacy/release-gate/demo/FSV rows; see
 # tests/blackbox_phase2_fsv.rs,
 # tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs,
 # tests/blackbox_phase9_gitlab_ci_fsv.rs,
@@ -334,7 +335,10 @@ context-graph blackbox inspect ledger --ledger "$ledger"
 # tests/blackbox_phase11_github_issue_evidence_fsv.rs,
 # tests/blackbox_phase12_scorecard_fsv.rs,
 # tests/blackbox_phase13_privacy_retention_fsv.rs,
-# tests/blackbox_phase14_release_gate_fsv.rs, and
+# tests/blackbox_phase14_release_gate_fsv.rs,
+# tests/blackbox_phase17_http_server_fsv.rs,
+# tests/blackbox_phase18_first_wedge_demo_fsv.rs,
+# tests/blackbox_phase19_fsv_protocol_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
 # docs/blackboxfix/22_phase3_state_and_invariants.md /
 # docs/blackboxfix/23_phase4_state_and_invariants.md /
@@ -343,7 +347,10 @@ context-graph blackbox inspect ledger --ledger "$ledger"
 # docs/blackboxfix/30_phase11_state_and_invariants.md /
 # docs/blackboxfix/31_phase12_state_and_invariants.md /
 # docs/blackboxfix/32_phase13_state_and_invariants.md /
-# docs/blackboxfix/33_phase14_state_and_invariants.md.
+# docs/blackboxfix/33_phase14_state_and_invariants.md /
+# docs/blackboxfix/36_phase17_state_and_invariants.md /
+# docs/blackboxfix/37_phase18_state_and_invariants.md /
+# docs/blackboxfix/38_phase19_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

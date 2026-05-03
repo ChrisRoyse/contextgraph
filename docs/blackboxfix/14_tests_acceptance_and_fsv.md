@@ -29,6 +29,7 @@ The mandatory operator-side protocol lives in
 | Risk assessment rows and decisions (Phase 16) | physical SQLite tenant evidence/runtime/access/package rows and a real decision-register JSON file read independently, then persisted as `risk_assessment`; dashboard risk API files read back from disk |
 | HTTP request audit rows (Phase 17) | real HTTP requests to `blackbox server serve`, physical SQLite business rows, and `http_request_audit` rows read independently after each request |
 | First-wedge demo package rows and files (Phase 18) | real Git/scanner/GitHub/GHA verifier evidence, physical SQLite `first_wedge_demo` rows, and demo package JSON/JSONL files read back from disk with manifest hashes |
+| Executable FSV certification rows and files (Phase 19) | physical SQLite state, SQLite `PRAGMA integrity_check`, FSV evidence JSON, declared artifact files, `full_state_verification` rows, and FSV package JSON/JSONL files read back from disk with manifest hashes |
 
 ## Test Levels
 
@@ -107,6 +108,11 @@ Phase 18 adds `tests/blackbox_phase18_first_wedge_demo_fsv.rs`, which builds
 the first-wedge demo from a real local Git repository, real scanner artifact
 files, live GitHub/GitHub Actions readbacks, physical SQLite evidence rows,
 and package files whose manifest hashes are read back from disk.
+Phase 19 adds `tests/blackbox_phase19_fsv_protocol_fsv.rs`, which certifies
+real FSV evidence against a real SQLite ledger and real artifact files,
+appends a `full_state_verification` row, verifies package manifest hashes,
+checks connector readback, and proves missing evidence, wrong post-state, bad
+artifact hash, and output-exists edges do not append certification rows.
 
 ## Acceptance Criteria
 

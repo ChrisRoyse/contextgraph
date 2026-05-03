@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 18,
-fresh ledgers initialize at schema version 12.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 19,
+fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-18, fresh ledgers initialize at schema version 12.
+19, fresh ledgers initialize at schema version 13.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-18, fresh ledgers initialize at schema version 12.
+19, fresh ledgers initialize at schema version 13.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -932,6 +932,53 @@ state for the happy path plus three edge cases.
 
 Phase 18 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 12` for
 `first_wedge_demo`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
+
+## Phase 19: Executable Full-State Verification Protocol — DONE (2026-05-03)
+
+Deliverables:
+
+- `blackbox fsv certify --ledger PATH --tenant TENANT --phase N --evidence
+  FILE --out DIR [--force] [--run-id RUN_ID] --agent AGENT`;
+- connector `blackbox_fsv_protocol_v1`;
+- ledger record kind `full_state_verification`;
+- package files `fsv-report.json`, `provenance.json`, `edge-cases.jsonl`,
+  and `manifest.json`;
+- strict evidence schema for trigger command, pre/post source state,
+  expected/actual deltas, independent read queries, three mandatory edge
+  categories, artifact hashes, and SQLite integrity check.
+
+Exit criteria (verified):
+
+- the command fails closed unless the evidence source-of-truth string matches
+  the physical `--ledger` path, the post-state matches a fresh SQLite read,
+  and expected/actual deltas match `post_state - pre_state`;
+- evidence must include `missing_target_state`, `wrong_target_state`, and
+  `permission_or_schema_failure` edge cases with typed non-zero errors and
+  before/after state;
+- declared artifacts are read from disk and checked by SHA-256 and byte count;
+- successful packages write every file, parse JSON/JSONL back, verify
+  manifest hashes/byte counts, append one `full_state_verification` row, and
+  read that row back from SQLite by sequence/id/hash;
+- missing evidence files, mismatched post-state, artifact hash mismatch, and
+  existing output directories create no `full_state_verification` row and no
+  final package files.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase19_fsv_protocol_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The test records real ledger rows through the
+CLI, captures real SQLite/file readbacks, exercises three fail-closed edge
+cases plus output-exists behavior, validates a successful FSV package, verifies
+package manifest hashes, reads the persisted `full_state_verification` payload
+from SQLite, and checks connector readback.
+
+Phase 19 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 13` for
+`full_state_verification`. The physical table shape is unchanged, but older
 schema-version ledgers are wiped on `blackbox init`; no migration shim is
 provided.
 

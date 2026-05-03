@@ -8,6 +8,18 @@ durable source of truth must be inspected directly.
 This protocol applies to **every phase** of the build plan in
 `13_mvp_implementation_phases.md`.
 
+Phase 19 ships an executable certification command for this protocol:
+
+```bash
+blackbox fsv certify --ledger PATH --tenant TENANT --phase N \
+  --evidence fsv-evidence.json --out fsv-package --agent AGENT
+```
+
+The command does not replace manual FSV. It makes the manual evidence
+first-class product state by validating the captured evidence against the
+physical ledger and artifact files, then appending a
+`full_state_verification` row only after direct readback succeeds.
+
 ## Why This Protocol Exists
 
 In computing, a trigger event causes a process X, which produces an outcome
@@ -48,6 +60,7 @@ writing a line of code:
 | 16 | Phase 15 + `risk_assessment` rows and real decision-register JSON files |
 | 17 | Phase 16 + real HTTP requests to `blackbox server serve` and `http_request_audit` rows read directly from SQLite |
 | 18 | Phase 17 + `first_wedge_demo` rows, real Git/scanner/GitHub/GHA verifier evidence, and demo package JSON/JSONL files with manifest hashes |
+| 19 | Phase 18 + `full_state_verification` rows, FSV evidence JSON, declared artifact file hashes, package JSON/JSONL files, manifest hashes, and SQLite `PRAGMA integrity_check` |
 
 If you cannot name the source of truth in one sentence, stop and design the
 data model first.
@@ -164,6 +177,15 @@ Phase 1 example (already runnable):
 | 4 | `inspect ledger` after privileged tamper | drop trigger; UPDATE | exit code | `2`, `error_code=BBX_HASH_CHAIN_BROKEN` |
 
 The complete set lives in `20_phase1_state_and_invariants.md`.
+
+Phase 19 executable example:
+
+| # | Action | Input you control | Source-of-truth read | Expected output |
+|---|---|---|---|---|
+| 1 | `blackbox fsv certify` | evidence JSON with known pre/post counts and artifact hashes | `SELECT payload_json FROM ledger_records WHERE record_kind='full_state_verification'` | one row, `status='passed'`, edge count `3`, SQLite integrity `ok` |
+| 2 | missing evidence file | nonexistent `--evidence` path | `SELECT COUNT(*) WHERE record_kind='full_state_verification'` | count unchanged, typed `BBX_IO_ERROR` |
+| 3 | wrong post-state | evidence post-state with wrong ledger tip | same count query | count unchanged, typed `FSV_POST_STATE_MISMATCH` |
+| 4 | bad artifact hash | evidence artifact SHA-256 that does not match disk | same count query | count unchanged, typed `FSV_ARTIFACT_HASH_MISMATCH` |
 
 ## Definition Of Done For A Phase
 

@@ -35,7 +35,7 @@ wiped on `blackbox init`; there is no migration shim. Phase 14 later bumps the
 live schema to `LEDGER_SCHEMA_VERSION = 8` for release-gate rows, Phase 15
 later bumped the live schema to `LEDGER_SCHEMA_VERSION = 9` for pilot-package
 rows, and Phase 17 later bumps the current live schema to
-`LEDGER_SCHEMA_VERSION = 12` for first-wedge demo rows.
+`LEDGER_SCHEMA_VERSION = 13` for executable FSV certification rows.
 
 ## Source Of Truth
 

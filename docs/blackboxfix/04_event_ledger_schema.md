@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 18 Physical Schema (shipped)
+## Phase 19 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 12 in Phase 18
+  schema_version              INTEGER NOT NULL,   -- 13 in Phase 19
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `12` | constant |
+| `schema_version` | `13` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-18 ship the following `record_kind` values. The remaining families
+Phases 1-19 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -126,6 +126,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 16 | `risk_assessment` | append-only risk/open-question readiness decision over ledger, runtime, package, incident, secret-scan, and required decision evidence |
 | 17 | `http_request_audit` | append-only authenticated HTTP request/response audit row for the Phase 17 single-writer server |
 | 18 | `first_wedge_demo` | append-only first-wedge buyer demo package row with required proof refs, demo manifest, and source-ledger readback |
+| 19 | `full_state_verification` | append-only certification row for executable FSV evidence, edge cases, artifact hashes, SQLite integrity, and package manifest readback |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -137,7 +138,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 12,
+  "schema_version": 13,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -238,7 +239,7 @@ Required proof categories:
   "source_ledger": {
     "path": "/tmp/bbx.sqlite",
     "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-    "ledger_schema_version": 12,
+    "ledger_schema_version": 13,
     "ledger_record_count_before_demo": 30,
     "ledger_tip_sha256_before_demo": "sha256:..."
   },
@@ -263,6 +264,73 @@ Required proof categories:
   },
   "source_refs": ["ledger record refs used to build the package"],
   "packaged_at": "2026-05-03T00:00:00Z"
+}
+```
+
+## FullStateVerification Payload (Phase 19, shipped)
+
+`blackbox fsv certify --ledger PATH --tenant TENANT --phase N --evidence FILE
+--out DIR` validates a captured FSV evidence JSON file against the physical
+SQLite ledger and physical artifact files. It fails closed unless:
+
+- the evidence `source_of_truth` matches the exact `--ledger` path;
+- evidence `post_state` matches a fresh SQLite read of `ledger_records` and
+  `blackbox_metadata`;
+- `expected_delta` equals `actual_delta`, and both equal `post_state -
+  pre_state`;
+- all three mandatory edge categories exist:
+  `missing_target_state`, `wrong_target_state`, and
+  `permission_or_schema_failure`;
+- every declared artifact hash and byte count matches the file on disk;
+- `PRAGMA integrity_check` returns `ok`;
+- generated package files are read back and manifest-hash checked before the
+  row is appended.
+
+```json
+{
+  "record_kind": "full_state_verification",
+  "full_state_verification_id": "full_state_verification_<uuid_simple>",
+  "full_state_verification_schema_version": 1,
+  "full_state_verification_rule_version": "full_state_verification_v1",
+  "phase": 19,
+  "tenant_id": "tenant_...",
+  "run_id": "run_... | null",
+  "status": "passed",
+  "source_ledger": {
+    "path": "/tmp/bbx.sqlite",
+    "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
+    "ledger_schema_version": 13,
+    "ledger_record_count_before_certification": 2,
+    "ledger_tip_sha256_before_certification": "sha256:..."
+  },
+  "evidence_file": {
+    "path": "/tmp/fsv-evidence.json",
+    "source_of_truth": "file:/tmp/fsv-evidence.json#sha256",
+    "sha256": "sha256:...",
+    "bytes": 1234
+  },
+  "fsv_protocol": {
+    "pre_state": {"ledger_record_count": 0, "record_kind_counts": {}},
+    "post_state": {"ledger_record_count": 2, "record_kind_counts": {"agent_run": 1, "tool_call": 1}},
+    "expected_delta": {"ledger_record_count": 2, "record_kind_counts": {"agent_run": 1, "tool_call": 1}},
+    "actual_delta": {"ledger_record_count": 2, "record_kind_counts": {"agent_run": 1, "tool_call": 1}},
+    "edge_case_count": 3,
+    "read_query_count": 2,
+    "artifact_count": 1,
+    "sqlite_integrity_check": ["ok"]
+  },
+  "package": {
+    "directory": "/tmp/fsv-package",
+    "manifest_sha256": "sha256:...",
+    "manifest": {
+      "format": "blackbox_full_state_verification_manifest_json_v1",
+      "files": [
+        {"path": "fsv-report.json", "sha256": "sha256:...", "bytes": 123},
+        {"path": "provenance.json", "sha256": "sha256:...", "bytes": 123},
+        {"path": "edge-cases.jsonl", "sha256": "sha256:...", "bytes": 123}
+      ]
+    }
+  }
 }
 ```
 
@@ -774,7 +842,7 @@ sequence, `risk_assessment_id`, `payload_sha256`, and `record_sha256`.
     "decisions_path": "/tmp/phase16-decisions.json"
   },
   "ledger_runtime": {
-    "ledger_schema_version": 12,
+    "ledger_schema_version": 13,
     "journal_mode": "wal",
     "synchronous": 2,
     "busy_timeout_ms": 5000

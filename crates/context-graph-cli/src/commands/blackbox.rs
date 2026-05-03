@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 12;
+const LEDGER_SCHEMA_VERSION: i64 = 13;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -47,6 +47,7 @@ const GITHUB_CONNECTOR_ID: &str = "github_v1";
 const GHA_CONNECTOR_ID: &str = "gha_v1";
 const GITLAB_CI_CONNECTOR_ID: &str = "gitlab_ci_v1";
 const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
+const K8S_CONNECTOR_ID: &str = "k8s_deployment_snapshot_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
@@ -57,6 +58,7 @@ const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
 const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
 const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
 const FIRST_WEDGE_DEMO_CONNECTOR_ID: &str = "blackbox_first_wedge_demo_v1";
+const FSV_PROTOCOL_CONNECTOR_ID: &str = "blackbox_fsv_protocol_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -73,6 +75,7 @@ const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
 const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
 const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
 const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
+const FULL_STATE_VERIFICATION_SCHEMA_VERSION: i64 = 1;
 const HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
 const HTTP_API_KEY_MIN_CHARS: usize = 32;
 const HTTP_DEFAULT_API_KEY_ENV: &str = "BLACKBOX_API_KEY";
@@ -84,6 +87,7 @@ const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
 const PILOT_PACKAGE_RULE_VERSION: &str = "pilot_package_v1";
 const RISK_ASSESSMENT_RULE_VERSION: &str = "risk_register_v1";
 const FIRST_WEDGE_DEMO_RULE_VERSION: &str = "first_wedge_demo_v1";
+const FSV_PROTOCOL_RULE_VERSION: &str = "full_state_verification_v1";
 const REQUIRED_RISK_DECISION_IDS: [&str; 5] = [
     "next_hosted_ci_connector",
     "paid_pilot_dashboard_minimum",
@@ -192,6 +196,11 @@ pub enum BlackboxCommands {
     Demo {
         #[command(subcommand)]
         action: DemoCommands,
+    },
+    /// Certify Full State Verification evidence as durable ledger state.
+    Fsv {
+        #[command(subcommand)]
+        action: FsvCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -808,6 +817,12 @@ pub enum DemoCommands {
     FirstWedge(DemoFirstWedgeArgs),
 }
 
+#[derive(Subcommand, Debug)]
+pub enum FsvCommands {
+    /// Validate a completed FSV evidence log and persist a certification row.
+    Certify(FsvCertifyArgs),
+}
+
 #[derive(Args, Debug)]
 pub struct ScoreRunArgs {
     /// SQLite ledger database path.
@@ -1045,6 +1060,45 @@ pub struct DemoFirstWedgeArgs {
     pub force: bool,
 
     /// Agent or operator identity building the demo package.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct FsvCertifyArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id that owns the FSV evidence.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// BlackBoxFix phase number being certified.
+    #[arg(long)]
+    pub phase: u16,
+
+    /// JSON FSV evidence file captured from real source-of-truth reads.
+    #[arg(long)]
+    pub evidence: PathBuf,
+
+    /// Output directory. The certifier writes fsv-report.json, provenance.json, edge-cases.jsonl, and manifest.json.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing FSV package directory after validation.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Optional run id this certification is tied to.
+    #[arg(long)]
+    pub run_id: Option<String>,
+
+    /// Agent or operator identity certifying the evidence.
     #[arg(long)]
     pub agent: String,
 
@@ -1529,6 +1583,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         },
         BlackboxCommands::Demo { action } => match action {
             DemoCommands::FirstWedge(args) => demo_first_wedge(args),
+        },
+        BlackboxCommands::Fsv { action } => match action {
+            FsvCommands::Certify(args) => fsv_certify(args),
         },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
@@ -2862,6 +2919,17 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": K8S_CONNECTOR_ID,
+                "source_kind": "kubernetes_deployment_snapshot",
+                "readback_specs": [
+                    "k8s_deployment_image_digest_v1",
+                    "k8s_replicas_match_v1",
+                    "k8s_rollout_completed_v1"
+                ],
+                "source_command": "kubectl get deployments.v1.apps --namespace <namespace> -o json",
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -2928,6 +2996,16 @@ fn connector_list() -> BbxResult<Value> {
                 "readback_specs": [
                     "blackbox_first_wedge_demo_v1",
                     "first_wedge_demo_manifest_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": FSV_PROTOCOL_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_full_state_verification",
+                "readback_specs": [
+                    "blackbox_full_state_verification_v1",
+                    "fsv_evidence_manifest_v1",
+                    "sqlite_integrity_check_v1"
                 ],
                 "fail_closed": true
             }
@@ -3078,6 +3156,25 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": SCANNER_CONNECTOR_ID,
                 "source_of_truth": scanner_source_of_truth(&args.source, "osv-report"),
+                "readback": readback,
+            }))
+        }
+        K8S_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    K8S_CONNECTOR_ID,
+                    k8s_source_of_truth(&args.source, "deployment-snapshot"),
+                    "--command",
+                    "k8s_deployment_snapshot_v1 connector test does not accept --command",
+                    "remove --command and pass a kubectl Deployment JSON snapshot path through --source",
+                ));
+            }
+            let readback = k8s_snapshot_connector_readback(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": K8S_CONNECTOR_ID,
+                "source_of_truth": k8s_source_of_truth(&args.source, "deployment-snapshot"),
                 "readback": readback,
             }))
         }
@@ -3294,6 +3391,33 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                     "ledger_record_count": inspection.record_count,
                     "ledger_tip_sha256": inspection.ledger_tip_sha256,
                     "first_wedge_demo_records_total": inspection.records.iter().filter(|record| record.record_kind == "first_wedge_demo").count(),
+                },
+            }))
+        }
+        FSV_PROTOCOL_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    FSV_PROTOCOL_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_fsv_protocol_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            let sqlite_integrity = sqlite_integrity_check(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": FSV_PROTOCOL_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "sqlite_integrity_check": sqlite_integrity,
+                    "full_state_verification_records_total": inspection.records.iter().filter(|record| record.record_kind == "full_state_verification").count(),
                 },
             }))
         }
@@ -4080,6 +4204,18 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             ],
             "fail_closed": true
         },
+        "phase19_full_state_verification": {
+            "command": "blackbox fsv certify --ledger PATH --tenant TENANT --phase N --evidence evidence.json --out DIR",
+            "connector": FSV_PROTOCOL_CONNECTOR_ID,
+            "record_kind": "full_state_verification",
+            "package_files": ["fsv-report.json", "provenance.json", "edge-cases.jsonl", "manifest.json"],
+            "required_edge_categories": [
+                "missing_target_state",
+                "wrong_target_state",
+                "permission_or_schema_failure"
+            ],
+            "fail_closed": true
+        },
         "endpoints": [
             { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
             { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
@@ -4112,7 +4248,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" },
             { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" },
             { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" },
-            { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" }
+            { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" },
+            { "method": "POST", "path": "/v1/fsv/tenants/{tenant_id}/certifications", "ledger_record_kind": "full_state_verification" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -8138,6 +8275,1583 @@ fn first_wedge_schema_error(
         format!("ledger_records[{}].{}", record.sequence, field_path.into()),
         message,
         "inspect the persisted source row and rebuild the first-wedge demo after correcting ledger state",
+    )
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct FsvLedgerState {
+    ledger_record_count: i64,
+    ledger_tip_sha256: Option<String>,
+    record_kind_counts: BTreeMap<String, i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct FsvLedgerDelta {
+    ledger_record_count: i64,
+    record_kind_counts: BTreeMap<String, i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FsvArtifactReadback {
+    path: String,
+    source_of_truth: String,
+    sha256: String,
+    bytes: u64,
+}
+
+struct FsvValidatedEvidence {
+    pre_state: FsvLedgerState,
+    post_state: FsvLedgerState,
+    expected_delta: FsvLedgerDelta,
+    actual_delta: FsvLedgerDelta,
+    edge_cases: Vec<Value>,
+    read_queries: Vec<Value>,
+    artifacts: Vec<FsvArtifactReadback>,
+    evidence_sha256: String,
+    evidence_bytes: u64,
+    sqlite_integrity_check: Vec<String>,
+}
+
+fn fsv_certify(args: FsvCertifyArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    if args.phase == 0 {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_PHASE_INVALID",
+            "--phase",
+            "--phase must be a positive BlackBoxFix phase number",
+            "pass the phase number whose physical source-of-truth evidence was captured",
+        ));
+    }
+    validate_fsv_output_dir(&args.out, args.force)?;
+
+    let evidence_bytes = fs::read(&args.evidence).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::Io,
+            "BBX_IO_ERROR",
+            format!("read FSV evidence JSON: {err}"),
+            Some(file_source_of_truth(&args.evidence)),
+            FSV_PROTOCOL_CONNECTOR_ID,
+            Some("--evidence".to_string()),
+            "check the evidence path, parent directory, and filesystem permissions",
+        )
+    })?;
+    let evidence_sha256 = sha256_hex(&evidence_bytes);
+    let evidence_json: Value = serde_json::from_slice(&evidence_bytes).map_err(|err| {
+        BlackboxError::evidence_integrity_for_connector(
+            "FSV_EVIDENCE_JSON_INVALID",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(&args.evidence),
+            "--evidence",
+            format!("FSV evidence file is not valid JSON: {err}"),
+            "capture the FSV evidence as one valid JSON object and retry certification",
+        )
+    })?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.ok_or_else(|| {
+        BlackboxError::schema_field(
+            &args.ledger,
+            "blackbox_metadata.ledger_id",
+            "ledger_id metadata is missing",
+        )
+    })?;
+    let sqlite_integrity = sqlite_integrity_check(&conn, &args.ledger)?;
+    let current_state = fsv_state_from_inspection(&inspection);
+
+    let validated = validate_fsv_evidence(
+        &args,
+        &evidence_json,
+        &current_state,
+        sqlite_integrity,
+        evidence_sha256,
+        evidence_bytes.len() as u64,
+    )?;
+
+    let certification_id = prefixed_id("full_state_verification");
+    let report = build_fsv_report(
+        &args,
+        &certification_id,
+        &ledger_id,
+        &inspection,
+        &evidence_json,
+        &validated,
+    )?;
+    let provenance = build_fsv_provenance(&args, &certification_id, &report, &validated)?;
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_fsv_temp_dir(&temp_dir)?;
+    let manifest = match write_fsv_directory(&args, &report, &provenance, &validated, &temp_dir) {
+        Ok(manifest) => manifest,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(err);
+        }
+    };
+    promote_fsv_dir(&temp_dir, &args.out, args.force)?;
+    let manifest_path = args.out.join("manifest.json");
+    let final_manifest = read_json_file(&manifest_path, "FSV manifest readback")?;
+    verify_fsv_manifest_files(&args.out, &final_manifest)?;
+    if final_manifest != manifest {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_MANIFEST_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(&manifest_path),
+            "manifest.json",
+            "final FSV manifest readback does not match the manifest written",
+            "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    let manifest_sha256 = sha256_file(&manifest_path)?;
+    let payload = json!({
+        "full_state_verification_schema_version": FULL_STATE_VERIFICATION_SCHEMA_VERSION,
+        "full_state_verification_rule_version": FSV_PROTOCOL_RULE_VERSION,
+        "full_state_verification_id": certification_id,
+        "phase": args.phase,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "status": "passed",
+        "certified_at": Utc::now().to_rfc3339(),
+        "source_ledger": report["source_ledger"].clone(),
+        "evidence_file": {
+            "path": args.evidence,
+            "source_of_truth": file_source_of_truth(&args.evidence),
+            "sha256": validated.evidence_sha256,
+            "bytes": validated.evidence_bytes,
+        },
+        "fsv_protocol": {
+            "source_of_truth": source_of_truth(&args.ledger),
+            "pre_state": report["pre_state"].clone(),
+            "post_state": report["post_state"].clone(),
+            "expected_delta": report["expected_delta"].clone(),
+            "actual_delta": report["actual_delta"].clone(),
+            "edge_case_count": validated.edge_cases.len(),
+            "read_query_count": validated.read_queries.len(),
+            "artifact_count": validated.artifacts.len(),
+            "sqlite_integrity_check": report["sqlite_integrity_check"].clone(),
+        },
+        "package": {
+            "directory": args.out,
+            "manifest_sha256": manifest_sha256,
+            "manifest": final_manifest,
+        },
+    });
+
+    let record_count_before = inspection.record_count;
+    let append = match append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: certification_id.clone(),
+            record_kind: "full_state_verification".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: args.run_id.clone(),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload,
+            redaction: RedactionReport::empty(),
+        },
+    ) {
+        Ok(append) => append,
+        Err(err) => {
+            let _ = fs::remove_dir_all(&args.out);
+            return Err(err);
+        }
+    };
+    let append_readback = readback_fsv_append(
+        &conn,
+        &args.ledger,
+        &certification_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox fsv certify",
+        "connector": FSV_PROTOCOL_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "full_state_verification_id": certification_id,
+        "phase": args.phase,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "manifest": manifest_path,
+        "manifest_sha256": manifest_sha256,
+        "readback": append_readback,
+    }))
+}
+
+fn validate_fsv_evidence(
+    args: &FsvCertifyArgs,
+    evidence: &Value,
+    current_state: &FsvLedgerState,
+    sqlite_integrity_check: Vec<String>,
+    evidence_sha256: String,
+    evidence_bytes: u64,
+) -> BbxResult<FsvValidatedEvidence> {
+    let format = fsv_required_str(&args.ledger, evidence, "$.format")?;
+    if format != "blackbox_full_state_verification_evidence_json_v1" {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            "$.format",
+            format!("unsupported FSV evidence format {format:?}"),
+            "write evidence with format blackbox_full_state_verification_evidence_json_v1",
+        ));
+    }
+    let phase = fsv_required_i64(&args.ledger, evidence, "$.phase")?;
+    if phase != i64::from(args.phase) {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_PHASE_MISMATCH",
+            "$.phase",
+            format!(
+                "evidence phase {phase} does not match --phase {}",
+                args.phase
+            ),
+            "certify the evidence with the same phase number recorded in the evidence file",
+        ));
+    }
+    let tenant = fsv_required_str(&args.ledger, evidence, "$.tenant_id")?;
+    if tenant != args.tenant {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_TENANT_MISMATCH",
+            "$.tenant_id",
+            format!(
+                "evidence tenant {tenant:?} does not match --tenant {:?}",
+                args.tenant
+            ),
+            "certify the evidence under the tenant that owns the captured source-of-truth state",
+        ));
+    }
+    if let Some(arg_run_id) = &args.run_id {
+        let evidence_run_id = fsv_required_str(&args.ledger, evidence, "$.run_id")?;
+        if evidence_run_id != arg_run_id {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_RUN_MISMATCH",
+                "$.run_id",
+                format!(
+                    "evidence run_id {evidence_run_id:?} does not match --run-id {arg_run_id:?}"
+                ),
+                "certify the evidence against the run id it was captured for",
+            ));
+        }
+    }
+    let evidence_source = fsv_required_str(&args.ledger, evidence, "$.source_of_truth")?;
+    let ledger_source = source_of_truth(&args.ledger);
+    if evidence_source != ledger_source {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_SOURCE_OF_TRUTH_MISMATCH",
+            "$.source_of_truth",
+            format!("evidence source_of_truth {evidence_source:?} does not match physical ledger {ledger_source:?}"),
+            "capture evidence from the same physical ledger path passed to --ledger",
+        ));
+    }
+
+    validate_fsv_trigger(args, evidence)?;
+    let pre_state = fsv_parse_state(&args.ledger, evidence, "$.pre_state")?;
+    let post_state = fsv_parse_state(&args.ledger, evidence, "$.post_state")?;
+    let expected_delta = fsv_parse_delta(&args.ledger, evidence, "$.expected_delta")?;
+    let actual_delta = fsv_parse_delta(&args.ledger, evidence, "$.actual_delta")?;
+    validate_fsv_delta_math(
+        &args.ledger,
+        "$",
+        &pre_state,
+        &post_state,
+        &expected_delta,
+        &actual_delta,
+    )?;
+    if &post_state != current_state {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_POST_STATE_MISMATCH",
+            "$.post_state",
+            format!(
+                "evidence post_state does not match direct SQLite readback; expected {:?}, actual {:?}",
+                post_state, current_state
+            ),
+            "rerun the physical source-of-truth reads and update the FSV evidence before certifying",
+        ));
+    }
+
+    let read_queries = validate_fsv_read_queries(args, evidence)?;
+    let edge_cases = validate_fsv_edge_cases(args, evidence)?;
+    let artifacts = validate_fsv_artifacts(args, evidence)?;
+
+    Ok(FsvValidatedEvidence {
+        pre_state,
+        post_state,
+        expected_delta,
+        actual_delta,
+        edge_cases,
+        read_queries,
+        artifacts,
+        evidence_sha256,
+        evidence_bytes,
+        sqlite_integrity_check,
+    })
+}
+
+fn validate_fsv_trigger(args: &FsvCertifyArgs, evidence: &Value) -> BbxResult<()> {
+    let trigger = fsv_required_object(&args.ledger, evidence, "$.trigger")?;
+    let command =
+        fsv_required_str_from_object(&args.ledger, trigger, "command", "$.trigger.command")?;
+    if command.trim().is_empty() {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            "$.trigger.command",
+            "trigger command must not be empty",
+            "record the exact command that caused the verified state transition",
+        ));
+    }
+    let exit_code =
+        fsv_required_i64_from_object(&args.ledger, trigger, "exit_code", "$.trigger.exit_code")?;
+    if exit_code != 0 {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_TRIGGER_FAILED",
+            "$.trigger.exit_code",
+            format!("happy-path trigger exit_code must be 0, found {exit_code}"),
+            "fix the failing trigger action and recapture FSV evidence from the physical source of truth",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_fsv_read_queries(args: &FsvCertifyArgs, evidence: &Value) -> BbxResult<Vec<Value>> {
+    let queries = fsv_required_array(&args.ledger, evidence, "$.read_queries")?;
+    if queries.is_empty() {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_READ_QUERIES_MISSING",
+            "$.read_queries",
+            "FSV evidence must include at least one independent source-of-truth read query",
+            "include the sqlite3/git/curl/file read command and its observed output",
+        ));
+    }
+    for (index, query) in queries.iter().enumerate() {
+        let field = format!("$.read_queries[{index}]");
+        let object = query.as_object().ok_or_else(|| {
+            fsv_invalid(
+                &args.ledger,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field.clone(),
+                "read query entry must be an object",
+                "record each source-of-truth read as an object with source_of_truth, query, and output",
+            )
+        })?;
+        for key in ["source_of_truth", "query", "output"] {
+            let value = object.get(key).and_then(Value::as_str).ok_or_else(|| {
+                fsv_invalid(
+                    &args.ledger,
+                    "FSV_EVIDENCE_SCHEMA_INVALID",
+                    format!("{field}.{key}"),
+                    format!("read query {key} must be a non-empty string"),
+                    "record exact source-of-truth read commands and observed output",
+                )
+            })?;
+            if value.trim().is_empty() {
+                return Err(fsv_invalid(
+                    &args.ledger,
+                    "FSV_EVIDENCE_SCHEMA_INVALID",
+                    format!("{field}.{key}"),
+                    format!("read query {key} must not be empty"),
+                    "record exact source-of-truth read commands and observed output",
+                ));
+            }
+        }
+    }
+    Ok(queries.clone())
+}
+
+fn validate_fsv_edge_cases(args: &FsvCertifyArgs, evidence: &Value) -> BbxResult<Vec<Value>> {
+    let edges = fsv_required_array(&args.ledger, evidence, "$.edge_cases")?;
+    if edges.len() < 3 {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_EDGE_CASES_INCOMPLETE",
+            "$.edge_cases",
+            format!("FSV evidence must include at least 3 edge cases; found {}", edges.len()),
+            "capture missing-target, wrong-target, and permission-or-schema failure evidence before certifying",
+        ));
+    }
+    let mut categories = BTreeSet::new();
+    for (index, edge) in edges.iter().enumerate() {
+        let field = format!("$.edge_cases[{index}]");
+        let object = edge.as_object().ok_or_else(|| {
+            fsv_invalid(
+                &args.ledger,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field.clone(),
+                "edge case entry must be an object",
+                "record each edge case with category, command, error_code, exit_code, and before/after state",
+            )
+        })?;
+        let category = fsv_required_str_from_map(
+            &args.ledger,
+            object,
+            "category",
+            format!("{field}.category"),
+        )?;
+        if !matches!(
+            category,
+            "missing_target_state" | "wrong_target_state" | "permission_or_schema_failure"
+        ) {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_EDGE_CATEGORY_INVALID",
+                format!("{field}.category"),
+                format!("unsupported edge category {category:?}"),
+                "use missing_target_state, wrong_target_state, or permission_or_schema_failure",
+            ));
+        }
+        categories.insert(category.to_string());
+        let error_code = fsv_required_str_from_map(
+            &args.ledger,
+            object,
+            "error_code",
+            format!("{field}.error_code"),
+        )?;
+        if error_code.trim().is_empty() {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_EDGE_ERROR_CODE_MISSING",
+                format!("{field}.error_code"),
+                "edge case error_code must not be empty",
+                "capture the typed error code emitted by the failing action",
+            ));
+        }
+        let command =
+            fsv_required_str_from_map(&args.ledger, object, "command", format!("{field}.command"))?;
+        if command.trim().is_empty() {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_EDGE_COMMAND_MISSING",
+                format!("{field}.command"),
+                "edge case command must not be empty",
+                "capture the exact command that triggered the edge case",
+            ));
+        }
+        let exit_code = fsv_required_i64_from_map(
+            &args.ledger,
+            object,
+            "exit_code",
+            format!("{field}.exit_code"),
+        )?;
+        if exit_code == 0 {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_EDGE_EXIT_CODE_INVALID",
+                format!("{field}.exit_code"),
+                "edge case exit_code must be non-zero",
+                "edge cases must prove fail-closed behavior with a failing command",
+            ));
+        }
+        let pre_state = fsv_parse_state_from_value(&args.ledger, edge, "$.pre_state")?;
+        let post_state = fsv_parse_state_from_value(&args.ledger, edge, "$.post_state")?;
+        let expected_delta = fsv_parse_delta_from_value(&args.ledger, edge, "$.expected_delta")?;
+        let actual_delta = fsv_parse_delta_from_value(&args.ledger, edge, "$.actual_delta")?;
+        validate_fsv_delta_math(
+            &args.ledger,
+            &field,
+            &pre_state,
+            &post_state,
+            &expected_delta,
+            &actual_delta,
+        )?;
+    }
+    for required in [
+        "missing_target_state",
+        "wrong_target_state",
+        "permission_or_schema_failure",
+    ] {
+        if !categories.contains(required) {
+            return Err(fsv_invalid(
+                &args.ledger,
+                "FSV_EDGE_CASES_INCOMPLETE",
+                "$.edge_cases",
+                format!("FSV evidence is missing required edge category {required}"),
+                "capture all three mandatory edge categories before certifying",
+            ));
+        }
+    }
+    Ok(edges.clone())
+}
+
+fn validate_fsv_artifacts(
+    args: &FsvCertifyArgs,
+    evidence: &Value,
+) -> BbxResult<Vec<FsvArtifactReadback>> {
+    let artifacts = fsv_required_array(&args.ledger, evidence, "$.artifacts")?;
+    if artifacts.is_empty() {
+        return Err(fsv_invalid(
+            &args.ledger,
+            "FSV_ARTIFACTS_MISSING",
+            "$.artifacts",
+            "FSV evidence must include at least one physical artifact with hash and byte count",
+            "include the evidence log or output file path and its SHA-256/byte readback",
+        ));
+    }
+    let base = args.evidence.parent().unwrap_or_else(|| Path::new("."));
+    let mut readbacks = Vec::with_capacity(artifacts.len());
+    for (index, artifact) in artifacts.iter().enumerate() {
+        let field = format!("$.artifacts[{index}]");
+        let object = artifact.as_object().ok_or_else(|| {
+            fsv_invalid(
+                &args.ledger,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field.clone(),
+                "artifact entry must be an object",
+                "record each artifact with path, sha256, and bytes",
+            )
+        })?;
+        let raw_path =
+            fsv_required_str_from_map(&args.ledger, object, "path", format!("{field}.path"))?;
+        let artifact_path = if Path::new(raw_path).is_absolute() {
+            PathBuf::from(raw_path)
+        } else {
+            base.join(raw_path)
+        };
+        let expected_sha =
+            fsv_required_str_from_map(&args.ledger, object, "sha256", format!("{field}.sha256"))?;
+        fsv_validate_sha256(&args.ledger, &format!("{field}.sha256"), expected_sha)?;
+        let expected_bytes =
+            fsv_required_u64_from_map(&args.ledger, object, "bytes", format!("{field}.bytes"))?;
+        let actual_sha = sha256_file(&artifact_path)?;
+        let actual_bytes = fs::metadata(&artifact_path)
+            .map_err(|err| BlackboxError::io(&artifact_path, "stat FSV artifact", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FSV_ARTIFACT_HASH_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&artifact_path),
+                format!("{field}.sha256"),
+                format!(
+                    "artifact readback mismatch for {}; expected {expected_sha}/{expected_bytes} bytes, found {actual_sha}/{actual_bytes} bytes",
+                    artifact_path.display()
+                ),
+                "recapture the artifact hash from disk and retry certification",
+            ));
+        }
+        readbacks.push(FsvArtifactReadback {
+            path: artifact_path.display().to_string(),
+            source_of_truth: file_source_of_truth(&artifact_path),
+            sha256: actual_sha,
+            bytes: actual_bytes,
+        });
+    }
+    Ok(readbacks)
+}
+
+fn build_fsv_report(
+    args: &FsvCertifyArgs,
+    certification_id: &str,
+    ledger_id: &str,
+    inspection: &LedgerInspection,
+    evidence: &Value,
+    validated: &FsvValidatedEvidence,
+) -> BbxResult<Value> {
+    Ok(json!({
+        "format": "blackbox_full_state_verification_report_json_v1",
+        "full_state_verification_schema_version": FULL_STATE_VERIFICATION_SCHEMA_VERSION,
+        "full_state_verification_rule_version": FSV_PROTOCOL_RULE_VERSION,
+        "full_state_verification_id": certification_id,
+        "phase": args.phase,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "status": "passed",
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_certification": inspection.record_count,
+            "ledger_tip_sha256_before_certification": inspection.ledger_tip_sha256,
+            "record_kind_counts_before_certification": fsv_state_from_inspection(inspection).record_kind_counts,
+        },
+        "evidence": {
+            "path": args.evidence,
+            "source_of_truth": file_source_of_truth(&args.evidence),
+            "sha256": validated.evidence_sha256,
+            "bytes": validated.evidence_bytes,
+            "trigger": evidence.get("trigger").cloned().unwrap_or(Value::Null),
+            "artifact_readbacks": serde_json::to_value(&validated.artifacts).map_err(|err| {
+                BlackboxError::new(
+                    ErrorKind::InvalidInput,
+                    "BBX_JSON_SERIALIZE_FAILED",
+                    format!("serialize FSV artifact readbacks: {err}"),
+                    Some(source_of_truth(&args.ledger)),
+                    Some("$.artifacts".to_string()),
+                    "report this as a bug; validated FSV artifact readbacks should serialize",
+                )
+            })?,
+        },
+        "pre_state": serde_json::to_value(&validated.pre_state).map_err(|err| {
+            BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_JSON_SERIALIZE_FAILED",
+                format!("serialize FSV pre_state: {err}"),
+                Some(source_of_truth(&args.ledger)),
+                Some("$.pre_state".to_string()),
+                "report this as a bug; validated FSV state should serialize",
+            )
+        })?,
+        "post_state": serde_json::to_value(&validated.post_state).map_err(|err| {
+            BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_JSON_SERIALIZE_FAILED",
+                format!("serialize FSV post_state: {err}"),
+                Some(source_of_truth(&args.ledger)),
+                Some("$.post_state".to_string()),
+                "report this as a bug; validated FSV state should serialize",
+            )
+        })?,
+        "expected_delta": serde_json::to_value(&validated.expected_delta).map_err(|err| {
+            BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_JSON_SERIALIZE_FAILED",
+                format!("serialize FSV expected_delta: {err}"),
+                Some(source_of_truth(&args.ledger)),
+                Some("$.expected_delta".to_string()),
+                "report this as a bug; validated FSV delta should serialize",
+            )
+        })?,
+        "actual_delta": serde_json::to_value(&validated.actual_delta).map_err(|err| {
+            BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_JSON_SERIALIZE_FAILED",
+                format!("serialize FSV actual_delta: {err}"),
+                Some(source_of_truth(&args.ledger)),
+                Some("$.actual_delta".to_string()),
+                "report this as a bug; validated FSV delta should serialize",
+            )
+        })?,
+        "read_queries": validated.read_queries,
+        "edge_case_count": validated.edge_cases.len(),
+        "artifact_count": validated.artifacts.len(),
+        "sqlite_integrity_check": validated.sqlite_integrity_check,
+        "basis": {
+            "provenance_model": "W3C PROV entity/activity/agent shape",
+            "attestation_shape": "in-toto/SLSA subject-materials-by-digest shape",
+            "database_integrity": "SQLite PRAGMA integrity_check"
+        },
+    }))
+}
+
+fn build_fsv_provenance(
+    args: &FsvCertifyArgs,
+    certification_id: &str,
+    report: &Value,
+    validated: &FsvValidatedEvidence,
+) -> BbxResult<Value> {
+    let subject = json!([{
+        "name": format!("blackbox-phase-{}-full-state-verification", args.phase),
+        "digest": {
+            "sha256": validated.evidence_sha256.trim_start_matches("sha256:")
+        }
+    }]);
+    Ok(json!({
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": subject,
+        "predicateType": "https://contextgraph.local/blackbox/full-state-verification/v1",
+        "predicate": {
+            "buildType": "blackbox_fsv_certify_v1",
+            "certification_id": certification_id,
+            "builder": {
+                "id": FSV_PROTOCOL_CONNECTOR_ID
+            },
+            "invocation": {
+                "command": "blackbox fsv certify",
+                "parameters": {
+                    "tenant": args.tenant,
+                    "phase": args.phase,
+                    "run_id": args.run_id,
+                    "evidence": args.evidence,
+                    "out": args.out,
+                }
+            },
+            "materials": validated.artifacts.iter().map(|artifact| {
+                json!({
+                    "uri": artifact.source_of_truth,
+                    "digest": {
+                        "sha256": artifact.sha256.trim_start_matches("sha256:")
+                    },
+                    "bytes": artifact.bytes
+                })
+            }).collect::<Vec<_>>(),
+            "metadata": {
+                "buildStartedOn": report["generated_at"].clone(),
+                "completeness": {
+                    "parameters": true,
+                    "environment": false,
+                    "materials": true
+                },
+                "reproducible": false
+            }
+        }
+    }))
+}
+
+fn write_fsv_directory(
+    args: &FsvCertifyArgs,
+    report: &Value,
+    provenance: &Value,
+    validated: &FsvValidatedEvidence,
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir_all(temp_dir)
+        .map_err(|err| BlackboxError::io(temp_dir, "create FSV temp directory", err))?;
+    write_fsv_json_file(&temp_dir.join("fsv-report.json"), report)?;
+    write_fsv_json_file(&temp_dir.join("provenance.json"), provenance)?;
+    write_fsv_jsonl(&temp_dir.join("edge-cases.jsonl"), &validated.edge_cases)?;
+    let files = vec![
+        fsv_file_entry(temp_dir, Path::new("fsv-report.json"))?,
+        fsv_file_entry(temp_dir, Path::new("provenance.json"))?,
+        fsv_file_entry(temp_dir, Path::new("edge-cases.jsonl"))?,
+    ];
+    let manifest = json!({
+        "format": "blackbox_full_state_verification_manifest_json_v1",
+        "full_state_verification_schema_version": FULL_STATE_VERIFICATION_SCHEMA_VERSION,
+        "full_state_verification_rule_version": FSV_PROTOCOL_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "phase": args.phase,
+        "run_id": args.run_id,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": report["source_ledger"].clone(),
+        "evidence": report["evidence"].clone(),
+        "files": files,
+    });
+    write_fsv_json_file(&temp_dir.join("manifest.json"), &manifest)?;
+    Ok(manifest)
+}
+
+fn write_fsv_json_file(path: &Path, value: &Value) -> BbxResult<()> {
+    write_json_file_new(path, value, "FSV package JSON")?;
+    let readback = read_json_file(path, "FSV package JSON readback")?;
+    if &readback != value {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_JSON_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "FSV package JSON readback does not match the value written",
+            "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn write_fsv_jsonl(path: &Path, rows: &[Value]) -> BbxResult<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, "write FSV JSONL", err))?;
+    let mut writer = BufWriter::new(file);
+    for row in rows {
+        writer
+            .write_all(canonical_json_string(row)?.as_bytes())
+            .map_err(|err| BlackboxError::io(path, "write FSV JSONL row", err))?;
+        writer
+            .write_all(b"\n")
+            .map_err(|err| BlackboxError::io(path, "write FSV JSONL newline", err))?;
+    }
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "flush FSV JSONL", err))?;
+    let readback = read_fsv_jsonl(path)?;
+    if readback != rows {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_JSONL_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "FSV edge-cases JSONL readback does not match the rows written",
+            "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    Ok(())
+}
+
+fn read_fsv_jsonl(path: &Path) -> BbxResult<Vec<Value>> {
+    let file = File::open(path).map_err(|err| BlackboxError::io(path, "open FSV JSONL", err))?;
+    let reader = BufReader::new(file);
+    let mut rows = Vec::new();
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|err| BlackboxError::io(path, "read FSV JSONL line", err))?;
+        if line.trim().is_empty() {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FSV_JSONL_SCHEMA_INVALID",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("edge-cases.jsonl[{index}]"),
+                "FSV JSONL contains an empty line",
+                "regenerate the FSV package without blank JSONL rows",
+            ));
+        }
+        let row: Value = serde_json::from_str(&line).map_err(|err| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FSV_JSONL_SCHEMA_INVALID",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(path),
+                format!("edge-cases.jsonl[{index}]"),
+                format!("FSV JSONL row is not valid JSON: {err}"),
+                "regenerate the FSV package from validated evidence",
+            )
+        })?;
+        rows.push(row);
+    }
+    Ok(rows)
+}
+
+fn fsv_file_entry(base: &Path, relative: &Path) -> BbxResult<Value> {
+    let path = base.join(relative);
+    let bytes = fs::metadata(&path)
+        .map_err(|err| BlackboxError::io(&path, "stat FSV package file", err))?
+        .len();
+    Ok(json!({
+        "path": relative.to_string_lossy(),
+        "sha256": sha256_file(&path)?,
+        "bytes": bytes,
+    }))
+}
+
+fn validate_fsv_output_dir(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "BBX_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            FSV_PROTOCOL_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty FSV package output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                FSV_PROTOCOL_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "FSV package output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FSV_PROTOCOL_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this FSV package directory is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_EXPORT_PATH_INVALID",
+                format!(
+                    "FSV package parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                FSV_PROTOCOL_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun FSV certification",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_fsv_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path)
+            .map_err(|err| BlackboxError::io(path, "remove stale FSV temp directory", err))?;
+    }
+    Ok(())
+}
+
+fn promote_fsv_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "BBX_OUTPUT_EXISTS",
+                format!(
+                    "FSV package output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                FSV_PROTOCOL_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this FSV package directory is intentional",
+            ));
+        }
+        fs::remove_dir_all(out)
+            .map_err(|err| BlackboxError::io(out, "replace existing FSV package directory", err))?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote FSV temp directory", err))?;
+    Ok(())
+}
+
+fn verify_fsv_manifest_files(out: &Path, manifest: &Value) -> BbxResult<()> {
+    if manifest["format"] != "blackbox_full_state_verification_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_MANIFEST_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.format",
+            "final FSV manifest readback did not preserve the expected format",
+            "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+    let files = manifest.get("files").and_then(Value::as_array).ok_or_else(|| {
+        BlackboxError::evidence_integrity_for_connector(
+            "FSV_MANIFEST_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.files",
+            "FSV manifest is missing files array",
+            "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+        )
+    })?;
+    for file in files {
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FSV_MANIFEST_READBACK_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "FSV manifest file entry is missing path",
+                "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FSV_MANIFEST_PATH_INVALID",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("FSV manifest file path is not safe relative path: {rel}"),
+                "regenerate the FSV manifest from trusted code",
+            ));
+        }
+        let path = out.join(rel_path);
+        let expected_sha = file.get("sha256").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FSV_MANIFEST_READBACK_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].sha256",
+                "FSV manifest file entry is missing sha256",
+                "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let expected_bytes = file.get("bytes").and_then(Value::as_u64).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FSV_MANIFEST_READBACK_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].bytes",
+                "FSV manifest file entry is missing byte count",
+                "delete the corrupt FSV package and rerun after inspecting filesystem/storage consistency",
+            )
+        })?;
+        let actual_sha = sha256_file(&path)?;
+        let actual_bytes = fs::metadata(&path)
+            .map_err(|err| BlackboxError::io(&path, "stat final FSV package file", err))?
+            .len();
+        if actual_sha != expected_sha || actual_bytes != expected_bytes {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "FSV_FILE_HASH_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                file_source_of_truth(&path),
+                rel,
+                "FSV package file hash or byte count changed after promotion",
+                "treat the FSV package directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn readback_fsv_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    certification_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_CERTIFICATION_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "FSV append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun FSV certification after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "FSV_CERTIFICATION_READBACK_MISMATCH",
+                FSV_PROTOCOL_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("FSV certification sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun FSV certification after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "full_state_verification"
+        || row
+            .payload
+            .get("full_state_verification_id")
+            .and_then(Value::as_str)
+            != Some(certification_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_CERTIFICATION_READBACK_MISMATCH",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.full_state_verification",
+            "full_state_verification row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun FSV certification after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_full_state_verification": inspection_after.record_count,
+        "ledger_tip_sha256_after_full_state_verification": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "full_state_verification_id": row.payload["full_state_verification_id"].clone(),
+        "phase": row.payload["phase"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+    }))
+}
+
+fn sqlite_integrity_check(conn: &Connection, ledger_path: &Path) -> BbxResult<Vec<String>> {
+    let mut stmt = conn
+        .prepare("PRAGMA integrity_check")
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "prepare SQLite integrity_check", err))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "run SQLite integrity_check", err))?;
+    let values = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| BlackboxError::sqlite(ledger_path, "decode SQLite integrity_check", err))?;
+    if values.as_slice() != ["ok"] {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "FSV_SQLITE_INTEGRITY_CHECK_FAILED",
+            FSV_PROTOCOL_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "PRAGMA integrity_check",
+            format!("SQLite integrity_check did not return ok: {values:?}"),
+            "treat the ledger as corrupt; restore from trusted backup or initialize a new ledger",
+        ));
+    }
+    Ok(values)
+}
+
+fn fsv_state_from_inspection(inspection: &LedgerInspection) -> FsvLedgerState {
+    FsvLedgerState {
+        ledger_record_count: inspection.record_count,
+        ledger_tip_sha256: Some(inspection.ledger_tip_sha256.clone()),
+        record_kind_counts: ledger_record_kind_counts(&inspection.records),
+    }
+}
+
+fn fsv_parse_state(
+    ledger_path: &Path,
+    root: &Value,
+    field_path: &str,
+) -> BbxResult<FsvLedgerState> {
+    fsv_parse_state_from_value(ledger_path, root, field_path)
+}
+
+fn fsv_parse_state_from_value(
+    ledger_path: &Path,
+    root: &Value,
+    field_path: &str,
+) -> BbxResult<FsvLedgerState> {
+    let state = fsv_value_at(ledger_path, root, field_path)?;
+    let object = state.as_object().ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            field_path,
+            "FSV state must be a JSON object",
+            "record ledger_record_count and record_kind_counts for every state block",
+        )
+    })?;
+    let ledger_record_count = fsv_required_i64_from_map(
+        ledger_path,
+        object,
+        "ledger_record_count",
+        format!("{field_path}.ledger_record_count"),
+    )?;
+    if ledger_record_count < 0 {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_STATE_INVALID",
+            format!("{field_path}.ledger_record_count"),
+            "ledger_record_count must not be negative",
+            "recapture the state from a real SQLite count query",
+        ));
+    }
+    let counts_value = object.get("record_kind_counts").ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            format!("{field_path}.record_kind_counts"),
+            "record_kind_counts is required",
+            "record the direct SQLite GROUP BY record_kind counts",
+        )
+    })?;
+    let counts_object = counts_value.as_object().ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            format!("{field_path}.record_kind_counts"),
+            "record_kind_counts must be an object",
+            "record counts as an object keyed by record_kind",
+        )
+    })?;
+    let mut counts = BTreeMap::new();
+    for (kind, value) in counts_object {
+        let count = value.as_i64().ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                format!("{field_path}.record_kind_counts.{kind}"),
+                "record kind count must be an integer",
+                "record SQLite counts as integer values",
+            )
+        })?;
+        if count < 0 {
+            return Err(fsv_invalid(
+                ledger_path,
+                "FSV_STATE_INVALID",
+                format!("{field_path}.record_kind_counts.{kind}"),
+                "record kind count must not be negative",
+                "recapture the state from a real SQLite count query",
+            ));
+        }
+        counts.insert(kind.clone(), count);
+    }
+    let ledger_tip_sha256 = object
+        .get("ledger_tip_sha256")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    if let Some(tip) = &ledger_tip_sha256 {
+        fsv_validate_sha256(ledger_path, &format!("{field_path}.ledger_tip_sha256"), tip)?;
+    }
+    Ok(FsvLedgerState {
+        ledger_record_count,
+        ledger_tip_sha256,
+        record_kind_counts: counts,
+    })
+}
+
+fn fsv_parse_delta(
+    ledger_path: &Path,
+    root: &Value,
+    field_path: &str,
+) -> BbxResult<FsvLedgerDelta> {
+    fsv_parse_delta_from_value(ledger_path, root, field_path)
+}
+
+fn fsv_parse_delta_from_value(
+    ledger_path: &Path,
+    root: &Value,
+    field_path: &str,
+) -> BbxResult<FsvLedgerDelta> {
+    let delta = fsv_value_at(ledger_path, root, field_path)?;
+    let object = delta.as_object().ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            field_path,
+            "FSV delta must be a JSON object",
+            "record ledger_record_count and record_kind_counts for every delta block",
+        )
+    })?;
+    let ledger_record_count = fsv_required_i64_from_map(
+        ledger_path,
+        object,
+        "ledger_record_count",
+        format!("{field_path}.ledger_record_count"),
+    )?;
+    if ledger_record_count < 0 {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_DELTA_INVALID",
+            format!("{field_path}.ledger_record_count"),
+            "ledger delta must not be negative for the append-only ledger",
+            "recapture the expected and actual deltas from append-only source-of-truth state",
+        ));
+    }
+    let counts_value = object.get("record_kind_counts").ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            format!("{field_path}.record_kind_counts"),
+            "delta record_kind_counts is required",
+            "record per-kind expected and actual deltas",
+        )
+    })?;
+    let counts_object = counts_value.as_object().ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            format!("{field_path}.record_kind_counts"),
+            "delta record_kind_counts must be an object",
+            "record per-kind deltas as an object keyed by record_kind",
+        )
+    })?;
+    let mut counts = BTreeMap::new();
+    for (kind, value) in counts_object {
+        let count = value.as_i64().ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                format!("{field_path}.record_kind_counts.{kind}"),
+                "delta record kind count must be an integer",
+                "record SQLite count deltas as integer values",
+            )
+        })?;
+        if count < 0 {
+            return Err(fsv_invalid(
+                ledger_path,
+                "FSV_DELTA_INVALID",
+                format!("{field_path}.record_kind_counts.{kind}"),
+                "record kind delta must not be negative for the append-only ledger",
+                "recapture the expected and actual deltas from append-only source-of-truth state",
+            ));
+        }
+        counts.insert(kind.clone(), count);
+    }
+    Ok(FsvLedgerDelta {
+        ledger_record_count,
+        record_kind_counts: counts,
+    })
+}
+
+fn validate_fsv_delta_math(
+    ledger_path: &Path,
+    field_path: &str,
+    pre_state: &FsvLedgerState,
+    post_state: &FsvLedgerState,
+    expected_delta: &FsvLedgerDelta,
+    actual_delta: &FsvLedgerDelta,
+) -> BbxResult<()> {
+    if expected_delta != actual_delta {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_DELTA_MISMATCH",
+            format!("{field_path}.actual_delta"),
+            format!(
+                "expected_delta does not match actual_delta; expected {:?}, actual {:?}",
+                expected_delta, actual_delta
+            ),
+            "fix the source-of-truth evidence so expected and actual deltas match field by field",
+        ));
+    }
+    let observed_record_delta = post_state.ledger_record_count - pre_state.ledger_record_count;
+    if observed_record_delta != actual_delta.ledger_record_count {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_STATE_DELTA_MISMATCH",
+            format!("{field_path}.actual_delta.ledger_record_count"),
+            format!(
+                "post-pre ledger_record_count is {observed_record_delta}, but actual_delta records {}",
+                actual_delta.ledger_record_count
+            ),
+            "recapture pre-state and post-state from the physical ledger and recompute deltas",
+        ));
+    }
+    let mut kinds = BTreeSet::new();
+    for key in pre_state.record_kind_counts.keys() {
+        kinds.insert(key.clone());
+    }
+    for key in post_state.record_kind_counts.keys() {
+        kinds.insert(key.clone());
+    }
+    for key in actual_delta.record_kind_counts.keys() {
+        kinds.insert(key.clone());
+    }
+    for kind in kinds {
+        let pre = pre_state
+            .record_kind_counts
+            .get(&kind)
+            .copied()
+            .unwrap_or(0);
+        let post = post_state
+            .record_kind_counts
+            .get(&kind)
+            .copied()
+            .unwrap_or(0);
+        let actual = actual_delta
+            .record_kind_counts
+            .get(&kind)
+            .copied()
+            .unwrap_or(0);
+        if post - pre != actual {
+            return Err(fsv_invalid(
+                ledger_path,
+                "FSV_STATE_DELTA_MISMATCH",
+                format!("{field_path}.actual_delta.record_kind_counts.{kind}"),
+                format!(
+                    "post-pre delta for record_kind {kind:?} is {}, but actual_delta records {actual}",
+                    post - pre
+                ),
+                "recapture per-kind SQLite counts and recompute deltas",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn fsv_value_at<'a>(ledger_path: &Path, root: &'a Value, field_path: &str) -> BbxResult<&'a Value> {
+    root.pointer(json_pointer_from_field_path(field_path).as_str())
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{field_path} is required"),
+                "capture all required FSV evidence fields before certification",
+            )
+        })
+}
+
+fn fsv_required_object<'a>(
+    ledger_path: &Path,
+    root: &'a Value,
+    field_path: &str,
+) -> BbxResult<&'a Map<String, Value>> {
+    fsv_value_at(ledger_path, root, field_path)?
+        .as_object()
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{field_path} must be a JSON object"),
+                "capture FSV evidence with the documented JSON object shape",
+            )
+        })
+}
+
+fn fsv_required_array<'a>(
+    ledger_path: &Path,
+    root: &'a Value,
+    field_path: &str,
+) -> BbxResult<&'a Vec<Value>> {
+    fsv_value_at(ledger_path, root, field_path)?
+        .as_array()
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{field_path} must be a JSON array"),
+                "capture FSV evidence with the documented JSON array shape",
+            )
+        })
+}
+
+fn fsv_required_str<'a>(
+    ledger_path: &Path,
+    root: &'a Value,
+    field_path: &str,
+) -> BbxResult<&'a str> {
+    let value = fsv_value_at(ledger_path, root, field_path)?
+        .as_str()
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{field_path} must be a non-empty string"),
+                "capture FSV evidence with all required string fields populated",
+            )
+        })?;
+    Ok(value)
+}
+
+fn fsv_required_i64(ledger_path: &Path, root: &Value, field_path: &str) -> BbxResult<i64> {
+    fsv_value_at(ledger_path, root, field_path)?
+        .as_i64()
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{field_path} must be an integer"),
+                "capture FSV evidence with integer counts and exit codes",
+            )
+        })
+}
+
+fn fsv_required_str_from_object<'a>(
+    ledger_path: &Path,
+    object: &'a Map<String, Value>,
+    key: &str,
+    field_path: &str,
+) -> BbxResult<&'a str> {
+    fsv_required_str_from_map(ledger_path, object, key, field_path)
+}
+
+fn fsv_required_str_from_map<'a>(
+    ledger_path: &Path,
+    object: &'a Map<String, Value>,
+    key: &str,
+    field_path: impl Into<String>,
+) -> BbxResult<&'a str> {
+    let field_path = field_path.into();
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            fsv_invalid(
+                ledger_path,
+                "FSV_EVIDENCE_SCHEMA_INVALID",
+                field_path,
+                format!("{key} must be a non-empty string"),
+                "capture FSV evidence with all required string fields populated",
+            )
+        })
+}
+
+fn fsv_required_i64_from_object(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    key: &str,
+    field_path: &str,
+) -> BbxResult<i64> {
+    fsv_required_i64_from_map(ledger_path, object, key, field_path)
+}
+
+fn fsv_required_i64_from_map(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    key: &str,
+    field_path: impl Into<String>,
+) -> BbxResult<i64> {
+    let field_path = field_path.into();
+    object.get(key).and_then(Value::as_i64).ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            field_path,
+            format!("{key} must be an integer"),
+            "capture FSV evidence with integer counts and exit codes",
+        )
+    })
+}
+
+fn fsv_required_u64_from_map(
+    ledger_path: &Path,
+    object: &Map<String, Value>,
+    key: &str,
+    field_path: impl Into<String>,
+) -> BbxResult<u64> {
+    let field_path = field_path.into();
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        fsv_invalid(
+            ledger_path,
+            "FSV_EVIDENCE_SCHEMA_INVALID",
+            field_path,
+            format!("{key} must be a non-negative integer"),
+            "capture FSV evidence with physical byte counts from stat or metadata",
+        )
+    })
+}
+
+fn fsv_validate_sha256(ledger_path: &Path, field_path: &str, value: &str) -> BbxResult<()> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_DIGEST_INVALID",
+            field_path,
+            "digest must start with sha256:",
+            "recompute the SHA-256 digest and store it with the sha256: prefix",
+        ));
+    };
+    if hex.len() != 64 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(fsv_invalid(
+            ledger_path,
+            "FSV_DIGEST_INVALID",
+            field_path,
+            "digest must contain exactly 64 hexadecimal SHA-256 characters",
+            "recompute the SHA-256 digest from the physical artifact",
+        ));
+    }
+    Ok(())
+}
+
+fn fsv_invalid(
+    ledger_path: &Path,
+    code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        FSV_PROTOCOL_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
     )
 }
 
@@ -18176,6 +19890,12 @@ impl VerifySpec {
                 Path::new(optional_str(&self.source, "sbom").unwrap_or("")),
                 "cyclonedx-sbom",
             ),
+            "k8s_deployment_image_digest_v1"
+            | "k8s_replicas_match_v1"
+            | "k8s_rollout_completed_v1" => k8s_source_of_truth(
+                Path::new(optional_str(&self.source, "snapshot").unwrap_or("")),
+                "deployment-snapshot",
+            ),
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -18217,6 +19937,9 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
         "scanner_vulnerability_absent_v1" => verify_scanner_vulnerability_absent(spec),
         "scanner_lockfile_pinned_to_version_v1" => verify_scanner_lockfile_pinned_to_version(spec),
         "scanner_sbom_artifact_present_v1" => verify_scanner_sbom_artifact_present(spec),
+        "k8s_deployment_image_digest_v1" => verify_k8s_deployment_image_digest(spec),
+        "k8s_replicas_match_v1" => verify_k8s_replicas_match(spec),
+        "k8s_rollout_completed_v1" => verify_k8s_rollout_completed(spec),
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
