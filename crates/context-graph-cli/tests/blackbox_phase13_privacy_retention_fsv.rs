@@ -165,7 +165,7 @@ fn new_case() -> Phase13Case {
         "--ledger",
         ledger.to_str().expect("ledger path UTF-8"),
     ]));
-    assert_eq!(init["schema_version"], 7);
+    assert_eq!(init["schema_version"], 8);
 
     let config_path = root.join("enterprise-config.json");
     let directory_path = root.join("enterprise-directory.json");

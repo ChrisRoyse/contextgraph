@@ -16,6 +16,21 @@ Design implication:
 - map BlackBoxFix controls to Govern, Map, Measure, and Manage;
 - produce evidence for design, deployment, use, and evaluation of AI systems;
 - support risk management instead of only debugging.
+- Phase 14 release gates turn measured scorecard/evidence/privacy state into
+  an explicit governed promote/block decision instead of leaving readiness as
+  an informal dashboard interpretation.
+
+### NIST Secure Software Development Framework
+
+Reference: <https://csrc.nist.gov/pubs/sp/800/218/final>
+
+Design implication:
+
+- software release readiness should be based on explicit verification,
+  artifact/evidence review, and traceable practices;
+- Phase 14 applies that release-control pattern to agent runs by requiring
+  physical ledger evidence, scorecards, RBAC, and incident/privacy checks
+  before a run can be approved for promotion.
 
 ### OWASP Top 10 For LLM And GenAI Applications
 
@@ -67,7 +82,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 13);
+  after Phase 14);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 
@@ -160,6 +175,9 @@ Design implication:
 - Phase 4 replay/export follows the same direction: capture the invocation,
   source inputs, resolved source-of-truth readbacks, byproduct evidence, and
   verifier decision so later consumers can inspect how a claim was produced.
+- Phase 14 release gates preserve the evaluated input record references and
+  source ledger tip so a downstream promotion can be tied back to the exact
+  evidence state that was approved or blocked.
 
 ### Model Context Protocol
 

@@ -21,6 +21,9 @@ GitHub issue bodies and comments. Phase 12 adds `blackbox_scoring_v1`, which
 reads the physical SQLite ledger and verifies scorecard append readback. Phase
 13 adds `blackbox_privacy_v1`, which reads the physical ledger plus enterprise
 tenant retention/RBAC rows and verifies privacy decision append readback.
+Phase 14 adds `blackbox_release_gate_v1`, which reads scorecard, verifier,
+evidence, incident, enterprise RBAC, and privacy rows and verifies release
+gate append readback.
 
 ## Connector Contract
 
@@ -203,6 +206,29 @@ secret-like request fields fail with typed errors. Authorized attempts first
 persist an `enterprise_access_decision`; successful privacy decisions are then
 read back from SQLite by sequence, decision id, run id, and hashes. Raw data
 subjects are not persisted; only `sha256:<hex>` digests are stored.
+
+### Phase 14: Release Gate Decisions — shipped
+
+Source of truth:
+
+- SQLite `ledger_records` rows for the parent run, `scorecard`,
+  `verifier_result`, `evidence_packet`, `incident_packet`,
+  `enterprise_access_decision`, `retention_decision`, and `evidence_deletion`.
+
+Shipped connector:
+
+- `blackbox_release_gate_v1`
+
+Readback spec:
+
+- `blackbox_release_gate_decision_v1`.
+
+The connector is fail-closed: malformed thresholds and missing runs write no
+gate row, unauthorized principals write only the denied RBAC decision, and
+blocked gates write a durable `release_gate` row before exiting non-zero.
+Gate decisions inspect physical score/risk/trust, evidence-ref integrity,
+failed or blocked verifiers, incident packets, and privacy retention/erasure
+state. An approved gate is possible only when every configured check passes.
 
 ### Phase 10: Package And Vulnerability Scanner Artifacts — shipped
 

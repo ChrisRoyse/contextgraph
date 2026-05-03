@@ -157,6 +157,13 @@ The platform fails closed if:
 - privacy decision cannot be authorized, classified, appended, or read back —
   Phase 13 emits `PRIVACY_*` errors and writes no privacy decision row.
 
+Phase 14 consumes these privacy rows in release gates when
+`blackbox gate evaluate --require-privacy` is used. The gate reads the
+physical `retention_decision` and `evidence_deletion` rows from
+`ledger_records`; a retained privacy decision is required, while approved
+erasure decisions block promotion because the run's evidence is no longer
+eligible for release use.
+
 Fail-closed means **no fallback**. Do not silently switch to in-memory
 storage or write to a degraded path; emit the typed error and exit non-zero.
 

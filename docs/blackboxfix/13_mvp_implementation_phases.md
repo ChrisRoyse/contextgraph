@@ -75,8 +75,8 @@ Deliverables (all shipped):
   `cmd_exit_zero_v1`;
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
-    **wiped** the ledger — no migration shim; current shipped schema is v5 after
-  Phase 11).
+  **wiped** the ledger — no migration shim; current shipped schema is v8 after
+  Phase 14).
 
 Exit criteria (verified):
 
@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 13,
-fresh ledgers initialize at schema version 7.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 14,
+fresh ledgers initialize at schema version 8.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -471,7 +471,7 @@ Focused hardening manual FSV completed against
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-13, fresh ledgers initialize at schema version 7.
+14, fresh ledgers initialize at schema version 8.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -541,7 +541,7 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
 keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-13, fresh ledgers initialize at schema version 7.
+14, fresh ledgers initialize at schema version 8.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -670,6 +670,77 @@ Phase 13 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 7` for
 `retention_decision` and `evidence_deletion`. The physical table shape is
 unchanged, but older schema-version ledgers are wiped on `blackbox init`; no
 migration shim is provided.
+
+## Phase 14: Release Gate Decisions — DONE (2026-05-03)
+
+Deliverables (all shipped):
+
+- release-gate connector `blackbox_release_gate_v1`;
+- `blackbox gate evaluate --ledger PATH --tenant TENANT --run-id RUN_ID`;
+- RBAC-gated authorization through `enterprise_access_decision` with the
+  `release.approve` permission;
+- append-only `release_gate` ledger rows with
+  `release_gate_schema_version = 1`;
+- deterministic gate checks over latest scorecard trust/risk, policy
+  compliance, evidence packet references, verifier status, incident packets,
+  and optional privacy retention state;
+- connector/API/dashboard surface additions for release gate rows;
+- Phase 14 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase14_release_gate_fsv.rs`).
+
+Exit criteria (met):
+
+- gate evaluation reads the physical SQLite ledger after hash-chain
+  verification and never trusts CLI return values alone;
+- the parent run must exist for the tenant before authorization;
+- every authorization attempt appends and reads back an
+  `enterprise_access_decision`; unauthorized attempts fail closed with
+  `RELEASE_GATE_RBAC_DENIED` and create no `release_gate` row;
+- approved and blocked release decisions are durable `release_gate` rows;
+- invalid thresholds or environment/trust inputs fail before any new row is
+  written;
+- successful gate appends are immediately read back from `ledger_records` and
+  matched by sequence, `release_gate_id`, `run_id`, `payload_sha256`, and
+  `record_sha256`.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase14_release_gate_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The suite executes the real binary against a real
+SQLite ledger, real enterprise config and SCIM directory rows, and a real
+local Git repository. It covers an approved gate, missing scorecard,
+too-low max-risk threshold, unauthorized principal, incident-bearing run,
+invalid max-risk input, and connector readback.
+Final physical SQLite counts were `enterprise_tenant_config=1`,
+`enterprise_directory_snapshot=1`, `agent_run=4`, `policy_decision=3`,
+`tool_call=3`, `expected_delta=3`, `readback_snapshot=3`,
+`verifier_result=3`, `evidence_packet=3`, `incident_packet=1`,
+`scorecard=3`, `retention_decision=3`, `enterprise_access_decision=8`, and
+`release_gate=4`.
+
+Manual FSV completed against `/tmp/bbx-phase14-manual-fsv.JAJAYu/fsv.log`
+with log SHA-256
+`e22a6ee2996cce9757db8401bd298a01a1ea693f5b12204493f6c7379d39ca0e`.
+The final direct SQLite readback proved four release gate rows:
+
+```text
+14|run_adfe20f23678429f896474ae0bf26ed4|approved|RELEASE_GATE_APPROVED|
+17|run_65e6869f7a7141ddbfbd5baeea97c0cc|blocked|RELEASE_GATE_BLOCKED|RELEASE_GATE_SCORECARD_REQUIRED
+19|run_adfe20f23678429f896474ae0bf26ed4|blocked|RELEASE_GATE_BLOCKED|RELEASE_GATE_RISK_TOO_HIGH
+33|run_de485dc4e6bf4933905108932e6e32b1|blocked|RELEASE_GATE_BLOCKED|RELEASE_GATE_TRUST_TOO_LOW
+```
+
+Final manual integrity was `schema_version=8`, `record_count=33`, and
+`status=passed`; `blackbox_metadata.record_count` and
+`blackbox_metadata.ledger_tip_sha256` matched the physical ledger rows.
+
+Phase 14 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 8` for
+`release_gate`. The physical table shape is unchanged, but older
+schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
 
 ## Phase Sequencing Rules
 

@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 13 Physical Schema (shipped)
+## Phase 14 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 7 in Phase 13
+  schema_version              INTEGER NOT NULL,   -- 8 in Phase 14
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `7` | constant |
+| `schema_version` | `8` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-13 ship the following `record_kind` values. The remaining families
+Phases 1-14 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -121,6 +121,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 12 | `scorecard` | deterministic run-level trust/risk/training-value score snapshot |
 | 13 | `retention_decision` | authorized retention review decision for one run and data-subject digest |
 | 13 | `evidence_deletion` | append-only erasure/deletion-request approval or denial audit row |
+| 14 | `release_gate` | append-only release/promotion approval or block decision over score, evidence, incident, RBAC, and privacy state |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -132,7 +133,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -505,6 +506,77 @@ the run has no incident packet. Legal hold and incident evidence produce a
 durable `denied` decision with `LEGAL_HOLD_ACTIVE` or
 `INCIDENT_EVIDENCE_LOCKED`. The ledger remains append-only in every case; the
 decision records whether matching external artifact stores may proceed.
+
+## Release Gate Decisions (Phase 14, shipped)
+
+`blackbox gate evaluate` appends one `release_gate` row for authorized gate
+evaluations. The command first verifies the physical ledger, requires the
+parent `agent_run`, persists and reads back an `enterprise_access_decision`
+for `release.approve`, reads the latest `scorecard`, verifies
+`evidence_packet.record_refs[]`, checks incident/verifier/privacy state, and
+then reads back the appended gate row by sequence, `release_gate_id`,
+`run_id`, `payload_sha256`, and `record_sha256`.
+
+```json
+{
+  "record_kind": "release_gate",
+  "release_gate_schema_version": 1,
+  "release_gate_rule_version": "release_gate_v1",
+  "release_gate_id": "release_gate_<uuid_simple>",
+  "tenant_id": "tenant_...",
+  "run_id": "run_...",
+  "request": {
+    "principal_id": "user_release",
+    "permission": "release.approve",
+    "resource": "tenant:tenant_...:release/production/run_...",
+    "environment": "production",
+    "min_trust_level": "verified_with_policy",
+    "max_risk": 0.7,
+    "require_policy": true,
+    "require_privacy": true
+  },
+  "run_evidence_summary": {
+    "record_kind_counts": {
+      "agent_run": 1,
+      "scorecard": 1,
+      "retention_decision": 1
+    },
+    "verifier_status_counts": {
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0
+    },
+    "incident_packets_total": 0,
+    "input_record_refs_sha256": "sha256:..."
+  },
+  "checks": [
+    {
+      "check_id": "risk_at_or_below_threshold",
+      "passed": true,
+      "observed": 0.58,
+      "expected": 0.7,
+      "reason_code": null
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "allowed": true,
+    "reason_code": "RELEASE_GATE_APPROVED",
+    "failed_checks": [],
+    "promotes_to_environment": "production"
+  },
+  "source_refs": {
+    "authorization_decision": { "record_kind": "enterprise_access_decision" },
+    "input_records": []
+  }
+}
+```
+
+Blocked evaluations persist `decision.status=blocked` and a non-empty
+`failed_checks[]`, then the CLI exits non-zero with `RELEASE_GATE_BLOCKED`.
+Invalid gate input, a missing parent run, or unauthorized principal does not
+create a `release_gate` row. Unauthorized attempts still persist the
+`enterprise_access_decision` denial.
 
 ## EvidencePacket (Phase 4, shipped)
 

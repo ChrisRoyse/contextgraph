@@ -1,94 +1,334 @@
 # Configuration
 
 **Source files covered:**
-- `crates/context-graph-core/src/config/mod.rs`
-- `crates/context-graph-core/src/config/sub_configs.rs`
-- `crates/context-graph-embeddings/src/config/*.rs`
-- `crates/context-graph-mcp/src/main.rs`
+- `crates/context-graph-core/src/config/mod.rs` — root `Config`, `Phase`, load order, validation
+- `crates/context-graph-core/src/config/sub_configs.rs` — `ServerConfig`, `McpConfig`, `LoggingConfig`, `StorageConfig`, `EmbeddingConfig`, `IndexConfig`, `UtlConfig`, `CudaConfig`, `WatcherConfig`
+- `crates/context-graph-core/src/config/embedder_config.rs` — `EmbedderConfig`, `EmbedderWeightsConfig`, name-based deserialization
+- `crates/context-graph-embeddings/src/config/mod.rs` — `EmbeddingConfig` (root for embedding subsystem)
+- `crates/context-graph-embeddings/src/config/models.rs` — `ModelPathConfig`
+- `crates/context-graph-embeddings/src/config/batch.rs` — `BatchConfig`, `PaddingStrategy`
+- `crates/context-graph-embeddings/src/config/cache.rs` — `CacheConfig`, `EvictionPolicy`
+- `crates/context-graph-embeddings/src/config/gpu.rs` — `GpuConfig`
+- `crates/context-graph-embeddings/src/warm/config.rs` — `WarmConfig`, `QuantizationMode`
+- `crates/context-graph-mcp/src/main.rs` — CLI args, env overrides, transport selection, daemon mode
+- `config/default.toml`, `config/development.toml`, `config/production.toml`, `config/test.toml`
 
-## 1. Load Order
-`Config::load` reads optional `config/default.toml`, optional `config/{CONTEXT_GRAPH_ENV}.toml` (default env `development`), then `CONTEXT_GRAPH` env vars with `__` separator. `Config::from_file(path)` reads one TOML file directly and validates.
+Cross-references:
+- [04_database_schema.md](04_database_schema.md) — physical CF/key/value layout governed by these configs
+- [09_storage_layer.md](09_storage_layer.md) — runtime storage repository + HNSW lifecycle that consumes `storage.*`/`index.*`
+- [05_embedding_subsystem.md](05_embedding_subsystem.md) — what `embedding.*` and `EmbeddingConfig.gpu/batch/cache/models` actually drive
+- [11_cuda_acceleration.md](11_cuda_acceleration.md) — what `cuda.*` and `WarmConfig.*` drive
 
-## 2. Core Config Keys
+## 1. Load Order and Resolution
+
+`Config::load` (`crates/context-graph-core/src/config/mod.rs:66`) loads in the following order; later sources OVERRIDE earlier ones:
+
+| Step | Source | Required? | Notes |
+| --- | --- | --- | --- |
+| 1 | `config/default.toml` | optional (`required(false)`) | Base settings |
+| 2 | `config/{CONTEXT_GRAPH_ENV}.toml` | optional (`required(false)`) | `CONTEXT_GRAPH_ENV` defaults to `"development"` |
+| 3 | Environment variables prefixed `CONTEXT_GRAPH` with `__` separator | optional | E.g. `CONTEXT_GRAPH__MCP__TRANSPORT=tcp` maps to `mcp.transport` |
+| 4 | `apply_overrides` (CLI flags + dedicated env vars) in `crates/context-graph-mcp/src/main.rs:363` | runtime | Applied AFTER load, BEFORE `Config::validate` is implicitly re-verified by handlers |
+| 5 | `Config::validate()` (`mod.rs:126`) | enforced | Calls `mcp.validate()`, parent-dir check on `storage.path`, then `validate_phase_safety()` |
+
+`Config::from_file(path)` (`mod.rs:96`) reads exactly one TOML file with no env layering, then validates.
+
+The checked-in TOML files in `config/` (default.toml, development.toml, production.toml, test.toml) reference legacy section names (`[general]`, `[server.transport]`, `[storage].sqlite_path`, `[embeddings]`, `[graph]`) that DO NOT match the current Rust `Config` shape — fields not present in the Rust types are silently ignored by serde. The Rust types are authoritative.
+
+## 2. Top-Level `Config` Keys
+
+Defined in `crates/context-graph-core/src/config/mod.rs:42`. All sections except `phase` and `watcher` are required at the type level (their `Default` impls supply values).
+
+| Key | Type | Default (`Config::default_config`) | Validation |
+| --- | --- | --- | --- |
+| `phase` | `Phase` enum | `Phase::Ghost` | Serde `lowercase`: `ghost`/`development`/`production` |
+| `server` | `ServerConfig` | see §3 | n/a |
+| `mcp` | `McpConfig` | see §4 | `McpConfig::validate()` (mod.rs:129) |
+| `logging` | `LoggingConfig` | see §5 | none |
+| `storage` | `StorageConfig` | see §6 | parent of `path` must exist when `backend != "memory"` (mod.rs:131) |
+| `embedding` | `EmbeddingConfig` (core) | see §7 | phase safety (mod.rs:159) |
+| `index` | `IndexConfig` | see §8 | phase safety |
+| `utl` | `UtlConfig` | see §9 | phase safety |
+| `cuda` | `CudaConfig` | see §10 | none in `Config::validate` |
+| `watcher` | `WatcherConfig` | disabled | none in `Config::validate` |
+
+## 3. `[server]` — `ServerConfig`
+
+Source: `sub_configs.rs:9-22`.
+
 | Key | Type | Default | Validation |
 | --- | --- | --- | --- |
-| phase | Phase | ghost | ghost/development/production |
-| server.name | String | context-graph | — |
-| server.version | String | 0.1.0-ghost | — |
-| mcp.transport | String | stdio | config accepts stdio/tcp/sse; main rejects sse |
-| mcp.max_payload_size | usize | 10485760 | >0 |
-| mcp.request_timeout | u64 | 30 | >0 |
-| mcp.bind_address | String | 127.0.0.1 | non-empty for tcp/sse |
-| mcp.tcp_port | u16 | 3100 | 1..=65535 for tcp |
-| mcp.sse_port | u16 | 3101 | 1..=65535 for sse |
-| mcp.max_connections | usize | 32 | >0 for tcp/sse |
-| logging.level | String | info | — |
-| logging.format | String | pretty | — |
-| logging.include_location | bool | false | — |
-| storage.backend | String | memory | production rejects `memory` |
-| storage.path | String | ./data/storage | parent must exist if backend != memory |
-| storage.compression | bool | true | — |
-| embedding.model | String | stub | production rejects `stub` |
-| index.backend | String | memory | production rejects `memory` |
-| index.hnsw_m | usize | 16 | — |
-| index.hnsw_ef_construction | usize | 200 | — |
-| utl.mode | String | stub | production rejects `stub` |
-| utl.consolidation_threshold | f32 | 0.7 | — |
-| cuda.device_id | u32 | 0 | — |
-| cuda.memory_limit_gb | f32 | 4.0 | — |
-| watcher.enabled | bool | false | — |
-| watcher.watch_paths | Vec<String> | ["./docs"] | — |
-| watcher.session_id | String | docs-watcher | — |
+| `name` | `String` | `"context-graph"` | none |
+| `version` | `String` | `"0.1.0-ghost"` | none |
 
-## 3. Environment Variables
+## 4. `[mcp]` — `McpConfig`
+
+Source: `sub_configs.rs:24-214`. All fields have serde defaults, all are validated by `McpConfig::validate()`.
+
+| Key | Type | Default | Valid range | Validation behavior |
+| --- | --- | --- | --- | --- |
+| `transport` | `String` | `"stdio"` | `"stdio"` \| `"tcp"` \| `"sse"` (case-insensitive) | Other values: `ConfigError`. Note: `crates/context-graph-mcp/src/main.rs:316` REJECTS `sse` even if config validation accepted it. |
+| `max_payload_size` | `usize` | `10_485_760` (10MB) | `> 0` | Zero ⇒ `ConfigError` |
+| `request_timeout` | `u64` | `30` (seconds) | `> 0` | Zero ⇒ `ConfigError` |
+| `bind_address` | `String` | `"127.0.0.1"` | non-empty when `transport ∈ {tcp, sse}` | Empty ⇒ `ConfigError` (only when applicable) |
+| `tcp_port` | `u16` | `3100` | `1..=65535` when `transport == "tcp"` | `0` ⇒ `ConfigError` (only when tcp) |
+| `sse_port` | `u16` | `3101` | `1..=65535` when `transport == "sse"` | `0` ⇒ `ConfigError` (only when sse). NOTE: SSE rejected at runtime regardless. |
+| `max_connections` | `usize` | `32` | `> 0` when transport is tcp/sse | Zero ⇒ `ConfigError` |
+
+## 5. `[logging]` — `LoggingConfig`
+
+Source: `sub_configs.rs:217-232`. None are validated.
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `level` | `String` | `"info"` |
+| `format` | `String` | `"pretty"` |
+| `include_location` | `bool` | `false` |
+
+## 6. `[storage]` — `StorageConfig`
+
+Source: `sub_configs.rs:235-250`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `backend` | `String` | `"memory"` | `Phase::Production` REJECTS `"memory"` (mod.rs:170-176). `apply_overrides` flips `"memory"` → `"rocksdb"` when `CONTEXT_GRAPH_STORAGE_PATH` is set (main.rs:418-426). |
+| `path` | `String` | `"./data/storage"` | When `backend != "memory"`, parent of path must exist (mod.rs:131-141). Single-writer flock at `<path>/mcp.pid`. |
+| `compression` | `bool` | `true` | none |
+
+## 7. `[embedding]` — Core `EmbeddingConfig` (root config)
+
+Source: `sub_configs.rs:253-264`. This is a separate, smaller type than the `EmbeddingConfig` in `context-graph-embeddings`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `model` | `String` | `"stub"` | `Phase::Production` REJECTS `"stub"`. `apply_overrides` flips `"stub"` → `"e5-large-v2"` when `CONTEXT_GRAPH_MODELS_PATH` is set. |
+
+## 8. `[index]` — `IndexConfig`
+
+Source: `sub_configs.rs:267-282`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `backend` | `String` | `"memory"` | `Phase::Production` REJECTS `"memory"`. `apply_overrides` flips `"memory"` → `"hnsw"` when `storage.backend == "rocksdb"` (main.rs:443-446). |
+| `hnsw_m` | `usize` | `16` | none enforced at config layer |
+| `hnsw_ef_construction` | `usize` | `200` | none enforced at config layer |
+
+Per-embedder HNSW M/ef defaults are NOT taken from `index.hnsw_m`/`index.hnsw_ef_construction`. They are hard-coded per `EmbedderIndex` in `crates/context-graph-storage/src/teleological/indexes/hnsw_config/functions.rs` and only consumed by the storage layer, not by `Config`.
+
+## 9. `[utl]` — `UtlConfig`
+
+Source: `sub_configs.rs:285-298`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `mode` | `String` | `"stub"` | `Phase::Production` REJECTS `"stub"`. `apply_overrides` flips `"stub"` → `"production"` when `storage.backend == "rocksdb"` (main.rs:449-451). |
+| `consolidation_threshold` | `f32` | `0.7` | none enforced at config layer |
+
+## 10. `[cuda]` — `CudaConfig`
+
+Source: `sub_configs.rs:301-314`. Used by the core crate only; the embeddings crate has its own `GpuConfig` (§13) and `WarmConfig` (§16).
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `device_id` | `u32` | `0` |
+| `memory_limit_gb` | `f32` | `4.0` |
+
+## 11. `[watcher]` — `WatcherConfig`
+
+Source: `sub_configs.rs:331-363`. All fields default; entire section is `#[serde(default)]`.
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `enabled` | `bool` | `false` |
+| `watch_paths` | `Vec<String>` | `["./docs"]` |
+| `session_id` | `String` | `"docs-watcher"` |
+
+`config/default.toml` exposes additional `[watcher.code]` sub-table fields (`enabled`, `watch_paths`, `session_id`, `extensions`, `use_ast_chunker`, `target_chunk_size`, `min_chunk_size`, `max_chunk_size`). These are NOT modeled in the current Rust `WatcherConfig` and are ignored by the loader; the actual code-watcher wiring is constructed elsewhere in the MCP server with hardcoded defaults.
+
+## 12. `EmbedderConfig` and `EmbedderWeightsConfig` (per-embedder slot config)
+
+Source: `crates/context-graph-core/src/config/embedder_config.rs`. These types are NOT mounted on the root `Config`; they are consumed by callers (search, training, weight profiles) that take an embedder list directly.
+
+`EmbedderConfig` (one slot):
+
+| Key | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `embedder` | `Embedder` | `Embedder::Semantic` | Deserialized via `Embedder::from_name` (accepts canonical name, e.g. `"E8_Graph"`, `"E8"`, `"graph"`). Unknown names ⇒ deserialization error. |
+| `weight` | `f32` | `1.0` | Range not enforced here; downstream fusion clamps. |
+| `enabled` | `bool` | `true` | none |
+| `model_path` | `Option<String>` | `None` | none |
+
+`check_deprecated_names` returns a `DeprecatedNameUsage` warning summary for any legacy aliases.
+
+## 13. `EmbeddingConfig` (embedding subsystem root, NOT the `embedding.*` table)
+
+Source: `crates/context-graph-embeddings/src/config/mod.rs:95`. Loaded by `EmbeddingConfig::from_file` or `from_toml_str`, validated by `validate()`, env-overridable via `with_env_overrides()`. NOTE: this root is distinct from `Config.embedding` (§7). The MCP server constructs both independently.
+
+| Section | Type | Default |
+| --- | --- | --- |
+| `models` | `ModelPathConfig` | §14 |
+| `batch` | `BatchConfig` | §15 |
+| `cache` | `CacheConfig` | §16 |
+| `gpu` | `GpuConfig` | §17 |
+
+## 14. `[models]` — `ModelPathConfig`
+
+Source: `crates/context-graph-embeddings/src/config/models.rs`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `models_dir` | `String` | `"./models"` | non-empty (`models.rs:80`) |
+| `lazy_loading` | `bool` | `true` | none |
+| `preload_models` | `Vec<String>` | `[]` | each name normalized via lowercase + `-→_`, must match a `ModelId::all()` name; otherwise `ConfigError` (models.rs:89-101). Valid names: `semantic`, `temporal_recent`, `temporal_periodic`, `temporal_positional`, `causal`, `sparse`, `code`, `graph`, `hdc`, `contextual`, `entity`, `kepler`, `late_interaction`, `splade`, `bge_m3_dense`. |
+| `max_loaded_models` | `usize` | `14` | `0` documented as "unlimited" (models.rs:57). |
+
+## 15. `[batch]` — `BatchConfig`
+
+Source: `crates/context-graph-embeddings/src/config/batch.rs`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `max_batch_size` | `usize` | `32` | `> 0` (batch.rs:157) |
+| `min_batch_size` | `usize` | `1` | `<= max_batch_size` |
+| `max_wait_ms` | `u64` | `50` | `> 0` when `min_batch_size > 1` |
+| `dynamic_batching` | `bool` | `true` | none |
+| `padding_strategy` | `PaddingStrategy` | `DynamicMax` | enum: `max_length`, `dynamic_max`, `power_of_two`, `bucket` |
+| `sort_by_length` | `bool` | `true` | none |
+
+## 16. `[cache]` — `CacheConfig`
+
+Source: `crates/context-graph-embeddings/src/config/cache.rs`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` | `bool` | `true` | none |
+| `max_entries` | `usize` | `100_000` | `> 0` when `enabled` (cache.rs:158) |
+| `max_bytes` | `usize` | `1_073_741_824` (1GB) | `> 0` when `enabled` |
+| `ttl_seconds` | `Option<u64>` | `None` | none |
+| `eviction_policy` | `EvictionPolicy` | `Lru` | enum: `lru`, `lfu`, `ttl_lru`, `arc` |
+| `persist_to_disk` | `bool` | `false` | none |
+| `disk_path` | `Option<PathBuf>` | `None` | required when `persist_to_disk` is true (cache.rs:168) |
+
+## 17. `[gpu]` — `GpuConfig`
+
+Source: `crates/context-graph-embeddings/src/config/gpu.rs`.
+
+| Key | Type | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` | `bool` | `true` | none |
+| `device_ids` | `Vec<u32>` | `[0]` | non-empty when `enabled` (gpu.rs:115) |
+| `memory_fraction` | `f32` | `0.9` | `(0.0, 1.0]`, finite (gpu.rs:120-126) |
+| `use_cuda_graphs` | `bool` | `true` | none |
+| `mixed_precision` | `bool` | `true` | none |
+| `green_contexts` | `bool` | `false` | none |
+| `gds_enabled` | `bool` | `false` | none |
+
+## 18. `WarmConfig` (warm-loading subsystem)
+
+Source: `crates/context-graph-embeddings/src/warm/config.rs`. Loaded via `WarmConfig::from_env()` or `WarmConfig::default()`. Validated by `validate()` (not shown in this excerpt).
+
+| Field | Type | Default | Env var |
+| --- | --- | --- | --- |
+| `vram_budget_bytes` | `usize` | `25_769_803_776` (24GB) | `WARM_VRAM_BUDGET_BYTES` |
+| `vram_headroom_bytes` | `usize` | `8_589_934_592` (8GB) | `WARM_VRAM_HEADROOM_BYTES` |
+| `model_weights_path` | `PathBuf` | `"./models"` | `WARM_MODEL_WEIGHTS_PATH` |
+| `diagnostic_dump_path` | `PathBuf` | `"/var/log/context-graph"` | `WARM_DIAGNOSTIC_DUMP_PATH` |
+| `cuda_device_id` | `u32` | `0` | `CUDA_VISIBLE_DEVICES` (first comma-segment) |
+| `enable_test_inference` | `bool` | `true` | `WARM_ENABLE_TEST_INFERENCE` (`true`/`1`/`yes`/`on`) |
+| `max_load_time_per_model_ms` | `u64` | `30_000` | `WARM_MAX_LOAD_TIME_MS` |
+| `quantization` | `QuantizationMode` | `Fp16` | not env-controlled |
+
+`QuantizationMode` variants: `Fp32` (1.0×), `Fp16` (0.5×), `Fp8` (0.25×).
+
+## 19. Phase-Aware Validation
+
+Implemented in `Config::validate_phase_safety` (`mod.rs:159-260`). Production REJECTS:
+
+| Setting | Required production value |
+| --- | --- |
+| `embedding.model` | not `"stub"` |
+| `storage.backend` | not `"memory"` |
+| `index.backend` | not `"memory"` |
+| `utl.mode` | not `"stub"` |
+
+`Phase::Ghost` and `Phase::Development` allow stubs but emit a warning to stderr (boxed banner) UNLESS `CONTEXT_GRAPH_MCP_QUIET` is set (mod.rs:193). `Phase::Production` produces a multi-line `ConfigError` listing every violation and remediation steps.
+
+`Config::uses_stubs()` and `Config::is_production_safe()` provide helpers used elsewhere.
+
+## 20. Environment Variables (Complete)
+
+### 20.1 Core (read by `Config::load` + MCP main)
+
+| Variable | Effect | Read by |
+| --- | --- | --- |
+| `CONTEXT_GRAPH_ENV` | Selects `config/{env}.toml` | `mod.rs:67` |
+| `CONTEXT_GRAPH__*` (double-underscore separator) | Generic config override (e.g. `CONTEXT_GRAPH__MCP__BIND_ADDRESS`) | `config` crate `Environment::with_prefix` |
+| `CONTEXT_GRAPH_TRANSPORT` | Override `mcp.transport` (rejects `sse`) | `main.rs:310, 388` |
+| `CONTEXT_GRAPH_TCP_PORT` | Parses `u16`, sets `mcp.tcp_port` | `main.rs:368` |
+| `CONTEXT_GRAPH_BIND_ADDRESS` | Sets `mcp.bind_address` | `main.rs:379` |
+| `CONTEXT_GRAPH_MCP_REQUEST_TIMEOUT` / `CONTEXT_GRAPH__MCP__REQUEST_TIMEOUT` | Sets `mcp.request_timeout` (positive integer seconds) | `main.rs:395-414` |
+| `CONTEXT_GRAPH_STORAGE_PATH` | Sets `storage.path`, flips `storage.backend` from `memory` to `rocksdb` | `main.rs:418-426`, `server/mod.rs:1193` |
+| `CONTEXT_GRAPH_MODELS_PATH` | Flips `embedding.model` from `stub` to `e5-large-v2`; the actual path is consumed by `ProductionMultiArrayProvider` | `main.rs:430-439`, `server/mod.rs:1245`, `global_provider.rs:88` |
+| `CONTEXT_GRAPH_WATCHER_ENABLED` | `1`/`true` enables watcher | `main.rs:455` |
+| `CONTEXT_GRAPH_WARM_FIRST` | `0`/`false` disables blocking warm-up; default true | `main.rs:487` |
+| `CONTEXT_GRAPH_DAEMON` | `1`/`true` enables daemon mode (otherwise standalone) | `main.rs:516` |
+| `CONTEXT_GRAPH_DAEMON_PORT` | Daemon listening port | `main.rs:539` |
+| `CONTEXT_GRAPH_MCP_QUIET` | Suppresses stderr phase warnings | `mod.rs:193` |
+| `CLAUDE_SESSION_ID` | Used by handlers to tag session-bound memories | `handlers/core/handlers.rs:354,367` |
+
+### 20.2 Embedding subsystem (`EmbeddingConfig::with_env_overrides`)
+
+Source: `crates/context-graph-embeddings/src/config/mod.rs:222-265`.
+
+| Variable | Field overridden | Parse |
+| --- | --- | --- |
+| `EMBEDDING_MODELS_DIR` | `models.models_dir` | string |
+| `EMBEDDING_LAZY_LOADING` | `models.lazy_loading` | `bool` |
+| `EMBEDDING_GPU_ENABLED` | `gpu.enabled` | `bool` |
+| `EMBEDDING_CACHE_ENABLED` | `cache.enabled` | `bool` |
+| `EMBEDDING_CACHE_MAX_ENTRIES` | `cache.max_entries` | `usize` |
+| `EMBEDDING_BATCH_MAX_SIZE` | `batch.max_batch_size` | `usize` |
+| `EMBEDDING_BATCH_MAX_WAIT_MS` | `batch.max_wait_ms` | `u64` |
+
+### 20.3 Warm-loading subsystem
+
+See §18.
+
+### 20.4 Diagnostics
+
 | Variable | Effect |
 | --- | --- |
-| CONTEXT_GRAPH_ENV | development config selector |
-| CONTEXT_GRAPH__* | config crate env override |
-| CONTEXT_GRAPH_TRANSPORT | stdio/tcp transport |
-| CONTEXT_GRAPH_TCP_PORT | TCP port |
-| CONTEXT_GRAPH_BIND_ADDRESS | bind address |
-| CONTEXT_GRAPH_STORAGE_PATH | sets path; switches `memory` to `rocksdb` |
-| CONTEXT_GRAPH_MODELS_PATH | switches `stub` to `e5-large-v2` |
-| CONTEXT_GRAPH_WATCHER_ENABLED | 1/true enables watcher |
-| CONTEXT_GRAPH_WARM_FIRST | 0/false disables blocking warmup |
-| CONTEXT_GRAPH_DAEMON | 1/true enables daemon |
-| CONTEXT_GRAPH_DAEMON_PORT | daemon port |
-| CONTEXT_GRAPH_MCP_QUIET | suppresses phase warnings |
-| EMBEDDING_MODELS_DIR | embedding `models_dir` |
-| EMBEDDING_LAZY_LOADING | embedding `lazy_loading` |
-| EMBEDDING_GPU_ENABLED | gpu.enabled |
-| EMBEDDING_CACHE_ENABLED | cache.enabled |
-| EMBEDDING_CACHE_MAX_ENTRIES | cache.max_entries |
-| EMBEDDING_BATCH_MAX_SIZE | batch.max_batch_size |
-| EMBEDDING_BATCH_MAX_WAIT_MS | batch.max_wait_ms |
+| `HOSTNAME` / `COMPUTERNAME` | `WarmDiagnostics::hostname` |
 
-## 4. Embedding Config Keys
-| Key | Default | Validation |
-| --- | --- | --- |
-| models.models_dir | ./models | non-empty |
-| models.lazy_loading | true | — |
-| models.preload_models | [] | must match `ModelId::all` |
-| models.max_loaded_models | 14 | 0 = unlimited (per comment) |
-| batch.max_batch_size | 32 | >0 |
-| batch.min_batch_size | 1 | <= max |
-| batch.max_wait_ms | 50 | >0 if min > 1 |
-| batch.padding_strategy | dynamic_max | max_length / dynamic_max / power_of_two / bucket |
-| cache.enabled | true | — |
-| cache.max_entries | 100000 | >0 if enabled |
-| cache.max_bytes | 1073741824 | >0 if enabled |
-| cache.eviction_policy | lru | lru / lfu / ttl_lru / arc |
-| cache.persist_to_disk | false | disk_path required if true |
-| gpu.enabled | true | — |
-| gpu.device_ids | [0] | non-empty if enabled |
-| gpu.memory_fraction | 0.9 | (0,1] finite |
-| gpu.use_cuda_graphs | true | — |
-| gpu.mixed_precision | true | — |
-| gpu.green_contexts | false | — |
-| gpu.gds_enabled | false | — |
+## 21. CLI Args (`crates/context-graph-mcp/src/main.rs`)
 
-## 5. Validation Rules
-Production phase rejects: `embedding.model=stub`, `storage.backend=memory`, `index.backend=memory`, `utl.mode=stub`. Non-memory storage validates that the parent directory of `storage.path` exists. MCP config validates payload size, timeout, transport-specific address/port/connections.
+`apply_overrides` (main.rs:363) lets these CLI flags supersede env and config:
 
-## 6. What Is Not Covered
-Checked-in TOML files contain older sections that no longer match the current Rust `Config`; behavior in code is authoritative.
+| Flag | Field overridden |
+| --- | --- |
+| `--port <N>` | `mcp.tcp_port` |
+| `--bind-address <ADDR>` | `mcp.bind_address` |
+| `--transport <MODE>` | `mcp.transport` (stdio/tcp; sse rejected) |
+| `--no-warm` | sets `warm_first = false` |
+| `--warm-first` | sets `warm_first = true` (default) |
+| `--daemon` | enables daemon mode |
+
+Priority for transport selection (`main.rs` `determine_transport`): CLI > `CONTEXT_GRAPH_TRANSPORT` > `mcp.transport` config field. Priority for warm-first: CLI `--no-warm` > `CONTEXT_GRAPH_WARM_FIRST` > default `true`.
+
+## 22. Override Chain Side Effects
+
+`apply_overrides` (main.rs:363-462) introduces these CHAIN-EFFECT flips that occur AFTER initial `Config::load`:
+
+1. `CONTEXT_GRAPH_STORAGE_PATH` set ⇒ `storage.path = $val`; if `storage.backend == "memory"` then `backend = "rocksdb"`.
+2. `CONTEXT_GRAPH_MODELS_PATH` set ⇒ if `embedding.model == "stub"` then `embedding.model = "e5-large-v2"`.
+3. `storage.backend == "rocksdb"` AND `index.backend == "memory"` ⇒ `index.backend = "hnsw"`.
+4. `storage.backend == "rocksdb"` AND `utl.mode == "stub"` ⇒ `utl.mode = "production"`.
+
+These flips happen BEFORE phase validation, so a Production phase combined with `CONTEXT_GRAPH_STORAGE_PATH` and `CONTEXT_GRAPH_MODELS_PATH` will pass the stub check.
+
+## 23. What Is NOT Covered Here
+
+- Per-CF RocksDB write-buffer/block-size/prefix-extractor profiles: these are hard-coded per CF, see [04_database_schema.md](04_database_schema.md).
+- `LearnerProfile`, `ConstellationSelector`, `WeightProfile` and other RUNTIME records that look like config but live in the database (see [16_training_subsystem.md](16_training_subsystem.md), [17_constellation_subsystem.md](17_constellation_subsystem.md)).
+- Causal/topic gate thresholds (`CAUSAL_THRESHOLD`, `NON_CAUSAL_THRESHOLD`, `CAUSAL_BOOST`, `CAUSAL_DEMOTION`, topic emergence ≥ 2.5): hard-coded constants referenced in [06_search_and_fusion.md](06_search_and_fusion.md) and [07_graph_and_causal.md](07_graph_and_causal.md).
+- Test config files under `crates/*/tests`: scope-limited fixtures, not part of the production load chain.

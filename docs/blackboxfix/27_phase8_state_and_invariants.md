@@ -17,7 +17,7 @@ implementation.
 | Export manifest | `manifest.json.files[]` hashes/byte counts matched against physical files |
 
 Phase 8 bumped the then-live ledger schema to `LEDGER_SCHEMA_VERSION = 5`.
-Phase 13 later bumped the current live schema to version 7. Older ledgers are
+Phase 14 later bumped the current live schema to version 8. Older ledgers are
 wiped on `blackbox init`, never migrated in place.
 
 ## Shipped Commands

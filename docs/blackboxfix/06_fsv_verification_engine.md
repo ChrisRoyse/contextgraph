@@ -12,7 +12,9 @@ Phase 10 shipped scanner artifact verifiers for OSV JSON, Cargo lockfiles,
 and CycloneDX JSON SBOMs. Phase 11 shipped GitHub issue evidence-link
 verification for ticket proof. Phase 12 shipped deterministic scorecards over
 physical ledger evidence. Phase 13 shipped privacy retention and erasure
-decision verification over physical ledger and enterprise-control rows.
+decision verification over physical ledger and enterprise-control rows. Phase
+14 shipped release/promotion gate verification over scorecards, verifier
+evidence, policy decisions, incident packets, privacy decisions, and RBAC.
 
 ## Full-State Verification Protocol
 
@@ -204,6 +206,15 @@ rows directly. It covers retention review, approved erasure, legal-hold denial,
 missing retention class, unauthorized principal, missing run, and empty data
 subject.
 
+Phase 14 follows the same doctrine for release gates in
+`crates/context-graph-cli/tests/blackbox_phase14_release_gate_fsv.rs`: the
+test writes real enterprise config/directory rows, records real runs, creates
+real Git verifier evidence, appends real scorecard and privacy rows, runs
+`blackbox gate evaluate`, and then reads physical SQLite `release_gate` and
+`enterprise_access_decision` rows directly. It covers an approved gate, missing
+scorecard, too-low max-risk threshold, unauthorized principal, incident-bearing
+run, invalid thresholds, and connector readback.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -254,7 +265,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4/9/10/11/12 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10/11/12/13/14 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 
@@ -283,20 +294,27 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3/4/9/10/11 happy paths use real Git/local-command, live
+# Phase 2/3/4/9/10/11/12/13/14 happy paths use real Git/local-command, live
 # GitHub/GHA/GitLab sources, real scanner artifact files, real exported
-# evidence files, and real GitHub issue/comment readbacks; see
+# evidence files, real GitHub issue/comment readbacks, and real SQLite
+# score/privacy/release-gate rows; see
 # tests/blackbox_phase2_fsv.rs,
 # tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs,
 # tests/blackbox_phase9_gitlab_ci_fsv.rs,
 # tests/blackbox_phase10_scanner_fsv.rs,
-# tests/blackbox_phase11_github_issue_evidence_fsv.rs, and
+# tests/blackbox_phase11_github_issue_evidence_fsv.rs,
+# tests/blackbox_phase12_scorecard_fsv.rs,
+# tests/blackbox_phase13_privacy_retention_fsv.rs,
+# tests/blackbox_phase14_release_gate_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
 # docs/blackboxfix/22_phase3_state_and_invariants.md /
 # docs/blackboxfix/23_phase4_state_and_invariants.md /
 # docs/blackboxfix/28_phase9_state_and_invariants.md /
 # docs/blackboxfix/29_phase10_state_and_invariants.md /
-# docs/blackboxfix/30_phase11_state_and_invariants.md.
+# docs/blackboxfix/30_phase11_state_and_invariants.md /
+# docs/blackboxfix/31_phase12_state_and_invariants.md /
+# docs/blackboxfix/32_phase13_state_and_invariants.md /
+# docs/blackboxfix/33_phase14_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

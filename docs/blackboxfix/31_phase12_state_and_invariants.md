@@ -24,7 +24,8 @@ Ledger record kind:
 Phase 12 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 6` for
 the new `scorecard` record kind. The physical SQLite table shape is unchanged,
 but old schema-version ledgers are wiped on `blackbox init`; there is no
-migration shim.
+migration shim. Phase 14 later bumps the current live schema to
+`LEDGER_SCHEMA_VERSION = 8` for release-gate rows.
 
 ## Source Of Truth
 
@@ -43,8 +44,9 @@ Before scoring, the command:
 4. Verifies every existing `evidence_packet.record_refs[]` points to the
    physical ledger row with the expected `record_kind`, `payload_sha256`, and
    `record_sha256`.
-5. Computes the score only from physical rows in that run, excluding previous
-   `scorecard` rows.
+5. Computes the score only from physical evidence/control rows in that run,
+   excluding previous `scorecard` rows and later `release_gate` governance
+   rows.
 6. Appends one `scorecard` row.
 7. Performs a separate ledger readback and verifies the appended sequence,
    `scorecard_id`, `run_id`, `payload_sha256`, `record_sha256`, row count, and
@@ -66,7 +68,8 @@ Before scoring, the command:
 - `score.training_value`;
 - `score.trust_level`;
 - `score_inputs` with exact counts and ratios used by the score;
-- `input_record_refs` for every non-scorecard run row consumed by scoring.
+- `input_record_refs` for every consumed run row except `scorecard` and
+  `release_gate` governance rows.
 
 ## Deterministic Rules
 

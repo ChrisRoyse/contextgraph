@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 11)
+## Concrete Layout (shipped through Phase 14)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -35,9 +35,12 @@ agent runtime
 | MCP/policy gateway | JSON-RPC stdio MCP recorder/gateway, policy rows, capability registry | `blackbox mcp recorder`, `blackbox mcp gateway`, `blackbox policy ...` |
 | Dashboard | Static dashboard bundle plus dashboard API JSON files over the verified ledger | `blackbox dashboard build`, `blackbox dashboard api` |
 | Enterprise controls | SSO/OIDC/SAML metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, audit/SIEM export | `blackbox enterprise ...` |
-| FSV harness | Phase 1-11 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| Scorecards | Deterministic run-level trust/risk/readiness score over physical ledger rows | `blackbox score run` |
+| Privacy controls | RBAC-gated retention and erasure-request decisions over enterprise config/directory rows | `blackbox privacy ...` |
+| Release gates | RBAC-gated release/promotion approval or block decisions over scorecards, evidence, incidents, and privacy state | `blackbox gate evaluate` |
+| FSV harness | Phase 1-14 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-11 is **not yet implemented**. Hosted multi-tenant
+Anything outside Phases 1-14 is **not yet implemented**. Hosted multi-tenant
 serving remains reserved for later work.
 
 ## Components (target architecture)
@@ -71,7 +74,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -89,7 +92,7 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3/9/10/11)
+### FSV Verifier (Phase 2/3/9/10/11/12/13/14)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`
@@ -184,6 +187,32 @@ it writes tenant-scoped `audit.jsonl`, `siem-rfc5424.log`, `controls.json`,
 and `manifest.json`, then reads files back and verifies hashes before
 returning success.
 
+### Scorecards (Phase 12)
+
+`blackbox score run` reads the physical SQLite ledger after integrity
+verification, verifies evidence packet references, computes deterministic
+trust/risk dimensions, appends one `scorecard` row, and reads it back by
+sequence, `scorecard_id`, `run_id`, `payload_sha256`, and `record_sha256`.
+Scorecards exclude previous `scorecard` and later `release_gate` governance
+rows from their input set so the evidence score stays stable.
+
+### Privacy Decisions (Phase 13)
+
+`blackbox privacy evaluate-retention` and `blackbox privacy request-erasure`
+verify tenant config, SCIM directory state, parent runs, and RBAC decisions
+from the ledger before appending `retention_decision` or `evidence_deletion`
+rows. Unauthorized attempts persist the denied authorization row and create no
+privacy decision row.
+
+### Release Gates (Phase 14)
+
+`blackbox gate evaluate` is the executable promotion gate. It verifies the
+ledger, parent run, `release.approve` RBAC decision, latest scorecard,
+evidence reference integrity, verifier status, incident state, policy state,
+and optional privacy retention state. Approved and blocked gates both append a
+`release_gate` row and read it back. Invalid requests and unauthorized
+principals fail closed before any gate row is written.
+
 ## Deployment Patterns
 
 ### Local Developer Mode (Phase 1)
@@ -222,7 +251,10 @@ static UI artifacts over the verified ledger. Phase 8 shipped enterprise
 control rows and audit/SIEM export over tenant-scoped verified ledger state.
 Phase 9 shipped hosted GitLab CI readback. Phase 10 shipped scanner artifact
 readback for OSV JSON reports, Cargo lockfiles, and CycloneDX JSON SBOMs.
-Phase 11 shipped GitHub issue evidence-link readback for ticket proof.
+Phase 11 shipped GitHub issue evidence-link readback for ticket proof. Phase
+12 shipped deterministic scorecards. Phase 13 shipped privacy retention and
+erasure decisions. Phase 14 shipped release/promotion gates over the verified
+ledger state.
 
 ## Design Constraint
 

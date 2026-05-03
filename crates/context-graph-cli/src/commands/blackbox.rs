@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 7;
+const LEDGER_SCHEMA_VERSION: i64 = 8;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -37,6 +37,7 @@ const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
 const SCORING_CONNECTOR_ID: &str = "blackbox_scoring_v1";
 const PRIVACY_CONNECTOR_ID: &str = "blackbox_privacy_v1";
+const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -48,7 +49,9 @@ const ENTERPRISE_CONTROL_SCHEMA_VERSION: i64 = 1;
 const SIEM_EXPORT_SCHEMA_VERSION: i64 = 1;
 const SCORECARD_SCHEMA_VERSION: i64 = 1;
 const PRIVACY_SCHEMA_VERSION: i64 = 1;
+const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
 const SCORE_RULE_VERSION: &str = "score_v1";
+const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -125,6 +128,11 @@ pub enum BlackboxCommands {
     Privacy {
         #[command(subcommand)]
         action: PrivacyCommands,
+    },
+    /// Evaluate Phase 14 release/promotion readiness gates.
+    Gate {
+        #[command(subcommand)]
+        action: GateCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -685,6 +693,12 @@ pub enum PrivacyCommands {
     RequestErasure(PrivacyRequestErasureArgs),
 }
 
+#[derive(Subcommand, Debug)]
+pub enum GateCommands {
+    /// Evaluate and persist a release/promotion gate decision for one run.
+    Evaluate(GateEvaluateArgs),
+}
+
 #[derive(Args, Debug)]
 pub struct ScoreRunArgs {
     /// SQLite ledger database path.
@@ -778,6 +792,53 @@ pub struct PrivacyRequestErasureArgs {
     pub reason: String,
 
     /// Agent or operator identity evaluating the request.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct GateEvaluateArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Tenant id governed by the latest enterprise configuration.
+    #[arg(long)]
+    pub tenant: String,
+
+    /// Existing run id being evaluated for release/promotion.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Principal id that must have release.approve permission through SCIM/RBAC.
+    #[arg(long)]
+    pub principal_id: String,
+
+    /// Target environment for the gate decision, for example staging or production.
+    #[arg(long)]
+    pub environment: String,
+
+    /// Minimum required trust level: recorded, verified, or verified_with_policy.
+    #[arg(long, default_value = "verified_with_policy")]
+    pub min_trust_level: String,
+
+    /// Maximum allowed score.risk in [0,1].
+    #[arg(long, default_value_t = 0.7)]
+    pub max_risk: f64,
+
+    /// Require scorecard policy_compliance to be allowed or approved.
+    #[arg(long)]
+    pub require_policy: bool,
+
+    /// Require a retained privacy retention decision and no approved erasure request.
+    #[arg(long)]
+    pub require_privacy: bool,
+
+    /// Agent or operator identity evaluating the gate.
     #[arg(long)]
     pub agent: String,
 
@@ -1244,6 +1305,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             PrivacyCommands::EvaluateRetention(args) => privacy_evaluate_retention(args),
             PrivacyCommands::RequestErasure(args) => privacy_request_erasure(args),
         },
+        BlackboxCommands::Gate { action } => match action {
+            GateCommands::Evaluate(args) => gate_evaluate(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -1337,6 +1401,14 @@ fn connector_list() -> BbxResult<Value> {
                 "readback_specs": [
                     "blackbox_retention_decision_v1",
                     "blackbox_evidence_deletion_decision_v1"
+                ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": RELEASE_GATE_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_release_gate",
+                "readback_specs": [
+                    "blackbox_release_gate_decision_v1"
                 ],
                 "fail_closed": true
             }
@@ -1577,6 +1649,31 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                     "ledger_tip_sha256": inspection.ledger_tip_sha256,
                     "retention_decisions_total": inspection.records.iter().filter(|record| record.record_kind == "retention_decision").count(),
                     "evidence_deletions_total": inspection.records.iter().filter(|record| record.record_kind == "evidence_deletion").count(),
+                },
+            }))
+        }
+        RELEASE_GATE_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    RELEASE_GATE_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_release_gate_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": RELEASE_GATE_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "release_gate_records_total": inspection.records.iter().filter(|record| record.record_kind == "release_gate").count(),
                 },
             }))
         }
@@ -2324,7 +2421,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null },
             { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" },
             { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate", "ledger_record_kind": "retention_decision" },
-            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" }
+            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" },
+            { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -3455,6 +3553,907 @@ fn privacy_error(
     )
 }
 
+fn gate_evaluate(args: GateEvaluateArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--principal-id", &args.principal_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--environment", &args.environment)?;
+    require_non_empty_for_ledger(&args.ledger, "--min-trust-level", &args.min_trust_level)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+    validate_gate_atom(&args.ledger, "--environment", &args.environment)?;
+    validate_gate_trust_level(&args.ledger, "--min-trust-level", &args.min_trust_level)?;
+    if !args.max_risk.is_finite() || !(0.0..=1.0).contains(&args.max_risk) {
+        return Err(gate_invalid(
+            &args.ledger,
+            "RELEASE_GATE_THRESHOLD_INVALID",
+            "--max-risk",
+            format!(
+                "--max-risk must be a finite value in [0,1], found {}",
+                args.max_risk
+            ),
+            "choose an explicit risk threshold between 0.0 and 1.0",
+        ));
+    }
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    ensure_gate_run_exists_for_tenant(
+        &args.ledger,
+        &inspection_before,
+        &args.run_id,
+        &args.tenant,
+    )?;
+    let resource = format!(
+        "tenant:{}:release/{}/{}",
+        args.tenant, args.environment, args.run_id
+    );
+    let authorization = enterprise_access_outcome(
+        &args.ledger,
+        &inspection_before,
+        &args.tenant,
+        &args.principal_id,
+        "release.approve",
+        &resource,
+    )?;
+    let authorization_append = append_enterprise_access_decision(
+        &mut conn,
+        &args.ledger,
+        &args.tenant,
+        &args.principal_id,
+        "release.approve",
+        &resource,
+        &args.agent,
+        args.model.as_deref(),
+        &authorization,
+    )?;
+    if !authorization.allowed {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "RELEASE_GATE_RBAC_DENIED",
+            format!(
+                "principal {} is not authorized to approve releases for tenant {}",
+                args.principal_id, args.tenant
+            ),
+            Some(source_of_truth(&args.ledger)),
+            RELEASE_GATE_CONNECTOR_ID,
+            authorization.field_path.clone(),
+            authorization.remediation.clone().unwrap_or_else(|| {
+                "grant release.approve through a SCIM group role and retry".to_string()
+            }),
+        ));
+    }
+
+    let inspection_after_auth = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let authorization_ref = ledger_record_ref_json(
+        "authorization_decision",
+        authorization_append.sequence,
+        &authorization_append.record_id,
+        "enterprise_access_decision",
+        &authorization_append.payload_sha256,
+        &authorization_append.record_sha256,
+    );
+    let release_gate_id = prefixed_id("release_gate");
+    let payload = build_release_gate_payload(
+        &args.ledger,
+        &inspection_after_auth,
+        &ledger_id,
+        &args,
+        &release_gate_id,
+        &resource,
+        authorization_ref.clone(),
+    )?;
+    let decision_allowed = payload
+        .pointer("/decision/allowed")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let failed_check_codes = payload
+        .pointer("/decision/failed_checks")
+        .and_then(Value::as_array)
+        .map(|checks| {
+            checks
+                .iter()
+                .filter_map(|check| check.get("reason_code").and_then(Value::as_str))
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let record_count_before_gate = inspection_after_auth.record_count;
+    let record_id = prefixed_id("bbx_gate");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "release_gate".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(args.run_id.clone()),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: payload.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_release_gate_append(
+        &conn,
+        &args.ledger,
+        &args.run_id,
+        &release_gate_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        record_count_before_gate,
+    )?;
+    let output = json!({
+        "status": if decision_allowed { "ok" } else { "blocked" },
+        "command": "blackbox gate evaluate",
+        "connector": RELEASE_GATE_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "release_gate",
+        "release_gate_id": release_gate_id,
+        "release_gate_schema_version": RELEASE_GATE_SCHEMA_VERSION,
+        "release_gate_rule_version": RELEASE_GATE_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "principal_id": args.principal_id,
+        "environment": args.environment,
+        "decision": payload["decision"].clone(),
+        "authorization_record": authorization_ref,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "readback": readback,
+    });
+    if decision_allowed {
+        Ok(output)
+    } else {
+        Err(BlackboxError::new_with_connector(
+            ErrorKind::ConnectorBlocked,
+            "RELEASE_GATE_BLOCKED",
+            format!(
+                "release gate {} blocked run {}; failed checks: {}",
+                payload["release_gate_id"].as_str().unwrap_or("release_gate"),
+                payload["run_id"].as_str().unwrap_or("run"),
+                failed_check_codes.join(",")
+            ),
+            Some(source_of_truth(&args.ledger)),
+            RELEASE_GATE_CONNECTOR_ID,
+            Some("release_gate.checks".to_string()),
+            "inspect the persisted release_gate row, fix the failing source-of-truth evidence, rerun score/privacy checks, then re-evaluate the gate",
+        ))
+    }
+}
+
+fn build_release_gate_payload(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    args: &GateEvaluateArgs,
+    release_gate_id: &str,
+    resource: &str,
+    authorization_ref: Value,
+) -> BbxResult<Value> {
+    let input_records = inspection
+        .records
+        .iter()
+        .filter(|record| {
+            record.run_id.as_deref() == Some(args.run_id.as_str())
+                && record.record_kind != "release_gate"
+        })
+        .collect::<Vec<_>>();
+    if input_records.is_empty() {
+        return Err(gate_not_found(
+            ledger_path,
+            "RELEASE_GATE_RUN_NOT_FOUND",
+            "ledger_records.run_id",
+            format!("run_id {} has no ledger rows", args.run_id),
+            "record the parent agent_run before evaluating a release gate",
+        ));
+    }
+    let run_records = input_records
+        .iter()
+        .copied()
+        .filter(|record| record.record_kind == "agent_run")
+        .collect::<Vec<_>>();
+    let run_record = match run_records.as_slice() {
+        [record] => *record,
+        [] => {
+            return Err(gate_not_found(
+                ledger_path,
+                "RELEASE_GATE_RUN_NOT_FOUND",
+                "ledger_records.record_kind",
+                format!("run_id {} has no agent_run parent", args.run_id),
+                "record the parent agent_run before evaluating a release gate",
+            ));
+        }
+        _ => {
+            return Err(gate_schema_error(
+                ledger_path,
+                run_records[1],
+                "record_kind",
+                format!("run_id {} has multiple agent_run rows", args.run_id),
+            ));
+        }
+    };
+    if run_record.tenant_id != args.tenant {
+        return Err(BlackboxError::tenant_mismatch(
+            ledger_path,
+            &args.run_id,
+            &run_record.tenant_id,
+            &args.tenant,
+        ));
+    }
+    for record in &input_records {
+        if record.tenant_id != args.tenant {
+            return Err(BlackboxError::tenant_mismatch(
+                ledger_path,
+                &args.run_id,
+                &record.tenant_id,
+                &args.tenant,
+            ));
+        }
+    }
+
+    let evidence_hash_verification = verify_evidence_packet_refs(ledger_path, &input_records)?;
+    let input_record_refs = input_records
+        .iter()
+        .copied()
+        .map(|record| gate_record_ref_from_output(ledger_path, "gate_input", record))
+        .collect::<BbxResult<Vec<_>>>()?;
+    let input_record_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(input_record_refs))?);
+    let kind_counts = ledger_record_kind_counts_from_refs(&input_records);
+    let verifier_counts = verifier_status_counts_for_refs(ledger_path, &input_records)?;
+    let failed_verifiers = verifier_counts.get("failed").copied().unwrap_or(0);
+    let blocked_verifiers = verifier_counts.get("blocked").copied().unwrap_or(0);
+    let incident_packets = kind_counts.get("incident_packet").copied().unwrap_or(0);
+    let latest_scorecard = input_records
+        .iter()
+        .copied()
+        .rev()
+        .find(|record| record.record_kind == "scorecard");
+    let latest_retention = input_records
+        .iter()
+        .copied()
+        .rev()
+        .find(|record| record.record_kind == "retention_decision");
+    let approved_erasure_count = input_records
+        .iter()
+        .filter(|record| {
+            record.record_kind == "evidence_deletion"
+                && record
+                    .payload
+                    .pointer("/decision/status")
+                    .and_then(Value::as_str)
+                    == Some("approved")
+        })
+        .count() as i64;
+
+    let mut checks = Vec::new();
+    checks.push(gate_check(
+        "scorecard_present",
+        latest_scorecard.is_some(),
+        latest_scorecard
+            .map(|record| json!({"sequence": record.sequence, "record_sha256": record.hash["record_sha256"].clone()}))
+            .unwrap_or(Value::Null),
+        json!("latest scorecard row for run"),
+        "RELEASE_GATE_SCORECARD_REQUIRED",
+        "ledger_records.record_kind",
+        "run `blackbox score run` for the run before evaluating the release gate",
+    ));
+
+    let mut score_summary = Value::Null;
+    if let Some(scorecard) = latest_scorecard {
+        let trust_level =
+            required_gate_payload_pointer_str(ledger_path, scorecard, "/score/trust_level")?;
+        validate_gate_score_trust_level(ledger_path, scorecard, trust_level)?;
+        let risk = required_gate_payload_pointer_f64(ledger_path, scorecard, "/score/risk")?;
+        let policy_compliance =
+            required_gate_payload_pointer_str(ledger_path, scorecard, "/score/policy_compliance")?;
+        let evidence_coverage = scorecard
+            .payload
+            .pointer("/score_inputs/evidence_coverage_ratio")
+            .and_then(Value::as_f64);
+        score_summary = json!({
+            "scorecard_ref": gate_record_ref_from_output(ledger_path, "latest_scorecard", scorecard)?,
+            "scorecard_id": required_gate_payload_str(ledger_path, scorecard, "scorecard_id")?,
+            "score": scorecard.payload["score"].clone(),
+            "score_inputs": {
+                "evidence_coverage_ratio": scorecard.payload.pointer("/score_inputs/evidence_coverage_ratio").cloned().unwrap_or(Value::Null),
+                "tool_calls_total": scorecard.payload.pointer("/score_inputs/tool_calls_total").cloned().unwrap_or(Value::Null),
+                "tool_calls_with_evidence": scorecard.payload.pointer("/score_inputs/tool_calls_with_evidence").cloned().unwrap_or(Value::Null),
+                "verifier_status_counts": scorecard.payload.pointer("/score_inputs/verifier_status_counts").cloned().unwrap_or(Value::Null),
+                "policy_decision_counts": scorecard.payload.pointer("/score_inputs/policy_decision_counts").cloned().unwrap_or(Value::Null),
+            }
+        });
+        checks.push(gate_check(
+            "trust_level_at_or_above_minimum",
+            gate_trust_rank(trust_level) >= gate_trust_rank(&args.min_trust_level),
+            json!(trust_level),
+            json!(args.min_trust_level),
+            "RELEASE_GATE_TRUST_TOO_LOW",
+            "scorecard.score.trust_level",
+            "produce verified evidence and a fresh scorecard before promotion",
+        ));
+        checks.push(gate_check(
+            "risk_at_or_below_threshold",
+            risk <= args.max_risk,
+            json!(risk),
+            json!(args.max_risk),
+            "RELEASE_GATE_RISK_TOO_HIGH",
+            "scorecard.score.risk",
+            "reduce run risk, add policy/evidence coverage, or choose an explicitly higher gate threshold",
+        ));
+        let policy_ok = matches!(policy_compliance, "allowed" | "approved");
+        checks.push(gate_check(
+            "policy_required",
+            !args.require_policy || policy_ok,
+            json!(policy_compliance),
+            if args.require_policy {
+                json!("allowed_or_approved")
+            } else {
+                json!("not_required")
+            },
+            "RELEASE_GATE_POLICY_REQUIRED",
+            "scorecard.score.policy_compliance",
+            "persist an allowed policy_decision before evaluating the gate",
+        ));
+        checks.push(gate_check(
+            "tool_call_evidence_coverage",
+            evidence_coverage.unwrap_or(0.0) >= 1.0,
+            evidence_coverage.map(Value::from).unwrap_or(Value::Null),
+            json!(1.0),
+            "RELEASE_GATE_EVIDENCE_COVERAGE_INCOMPLETE",
+            "scorecard.score_inputs.evidence_coverage_ratio",
+            "verify every mutating tool call and rerun scoring before gate evaluation",
+        ));
+    }
+
+    checks.push(gate_check(
+        "verifier_results_clean",
+        failed_verifiers == 0 && blocked_verifiers == 0,
+        json!({"failed": failed_verifiers, "blocked": blocked_verifiers}),
+        json!({"failed": 0, "blocked": 0}),
+        "RELEASE_GATE_VERIFIER_NOT_CLEAN",
+        "ledger_records.verifier_result.status",
+        "fix failed or blocked verifier evidence, then rerun verification and scoring",
+    ));
+    checks.push(gate_check(
+        "incident_free",
+        incident_packets == 0,
+        json!(incident_packets),
+        json!(0),
+        "RELEASE_GATE_INCIDENT_OPEN",
+        "ledger_records.record_kind",
+        "resolve incident evidence in a new run before promotion",
+    ));
+    checks.push(gate_check(
+        "evidence_packet_refs_intact",
+        evidence_hash_verification["status"] == "passed",
+        evidence_hash_verification.clone(),
+        json!("passed"),
+        "RELEASE_GATE_EVIDENCE_REF_BROKEN",
+        "evidence_packet.record_refs",
+        "repair source evidence by creating a new verified run; never ignore broken evidence refs",
+    ));
+
+    let retention_status = latest_retention
+        .and_then(|record| {
+            record
+                .payload
+                .pointer("/decision/status")
+                .and_then(Value::as_str)
+        })
+        .map(ToString::to_string);
+    checks.push(gate_check(
+        "privacy_retention_required",
+        !args.require_privacy || retention_status.as_deref() == Some("retained"),
+        retention_status
+            .as_ref()
+            .map(|status| json!(status))
+            .unwrap_or(Value::Null),
+        if args.require_privacy {
+            json!("retained")
+        } else {
+            json!("not_required")
+        },
+        "RELEASE_GATE_PRIVACY_RETENTION_REQUIRED",
+        "ledger_records.retention_decision",
+        "run `blackbox privacy evaluate-retention` and persist a retained decision before promotion",
+    ));
+    checks.push(gate_check(
+        "privacy_erasure_not_approved",
+        !args.require_privacy || approved_erasure_count == 0,
+        json!(approved_erasure_count),
+        json!(0),
+        "RELEASE_GATE_PRIVACY_ERASURE_APPROVED",
+        "ledger_records.evidence_deletion.decision.status",
+        "complete and verify external erasure handling in a later artifact store workflow before promotion",
+    ));
+
+    let failed_checks = checks
+        .iter()
+        .filter(|check| check.get("passed").and_then(Value::as_bool) == Some(false))
+        .cloned()
+        .collect::<Vec<_>>();
+    let allowed = failed_checks.is_empty();
+    let first_sequence = input_records
+        .iter()
+        .map(|record| record.sequence)
+        .min()
+        .unwrap_or(0);
+    let last_sequence = input_records
+        .iter()
+        .map(|record| record.sequence)
+        .max()
+        .unwrap_or(0);
+    Ok(json!({
+        "record_kind": "release_gate",
+        "release_gate_id": release_gate_id,
+        "release_gate_schema_version": RELEASE_GATE_SCHEMA_VERSION,
+        "release_gate_rule_version": RELEASE_GATE_RULE_VERSION,
+        "tenant_id": args.tenant,
+        "run_id": args.run_id,
+        "request": {
+            "principal_id": args.principal_id,
+            "permission": "release.approve",
+            "resource": resource,
+            "environment": args.environment,
+            "min_trust_level": args.min_trust_level,
+            "max_risk": args.max_risk,
+            "require_policy": args.require_policy,
+            "require_privacy": args.require_privacy,
+        },
+        "source_ledger": {
+            "path": ledger_path,
+            "source_of_truth": source_of_truth(ledger_path),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_gate": inspection.record_count,
+            "ledger_tip_sha256_before_gate": inspection.ledger_tip_sha256,
+        },
+        "run_evidence_summary": {
+            "record_count": input_records.len(),
+            "record_kind_counts": kind_counts,
+            "verifier_status_counts": verifier_counts,
+            "incident_packets_total": incident_packets,
+            "first_sequence": first_sequence,
+            "last_sequence": last_sequence,
+            "input_record_refs_sha256": input_record_refs_sha256,
+        },
+        "scorecard_summary": score_summary,
+        "privacy_summary": {
+            "latest_retention_decision": latest_retention
+                .map(|record| gate_record_ref_from_output(ledger_path, "latest_retention_decision", record))
+                .transpose()?,
+            "retention_status": retention_status,
+            "approved_erasure_count": approved_erasure_count,
+        },
+        "checks": checks,
+        "decision": {
+            "status": if allowed { "approved" } else { "blocked" },
+            "allowed": allowed,
+            "reason_code": if allowed { "RELEASE_GATE_APPROVED" } else { "RELEASE_GATE_BLOCKED" },
+            "failed_checks": failed_checks,
+            "promotes_to_environment": if allowed { Value::String(args.environment.clone()) } else { Value::Null },
+        },
+        "source_refs": {
+            "authorization_decision": authorization_ref,
+            "input_records": input_record_refs,
+        },
+        "standards_basis": [
+            "NIST AI RMF Govern/Measure/Manage risk lifecycle",
+            "NIST SSDF secure release criteria and vulnerability risk reduction",
+            "OpenSSF SLSA artifact trust/provenance decision guidance"
+        ],
+        "evaluated_at": Utc::now().to_rfc3339(),
+    }))
+}
+
+fn readback_release_gate_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    run_id: &str,
+    release_gate_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "RELEASE_GATE_READBACK_MISMATCH",
+            RELEASE_GATE_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "release gate append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun gate evaluation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "RELEASE_GATE_READBACK_MISMATCH",
+                RELEASE_GATE_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("release gate sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun gate evaluation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "release_gate"
+        || row.run_id.as_deref() != Some(run_id)
+        || row.payload.get("release_gate_id").and_then(Value::as_str) != Some(release_gate_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "RELEASE_GATE_READBACK_MISMATCH",
+            RELEASE_GATE_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.release_gate",
+            "release gate row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun gate evaluation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_release_gate": inspection_after.record_count,
+        "ledger_tip_sha256_after_release_gate": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "run_id": row.run_id,
+        "release_gate_id": row.payload["release_gate_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "decision": row.payload["decision"].clone(),
+    }))
+}
+
+fn gate_check(
+    check_id: &'static str,
+    passed: bool,
+    observed: Value,
+    expected: Value,
+    reason_code: &'static str,
+    field_path: &'static str,
+    remediation: &'static str,
+) -> Value {
+    json!({
+        "check_id": check_id,
+        "passed": passed,
+        "observed": observed,
+        "expected": expected,
+        "reason_code": if passed { Value::Null } else { Value::String(reason_code.to_string()) },
+        "field_path": field_path,
+        "remediation": if passed { Value::Null } else { Value::String(remediation.to_string()) },
+    })
+}
+
+fn ensure_gate_run_exists_for_tenant(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_id: &str,
+    tenant: &str,
+) -> BbxResult<()> {
+    let run_records = inspection
+        .records
+        .iter()
+        .filter(|record| {
+            record.record_kind == "agent_run" && record.run_id.as_deref() == Some(run_id)
+        })
+        .collect::<Vec<_>>();
+    let run_record = match run_records.as_slice() {
+        [record] => *record,
+        [] => {
+            return Err(gate_not_found(
+                ledger_path,
+                "RELEASE_GATE_RUN_NOT_FOUND",
+                "ledger_records.run_id",
+                format!("run_id {run_id} does not exist in ledger_records"),
+                "record the parent agent_run before evaluating a release gate",
+            ));
+        }
+        _ => {
+            return Err(gate_schema_error(
+                ledger_path,
+                run_records[1],
+                "record_kind",
+                format!("run_id {run_id} has multiple agent_run rows"),
+            ));
+        }
+    };
+    if run_record.tenant_id != tenant {
+        return Err(BlackboxError::tenant_mismatch(
+            ledger_path,
+            run_id,
+            &run_record.tenant_id,
+            tenant,
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gate_atom(ledger_path: &Path, field_path: &'static str, value: &str) -> BbxResult<()> {
+    if value.len() > 128
+        || value
+            .chars()
+            .any(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/')))
+    {
+        return Err(gate_invalid(
+            ledger_path,
+            "RELEASE_GATE_REQUEST_INVALID",
+            field_path,
+            format!("{field_path} contains unsupported characters"),
+            "use a stable ASCII identifier containing letters, numbers, underscore, dash, dot, or slash",
+        ));
+    }
+    if looks_like_secret_literal(value) {
+        return Err(gate_invalid(
+            ledger_path,
+            "RELEASE_GATE_SECRET_MATERIAL_REFUSED",
+            field_path,
+            "release gate request field contains secret-like material",
+            "replace credentials or tokens with non-sensitive references before retrying",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gate_trust_level(
+    ledger_path: &Path,
+    field_path: &'static str,
+    value: &str,
+) -> BbxResult<()> {
+    match value {
+        "recorded" | "verified" | "verified_with_policy" => Ok(()),
+        other => Err(gate_invalid(
+            ledger_path,
+            "RELEASE_GATE_THRESHOLD_INVALID",
+            field_path,
+            format!("unsupported minimum trust level {other:?}"),
+            "choose recorded, verified, or verified_with_policy",
+        )),
+    }
+}
+
+fn validate_gate_score_trust_level(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    value: &str,
+) -> BbxResult<()> {
+    match value {
+        "recorded" | "verified" | "verified_with_policy" | "incident" | "unobserved" => Ok(()),
+        other => Err(gate_schema_error(
+            ledger_path,
+            record,
+            "score.trust_level",
+            format!("scorecard has unsupported trust_level {other:?}"),
+        )),
+    }
+}
+
+fn gate_trust_rank(value: &str) -> i64 {
+    match value {
+        "verified_with_policy" => 3,
+        "verified" => 2,
+        "recorded" => 1,
+        _ => 0,
+    }
+}
+
+fn required_gate_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            gate_schema_error(
+                ledger_path,
+                record,
+                field,
+                format!(
+                    "{} payload is missing non-empty {field}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn required_gate_payload_pointer_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    pointer: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            gate_schema_error(
+                ledger_path,
+                record,
+                pointer.trim_start_matches('/').replace('/', "."),
+                format!(
+                    "{} payload is missing non-empty {pointer}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn required_gate_payload_pointer_f64(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    pointer: &'static str,
+) -> BbxResult<f64> {
+    let value = record
+        .payload
+        .pointer(pointer)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| {
+            gate_schema_error(
+                ledger_path,
+                record,
+                pointer.trim_start_matches('/').replace('/', "."),
+                format!(
+                    "{} payload is missing numeric {pointer}",
+                    record.record_kind
+                ),
+            )
+        })?;
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(gate_schema_error(
+            ledger_path,
+            record,
+            pointer.trim_start_matches('/').replace('/', "."),
+            format!("{pointer} must be a finite score in [0,1], found {value}"),
+        ));
+    }
+    Ok(value)
+}
+
+fn verifier_status_counts_for_refs(
+    ledger_path: &Path,
+    records: &[&LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, i64>> {
+    let mut counts = initialized_status_counts();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "verifier_result")
+    {
+        let status = required_gate_payload_str(ledger_path, record, "status")?;
+        match status {
+            "passed" | "failed" | "blocked" => {
+                *counts.entry(status.to_string()).or_insert(0) += 1;
+            }
+            other => {
+                return Err(gate_schema_error(
+                    ledger_path,
+                    record,
+                    "status",
+                    format!("unsupported verifier_result status {other:?}"),
+                ));
+            }
+        }
+    }
+    Ok(counts)
+}
+
+fn gate_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    let payload_sha256 = record
+        .hash
+        .get("payload_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            gate_schema_error(
+                ledger_path,
+                record,
+                "hash.payload_sha256",
+                format!("{} row is missing payload_sha256", record.record_kind),
+            )
+        })?;
+    let record_sha256 = record
+        .hash
+        .get("record_sha256")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            gate_schema_error(
+                ledger_path,
+                record,
+                "hash.record_sha256",
+                format!("{} row is missing record_sha256", record.record_kind),
+            )
+        })?;
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        payload_sha256,
+        record_sha256,
+    ))
+}
+
+fn gate_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        RELEASE_GATE_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn gate_not_found(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::NotFound,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        RELEASE_GATE_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn gate_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::Schema,
+        "RELEASE_GATE_RECORD_SCHEMA_DRIFT",
+        message,
+        Some(source_of_truth(ledger_path)),
+        RELEASE_GATE_CONNECTOR_ID,
+        Some(format!(
+            "ledger_records[{}].payload.{}",
+            record.sequence,
+            field_path.into()
+        )),
+        "inspect the physical ledger row; release gate evaluation never guesses across malformed ledger payloads",
+    )
+}
+
 fn ensure_score_run_exists_for_tenant(
     conn: &Connection,
     path: &Path,
@@ -3501,7 +4500,9 @@ fn build_scorecard_payload(
         .records
         .iter()
         .filter(|record| {
-            record.run_id.as_deref() == Some(run_id) && record.record_kind != "scorecard"
+            record.run_id.as_deref() == Some(run_id)
+                && record.record_kind != "scorecard"
+                && record.record_kind != "release_gate"
         })
         .collect::<Vec<_>>();
     if input_records.is_empty() {
@@ -4066,6 +5067,7 @@ fn score_connector_reliability(
         SCANNER_CONNECTOR_ID => Ok(0.92),
         ENTERPRISE_CONNECTOR_ID => Ok(0.93),
         PRIVACY_CONNECTOR_ID => Ok(0.93),
+        RELEASE_GATE_CONNECTOR_ID => Ok(0.94),
         SQLITE_CONNECTOR_ID => Ok(0.96),
         POLICY_CONNECTOR_ID => Ok(0.88),
         other => Err(scorecard_schema_error(
@@ -8192,6 +9194,7 @@ fn build_dashboard_summary(
         json!({"label": "Scorecards", "value": kind_counts.get("scorecard").copied().unwrap_or(0)}),
         json!({"label": "Retention decisions", "value": kind_counts.get("retention_decision").copied().unwrap_or(0)}),
         json!({"label": "Erasure decisions", "value": kind_counts.get("evidence_deletion").copied().unwrap_or(0)}),
+        json!({"label": "Release gates", "value": kind_counts.get("release_gate").copied().unwrap_or(0)}),
         json!({"label": "Verifier passed", "value": passed}),
         json!({"label": "Verifier failed", "value": failed}),
         json!({"label": "Verifier blocked", "value": blocked}),
@@ -8220,6 +9223,7 @@ fn build_dashboard_summary(
             "scorecards_total": kind_counts.get("scorecard").copied().unwrap_or(0),
             "retention_decisions_total": kind_counts.get("retention_decision").copied().unwrap_or(0),
             "evidence_deletions_total": kind_counts.get("evidence_deletion").copied().unwrap_or(0),
+            "release_gates_total": kind_counts.get("release_gate").copied().unwrap_or(0),
             "verifier_results_total": verifier_total,
             "verifier_statuses": verifier_status_counts,
             "policy_decisions": policy_decision_counts,
@@ -8445,6 +9449,7 @@ fn build_dashboard_errors(
             || record.record_kind == "policy_decision"
             || record.record_kind == "retention_decision"
             || record.record_kind == "evidence_deletion"
+            || record.record_kind == "release_gate"
     }) {
         let error_code = record
             .payload
@@ -8466,8 +9471,14 @@ fn build_dashboard_errors(
             .pointer("/decision/status")
             .and_then(Value::as_str)
             == Some("denied");
+        let include_gate_block = record.record_kind == "release_gate"
+            && record
+                .payload
+                .pointer("/decision/status")
+                .and_then(Value::as_str)
+                == Some("blocked");
         let Some(code) = error_code.filter(|code| !code.trim().is_empty()) else {
-            if include_policy_denial || include_privacy_denial {
+            if include_policy_denial || include_privacy_denial || include_gate_block {
                 return Err(dashboard_schema_error(
                     ledger_path,
                     record,
@@ -8534,6 +9545,17 @@ fn build_dashboard_exports(
                 "blackbox", "score", "run",
                 "--ledger", ledger_path.display().to_string(),
                 "--run-id", run_id,
+            ],
+            "release_gate_command": [
+                "blackbox", "gate", "evaluate",
+                "--ledger", ledger_path.display().to_string(),
+                "--tenant", run_record.tenant_id.clone(),
+                "--run-id", run_id,
+                "--principal-id", "USER_WITH_RELEASE_APPROVE",
+                "--environment", "production",
+                "--require-policy",
+                "--require-privacy",
+                "--agent", "release_operator"
             ],
             "timeline_api": format!("api/{}", dashboard_timeline_file_name(run_id)),
         }));
@@ -10356,7 +11378,7 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option><option value=\"retention_decision\">retention_decision</option><option value=\"evidence_deletion\">evidence_deletion</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"approved\">approved</option><option value=\"retained\">retained</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option><option value=\"retention_decision\">retention_decision</option><option value=\"evidence_deletion\">evidence_deletion</option><option value=\"release_gate\">release_gate</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"approved\">approved</option><option value=\"retained\">retained</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
     for (_, _, timeline) in &data.timelines {
         let run_id = timeline.get("run_id").and_then(Value::as_str).unwrap_or("");
         for record in dashboard_array(timeline, "/report/timeline")? {
@@ -10509,6 +11531,9 @@ fn dashboard_timeline_record_source(record: &Value) -> String {
     if let Some(source) = record.pointer("/payload/source_refs/tenant_config/record_sha256") {
         return dashboard_display_value(source);
     }
+    if let Some(source) = record.pointer("/payload/source_ledger/source_of_truth") {
+        return dashboard_display_value(source);
+    }
     if let Some(source) = record.pointer("/payload/source_of_truth/locator") {
         return dashboard_display_value(source);
     }
@@ -10530,6 +11555,7 @@ fn dashboard_timeline_record_detail(record: &Value) -> String {
         "/payload/score/trust_level",
         "/payload/scorecard_id",
         "/payload/privacy_decision_id",
+        "/payload/release_gate_id",
         "/payload/decision/reason_code",
     ] {
         if let Some(value) = record.pointer(pointer) {

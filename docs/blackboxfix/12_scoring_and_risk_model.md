@@ -9,7 +9,8 @@ Phase 2 persists the first deterministic verifier score fields inside
 ships deterministic run-level `scorecard` rows with correctness,
 verification confidence, risk, policy compliance, training value, and trust
 level. Phase 7 dashboard rollups now include `scorecard` rows in timelines and
-export commands.
+export commands. Phase 14 release gates consume the latest scorecard but are
+not scoring inputs themselves.
 
 ## Score Dimensions
 
@@ -131,6 +132,8 @@ append-only ledger rows:
   as success;
 - failed or blocked verifier rows preserve their typed error codes and
   remediation in the source evidence.
+- later `release_gate` governance rows are excluded from future scorecard
+  inputs, so a gate decision cannot change the score evidence it consumes.
 
 Scorecards use `score_rule_version = score_v1` and
 `scorecard_schema_version = 1`.

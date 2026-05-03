@@ -3,17 +3,18 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 13 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+Phase 14 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
 decision rows, a capability registry, a machine-readable HTTP API surface
 registry, a static dashboard/API bundle, and enterprise-control commands for
 SSO metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, and
 audit/SIEM export. It also ships the GitLab CI hosted connector and the local
 scanner artifact connector, GitHub issue evidence-link verification, and
 deterministic run scorecards. Phase 13 adds authorized privacy retention and
-erasure-request decision rows.
+erasure-request decision rows. Phase 14 adds an authorized release/promotion
+gate that persists approved and blocked gate decisions.
 SDKs and hosted HTTP serving are reserved for later phases.
 
-## CLI (shipped Phase 13)
+## CLI (shipped Phase 14)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -41,6 +42,7 @@ blackbox connector test        --connector scanner_artifact_v1 --source OSV_REPO
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_release_gate_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -101,6 +103,14 @@ blackbox privacy request-erasure
                                --principal-id PRINCIPAL
                                --retention-class CLASS
                                --data-subject SUBJECT --reason REASON
+                               --agent AGENT [--model MODEL]
+blackbox gate evaluate         --ledger PATH --tenant TENANT --run-id RUN_ID
+                               --principal-id PRINCIPAL
+                               --environment ENV
+                               [--min-trust-level TRUST]
+                               [--max-risk FLOAT]
+                               [--require-policy]
+                               [--require-privacy]
                                --agent AGENT [--model MODEL]
 blackbox policy evaluate       --ledger PATH --mode MODE --tool TOOL
                                --capability CAP [--run-id RUN_ID]
@@ -191,7 +201,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 7,
+  "schema_version": 8,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -250,6 +260,18 @@ flow with `privacy.erase` and writes `evidence_deletion`; legal hold or
 incident evidence produces a durable denied decision instead of deleting
 append-only ledger rows.
 
+`gate evaluate` writes one `release_gate` row after reading the physical
+ledger, verifying the parent run, persisting and checking an
+`enterprise_access_decision` for `release.approve`, resolving the latest
+scorecard, checking score trust/risk thresholds, checking policy and privacy
+requirements when requested, verifying evidence packet references, and
+blocking any failed/blocked verifier or incident state. Approved and blocked
+gate decisions are both durable rows and are read back by sequence,
+`release_gate_id`, `run_id`, `payload_sha256`, and `record_sha256`.
+Unauthorized principals fail as `RELEASE_GATE_RBAC_DENIED` after the denied
+authorization row is persisted and create no `release_gate` row. Invalid
+request fields fail before new rows are written.
+
 `connector test --connector gitlab_ci_v1` reads GitLab project metadata and
 the latest pipeline from GitLab REST API v4. `gitlab_pipeline_status_v1`
 passes only when the expected pipeline id exists and the status, ref, and SHA
@@ -275,6 +297,10 @@ exists, is not a pull request, and the exact expected absolute `http(s)`
 evidence URL appears in the requested `link_scope`: `body`, `comments`, or
 `body_or_comments`. The readback stores issue metadata, issue body SHA/length,
 comment page summaries, pagination headers, and matched locations.
+
+`connector test --connector blackbox_release_gate_v1` opens the SQLite ledger,
+verifies the hash chains, and returns the total persisted `release_gate` rows
+read from `ledger_records`.
 
 ## HTTP API Surface (Phase 6 shipped as registry)
 
@@ -302,6 +328,7 @@ POST /v1/enterprise/tenants/{tenant_id}/audit-export
 POST /v1/runs/{run_id}/scorecard
 POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate
 POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests
+POST /v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate
 GET  /v1/dashboard/summary
 GET  /v1/dashboard/runs
 GET  /v1/dashboard/runs/{run_id}/timeline
@@ -367,7 +394,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 13)
+## OpenTelemetry Export (reserved after Phase 14)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -381,14 +408,14 @@ The ledger remains authoritative.
 Phase 7 shipped local dashboard metrics, Phase 8 shipped audit/SIEM files,
 Phase 9 shipped hosted GitLab CI readbacks, Phase 10 shipped local scanner
 artifact readbacks, Phase 11 shipped GitHub ticket evidence-link readbacks,
-Phase 12 shipped deterministic scorecards, and Phase 13 shipped privacy
-retention/erasure decision audit rows. OpenTelemetry emission remains a later
-export path.
+Phase 12 shipped deterministic scorecards, Phase 13 shipped privacy
+retention/erasure decision audit rows, and Phase 14 shipped release-gate
+decision rows. OpenTelemetry emission remains a later export path.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 7 in Phase 13).
+- Ledger records include `schema_version` (= 8 in Phase 14).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -408,11 +435,14 @@ export path.
 - Phase 12 bumps the ledger schema to 6 for the new `scorecard` record kind.
 - Phase 13 bumps the ledger schema to 7 for `retention_decision` and
   `evidence_deletion`.
+- Phase 14 bumps the ledger schema to 8 for the new `release_gate` record
+  kind.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
   `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
-  `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1` today).
+  `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
+  `blackbox_release_gate_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -435,9 +465,12 @@ Concrete inputs and expected outputs live in
 `25_phase6_state_and_invariants.md`,
 `26_phase7_state_and_invariants.md`,
 `27_phase8_state_and_invariants.md`,
-`28_phase9_state_and_invariants.md`, and
-`29_phase10_state_and_invariants.md`, and
-`30_phase11_state_and_invariants.md`. The automated equivalents are
+`28_phase9_state_and_invariants.md`,
+`29_phase10_state_and_invariants.md`,
+`30_phase11_state_and_invariants.md`,
+`31_phase12_state_and_invariants.md`,
+`32_phase13_state_and_invariants.md`, and
+`33_phase14_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -453,4 +486,10 @@ PASS), `crates/context-graph-cli/tests/blackbox_phase8_enterprise_fsv.rs`
 `crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs` (1 local
 integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`
-(1 live integration test, PASS).
+(1 live integration test, PASS),
+`crates/context-graph-cli/tests/blackbox_phase12_scorecard_fsv.rs`
+(1 local integration test, PASS),
+`crates/context-graph-cli/tests/blackbox_phase13_privacy_retention_fsv.rs`
+(1 local integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase14_release_gate_fsv.rs`
+(1 local integration test, PASS).

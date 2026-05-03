@@ -3,7 +3,8 @@
 Phase 11 ships `github_issue_evidence_link_v1` on the existing `github_v1`
 connector. It closes the first-wedge ticket proof gap by verifying that an
 exact evidence URL is present in a real GitHub issue body and/or issue
-comments. There is no schema bump; `LEDGER_SCHEMA_VERSION` remains `5`.
+comments. There was no schema bump in Phase 11; `LEDGER_SCHEMA_VERSION`
+remained `5` then. The current live schema after Phase 14 is `8`.
 
 ## Source Of Truth
 
