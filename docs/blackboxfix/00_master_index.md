@@ -9,7 +9,7 @@ This index is the **canonical entry point**. A fresh-context AI agent should
 read this file first, then `13_mvp_implementation_phases.md`, then
 `19_full_state_verification_protocol.md` before touching code.
 
-## Repository State (as of 2026-05-02)
+## Repository State (as of 2026-05-03)
 
 - **Repo root**: `/home/cabdru/contextgraph`
 - **Workspace**: 12 crates; BlackBoxFix lives inside `context-graph-cli`.
@@ -29,7 +29,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 5` after Phase 11; old ledgers are
+    ledger schema is `LEDGER_SCHEMA_VERSION = 6` after Phase 12; old ledgers are
     wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
@@ -40,8 +40,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_branch_head_matches_commit_v1`,
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
-  - Phase 3 added no new record kinds. Current ledgers run under schema v5
-    after Phase 11.
+  - Phase 3 added no new record kinds. Current ledgers run under schema v6
+    after Phase 12.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -49,7 +49,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Record kinds: `evidence_packet`, `incident_packet`.
   - Commands: `blackbox replay --ledger PATH --run-id RUN_ID` and
     `blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE`.
-  - Ledger schema: `LEDGER_SCHEMA_VERSION = 5`; older ledgers are wiped on
+  - Ledger schema: `LEDGER_SCHEMA_VERSION = 6`; older ledgers are wiped on
     init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`
     (4/4 passing; run with
@@ -68,8 +68,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `blackbox policy evaluate`, `blackbox policy registry`, and
     `blackbox api surface`.
   - New record kinds originally added under schema v4: `policy_decision`,
-    `agent_step`, `model_decision`. Current ledgers run under schema v5 after
-    Phase 11.
+    `agent_step`, `model_decision`. Current ledgers run under schema v6 after
+    Phase 12.
   - Gateway first workflow: `verified_git_apply_patch` applies a real Git patch
     and returns verifier evidence from `git_file_diff_matches_patch_v1`.
   - FSV test suite:
@@ -105,8 +105,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Verifiers: `gitlab_pipeline_status_v1`,
     `gitlab_pipeline_jobs_completed_v1`.
   - Source of truth: GitLab REST API project/pipeline/jobs endpoints plus the
-    local SQLite ledger evidence rows. No schema bump; current ledgers remain
-    `LEDGER_SCHEMA_VERSION = 5`.
+    local SQLite ledger evidence rows. Phase 9 added no schema bump; current
+    ledgers now run under `LEDGER_SCHEMA_VERSION = 6`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase9_gitlab_ci_fsv.rs`
     (1 live integration test covering 2 happy verifiers + 9 edge checks; run
@@ -118,8 +118,9 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `scanner_lockfile_pinned_to_version_v1`,
     `scanner_sbom_artifact_present_v1`.
   - Source of truth: physical OSV JSON report files, Cargo lockfiles,
-    CycloneDX JSON SBOM files, plus local SQLite ledger evidence rows. No
-    schema bump; current ledgers remain `LEDGER_SCHEMA_VERSION = 5`.
+    CycloneDX JSON SBOM files, plus local SQLite ledger evidence rows. Phase
+    10 added no schema bump; current ledgers now run under
+    `LEDGER_SCHEMA_VERSION = 6`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs`
     (1 local integration test covering 3 happy verifiers + 12 edge checks; run
@@ -130,13 +131,26 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Verifier: `github_issue_evidence_link_v1`.
   - Source of truth: GitHub Issues REST API issue body and issue comments,
     plus local SQLite ledger evidence rows. Pull requests returned by the
-    Issues endpoint are rejected as ticket evidence. No schema bump; current
-    ledgers remain `LEDGER_SCHEMA_VERSION = 5`.
+    Issues endpoint are rejected as ticket evidence. Phase 11 added no schema
+    bump; current ledgers now run under `LEDGER_SCHEMA_VERSION = 6`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`
     (1 live integration test covering connector exposure, 1 happy verifier,
     and 7 edge checks; run with
     `cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv`).
+- **Phase 12 (Deterministic Scorecards)**: COMPLETE and verified.
+  - Connector: `blackbox_scoring_v1`.
+  - Command: `blackbox score run --ledger PATH --run-id RUN_ID`.
+  - Record kind: `scorecard`.
+  - Source of truth: physical SQLite `ledger_records` rows, including
+    verifier, evidence, incident, policy, and tool-call rows. Phase 12 bumps
+    the logical ledger schema to `LEDGER_SCHEMA_VERSION = 6`.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase12_scorecard_fsv.rs`
+    (1 local integration test covering a verified happy scorecard, no-tool
+    edge, unverified-tool edge, failed-verifier incident edge, and missing-run
+    fail-closed behavior; run with
+    `cargo test --package context-graph-cli --test blackbox_phase12_scorecard_fsv`).
 
 ## Build And Test Quick Reference
 
@@ -177,6 +191,9 @@ cargo test --package context-graph-cli --test blackbox_phase10_scanner_fsv -- --
 # Phase 11 FSV tests (live GitHub issue/comments API + real SQLite ledger)
 cargo test --package context-graph-cli --test blackbox_phase11_github_issue_evidence_fsv -- --nocapture
 
+# Phase 12 FSV tests (real SQLite scorecards + real Git verifier evidence)
+cargo test --package context-graph-cli --test blackbox_phase12_scorecard_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -191,18 +208,18 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 11
+- `04_event_ledger_schema.md` — record contracts and the current Phase 12
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped
-  local/GitHub/GitLab/enterprise/scanner-artifact connectors.
+  local/GitHub/GitLab/enterprise/scanner-artifact/scoring connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped verifier registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 11 GitHub ticket evidence shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 12 scorecards shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–11 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–12 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -234,6 +251,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   connector, verifiers, local tests, and manual FSV evidence.
 - `30_phase11_state_and_invariants.md` — shipped Phase 11 GitHub issue
   evidence-link verifier, live tests, and manual FSV evidence.
+- `31_phase12_state_and_invariants.md` — shipped Phase 12 deterministic
+  scorecards, tests, and manual FSV evidence.
 
 ## Build Doctrine
 
@@ -257,7 +276,7 @@ non-zero exit code, every time.
 
 1. **No backwards compatibility.** This product is pre-production. On a schema
    change, wipe the SQLite ledger; never write a migration shim. Current
-   physical ledger schema is version `5`.
+   physical ledger schema is version `6`.
 2. **Fail fast, no fallbacks.** A failure must surface as a typed error code
    with `source_of_truth`, `connector`, `field_path`, and `remediation`. If the
    path errors, do not catch and substitute a default — let it bubble.

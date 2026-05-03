@@ -22,6 +22,7 @@ The mandatory operator-side protocol lives in
 | GitLab CI API + ledger evidence rows (Phase 9) | live GitLab project/pipeline/job state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
 | Scanner artifact files + ledger evidence rows (Phase 10) | OSV JSON reports, Cargo lockfiles, CycloneDX JSON SBOM files, and physical SQLite rows read directly |
 | GitHub Issues API + ledger evidence rows (Phase 11) | live GitHub issue body/comment state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
+| Scorecard rows (Phase 12) | physical SQLite verifier/evidence/policy/incident/tool-call rows read independently and persisted as `scorecard` rows |
 
 ## Test Levels
 
@@ -71,6 +72,9 @@ files, runs the real CLI, and reads SQLite rows plus artifact files directly.
 Phase 11 adds `tests/blackbox_phase11_github_issue_evidence_fsv.rs`, which
 discovers live GitHub issue source-of-truth state with `curl`, verifies the
 evidence link through the real CLI, and reads SQLite rows directly.
+Phase 12 adds `tests/blackbox_phase12_scorecard_fsv.rs`, which uses a real
+SQLite ledger and real local Git verifier evidence, appends real `scorecard`
+rows, and reads those rows directly from `ledger_records`.
 
 ## Acceptance Criteria
 
@@ -192,6 +196,12 @@ Concretely, that means:
   specs such as malformed evidence URLs, unsupported link scopes, invalid
   issue numbers, or invalid repository source segments are blocked before
   source reads and therefore do not create readback rows.
+- Phase 12 FSV scores real ledger rows produced by real CLI commands and a
+  real local Git verifier. It then opens the physical SQLite ledger to prove
+  `scorecard` rows exist only where expected and contain the exact trust level,
+  correctness, risk, confidence, training value, score inputs, and readback
+  hashes expected from the source rows. Missing run ids fail as
+  `SCORECARD_RUN_NOT_FOUND` and do not create scorecard rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -203,7 +213,7 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11 inputs/outputs are
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9/10/11/12 inputs/outputs are
 enumerated in `23_phase4_state_and_invariants.md`,
 `24_phase5_state_and_invariants.md`,
 `25_phase6_state_and_invariants.md`, and
@@ -211,7 +221,8 @@ enumerated in `23_phase4_state_and_invariants.md`,
 `27_phase8_state_and_invariants.md`, and
 `28_phase9_state_and_invariants.md`, and
 `29_phase10_state_and_invariants.md`, and
-`30_phase11_state_and_invariants.md`.
+`30_phase11_state_and_invariants.md`, and
+`31_phase12_state_and_invariants.md`.
 
 A synthetic test must include:
 

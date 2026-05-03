@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 5;
+const LEDGER_SCHEMA_VERSION: i64 = 6;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -35,6 +35,7 @@ const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
+const SCORING_CONNECTOR_ID: &str = "blackbox_scoring_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -44,6 +45,8 @@ const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
 const DASHBOARD_SCHEMA_VERSION: i64 = 1;
 const ENTERPRISE_CONTROL_SCHEMA_VERSION: i64 = 1;
 const SIEM_EXPORT_SCHEMA_VERSION: i64 = 1;
+const SCORECARD_SCHEMA_VERSION: i64 = 1;
+const SCORE_RULE_VERSION: &str = "score_v1";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
@@ -110,6 +113,11 @@ pub enum BlackboxCommands {
     Enterprise {
         #[command(subcommand)]
         action: EnterpriseCommands,
+    },
+    /// Compute and persist Phase 12 deterministic trust/risk scorecards.
+    Score {
+        #[command(subcommand)]
+        action: ScoreCommands,
     },
     /// Inspect physical ledger state.
     Inspect {
@@ -656,6 +664,35 @@ pub struct EnterpriseAuditExportArgs {
     pub model: Option<String>,
 }
 
+#[derive(Subcommand, Debug)]
+pub enum ScoreCommands {
+    /// Compute and persist a deterministic scorecard for one run.
+    Run(ScoreRunArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ScoreRunArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id to score.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Scoring actor identifier.
+    #[arg(long, default_value = "blackbox_scoring")]
+    pub agent: String,
+
+    /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
 impl DashboardView {
     fn as_str(self) -> &'static str {
         match self {
@@ -1107,6 +1144,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             EnterpriseCommands::AccessEvaluate(args) => enterprise_access_evaluate(args),
             EnterpriseCommands::ExportAudit(args) => enterprise_export_audit(args),
         },
+        BlackboxCommands::Score { action } => match action {
+            ScoreCommands::Run(args) => score_run(args),
+        },
         BlackboxCommands::Inspect { action } => match action {
             InspectCommands::Ledger(args) => inspect_ledger(args),
         },
@@ -1186,6 +1226,12 @@ fn connector_list() -> BbxResult<Value> {
                     "enterprise_rbac_tenant_isolation_v1",
                     "enterprise_audit_siem_export_v1"
                 ],
+                "fail_closed": true
+            },
+            {
+                "connector_id": SCORING_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_scorecard",
+                "readback_specs": ["blackbox_scorecard_run_v1"],
                 "fail_closed": true
             }
         ]
@@ -1374,6 +1420,31 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                         "directory_snapshots": directory_snapshots,
                         "access_decisions": access_decisions
                     }
+                },
+            }))
+        }
+        SCORING_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    SCORING_CONNECTOR_ID,
+                    source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_scoring_v1 connector test does not accept --command",
+                    "remove --command and pass the SQLite ledger path through --source",
+                ));
+            }
+            let conn = open_initialized_ledger(&args.source)?;
+            let inspection = verify_ledger_integrity(&conn, &args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": SCORING_CONNECTOR_ID,
+                "source_of_truth": source_of_truth(&args.source),
+                "readback": {
+                    "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+                    "ledger_record_count": inspection.record_count,
+                    "ledger_tip_sha256": inspection.ledger_tip_sha256,
+                    "scorecard_records_total": inspection.records.iter().filter(|record| record.record_kind == "scorecard").count(),
                 },
             }))
         }
@@ -2118,7 +2189,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/config", "ledger_record_kind": "enterprise_tenant_config" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
             { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
-            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null }
+            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -2414,6 +2486,778 @@ fn enterprise_export_audit(args: EnterpriseAuditExportArgs) -> BbxResult<Value> 
         "access_decision_record_sha256": access_append.record_sha256,
         "manifest_sha256": sha256_file(&manifest_path)?,
     }))
+}
+
+fn score_run(args: ScoreRunArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    ensure_score_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let scorecard_id = prefixed_id("score");
+    let scorecard_payload = build_scorecard_payload(
+        &args.ledger,
+        &inspection_before,
+        &ledger_id,
+        &args.run_id,
+        &scorecard_id,
+    )?;
+    let record_id = prefixed_id("bbx_rec");
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "scorecard".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(args.run_id.clone()),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: scorecard_payload.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_scorecard_append(
+        &conn,
+        &args.ledger,
+        &args.run_id,
+        &scorecard_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        inspection_before.record_count,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox score run",
+        "connector": SCORING_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "scorecard",
+        "scorecard_id": scorecard_id,
+        "run_id": args.run_id,
+        "score_rule_version": SCORE_RULE_VERSION,
+        "scorecard_schema_version": SCORECARD_SCHEMA_VERSION,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "score": scorecard_payload["score"].clone(),
+        "score_inputs": scorecard_payload["score_inputs"].clone(),
+        "readback": readback,
+    }))
+}
+
+fn ensure_score_run_exists_for_tenant(
+    conn: &Connection,
+    path: &Path,
+    run_id: &str,
+    tenant_id: &str,
+) -> BbxResult<()> {
+    let parent_tenant: Option<String> = conn
+        .query_row(
+            "SELECT tenant_id FROM ledger_records
+             WHERE record_kind = 'agent_run' AND run_id = ?1",
+            params![run_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|err| BlackboxError::sqlite(path, "read scorecard run parent from ledger", err))?;
+    let Some(parent_tenant) = parent_tenant else {
+        return Err(scorecard_invalid(
+            path,
+            "SCORECARD_RUN_NOT_FOUND",
+            "ledger_records.run_id",
+            format!("run_id {run_id} does not exist in ledger_records"),
+            "record the parent agent_run before scoring the run",
+        ));
+    };
+    if parent_tenant != tenant_id {
+        return Err(BlackboxError::tenant_mismatch(
+            path,
+            run_id,
+            &parent_tenant,
+            tenant_id,
+        ));
+    }
+    Ok(())
+}
+
+fn build_scorecard_payload(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    run_id: &str,
+    scorecard_id: &str,
+) -> BbxResult<Value> {
+    let input_records = inspection
+        .records
+        .iter()
+        .filter(|record| {
+            record.run_id.as_deref() == Some(run_id) && record.record_kind != "scorecard"
+        })
+        .collect::<Vec<_>>();
+    if input_records.is_empty() {
+        return Err(scorecard_invalid(
+            ledger_path,
+            "SCORECARD_RUN_NOT_FOUND",
+            "ledger_records.run_id",
+            format!("run_id {run_id} has no scorable ledger rows"),
+            "record the run and its source-of-truth evidence before scoring it",
+        ));
+    }
+
+    let run_records = input_records
+        .iter()
+        .copied()
+        .filter(|record| record.record_kind == "agent_run")
+        .collect::<Vec<_>>();
+    let run_record = match run_records.as_slice() {
+        [record] => *record,
+        [] => {
+            return Err(scorecard_invalid(
+                ledger_path,
+                "SCORECARD_RUN_NOT_FOUND",
+                "ledger_records.record_kind",
+                format!("run_id {run_id} has no agent_run row"),
+                "record the parent agent_run before scoring the run",
+            ));
+        }
+        _ => {
+            return Err(scorecard_schema_error(
+                ledger_path,
+                run_records[1],
+                "record_kind",
+                format!("run_id {run_id} has multiple agent_run rows"),
+            ));
+        }
+    };
+
+    let run_risk_tier =
+        required_score_payload_pointer_str(ledger_path, run_record, "/task/risk_tier")?;
+    validate_risk_tier(ledger_path, run_risk_tier)?;
+    let evidence_hash_verification = verify_evidence_packet_refs(ledger_path, &input_records)?;
+    let score_input_refs = input_records
+        .iter()
+        .copied()
+        .map(|record| scorecard_record_ref_from_output(ledger_path, "score_input", record))
+        .collect::<BbxResult<Vec<_>>>()?;
+    let score_input_refs_sha256 = sha256_hex(&canonical_json_bytes(&json!(score_input_refs))?);
+
+    let mut verifier_status_counts = initialized_status_counts();
+    let mut policy_counts = BTreeMap::new();
+    policy_counts.insert("allowed".to_string(), 0_i64);
+    policy_counts.insert("denied".to_string(), 0_i64);
+    policy_counts.insert("unknown".to_string(), 0_i64);
+    let mut connectors = BTreeSet::new();
+    let mut connector_reliability_sum = 0.0_f64;
+    let mut verifier_total = 0_i64;
+    let mut verifier_with_readback = 0_i64;
+    let mut tool_call_ids = BTreeSet::new();
+    let mut evidence_tool_call_ids = BTreeSet::new();
+    let mut approved_policy_count = 0_i64;
+
+    for record in &input_records {
+        match record.record_kind.as_str() {
+            "tool_call" => {
+                let tool_call_id = required_score_payload_str(ledger_path, record, "tool_call_id")?;
+                if !tool_call_ids.insert(tool_call_id.to_string()) {
+                    return Err(scorecard_schema_error(
+                        ledger_path,
+                        record,
+                        "tool_call_id",
+                        format!("duplicate tool_call_id {tool_call_id} in run {run_id}"),
+                    ));
+                }
+            }
+            "evidence_packet" => {
+                let tool_call_id = required_score_payload_str(ledger_path, record, "tool_call_id")?;
+                evidence_tool_call_ids.insert(tool_call_id.to_string());
+            }
+            "verifier_result" => {
+                validate_verifier_score_shape(ledger_path, record)?;
+                verifier_total += 1;
+                let status = required_score_payload_str(ledger_path, record, "status")?;
+                match status {
+                    "passed" | "failed" | "blocked" => {
+                        *verifier_status_counts
+                            .entry(status.to_string())
+                            .or_insert(0) += 1;
+                    }
+                    other => {
+                        return Err(scorecard_schema_error(
+                            ledger_path,
+                            record,
+                            "status",
+                            format!("unsupported verifier_result status {other:?}"),
+                        ));
+                    }
+                }
+                let connector = required_score_payload_str(ledger_path, record, "connector")?;
+                connector_reliability_sum +=
+                    score_connector_reliability(ledger_path, record, connector)?;
+                connectors.insert(connector.to_string());
+                if record.payload.get("actual_readback") != Some(&json!({"blocked": true})) {
+                    verifier_with_readback += 1;
+                }
+            }
+            "policy_decision" => {
+                let status = required_score_payload_str(ledger_path, record, "status")?;
+                match status {
+                    "allowed" | "denied" => {
+                        *policy_counts.entry(status.to_string()).or_insert(0) += 1;
+                    }
+                    other => {
+                        return Err(scorecard_schema_error(
+                            ledger_path,
+                            record,
+                            "status",
+                            format!("unsupported policy_decision status {other:?}"),
+                        ));
+                    }
+                }
+                if status == "allowed"
+                    && record
+                        .payload
+                        .pointer("/approval/approval_id")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                        .is_some()
+                {
+                    approved_policy_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for evidence_tool_call_id in &evidence_tool_call_ids {
+        if !tool_call_ids.contains(evidence_tool_call_id) {
+            return Err(scorecard_invalid(
+                ledger_path,
+                "SCORECARD_EVIDENCE_WITHOUT_TOOL_CALL",
+                "ledger_records.payload.tool_call_id",
+                format!(
+                    "evidence_packet references tool_call_id {evidence_tool_call_id}, but the run has no matching tool_call"
+                ),
+                "repair the ledger by starting a new run and recording the tool call before verifier evidence",
+            ));
+        }
+    }
+
+    let tool_calls_total = tool_call_ids.len() as i64;
+    let tool_calls_with_evidence = evidence_tool_call_ids.len() as i64;
+    let evidence_packets_total = input_records
+        .iter()
+        .filter(|record| record.record_kind == "evidence_packet")
+        .count() as i64;
+    let incidents_total = input_records
+        .iter()
+        .filter(|record| record.record_kind == "incident_packet")
+        .count() as i64;
+    let readback_snapshots_total = input_records
+        .iter()
+        .filter(|record| record.record_kind == "readback_snapshot")
+        .count() as i64;
+    let failed = verifier_status_counts.get("failed").copied().unwrap_or(0);
+    let blocked = verifier_status_counts.get("blocked").copied().unwrap_or(0);
+    let passed = verifier_status_counts.get("passed").copied().unwrap_or(0);
+    let policy_denied = policy_counts.get("denied").copied().unwrap_or(0);
+    let policy_allowed = policy_counts.get("allowed").copied().unwrap_or(0);
+    let policy_total = policy_allowed + policy_denied;
+    let all_tool_calls_evidenced =
+        tool_calls_total > 0 && tool_calls_with_evidence == tool_calls_total;
+    let correctness = if failed > 0 {
+        Some(0.0)
+    } else if verifier_total > 0 && blocked == 0 && all_tool_calls_evidenced {
+        Some(1.0)
+    } else {
+        None
+    };
+    let policy_compliance = if policy_denied > 0 {
+        "denied"
+    } else if approved_policy_count > 0 {
+        "approved"
+    } else if policy_allowed > 0 {
+        "allowed"
+    } else {
+        "policy_missing"
+    };
+    let trust_level = if incidents_total > 0 || failed > 0 || policy_denied > 0 {
+        "incident"
+    } else if passed > 0 && blocked == 0 && all_tool_calls_evidenced && policy_allowed > 0 {
+        "verified_with_policy"
+    } else if passed > 0 && blocked == 0 && all_tool_calls_evidenced {
+        "verified"
+    } else {
+        "recorded"
+    };
+    let evidence_coverage_ratio = ratio_f64(tool_calls_with_evidence, tool_calls_total);
+    let readback_ratio = ratio_f64(verifier_with_readback, verifier_total);
+    let average_connector_reliability = if verifier_total == 0 {
+        0.0
+    } else {
+        connector_reliability_sum / verifier_total as f64
+    };
+    let evidence_ref_factor =
+        if evidence_packets_total > 0 && evidence_hash_verification["status"] == "passed" {
+            1.0
+        } else {
+            0.0
+        };
+    let verification_confidence = if verifier_total == 0 {
+        0.0
+    } else {
+        round_score(clamp01(
+            (average_connector_reliability * 0.55)
+                + (evidence_coverage_ratio.unwrap_or(0.0) * 0.25)
+                + (readback_ratio.unwrap_or(0.0) * 0.10)
+                + (evidence_ref_factor * 0.10),
+        ))
+    };
+    let risk = round_score(compute_scorecard_risk(
+        run_risk_tier,
+        tool_calls_total,
+        failed,
+        blocked,
+        incidents_total,
+        policy_denied,
+        policy_total,
+        all_tool_calls_evidenced,
+    ));
+    let training_value = round_score(compute_scorecard_training_value(
+        run_risk_tier,
+        passed,
+        failed,
+        blocked,
+        incidents_total,
+        policy_denied,
+        evidence_packets_total,
+    ));
+    let score_inputs = json!({
+        "run_risk_tier": run_risk_tier,
+        "tool_calls_total": tool_calls_total,
+        "tool_calls_with_evidence": tool_calls_with_evidence,
+        "evidence_coverage_ratio": evidence_coverage_ratio,
+        "verifier_results_total": verifier_total,
+        "verifier_status_counts": verifier_status_counts,
+        "readback_snapshots_total": readback_snapshots_total,
+        "verifier_results_with_readback": verifier_with_readback,
+        "readback_ratio": readback_ratio,
+        "evidence_packets_total": evidence_packets_total,
+        "incident_packets_total": incidents_total,
+        "policy_decision_counts": policy_counts,
+        "policy_compliance": policy_compliance,
+        "approved_policy_count": approved_policy_count,
+        "connectors": connectors,
+        "average_connector_reliability": round_score(average_connector_reliability),
+        "evidence_hash_verification": evidence_hash_verification,
+        "score_input_refs_sha256": score_input_refs_sha256,
+    });
+
+    Ok(json!({
+        "record_kind": "scorecard",
+        "scorecard_id": scorecard_id,
+        "run_id": run_id,
+        "scorecard_schema_version": SCORECARD_SCHEMA_VERSION,
+        "score_rule_version": SCORE_RULE_VERSION,
+        "scored_at": Utc::now().to_rfc3339(),
+        "source_of_truth": source_of_truth(ledger_path),
+        "source_ledger": {
+            "path": ledger_path,
+            "source_of_truth": source_of_truth(ledger_path),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_score": inspection.record_count,
+            "ledger_tip_sha256_before_score": inspection.ledger_tip_sha256,
+        },
+        "score": {
+            "correctness": correctness,
+            "verification_confidence": verification_confidence,
+            "risk": risk,
+            "policy_compliance": policy_compliance,
+            "training_value": training_value,
+            "trust_level": trust_level,
+        },
+        "score_inputs": score_inputs,
+        "score_rules": {
+            "basis": [
+                "run scorecards are computed only from physical ledger rows after hash-chain verification",
+                "evidence_packet record_refs must match physical ledger rows before scoring",
+                "failed verifier, denied policy, or incident packet sets trust_level=incident",
+                "full tool-call evidence coverage plus passed verifiers is required for verified trust levels",
+                "missing policy on high-risk runs raises risk and reports policy_compliance=policy_missing"
+            ],
+            "external_basis": [
+                "NIST AI RMF Govern/Map/Measure/Manage risk lifecycle",
+                "NIST SP 800-53 audit accountability record-content principle",
+                "OWASP LLM excessive-agency governance risk"
+            ],
+        },
+        "input_record_count": input_records.len(),
+        "input_record_refs": score_input_refs,
+    }))
+}
+
+fn readback_scorecard_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    run_id: &str,
+    scorecard_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "SCORECARD_READBACK_MISMATCH",
+            SCORING_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "scorecard append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun scoring after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "SCORECARD_READBACK_MISMATCH",
+                SCORING_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("scorecard sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun scoring after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "scorecard"
+        || row.run_id.as_deref() != Some(run_id)
+        || row.payload.get("scorecard_id").and_then(Value::as_str) != Some(scorecard_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "SCORECARD_READBACK_MISMATCH",
+            SCORING_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.scorecard",
+            "scorecard row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun scoring after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_score": inspection_after.record_count,
+        "ledger_tip_sha256_after_score": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "run_id": row.run_id,
+        "scorecard_id": row.payload["scorecard_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "score": row.payload["score"].clone(),
+    }))
+}
+
+fn scorecard_invalid(
+    ledger_path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger_path)),
+        SCORING_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn scorecard_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::Schema,
+        "SCORECARD_RECORD_SCHEMA_DRIFT",
+        message,
+        Some(source_of_truth(ledger_path)),
+        SCORING_CONNECTOR_ID,
+        Some(format!(
+            "ledger_records[{}].payload.{}",
+            record.sequence,
+            field_path.into()
+        )),
+        "inspect the physical ledger row; scoring never guesses across malformed ledger payloads",
+    )
+}
+
+fn required_score_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            scorecard_schema_error(
+                ledger_path,
+                record,
+                field,
+                format!(
+                    "{} payload is missing non-empty {field}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn required_score_payload_pointer_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    pointer: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            scorecard_schema_error(
+                ledger_path,
+                record,
+                pointer.trim_start_matches('/').replace('/', "."),
+                format!(
+                    "{} payload is missing non-empty {pointer}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn scorecard_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        required_record_hash_str(ledger_path, record, "payload_sha256")?,
+        required_record_hash_str(ledger_path, record, "record_sha256")?,
+    ))
+}
+
+fn required_record_hash_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .hash
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            scorecard_schema_error(
+                ledger_path,
+                record,
+                format!("hash.{field}"),
+                format!("{} row is missing hash field {field}", record.record_kind),
+            )
+        })
+}
+
+fn validate_verifier_score_shape(ledger_path: &Path, record: &LedgerRecordOutput) -> BbxResult<()> {
+    let Some(score) = record
+        .payload
+        .get("score")
+        .filter(|value| value.is_object())
+    else {
+        return Err(scorecard_schema_error(
+            ledger_path,
+            record,
+            "score",
+            "verifier_result is missing score object",
+        ));
+    };
+    validate_score_number_or_null(ledger_path, record, score, "correctness")?;
+    validate_score_number(ledger_path, record, score, "risk")?;
+    validate_score_number(ledger_path, record, score, "confidence")?;
+    Ok(())
+}
+
+fn validate_score_number_or_null(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    score: &Value,
+    field: &'static str,
+) -> BbxResult<()> {
+    if score.get(field) == Some(&Value::Null) {
+        return Ok(());
+    }
+    validate_score_number(ledger_path, record, score, field)
+}
+
+fn validate_score_number(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    score: &Value,
+    field: &'static str,
+) -> BbxResult<()> {
+    let Some(value) = score.get(field).and_then(Value::as_f64) else {
+        return Err(scorecard_schema_error(
+            ledger_path,
+            record,
+            format!("score.{field}"),
+            format!("verifier_result score.{field} must be a number in [0,1]"),
+        ));
+    };
+    if !(0.0..=1.0).contains(&value) {
+        return Err(scorecard_schema_error(
+            ledger_path,
+            record,
+            format!("score.{field}"),
+            format!("verifier_result score.{field} must be in [0,1], found {value}"),
+        ));
+    }
+    Ok(())
+}
+
+fn score_connector_reliability(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    connector: &str,
+) -> BbxResult<f64> {
+    match connector {
+        GIT_CONNECTOR_ID => Ok(0.95),
+        FS_CONNECTOR_ID => Ok(0.90),
+        CMD_CONNECTOR_ID => Ok(0.85),
+        GITHUB_CONNECTOR_ID => Ok(0.90),
+        GHA_CONNECTOR_ID => Ok(0.90),
+        GITLAB_CI_CONNECTOR_ID => Ok(0.90),
+        SCANNER_CONNECTOR_ID => Ok(0.92),
+        ENTERPRISE_CONNECTOR_ID => Ok(0.93),
+        SQLITE_CONNECTOR_ID => Ok(0.96),
+        POLICY_CONNECTOR_ID => Ok(0.88),
+        other => Err(scorecard_schema_error(
+            ledger_path,
+            record,
+            "connector",
+            format!("unsupported connector {other:?} in verifier_result"),
+        )),
+    }
+}
+
+fn ratio_f64(numerator: i64, denominator: i64) -> Option<f64> {
+    if denominator <= 0 {
+        None
+    } else {
+        Some(round_score((numerator as f64) / (denominator as f64)))
+    }
+}
+
+fn compute_scorecard_risk(
+    run_risk_tier: &str,
+    tool_calls_total: i64,
+    failed: i64,
+    blocked: i64,
+    incidents_total: i64,
+    policy_denied: i64,
+    policy_total: i64,
+    all_tool_calls_evidenced: bool,
+) -> f64 {
+    let mut risk = match run_risk_tier {
+        "low" => 0.20,
+        "medium" => 0.50,
+        "high" => 0.80,
+        _ => 1.0,
+    };
+    if tool_calls_total > 0 {
+        risk += 0.08;
+    }
+    if run_risk_tier == "high" && policy_total == 0 {
+        risk += 0.10;
+    }
+    if tool_calls_total > 0 && !all_tool_calls_evidenced {
+        risk += 0.08;
+    }
+    if failed > 0 {
+        risk += 0.10;
+    }
+    if blocked > 0 {
+        risk += 0.05;
+    }
+    if incidents_total > 0 {
+        risk += 0.12;
+    }
+    if policy_denied > 0 {
+        risk += 0.10;
+    }
+    clamp01(risk)
+}
+
+fn compute_scorecard_training_value(
+    run_risk_tier: &str,
+    passed: i64,
+    failed: i64,
+    blocked: i64,
+    incidents_total: i64,
+    policy_denied: i64,
+    evidence_packets_total: i64,
+) -> f64 {
+    let mut value = 0.05;
+    if passed > 0 && evidence_packets_total > 0 {
+        value += 0.15;
+    }
+    if run_risk_tier == "high" {
+        value += 0.10;
+    }
+    if failed > 0 {
+        value += 0.25;
+    }
+    if blocked > 0 {
+        value += 0.18;
+    }
+    if incidents_total > 0 {
+        value += 0.25;
+    }
+    if policy_denied > 0 {
+        value += 0.20;
+    }
+    clamp01(value)
+}
+
+fn clamp01(value: f64) -> f64 {
+    value.clamp(0.0, 1.0)
+}
+
+fn round_score(value: f64) -> f64 {
+    (value * 10_000.0).round() / 10_000.0
 }
 
 #[derive(Debug)]
@@ -6441,6 +7285,7 @@ fn build_dashboard_summary(
         json!({"label": "Tool calls", "value": tool_calls_total}),
         json!({"label": "Evidence packets", "value": kind_counts.get("evidence_packet").copied().unwrap_or(0)}),
         json!({"label": "Incidents", "value": kind_counts.get("incident_packet").copied().unwrap_or(0)}),
+        json!({"label": "Scorecards", "value": kind_counts.get("scorecard").copied().unwrap_or(0)}),
         json!({"label": "Verifier passed", "value": passed}),
         json!({"label": "Verifier failed", "value": failed}),
         json!({"label": "Verifier blocked", "value": blocked}),
@@ -6466,6 +7311,7 @@ fn build_dashboard_summary(
             "tool_calls_total": tool_calls_total,
             "evidence_packets_total": kind_counts.get("evidence_packet").copied().unwrap_or(0),
             "incident_packets_total": kind_counts.get("incident_packet").copied().unwrap_or(0),
+            "scorecards_total": kind_counts.get("scorecard").copied().unwrap_or(0),
             "verifier_results_total": verifier_total,
             "verifier_statuses": verifier_status_counts,
             "policy_decisions": policy_decision_counts,
@@ -6756,6 +7602,11 @@ fn build_dashboard_exports(
                 "--ledger", ledger_path.display().to_string(),
                 "--run-id", run_id,
                 "--out", format!("evidence_{}.json", safe_filename_fragment(run_id)),
+            ],
+            "scorecard_command": [
+                "blackbox", "score", "run",
+                "--ledger", ledger_path.display().to_string(),
+                "--run-id", run_id,
             ],
             "timeline_api": format!("api/{}", dashboard_timeline_file_name(run_id)),
         }));
@@ -8578,7 +9429,7 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"ok\">ok</option><option value=\"running\">running</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"timeline\"><h2 id=\"timeline\">Timeline</h2><div class=\"filters\" aria-label=\"Timeline filters\"><label>Record<select id=\"timeline-kind\"><option value=\"\">All</option><option value=\"agent_run\">agent_run</option><option value=\"agent_step\">agent_step</option><option value=\"model_decision\">model_decision</option><option value=\"policy_decision\">policy_decision</option><option value=\"tool_call\">tool_call</option><option value=\"expected_delta\">expected_delta</option><option value=\"readback_snapshot\">readback_snapshot</option><option value=\"verifier_result\">verifier_result</option><option value=\"evidence_packet\">evidence_packet</option><option value=\"incident_packet\">incident_packet</option><option value=\"scorecard\">scorecard</option></select></label><label>Status<select id=\"timeline-status\"><option value=\"\">All</option><option value=\"passed\">passed</option><option value=\"failed\">failed</option><option value=\"blocked\">blocked</option><option value=\"denied\">denied</option><option value=\"ok\">ok</option><option value=\"running\">running</option><option value=\"verified\">verified</option><option value=\"verified_with_policy\">verified_with_policy</option><option value=\"recorded\">recorded</option><option value=\"incident\">incident</option></select></label><label>Risk<select id=\"timeline-risk\"><option value=\"\">All</option><option value=\"low\">low</option><option value=\"medium\">medium</option><option value=\"high\">high</option></select></label><label>Source<input id=\"timeline-source\" type=\"search\" autocomplete=\"off\"></label></div><div class=\"wide\"><table><thead><tr><th>Run</th><th>Seq</th><th>Record</th><th>Status</th><th>Risk</th><th>Source Of Truth</th><th>Detail</th></tr></thead><tbody>\n");
     for (_, _, timeline) in &data.timelines {
         let run_id = timeline.get("run_id").and_then(Value::as_str).unwrap_or("");
         for record in dashboard_array(timeline, "/report/timeline")? {
@@ -8651,12 +9502,13 @@ fn build_dashboard_html(data: &DashboardData) -> BbxResult<String> {
     }
     html.push_str("</tbody></table></div></section>\n");
 
-    html.push_str("<section aria-labelledby=\"exports\"><h2 id=\"exports\">Exports</h2><div class=\"wide\"><table><thead><tr><th>Run</th><th>Evidence Command</th><th>Timeline API</th></tr></thead><tbody>\n");
+    html.push_str("<section aria-labelledby=\"exports\"><h2 id=\"exports\">Exports</h2><div class=\"wide\"><table><thead><tr><th>Run</th><th>Evidence Command</th><th>Score Command</th><th>Timeline API</th></tr></thead><tbody>\n");
     for export in dashboard_array(&data.exports, "/exports/evidence_by_run")? {
         html.push_str(&format!(
-            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td><a href=\"{}\">timeline</a></td></tr>\n",
             html_escape(export.get("run_id").and_then(Value::as_str).unwrap_or("")),
             html_escape(&dashboard_display_value(export.get("evidence_export_command").unwrap_or(&Value::Null))),
+            html_escape(&dashboard_display_value(export.get("scorecard_command").unwrap_or(&Value::Null))),
             html_escape(export.get("timeline_api").and_then(Value::as_str).unwrap_or(""))
         ));
     }
@@ -8690,6 +9542,7 @@ fn dashboard_timeline_record_status(record: &Value) -> String {
         "/payload/status",
         "/payload/verifier_status",
         "/payload/execution/status",
+        "/payload/score/trust_level",
         "/payload/trigger",
     ] {
         if let Some(status) = record.pointer(pointer).and_then(Value::as_str) {
@@ -8702,6 +9555,18 @@ fn dashboard_timeline_record_status(record: &Value) -> String {
 }
 
 fn dashboard_timeline_record_risk(record: &Value) -> String {
+    if let Some(score_risk) = record
+        .pointer("/payload/score/risk")
+        .and_then(Value::as_f64)
+    {
+        if score_risk >= 0.67 {
+            return "high".to_string();
+        }
+        if score_risk >= 0.34 {
+            return "medium".to_string();
+        }
+        return "low".to_string();
+    }
     record
         .pointer("/payload/task/risk_tier")
         .and_then(Value::as_str)
@@ -8731,6 +9596,8 @@ fn dashboard_timeline_record_detail(record: &Value) -> String {
         "/payload/error_code",
         "/payload/evidence_packet_id",
         "/payload/incident_packet_id",
+        "/payload/score/trust_level",
+        "/payload/scorecard_id",
     ] {
         if let Some(value) = record.pointer(pointer) {
             let rendered = dashboard_display_value(value);

@@ -10,7 +10,8 @@ Phase 4 shipped evidence packets, incident packets, read-only replay, and
 evidence export. Phase 9 shipped GitLab CI hosted pipeline/job verifiers.
 Phase 10 shipped scanner artifact verifiers for OSV JSON, Cargo lockfiles,
 and CycloneDX JSON SBOMs. Phase 11 shipped GitHub issue evidence-link
-verification for ticket proof.
+verification for ticket proof. Phase 12 shipped deterministic scorecards over
+physical ledger evidence.
 
 ## Full-State Verification Protocol
 
@@ -185,6 +186,14 @@ segments, invalid evidence URLs, and invalid link scopes.
 Issue-comments pagination is persisted in `readback_snapshot`; malformed or
 incomplete pagination is `blocked`, not silently treated as complete.
 
+Phase 12 follows the same source-of-truth doctrine for scorecards in
+`crates/context-graph-cli/tests/blackbox_phase12_scorecard_fsv.rs`: the test
+creates real ledger rows through the CLI, uses a real Git verifier to produce
+passed and failed evidence, runs `blackbox score run`, and then reads physical
+SQLite `scorecard` rows directly. It covers a verified happy path, no-tool
+recorded state, unverified high-risk tool-call state, failed-verifier incident
+state, and missing-run fail-closed behavior.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -235,7 +244,7 @@ Every verifier failure must answer:
 - Was this a policy block, execution failure, or outcome mismatch?
 - What action should a human or agent take next?
 
-Phase 2/3/4/9/10/11 enforce this with the `BlackboxError` JSON shape (`status`,
+Phase 2/3/4/9/10/11/12 enforce this with the `BlackboxError` JSON shape (`status`,
 `error_code`, `message`, `source_of_truth`, `connector`, `field_path`,
 `remediation`).
 

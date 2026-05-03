@@ -17,7 +17,8 @@ RBAC/tenant-isolation decisions, and audit/SIEM export readback. Phase 9 adds
 adds `scanner_artifact_v1` for physical OSV report, Cargo lockfile, and
 CycloneDX SBOM readback. Phase 11 extends `github_v1` with
 `github_issue_evidence_link_v1` for ticket evidence-link verification through
-GitHub issue bodies and comments.
+GitHub issue bodies and comments. Phase 12 adds `blackbox_scoring_v1`, which
+reads the physical SQLite ledger and verifies scorecard append readback.
 
 ## Connector Contract
 
@@ -268,4 +269,7 @@ issue whose body contains an `http(s)` URL before verifying
 `gitlab-org/gitlab-runner` unless `BBX_GITLAB_TEST_PROJECT` overrides it. For
 scanner artifacts shipped in Phase 10, `<fixture>` is an OSV JSON report path,
 and verifier specs point at real OSV JSON, `Cargo.lock`, and CycloneDX JSON
-files. Confirm the row counts match the test plan. Anything else is hearsay.
+files. For scoring shipped in Phase 12, `<fixture>` is the SQLite ledger path;
+`blackbox_scoring_v1` reads `ledger_records`, verifies hash chains and evidence
+references, appends a `scorecard`, and reads the appended row back. Confirm the
+row counts match the test plan. Anything else is hearsay.

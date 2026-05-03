@@ -28,7 +28,7 @@ and `crates/context-graph-cli/src/main.rs:136-139,210`.
 | `crates/context-graph-cli/src/commands/blackbox.rs` | full Phase 1 implementation (≈1600 lines, single file) |
 | `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` | FSV harness (10 tests, all pass) |
 
-## Phase 1 Constants (superseded by current schema version 5)
+## Phase 1 Constants (superseded by current schema version 6)
 
 ```rust
 const LEDGER_SCHEMA_VERSION: i64 = 1;

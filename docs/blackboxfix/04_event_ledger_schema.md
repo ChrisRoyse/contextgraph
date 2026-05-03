@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 11 Physical Schema (shipped; unchanged from Phase 8)
+## Phase 12 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 5 in Phase 11
+  schema_version              INTEGER NOT NULL,   -- 6 in Phase 12
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `5` | constant |
+| `schema_version` | `6` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-11 ship the following `record_kind` values. The remaining families
+Phases 1-12 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -118,6 +118,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 8 | `enterprise_tenant_config` | validated SSO/RBAC/retention/deployment/key metadata for one tenant |
 | 8 | `enterprise_directory_snapshot` | validated SCIM user/group/role snapshot for one tenant |
 | 8 | `enterprise_access_decision` | persisted RBAC and tenant-isolation access decision |
+| 12 | `scorecard` | deterministic run-level trust/risk/training-value score snapshot |
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no
@@ -129,7 +130,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -395,10 +396,52 @@ Typed failure example:
 Phase 3 reuses these same three evidence record kinds for GitHub/GitHub
 Actions readbacks. Phase 9 reuses them again for GitLab CI pipeline/job
 readbacks. Phase 10 reuses them again for scanner artifact readbacks. Phase 11
-reuses them again for GitHub issue evidence-link readbacks. No new table or
-schema version was required because the existing payloads already include
-connector id, operation, source locator, observed state, typed error fields,
-and remediation.
+reuses them again for GitHub issue evidence-link readbacks. No new table was
+required because the existing payloads already include connector id,
+operation, source locator, observed state, typed error fields, and
+remediation.
+
+## Scorecard (Phase 12, shipped)
+
+`blackbox score run` appends one `scorecard` row after independently reading
+the physical ledger. It excludes prior scorecards from score inputs, verifies
+evidence packet references, and reads the appended row back by sequence and
+hash before reporting success.
+
+```json
+{
+  "record_kind": "scorecard",
+  "scorecard_id": "score_<uuid_simple>",
+  "run_id": "run_...",
+  "scorecard_schema_version": 1,
+  "score_rule_version": "score_v1",
+  "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
+  "score": {
+    "correctness": 1.0,
+    "verification_confidence": 0.9725,
+    "risk": 0.58,
+    "policy_compliance": "allowed",
+    "training_value": 0.2,
+    "trust_level": "verified_with_policy"
+  },
+  "score_inputs": {
+    "tool_calls_total": 1,
+    "tool_calls_with_evidence": 1,
+    "verifier_status_counts": { "passed": 1, "failed": 0, "blocked": 0 },
+    "policy_decision_counts": { "allowed": 1, "denied": 0 },
+    "evidence_hash_verification": { "status": "passed" }
+  },
+  "input_record_refs": [
+    {
+      "role": "score_input",
+      "sequence": 1,
+      "record_kind": "agent_run",
+      "payload_sha256": "sha256:...",
+      "record_sha256": "sha256:..."
+    }
+  ]
+}
+```
 
 ## EvidencePacket (Phase 4, shipped)
 

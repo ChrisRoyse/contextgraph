@@ -394,7 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 12,
+fresh ledgers initialize at schema version 6.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -469,7 +470,8 @@ Focused hardening manual FSV completed against
 `evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
-keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
+keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
+12, fresh ledgers initialize at schema version 6.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -538,7 +540,70 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 `verifier_result=4`, `evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
-keeps the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
+keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
+12, fresh ledgers initialize at schema version 6.
+
+## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
+
+Deliverables (all shipped):
+
+- scoring connector `blackbox_scoring_v1`;
+- `blackbox score run --ledger PATH --run-id RUN_ID`;
+- append-only `scorecard` ledger row with `score_rule_version = score_v1`;
+- schema bump to `LEDGER_SCHEMA_VERSION = 6` for the new ledger record kind;
+- deterministic score dimensions: correctness, verification confidence, risk,
+  policy compliance, training value, and trust level;
+- score inputs that expose exact row counts, evidence coverage, verifier
+  status counts, policy counts, connector reliability, and evidence-ref
+  verification;
+- dashboard/export surface additions for `scorecard` rows and score commands;
+- Phase 12 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase12_scorecard_fsv.rs`).
+
+Exit criteria (met):
+
+- scoring reads the physical SQLite ledger after hash-chain verification and
+  never trusts an in-memory command return value;
+- evidence packet references must match physical ledger rows before a scorecard
+  is produced;
+- missing runs, malformed scoring input rows, evidence without tool calls, and
+  scorecard readback mismatch fail closed with typed errors;
+- a successful score append is immediately read back from `ledger_records`
+  and matched by sequence, `scorecard_id`, `run_id`, `payload_sha256`, and
+  `record_sha256`;
+- previous scorecards are excluded from the next score computation so the same
+  run's trust/risk values are stable across repeated scoring snapshots.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase12_scorecard_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The suite executes the real binary against a real
+SQLite ledger and a real local Git repository. It covers a verified
+policy-allowed happy path plus no-tool, unverified-tool, failed-verifier
+incident, and missing-run edge cases. Final physical SQLite counts were
+`agent_run=4`, `policy_decision=1`, `tool_call=3`, `expected_delta=2`,
+`readback_snapshot=2`, `verifier_result=2`, `evidence_packet=2`,
+`incident_packet=1`, and `scorecard=4`.
+
+Manual FSV completed against `/tmp/bbx-phase12-manual-fsv.1VNO0R/fsv.log`
+with log SHA-256
+`b8da7e8aca9aa7af7b8ff6571bef790849b1d64a99add3d9ddc4c159d5c81958`.
+The final direct SQLite scorecard readback proved:
+
+```text
+8|verified_with_policy|1.0|0.58|0.9725
+10|recorded||0.2|0.0
+13|recorded||1.0|0.0
+21|incident|0.0|0.5|0.9725
+```
+
+Phase 12 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 6` for
+the new `scorecard` record kind. The physical table shape is unchanged, but
+older schema-version ledgers are wiped on `blackbox init`; no migration shim is
+provided.
 
 ## Phase Sequencing Rules
 

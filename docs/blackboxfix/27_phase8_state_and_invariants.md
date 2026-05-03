@@ -16,8 +16,9 @@ implementation.
 | Control packet | `controls.json` under `--out` |
 | Export manifest | `manifest.json.files[]` hashes/byte counts matched against physical files |
 
-Phase 8 bumps the live ledger schema to `LEDGER_SCHEMA_VERSION = 5`. Older
-ledgers are wiped on `blackbox init`, never migrated in place.
+Phase 8 bumped the then-live ledger schema to `LEDGER_SCHEMA_VERSION = 5`.
+Phase 12 later bumped the current live schema to version 6. Older ledgers are
+wiped on `blackbox init`, never migrated in place.
 
 ## Shipped Commands
 

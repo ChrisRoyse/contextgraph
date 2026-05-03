@@ -5,9 +5,11 @@ source-of-truth impact. The score must explain why an action is trusted, not
 hide the details.
 
 Phase 2 persists the first deterministic verifier score fields inside
-`verifier_result.score`: `correctness`, `risk`, and `confidence`. Policy,
-training value, and richer lifecycle scoring remain later-phase work. Phase 7
-ships dashboard rollups from existing ledger fields.
+`verifier_result.score`: `correctness`, `risk`, and `confidence`. Phase 12
+ships deterministic run-level `scorecard` rows with correctness,
+verification confidence, risk, policy compliance, training value, and trust
+level. Phase 7 dashboard rollups now include `scorecard` rows in timelines and
+export commands.
 
 ## Score Dimensions
 
@@ -113,7 +115,27 @@ successful.
 The scoring function must be pure: same inputs → same outputs. No
 non-deterministic embeddings or random adjustments.
 
-## Dashboard Metrics (Phase 7)
+## Scorecards (Phase 12)
+
+`blackbox score run --ledger PATH --run-id RUN_ID` appends one `scorecard`
+row after verifying the physical ledger and evidence packet references. The
+scorecard exposes all inputs used to compute the score.
+
+The scorecard is not a model judgment. It is a deterministic read model over
+append-only ledger rows:
+
+- verifier statuses and evidence coverage determine correctness and trust;
+- policy rows determine policy compliance;
+- incident rows and denied policies force `trust_level=incident`;
+- high-risk unverified tool calls raise risk instead of being silently treated
+  as success;
+- failed or blocked verifier rows preserve their typed error codes and
+  remediation in the source evidence.
+
+Scorecards use `score_rule_version = score_v1` and
+`scorecard_schema_version = 1`.
+
+## Dashboard Metrics (Phase 7 + Phase 12)
 
 Phase 7 ships these metrics through `blackbox dashboard build` and
 `blackbox dashboard api`:
@@ -126,7 +148,8 @@ Phase 7 ships these metrics through `blackbox dashboard build` and
 
 The dashboard read models also expose verifier status by connector, agent,
 tenant, and tool; policy decision counts; unverified action count; evidence
-packet totals; incident totals; and export commands for evidence/episodes.
+packet totals; incident totals; scorecard totals; and export commands for
+evidence/episodes/scorecards.
 Mean time to remediation, high-risk autonomous action trends, eval generation
 counts, and regression recurrence rate remain later aggregate metrics because
 they require additional lifecycle records.
@@ -139,7 +162,7 @@ score record must include `score_inputs` plus a `score_rule_version`.
 
 ## FSV Of The Scoring Contract
 
-Phase 2 FSV includes deterministic score readback inside physical
+Phase 2 FSV includes deterministic verifier score readback inside physical
 `verifier_result` rows:
 
 1. **Happy path**: passed verifier on a low-risk read-only action ⇒
@@ -149,5 +172,19 @@ Phase 2 FSV includes deterministic score readback inside physical
 3. **Blocked**: verifier blocked due to missing source/schema/connector
    precondition ⇒ `correctness=null`.
 
-Each test must read the score back from the persisted ledger row, not from
-the in-memory return value.
+Phase 12 FSV adds run-level scorecard readback from physical `scorecard`
+rows:
+
+1. **Happy path**: policy-allowed, verified Git readback => trust
+   `verified_with_policy`, correctness `1.0`, risk `0.58`, confidence
+   `0.9725`.
+2. **No tool calls**: run-only ledger state => trust `recorded`,
+   correctness `null`.
+3. **Unverified tool call**: high-risk tool call without evidence => trust
+   `recorded`, risk `1.0`, evidence coverage `0.0`.
+4. **Failed verifier**: failed Git readback with incident packet => trust
+   `incident`, correctness `0.0`, risk `0.5`.
+5. **Missing run**: `SCORECARD_RUN_NOT_FOUND`, no `scorecard` row written.
+
+Each test reads the score back from the persisted SQLite `scorecard` row, not
+from the in-memory return value.
