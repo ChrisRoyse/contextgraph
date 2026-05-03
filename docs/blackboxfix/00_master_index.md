@@ -29,7 +29,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 23; old ledgers are
+    ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 24; old ledgers are
     wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
@@ -41,7 +41,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
   - Phase 3 added no new record kinds. Current ledgers run under schema v13
-    after Phase 23.
+    after Phase 24.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -314,6 +314,23 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     readback, empty ledger, existing output, hash-chain tampering, manifest
     hashes, and direct SQLite/file proof; run with
     `cargo test --package context-graph-cli --test blackbox_phase23_otel_export_fsv -- --nocapture`).
+- **Phase 24 (Provider-Neutral SDK Ingestion)**: COMPLETE and verified.
+  - Connector: `blackbox_sdk_ingest_v1`.
+  - Commands: `blackbox sdk schema` and
+    `blackbox sdk ingest --ledger PATH --input CLOUDEVENTS_JSON`.
+  - Input source of truth: physical CloudEvents 1.0 JSON object/batch files.
+  - Ledger source of truth: `agent_run`, `agent_step`, `model_decision`, and
+    `tool_call` rows in SQLite `ledger_records`, located by
+    `payload.sdk_event.source` and `payload.sdk_event.id`.
+  - Phase 24 adds no new ledger record kind and does not bump the physical
+    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_phase24_sdk_ingest_fsv.rs`
+    (4 local integration tests covering connector readback, happy SDK run/
+    step/model/tool ingestion, source/id idempotency, mutating expected-delta
+    enforcement, empty batches, invalid traceparent, atomic rollback, and
+    direct SQLite/file proof; run with
+    `cargo test --package context-graph-cli --test blackbox_phase24_sdk_ingest_fsv -- --nocapture`).
 
 ## Build And Test Quick Reference
 
@@ -390,6 +407,9 @@ cargo test --package context-graph-cli --test blackbox_phase22_ticketing_fsv -- 
 # Phase 23 FSV tests (real SQLite ledger + OTLP JSONL file readback)
 cargo test --package context-graph-cli --test blackbox_phase23_otel_export_fsv -- --nocapture
 
+# Phase 24 FSV tests (real CloudEvents files + direct SQLite readback)
+cargo test --package context-graph-cli --test blackbox_phase24_sdk_ingest_fsv -- --nocapture
+
 # Run the standalone binary against a temp ledger
 cargo run -p context-graph-cli --bin blackbox -- \
     init --ledger /tmp/bbx.sqlite
@@ -404,18 +424,18 @@ cargo run -p context-graph-cli --bin context-graph -- \
 - `01_product_vision.md` — product thesis, users, principles, non-goals.
 - `02_market_and_buyer_research.md` — buyers, urgency, wedge, competitors, pricing.
 - `03_reference_architecture.md` — system components and deployment patterns.
-- `04_event_ledger_schema.md` — record contracts and the current Phase 23
+- `04_event_ledger_schema.md` — record contracts and the current Phase 24
   SQLite schema.
 - `05_source_of_truth_connectors.md` — connector contract and shipped
-  local/GitHub/GitLab/enterprise/scanner-artifact/Kubernetes/Terraform-cloud/ticketing/scoring/privacy/release-gate/packaging/risk/HTTP/demo/FSV/OpenTelemetry connectors.
+  local/GitHub/GitLab/enterprise/scanner-artifact/Kubernetes/Terraform-cloud/ticketing/scoring/privacy/release-gate/packaging/risk/HTTP/demo/FSV/OpenTelemetry/SDK-ingest connectors.
 - `06_fsv_verification_engine.md` — verifier protocol and shipped verifier registry.
 - `07_replay_forensics_and_incidents.md` — replay, audit packets, incident workflow.
 - `08_training_eval_corpus.md` — shipped verified episode export (Phase 5).
 - `09_security_governance_compliance.md` — security, NIST/OWASP/MITRE alignment.
-- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 23 OpenTelemetry export shipped).
+- `10_api_cli_mcp_surface.md` — CLI / API / MCP / SDK surface (Phase 24 SDK ingestion shipped).
 - `11_storage_retention_privacy.md` — storage, retention, encryption, tenancy.
 - `12_scoring_and_risk_model.md` — verifier status, risk scoring, trust levels.
-- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–23 done.
+- `13_mvp_implementation_phases.md` — sequenced build plan; Phases 0–24 done.
 - `14_tests_acceptance_and_fsv.md` — acceptance tests, manual FSV templates.
 - `15_gtm_pricing_and_packaging.md` — go-to-market, packaging, sales motion.
 - `16_risks_open_questions.md` — risks; resolved open questions noted inline.
@@ -475,6 +495,8 @@ cargo run -p context-graph-cli --bin context-graph -- \
   connector, verifiers, tests, and manual FSV checklist.
 - `42_phase23_state_and_invariants.md` — shipped Phase 23 OpenTelemetry
   export, connector readback, tests, and manual FSV checklist.
+- `43_phase24_state_and_invariants.md` — shipped Phase 24 SDK CloudEvents
+  ingestion, connector readback, tests, and manual FSV checklist.
 
 ## Build Doctrine
 

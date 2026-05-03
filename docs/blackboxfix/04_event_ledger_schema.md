@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 23 Physical Schema (shipped)
+## Phase 24 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 13 in Phase 23
+  schema_version              INTEGER NOT NULL,   -- 13 in Phase 24
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-23 ship the following `record_kind` values. The remaining families
+Phases 1-24 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -127,6 +127,14 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 17 | `http_request_audit` | append-only authenticated HTTP request/response audit row for the Phase 17 single-writer server |
 | 18 | `first_wedge_demo` | append-only first-wedge buyer demo package row with required proof refs, demo manifest, and source-ledger readback |
 | 19 | `full_state_verification` | append-only certification row for executable FSV evidence, edge cases, artifact hashes, SQLite integrity, and package manifest readback |
+
+Phase 24 adds no new `record_kind`. SDK CloudEvents are normalized into the
+existing `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows and
+add a `payload.sdk_event` object containing `specversion`, `source`, `id`,
+`type`, `datacontenttype`, optional `subject`/`time`/`traceparent`, and
+`data_sha256`. The physical idempotency key is the
+`payload.sdk_event.source` plus `payload.sdk_event.id` pair, read directly
+from `ledger_records`.
 
 When introducing a new kind, bump `LEDGER_SCHEMA_VERSION`, update the table
 above, **and wipe the ledger** rather than writing a migration shim (no

@@ -76,7 +76,7 @@ Deliverables (all shipped):
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
   **wiped** the ledger — no migration shim; current shipped schema is v13
-  after Phase 23).
+  after Phase 24).
 
 Exit criteria (verified):
 
@@ -394,7 +394,7 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 23,
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 24,
 fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
@@ -1167,6 +1167,50 @@ counts did not change, and exercise empty-ledger, existing-output, and
 tampered-ledger edges.
 
 Phase 23 adds no new ledger record kind and does not bump the physical schema;
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+
+## Phase 24: Provider-Neutral SDK Ingestion — DONE (2026-05-03)
+
+Deliverables:
+
+- command `blackbox sdk schema [--ledger PATH]`;
+- command `blackbox sdk ingest --ledger PATH --input CLOUDEVENTS_JSON`;
+- connector `blackbox_sdk_ingest_v1` for validating physical SDK event files;
+- strict CloudEvents 1.0 JSON object/batch contract with a 128-event batch
+  limit;
+- W3C `traceparent` validation for lowercase hexadecimal shape and non-zero
+  trace/parent ids;
+- idempotency enforcement on CloudEvents `source` + `id`;
+- mapping from SDK events to existing `agent_run`, `agent_step`,
+  `model_decision`, and `tool_call` ledger rows;
+- fail-closed expected-delta enforcement for mutating tool-call events;
+- atomic batch append with separate SQLite readback of every inserted row.
+
+Exit criteria (verified):
+
+- connector test reads and validates the physical CloudEvents file before
+  ingest;
+- `blackbox sdk ingest` verifies ledger integrity, event idempotency, parent
+  run tenancy, redaction, and expected-delta requirements before append;
+- batch validation failures append zero rows;
+- returned success includes source file hash, before/after ledger state, and
+  readback rows from `ledger_records`;
+- direct SQLite queries can locate each persisted SDK event through
+  `payload.sdk_event.source` and `payload.sdk_event.id`.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase24_sdk_ingest_fsv -- --nocapture
+```
+
+Current result: 4/4 passing. The tests write real CloudEvents JSON files, run
+the real CLI, verify connector readback, ingest a run plus step/model/tool
+events, query physical SQLite rows directly for `payload.sdk_event` metadata
+and redacted expected-delta fields, and exercise duplicate source/id, missing
+expected delta, empty batch, and invalid traceparent edges.
+
+Phase 24 adds no new ledger record kind and does not bump the physical schema;
 current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
 
 ## Phase Sequencing Rules

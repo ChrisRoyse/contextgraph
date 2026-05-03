@@ -133,6 +133,38 @@ Design implication:
   kind, verifier status, and policy status; trace/log records carry detailed
   record ids and hashes for forensic drilldown.
 
+### CloudEvents
+
+References:
+
+- <https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md>
+- <https://github.com/cloudevents/spec/blob/main/cloudevents/formats/json-format.md>
+
+Design implication:
+
+- use CloudEvents as the provider-neutral SDK event envelope instead of
+  inventing a runtime-specific wrapper;
+- enforce `specversion`, `id`, `source`, `type`, `datacontenttype`, and JSON
+  `data` so SDK inputs are portable and inspectable;
+- treat CloudEvents `source` + `id` as the SDK ingestion idempotency key;
+- support JSON object and JSON batch shapes but cap batch size so operators
+  can inspect failures and logs.
+
+### W3C Trace Context
+
+Reference:
+
+- <https://www.w3.org/TR/trace-context/>
+
+Design implication:
+
+- accept `traceparent` as an SDK event extension so agent/runtime telemetry can
+  correlate with BlackBoxFix ledger rows;
+- validate lowercase hexadecimal version, trace id, parent id, and flags
+  instead of storing arbitrary strings;
+- reject all-zero trace and parent ids so evidence rows cannot carry invalid
+  correlation state.
+
 ### Ticketing API Readback
 
 References:

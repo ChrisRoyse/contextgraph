@@ -27,10 +27,11 @@ Kubernetes Deployment snapshot verification through
 inventory, and cloud audit artifact verification through
 `terraform_cloud_artifact_v1`. Phase 22 adds Jira, Linear, and ServiceNow
 ticketing artifact verification through `ticketing_artifact_v1`. Phase 23
-adds OpenTelemetry OTLP JSONL export through `blackbox_otel_export_v1`.
-SDKs remain reserved for later phases.
+adds OpenTelemetry OTLP JSONL export through `blackbox_otel_export_v1`. Phase
+24 adds provider-neutral SDK event ingestion through strict CloudEvents JSON
+files and `blackbox_sdk_ingest_v1`.
 
-## CLI (shipped Phase 23)
+## CLI (shipped Phase 24)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -71,6 +72,8 @@ blackbox connector test        --connector blackbox_packaging_v1 --source LEDGER
 blackbox connector test        --connector blackbox_http_server_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_first_wedge_demo_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_fsv_protocol_v1 --source LEDGER_PATH
+blackbox connector test        --connector blackbox_sdk_ingest_v1
+                               --source CLOUDEVENTS_JSON
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
                                [--model MODEL]      (default: null)
@@ -91,6 +94,8 @@ blackbox record tool-call      --ledger PATH --run-id RUN_ID --tool TOOL
                                [--capability CAP]   (default: local.tool)
                                [--status STATUS]    (ok|failed|blocked, default: ok)
                                [--external-request-id ID]
+blackbox sdk schema            [--ledger PATH]
+blackbox sdk ingest            --ledger PATH --input CLOUDEVENTS_JSON
 blackbox verify                --ledger PATH --input SPEC_JSON
                                [--tenant TENANT]    (default: tenant_local)
                                [--agent AGENT]      (default: blackbox_verifier)
@@ -515,24 +520,45 @@ patch. It records `agent_step`, `model_decision`, `policy_decision`, and
 ids, verifier result, and evidence packet data. Governed modes block
 unverified mutating calls before external mutation.
 
-## SDK (reserved after Phase 6)
+## SDK Ingestion (Phase 24 shipped)
 
-Start with Python and TypeScript:
+Phase 24 ships the durable ingestion contract that packaged Python,
+TypeScript, or provider-specific SDKs can target without binding BlackBoxFix
+to one model runtime. The shipped surface is file-based and fail-closed:
 
-```python
-with blackbox.run(task="fix vulnerability", agent_id="agent_coder") as run:
-    call = run.tool_call("git_apply_patch", input=patch)
-    result = call.execute()
-    evidence = call.verify(expected_delta=expected)
+```bash
+blackbox sdk schema
+blackbox connector test --connector blackbox_sdk_ingest_v1 --source events.json
+blackbox sdk ingest --ledger blackbox.sqlite --input events.json
 ```
 
-SDK constraints:
+Accepted input:
 
-- all mutating calls require expected delta;
-- all verifiers return typed result;
-- recorder works without model-provider lock-in;
-- redaction hooks run before persistence;
-- source-of-truth readback is explicit.
+- one CloudEvents 1.0 JSON object, or a JSON array of up to 128 CloudEvents
+  objects;
+- required envelope attributes: `specversion`, `id`, `source`, `type`,
+  `datacontenttype`, and `data`;
+- supported optional attributes: `subject`, `time`, and W3C `traceparent`;
+- `datacontenttype` must be `application/json`;
+- duplicate detection uses the CloudEvents `source` + `id` pair and fails
+  before append if the pair already exists in `ledger_records`.
+
+Supported event types:
+
+- `dev.contextgraph.blackbox.agent_run.v1` -> `agent_run`;
+- `dev.contextgraph.blackbox.agent_step.v1` -> `agent_step`;
+- `dev.contextgraph.blackbox.model_decision.v1` -> `model_decision`;
+- `dev.contextgraph.blackbox.tool_call.v1` -> `tool_call`.
+
+SDK constraints now enforced by the CLI:
+
+- all mutating tool-call events require `data.expected_delta`;
+- W3C `traceparent` values must be lowercase hex, correctly sized, and use
+  non-zero trace and parent ids;
+- redaction runs before persistence for model/tool input and expected-delta
+  fields;
+- batch ingest is atomic: validation failures append zero rows;
+- success is proven by a separate SQLite readback of the rows just appended.
 
 ## OpenTelemetry Export (Phase 23 shipped)
 
@@ -569,7 +595,7 @@ OpenTelemetry path without adding ledger record kinds.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 13 in Phase 23).
+- Ledger records include `schema_version` (= 13 in Phase 24).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -610,6 +636,10 @@ OpenTelemetry path without adding ledger record kinds.
   evidence records for ticketing artifact readbacks.
 - Phase 23 does not bump the ledger schema. It writes OpenTelemetry export
   artifacts outside the ledger with `blackbox_otel_export_manifest_json_v1`.
+- Phase 24 does not bump the ledger schema. It maps SDK CloudEvents onto
+  existing `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows
+  and persists `payload.sdk_event` metadata for source/id idempotency and
+  physical readback.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -619,7 +649,8 @@ OpenTelemetry path without adding ledger record kinds.
   `blackbox_risk_v1`, `blackbox_http_server_v1`, and
   `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`,
   `k8s_deployment_snapshot_v1`, `terraform_cloud_artifact_v1`,
-  `ticketing_artifact_v1`, and `blackbox_otel_export_v1` today).
+  `ticketing_artifact_v1`, `blackbox_otel_export_v1`, and
+  `blackbox_sdk_ingest_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 

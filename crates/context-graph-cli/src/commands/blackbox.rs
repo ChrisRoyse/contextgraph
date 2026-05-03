@@ -62,6 +62,7 @@ const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
 const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
 const FIRST_WEDGE_DEMO_CONNECTOR_ID: &str = "blackbox_first_wedge_demo_v1";
 const FSV_PROTOCOL_CONNECTOR_ID: &str = "blackbox_fsv_protocol_v1";
+const SDK_INGEST_CONNECTOR_ID: &str = "blackbox_sdk_ingest_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
@@ -80,6 +81,7 @@ const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
 const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
 const FULL_STATE_VERIFICATION_SCHEMA_VERSION: i64 = 1;
 const OTEL_EXPORT_SCHEMA_VERSION: i64 = 1;
+const SDK_INGEST_SCHEMA_VERSION: i64 = 1;
 const OTEL_SCOPE_NAME: &str = "contextgraph.blackboxfix";
 const OTEL_SCOPE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
@@ -105,6 +107,11 @@ const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_VERIFIER: &str = "git_file_diff_matches_patch_v1";
+const SDK_MAX_BATCH_EVENTS: usize = 128;
+const SDK_EVENT_AGENT_RUN: &str = "dev.contextgraph.blackbox.agent_run.v1";
+const SDK_EVENT_AGENT_STEP: &str = "dev.contextgraph.blackbox.agent_step.v1";
+const SDK_EVENT_MODEL_DECISION: &str = "dev.contextgraph.blackbox.model_decision.v1";
+const SDK_EVENT_TOOL_CALL: &str = "dev.contextgraph.blackbox.tool_call.v1";
 
 #[derive(Parser, Debug)]
 #[command(name = "blackbox")]
@@ -133,6 +140,11 @@ pub enum BlackboxCommands {
     Record {
         #[command(subcommand)]
         action: RecordCommands,
+    },
+    /// Ingest provider-neutral SDK event envelopes.
+    Sdk {
+        #[command(subcommand)]
+        action: SdkCommands,
     },
     /// Evaluate and persist Phase 6 policy decisions.
     Policy {
@@ -257,6 +269,32 @@ pub enum RecordCommands {
     /// Record a tool call for an existing run.
     #[command(name = "tool-call")]
     ToolCall(RecordToolCallArgs),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SdkCommands {
+    /// Print the strict SDK CloudEvents ingestion contract.
+    Schema(SdkSchemaArgs),
+    /// Validate and atomically ingest one SDK CloudEvent object or JSON batch.
+    Ingest(SdkIngestArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct SdkSchemaArgs {
+    /// Optional SQLite ledger path to verify before printing the SDK contract.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct SdkIngestArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// CloudEvents JSON object or JSON array file to ingest.
+    #[arg(long)]
+    pub input: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -1556,6 +1594,10 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
             RecordCommands::Step(args) => record_agent_step(args),
             RecordCommands::ModelDecision(args) => record_model_decision(args),
             RecordCommands::ToolCall(args) => record_tool_call(args),
+        },
+        BlackboxCommands::Sdk { action } => match action {
+            SdkCommands::Schema(args) => sdk_schema(args),
+            SdkCommands::Ingest(args) => sdk_ingest(args),
         },
         BlackboxCommands::Policy { action } => match action {
             PolicyCommands::Evaluate(args) => policy_evaluate(args),
@@ -3083,6 +3125,18 @@ fn connector_list() -> BbxResult<Value> {
                     "sqlite_integrity_check_v1"
                 ],
                 "fail_closed": true
+            },
+            {
+                "connector_id": SDK_INGEST_CONNECTOR_ID,
+                "source_kind": "cloudevents_sdk_ingest_file",
+                "readback_specs": [
+                    "blackbox_sdk_cloudevents_json_v1",
+                    "sdk_event_source_id_idempotency_v1",
+                    "w3c_traceparent_v1",
+                    "sqlite_ledger_readback_v1"
+                ],
+                "max_batch_events": SDK_MAX_BATCH_EVENTS,
+                "fail_closed": true
             }
         ]
     }))
@@ -3553,6 +3607,33 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 },
             }))
         }
+        SDK_INGEST_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    SDK_INGEST_CONNECTOR_ID,
+                    file_source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_sdk_ingest_v1 connector test does not accept --command",
+                    "remove --command and pass a CloudEvents JSON object or JSON array file through --source",
+                ));
+            }
+            let batch = read_sdk_event_file(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": SDK_INGEST_CONNECTOR_ID,
+                "source_of_truth": file_source_of_truth(&args.source),
+                "readback": {
+                    "format": "blackbox_sdk_cloudevents_json_v1",
+                    "schema_version": SDK_INGEST_SCHEMA_VERSION,
+                    "event_count": batch.events.len(),
+                    "max_batch_events": SDK_MAX_BATCH_EVENTS,
+                    "file_sha256": batch.file_sha256,
+                    "file_bytes": batch.file_bytes,
+                    "events": batch.events.iter().map(sdk_event_connector_readback).collect::<Vec<_>>(),
+                },
+            }))
+        }
         other => Err(BlackboxError::connector_blocked(
             "CONNECTOR_UNKNOWN",
             SQLITE_CONNECTOR_ID,
@@ -4016,6 +4097,1247 @@ fn record_tool_call_from_value(
     }))
 }
 
+#[derive(Debug, Clone)]
+struct SdkEventBatch {
+    file_sha256: String,
+    file_bytes: usize,
+    events: Vec<SdkEvent>,
+}
+
+#[derive(Debug, Clone)]
+struct SdkEvent {
+    index: usize,
+    specversion: String,
+    id: String,
+    source: String,
+    event_type: String,
+    datacontenttype: String,
+    subject: Option<String>,
+    time: Option<String>,
+    traceparent: Option<String>,
+    data: Value,
+    data_sha256: String,
+}
+
+fn sdk_schema(args: SdkSchemaArgs) -> BbxResult<Value> {
+    let ledger_source = if let Some(ledger) = args.ledger {
+        let conn = open_initialized_ledger(&ledger)?;
+        verify_ledger_integrity(&conn, &ledger)?;
+        Value::String(source_of_truth(&ledger))
+    } else {
+        Value::Null
+    };
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox sdk schema",
+        "connector": SDK_INGEST_CONNECTOR_ID,
+        "source_of_truth": ledger_source,
+        "format": "blackbox_sdk_cloudevents_json_v1",
+        "schema_version": SDK_INGEST_SCHEMA_VERSION,
+        "cloud_events_contract": {
+            "specversion": "1.0",
+            "datacontenttype": "application/json",
+            "accepted_top_level_shapes": ["CloudEvents JSON object", "CloudEvents JSON array"],
+            "max_batch_events": SDK_MAX_BATCH_EVENTS,
+            "required_attributes": ["specversion", "id", "source", "type", "datacontenttype", "data"],
+            "optional_attributes": ["subject", "time", "traceparent"],
+            "duplicate_key": ["source", "id"],
+            "trace_context": "W3C traceparent extension, lowercase hexadecimal, non-zero trace-id and parent-id",
+        },
+        "event_types": [
+            {
+                "type": SDK_EVENT_AGENT_RUN,
+                "ledger_record_kind": "agent_run",
+                "data_required": ["tenant", "agent", "task", "task_kind", "risk_tier", "sdk"],
+                "data_optional": ["model"],
+            },
+            {
+                "type": SDK_EVENT_AGENT_STEP,
+                "ledger_record_kind": "agent_step",
+                "data_required": ["tenant", "agent", "run_id", "step_kind", "summary", "context", "sdk"],
+                "data_optional": ["model"],
+            },
+            {
+                "type": SDK_EVENT_MODEL_DECISION,
+                "ledger_record_kind": "model_decision",
+                "data_required": ["tenant", "agent", "run_id", "tool_name", "capability_id", "confidence", "input", "sdk"],
+                "data_optional": ["model"],
+            },
+            {
+                "type": SDK_EVENT_TOOL_CALL,
+                "ledger_record_kind": "tool_call",
+                "data_required": ["tenant", "agent", "run_id", "tool_name", "capability_id", "input", "status", "mutating", "sdk"],
+                "data_optional": ["model", "external_request_id", "expected_delta"],
+                "mutating_contract": "expected_delta is required when mutating is true",
+            }
+        ],
+        "ingest_command": "blackbox sdk ingest --ledger PATH --input cloudevents.json",
+        "connector_test_command": "blackbox connector test --connector blackbox_sdk_ingest_v1 --source cloudevents.json",
+        "fail_closed": true,
+    }))
+}
+
+fn sdk_ingest(args: SdkIngestArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    let batch = read_sdk_event_file(&args.input)?;
+    ensure_sdk_batch_unique(&args.input, &batch.events)?;
+
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    let before = verify_ledger_integrity(&conn, &args.ledger)?;
+    ensure_sdk_events_not_previously_ingested(&conn, &args.ledger, &batch.events)?;
+    ensure_sdk_parent_runs_exist(&conn, &args.ledger, &batch.events)?;
+
+    let mut records = Vec::with_capacity(batch.events.len());
+    for event in &batch.events {
+        records.push(build_sdk_record(&args.ledger, event)?);
+    }
+    let appends = append_records_atomically(&mut conn, &args.ledger, records)?;
+    drop(conn);
+
+    let after_conn = open_initialized_ledger(&args.ledger)?;
+    let after = verify_ledger_integrity(&after_conn, &args.ledger)?;
+    let stored_records = sdk_ingest_readback(&after_conn, &args.ledger, &batch.events, &appends)?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox sdk ingest",
+        "connector": SDK_INGEST_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "input_source_of_truth": file_source_of_truth(&args.input),
+        "input_sha256": batch.file_sha256,
+        "input_bytes": batch.file_bytes,
+        "schema_version": SDK_INGEST_SCHEMA_VERSION,
+        "event_count": batch.events.len(),
+        "ledger_before": {
+            "record_count": before.record_count,
+            "ledger_tip_sha256": before.ledger_tip_sha256,
+        },
+        "ledger_after": {
+            "record_count": after.record_count,
+            "ledger_tip_sha256": after.ledger_tip_sha256,
+        },
+        "records": stored_records,
+        "fail_closed": true,
+    }))
+}
+
+fn read_sdk_event_file(path: &Path) -> BbxResult<SdkEventBatch> {
+    let bytes = fs::read(path).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::Io,
+            "SDK_EVENT_FILE_READ_FAILED",
+            format!("read SDK event file: {err}"),
+            Some(file_source_of_truth(path)),
+            SDK_INGEST_CONNECTOR_ID,
+            Some(path.display().to_string()),
+            "check the SDK event file path and filesystem permissions",
+        )
+    })?;
+    let file_sha256 = sha256_hex(&bytes);
+    let file_bytes = bytes.len();
+    let value: Value = serde_json::from_slice(&bytes).map_err(|err| {
+        sdk_file_error(
+            path,
+            "SDK_EVENT_JSON_INVALID",
+            "$",
+            format!("SDK event file is not valid JSON: {err}"),
+            "write one CloudEvents JSON object or a JSON array of CloudEvents objects",
+        )
+    })?;
+    let events = match value {
+        Value::Array(items) => {
+            if items.is_empty() {
+                return Err(sdk_file_error(
+                    path,
+                    "SDK_EVENT_BATCH_EMPTY",
+                    "$",
+                    "SDK event batch must contain at least one event",
+                    "write one or more CloudEvents objects to the input array",
+                ));
+            }
+            if items.len() > SDK_MAX_BATCH_EVENTS {
+                return Err(sdk_file_error(
+                    path,
+                    "SDK_EVENT_BATCH_TOO_LARGE",
+                    "$",
+                    format!(
+                        "SDK event batch contains {} events; maximum is {}",
+                        items.len(),
+                        SDK_MAX_BATCH_EVENTS
+                    ),
+                    format!("split the SDK event file into batches of at most {SDK_MAX_BATCH_EVENTS} events"),
+                ));
+            }
+            items
+                .iter()
+                .enumerate()
+                .map(|(idx, event)| validate_sdk_event(path, idx, event))
+                .collect::<BbxResult<Vec<_>>>()?
+        }
+        Value::Object(_) => vec![validate_sdk_event(path, 0, &value)?],
+        _ => {
+            return Err(sdk_file_error(
+                path,
+                "SDK_EVENT_TOP_LEVEL_INVALID",
+                "$",
+                "SDK event file top level must be a CloudEvents object or array",
+                "write one CloudEvents JSON object or a JSON array of CloudEvents objects",
+            ));
+        }
+    };
+    Ok(SdkEventBatch {
+        file_sha256,
+        file_bytes,
+        events,
+    })
+}
+
+fn validate_sdk_event(path: &Path, index: usize, value: &Value) -> BbxResult<SdkEvent> {
+    let object = value.as_object().ok_or_else(|| {
+        sdk_file_error(
+            path,
+            "SDK_EVENT_SCHEMA_INVALID",
+            format!("events[{index}]"),
+            "SDK event must be a JSON object",
+            "write each SDK event as a CloudEvents JSON object",
+        )
+    })?;
+    let allowed = [
+        "specversion",
+        "id",
+        "source",
+        "type",
+        "datacontenttype",
+        "subject",
+        "time",
+        "traceparent",
+        "data",
+    ];
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(sdk_file_error(
+                path,
+                "SDK_EVENT_UNKNOWN_ATTRIBUTE",
+                format!("events[{index}].{key}"),
+                format!("unsupported CloudEvents attribute {key:?}"),
+                "remove unsupported top-level attributes; only the documented SDK contract is accepted",
+            ));
+        }
+    }
+
+    let specversion = required_sdk_event_string(path, value, index, "specversion")?;
+    if specversion != "1.0" {
+        return Err(sdk_file_error(
+            path,
+            "SDK_EVENT_SPECVERSION_UNSUPPORTED",
+            format!("events[{index}].specversion"),
+            format!("CloudEvents specversion must be 1.0, found {specversion:?}"),
+            "emit CloudEvents 1.0 JSON events",
+        ));
+    }
+    let id = required_sdk_event_string(path, value, index, "id")?;
+    validate_sdk_token(path, index, "id", &id, 256)?;
+    let source = required_sdk_event_string(path, value, index, "source")?;
+    validate_sdk_token(path, index, "source", &source, 512)?;
+    let event_type = required_sdk_event_string(path, value, index, "type")?;
+    validate_sdk_event_type(path, index, &event_type)?;
+    let datacontenttype = required_sdk_event_string(path, value, index, "datacontenttype")?;
+    validate_sdk_datacontenttype(path, index, &datacontenttype)?;
+
+    let subject = optional_sdk_event_string(path, value, index, "subject")?;
+    let time = optional_sdk_event_string(path, value, index, "time")?;
+    if let Some(time) = &time {
+        DateTime::parse_from_rfc3339(time).map_err(|err| {
+            sdk_file_error(
+                path,
+                "SDK_EVENT_TIME_INVALID",
+                format!("events[{index}].time"),
+                format!("CloudEvents time must be RFC3339: {err}"),
+                "emit time using an RFC3339 timestamp such as 2026-05-03T12:00:00Z",
+            )
+        })?;
+    }
+    let traceparent = optional_sdk_event_string(path, value, index, "traceparent")?;
+    if let Some(traceparent) = &traceparent {
+        validate_sdk_traceparent(path, index, traceparent)?;
+    }
+    let data = value.get("data").ok_or_else(|| {
+        sdk_file_error(
+            path,
+            "SDK_EVENT_DATA_REQUIRED",
+            format!("events[{index}].data"),
+            "CloudEvents data is required",
+            "include a JSON object in the data attribute",
+        )
+    })?;
+    if !data.is_object() {
+        return Err(sdk_file_error(
+            path,
+            "SDK_EVENT_DATA_INVALID",
+            format!("events[{index}].data"),
+            "CloudEvents data must be a JSON object",
+            "include SDK event fields in data as a JSON object",
+        ));
+    }
+    let data = data.clone();
+    let data_sha256 = sha256_hex(&canonical_json_bytes(&data)?);
+
+    Ok(SdkEvent {
+        index,
+        specversion,
+        id,
+        source,
+        event_type,
+        datacontenttype,
+        subject,
+        time,
+        traceparent,
+        data,
+        data_sha256,
+    })
+}
+
+fn required_sdk_event_string(
+    path: &Path,
+    value: &Value,
+    index: usize,
+    key: &'static str,
+) -> BbxResult<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            sdk_file_error(
+                path,
+                "SDK_EVENT_FIELD_REQUIRED",
+                format!("events[{index}].{key}"),
+                format!("CloudEvents {key} is required and must be a non-empty string"),
+                "emit a complete CloudEvents JSON envelope",
+            )
+        })
+}
+
+fn optional_sdk_event_string(
+    path: &Path,
+    value: &Value,
+    index: usize,
+    key: &'static str,
+) -> BbxResult<Option<String>> {
+    match value.get(key) {
+        Some(Value::String(text)) if !text.trim().is_empty() => Ok(Some(text.clone())),
+        Some(Value::String(_)) => Err(sdk_file_error(
+            path,
+            "SDK_EVENT_FIELD_EMPTY",
+            format!("events[{index}].{key}"),
+            format!("CloudEvents {key} must not be empty when present"),
+            "omit the field or provide a non-empty string",
+        )),
+        Some(_) => Err(sdk_file_error(
+            path,
+            "SDK_EVENT_FIELD_INVALID",
+            format!("events[{index}].{key}"),
+            format!("CloudEvents {key} must be a string"),
+            "emit a string value for this CloudEvents attribute",
+        )),
+        None => Ok(None),
+    }
+}
+
+fn validate_sdk_token(
+    path: &Path,
+    index: usize,
+    field: &'static str,
+    value: &str,
+    max_len: usize,
+) -> BbxResult<()> {
+    if value.len() > max_len {
+        return Err(sdk_file_error(
+            path,
+            "SDK_EVENT_FIELD_TOO_LONG",
+            format!("events[{index}].{field}"),
+            format!(
+                "CloudEvents {field} is {} bytes; maximum is {max_len}",
+                value.len()
+            ),
+            "emit bounded event identifiers so logs and indexes remain inspectable",
+        ));
+    }
+    if value
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err(sdk_file_error(
+            path,
+            "SDK_EVENT_FIELD_INVALID",
+            format!("events[{index}].{field}"),
+            format!("CloudEvents {field} must not contain whitespace or control characters"),
+            "emit compact event identifiers without whitespace",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_sdk_event_type(path: &Path, index: usize, event_type: &str) -> BbxResult<()> {
+    match event_type {
+        SDK_EVENT_AGENT_RUN
+        | SDK_EVENT_AGENT_STEP
+        | SDK_EVENT_MODEL_DECISION
+        | SDK_EVENT_TOOL_CALL => Ok(()),
+        other => Err(sdk_file_error(
+            path,
+            "SDK_EVENT_TYPE_UNSUPPORTED",
+            format!("events[{index}].type"),
+            format!("unsupported SDK event type {other:?}"),
+            "choose one of the event types printed by blackbox sdk schema",
+        )),
+    }
+}
+
+fn validate_sdk_datacontenttype(path: &Path, index: usize, datacontenttype: &str) -> BbxResult<()> {
+    let media_type = datacontenttype
+        .split(';')
+        .next()
+        .unwrap_or(datacontenttype)
+        .trim()
+        .to_ascii_lowercase();
+    if media_type == "application/json" {
+        Ok(())
+    } else {
+        Err(sdk_file_error(
+            path,
+            "SDK_EVENT_DATACONTENTTYPE_UNSUPPORTED",
+            format!("events[{index}].datacontenttype"),
+            format!(
+                "SDK event datacontenttype must be application/json, found {datacontenttype:?}"
+            ),
+            "emit JSON data and set datacontenttype to application/json",
+        ))
+    }
+}
+
+fn validate_sdk_traceparent(path: &Path, index: usize, traceparent: &str) -> BbxResult<()> {
+    let parts = traceparent.split('-').collect::<Vec<_>>();
+    if parts.len() != 4
+        || parts[0].len() != 2
+        || parts[1].len() != 32
+        || parts[2].len() != 16
+        || parts[3].len() != 2
+    {
+        return Err(sdk_traceparent_error(
+            path,
+            index,
+            traceparent,
+            "traceparent must use version-trace-id-parent-id-flags",
+        ));
+    }
+    if !parts.iter().all(|part| sdk_is_lower_hex(part)) {
+        return Err(sdk_traceparent_error(
+            path,
+            index,
+            traceparent,
+            "traceparent must be lowercase hexadecimal",
+        ));
+    }
+    if parts[0] == "ff" {
+        return Err(sdk_traceparent_error(
+            path,
+            index,
+            traceparent,
+            "traceparent version ff is forbidden",
+        ));
+    }
+    if parts[1].chars().all(|ch| ch == '0') {
+        return Err(sdk_traceparent_error(
+            path,
+            index,
+            traceparent,
+            "trace-id must not be all zeros",
+        ));
+    }
+    if parts[2].chars().all(|ch| ch == '0') {
+        return Err(sdk_traceparent_error(
+            path,
+            index,
+            traceparent,
+            "parent-id must not be all zeros",
+        ));
+    }
+    Ok(())
+}
+
+fn sdk_traceparent_error(
+    path: &Path,
+    index: usize,
+    traceparent: &str,
+    message: impl Into<String>,
+) -> BlackboxError {
+    sdk_file_error(
+        path,
+        "SDK_TRACEPARENT_INVALID",
+        format!("events[{index}].traceparent"),
+        format!("invalid W3C traceparent {traceparent:?}: {}", message.into()),
+        "emit W3C traceparent as 00-<32 lowercase hex trace-id>-<16 lowercase hex parent-id>-<2 lowercase hex flags>",
+    )
+}
+
+fn sdk_is_lower_hex(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn ensure_sdk_batch_unique(input: &Path, events: &[SdkEvent]) -> BbxResult<()> {
+    let mut seen = BTreeSet::new();
+    for event in events {
+        let key = (event.source.clone(), event.id.clone());
+        if !seen.insert(key) {
+            return Err(sdk_file_error(
+                input,
+                "SDK_EVENT_DUPLICATE_IN_BATCH",
+                format!("events[{}].id", event.index),
+                format!(
+                    "duplicate CloudEvents source/id pair source={:?} id={:?} in the input batch",
+                    event.source, event.id
+                ),
+                "deduplicate the SDK event batch before ingesting it",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_sdk_events_not_previously_ingested(
+    conn: &Connection,
+    ledger: &Path,
+    events: &[SdkEvent],
+) -> BbxResult<()> {
+    for event in events {
+        let duplicate: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT sequence, record_kind
+                 FROM ledger_records
+                 WHERE json_extract(payload_json, '$.sdk_event.source') = ?1
+                   AND json_extract(payload_json, '$.sdk_event.id') = ?2
+                 LIMIT 1",
+                params![&event.source, &event.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|err| BlackboxError::sqlite(ledger, "check SDK event idempotency", err))?;
+        if let Some((sequence, kind)) = duplicate {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_EVENT_DUPLICATE",
+                format!("events[{}].id", event.index),
+                format!(
+                    "CloudEvents source/id pair source={:?} id={:?} was already ingested at sequence {sequence} as {kind}",
+                    event.source, event.id
+                ),
+                "do not resend an already persisted SDK event; inspect the returned ledger readback for the original run_id/tool_call_id",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn ensure_sdk_parent_runs_exist(
+    conn: &Connection,
+    ledger: &Path,
+    events: &[SdkEvent],
+) -> BbxResult<()> {
+    for event in events {
+        if event.event_type == SDK_EVENT_AGENT_RUN {
+            continue;
+        }
+        let tenant = required_sdk_data_string(ledger, event, "tenant")?;
+        let run_id = required_sdk_data_string(ledger, event, "run_id")?;
+        let parent_tenant: Option<String> = conn
+            .query_row(
+                "SELECT tenant_id FROM ledger_records
+                 WHERE record_kind = 'agent_run' AND run_id = ?1",
+                params![&run_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|err| BlackboxError::sqlite(ledger, "read SDK parent run", err))?;
+        match parent_tenant {
+            Some(parent_tenant) if parent_tenant == tenant => {}
+            Some(parent_tenant) => {
+                return Err(sdk_ledger_error(
+                    ledger,
+                    "SDK_RUN_TENANT_MISMATCH",
+                    format!("events[{}].data.run_id", event.index),
+                    format!(
+                        "SDK event references run_id {run_id} owned by tenant {parent_tenant}, not {tenant}"
+                    ),
+                    "ingest child events only under the same tenant as the parent agent_run",
+                ));
+            }
+            None => {
+                return Err(sdk_ledger_error(
+                    ledger,
+                    "SDK_RUN_PARENT_NOT_FOUND",
+                    format!("events[{}].data.run_id", event.index),
+                    format!("SDK event references missing run_id {run_id}"),
+                    "ingest the agent_run event first, then use its returned run_id for child SDK events",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn build_sdk_record(ledger: &Path, event: &SdkEvent) -> BbxResult<NewRecord> {
+    match event.event_type.as_str() {
+        SDK_EVENT_AGENT_RUN => build_sdk_agent_run_record(ledger, event),
+        SDK_EVENT_AGENT_STEP => build_sdk_agent_step_record(ledger, event),
+        SDK_EVENT_MODEL_DECISION => build_sdk_model_decision_record(ledger, event),
+        SDK_EVENT_TOOL_CALL => build_sdk_tool_call_record(ledger, event),
+        _ => Err(sdk_ledger_error(
+            ledger,
+            "SDK_EVENT_TYPE_UNSUPPORTED",
+            format!("events[{}].type", event.index),
+            format!("unsupported SDK event type {:?}", event.event_type),
+            "choose one of the event types printed by blackbox sdk schema",
+        )),
+    }
+}
+
+fn build_sdk_agent_run_record(ledger: &Path, event: &SdkEvent) -> BbxResult<NewRecord> {
+    let tenant = required_sdk_data_string(ledger, event, "tenant")?;
+    let agent = required_sdk_data_string(ledger, event, "agent")?;
+    let task = required_sdk_data_string(ledger, event, "task")?;
+    let task_kind = required_sdk_data_string(ledger, event, "task_kind")?;
+    let risk_tier = required_sdk_data_string(ledger, event, "risk_tier")?;
+    validate_risk_tier(ledger, &risk_tier)?;
+    let model = optional_sdk_data_string(ledger, event, "model")?;
+    let sdk = required_sdk_metadata(ledger, event)?;
+    let sdk_name = sdk
+        .get("name")
+        .and_then(Value::as_str)
+        .expect("required_sdk_metadata validated sdk.name");
+    let run_id = prefixed_id("run");
+    let record_id = prefixed_id("bbx_rec");
+    let payload = json!({
+        "record_kind": "agent_run",
+        "run_id": run_id,
+        "task": {
+            "task_kind": task_kind,
+            "requested_outcome": task,
+            "risk_tier": risk_tier,
+        },
+        "runtime": {
+            "framework": format!("sdk:{sdk_name}"),
+            "adapter_version": env!("CARGO_PKG_VERSION"),
+            "sdk": sdk,
+        },
+        "status": "running",
+        "summary": {
+            "steps_total": 0,
+            "tool_calls_total": 0,
+            "verifier_passed": 0,
+            "verifier_failed": 0,
+            "verifier_blocked": 0,
+        },
+        "sdk_event": sdk_event_metadata(event),
+    });
+    Ok(NewRecord {
+        record_id,
+        record_kind: "agent_run".to_string(),
+        tenant_id: tenant,
+        run_id: Some(run_id),
+        step_id: None,
+        actor: actor_json(&agent, model.as_deref()),
+        payload,
+        redaction: RedactionReport::empty(),
+    })
+}
+
+fn build_sdk_agent_step_record(ledger: &Path, event: &SdkEvent) -> BbxResult<NewRecord> {
+    let tenant = required_sdk_data_string(ledger, event, "tenant")?;
+    let agent = required_sdk_data_string(ledger, event, "agent")?;
+    let run_id = required_sdk_data_string(ledger, event, "run_id")?;
+    let step_kind = required_sdk_data_string(ledger, event, "step_kind")?;
+    let summary = required_sdk_data_string(ledger, event, "summary")?;
+    let context = required_sdk_data_object(ledger, event, "context")?;
+    let model = optional_sdk_data_string(ledger, event, "model")?;
+    required_sdk_metadata(ledger, event)?;
+    let step_id = prefixed_id("step");
+    let record_id = prefixed_id("bbx_rec");
+    let payload = json!({
+        "record_kind": "agent_step",
+        "step_id": step_id,
+        "run_id": run_id,
+        "step_kind": step_kind,
+        "summary": summary,
+        "context": context,
+        "recorded_at": Utc::now().to_rfc3339(),
+        "sdk_event": sdk_event_metadata(event),
+    });
+    Ok(NewRecord {
+        record_id,
+        record_kind: "agent_step".to_string(),
+        tenant_id: tenant,
+        run_id: Some(run_id),
+        step_id: Some(step_id),
+        actor: actor_json(&agent, model.as_deref()),
+        payload,
+        redaction: RedactionReport::empty(),
+    })
+}
+
+fn build_sdk_model_decision_record(ledger: &Path, event: &SdkEvent) -> BbxResult<NewRecord> {
+    let tenant = required_sdk_data_string(ledger, event, "tenant")?;
+    let agent = required_sdk_data_string(ledger, event, "agent")?;
+    let run_id = required_sdk_data_string(ledger, event, "run_id")?;
+    let tool_name = required_sdk_data_string(ledger, event, "tool_name")?;
+    let capability_id = required_sdk_data_string(ledger, event, "capability_id")?;
+    let confidence = required_sdk_data_f64(ledger, event, "confidence")?;
+    if !(0.0..=1.0).contains(&confidence) {
+        return Err(sdk_ledger_error(
+            ledger,
+            "SDK_CONFIDENCE_INVALID",
+            format!("events[{}].data.confidence", event.index),
+            format!("confidence must be in [0,1], got {confidence}"),
+            "emit a numeric confidence between 0.0 and 1.0",
+        ));
+    }
+    let input = required_sdk_data_object(ledger, event, "input")?;
+    let model = optional_sdk_data_string(ledger, event, "model")?;
+    required_sdk_metadata(ledger, event)?;
+    let redacted = redact_tool_input(ledger, &input)?;
+    let model_decision_id = prefixed_id("decision");
+    let step_id = prefixed_id("step");
+    let record_id = prefixed_id("bbx_rec");
+    let payload = json!({
+        "record_kind": "model_decision",
+        "model_decision_id": model_decision_id,
+        "run_id": run_id,
+        "step_id": step_id,
+        "tool_choice": {
+            "tool_name": tool_name,
+            "capability_id": capability_id,
+        },
+        "confidence": confidence,
+        "policy_context": redacted.value.get("policy_context").cloned().unwrap_or(Value::Null),
+        "input_redacted": redacted.value,
+        "recorded_at": Utc::now().to_rfc3339(),
+        "sdk_event": sdk_event_metadata(event),
+    });
+    Ok(NewRecord {
+        record_id,
+        record_kind: "model_decision".to_string(),
+        tenant_id: tenant,
+        run_id: Some(run_id),
+        step_id: Some(step_id),
+        actor: actor_json(&agent, model.as_deref()),
+        payload,
+        redaction: redacted.report,
+    })
+}
+
+fn build_sdk_tool_call_record(ledger: &Path, event: &SdkEvent) -> BbxResult<NewRecord> {
+    let tenant = required_sdk_data_string(ledger, event, "tenant")?;
+    let agent = required_sdk_data_string(ledger, event, "agent")?;
+    let run_id = required_sdk_data_string(ledger, event, "run_id")?;
+    let tool_name = required_sdk_data_string(ledger, event, "tool_name")?;
+    let capability_id = required_sdk_data_string(ledger, event, "capability_id")?;
+    let input = required_sdk_data_object(ledger, event, "input")?;
+    let status = parse_sdk_tool_status(ledger, event)?;
+    let mutating = required_sdk_data_bool(ledger, event, "mutating")?;
+    let expected_delta = match event.data.get("expected_delta") {
+        Some(value) if value.is_object() => Some(value.clone()),
+        Some(_) => {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_EXPECTED_DELTA_INVALID",
+                format!("events[{}].data.expected_delta", event.index),
+                "expected_delta must be a JSON object when present",
+                "emit expected_delta as a JSON object describing the intended source-of-truth change",
+            ));
+        }
+        None if mutating => {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_EXPECTED_DELTA_REQUIRED",
+                format!("events[{}].data.expected_delta", event.index),
+                "mutating SDK tool calls require expected_delta",
+                "include expected_delta so Full State Verification can compare intended and observed state",
+            ));
+        }
+        None => None,
+    };
+    let external_request_id = optional_sdk_data_string(ledger, event, "external_request_id")?;
+    let model = optional_sdk_data_string(ledger, event, "model")?;
+    required_sdk_metadata(ledger, event)?;
+
+    let redaction_input = json!({
+        "input": input,
+        "expected_delta": expected_delta.clone().unwrap_or(Value::Null),
+    });
+    let redacted = redact_tool_input(ledger, &redaction_input)?;
+    let input_redacted = redacted
+        .value
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let expected_delta_redacted = redacted
+        .value
+        .get("expected_delta")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let input_digest = sha256_hex(&canonical_json_bytes(&input_redacted)?);
+    let expected_delta_digest = if expected_delta_redacted.is_null() {
+        Value::Null
+    } else {
+        Value::String(sha256_hex(&canonical_json_bytes(&expected_delta_redacted)?))
+    };
+
+    let tool_call_id = prefixed_id("tool");
+    let record_id = prefixed_id("bbx_rec");
+    let now = Utc::now().to_rfc3339();
+    let payload = json!({
+        "record_kind": "tool_call",
+        "tool_call_id": tool_call_id,
+        "run_id": run_id,
+        "tool_name": tool_name,
+        "capability_id": capability_id,
+        "mutating": mutating,
+        "input_digest": input_digest,
+        "input_redacted": input_redacted,
+        "expected_delta_digest": expected_delta_digest,
+        "expected_delta_redacted": expected_delta_redacted,
+        "authorization": {
+            "policy_decision_id": null,
+            "mode": "sdk_ingest",
+            "approved_by": null,
+        },
+        "execution": {
+            "started_at": now,
+            "finished_at": now,
+            "status": status.as_str(),
+            "external_request_id": external_request_id,
+        },
+        "sdk_event": sdk_event_metadata(event),
+    });
+    Ok(NewRecord {
+        record_id,
+        record_kind: "tool_call".to_string(),
+        tenant_id: tenant,
+        run_id: Some(run_id),
+        step_id: None,
+        actor: actor_json(&agent, model.as_deref()),
+        payload,
+        redaction: redacted.report,
+    })
+}
+
+fn parse_sdk_tool_status(ledger: &Path, event: &SdkEvent) -> BbxResult<ToolExecutionStatus> {
+    let status = required_sdk_data_string(ledger, event, "status")?;
+    match status.as_str() {
+        "ok" => Ok(ToolExecutionStatus::Ok),
+        "failed" => Ok(ToolExecutionStatus::Failed),
+        "blocked" => Ok(ToolExecutionStatus::Blocked),
+        other => Err(sdk_ledger_error(
+            ledger,
+            "SDK_TOOL_STATUS_INVALID",
+            format!("events[{}].data.status", event.index),
+            format!("tool call status must be ok, failed, or blocked; found {other:?}"),
+            "emit one of the supported tool call statuses",
+        )),
+    }
+}
+
+fn required_sdk_metadata(ledger: &Path, event: &SdkEvent) -> BbxResult<Value> {
+    let sdk = required_sdk_data_object(ledger, event, "sdk")?;
+    let name = sdk.get("name").and_then(Value::as_str).ok_or_else(|| {
+        sdk_ledger_error(
+            ledger,
+            "SDK_METADATA_INVALID",
+            format!("events[{}].data.sdk.name", event.index),
+            "sdk.name is required and must be a string",
+            "include SDK metadata with name and version",
+        )
+    })?;
+    let version = sdk.get("version").and_then(Value::as_str).ok_or_else(|| {
+        sdk_ledger_error(
+            ledger,
+            "SDK_METADATA_INVALID",
+            format!("events[{}].data.sdk.version", event.index),
+            "sdk.version is required and must be a string",
+            "include SDK metadata with name and version",
+        )
+    })?;
+    validate_sdk_metadata_token(ledger, event, "name", name)?;
+    validate_sdk_metadata_token(ledger, event, "version", version)?;
+    Ok(sdk)
+}
+
+fn validate_sdk_metadata_token(
+    ledger: &Path,
+    event: &SdkEvent,
+    field: &'static str,
+    value: &str,
+) -> BbxResult<()> {
+    if value.trim().is_empty() || value.len() > 64 {
+        return Err(sdk_ledger_error(
+            ledger,
+            "SDK_METADATA_INVALID",
+            format!("events[{}].data.sdk.{field}", event.index),
+            format!("sdk.{field} must be non-empty and at most 64 bytes"),
+            "emit compact SDK metadata",
+        ));
+    }
+    if !value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        return Err(sdk_ledger_error(
+            ledger,
+            "SDK_METADATA_INVALID",
+            format!("events[{}].data.sdk.{field}", event.index),
+            format!(
+                "sdk.{field} may contain only ASCII letters, digits, dot, underscore, or hyphen"
+            ),
+            "emit stable SDK metadata identifiers",
+        ));
+    }
+    Ok(())
+}
+
+fn required_sdk_data_string(
+    ledger: &Path,
+    event: &SdkEvent,
+    key: &'static str,
+) -> BbxResult<String> {
+    event
+        .data
+        .get(key)
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| {
+            sdk_ledger_error(
+                ledger,
+                "SDK_DATA_FIELD_REQUIRED",
+                format!("events[{}].data.{key}", event.index),
+                format!("data.{key} is required and must be a non-empty string"),
+                "emit the required SDK event data field",
+            )
+        })
+}
+
+fn optional_sdk_data_string(
+    ledger: &Path,
+    event: &SdkEvent,
+    key: &'static str,
+) -> BbxResult<Option<String>> {
+    match event.data.get(key) {
+        Some(Value::String(text)) if !text.trim().is_empty() => Ok(Some(text.clone())),
+        Some(Value::String(_)) => Err(sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_EMPTY",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} must not be empty when present"),
+            "omit the field or provide a non-empty string",
+        )),
+        Some(_) => Err(sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_INVALID",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} must be a string"),
+            "emit the field using the documented SDK data type",
+        )),
+        None => Ok(None),
+    }
+}
+
+fn required_sdk_data_object(
+    ledger: &Path,
+    event: &SdkEvent,
+    key: &'static str,
+) -> BbxResult<Value> {
+    match event.data.get(key) {
+        Some(value) if value.is_object() => Ok(value.clone()),
+        Some(_) => Err(sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_INVALID",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} must be a JSON object"),
+            "emit the field using the documented SDK data type",
+        )),
+        None => Err(sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_REQUIRED",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} is required"),
+            "emit the required SDK event data field",
+        )),
+    }
+}
+
+fn required_sdk_data_bool(ledger: &Path, event: &SdkEvent, key: &'static str) -> BbxResult<bool> {
+    event.data.get(key).and_then(Value::as_bool).ok_or_else(|| {
+        sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_INVALID",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} is required and must be boolean"),
+            "emit the field using the documented SDK data type",
+        )
+    })
+}
+
+fn required_sdk_data_f64(ledger: &Path, event: &SdkEvent, key: &'static str) -> BbxResult<f64> {
+    event.data.get(key).and_then(Value::as_f64).ok_or_else(|| {
+        sdk_ledger_error(
+            ledger,
+            "SDK_DATA_FIELD_INVALID",
+            format!("events[{}].data.{key}", event.index),
+            format!("data.{key} is required and must be numeric"),
+            "emit the field using the documented SDK data type",
+        )
+    })
+}
+
+fn sdk_event_metadata(event: &SdkEvent) -> Value {
+    json!({
+        "ingest_schema_version": SDK_INGEST_SCHEMA_VERSION,
+        "specversion": event.specversion,
+        "id": event.id,
+        "source": event.source,
+        "type": event.event_type,
+        "datacontenttype": event.datacontenttype,
+        "subject": event.subject,
+        "time": event.time,
+        "traceparent": event.traceparent,
+        "data_sha256": event.data_sha256,
+    })
+}
+
+fn sdk_event_connector_readback(event: &SdkEvent) -> Value {
+    json!({
+        "index": event.index,
+        "specversion": event.specversion,
+        "id": event.id,
+        "source": event.source,
+        "type": event.event_type,
+        "datacontenttype": event.datacontenttype,
+        "traceparent_present": event.traceparent.is_some(),
+        "data_sha256": event.data_sha256,
+    })
+}
+
+fn sdk_record_kind_for_event_type(event_type: &str) -> &'static str {
+    match event_type {
+        SDK_EVENT_AGENT_RUN => "agent_run",
+        SDK_EVENT_AGENT_STEP => "agent_step",
+        SDK_EVENT_MODEL_DECISION => "model_decision",
+        SDK_EVENT_TOOL_CALL => "tool_call",
+        _ => "unknown",
+    }
+}
+
+fn sdk_ingest_readback(
+    conn: &Connection,
+    ledger: &Path,
+    events: &[SdkEvent],
+    appends: &[AppendResult],
+) -> BbxResult<Vec<Value>> {
+    if events.len() != appends.len() {
+        return Err(sdk_ledger_error(
+            ledger,
+            "SDK_INGEST_READBACK_MISMATCH",
+            "records",
+            format!(
+                "SDK ingest appended {} records for {} events",
+                appends.len(),
+                events.len()
+            ),
+            "report this as a bug; SDK ingest must append exactly one ledger row per event",
+        ));
+    }
+    let mut rows = Vec::with_capacity(events.len());
+    for (event, append) in events.iter().zip(appends.iter()) {
+        let stored: Option<(String, String, String, Option<String>, Option<String>, String, String, String)> =
+            conn.query_row(
+                "SELECT record_id, record_kind, tenant_id, run_id, step_id, payload_json, payload_sha256, record_sha256
+                 FROM ledger_records
+                 WHERE sequence = ?1",
+                params![append.sequence],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|err| BlackboxError::sqlite(ledger, "read back SDK ledger row", err))?;
+        let Some((
+            record_id,
+            record_kind,
+            tenant_id,
+            run_id,
+            step_id,
+            payload_json,
+            payload_sha256,
+            record_sha256,
+        )) = stored
+        else {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_INGEST_READBACK_MISSING",
+                format!("ledger_records.sequence={}", append.sequence),
+                format!(
+                    "SDK ingest append sequence {} was not found in ledger_records",
+                    append.sequence
+                ),
+                "inspect SQLite storage durability and rerun after fixing the ledger state",
+            ));
+        };
+        if record_sha256 != append.record_sha256 || payload_sha256 != append.payload_sha256 {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_INGEST_READBACK_MISMATCH",
+                format!("ledger_records.sequence={}", append.sequence),
+                "SDK ingest readback hashes do not match append results",
+                "inspect the ledger for post-commit mutation or storage corruption",
+            ));
+        }
+        let expected_kind = sdk_record_kind_for_event_type(&event.event_type);
+        if record_kind != expected_kind {
+            return Err(sdk_ledger_error(
+                ledger,
+                "SDK_INGEST_READBACK_MISMATCH",
+                format!("ledger_records.sequence={}.record_kind", append.sequence),
+                format!(
+                    "SDK event {} expected record_kind {expected_kind}, found {record_kind}",
+                    event.id
+                ),
+                "report this as a bug; SDK event type mapping is inconsistent",
+            ));
+        }
+        let payload: Value = serde_json::from_str(&payload_json).map_err(|err| {
+            sdk_ledger_error(
+                ledger,
+                "SDK_INGEST_READBACK_JSON_INVALID",
+                format!("ledger_records.sequence={}.payload_json", append.sequence),
+                format!("SDK ledger payload was not valid JSON on readback: {err}"),
+                "inspect SQLite storage durability and rerun after fixing the ledger state",
+            )
+        })?;
+        let sdk_event = payload.get("sdk_event").ok_or_else(|| {
+            sdk_ledger_error(
+                ledger,
+                "SDK_INGEST_READBACK_MISMATCH",
+                format!(
+                    "ledger_records.sequence={}.payload_json.sdk_event",
+                    append.sequence
+                ),
+                "SDK ledger payload is missing sdk_event metadata",
+                "report this as a bug; SDK records must persist event metadata",
+            )
+        })?;
+        for (field, expected) in [
+            ("id", event.id.as_str()),
+            ("source", event.source.as_str()),
+            ("type", event.event_type.as_str()),
+            ("data_sha256", event.data_sha256.as_str()),
+        ] {
+            if sdk_event.get(field).and_then(Value::as_str) != Some(expected) {
+                return Err(sdk_ledger_error(
+                    ledger,
+                    "SDK_INGEST_READBACK_MISMATCH",
+                    format!(
+                        "ledger_records.sequence={}.payload_json.sdk_event.{field}",
+                        append.sequence
+                    ),
+                    format!(
+                        "SDK readback field {field} did not match event {}",
+                        event.id
+                    ),
+                    "inspect the ledger payload and SDK event input for mismatch",
+                ));
+            }
+        }
+        rows.push(json!({
+            "event": {
+                "index": event.index,
+                "id": event.id,
+                "source": event.source,
+                "type": event.event_type,
+                "data_sha256": event.data_sha256,
+            },
+            "ledger": {
+                "sequence": append.sequence,
+                "record_id": record_id,
+                "record_kind": record_kind,
+                "tenant_id": tenant_id,
+                "run_id": run_id,
+                "step_id": step_id,
+                "payload_sha256": payload_sha256,
+                "record_sha256": record_sha256,
+                "previous_record_sha256": append.previous_record_sha256,
+                "run_chain_sha256": append.run_chain_sha256,
+            },
+            "identifiers": {
+                "run_id": payload.get("run_id").cloned().unwrap_or(Value::Null),
+                "step_id": payload.get("step_id").cloned().unwrap_or(Value::Null),
+                "tool_call_id": payload.get("tool_call_id").cloned().unwrap_or(Value::Null),
+                "model_decision_id": payload.get("model_decision_id").cloned().unwrap_or(Value::Null),
+            },
+            "redaction": append.redaction,
+            "payload_readback": payload,
+        }));
+    }
+    Ok(rows)
+}
+
+fn sdk_file_error(
+    path: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(file_source_of_truth(path)),
+        SDK_INGEST_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn sdk_ledger_error(
+    ledger: &Path,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_of_truth(ledger)),
+        SDK_INGEST_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
 fn policy_registry(args: PolicyRegistryArgs) -> BbxResult<Value> {
     let ledger_source = if let Some(ledger) = args.ledger {
         let conn = open_initialized_ledger(&ledger)?;
@@ -4406,6 +5728,18 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             "signals": ["traces", "logs", "metrics"],
             "fail_closed": true
         },
+        "phase24_sdk_ingest": {
+            "schema_command": "blackbox sdk schema",
+            "ingest_command": "blackbox sdk ingest --ledger PATH --input cloudevents.json",
+            "connector": SDK_INGEST_CONNECTOR_ID,
+            "record_kinds": ["agent_run", "agent_step", "model_decision", "tool_call"],
+            "input_format": "CloudEvents 1.0 JSON object or JSON array",
+            "idempotency_key": ["source", "id"],
+            "trace_context": "W3C traceparent extension",
+            "source_of_truth": "SDK CloudEvents input file plus SQLite ledger_records readback",
+            "max_batch_events": SDK_MAX_BATCH_EVENTS,
+            "fail_closed": true
+        },
         "endpoints": [
             { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
             { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
@@ -4440,7 +5774,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" },
             { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" },
             { "method": "POST", "path": "/v1/fsv/tenants/{tenant_id}/certifications", "ledger_record_kind": "full_state_verification" },
-            { "method": "POST", "path": "/v1/exports/opentelemetry", "ledger_record_kind": null }
+            { "method": "POST", "path": "/v1/exports/opentelemetry", "ledger_record_kind": null },
+            { "method": "POST", "path": "/v1/sdk/events", "ledger_record_kind": "agent_run|agent_step|model_decision|tool_call" }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -20972,8 +22307,48 @@ struct AppendResult {
 }
 
 fn append_record(conn: &mut Connection, path: &Path, record: NewRecord) -> BbxResult<AppendResult> {
-    require_non_empty_for_ledger(path, "record_kind", &record.record_kind)?;
-    require_non_empty_for_ledger(path, "tenant_id", &record.tenant_id)?;
+    let mut results = append_records_atomically(conn, path, vec![record])?;
+    results.pop().ok_or_else(|| {
+        BlackboxError::new(
+            ErrorKind::InvalidInput,
+            "BBX_APPEND_EMPTY_BATCH",
+            "single-record append unexpectedly produced no append result",
+            Some(source_of_truth(path)),
+            Some("ledger_records".to_string()),
+            "report this as a bug; append_record must always append exactly one record",
+        )
+    })
+}
+
+fn append_records_atomically(
+    conn: &mut Connection,
+    path: &Path,
+    records: Vec<NewRecord>,
+) -> BbxResult<Vec<AppendResult>> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
+    for (idx, record) in records.iter().enumerate() {
+        require_non_empty_for_ledger(path, "record_kind", &record.record_kind)?;
+        require_non_empty_for_ledger(path, "tenant_id", &record.tenant_id)?;
+        require_non_empty_for_ledger(path, "record_id", &record.record_id)?;
+        if record.payload.get("record_kind").and_then(Value::as_str)
+            != Some(record.record_kind.as_str())
+        {
+            return Err(BlackboxError::new(
+                ErrorKind::InvalidInput,
+                "BBX_APPEND_RECORD_KIND_MISMATCH",
+                format!(
+                    "batch record {idx} has record_kind {} but payload.record_kind is {:?}",
+                    record.record_kind,
+                    record.payload.get("record_kind")
+                ),
+                Some(source_of_truth(path)),
+                Some(format!("records[{idx}].payload.record_kind")),
+                "build ledger records from a single typed source so the row and payload record_kind match",
+            ));
+        }
+    }
 
     let tx = conn
         .transaction()
@@ -20982,90 +22357,108 @@ fn append_record(conn: &mut Connection, path: &Path, record: NewRecord) -> BbxRe
         .map_err(|err| BlackboxError::sqlite(path, "configure append transaction", err))?;
     verify_ledger_integrity_tx(&tx, path)?;
 
-    let previous_record_sha256 = latest_record_hash(&tx, path)?;
-    let run_previous_record_sha256 = match &record.run_id {
-        Some(run_id) => latest_run_record_hash(&tx, path, run_id)?,
-        None => None,
-    };
+    let mut previous_record_sha256 = latest_record_hash(&tx, path)?;
+    let mut latest_by_run: BTreeMap<String, String> = BTreeMap::new();
+    let mut results = Vec::with_capacity(records.len());
 
-    let created_at = Utc::now().to_rfc3339();
-    let payload_json = canonical_json_string(&record.payload)?;
-    let actor_json = canonical_json_string(&record.actor)?;
-    let redaction_value = record.redaction.to_json();
-    let redaction_json = canonical_json_string(&redaction_value)?;
-    let payload_sha256 = sha256_hex(payload_json.as_bytes());
+    for record in records {
+        let run_previous_record_sha256 = match &record.run_id {
+            Some(run_id) => match latest_by_run.get(run_id) {
+                Some(latest) => Some(latest.clone()),
+                None => latest_run_record_hash(&tx, path, run_id)?,
+            },
+            None => None,
+        };
 
-    let run_chain_sha256 = compute_run_chain_hash(
-        &record,
-        &created_at,
-        &actor_json,
-        &payload_sha256,
-        &redaction_json,
-        run_previous_record_sha256.as_deref(),
-    )?;
-    let record_sha256 = compute_record_hash(
-        &record,
-        &created_at,
-        &actor_json,
-        &payload_sha256,
-        &redaction_json,
-        previous_record_sha256.as_deref(),
-        run_previous_record_sha256.as_deref(),
-        &run_chain_sha256,
-    )?;
+        let created_at = Utc::now().to_rfc3339();
+        let payload_json = canonical_json_string(&record.payload)?;
+        let actor_json = canonical_json_string(&record.actor)?;
+        let redaction_value = record.redaction.to_json();
+        let redaction_json = canonical_json_string(&redaction_value)?;
+        let payload_sha256 = sha256_hex(payload_json.as_bytes());
 
-    tx.execute(
-        "INSERT INTO ledger_records (
-             record_id, schema_version, record_kind, tenant_id, run_id, step_id,
-             created_at, actor_json, payload_json, redaction_json, payload_sha256,
-             previous_record_sha256, run_previous_record_sha256, run_chain_sha256,
-             record_sha256
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-        params![
-            record.record_id,
-            LEDGER_SCHEMA_VERSION,
-            record.record_kind,
-            record.tenant_id,
-            record.run_id,
-            record.step_id,
-            created_at,
-            actor_json,
-            payload_json,
-            redaction_json,
+        let run_chain_sha256 = compute_run_chain_hash(
+            &record,
+            &created_at,
+            &actor_json,
+            &payload_sha256,
+            &redaction_json,
+            run_previous_record_sha256.as_deref(),
+        )?;
+        let record_sha256 = compute_record_hash(
+            &record,
+            &created_at,
+            &actor_json,
+            &payload_sha256,
+            &redaction_json,
+            previous_record_sha256.as_deref(),
+            run_previous_record_sha256.as_deref(),
+            &run_chain_sha256,
+        )?;
+
+        tx.execute(
+            "INSERT INTO ledger_records (
+                 record_id, schema_version, record_kind, tenant_id, run_id, step_id,
+                 created_at, actor_json, payload_json, redaction_json, payload_sha256,
+                 previous_record_sha256, run_previous_record_sha256, run_chain_sha256,
+                 record_sha256
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                &record.record_id,
+                LEDGER_SCHEMA_VERSION,
+                &record.record_kind,
+                &record.tenant_id,
+                &record.run_id,
+                &record.step_id,
+                &created_at,
+                &actor_json,
+                &payload_json,
+                &redaction_json,
+                &payload_sha256,
+                &previous_record_sha256,
+                &run_previous_record_sha256,
+                &run_chain_sha256,
+                &record_sha256,
+            ],
+        )
+        .map_err(|err| BlackboxError::sqlite(path, "insert append-only ledger record", err))?;
+
+        let sequence = tx.last_insert_rowid();
+        let append = AppendResult {
+            sequence,
             payload_sha256,
-            previous_record_sha256,
-            run_previous_record_sha256,
-            run_chain_sha256,
-            record_sha256,
-        ],
-    )
-    .map_err(|err| BlackboxError::sqlite(path, "insert append-only ledger record", err))?;
+            previous_record_sha256: previous_record_sha256.clone(),
+            run_chain_sha256: run_chain_sha256.clone(),
+            record_sha256: record_sha256.clone(),
+            redaction: redaction_value,
+        };
+        if let Some(run_id) = &record.run_id {
+            latest_by_run.insert(run_id.clone(), record_sha256.clone());
+        }
+        previous_record_sha256 = Some(record_sha256);
+        results.push(append);
+    }
 
-    let sequence = tx.last_insert_rowid();
+    let ledger_tip_sha256 = previous_record_sha256.clone().unwrap_or_default();
     let record_count: i64 = tx
         .query_row("SELECT COUNT(*) FROM ledger_records", [], |row| row.get(0))
         .map_err(|err| BlackboxError::sqlite(path, "count ledger records after append", err))?;
     set_metadata(&tx, path, "ledger_record_count", &record_count.to_string())?;
-    set_metadata(&tx, path, "ledger_tip_sha256", &record_sha256)?;
+    set_metadata(&tx, path, "ledger_tip_sha256", &ledger_tip_sha256)?;
 
     tx.commit()
         .map_err(|err| BlackboxError::sqlite(path, "commit ledger append transaction", err))?;
 
-    info!(
-        source_of_truth = %source_of_truth(path),
-        sequence,
-        record_sha256,
-        "appended blackbox ledger record"
-    );
+    for append in &results {
+        info!(
+            source_of_truth = %source_of_truth(path),
+            sequence = append.sequence,
+            record_sha256 = append.record_sha256,
+            "appended blackbox ledger record"
+        );
+    }
 
-    Ok(AppendResult {
-        sequence,
-        payload_sha256,
-        previous_record_sha256,
-        run_chain_sha256,
-        record_sha256,
-        redaction: redaction_value,
-    })
+    Ok(results)
 }
 
 fn set_metadata(

@@ -44,7 +44,9 @@ artifacts. Phase 22 adds `ticketing_artifact_v1`, which reads captured Jira,
 Linear, and ServiceNow API JSON artifacts for ticket state and evidence-link
 verification. Phase 23 adds `blackbox_otel_export_v1`, which reads completed
 OpenTelemetry export directories and verifies OTLP JSONL signal files plus
-manifest hashes.
+manifest hashes. Phase 24 adds `blackbox_sdk_ingest_v1`, which reads
+CloudEvents SDK ingestion files and verifies the persisted SQLite rows
+created from them.
 
 ## Connector Contract
 
@@ -389,6 +391,35 @@ Connector properties:
 - empty ledgers, existing output without `--force`, mixed-signal JSONL,
   tampered ledgers, and manifest/file hash drift fail closed with typed errors.
 
+### Phase 24: SDK CloudEvents Ingestion — shipped
+
+Source of truth:
+
+- SDK input file at `file:/path/to/events.json#sha256`;
+- SQLite ledger rows at `sqlite:/path/to/blackbox.sqlite#ledger_records`.
+
+Readback specs:
+
+- `blackbox_sdk_cloudevents_json_v1`;
+- `sdk_event_source_id_idempotency_v1`;
+- `w3c_traceparent_v1`;
+- `sqlite_ledger_readback_v1`.
+
+Connector properties:
+
+- accepts only CloudEvents 1.0 JSON objects or JSON arrays up to 128 events;
+- requires `datacontenttype=application/json`, supported event types, and a
+  JSON object in `data`;
+- validates optional W3C `traceparent` shape, lowercase hexadecimal encoding,
+  and non-zero trace/parent ids;
+- rejects duplicate CloudEvents `source` + `id` pairs within the input file
+  and within existing `ledger_records`;
+- maps SDK events onto existing `agent_run`, `agent_step`, `model_decision`,
+  and `tool_call` rows;
+- requires `data.expected_delta` for mutating tool-call events;
+- appends batches atomically and reads the inserted SQLite rows back before
+  returning success.
+
 ### Phase 8: Enterprise Controls — shipped
 
 Source of truth:
@@ -547,7 +578,7 @@ a physical source are blocked before a readback row is written.
 
 ### Later Phases (deferred)
 
-No connector family remains deferred in the Phase 23 MVP connector plan.
+No connector family remains deferred in the Phase 24 MVP connector plan.
 
 ## Connector Lifecycle
 
@@ -624,4 +655,8 @@ in Phase 22, manual FSV reads the physical Jira, Linear, or ServiceNow API
 JSON artifact file and the SQLite verifier rows directly. For OpenTelemetry
 export shipped in Phase 23, manual FSV reads `traces.jsonl`, `logs.jsonl`,
 `metrics.jsonl`, and `manifest.json`, recomputes the file hashes, and confirms
-ledger row counts did not change. Anything else is hearsay.
+ledger row counts did not change. For SDK ingestion shipped in Phase 24,
+manual FSV reads the CloudEvents input file, then queries `ledger_records`
+directly for `payload.sdk_event.source`, `payload.sdk_event.id`,
+`payload.sdk_event.type`, and expected redacted payload fields. Anything else
+is hearsay.

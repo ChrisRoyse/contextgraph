@@ -34,6 +34,7 @@ The mandatory operator-side protocol lives in
 | Terraform/cloud artifact files + ledger evidence rows (Phase 21) | physical Terraform plan/state JSON files, normalized cloud inventory JSON, cloud audit JSONL, and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | Ticketing API artifact files + ledger evidence rows (Phase 22) | physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON files plus SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | OpenTelemetry export files (Phase 23) | verified SQLite `ledger_records` used as input plus physical `traces.jsonl`, `logs.jsonl`, `metrics.jsonl`, and `manifest.json` files read back directly with manifest hashes |
+| SDK CloudEvents ingestion files (Phase 24) | physical CloudEvents JSON object/batch files plus SQLite `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows read directly by `payload.sdk_event.source` and `payload.sdk_event.id` |
 
 ## Test Levels
 
@@ -138,6 +139,12 @@ real SQLite ledger with passed and failed command verifier evidence, exports
 OTLP JSONL traces/logs/metrics, reads the physical files and manifest directly,
 recomputes hashes, runs connector readback, proves export does not mutate
 `ledger_records`, and checks empty-ledger, existing-output, and tampered-ledger
+edges.
+Phase 24 adds `tests/blackbox_phase24_sdk_ingest_fsv.rs`, which writes real
+CloudEvents SDK event files, runs connector readback and `blackbox sdk ingest`,
+reads `ledger_records` directly for `payload.sdk_event` metadata and redacted
+payload fields, proves batch ingest is atomic, and checks duplicate
+source/id, missing expected delta, empty batch, and invalid traceparent
 edges.
 
 ## Acceptance Criteria

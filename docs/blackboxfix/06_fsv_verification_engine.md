@@ -22,7 +22,8 @@ SQLite runtime PRAGMAs, package evidence, incident/eval conversion state, and
 a required decision-register JSON file. Phase 20 shipped Kubernetes Deployment
 snapshot verification, Phase 21 shipped Terraform/cloud artifact verification,
 Phase 22 shipped ticketing artifact verification for Jira, Linear, and
-ServiceNow, and Phase 23 shipped manifest-verified OpenTelemetry file export.
+ServiceNow, Phase 23 shipped manifest-verified OpenTelemetry file export, and
+Phase 24 shipped SDK CloudEvents ingestion with SQLite readback.
 
 ## Full-State Verification Protocol
 
@@ -57,6 +58,8 @@ lives. Examples:
   manifests;
 - OpenTelemetry export files for OTLP JSONL traces, logs, metrics, and
   manifest hashes;
+- SDK CloudEvents input files plus the SQLite `ledger_records` rows created
+  from those events;
 - decision-register JSON files for required risk/open-question closure.
 
 For Phase 1 the durable system is the SQLite `ledger_records` table itself.

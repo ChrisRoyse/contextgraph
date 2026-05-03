@@ -116,7 +116,7 @@ Mitigation:
 - instrument at the tool boundary;
 - support MCP gateway (Phase 6);
 - provide generic HTTP ingestion (Phase 17 shipped the first authenticated
-  server) and SDK ingestion in a later phase.
+  server) and CloudEvents SDK ingestion (Phase 24).
 
 ### Model Provider Platform Moves
 

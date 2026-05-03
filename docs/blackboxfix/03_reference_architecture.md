@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 23)
+## Concrete Layout (shipped through Phase 24)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `export otel`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `demo ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `sdk`, `verify`, `replay`, `export evidence`, `export episodes`, `export otel`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `demo ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -47,10 +47,12 @@ agent runtime
 | Terraform/cloud artifact readback | Physical `terraform show -json` plan/state files plus normalized cloud inventory JSON and audit JSONL artifacts | `terraform_cloud_artifact_v1` |
 | Ticketing artifact readback | Physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON artifacts for ticket state and evidence-link verification | `ticketing_artifact_v1` |
 | OpenTelemetry export readback | Physical OTLP JSONL traces/logs/metrics plus manifest hashes exported from a verified ledger | `blackbox_otel_export_v1` |
-| FSV harness | Phase 1-23 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| SDK event ingestion | Provider-neutral CloudEvents JSON object/batch ingestion with source/id idempotency, W3C traceparent validation, expected-delta enforcement for mutating calls, and SQLite readback | `blackbox sdk ingest`, `blackbox_sdk_ingest_v1` |
+| FSV harness | Phase 1-24 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-23 is **not yet implemented**. Public multi-tenant
-SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
+Anything outside Phases 1-24 is **not yet implemented**. Public multi-tenant
+SaaS serving, packaged language SDK clients, and provider-managed TLS remain
+reserved for later work.
 
 ## Components (target architecture)
 
@@ -61,12 +63,15 @@ Initial adapters in priority order:
 
 1. local CLI wrapper (Phase 1: implicit — operator invokes `blackbox record …`);
 2. MCP recorder server (Phase 6 shipped over JSON-RPC stdio);
-3. OpenAI/Anthropic style tool-call wrapper (reserved after Phase 6);
+3. provider-neutral CloudEvents SDK ingestion bridge (Phase 24 shipped);
 4. coding-agent shell/git wrapper (Phase 2);
 5. generic HTTP webhook ingestion (reserved after Phase 6).
 
 The shipped MCP adapter emits `AgentRun`, `AgentStep`, `ToolCall`, and
-`ModelDecision` records for the verified Git patch workflow.
+`ModelDecision` records for the verified Git patch workflow. The shipped SDK
+ingestion bridge accepts strict CloudEvents JSON files from any language
+runtime and persists the same ledger record families after file and ledger
+readback validation.
 
 ### Tool Gateway (Phase 6)
 
@@ -83,7 +88,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18/20/21/22)
+### Source-Of-Truth Connectors (Phase 2/3/9/10/11/12/13/14/15/16/17/18/20/21/22/24)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
