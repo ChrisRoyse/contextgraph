@@ -76,7 +76,7 @@ Deliverables (all shipped):
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
   **wiped** the ledger — no migration shim; current shipped schema is v5 after
-  Phase 8).
+  Phase 9).
 
 Exit criteria (verified):
 
@@ -342,6 +342,59 @@ role assignment, cross-tenant resource denial, unauthorized audit export, and
 hash-chain tamper blocking before export files are written. The hardened
 export path persists an `enterprise_access_decision` for both allowed and
 denied `export-audit` attempts.
+
+## Phase 9: GitLab CI Hosted Connector — DONE (2026-05-02)
+
+Deliverables (all shipped):
+
+- hosted CI connector `gitlab_ci_v1`;
+- `blackbox connector test --connector gitlab_ci_v1 --source GROUP/PROJECT`;
+- verifiers `gitlab_pipeline_status_v1` and
+  `gitlab_pipeline_jobs_completed_v1`;
+- GitLab REST readback with explicit `Accept`, `User-Agent`, optional
+  `BBX_GITLAB_TOKEN` / `GITLAB_TOKEN` `PRIVATE-TOKEN` auth, rate-limit
+  headers, pagination headers, request ids, response body hashes, and typed
+  fail-closed errors;
+- Phase 9 FSV test
+  (`crates/context-graph-cli/tests/blackbox_phase9_gitlab_ci_fsv.rs`).
+
+Exit criteria (met):
+
+- hosted CI state can be verified without trusting an agent's return value;
+- pipeline id, status, ref, and commit SHA must all match before
+  `gitlab_pipeline_status_v1` passes;
+- pipeline jobs must be present, `minimum_jobs` must be at least 1, every
+  paginated jobs page must be read, and every job must match explicit allowed
+  statuses before `gitlab_pipeline_jobs_completed_v1` passes;
+- missing pipelines/jobs, stale status/ref/SHA expectations, invalid job
+  status values, and malformed schema fail with typed error codes and durable
+  evidence.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase9_gitlab_ci_fsv -- --nocapture
+```
+
+Current result: 1/1 passing. The live integration test independently
+discovers a real public GitLab project/pipeline/jobs fixture with `curl`,
+executes the real `context-graph blackbox` binary, then reads physical
+SQLite `ledger_records` rows. It covers 2 happy paths and 9 edge checks:
+missing pipeline, wrong pipeline status, wrong ref, schema-invalid pipeline
+id, missing jobs endpoint, wrong allowed job status, minimum-job mismatch,
+invalid allowed job status, and zero-minimum job schema blocking.
+
+Manual FSV completed against `/tmp/bbx-phase9-manual-fsv.IT6RIN/fsv.log`.
+Final physical SQLite state: `agent_run=1`, `tool_call=1`,
+`expected_delta=7`, `readback_snapshot=5`, `verifier_result=7`,
+`evidence_packet=7`, `incident_packet=3`. Direct SQLite readback proved the
+happy jobs verifier stored `pages_read=1`, `api_pages=1`, `jobs_total=4`, and
+`mismatched_count=0`, with the first GitLab jobs API page preserving a
+pagination `Link` header; invalid job status and `minimum_jobs=0` were
+blocked before source reads and therefore wrote no readback snapshots.
+
+No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
+the live ledger schema at `LEDGER_SCHEMA_VERSION = 5`.
 
 ## Phase Sequencing Rules
 

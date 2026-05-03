@@ -3,13 +3,14 @@
 BlackBoxFix exposes the same core semantics through CLI, API, SDK, and MCP
 wrappers. The product surface makes the FSV lifecycle explicit.
 
-Phase 8 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
+Phase 9 ships the local CLI plus JSON-RPC stdio MCP recorder/gateway, policy
 decision rows, a capability registry, a machine-readable HTTP API surface
 registry, a static dashboard/API bundle, and enterprise-control commands for
 SSO metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, and
-audit/SIEM export. SDKs and hosted HTTP serving are reserved for later phases.
+audit/SIEM export. It also ships the GitLab CI hosted connector. SDKs and
+hosted HTTP serving are reserved for later phases.
 
-## CLI (shipped Phase 8)
+## CLI (shipped Phase 9)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -32,6 +33,7 @@ blackbox connector test        --connector cmd_local_v1 --source CWD
                                --command ARGV...
 blackbox connector test        --connector github_v1 --source OWNER/REPO
 blackbox connector test        --connector gha_v1 --source OWNER/REPO
+blackbox connector test        --connector gitlab_ci_v1 --source GROUP/PROJECT
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox record run            --ledger PATH --task TASK --agent AGENT
                                [--tenant TENANT]    (default: tenant_local)
@@ -94,7 +96,7 @@ The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
 `-v`/`-vv`/`-vvv` increase log verbosity (warn/info/debug/trace, written to
 stderr). Stdout always carries the JSON result on success.
 
-### Verifier Spec Input (Phase 2/3)
+### Verifier Spec Input (Phase 2/3/9)
 
 `blackbox verify --input` takes a JSON object:
 
@@ -108,7 +110,7 @@ stderr). Stdout always carries the JSON result on success.
 }
 ```
 
-Supported Phase 2/3 verifier ids:
+Supported Phase 2/3/9 verifier ids:
 
 - `git_branch_exists_v1`
 - `git_commit_exists_v1`
@@ -120,6 +122,8 @@ Supported Phase 2/3 verifier ids:
 - `github_check_suite_passed_v1`
 - `github_issue_state_changed_v1`
 - `gha_workflow_run_completed_v1`
+- `gitlab_pipeline_status_v1`
+- `gitlab_pipeline_jobs_completed_v1`
 
 Every verifier writes `expected_delta`, then a `readback_snapshot` when the
 connector was able to read physical state, then `verifier_result`, then an
@@ -204,6 +208,14 @@ attempt. If the principal lacks `audit.export`, the command creates no files
 and returns `ENTERPRISE_RBAC_DENIED`; if authorized, it writes `audit.jsonl`,
 `siem-rfc5424.log`, `controls.json`, and `manifest.json`; the exporter reads
 every file back and validates hashes before reporting success.
+
+`connector test --connector gitlab_ci_v1` reads GitLab project metadata and
+the latest pipeline from GitLab REST API v4. `gitlab_pipeline_status_v1`
+passes only when the expected pipeline id exists and the status, ref, and SHA
+all match. `gitlab_pipeline_jobs_completed_v1` passes only when the pipeline
+has a non-zero expected minimum job count, every GitLab jobs page has been
+read through pagination, and every job status is explicitly allowed, with
+optional explicit handling for `allow_failure` failed jobs.
 
 ## HTTP API Surface (Phase 6 shipped as registry)
 
@@ -293,7 +305,7 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 8)
+## OpenTelemetry Export (reserved after Phase 9)
 
 OpenTelemetry is an export path, not the primary source of truth. Emit:
 
@@ -304,13 +316,14 @@ OpenTelemetry is an export path, not the primary source of truth. Emit:
 
 The ledger remains authoritative.
 
-Phase 7 shipped local dashboard metrics and Phase 8 shipped audit/SIEM files.
-OpenTelemetry emission remains a later export path.
+Phase 7 shipped local dashboard metrics, Phase 8 shipped audit/SIEM files, and
+Phase 9 shipped hosted GitLab CI readbacks. OpenTelemetry emission remains a
+later export path.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 5 in Phase 8).
+- Ledger records include `schema_version` (= 5 in Phase 9).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -321,10 +334,12 @@ OpenTelemetry emission remains a later export path.
   outside the ledger with `dashboard_schema_version = 1`.
 - Phase 8 bumps the ledger schema to 5 for `enterprise_tenant_config`,
   `enterprise_directory_snapshot`, and `enterprise_access_decision`.
+- Phase 9 does not bump the ledger schema. It reuses Phase 2-4 verifier and
+  evidence records for GitLab CI readbacks.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
-  `github_v1`, `gha_v1`, `enterprise_controls_v1` today).
+  `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 

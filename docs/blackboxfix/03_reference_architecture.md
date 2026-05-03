@@ -17,7 +17,7 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 8)
+## Concrete Layout (shipped through Phase 9)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
@@ -28,14 +28,14 @@ agent runtime
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
 | Local source readback | Git, filesystem, command connectors | `git_local_v1`, `fs_local_v1`, `cmd_local_v1` |
-| Hosted source readback | GitHub and GitHub Actions connectors | `github_v1`, `gha_v1` |
+| Hosted source readback | GitHub, GitHub Actions, and GitLab CI connectors | `github_v1`, `gha_v1`, `gitlab_ci_v1` |
 | Evidence/replay/export | `evidence_packet`, `incident_packet`, JSON evidence, JSONL episodes, eval fixtures | `blackbox replay`, `blackbox export evidence`, `blackbox export episodes` |
 | MCP/policy gateway | JSON-RPC stdio MCP recorder/gateway, policy rows, capability registry | `blackbox mcp recorder`, `blackbox mcp gateway`, `blackbox policy ...` |
 | Dashboard | Static dashboard bundle plus dashboard API JSON files over the verified ledger | `blackbox dashboard build`, `blackbox dashboard api` |
 | Enterprise controls | SSO/OIDC/SAML metadata, SCIM directory snapshots, RBAC/tenant-isolation decisions, audit/SIEM export | `blackbox enterprise ...` |
-| FSV harness | Phase 1-8 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| FSV harness | Phase 1-9 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-8 is **not yet implemented**. Hosted multi-tenant
+Anything outside Phases 1-9 is **not yet implemented**. Hosted multi-tenant
 serving remains reserved for later work.
 
 ## Components (target architecture)
@@ -69,7 +69,7 @@ The gateway is the controlled path for mutating tool calls. It performs:
 If a mutating tool has no verifier, the platform must label it
 `unverified_blocked` in governed mode.
 
-### Source-Of-Truth Connectors (Phase 2/3)
+### Source-Of-Truth Connectors (Phase 2/3/9)
 
 Connectors read durable state from actual systems. They must support an
 explicit readback operation that is separate from the mutating call path.
@@ -87,7 +87,7 @@ Examples (priority order, see `05_source_of_truth_connectors.md`):
 - ticketing systems;
 - cloud audit logs.
 
-### FSV Verifier (Phase 2/3)
+### FSV Verifier (Phase 2/3/9)
 
 The verifier compares an expected persisted delta against independently read
 source-of-truth state. It writes `VerifierResult` and `EvidencePacket`

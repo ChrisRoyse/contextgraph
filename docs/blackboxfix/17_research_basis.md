@@ -67,7 +67,7 @@ Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
 Design implication:
 
 - export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 8);
+  after Phase 9);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
 - use semantic attributes for run, step, tool, verifier, connector, risk tier.
 
@@ -289,6 +289,30 @@ Design implication:
   responses such as commit/check-suite `422` are captured as verifier failures
   only where the endpoint contract and live readback prove they mean “target
   absent.”
+
+### GitLab REST API, Pipelines, And Jobs
+
+References:
+
+- <https://docs.gitlab.com/api/pipelines/>
+- <https://docs.gitlab.com/api/jobs/>
+- <https://docs.gitlab.com/api/rest/authentication/>
+- <https://docs.gitlab.com/api/rest/#pagination>
+
+Design implication:
+
+- verify pipelines through documented project pipeline endpoints and require
+  pipeline id, status, ref, and SHA to match the expected delta;
+- verify jobs through documented jobs endpoints and treat all status values as
+  a closed set from GitLab docs;
+- send optional private/project/group tokens in the documented
+  `PRIVATE-TOKEN` header, while allowing public unauthenticated fixtures;
+- read paginated jobs completely using GitLab `Link` and `x-next-page`
+  pagination headers and record each API page in evidence. Missing, malformed,
+  or incomplete pagination is a connector block, not a partial pass;
+- store request id, ETag, rate-limit headers, pagination headers, response
+  body hash, and normalized observed state in `readback_snapshot` so operators
+  can diagnose API/schema/rate-limit failures from the ledger.
 
 ## Internal Project References
 

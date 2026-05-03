@@ -30,12 +30,15 @@ const FS_CONNECTOR_ID: &str = "fs_local_v1";
 const CMD_CONNECTOR_ID: &str = "cmd_local_v1";
 const GITHUB_CONNECTOR_ID: &str = "github_v1";
 const GHA_CONNECTOR_ID: &str = "gha_v1";
+const GITLAB_CI_CONNECTOR_ID: &str = "gitlab_ci_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const GITHUB_API_VERSION: &str = "2022-11-28";
 const GITHUB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
+const GITLAB_API_BASE: &str = "https://gitlab.com/api/v4";
+const GITLAB_USER_AGENT: &str = "contextgraph-blackbox/0.1";
 const EPISODE_EXPORT_SCHEMA_VERSION: i64 = 1;
 const DASHBOARD_SCHEMA_VERSION: i64 = 1;
 const ENTERPRISE_CONTROL_SCHEMA_VERSION: i64 = 1;
@@ -1154,6 +1157,15 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": GITLAB_CI_CONNECTOR_ID,
+                "source_kind": "gitlab_ci",
+                "readback_specs": [
+                    "gitlab_pipeline_status_v1",
+                    "gitlab_pipeline_jobs_completed_v1"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -1271,6 +1283,27 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": GHA_CONNECTOR_ID,
                 "source_of_truth": gha_source_of_truth(&owner, &repo, "actions/runs"),
+                "readback": readback,
+            }))
+        }
+        GITLAB_CI_CONNECTOR_ID => {
+            let project_locator = args.source.display().to_string();
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    GITLAB_CI_CONNECTOR_ID,
+                    gitlab_source_of_truth_from_locator(&project_locator, "project"),
+                    "--command",
+                    "gitlab_ci_v1 connector test does not accept --command",
+                    "remove --command and pass GROUP/PROJECT through --source",
+                ));
+            }
+            let project = parse_gitlab_project_locator(&project_locator)?;
+            let readback = gitlab_project_readback(&project).await?;
+            Ok(json!({
+                "status": "ok",
+                "connector": GITLAB_CI_CONNECTOR_ID,
+                "source_of_truth": gitlab_source_of_truth(&project, "project"),
                 "readback": readback,
             }))
         }
@@ -9857,6 +9890,16 @@ impl VerifySpec {
                         .unwrap_or_else(|| "unknown".to_string())
                 ),
             ),
+            "gitlab_pipeline_status_v1" | "gitlab_pipeline_jobs_completed_v1" => {
+                let project = optional_str(&self.source, "project").unwrap_or("");
+                let pipeline = self
+                    .expected
+                    .get("pipeline_id")
+                    .and_then(Value::as_u64)
+                    .map(|number| number.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                gitlab_source_of_truth_from_parts(project, &format!("pipelines/{pipeline}"))
+            }
             _ => "blackbox:unknown_verifier".to_string(),
         }
     }
@@ -9892,6 +9935,8 @@ async fn run_phase2_verifier(spec: &VerifySpec) -> VerificationOutcome {
         "github_issue_state_changed_v1" => verify_github_issue_state_changed(spec).await,
         "github_check_suite_passed_v1" => verify_github_check_suite_passed(spec).await,
         "gha_workflow_run_completed_v1" => verify_gha_workflow_run_completed(spec).await,
+        "gitlab_pipeline_status_v1" => verify_gitlab_pipeline_status(spec).await,
+        "gitlab_pipeline_jobs_completed_v1" => verify_gitlab_pipeline_jobs_completed(spec).await,
         _ => VerificationOutcome::blocked(
             SQLITE_CONNECTOR_ID,
             "blackbox:verifier_registry".to_string(),
@@ -9997,6 +10042,18 @@ struct GithubApiReadback {
     body: Value,
     body_sha256: String,
     rate_limit: Value,
+    request_id: Option<String>,
+    etag: Option<String>,
+}
+
+#[derive(Debug)]
+struct GitlabApiReadback {
+    status: u16,
+    url: String,
+    body: Value,
+    body_sha256: String,
+    rate_limit: Value,
+    pagination: Value,
     request_id: Option<String>,
     etag: Option<String>,
 }
@@ -10980,6 +11037,463 @@ async fn gha_repo_readback(owner: &str, repo: &str) -> BbxResult<Value> {
     }))
 }
 
+fn gitlab_source_of_truth(project: &str, locator: &str) -> String {
+    gitlab_source_of_truth_from_parts(project, locator)
+}
+
+fn gitlab_source_of_truth_from_parts(project: &str, locator: &str) -> String {
+    format!("gitlab:{project}#{locator}")
+}
+
+fn gitlab_source_of_truth_from_locator(project_locator: &str, locator: &str) -> String {
+    format!("gitlab:{project_locator}#{locator}")
+}
+
+fn parse_gitlab_project_locator(locator: &str) -> BbxResult<String> {
+    let trimmed = locator.trim().trim_matches('/');
+    let parts = trimmed.split('/').collect::<Vec<_>>();
+    if parts.len() < 2
+        || parts
+            .iter()
+            .any(|part| part.trim().is_empty() || *part == "." || *part == "..")
+    {
+        return Err(BlackboxError::connector_blocked(
+            "GITLAB_PROJECT_LOCATOR_INVALID",
+            GITLAB_CI_CONNECTOR_ID,
+            gitlab_source_of_truth_from_locator(locator, "project"),
+            "--source",
+            "GitLab connector source must be GROUP/PROJECT or GROUP/SUBGROUP/PROJECT",
+            "pass a GitLab project path like gitlab-org/gitlab-runner",
+        ));
+    }
+    for part in &parts {
+        if !part
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+        {
+            return Err(BlackboxError::connector_blocked(
+                "GITLAB_PROJECT_LOCATOR_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                gitlab_source_of_truth_from_locator(locator, "project"),
+                "--source",
+                format!("GitLab project path segment {part:?} contains unsupported characters"),
+                "use the URL path from GitLab without query strings, fragments, or shell metacharacters",
+            ));
+        }
+    }
+    Ok(parts.join("/"))
+}
+
+fn gitlab_api_url(project: &str, suffix_segments: &[&str], query: &[(&str, String)]) -> Url {
+    let mut url = Url::parse(GITLAB_API_BASE).expect("GitLab API base URL is valid");
+    {
+        let mut path = url
+            .path_segments_mut()
+            .expect("GitLab API base URL supports path segments");
+        path.push("projects");
+        path.push(project);
+        for segment in suffix_segments {
+            path.push(segment);
+        }
+    }
+    if !query.is_empty() {
+        let mut pairs = url.query_pairs_mut();
+        for (key, value) in query {
+            pairs.append_pair(key, value);
+        }
+    }
+    url
+}
+
+fn gitlab_token() -> Option<String> {
+    std::env::var("BBX_GITLAB_TOKEN")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("GITLAB_TOKEN")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+}
+
+fn gitlab_client(source_of_truth: &str) -> BbxResult<Client> {
+    Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|err| {
+            BlackboxError::connector_blocked(
+                "GITLAB_HTTP_CLIENT_FAILED",
+                GITLAB_CI_CONNECTOR_ID,
+                source_of_truth.to_string(),
+                "gitlab.client",
+                format!("failed to build GitLab HTTP client: {err}"),
+                "inspect the local TLS/network configuration and retry",
+            )
+        })
+}
+
+fn gitlab_header(headers: &HeaderMap, name: &'static str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned)
+}
+
+fn gitlab_rate_limit(headers: &HeaderMap) -> Value {
+    json!({
+        "limit": gitlab_header(headers, "ratelimit-limit"),
+        "remaining": gitlab_header(headers, "ratelimit-remaining"),
+        "reset": gitlab_header(headers, "ratelimit-reset"),
+        "reset_time": gitlab_header(headers, "ratelimit-resettime"),
+        "retry_after": headers
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned),
+    })
+}
+
+fn gitlab_pagination(headers: &HeaderMap) -> Value {
+    json!({
+        "link": gitlab_header(headers, "link"),
+        "x_next_page": gitlab_header(headers, "x-next-page"),
+        "x_page": gitlab_header(headers, "x-page"),
+        "x_per_page": gitlab_header(headers, "x-per-page"),
+        "x_total": gitlab_header(headers, "x-total"),
+        "x_total_pages": gitlab_header(headers, "x-total-pages"),
+    })
+}
+
+fn gitlab_pipeline_jobs_url(project: &str, pipeline_id: u64, page: u64) -> Url {
+    gitlab_api_url(
+        project,
+        &["pipelines", &pipeline_id.to_string(), "jobs"],
+        &[
+            ("per_page", "100".to_string()),
+            ("include_retried", "false".to_string()),
+            ("page", page.to_string()),
+        ],
+    )
+}
+
+fn gitlab_link_next_url(response: &GitlabApiReadback, source: &str) -> BbxResult<Option<Url>> {
+    let Some(link) = response.pagination.get("link").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    for part in link.split(',') {
+        if !part.contains("rel=\"next\"") {
+            continue;
+        }
+        let Some(start) = part.find('<') else {
+            return Err(BlackboxError::connector_blocked(
+                "GITLAB_PAGINATION_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                "GitLab Link header contained rel=\"next\" without a URL start delimiter",
+                "inspect the GitLab pagination headers and update the connector before claiming verification success",
+            ));
+        };
+        let Some(end_offset) = part[start + 1..].find('>') else {
+            return Err(BlackboxError::connector_blocked(
+                "GITLAB_PAGINATION_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                "GitLab Link header contained rel=\"next\" without a URL end delimiter",
+                "inspect the GitLab pagination headers and update the connector before claiming verification success",
+            ));
+        };
+        let raw_url = &part[start + 1..start + 1 + end_offset];
+        let url = Url::parse(raw_url).map_err(|err| {
+            BlackboxError::connector_blocked(
+                "GITLAB_PAGINATION_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                format!("GitLab rel=\"next\" URL was invalid: {err}"),
+                "inspect the GitLab pagination headers and update the connector before claiming verification success",
+            )
+        })?;
+        let base = Url::parse(GITLAB_API_BASE).expect("GitLab API base URL is valid");
+        if url.scheme() != base.scheme()
+            || url.host_str() != base.host_str()
+            || !url.path().starts_with(base.path())
+        {
+            return Err(BlackboxError::connector_blocked(
+                "GITLAB_PAGINATION_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                source.to_string(),
+                "response.headers.link",
+                format!("GitLab rel=\"next\" URL left the configured API base: {url}"),
+                "inspect the GitLab pagination headers and update the connector before claiming verification success",
+            ));
+        }
+        return Ok(Some(url));
+    }
+    Ok(None)
+}
+
+fn gitlab_page_from_url(url: &Url, fallback: u64) -> u64 {
+    url.query_pairs()
+        .find(|(key, _)| key == "page")
+        .and_then(|(_, value)| value.parse::<u64>().ok())
+        .unwrap_or(fallback)
+}
+
+fn gitlab_error_message(body: &Value) -> String {
+    match body.get("message") {
+        Some(Value::String(message)) => message.clone(),
+        Some(other) => other.to_string(),
+        None => body
+            .as_str()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| "GitLab API returned an error".to_string()),
+    }
+}
+
+fn gitlab_is_rate_limited(status: u16, headers: &HeaderMap, body: &Value) -> bool {
+    status == 429
+        || headers.contains_key(RETRY_AFTER)
+        || gitlab_header(headers, "ratelimit-remaining").as_deref() == Some("0")
+        || gitlab_error_message(body)
+            .to_lowercase()
+            .contains("rate limit")
+}
+
+async fn gitlab_get_json(
+    url: Url,
+    source_of_truth: &str,
+    operation: &'static str,
+    allowed_non_success_statuses: &[u16],
+) -> BbxResult<GitlabApiReadback> {
+    let client = gitlab_client(source_of_truth)?;
+    let mut request = client
+        .get(url.clone())
+        .header(USER_AGENT, HeaderValue::from_static(GITLAB_USER_AGENT))
+        .header(ACCEPT, HeaderValue::from_static("application/json"));
+    if let Some(token) = gitlab_token() {
+        let header_value = HeaderValue::from_str(&token).map_err(|err| {
+            BlackboxError::connector_blocked(
+                "CONNECTOR_CREDENTIAL_INVALID",
+                GITLAB_CI_CONNECTOR_ID,
+                source_of_truth.to_string(),
+                "env.BBX_GITLAB_TOKEN",
+                format!("GitLab token could not be encoded as an HTTP header: {err}"),
+                "replace BBX_GITLAB_TOKEN/GITLAB_TOKEN with a valid GitLab access token",
+            )
+        })?;
+        request = request.header("PRIVATE-TOKEN", header_value);
+    }
+    let response = request.send().await.map_err(|err| {
+        BlackboxError::connector_blocked(
+            "SOURCE_OF_TRUTH_UNAVAILABLE",
+            GITLAB_CI_CONNECTOR_ID,
+            source_of_truth.to_string(),
+            operation,
+            format!("GitLab API request failed before an HTTP response was received: {err}"),
+            "check network access, DNS/TLS, and GitLab availability, then retry",
+        )
+    })?;
+    let status = response.status().as_u16();
+    let headers = response.headers().clone();
+    let url_after_redirects = response.url().to_string();
+    let request_id = gitlab_header(&headers, "x-request-id");
+    let etag = gitlab_header(&headers, "etag");
+    let body_text = response.text().await.map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GITLAB_RESPONSE_READ_FAILED",
+            GITLAB_CI_CONNECTOR_ID,
+            source_of_truth.to_string(),
+            operation,
+            format!("failed to read GitLab API response body: {err}"),
+            "retry after confirming the network connection is stable",
+        )
+    })?;
+    let body_sha256 = sha256_hex(body_text.as_bytes());
+    let body = if body_text.trim().is_empty() {
+        Value::Null
+    } else {
+        match serde_json::from_str(&body_text) {
+            Ok(value) => value,
+            Err(err) if (200..300).contains(&status) => {
+                return Err(BlackboxError::connector_blocked(
+                    "READBACK_SCHEMA_DRIFT",
+                    GITLAB_CI_CONNECTOR_ID,
+                    source_of_truth.to_string(),
+                    operation,
+                    format!("GitLab API success response body was not valid JSON: {err}"),
+                    "inspect the response and update the connector only if GitLab changed the endpoint contract",
+                ));
+            }
+            Err(_) => Value::String(body_text),
+        }
+    };
+    let rate_limit = gitlab_rate_limit(&headers);
+    let pagination = gitlab_pagination(&headers);
+    if (200..300).contains(&status) || allowed_non_success_statuses.contains(&status) {
+        return Ok(GitlabApiReadback {
+            status,
+            url: url_after_redirects,
+            body,
+            body_sha256,
+            rate_limit,
+            pagination,
+            request_id,
+            etag,
+        });
+    }
+    if gitlab_is_rate_limited(status, &headers, &body) {
+        return Err(BlackboxError::connector_blocked(
+            "GITLAB_RATE_LIMITED",
+            GITLAB_CI_CONNECTOR_ID,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitLab API rate limit blocked readback: HTTP {status}: {}",
+                gitlab_error_message(&body)
+            ),
+            "wait until ratelimit-reset or retry-after, then rerun verification without claiming success",
+        ));
+    }
+    if status == 401 || status == 403 {
+        return Err(BlackboxError::connector_blocked(
+            "CONNECTOR_PERMISSION_DENIED",
+            GITLAB_CI_CONNECTOR_ID,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitLab API denied readback: HTTP {status}: {}",
+                gitlab_error_message(&body)
+            ),
+            "provide a GitLab token with read_api access or verify the project is public",
+        ));
+    }
+    if status >= 500 {
+        return Err(BlackboxError::connector_blocked(
+            "SOURCE_OF_TRUTH_UNAVAILABLE",
+            GITLAB_CI_CONNECTOR_ID,
+            source_of_truth.to_string(),
+            operation,
+            format!(
+                "GitLab source of truth could not provide a stable readback: HTTP {status}: {}",
+                gitlab_error_message(&body)
+            ),
+            "retry after GitLab/API state is available; do not treat this as success",
+        ));
+    }
+    Err(BlackboxError::connector_blocked(
+        "GITLAB_HTTP_STATUS_UNEXPECTED",
+        GITLAB_CI_CONNECTOR_ID,
+        source_of_truth.to_string(),
+        operation,
+        format!(
+            "GitLab API returned unexpected HTTP {status}: {}",
+            gitlab_error_message(&body)
+        ),
+        "inspect the endpoint, request parameters, and GitLab API docs before retrying",
+    ))
+}
+
+fn gitlab_api_snapshot(response: &GitlabApiReadback) -> Value {
+    json!({
+        "http_status": response.status,
+        "url": response.url,
+        "request_id": response.request_id,
+        "etag": response.etag,
+        "rate_limit": response.rate_limit,
+        "pagination": response.pagination,
+        "body_sha256": response.body_sha256,
+        "body": response.body,
+    })
+}
+
+async fn gitlab_project_readback(project: &str) -> BbxResult<Value> {
+    let source = gitlab_source_of_truth(project, "project");
+    let url = gitlab_api_url(project, &[], &[]);
+    let response = gitlab_get_json(url, &source, "GET /projects/:id", &[404]).await?;
+    if response.status == 404 {
+        return Err(BlackboxError::connector_blocked(
+            "GITLAB_PROJECT_NOT_FOUND",
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "source",
+            "GitLab project was not found",
+            "verify GROUP/PROJECT and provide read_api credentials for private projects",
+        ));
+    }
+    let pipelines_source = gitlab_source_of_truth(project, "pipelines");
+    let pipelines_url = gitlab_api_url(
+        project,
+        &["pipelines"],
+        &[("per_page", "1".to_string()), ("sort", "desc".to_string())],
+    );
+    let pipelines_response = gitlab_get_json(
+        pipelines_url,
+        &pipelines_source,
+        "GET /projects/:id/pipelines?per_page=1",
+        &[],
+    )
+    .await?;
+    let latest_pipeline = pipelines_response
+        .body
+        .as_array()
+        .and_then(|items| items.first())
+        .map(gitlab_pipeline_summary)
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "project": gitlab_project_summary(&response.body),
+        "latest_pipeline": latest_pipeline,
+        "api": gitlab_api_snapshot(&response),
+        "pipelines_api": gitlab_api_snapshot(&pipelines_response),
+    }))
+}
+
+fn gitlab_project_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "path_with_namespace": body.get("path_with_namespace").cloned().unwrap_or(Value::Null),
+        "visibility": body.get("visibility").cloned().unwrap_or(Value::Null),
+        "default_branch": body.get("default_branch").cloned().unwrap_or(Value::Null),
+        "web_url": body.get("web_url").cloned().unwrap_or(Value::Null),
+        "last_activity_at": body.get("last_activity_at").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn gitlab_pipeline_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "iid": body.get("iid").cloned().unwrap_or(Value::Null),
+        "project_id": body.get("project_id").cloned().unwrap_or(Value::Null),
+        "status": body.get("status").cloned().unwrap_or(Value::Null),
+        "source": body.get("source").cloned().unwrap_or(Value::Null),
+        "ref": body.get("ref").cloned().unwrap_or(Value::Null),
+        "sha": body.get("sha").cloned().unwrap_or(Value::Null),
+        "web_url": body.get("web_url").cloned().unwrap_or(Value::Null),
+        "created_at": body.get("created_at").cloned().unwrap_or(Value::Null),
+        "updated_at": body.get("updated_at").cloned().unwrap_or(Value::Null),
+        "name": body.get("name").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn gitlab_job_summary(body: &Value) -> Value {
+    json!({
+        "id": body.get("id").cloned().unwrap_or(Value::Null),
+        "name": body.get("name").cloned().unwrap_or(Value::Null),
+        "stage": body.get("stage").cloned().unwrap_or(Value::Null),
+        "status": body.get("status").cloned().unwrap_or(Value::Null),
+        "allow_failure": body.get("allow_failure").cloned().unwrap_or(Value::Bool(false)),
+        "ref": body.get("ref").cloned().unwrap_or(Value::Null),
+        "tag": body.get("tag").cloned().unwrap_or(Value::Null),
+        "web_url": body.get("web_url").cloned().unwrap_or(Value::Null),
+        "created_at": body.get("created_at").cloned().unwrap_or(Value::Null),
+        "started_at": body.get("started_at").cloned().unwrap_or(Value::Null),
+        "finished_at": body.get("finished_at").cloned().unwrap_or(Value::Null),
+        "duration": body.get("duration").cloned().unwrap_or(Value::Null),
+        "failure_reason": body.get("failure_reason").cloned().unwrap_or(Value::Null),
+    })
+}
+
 fn github_repo_summary(body: &Value) -> Value {
     json!({
         "id": body.get("id").cloned().unwrap_or(Value::Null),
@@ -11085,6 +11599,610 @@ fn github_readback_payload(
             "observed": actual,
         }),
     )
+}
+
+fn gitlab_project_from_spec(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<String, VerificationOutcome> {
+    let project = required_source_string(
+        spec,
+        "project",
+        "$.source.project",
+        GITLAB_CI_CONNECTOR_ID,
+        source_hint,
+    )?;
+    parse_gitlab_project_locator(&project).map_err(connector_error_to_outcome)
+}
+
+fn gitlab_readback_payload(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    response: &GitlabApiReadback,
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        GITLAB_CI_CONNECTOR_ID,
+        source,
+        operation,
+        json!({
+            "api": gitlab_api_snapshot(response),
+            "observed": actual,
+        }),
+    )
+}
+
+fn gitlab_readback_pages_payload(
+    verifier_id: &str,
+    source: &str,
+    operation: &str,
+    responses: &[GitlabApiReadback],
+    actual: &Value,
+) -> Value {
+    readback_payload(
+        "readback",
+        verifier_id,
+        GITLAB_CI_CONNECTOR_ID,
+        source,
+        operation,
+        json!({
+            "api_pages": responses.iter().map(gitlab_api_snapshot).collect::<Vec<_>>(),
+            "observed": actual,
+        }),
+    )
+}
+
+fn gitlab_valid_pipeline_status(status: &str) -> bool {
+    matches!(
+        status,
+        "created"
+            | "waiting_for_resource"
+            | "preparing"
+            | "pending"
+            | "running"
+            | "success"
+            | "failed"
+            | "canceled"
+            | "skipped"
+            | "manual"
+            | "scheduled"
+    )
+}
+
+fn gitlab_valid_job_status(status: &str) -> bool {
+    matches!(
+        status,
+        "canceled"
+            | "canceling"
+            | "created"
+            | "failed"
+            | "manual"
+            | "pending"
+            | "preparing"
+            | "running"
+            | "scheduled"
+            | "skipped"
+            | "success"
+            | "waiting_for_callback"
+            | "waiting_for_resource"
+    )
+}
+
+fn require_gitlab_pipeline_status(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<String, VerificationOutcome> {
+    let status = required_expected_string(
+        spec,
+        "status",
+        "$.expected.status",
+        GITLAB_CI_CONNECTOR_ID,
+        source_hint,
+        false,
+    )?;
+    if gitlab_valid_pipeline_status(&status) {
+        Ok(status)
+    } else {
+        Err(VerificationOutcome::blocked(
+            GITLAB_CI_CONNECTOR_ID,
+            source_hint.to_string(),
+            "GITLAB_PIPELINE_STATUS_INVALID",
+            "$.expected.status",
+            format!("unsupported GitLab pipeline status {status:?}"),
+            "use a status documented by GitLab's Pipelines API",
+            None,
+        ))
+    }
+}
+
+fn require_gitlab_job_statuses(
+    spec: &VerifySpec,
+    source_hint: &str,
+) -> Result<BTreeSet<String>, VerificationOutcome> {
+    let statuses = expected_string_array(
+        spec,
+        "allowed_statuses",
+        "$.expected.allowed_statuses",
+        GITLAB_CI_CONNECTOR_ID,
+        source_hint,
+        true,
+    )?;
+    let mut parsed = BTreeSet::new();
+    for (index, status) in statuses.into_iter().enumerate() {
+        if status.trim().is_empty() {
+            return Err(VerificationOutcome::blocked(
+                GITLAB_CI_CONNECTOR_ID,
+                source_hint.to_string(),
+                "VERIFIER_SPEC_MISSING_FIELD",
+                format!("$.expected.allowed_statuses[{index}]"),
+                "gitlab_pipeline_jobs_completed_v1 requires non-empty status strings",
+                "remove empty statuses from $.expected.allowed_statuses",
+                None,
+            ));
+        }
+        if !gitlab_valid_job_status(&status) {
+            return Err(VerificationOutcome::blocked(
+                GITLAB_CI_CONNECTOR_ID,
+                source_hint.to_string(),
+                "GITLAB_JOB_STATUS_INVALID",
+                format!("$.expected.allowed_statuses[{index}]"),
+                format!("unsupported GitLab job status {status:?}"),
+                "use status values documented by GitLab's Jobs API",
+                None,
+            ));
+        }
+        parsed.insert(status);
+    }
+    Ok(parsed)
+}
+
+fn gitlab_next_page(
+    response: &GitlabApiReadback,
+    current_page: u64,
+    source: &str,
+) -> BbxResult<Option<u64>> {
+    let next_raw = response
+        .pagination
+        .get("x_next_page")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if next_raw.is_empty() {
+        if let Some(total_pages) = response
+            .pagination
+            .get("x_total_pages")
+            .and_then(Value::as_str)
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            if total_pages > current_page {
+                return Err(BlackboxError::connector_blocked(
+                    "GITLAB_PAGINATION_INCOMPLETE",
+                    GITLAB_CI_CONNECTOR_ID,
+                    source.to_string(),
+                    "response.headers.x-next-page",
+                    format!(
+                        "GitLab response omitted x-next-page even though x-total-pages={total_pages} exceeds current page {current_page}"
+                    ),
+                    "inspect the GitLab pagination headers and rerun only after the connector can read every page",
+                ));
+            }
+        }
+        return Ok(None);
+    }
+    let next_page = next_raw.parse::<u64>().map_err(|err| {
+        BlackboxError::connector_blocked(
+            "GITLAB_PAGINATION_INVALID",
+            GITLAB_CI_CONNECTOR_ID,
+            source.to_string(),
+            "response.headers.x-next-page",
+            format!("GitLab x-next-page header {next_raw:?} was not a positive integer: {err}"),
+            "inspect the GitLab pagination headers and update the connector before claiming verification success",
+        )
+    })?;
+    if next_page <= current_page {
+        return Err(BlackboxError::connector_blocked(
+            "GITLAB_PAGINATION_INVALID",
+            GITLAB_CI_CONNECTOR_ID,
+            source.to_string(),
+            "response.headers.x-next-page",
+            format!("GitLab x-next-page header {next_page} did not advance beyond current page {current_page}"),
+            "inspect the GitLab pagination headers and update the connector before claiming verification success",
+        ));
+    }
+    Ok(Some(next_page))
+}
+
+async fn verify_gitlab_pipeline_status(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = gitlab_source_of_truth_from_parts(
+        optional_str(&spec.source, "project").unwrap_or(""),
+        "pipelines/unknown",
+    );
+    let project = match gitlab_project_from_spec(spec, &source_hint) {
+        Ok(project) => project,
+        Err(outcome) => return outcome,
+    };
+    let pipeline_id = match required_expected_u64(
+        spec,
+        "pipeline_id",
+        "$.expected.pipeline_id",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(pipeline_id) => pipeline_id,
+        Err(outcome) => return outcome,
+    };
+    let expected_status = match require_gitlab_pipeline_status(spec, &source_hint) {
+        Ok(status) => status,
+        Err(outcome) => return outcome,
+    };
+    let expected_ref = match required_expected_string(
+        spec,
+        "ref",
+        "$.expected.ref",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let expected_sha = match required_expected_string(
+        spec,
+        "sha",
+        "$.expected.sha",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+        false,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let source = gitlab_source_of_truth(&project, &format!("pipelines/{pipeline_id}"));
+    let url = gitlab_api_url(&project, &["pipelines", &pipeline_id.to_string()], &[]);
+    let response = match gitlab_get_json(
+        url,
+        &source,
+        "GET /projects/:id/pipelines/:pipeline_id",
+        &[404],
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(err) => return connector_error_to_outcome(err),
+    };
+    let actual = if response.status == 404 {
+        json!({
+            "pipeline_id": pipeline_id,
+            "exists": false,
+            "http_status": response.status,
+            "message": gitlab_error_message(&response.body),
+        })
+    } else {
+        let summary = gitlab_pipeline_summary(&response.body);
+        json!({
+            "pipeline_id": pipeline_id,
+            "exists": true,
+            "http_status": response.status,
+            "status": summary.get("status").cloned().unwrap_or(Value::Null),
+            "ref": summary.get("ref").cloned().unwrap_or(Value::Null),
+            "sha": summary.get("sha").cloned().unwrap_or(Value::Null),
+            "source": summary.get("source").cloned().unwrap_or(Value::Null),
+            "web_url": summary.get("web_url").cloned().unwrap_or(Value::Null),
+            "updated_at": summary.get("updated_at").cloned().unwrap_or(Value::Null),
+        })
+    };
+    let readback = gitlab_readback_payload(
+        "gitlab_pipeline_status_v1",
+        &source,
+        "GET /projects/:id/pipelines/:pipeline_id",
+        &response,
+        &actual,
+    );
+    if response.status == 404 {
+        return VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitLab pipeline does not exist",
+            "verify the pipeline id and project path before claiming CI completed",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("status").and_then(Value::as_str) != Some(expected_status.as_str()) {
+        return VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_STATUS_MISMATCH",
+            "actual_readback.status",
+            "GitLab pipeline status did not match the expected status",
+            "wait for the pipeline to reach the expected status or update the expected delta",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("ref").and_then(Value::as_str) != Some(expected_ref.as_str()) {
+        return VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_REF_MISMATCH",
+            "actual_readback.ref",
+            "GitLab pipeline ref did not match the expected ref",
+            "verify the pipeline belongs to the claimed branch, tag, or merge-request ref",
+            readback,
+            actual,
+        );
+    }
+    if actual.get("sha").and_then(Value::as_str) == Some(expected_sha.as_str()) {
+        VerificationOutcome::passed(GITLAB_CI_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_SHA_MISMATCH",
+            "actual_readback.sha",
+            "GitLab pipeline SHA did not match the expected commit",
+            "verify the pipeline belongs to the claimed commit SHA before claiming CI passed",
+            readback,
+            actual,
+        )
+    }
+}
+
+async fn verify_gitlab_pipeline_jobs_completed(spec: &VerifySpec) -> VerificationOutcome {
+    let source_hint = gitlab_source_of_truth_from_parts(
+        optional_str(&spec.source, "project").unwrap_or(""),
+        "pipelines/unknown/jobs",
+    );
+    let project = match gitlab_project_from_spec(spec, &source_hint) {
+        Ok(project) => project,
+        Err(outcome) => return outcome,
+    };
+    let pipeline_id = match required_expected_u64(
+        spec,
+        "pipeline_id",
+        "$.expected.pipeline_id",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(pipeline_id) => pipeline_id,
+        Err(outcome) => return outcome,
+    };
+    let allowed_statuses = match require_gitlab_job_statuses(spec, &source_hint) {
+        Ok(statuses) => statuses,
+        Err(outcome) => return outcome,
+    };
+    let allow_failure_failed_ok = match required_expected_bool(
+        spec,
+        "allow_failure_failed_ok",
+        "$.expected.allow_failure_failed_ok",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    let minimum_jobs = match required_expected_u64(
+        spec,
+        "minimum_jobs",
+        "$.expected.minimum_jobs",
+        GITLAB_CI_CONNECTOR_ID,
+        &source_hint,
+    ) {
+        Ok(value) => value,
+        Err(outcome) => return outcome,
+    };
+    if minimum_jobs == 0 {
+        return VerificationOutcome::blocked(
+            GITLAB_CI_CONNECTOR_ID,
+            source_hint,
+            "GITLAB_MINIMUM_JOBS_INVALID",
+            "$.expected.minimum_jobs",
+            "gitlab_pipeline_jobs_completed_v1 requires minimum_jobs to be at least 1",
+            "set $.expected.minimum_jobs to the minimum non-zero number of jobs that must exist before CI can be claimed complete",
+            None,
+        );
+    }
+    let source = gitlab_source_of_truth(&project, &format!("pipelines/{pipeline_id}/jobs"));
+    let operation =
+        "GET /projects/:id/pipelines/:pipeline_id/jobs?per_page=100&include_retried=false&page=*";
+    let mut page = 1u64;
+    let mut next_url = gitlab_pipeline_jobs_url(&project, pipeline_id, page);
+    let mut responses = Vec::new();
+    let mut jobs = Vec::new();
+    loop {
+        let response = match gitlab_get_json(next_url.clone(), &source, operation, &[404]).await {
+            Ok(response) => response,
+            Err(err) => return connector_error_to_outcome(err),
+        };
+        responses.push(response);
+        let response = responses
+            .last()
+            .expect("response was just pushed into responses");
+        if response.status == 404 {
+            break;
+        }
+        let Some(items) = response.body.as_array() else {
+            let actual = json!({
+                "pipeline_id": pipeline_id,
+                "exists": true,
+                "http_status": response.status,
+                "page": page,
+                "schema_error": "GitLab pipeline jobs response body was not a JSON array",
+            });
+            let readback = gitlab_readback_pages_payload(
+                "gitlab_pipeline_jobs_completed_v1",
+                &source,
+                operation,
+                &responses,
+                &actual,
+            );
+            return VerificationOutcome::blocked(
+                GITLAB_CI_CONNECTOR_ID,
+                source,
+                "READBACK_SCHEMA_DRIFT",
+                "response.body",
+                "GitLab pipeline jobs endpoint returned a success body that was not a JSON array",
+                "inspect the response and update the connector only if GitLab changed the Jobs API contract",
+                Some(readback),
+            );
+        };
+        let page_jobs_count = items.len();
+        jobs.extend(items.iter().map(gitlab_job_summary));
+        let link_next_url = match gitlab_link_next_url(response, &source) {
+            Ok(value) => value,
+            Err(err) => return connector_error_to_outcome(err),
+        };
+        match (link_next_url, gitlab_next_page(response, page, &source)) {
+            (Some(url), Ok(Some(next_page))) => {
+                let parsed_page = gitlab_page_from_url(&url, next_page);
+                if parsed_page != next_page {
+                    return connector_error_to_outcome(BlackboxError::connector_blocked(
+                        "GITLAB_PAGINATION_INVALID",
+                        GITLAB_CI_CONNECTOR_ID,
+                        source,
+                        "response.headers.link",
+                        format!(
+                            "GitLab rel=\"next\" page {parsed_page} disagreed with x-next-page {next_page}"
+                        ),
+                        "inspect the GitLab pagination headers and update the connector before claiming verification success",
+                    ));
+                }
+                page = next_page;
+                next_url = url;
+            }
+            (Some(url), Ok(None)) => {
+                let parsed_page = gitlab_page_from_url(&url, page + 1);
+                if parsed_page <= page {
+                    return connector_error_to_outcome(BlackboxError::connector_blocked(
+                        "GITLAB_PAGINATION_INVALID",
+                        GITLAB_CI_CONNECTOR_ID,
+                        source,
+                        "response.headers.link",
+                        format!(
+                            "GitLab rel=\"next\" page {parsed_page} did not advance beyond current page {page}"
+                        ),
+                        "inspect the GitLab pagination headers and update the connector before claiming verification success",
+                    ));
+                }
+                page = parsed_page;
+                next_url = url;
+            }
+            (None, Ok(Some(next_page))) => {
+                page = next_page;
+                next_url = gitlab_pipeline_jobs_url(&project, pipeline_id, page);
+            }
+            (None, Ok(None)) if page_jobs_count == 100 => {
+                return connector_error_to_outcome(BlackboxError::connector_blocked(
+                    "GITLAB_PAGINATION_INCOMPLETE",
+                    GITLAB_CI_CONNECTOR_ID,
+                    source,
+                    "response.headers.link",
+                    "GitLab returned a full jobs page without a rel=\"next\" link or x-next-page header",
+                    "rerun after GitLab provides complete pagination headers; do not claim verification success from a possibly partial jobs list",
+                ));
+            }
+            (None, Ok(None)) => break,
+            (_, Err(err)) => return connector_error_to_outcome(err),
+        }
+    }
+    let mut mismatched_jobs = Vec::new();
+    for job in &jobs {
+        let status = job.get("status").and_then(Value::as_str).unwrap_or("");
+        let allow_failure = job
+            .get("allow_failure")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let allowed = allowed_statuses.contains(status)
+            || (allow_failure_failed_ok && allow_failure && status == "failed");
+        if !allowed {
+            mismatched_jobs.push(job.clone());
+        }
+    }
+    let jobs_total = jobs.len();
+    let mismatched_count = mismatched_jobs.len();
+    let last_response = responses
+        .last()
+        .expect("GitLab jobs verifier always records at least one response");
+    let actual = if last_response.status == 404 {
+        json!({
+            "pipeline_id": pipeline_id,
+            "exists": false,
+            "http_status": last_response.status,
+            "message": gitlab_error_message(&last_response.body),
+            "pages_read": responses.len(),
+            "jobs_total": 0,
+            "jobs": [],
+        })
+    } else {
+        json!({
+            "pipeline_id": pipeline_id,
+            "exists": true,
+            "http_status": last_response.status,
+            "allowed_statuses": allowed_statuses.iter().cloned().collect::<Vec<_>>(),
+            "allow_failure_failed_ok": allow_failure_failed_ok,
+            "minimum_jobs": minimum_jobs,
+            "pages_read": responses.len(),
+            "jobs_total": jobs_total,
+            "mismatched_count": mismatched_count,
+            "mismatched_jobs": mismatched_jobs,
+            "jobs": jobs,
+        })
+    };
+    let readback = gitlab_readback_pages_payload(
+        "gitlab_pipeline_jobs_completed_v1",
+        &source,
+        operation,
+        &responses,
+        &actual,
+    );
+    if last_response.status == 404 {
+        return VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_JOBS_NOT_FOUND",
+            "actual_readback.exists",
+            "expected GitLab pipeline jobs endpoint did not exist",
+            "verify the pipeline id and project path before claiming CI jobs completed",
+            readback,
+            actual,
+        );
+    }
+    if jobs_total < minimum_jobs as usize {
+        return VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_JOBS_MISSING",
+            "actual_readback.jobs_total",
+            "GitLab pipeline had fewer jobs than the expected minimum",
+            "wait for jobs to be created or verify the pipeline id before claiming CI completed",
+            readback,
+            actual,
+        );
+    }
+    if actual
+        .get("mismatched_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        == 0
+    {
+        VerificationOutcome::passed(GITLAB_CI_CONNECTOR_ID, source, readback, actual)
+    } else {
+        VerificationOutcome::failed(
+            GITLAB_CI_CONNECTOR_ID,
+            source,
+            "GITLAB_PIPELINE_JOBS_STATUS_MISMATCH",
+            "actual_readback.mismatched_jobs",
+            "one or more GitLab pipeline jobs did not match the allowed terminal statuses",
+            "inspect the mismatched jobs before claiming the CI pipeline is complete",
+            readback,
+            actual,
+        )
+    }
 }
 
 async fn verify_github_pr_state(spec: &VerifySpec) -> VerificationOutcome {

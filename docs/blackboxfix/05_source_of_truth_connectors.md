@@ -12,7 +12,8 @@ filesystem sources of truth. Phase 6 adds MCP/policy surfaces
 `mcp_stdio_v1` and `blackbox_policy_v1`, and uses `git_local_v1` as the
 physical source of truth for the first verified gateway mutation. Phase 8 adds
 `enterprise_controls_v1` for tenant config, SCIM directory snapshots,
-RBAC/tenant-isolation decisions, and audit/SIEM export readback.
+RBAC/tenant-isolation decisions, and audit/SIEM export readback. Phase 9 adds
+`gitlab_ci_v1` for hosted GitLab pipeline and job-state readback.
 
 ## Connector Contract
 
@@ -112,13 +113,27 @@ The connector uses GitHub REST API `GET` endpoints only. It sends
 and a stable user agent. `BBX_GITHUB_TOKEN` or `GITHUB_TOKEN` is optional for
 public resources and required by operators for private resources.
 
-### Phase 3: CI Providers — GitHub Actions shipped
+### Phase 3/9: CI Providers — GitHub Actions + GitLab CI shipped
 
-Initial target: GitHub Actions. Add later: Buildkite, CircleCI, GitLab CI.
+Shipped hosted CI targets: GitHub Actions and GitLab CI. Add later:
+Buildkite and CircleCI.
 
 Shipped verifier:
 
 - `gha_workflow_run_completed_v1`
+- `gitlab_pipeline_status_v1`
+- `gitlab_pipeline_jobs_completed_v1`
+
+`gitlab_ci_v1` reads GitLab REST API v4 on GitLab.com. Public projects can be
+read without a token; private projects require `BBX_GITLAB_TOKEN` or
+`GITLAB_TOKEN`, sent as `PRIVATE-TOKEN`. Connector evidence records the
+request URL, HTTP status, request id, ETag, pagination headers, rate-limit
+headers, response body SHA-256, and normalized pipeline/job fields.
+`gitlab_pipeline_jobs_completed_v1` reads every jobs page using GitLab
+`Link`/`x-next-page` pagination headers, persists each API page in the
+readback snapshot, blocks malformed or incomplete pagination, and rejects
+`minimum_jobs=0` before any source read so an empty pipeline cannot be
+misreported as complete.
 
 Deferred examples:
 
@@ -210,5 +225,8 @@ PY
 ```
 
 For GitHub/GHA shipped in Phase 3, `<fixture>` is `OWNER/REPO` and the test
-suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it.
-Confirm the row counts match the test plan. Anything else is hearsay.
+suite uses `actions/checkout` unless `BBX_GITHUB_TEST_REPO` overrides it. For
+GitLab CI shipped in Phase 9, `<fixture>` is `GROUP/PROJECT` and the test
+suite uses `gitlab-org/gitlab-runner` unless `BBX_GITLAB_TEST_PROJECT`
+overrides it. Confirm the row counts match the test plan. Anything else is
+hearsay.

@@ -7,7 +7,7 @@ Phase 1 shipped a structural verifier for the ledger (hash-chain integrity
 across the SQLite source of truth). Phase 2 shipped local Git/file/command
 outcome verifiers. Phase 3 shipped GitHub/GitHub Actions outcome verifiers.
 Phase 4 shipped evidence packets, incident packets, read-only replay, and
-evidence export.
+evidence export. Phase 9 shipped GitLab CI hosted pipeline/job verifiers.
 
 ## Full-State Verification Protocol
 
@@ -61,6 +61,8 @@ Shipped Phase 2/3 verifier ids:
 | `github_issue_state_changed_v1` | `github_v1` | GitHub issue API | issue exists, is not a PR, and state equals expected |
 | `github_check_suite_passed_v1` | `github_v1` | GitHub check suites API | at least one suite exists and all suite conclusions match expected |
 | `gha_workflow_run_completed_v1` | `gha_v1` | GitHub Actions workflow run API | workflow run status and conclusion match expected |
+| `gitlab_pipeline_status_v1` | `gitlab_ci_v1` | GitLab REST API `GET /projects/:id/pipelines/:pipeline_id` | pipeline id exists and status, ref, and SHA all match expected |
+| `gitlab_pipeline_jobs_completed_v1` | `gitlab_ci_v1` | GitLab REST API `GET /projects/:id/pipelines/:pipeline_id/jobs` across all pages | `minimum_jobs >= 1`, jobs exist, pagination is complete, and every job matches explicit allowed statuses |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;
@@ -146,6 +148,15 @@ test discovers real GitHub/GHA state, verifies all five happy paths, then
 covers missing targets, stale/wrong expectations, issue/PR ambiguity, and
 schema blocks.
 
+Phase 9 follows the same rule in
+`crates/context-graph-cli/tests/blackbox_phase9_gitlab_ci_fsv.rs`: the live
+integration test discovers real GitLab CI state, verifies pipeline and job
+happy paths, then covers missing targets, stale/wrong expectations, invalid
+job status values, zero-minimum job claims, and schema blocks. Jobs verification
+stores every GitLab API page in the `readback_snapshot`; malformed pagination
+headers or full pages without a usable `Link`/`x-next-page` next-page signal
+are `blocked`, not silently ignored.
+
 Phase 4 follows the same rule in
 `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`: the tests use real
 SQLite ledgers, a real local Git repository, real exported JSON files, and
@@ -225,12 +236,14 @@ sqlite3 "$ledger" "DROP TRIGGER ledger_records_no_update; UPDATE ledger_records 
 context-graph blackbox inspect ledger --ledger "$ledger"
 # Must exit 2 with error_code BBX_HASH_CHAIN_BROKEN.
 
-# Phase 2/3/4 happy paths use real Git/local-command, live GitHub/GHA sources,
-# and real exported evidence files; see tests/blackbox_phase2_fsv.rs,
-# tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs, and
+# Phase 2/3/4/9 happy paths use real Git/local-command, live GitHub/GHA/GitLab
+# sources, and real exported evidence files; see tests/blackbox_phase2_fsv.rs,
+# tests/blackbox_phase3_fsv.rs, tests/blackbox_phase4_fsv.rs,
+# tests/blackbox_phase9_gitlab_ci_fsv.rs, and
 # docs/blackboxfix/21_phase2_state_and_invariants.md /
 # docs/blackboxfix/22_phase3_state_and_invariants.md /
-# docs/blackboxfix/23_phase4_state_and_invariants.md.
+# docs/blackboxfix/23_phase4_state_and_invariants.md /
+# docs/blackboxfix/28_phase9_state_and_invariants.md.
 ```
 
 If those two outputs do not match, this doc is wrong; update it.

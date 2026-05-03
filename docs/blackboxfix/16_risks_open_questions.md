@@ -138,12 +138,17 @@ Mitigation:
   → **Not Phase 4.** Phase 4 ships unsigned, hash-verified evidence packets
   and JSON exports. Signing needs key-management and envelope decisions and
   moves to Phase 5+.
+- **Which hosted CI connector should come after GitHub Actions?**
+  → **GitLab CI first.** Phase 9 ships `gitlab_ci_v1` because GitLab exposes
+  public, read-only project/pipeline/job source-of-truth endpoints suitable for
+  live FSV without test tokens. Buildkite and CircleCI remain candidates for a
+  later hosted-CI connector phase.
 
 ## Open Questions (still open)
 
-- Which hosted CI connector should come after GitHub Actions?
-  Candidates: Buildkite, CircleCI, GitLab CI. Decide before the next hosted
-  CI connector phase.
+- Which hosted CI connector should follow GitLab CI?
+  Candidates: Buildkite and CircleCI. Choose based on first paid pilot CI
+  footprint and availability of public read-only fixtures for live FSV.
 - What is the minimum dashboard required for a paid pilot?
   Hypothesis: timeline + filter + evidence viewer + JSONL download. Validate
   with two pilot prospects before building.

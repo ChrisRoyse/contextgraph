@@ -19,6 +19,7 @@ The mandatory operator-side protocol lives in
 | MCP tool registry + policy rows (Phase 6) | advertised tools match shipped schemas; governed decisions persist in `ledger_records` |
 | Dashboard bundle (Phase 7) | `index.html`, `manifest.json`, and `api/*.json` read back from disk; manifest sha256 entries match actual bytes |
 | Enterprise controls and audit export (Phase 8) | SSO/RBAC/retention/key config rows, SCIM directory rows, access decision rows, `audit.jsonl`, `siem-rfc5424.log`, `controls.json`, and `manifest.json` read back directly |
+| GitLab CI API + ledger evidence rows (Phase 9) | live GitLab project/pipeline/job state read independently and persisted as `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and incident rows |
 
 ## Test Levels
 
@@ -60,7 +61,9 @@ Phase 7 adds `tests/blackbox_phase7_dashboard_fsv.rs`, which builds a real
 dashboard bundle and reads SQLite/dashboard files directly. Phase 8 adds
 `tests/blackbox_phase8_enterprise_fsv.rs`, which persists real enterprise
 control rows, exports real audit/SIEM files, and reads SQLite/export files
-directly.
+directly. Phase 9 adds `tests/blackbox_phase9_gitlab_ci_fsv.rs`, which
+discovers live GitLab source-of-truth state with `curl`, runs the real CLI,
+and reads SQLite rows directly.
 
 ## Acceptance Criteria
 
@@ -159,6 +162,13 @@ Concretely, that means:
   `enterprise_access_decision` rows in physical SQLite, exports
   `audit.jsonl`, `siem-rfc5424.log`, `controls.json`, and `manifest.json`,
   then parses and hashes those files directly.
+- Phase 9 FSV reads a real public GitLab project, pipeline, and jobs with
+  `curl`, verifies the same state through `gitlab_ci_v1`, and then opens the
+  physical SQLite ledger to prove expected/readback/verifier/evidence/incident
+  rows exist only where expected. The jobs verifier records every GitLab API
+  page in `readback_snapshot.observed_state.api_pages`; invalid verifier specs
+  such as unsupported job statuses or `minimum_jobs=0` are blocked before
+  source reads and therefore do not create readback rows.
 
 For hosted systems unavailable in CI, run those tests as gated integration
 tests with a `BBX_LIVE_GITHUB_TOKEN` env var; keep all local source-of-truth
@@ -170,12 +180,13 @@ For each phase, synthesize input where you control the ground truth, then
 read the source of truth and compare. Phase 1 inputs/outputs are enumerated
 in `20_phase1_state_and_invariants.md` §"Happy Path", §"Edge Case 1/2/3".
 Phase 2 inputs/outputs are enumerated in
-`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8 inputs/outputs are
+`21_phase2_state_and_invariants.md`. Phase 4/5/6/7/8/9 inputs/outputs are
 enumerated in `23_phase4_state_and_invariants.md`,
 `24_phase5_state_and_invariants.md`,
 `25_phase6_state_and_invariants.md`, and
 `26_phase7_state_and_invariants.md`, and
-`27_phase8_state_and_invariants.md`.
+`27_phase8_state_and_invariants.md`, and
+`28_phase9_state_and_invariants.md`.
 
 A synthetic test must include:
 
