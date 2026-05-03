@@ -21,8 +21,8 @@ Phase 16 shipped risk/open-question assessment over physical ledger rows,
 SQLite runtime PRAGMAs, package evidence, incident/eval conversion state, and
 a required decision-register JSON file. Phase 20 shipped Kubernetes Deployment
 snapshot verification, Phase 21 shipped Terraform/cloud artifact verification,
-and Phase 22 shipped ticketing artifact verification for Jira, Linear, and
-ServiceNow.
+Phase 22 shipped ticketing artifact verification for Jira, Linear, and
+ServiceNow, and Phase 23 shipped manifest-verified OpenTelemetry file export.
 
 ## Full-State Verification Protocol
 
@@ -54,7 +54,9 @@ lives. Examples:
   artifacts for infrastructure;
 - ticketing API artifacts for issue state;
 - package output files for pilot reports, usage meters, eval candidates, and
-  manifests.
+  manifests;
+- OpenTelemetry export files for OTLP JSONL traces, logs, metrics, and
+  manifest hashes;
 - decision-register JSON files for required risk/open-question closure.
 
 For Phase 1 the durable system is the SQLite `ledger_records` table itself.
@@ -66,7 +68,7 @@ log/file.
 
 ## Verifier Registry
 
-Shipped Phase 2/3/9/10/11/20/21/22 verifier ids:
+Shipped Phase 2/3/9/10/11/20/21/22/23 verifier ids:
 
 | Verifier | Connector | Source of truth | Main comparison |
 |---|---|---|---|
@@ -100,6 +102,10 @@ Shipped Phase 2/3/9/10/11/20/21/22 verifier ids:
 | `blackbox_usage_meter_events_jsonl_v1` | `blackbox_packaging_v1` | `usage-meter-events.jsonl` | every line is valid JSON with stable meter fields and no blank rows |
 | `blackbox_risk_assessment_v1` | `blackbox_risk_v1` | SQLite `ledger_records` | risk row id/hash/readback and accepted/blocked checks match physical ledger state |
 | `blackbox_open_question_decisions_v1` | `blackbox_risk_v1` | decision-register JSON file | every required Phase 16 decision exists exactly once, is closed, bounded, and secret-free |
+| `blackbox_otel_trace_file_v1` | `blackbox_otel_export_v1` | `traces.jsonl` + manifest | trace JSONL has only `resourceSpans`, span count equals physical ledger row count, and manifest hash matches bytes |
+| `blackbox_otel_log_file_v1` | `blackbox_otel_export_v1` | `logs.jsonl` + manifest | log JSONL has only `resourceLogs`, failure/incident summary logs are present, and manifest hash matches bytes |
+| `blackbox_otel_metric_file_v1` | `blackbox_otel_export_v1` | `metrics.jsonl` + manifest | metric JSONL has only `resourceMetrics`, low-cardinality count metrics are present, and manifest hash matches bytes |
+| `blackbox_otel_manifest_v1` | `blackbox_otel_export_v1` | `manifest.json` | source-ledger count/tip, file hashes, byte counts, and item counts match physical ledger/export files |
 
 All verifier specs are JSON objects containing `verifier_id`, `run_id`,
 `tool_call_id`, `source`, and `expected`. Schema/type failures are `blocked`;

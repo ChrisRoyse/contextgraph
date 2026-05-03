@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 22 Physical Schema (shipped)
+## Phase 23 Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 13 in Phase 22
+  schema_version              INTEGER NOT NULL,   -- 13 in Phase 23
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -99,7 +99,7 @@ All hashes are stored as `sha256:<lowercase-hex>`.
 
 ## Record Families
 
-Phases 1-22 ship the following `record_kind` values. The remaining families
+Phases 1-23 ship the following `record_kind` values. The remaining families
 are reserved for later phases and **must not be invented ad-hoc**:
 
 | Phase | `record_kind` | Purpose |
@@ -519,6 +519,26 @@ curl -H 'Accept: application/json' \
 The ledger remains append-only and hash-chained; ticketing verification
 success is proven only by persisted verifier/evidence rows plus a physical
 readback of the captured provider artifact file.
+
+## OpenTelemetry Export Files (Phase 23, shipped)
+
+Phase 23 adds no new `record_kind` and does not mutate the ledger. It exports
+verified ledger state to physical OTLP-style JSONL files:
+
+- `traces.jsonl` with one `resourceSpans` object containing one span per
+  physical `ledger_records` row;
+- `logs.jsonl` with one `resourceLogs` object containing verifier failures,
+  incidents, denied policies, non-ok HTTP audits, and an export summary log;
+- `metrics.jsonl` with one `resourceMetrics` object containing low-cardinality
+  counts for record kinds, verifier statuses, policy decisions, and verifier
+  pass ratio;
+- `manifest.json` with file hashes, byte counts, item counts, source-ledger
+  record count, ledger id, schema version, and tip hash at export time.
+
+The export source of truth is the verified SQLite ledger plus the promoted
+export directory. Success requires reading the JSONL files and manifest back
+from disk, verifying each signal file contains only its own top-level OTLP key,
+and comparing manifest hashes to the actual bytes after promotion.
 
 ## EnterpriseTenantConfig Payload (Phase 8, shipped)
 

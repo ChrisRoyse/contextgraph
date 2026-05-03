@@ -17,13 +17,13 @@ agent runtime
   -> replay, dashboards, exports
 ```
 
-## Concrete Layout (shipped through Phase 22)
+## Concrete Layout (shipped through Phase 23)
 
 | Layer | Shipped implementation | File path |
 |---|---|---|
 | CLI entrypoint (standalone) | `blackbox` binary | `crates/context-graph-cli/src/bin/blackbox.rs` |
 | CLI entrypoint (umbrella) | `context-graph blackbox …` | `crates/context-graph-cli/src/main.rs:136-139,210` |
-| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `demo ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
+| Command implementations | `init`, `record`, `verify`, `replay`, `export evidence`, `export episodes`, `export otel`, `dashboard build`, `dashboard api`, `enterprise ...`, `score ...`, `privacy ...`, `gate ...`, `package ...`, `risk ...`, `demo ...`, `inspect ledger` | `crates/context-graph-cli/src/commands/blackbox.rs` |
 | Ledger store | SQLite WAL, sync=FULL | `ledger_records` + `blackbox_metadata` tables |
 | Hash chain | SHA-256 over canonical (sorted-key) JSON | `compute_record_hash` / `compute_run_chain_hash` |
 | Redaction | `redact_v1` (field-name + literal-pattern + post-scan) | `redact_tool_input` / `is_sensitive_field_name` / `looks_like_secret_literal` |
@@ -46,9 +46,10 @@ agent runtime
 | Kubernetes deployment readback | Physical `kubectl get deployments.v1.apps -o json` snapshots for image digest, replica, and rollout verification | `k8s_deployment_snapshot_v1` |
 | Terraform/cloud artifact readback | Physical `terraform show -json` plan/state files plus normalized cloud inventory JSON and audit JSONL artifacts | `terraform_cloud_artifact_v1` |
 | Ticketing artifact readback | Physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON artifacts for ticket state and evidence-link verification | `ticketing_artifact_v1` |
-| FSV harness | Phase 1-22 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
+| OpenTelemetry export readback | Physical OTLP JSONL traces/logs/metrics plus manifest hashes exported from a verified ledger | `blackbox_otel_export_v1` |
+| FSV harness | Phase 1-23 tests against real systems/artifacts | `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs` |
 
-Anything outside Phases 1-22 is **not yet implemented**. Public multi-tenant
+Anything outside Phases 1-23 is **not yet implemented**. Public multi-tenant
 SaaS serving, SDKs, and provider-managed TLS remain reserved for later work.
 
 ## Components (target architecture)

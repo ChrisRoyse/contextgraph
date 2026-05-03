@@ -76,7 +76,7 @@ Deliverables (all shipped):
 - new ledger record kinds: `expected_delta`, `readback_snapshot`,
   `verifier_result` (originally bumped `LEDGER_SCHEMA_VERSION` to 2 and
   **wiped** the ledger — no migration shim; current shipped schema is v13
-  after Phase 19).
+  after Phase 23).
 
 Exit criteria (verified):
 
@@ -394,7 +394,7 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 22,
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 23,
 fresh ledgers initialize at schema version 13.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
@@ -1124,6 +1124,49 @@ state, and invalid JSON edges, and reads the physical SQLite ledger to prove
 expected/readback/verifier/evidence/incident rows exist.
 
 Phase 22 adds no new ledger record kind and does not bump the physical schema;
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+
+## Phase 23: OpenTelemetry Evidence Export — DONE (2026-05-03)
+
+Deliverables:
+
+- command `blackbox export otel --ledger PATH --out DIR [--force]`;
+- connector `blackbox_otel_export_v1`;
+- export files `traces.jsonl`, `logs.jsonl`, `metrics.jsonl`, and
+  `manifest.json`;
+- span generation for every verified physical ledger row using deterministic
+  trace/span ids derived from ledger/run/record hashes;
+- logs for verifier failures, incidents, denied policies, non-ok HTTP audits,
+  and export completion;
+- low-cardinality metrics for record-kind counts, verifier-status counts,
+  policy-decision counts, and verifier pass ratio;
+- fail-closed readback for empty ledgers, existing output without `--force`,
+  mixed-signal JSONL files, manifest/hash drift, and hash-chain tampering.
+
+Exit criteria (verified):
+
+- export verifies the SQLite hash chain before any files are promoted;
+- export does not mutate `ledger_records`;
+- each JSONL signal file contains exactly one OTLP top-level key and at least
+  one nested signal item;
+- `manifest.json` source-ledger count/tip and file hashes match physical
+  SQLite/file state after promotion;
+- connector test reads the completed export directory and recomputes hashes
+  before returning success.
+
+Automated FSV:
+
+```bash
+cargo test --package context-graph-cli --test blackbox_phase23_otel_export_fsv -- --nocapture
+```
+
+Current result: 4/4 passing. The tests create real SQLite ledgers, run real
+command verifiers to produce passed and failed evidence, export OTLP JSONL,
+parse and hash the physical files, run connector readback, prove ledger row
+counts did not change, and exercise empty-ledger, existing-output, and
+tampered-ledger edges.
+
+Phase 23 adds no new ledger record kind and does not bump the physical schema;
 current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
 
 ## Phase Sequencing Rules

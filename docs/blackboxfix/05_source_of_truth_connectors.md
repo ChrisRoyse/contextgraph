@@ -42,7 +42,9 @@ adds `terraform_cloud_artifact_v1`, which reads physical Terraform JSON
 plan/state artifacts plus normalized cloud inventory JSON and audit JSONL
 artifacts. Phase 22 adds `ticketing_artifact_v1`, which reads captured Jira,
 Linear, and ServiceNow API JSON artifacts for ticket state and evidence-link
-verification.
+verification. Phase 23 adds `blackbox_otel_export_v1`, which reads completed
+OpenTelemetry export directories and verifies OTLP JSONL signal files plus
+manifest hashes.
 
 ## Connector Contract
 
@@ -361,6 +363,32 @@ Connector properties:
 - invalid JSON, unsupported source formats, duplicate ticket identities, and
   provider schema drift are blocked typed errors.
 
+### Phase 23: OpenTelemetry Export — shipped
+
+Source of truth:
+
+- verified SQLite ledger rows at `sqlite:/path/to/blackbox.sqlite#ledger_records`;
+- exported OTLP JSONL files `traces.jsonl`, `logs.jsonl`, and `metrics.jsonl`;
+- exported `manifest.json` with source-ledger metadata, file hashes, byte
+  counts, and item counts.
+
+Readback specs:
+
+- `blackbox_otel_trace_file_v1`;
+- `blackbox_otel_log_file_v1`;
+- `blackbox_otel_metric_file_v1`;
+- `blackbox_otel_manifest_v1`.
+
+Connector properties:
+
+- `blackbox export otel --ledger PATH --out DIR [--force]` verifies the ledger
+  hash chain before export and never appends ledger rows;
+- each JSONL file contains exactly one OTLP top-level signal key:
+  `resourceSpans`, `resourceLogs`, or `resourceMetrics`;
+- manifest hashes and byte counts must match the promoted files after export;
+- empty ledgers, existing output without `--force`, mixed-signal JSONL,
+  tampered ledgers, and manifest/file hash drift fail closed with typed errors.
+
 ### Phase 8: Enterprise Controls — shipped
 
 Source of truth:
@@ -519,7 +547,7 @@ a physical source are blocked before a readback row is written.
 
 ### Later Phases (deferred)
 
-No connector family remains deferred in the Phase 22 MVP connector plan.
+No connector family remains deferred in the Phase 23 MVP connector plan.
 
 ## Connector Lifecycle
 
@@ -593,5 +621,7 @@ manual FSV must also read the decision-register JSON and dashboard
 artifacts shipped in Phases 20 and 21, manual FSV reads the physical JSON/JSONL
 artifact files and the SQLite verifier rows. For ticketing artifacts shipped
 in Phase 22, manual FSV reads the physical Jira, Linear, or ServiceNow API
-JSON artifact file and the SQLite verifier rows directly. Anything else is
-hearsay.
+JSON artifact file and the SQLite verifier rows directly. For OpenTelemetry
+export shipped in Phase 23, manual FSV reads `traces.jsonl`, `logs.jsonl`,
+`metrics.jsonl`, and `manifest.json`, recomputes the file hashes, and confirms
+ledger row counts did not change. Anything else is hearsay.

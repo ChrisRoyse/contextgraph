@@ -26,10 +26,11 @@ Kubernetes Deployment snapshot verification through
 `k8s_deployment_snapshot_v1`. Phase 21 adds Terraform plan/state, cloud
 inventory, and cloud audit artifact verification through
 `terraform_cloud_artifact_v1`. Phase 22 adds Jira, Linear, and ServiceNow
-ticketing artifact verification through `ticketing_artifact_v1`.
+ticketing artifact verification through `ticketing_artifact_v1`. Phase 23
+adds OpenTelemetry OTLP JSONL export through `blackbox_otel_export_v1`.
 SDKs remain reserved for later phases.
 
-## CLI (shipped Phase 22)
+## CLI (shipped Phase 23)
 
 Two binaries, identical semantics for the BlackBoxFix subset:
 
@@ -60,6 +61,8 @@ blackbox connector test        --connector terraform_cloud_artifact_v1
                                --source TERRAFORM_PLAN_JSON
 blackbox connector test        --connector ticketing_artifact_v1
                                --source TICKETING_API_JSON
+blackbox connector test        --connector blackbox_otel_export_v1
+                               --source OTEL_EXPORT_DIR
 blackbox connector test        --connector enterprise_controls_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_scoring_v1 --source LEDGER_PATH
 blackbox connector test        --connector blackbox_privacy_v1 --source LEDGER_PATH
@@ -98,6 +101,7 @@ blackbox inspect ledger        --ledger PATH
 blackbox replay                --ledger PATH --run-id RUN_ID
 blackbox export evidence       --ledger PATH --run-id RUN_ID --out FILE
 blackbox export episodes       --ledger PATH --out DIR [--force]
+blackbox export otel           --ledger PATH --out DIR [--force]
 blackbox dashboard build       --ledger PATH --out DIR [--force]
 blackbox dashboard api         --ledger PATH --view VIEW [--run-id RUN_ID]
 blackbox enterprise configure  --ledger PATH --tenant TENANT --input CONFIG
@@ -172,7 +176,7 @@ The `--ledger` flag also accepts the env var `BLACKBOX_LEDGER`.
 `-v`/`-vv`/`-vvv` increase log verbosity (warn/info/debug/trace, written to
 stderr). Stdout always carries the JSON result on success.
 
-### Verifier Spec Input (Phase 2/3/9/10/11)
+### Verifier Spec Input (Phase 2/3/9/10/11/20/21/22)
 
 `blackbox verify --input` takes a JSON object:
 
@@ -186,7 +190,7 @@ stderr). Stdout always carries the JSON result on success.
 }
 ```
 
-Supported Phase 2/3/9/10/11 verifier ids:
+Supported Phase 2/3/9/10/11/20/21/22 verifier ids:
 
 - `git_branch_exists_v1`
 - `git_commit_exists_v1`
@@ -204,6 +208,16 @@ Supported Phase 2/3/9/10/11 verifier ids:
 - `scanner_vulnerability_absent_v1`
 - `scanner_lockfile_pinned_to_version_v1`
 - `scanner_sbom_artifact_present_v1`
+- `k8s_deployment_image_digest_v1`
+- `k8s_replicas_match_v1`
+- `k8s_rollout_completed_v1`
+- `tf_plan_only_approved_changes_v1`
+- `tf_state_attribute_v1`
+- `cloud_resource_present_v1`
+- `cloud_audit_principal_action_v1`
+- `jira_ticket_state_v1`
+- `linear_ticket_state_v1`
+- `servicenow_ticket_state_v1`
 
 Every verifier writes `expected_delta`, then a `readback_snapshot` when the
 connector was able to read physical state, then `verifier_result`, then an
@@ -520,16 +534,25 @@ SDK constraints:
 - redaction hooks run before persistence;
 - source-of-truth readback is explicit.
 
-## OpenTelemetry Export (reserved after Phase 16)
+## OpenTelemetry Export (Phase 23 shipped)
 
-OpenTelemetry is an export path, not the primary source of truth. Emit:
+OpenTelemetry is an export path, not the primary source of truth. Phase 23
+ships:
 
-- trace spans for run, step, tool call, verifier;
-- logs for failures and remediation;
-- metrics for pass rates, blocked actions, risk scores, latency;
-- span attributes for connector, source kind, tool capability, risk tier.
+- `blackbox export otel --ledger PATH --out DIR [--force]`;
+- `blackbox_otel_export_v1` connector readback over completed export
+  directories;
+- `traces.jsonl` with `resourceSpans` and one span per physical ledger row;
+- `logs.jsonl` with `resourceLogs` for incidents, failed/blocked verifiers,
+  denied policies, non-ok HTTP audits, and export summary logs;
+- `metrics.jsonl` with `resourceMetrics` for low-cardinality record kind,
+  verifier status, policy decision, and pass-ratio metrics;
+- `manifest.json` with source-ledger metadata, file hashes, byte counts, and
+  item counts.
 
-The ledger remains authoritative.
+The ledger remains authoritative. The exporter verifies the ledger hash chain
+before writing, writes to a temp directory, reads all JSONL files and the
+manifest back, promotes the directory, and verifies the promoted files again.
 
 Phase 7 shipped local dashboard metrics, Phase 8 shipped audit/SIEM files,
 Phase 9 shipped hosted GitLab CI readbacks, Phase 10 shipped local scanner
@@ -540,12 +563,13 @@ decision rows. Phase 15 shipped usage-meter JSONL package output and kept
 OpenTelemetry emission as a later export path. Phase 16 shipped
 risk-assessment rows and dashboard risk readbacks while keeping OpenTelemetry
 as an export-only path. Phase 18 shipped a manifest-verified first-wedge demo
-package and durable `first_wedge_demo` rows.
+package and durable `first_wedge_demo` rows. Phase 23 ships the export-only
+OpenTelemetry path without adding ledger record kinds.
 
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 13 in Phase 22).
+- Ledger records include `schema_version` (= 13 in Phase 23).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -584,6 +608,8 @@ package and durable `first_wedge_demo` rows.
   evidence records for Terraform/cloud artifact readbacks.
 - Phase 22 does not bump the ledger schema. It reuses Phase 2-4 verifier and
   evidence records for ticketing artifact readbacks.
+- Phase 23 does not bump the ledger schema. It writes OpenTelemetry export
+  artifacts outside the ledger with `blackbox_otel_export_manifest_json_v1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
@@ -592,8 +618,8 @@ package and durable `first_wedge_demo` rows.
   `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
   `blackbox_risk_v1`, `blackbox_http_server_v1`, and
   `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`,
-  `k8s_deployment_snapshot_v1`, `terraform_cloud_artifact_v1`, and
-  `ticketing_artifact_v1` today).
+  `k8s_deployment_snapshot_v1`, `terraform_cloud_artifact_v1`,
+  `ticketing_artifact_v1`, and `blackbox_otel_export_v1` today).
 - Export manifests record all versions.
 - Schema bumps wipe the ledger; no migration shims.
 
@@ -628,8 +654,9 @@ Concrete inputs and expected outputs live in
 `37_phase18_state_and_invariants.md`,
 `38_phase19_state_and_invariants.md`,
 `39_phase20_state_and_invariants.md`,
-`40_phase21_state_and_invariants.md`, and
-`41_phase22_state_and_invariants.md`. The automated equivalents are
+`40_phase21_state_and_invariants.md`,
+`41_phase22_state_and_invariants.md`, and
+`42_phase23_state_and_invariants.md`. The automated equivalents are
 `crates/context-graph-cli/tests/blackbox_phase1_fsv.rs` (10 tests, PASS) and
 `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs` (19 tests, PASS),
 plus `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs` (1 live
@@ -667,4 +694,6 @@ integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase21_terraform_cloud_fsv.rs`
 (1 local integration test, PASS), and
 `crates/context-graph-cli/tests/blackbox_phase22_ticketing_fsv.rs`
-(1 local integration test, PASS).
+(1 local integration test, PASS), and
+`crates/context-graph-cli/tests/blackbox_phase23_otel_export_fsv.rs`
+(4 local integration tests, PASS).

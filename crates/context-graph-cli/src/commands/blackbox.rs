@@ -23,7 +23,7 @@ use axum::http::{HeaderMap as AxumHeaderMap, HeaderValue as AxumHeaderValue, Sta
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use reqwest::header::{
     HeaderMap as ReqwestHeaderMap, HeaderValue as ReqwestHeaderValue, ACCEPT,
@@ -50,6 +50,7 @@ const SCANNER_CONNECTOR_ID: &str = "scanner_artifact_v1";
 const K8S_CONNECTOR_ID: &str = "k8s_deployment_snapshot_v1";
 const TF_CLOUD_CONNECTOR_ID: &str = "terraform_cloud_artifact_v1";
 const TICKETING_CONNECTOR_ID: &str = "ticketing_artifact_v1";
+const OTEL_EXPORT_CONNECTOR_ID: &str = "blackbox_otel_export_v1";
 const MCP_CONNECTOR_ID: &str = "mcp_stdio_v1";
 const POLICY_CONNECTOR_ID: &str = "blackbox_policy_v1";
 const ENTERPRISE_CONNECTOR_ID: &str = "enterprise_controls_v1";
@@ -78,6 +79,9 @@ const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
 const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
 const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
 const FULL_STATE_VERIFICATION_SCHEMA_VERSION: i64 = 1;
+const OTEL_EXPORT_SCHEMA_VERSION: i64 = 1;
+const OTEL_SCOPE_NAME: &str = "contextgraph.blackboxfix";
+const OTEL_SCOPE_VERSION: &str = env!("CARGO_PKG_VERSION");
 const HTTP_MAX_BODY_BYTES: usize = 64 * 1024;
 const HTTP_API_KEY_MIN_CHARS: usize = 32;
 const HTTP_DEFAULT_API_KEY_ENV: &str = "BLACKBOX_API_KEY";
@@ -577,6 +581,8 @@ pub enum ExportCommands {
     Evidence(ExportEvidenceArgs),
     /// Export verified training/eval episodes from the ledger.
     Episodes(ExportEpisodesArgs),
+    /// Export OpenTelemetry-compatible trace, log, and metric files from the ledger.
+    Otel(ExportOtelArgs),
 }
 
 #[derive(Args, Debug)]
@@ -601,6 +607,21 @@ pub struct ExportEpisodesArgs {
     pub ledger: PathBuf,
 
     /// Output directory. The exporter writes episodes.jsonl, manifest.json, and evals/.
+    #[arg(long)]
+    pub out: PathBuf,
+
+    /// Replace an existing output directory.
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ExportOtelArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Output directory. The exporter writes traces.jsonl, logs.jsonl, metrics.jsonl, and manifest.json.
     #[arg(long)]
     pub out: PathBuf,
 
@@ -1556,6 +1577,7 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         BlackboxCommands::Export { action } => match action {
             ExportCommands::Evidence(args) => export_evidence(args),
             ExportCommands::Episodes(args) => export_episodes(args),
+            ExportCommands::Otel(args) => export_otel(args),
         },
         BlackboxCommands::Dashboard { action } => match action {
             DashboardCommands::Build(args) => dashboard_build(args),
@@ -2966,6 +2988,23 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": OTEL_EXPORT_CONNECTOR_ID,
+                "source_kind": "opentelemetry_file_export",
+                "readback_specs": [
+                    "blackbox_otel_trace_file_v1",
+                    "blackbox_otel_log_file_v1",
+                    "blackbox_otel_metric_file_v1",
+                    "blackbox_otel_manifest_v1"
+                ],
+                "artifact_files": [
+                    "traces.jsonl",
+                    "logs.jsonl",
+                    "metrics.jsonl",
+                    "manifest.json"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": ENTERPRISE_CONNECTOR_ID,
                 "source_kind": "enterprise_controls",
                 "readback_specs": [
@@ -3249,6 +3288,25 @@ async fn connector_test(args: ConnectorTestArgs) -> BbxResult<Value> {
                 "status": "ok",
                 "connector": TICKETING_CONNECTOR_ID,
                 "source_of_truth": ticketing_source_of_truth(&args.source, "artifact"),
+                "readback": readback,
+            }))
+        }
+        OTEL_EXPORT_CONNECTOR_ID => {
+            if !args.command.is_empty() {
+                return Err(BlackboxError::connector_blocked(
+                    "CONNECTOR_TEST_SCHEMA_INVALID",
+                    OTEL_EXPORT_CONNECTOR_ID,
+                    file_source_of_truth(&args.source),
+                    "--command",
+                    "blackbox_otel_export_v1 connector test does not accept --command",
+                    "remove --command and pass a completed OpenTelemetry export directory through --source",
+                ));
+            }
+            let readback = readback_otel_export_dir(&args.source)?;
+            Ok(json!({
+                "status": "ok",
+                "connector": OTEL_EXPORT_CONNECTOR_ID,
+                "source_of_truth": file_source_of_truth(&args.source),
                 "readback": readback,
             }))
         }
@@ -4334,6 +4392,20 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             ],
             "fail_closed": true
         },
+        "phase23_opentelemetry_export": {
+            "command": "blackbox export otel --ledger PATH --out DIR",
+            "connector": OTEL_EXPORT_CONNECTOR_ID,
+            "record_kinds": null,
+            "output_files": [
+                "traces.jsonl",
+                "logs.jsonl",
+                "metrics.jsonl",
+                "manifest.json"
+            ],
+            "source_of_truth": "SQLite ledger_records plus exported OTLP JSONL files",
+            "signals": ["traces", "logs", "metrics"],
+            "fail_closed": true
+        },
         "endpoints": [
             { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
             { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
@@ -4367,7 +4439,8 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" },
             { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" },
             { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" },
-            { "method": "POST", "path": "/v1/fsv/tenants/{tenant_id}/certifications", "ledger_record_kind": "full_state_verification" }
+            { "method": "POST", "path": "/v1/fsv/tenants/{tenant_id}/certifications", "ledger_record_kind": "full_state_verification" },
+            { "method": "POST", "path": "/v1/exports/opentelemetry", "ledger_record_kind": null }
         ],
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
@@ -15732,6 +15805,1226 @@ fn export_episodes(args: ExportEpisodesArgs) -> BbxResult<Value> {
             Err(err)
         }
     }
+}
+
+fn export_otel(args: ExportOtelArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    validate_otel_directory_path(&args.out, args.force)?;
+
+    let conn = open_initialized_ledger(&args.ledger)?;
+    let inspection = verify_ledger_integrity(&conn, &args.ledger)?;
+    if inspection.records.is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "OTEL_EXPORT_EMPTY_LEDGER",
+            "OpenTelemetry export requires at least one physical ledger record",
+            Some(source_of_truth(&args.ledger)),
+            OTEL_EXPORT_CONNECTOR_ID,
+            Some("ledger_records".to_string()),
+            "record at least one run or audited event before exporting telemetry",
+        ));
+    }
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.ok_or_else(|| {
+        BlackboxError::schema_field(
+            &args.ledger,
+            "blackbox_metadata.ledger_id",
+            "ledger_id metadata is missing",
+        )
+    })?;
+    let export = build_otel_export(&args.ledger, &inspection, &ledger_id)?;
+
+    let temp_dir = export_temp_dir(&args.out);
+    cleanup_otel_temp_dir(&temp_dir)?;
+    let build_result =
+        write_otel_export_directory(&args, &inspection, &ledger_id, &export, &temp_dir);
+    match build_result {
+        Ok(summary) => Ok(summary),
+        Err(err) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            Err(err)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct OtelExportData {
+    traces: Value,
+    logs: Value,
+    metrics: Value,
+    counts: OtelExportCounts,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OtelExportCounts {
+    spans_total: usize,
+    log_records_total: usize,
+    metrics_total: usize,
+    record_kind_counts: BTreeMap<String, i64>,
+    verifier_status_counts: BTreeMap<String, i64>,
+    policy_decision_counts: BTreeMap<String, i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OtelFileReadback {
+    signal: String,
+    line_count: usize,
+    top_level_key: String,
+    item_count: usize,
+    sha256: String,
+    size_bytes: u64,
+}
+
+fn build_otel_export(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+) -> BbxResult<OtelExportData> {
+    let resource = otel_resource(ledger_id);
+    let scope = otel_scope();
+    let run_span_ids = otel_run_span_ids(ledger_path, &inspection.records)?;
+    let mut spans = Vec::with_capacity(inspection.records.len());
+    let mut logs = Vec::new();
+    for record in &inspection.records {
+        spans.push(otel_span_for_record(
+            ledger_path,
+            ledger_id,
+            record,
+            &run_span_ids,
+        )?);
+        if let Some(log) = otel_log_for_record(ledger_path, ledger_id, record)? {
+            logs.push(log);
+        }
+    }
+    logs.push(otel_summary_log(ledger_path, ledger_id, inspection)?);
+
+    let first_time = otel_time_unix_nano(
+        ledger_path,
+        inspection
+            .records
+            .first()
+            .expect("empty inspection checked before OTEL export"),
+    )?;
+    let export_time = utc_now_unix_nano();
+    let metrics = otel_metrics_for_ledger(ledger_path, inspection, &first_time, &export_time)?;
+    let counts = OtelExportCounts {
+        spans_total: spans.len(),
+        log_records_total: logs.len(),
+        metrics_total: metrics.len(),
+        record_kind_counts: ledger_record_kind_counts(&inspection.records),
+        verifier_status_counts: verifier_status_counts(ledger_path, &inspection.records)?,
+        policy_decision_counts: policy_decision_counts(ledger_path, &inspection.records)?,
+    };
+
+    Ok(OtelExportData {
+        traces: json!({
+            "resourceSpans": [{
+                "resource": resource.clone(),
+                "scopeSpans": [{
+                    "scope": scope.clone(),
+                    "spans": spans
+                }]
+            }]
+        }),
+        logs: json!({
+            "resourceLogs": [{
+                "resource": resource.clone(),
+                "scopeLogs": [{
+                    "scope": scope.clone(),
+                    "logRecords": logs
+                }]
+            }]
+        }),
+        metrics: json!({
+            "resourceMetrics": [{
+                "resource": resource,
+                "scopeMetrics": [{
+                    "scope": scope,
+                    "metrics": metrics
+                }]
+            }]
+        }),
+        counts,
+    })
+}
+
+fn otel_resource(ledger_id: &str) -> Value {
+    json!({
+        "attributes": [
+            otel_attr_str("service.name", "blackboxfix"),
+            otel_attr_str("service.namespace", "contextgraph"),
+            otel_attr_str("service.version", OTEL_SCOPE_VERSION),
+            otel_attr_str("telemetry.sdk.name", "blackboxfix-file-exporter"),
+            otel_attr_str("telemetry.sdk.language", "rust"),
+            otel_attr_str("blackbox.ledger.id", ledger_id),
+            otel_attr_i64("blackbox.ledger.schema_version", LEDGER_SCHEMA_VERSION),
+        ]
+    })
+}
+
+fn otel_scope() -> Value {
+    json!({
+        "name": OTEL_SCOPE_NAME,
+        "version": OTEL_SCOPE_VERSION,
+    })
+}
+
+fn otel_run_span_ids(
+    ledger_path: &Path,
+    records: &[LedgerRecordOutput],
+) -> BbxResult<BTreeMap<String, String>> {
+    let mut ids = BTreeMap::new();
+    for record in records
+        .iter()
+        .filter(|record| record.record_kind == "agent_run")
+    {
+        let run_id = otel_payload_str(ledger_path, record, "run_id")?;
+        if ids
+            .insert(
+                run_id.to_string(),
+                otel_span_id_for_record(ledger_path, record)?,
+            )
+            .is_some()
+        {
+            return Err(otel_source_schema_error(
+                ledger_path,
+                record,
+                "payload.run_id",
+                format!("duplicate agent_run run_id {run_id}"),
+            ));
+        }
+    }
+    Ok(ids)
+}
+
+fn otel_span_for_record(
+    ledger_path: &Path,
+    ledger_id: &str,
+    record: &LedgerRecordOutput,
+    run_span_ids: &BTreeMap<String, String>,
+) -> BbxResult<Value> {
+    let timestamp = otel_time_unix_nano(ledger_path, record)?;
+    let trace_id = otel_trace_id(ledger_id, record.run_id.as_deref().unwrap_or("ledger"));
+    let span_id = otel_span_id_for_record(ledger_path, record)?;
+    let parent_span_id = if record.record_kind == "agent_run" {
+        None
+    } else if let Some(run_id) = &record.run_id {
+        Some(run_span_ids.get(run_id).cloned().ok_or_else(|| {
+            otel_source_schema_error(
+                ledger_path,
+                record,
+                "run_id",
+                format!("record references run_id {run_id} but no agent_run span exists"),
+            )
+        })?)
+    } else {
+        None
+    };
+    let mut attributes = vec![
+        otel_attr_i64("blackbox.ledger.sequence", record.sequence),
+        otel_attr_str("blackbox.record.id", &record.record_id),
+        otel_attr_str("blackbox.record.kind", &record.record_kind),
+        otel_attr_str("blackbox.tenant.id", &record.tenant_id),
+        otel_attr_str(
+            "blackbox.record.sha256",
+            otel_hash_str(ledger_path, record, "record_sha256")?,
+        ),
+        otel_attr_str(
+            "blackbox.payload.sha256",
+            otel_hash_str(ledger_path, record, "payload_sha256")?,
+        ),
+    ];
+    if let Some(run_id) = &record.run_id {
+        attributes.push(otel_attr_str("blackbox.run.id", run_id));
+    }
+    if let Some(step_id) = &record.step_id {
+        attributes.push(otel_attr_str("blackbox.step.id", step_id));
+    }
+    if let Some(agent) = record.actor.get("agent_id").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.agent.id", agent));
+    }
+    if let Some(model) = record.actor.get("model_id").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.model.id", model));
+    }
+    if let Some(tool) = record.payload.get("tool_name").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.tool.name", tool));
+    }
+    if let Some(capability) = record.payload.get("capability_id").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.capability.id", capability));
+    }
+    if let Some(verifier) = record.payload.get("verifier_id").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.verifier.id", verifier));
+    }
+    if let Some(status) = record.payload.get("status").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.status", status));
+    }
+    if let Some(error) = record.payload.get("error_code").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.error_code", error));
+    }
+    if let Some(connector) = record.payload.get("connector").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.connector.id", connector));
+    }
+
+    let mut span = json!({
+        "traceId": trace_id,
+        "spanId": span_id,
+        "name": format!("blackbox.{}", record.record_kind),
+        "kind": 1,
+        "startTimeUnixNano": timestamp,
+        "endTimeUnixNano": timestamp,
+        "attributes": attributes,
+        "droppedAttributesCount": 0,
+        "droppedEventsCount": 0,
+        "droppedLinksCount": 0,
+        "status": otel_span_status(record),
+    });
+    if let Some(parent) = parent_span_id {
+        span["parentSpanId"] = json!(parent);
+    }
+    Ok(span)
+}
+
+fn otel_log_for_record(
+    ledger_path: &Path,
+    ledger_id: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Option<Value>> {
+    let Some((severity_number, severity_text, body)) = otel_log_classification(record) else {
+        return Ok(None);
+    };
+    let trace_id = otel_trace_id(ledger_id, record.run_id.as_deref().unwrap_or("ledger"));
+    let span_id = otel_span_id_for_record(ledger_path, record)?;
+    let mut attributes = vec![
+        otel_attr_i64("blackbox.ledger.sequence", record.sequence),
+        otel_attr_str("blackbox.record.kind", &record.record_kind),
+        otel_attr_str("blackbox.record.id", &record.record_id),
+    ];
+    if let Some(error) = record.payload.get("error_code").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.error_code", error));
+    }
+    if let Some(status) = record.payload.get("status").and_then(Value::as_str) {
+        attributes.push(otel_attr_str("blackbox.status", status));
+    }
+    Ok(Some(json!({
+        "timeUnixNano": otel_time_unix_nano(ledger_path, record)?,
+        "observedTimeUnixNano": utc_now_unix_nano(),
+        "severityNumber": severity_number,
+        "severityText": severity_text,
+        "body": { "stringValue": body },
+        "attributes": attributes,
+        "droppedAttributesCount": 0,
+        "traceId": trace_id,
+        "spanId": span_id,
+    })))
+}
+
+fn otel_log_classification(record: &LedgerRecordOutput) -> Option<(i64, &'static str, String)> {
+    match record.record_kind.as_str() {
+        "incident_packet" => Some((
+            17,
+            "Error",
+            format!("BlackBoxFix incident packet {}", record.record_id),
+        )),
+        "verifier_result" => match record.payload.get("status").and_then(Value::as_str) {
+            Some("failed") => Some((
+                17,
+                "Error",
+                format!(
+                    "Verifier failed: {}",
+                    record
+                        .payload
+                        .get("error_code")
+                        .and_then(Value::as_str)
+                        .unwrap_or("UNKNOWN_ERROR")
+                ),
+            )),
+            Some("blocked") => Some((
+                13,
+                "Warn",
+                format!(
+                    "Verifier blocked: {}",
+                    record
+                        .payload
+                        .get("error_code")
+                        .and_then(Value::as_str)
+                        .unwrap_or("UNKNOWN_ERROR")
+                ),
+            )),
+            _ => None,
+        },
+        "policy_decision" => {
+            if record.payload.get("status").and_then(Value::as_str) == Some("denied") {
+                Some((13, "Warn", "Policy denied BlackBoxFix action".to_string()))
+            } else {
+                None
+            }
+        }
+        "http_request_audit" => {
+            let outcome = record
+                .payload
+                .pointer("/response/outcome")
+                .and_then(Value::as_str);
+            if outcome != Some("ok") {
+                Some((
+                    13,
+                    "Warn",
+                    format!(
+                        "HTTP request audit outcome {}",
+                        outcome.unwrap_or("unknown")
+                    ),
+                ))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn otel_summary_log(
+    ledger_path: &Path,
+    ledger_id: &str,
+    inspection: &LedgerInspection,
+) -> BbxResult<Value> {
+    let record = inspection
+        .records
+        .last()
+        .expect("empty inspection checked before OTEL export");
+    Ok(json!({
+        "timeUnixNano": utc_now_unix_nano(),
+        "observedTimeUnixNano": utc_now_unix_nano(),
+        "severityNumber": 9,
+        "severityText": "Info",
+        "body": { "stringValue": "BlackBoxFix OpenTelemetry export completed from verified ledger state" },
+        "attributes": [
+            otel_attr_i64("blackbox.ledger.record_count", inspection.record_count),
+            otel_attr_str("blackbox.ledger.tip_sha256", &inspection.ledger_tip_sha256),
+            otel_attr_str("blackbox.source_of_truth", source_of_truth(ledger_path)),
+        ],
+        "droppedAttributesCount": 0,
+        "traceId": otel_trace_id(ledger_id, record.run_id.as_deref().unwrap_or("ledger")),
+        "spanId": otel_span_id_for_record(ledger_path, record)?,
+    }))
+}
+
+fn otel_metrics_for_ledger(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    start_time: &str,
+    export_time: &str,
+) -> BbxResult<Vec<Value>> {
+    let record_kind_points = ledger_record_kind_counts(&inspection.records)
+        .into_iter()
+        .map(|(kind, count)| {
+            otel_sum_point(
+                start_time,
+                export_time,
+                count,
+                vec![otel_attr_str("blackbox.record.kind", kind)],
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let verifier_points = verifier_status_counts(ledger_path, &inspection.records)?
+        .into_iter()
+        .map(|(status, count)| {
+            otel_sum_point(
+                start_time,
+                export_time,
+                count,
+                vec![otel_attr_str("blackbox.verifier.status", status)],
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let policy_points = policy_decision_counts(ledger_path, &inspection.records)?
+        .into_iter()
+        .map(|(status, count)| {
+            otel_sum_point(
+                start_time,
+                export_time,
+                count,
+                vec![otel_attr_str("blackbox.policy.status", status)],
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let total_verifiers = inspection
+        .records
+        .iter()
+        .filter(|record| record.record_kind == "verifier_result")
+        .count() as i64;
+    let passed_verifiers = inspection
+        .records
+        .iter()
+        .filter(|record| {
+            record.record_kind == "verifier_result"
+                && record.payload.get("status").and_then(Value::as_str) == Some("passed")
+        })
+        .count() as f64;
+    let pass_ratio = if total_verifiers > 0 {
+        passed_verifiers / (total_verifiers as f64)
+    } else {
+        0.0
+    };
+
+    Ok(vec![
+        otel_sum_metric(
+            "blackbox.ledger.records",
+            "Ledger records by record kind.",
+            "1",
+            record_kind_points,
+        ),
+        otel_sum_metric(
+            "blackbox.verifier.results",
+            "Verifier results by status.",
+            "1",
+            verifier_points,
+        ),
+        otel_sum_metric(
+            "blackbox.policy.decisions",
+            "Policy decisions by status.",
+            "1",
+            policy_points,
+        ),
+        otel_gauge_metric(
+            "blackbox.verifier.pass_ratio",
+            "Ratio of passed verifier results to all verifier results.",
+            "1",
+            vec![otel_gauge_point(
+                start_time,
+                export_time,
+                pass_ratio,
+                vec![],
+            )],
+        ),
+    ])
+}
+
+fn write_otel_export_directory(
+    args: &ExportOtelArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    export: &OtelExportData,
+    temp_dir: &Path,
+) -> BbxResult<Value> {
+    fs::create_dir(temp_dir)
+        .map_err(|err| BlackboxError::io(temp_dir, "create OTEL export temp directory", err))?;
+    let traces_path = temp_dir.join("traces.jsonl");
+    let logs_path = temp_dir.join("logs.jsonl");
+    let metrics_path = temp_dir.join("metrics.jsonl");
+    let manifest_path = temp_dir.join("manifest.json");
+
+    write_otel_jsonl_file(&traces_path, "traces", "resourceSpans", &export.traces)?;
+    write_otel_jsonl_file(&logs_path, "logs", "resourceLogs", &export.logs)?;
+    write_otel_jsonl_file(&metrics_path, "metrics", "resourceMetrics", &export.metrics)?;
+    let traces_readback = readback_otel_jsonl(&traces_path, "traces", "resourceSpans")?;
+    let logs_readback = readback_otel_jsonl(&logs_path, "logs", "resourceLogs")?;
+    let metrics_readback = readback_otel_jsonl(&metrics_path, "metrics", "resourceMetrics")?;
+    if traces_readback.item_count != export.counts.spans_total
+        || logs_readback.item_count != export.counts.log_records_total
+        || metrics_readback.item_count != export.counts.metrics_total
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_EXPORT_READBACK_MISMATCH",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(temp_dir),
+            "otel.item_count",
+            "OpenTelemetry temp file readback counts do not match generated telemetry counts",
+            "delete the temp export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    let manifest = build_otel_manifest(
+        args,
+        inspection,
+        ledger_id,
+        &traces_readback,
+        &logs_readback,
+        &metrics_readback,
+        &export.counts,
+    );
+    write_json_file_new(&manifest_path, &manifest, "OTEL export manifest")?;
+    let manifest_readback = read_json_file(&manifest_path, "OTEL export manifest readback")?;
+    if manifest_readback != manifest {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_MANIFEST_READBACK_MISMATCH",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(&manifest_path),
+            "manifest.json",
+            "OpenTelemetry export manifest readback does not match the JSON value written",
+            "delete the corrupt export and rerun after inspecting filesystem/storage consistency",
+        ));
+    }
+
+    promote_otel_dir(temp_dir, &args.out, args.force)?;
+    let final_readback = readback_otel_export_dir(&args.out)?;
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox export otel",
+        "connector": OTEL_EXPORT_CONNECTOR_ID,
+        "source_of_truth": file_source_of_truth(&args.out),
+        "ledger_source_of_truth": source_of_truth(&args.ledger),
+        "out": args.out,
+        "files": final_readback["files"].clone(),
+        "counts": final_readback["counts"].clone(),
+        "ledger_tip_sha256_at_export": inspection.ledger_tip_sha256,
+    }))
+}
+
+fn build_otel_manifest(
+    args: &ExportOtelArgs,
+    inspection: &LedgerInspection,
+    ledger_id: &str,
+    traces: &OtelFileReadback,
+    logs: &OtelFileReadback,
+    metrics: &OtelFileReadback,
+    counts: &OtelExportCounts,
+) -> Value {
+    json!({
+        "status": "ok",
+        "format": "blackbox_otel_export_manifest_json_v1",
+        "schema_version": OTEL_EXPORT_SCHEMA_VERSION,
+        "generated_at": Utc::now().to_rfc3339(),
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count": inspection.record_count,
+            "ledger_tip_sha256_at_export": inspection.ledger_tip_sha256,
+        },
+        "opentelemetry": {
+            "serialization": "otlp-json-file-exporter",
+            "file_extension": "jsonl",
+            "files_contain_exactly_one_signal_type": true,
+            "signals": ["traces", "logs", "metrics"],
+        },
+        "files": [
+            otel_manifest_file_entry("traces", "traces.jsonl", traces),
+            otel_manifest_file_entry("logs", "logs.jsonl", logs),
+            otel_manifest_file_entry("metrics", "metrics.jsonl", metrics),
+        ],
+        "counts": counts,
+    })
+}
+
+fn otel_manifest_file_entry(signal: &str, path: &str, readback: &OtelFileReadback) -> Value {
+    json!({
+        "signal": signal,
+        "path": path,
+        "top_level_key": readback.top_level_key,
+        "line_count": readback.line_count,
+        "item_count": readback.item_count,
+        "sha256": readback.sha256,
+        "bytes": readback.size_bytes,
+    })
+}
+
+fn readback_otel_export_dir(out: &Path) -> BbxResult<Value> {
+    if !out.exists() || !out.is_dir() {
+        return Err(BlackboxError::connector_blocked(
+            "OTEL_EXPORT_SOURCE_INVALID",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(out),
+            "--source",
+            "OpenTelemetry export source must be an existing directory",
+            "run `blackbox export otel --ledger PATH --out DIR` before testing the export connector",
+        ));
+    }
+    let manifest_path = out.join("manifest.json");
+    let manifest = read_json_file(&manifest_path, "OTEL export manifest readback")?;
+    if manifest["format"] != "blackbox_otel_export_manifest_json_v1" {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_MANIFEST_READBACK_MISMATCH",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(&manifest_path),
+            "manifest.json.format",
+            "OpenTelemetry export manifest did not preserve expected format",
+            "delete the corrupt export and regenerate it from the ledger",
+        ));
+    }
+    let traces = readback_otel_jsonl(&out.join("traces.jsonl"), "traces", "resourceSpans")?;
+    let logs = readback_otel_jsonl(&out.join("logs.jsonl"), "logs", "resourceLogs")?;
+    let metrics = readback_otel_jsonl(&out.join("metrics.jsonl"), "metrics", "resourceMetrics")?;
+    verify_otel_manifest_files(out, &manifest, &[&traces, &logs, &metrics])?;
+    Ok(json!({
+        "format": "blackbox_otel_export_readback_json_v1",
+        "manifest": manifest,
+        "files": {
+            "traces": traces,
+            "logs": logs,
+            "metrics": metrics,
+        },
+        "counts": manifest["counts"].clone(),
+    }))
+}
+
+fn write_otel_jsonl_file(
+    path: &Path,
+    signal: &str,
+    top_level_key: &str,
+    value: &Value,
+) -> BbxResult<()> {
+    validate_otel_top_level(path, signal, top_level_key, value)?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| BlackboxError::io(path, "create OpenTelemetry JSONL file", err))?;
+    let mut writer = BufWriter::new(file);
+    serde_json::to_writer(&mut writer, value).map_err(|err| {
+        BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "OTEL_JSONL_SERIALIZE_FAILED",
+            format!("failed to serialize {signal} OTLP JSON line: {err}"),
+            Some(file_source_of_truth(path)),
+            OTEL_EXPORT_CONNECTOR_ID,
+            Some(path.display().to_string()),
+            "inspect the generated OpenTelemetry JSON value and rerun export",
+        )
+    })?;
+    writer
+        .write_all(b"\n")
+        .map_err(|err| BlackboxError::io(path, "write OpenTelemetry JSONL newline", err))?;
+    writer
+        .flush()
+        .map_err(|err| BlackboxError::io(path, "flush OpenTelemetry JSONL file", err))?;
+    Ok(())
+}
+
+fn readback_otel_jsonl(
+    path: &Path,
+    signal: &str,
+    top_level_key: &str,
+) -> BbxResult<OtelFileReadback> {
+    let sha256 = sha256_file(path)?;
+    let size_bytes = fs::metadata(path)
+        .map_err(|err| BlackboxError::io(path, "stat OpenTelemetry JSONL file", err))?
+        .len();
+    let file =
+        File::open(path).map_err(|err| BlackboxError::io(path, "open OpenTelemetry JSONL", err))?;
+    let reader = BufReader::new(file);
+    let mut line_count = 0usize;
+    let mut item_count = 0usize;
+    for (index, line_result) in reader.lines().enumerate() {
+        let line = line_result
+            .map_err(|err| BlackboxError::io(path, "read OpenTelemetry JSONL line", err))?;
+        if line.trim().is_empty() {
+            return Err(otel_jsonl_invalid(
+                path,
+                index + 1,
+                "$",
+                "blank JSONL lines are invalid OpenTelemetry file-export records",
+            ));
+        }
+        let value: Value = serde_json::from_str(&line).map_err(|err| {
+            otel_jsonl_invalid(
+                path,
+                index + 1,
+                "$",
+                format!("OpenTelemetry JSONL line does not parse as JSON: {err}"),
+            )
+        })?;
+        validate_otel_top_level(path, signal, top_level_key, &value)?;
+        item_count += otel_signal_item_count(&value, top_level_key);
+        line_count += 1;
+    }
+    if line_count == 0 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_JSONL_INVALID",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(path),
+            path.display().to_string(),
+            "OpenTelemetry JSONL file contains no records",
+            "regenerate the export; every signal file must contain at least one OTLP JSON object",
+        ));
+    }
+    if item_count == 0 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_JSONL_INVALID",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(path),
+            top_level_key,
+            "OpenTelemetry JSONL file contains no nested signal items",
+            "regenerate the export from a verified non-empty ledger and inspect the signal payload shape",
+        ));
+    }
+    Ok(OtelFileReadback {
+        signal: signal.to_string(),
+        line_count,
+        top_level_key: top_level_key.to_string(),
+        item_count,
+        sha256,
+        size_bytes,
+    })
+}
+
+fn validate_otel_top_level(
+    path: &Path,
+    signal: &str,
+    top_level_key: &str,
+    value: &Value,
+) -> BbxResult<()> {
+    let object = value.as_object().ok_or_else(|| {
+        BlackboxError::evidence_integrity_for_connector(
+            "OTEL_JSONL_INVALID",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "$",
+            "OpenTelemetry file-export line must be a JSON object",
+            "regenerate the export; each JSONL line must be one OTLP JSON object",
+        )
+    })?;
+    if object.len() != 1 || !object.contains_key(top_level_key) {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_SIGNAL_FILE_MIXED",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(path),
+            "$",
+            format!("{signal} file must contain exactly one OTLP top-level key {top_level_key}"),
+            "regenerate the export; traces, logs, and metrics must be written to separate files",
+        ));
+    }
+    if !value
+        .get(top_level_key)
+        .and_then(Value::as_array)
+        .map(|items| !items.is_empty())
+        .unwrap_or(false)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_JSONL_INVALID",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(path),
+            top_level_key,
+            format!("{top_level_key} must be a non-empty array"),
+            "regenerate the export from a non-empty verified ledger",
+        ));
+    }
+    Ok(())
+}
+
+fn otel_signal_item_count(value: &Value, top_level_key: &str) -> usize {
+    match top_level_key {
+        "resourceSpans" => value
+            .pointer("/resourceSpans/0/scopeSpans/0/spans")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        "resourceLogs" => value
+            .pointer("/resourceLogs/0/scopeLogs/0/logRecords")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        "resourceMetrics" => value
+            .pointer("/resourceMetrics/0/scopeMetrics/0/metrics")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0),
+        _ => 0,
+    }
+}
+
+fn verify_otel_manifest_files(
+    out: &Path,
+    manifest: &Value,
+    readbacks: &[&OtelFileReadback],
+) -> BbxResult<()> {
+    let files = manifest
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "OTEL_MANIFEST_READBACK_MISMATCH",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files",
+                "OpenTelemetry manifest is missing files array",
+                "delete the corrupt export and regenerate it from the ledger",
+            )
+        })?;
+    if files.len() != readbacks.len() {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "OTEL_MANIFEST_READBACK_MISMATCH",
+            OTEL_EXPORT_CONNECTOR_ID,
+            file_source_of_truth(&out.join("manifest.json")),
+            "manifest.json.files",
+            "OpenTelemetry manifest file count does not match expected signal files",
+            "delete the corrupt export and regenerate it from the ledger",
+        ));
+    }
+    let by_signal = readbacks
+        .iter()
+        .map(|readback| (readback.signal.as_str(), *readback))
+        .collect::<BTreeMap<_, _>>();
+    for file in files {
+        let signal = file.get("signal").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "OTEL_MANIFEST_READBACK_MISMATCH",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].signal",
+                "OpenTelemetry manifest file entry is missing signal",
+                "delete the corrupt export and regenerate it from the ledger",
+            )
+        })?;
+        let rel = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "OTEL_MANIFEST_READBACK_MISMATCH",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                "OpenTelemetry manifest file entry is missing path",
+                "delete the corrupt export and regenerate it from the ledger",
+            )
+        })?;
+        let rel_path = Path::new(rel);
+        if rel_path.is_absolute()
+            || rel_path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "OTEL_MANIFEST_PATH_INVALID",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].path",
+                format!("OpenTelemetry manifest file path is not safe relative path: {rel}"),
+                "regenerate the manifest from trusted code",
+            ));
+        }
+        let readback = by_signal.get(signal).copied().ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "OTEL_MANIFEST_READBACK_MISMATCH",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&out.join("manifest.json")),
+                "manifest.json.files[].signal",
+                format!("manifest references unexpected signal {signal}"),
+                "regenerate the export with the shipped signal set",
+            )
+        })?;
+        let actual_path = out.join(rel_path);
+        let actual_sha = sha256_file(&actual_path)?;
+        let actual_bytes = fs::metadata(&actual_path)
+            .map_err(|err| BlackboxError::io(&actual_path, "stat final OTEL file", err))?
+            .len();
+        if file.get("sha256").and_then(Value::as_str) != Some(actual_sha.as_str())
+            || file.get("bytes").and_then(Value::as_u64) != Some(actual_bytes)
+            || file.get("item_count").and_then(Value::as_u64) != Some(readback.item_count as u64)
+        {
+            return Err(BlackboxError::evidence_integrity_for_connector(
+                "OTEL_FILE_HASH_MISMATCH",
+                OTEL_EXPORT_CONNECTOR_ID,
+                file_source_of_truth(&actual_path),
+                rel,
+                "OpenTelemetry file hash, byte count, or item count changed after promotion",
+                "treat the export directory as unreliable and inspect filesystem/storage before retrying",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_otel_directory_path(path: &Path, force: bool) -> BbxResult<()> {
+    if path.as_os_str().is_empty() {
+        return Err(BlackboxError::new_with_connector(
+            ErrorKind::InvalidInput,
+            "OTEL_EXPORT_PATH_INVALID",
+            "--out must not be empty",
+            None,
+            OTEL_EXPORT_CONNECTOR_ID,
+            Some("--out".to_string()),
+            "provide a non-empty OpenTelemetry export output directory",
+        ));
+    }
+    if path.exists() {
+        if !path.is_dir() {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "OTEL_EXPORT_PATH_INVALID",
+                "--out exists and is not a directory",
+                Some(file_source_of_truth(path)),
+                OTEL_EXPORT_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "provide a directory path or remove the existing file",
+            ));
+        }
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "OTEL_OUTPUT_EXISTS",
+                format!(
+                    "OpenTelemetry export output directory already exists: {}",
+                    path.display()
+                ),
+                Some(file_source_of_truth(path)),
+                OTEL_EXPORT_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this telemetry export is intentional",
+            ));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() && (!parent.exists() || !parent.is_dir()) {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "OTEL_EXPORT_PATH_INVALID",
+                format!(
+                    "OpenTelemetry export parent directory does not exist: {}",
+                    parent.display()
+                ),
+                Some(file_source_of_truth(path)),
+                OTEL_EXPORT_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "create the parent directory explicitly and rerun the telemetry export",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_otel_temp_dir(path: &Path) -> BbxResult<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|err| {
+            BlackboxError::io(path, "remove stale OTEL export temp directory", err)
+        })?;
+    }
+    Ok(())
+}
+
+fn promote_otel_dir(temp_dir: &Path, out: &Path, force: bool) -> BbxResult<()> {
+    if out.exists() {
+        if !force {
+            return Err(BlackboxError::new_with_connector(
+                ErrorKind::InvalidInput,
+                "OTEL_OUTPUT_EXISTS",
+                format!(
+                    "OpenTelemetry export output directory already exists: {}",
+                    out.display()
+                ),
+                Some(file_source_of_truth(out)),
+                OTEL_EXPORT_CONNECTOR_ID,
+                Some("--out".to_string()),
+                "rerun with --force only when replacing this telemetry export is intentional",
+            ));
+        }
+        fs::remove_dir_all(out)
+            .map_err(|err| BlackboxError::io(out, "replace existing OTEL export directory", err))?;
+    }
+    fs::rename(temp_dir, out)
+        .map_err(|err| BlackboxError::io(out, "promote OTEL export temp directory", err))?;
+    Ok(())
+}
+
+fn otel_sum_metric(name: &str, description: &str, unit: &str, data_points: Vec<Value>) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "unit": unit,
+        "sum": {
+            "dataPoints": data_points,
+            "aggregationTemporality": 2,
+            "isMonotonic": true,
+        }
+    })
+}
+
+fn otel_gauge_metric(name: &str, description: &str, unit: &str, data_points: Vec<Value>) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "unit": unit,
+        "gauge": {
+            "dataPoints": data_points,
+        }
+    })
+}
+
+fn otel_sum_point(start_time: &str, time: &str, value: i64, attributes: Vec<Value>) -> Value {
+    json!({
+        "attributes": attributes,
+        "startTimeUnixNano": start_time,
+        "timeUnixNano": time,
+        "asInt": value.to_string(),
+    })
+}
+
+fn otel_gauge_point(start_time: &str, time: &str, value: f64, attributes: Vec<Value>) -> Value {
+    json!({
+        "attributes": attributes,
+        "startTimeUnixNano": start_time,
+        "timeUnixNano": time,
+        "asDouble": value,
+    })
+}
+
+fn otel_attr_str(key: &str, value: impl AsRef<str>) -> Value {
+    json!({
+        "key": key,
+        "value": { "stringValue": value.as_ref() }
+    })
+}
+
+fn otel_attr_i64(key: &str, value: i64) -> Value {
+    json!({
+        "key": key,
+        "value": { "intValue": value.to_string() }
+    })
+}
+
+fn otel_trace_id(ledger_id: &str, run_or_scope: &str) -> String {
+    otel_hash_hex(&["trace", ledger_id, run_or_scope], 32)
+}
+
+fn otel_span_id_for_record(ledger_path: &Path, record: &LedgerRecordOutput) -> BbxResult<String> {
+    Ok(otel_hash_hex(
+        &[
+            "span",
+            otel_hash_str(ledger_path, record, "record_sha256")?,
+            &record.sequence.to_string(),
+        ],
+        16,
+    ))
+}
+
+fn otel_hash_hex(parts: &[&str], len: usize) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    let digest = hasher.finalize();
+    format!("{digest:x}").chars().take(len).collect()
+}
+
+fn otel_hash_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    key: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .hash
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| value.starts_with("sha256:") && value.len() == 71)
+        .ok_or_else(|| {
+            otel_source_schema_error(
+                ledger_path,
+                record,
+                format!("hash.{key}"),
+                format!("ledger record is missing valid {key}"),
+            )
+        })
+}
+
+fn otel_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    key: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            otel_source_schema_error(
+                ledger_path,
+                record,
+                format!("payload.{key}"),
+                format!("{} payload is missing non-empty {key}", record.record_kind),
+            )
+        })
+}
+
+fn otel_time_unix_nano(ledger_path: &Path, record: &LedgerRecordOutput) -> BbxResult<String> {
+    let parsed = DateTime::parse_from_rfc3339(&record.created_at).map_err(|err| {
+        otel_source_schema_error(
+            ledger_path,
+            record,
+            "created_at",
+            format!("created_at is not RFC3339 for OTEL export: {err}"),
+        )
+    })?;
+    let nanos =
+        (parsed.timestamp() as i128) * 1_000_000_000i128 + parsed.timestamp_subsec_nanos() as i128;
+    if nanos < 0 {
+        return Err(otel_source_schema_error(
+            ledger_path,
+            record,
+            "created_at",
+            "created_at is before the Unix epoch and cannot be exported as OTLP time",
+        ));
+    }
+    Ok(nanos.to_string())
+}
+
+fn utc_now_unix_nano() -> String {
+    let now = Utc::now();
+    ((now.timestamp() as i128) * 1_000_000_000i128 + now.timestamp_subsec_nanos() as i128)
+        .to_string()
+}
+
+fn otel_span_status(record: &LedgerRecordOutput) -> Value {
+    if record.record_kind == "verifier_result" {
+        match record.payload.get("status").and_then(Value::as_str) {
+            Some("passed") => return json!({ "code": 1 }),
+            Some("failed" | "blocked") => {
+                return json!({
+                    "code": 2,
+                    "message": record
+                        .payload
+                        .get("error_code")
+                        .and_then(Value::as_str)
+                        .unwrap_or("VERIFIER_NOT_PASSED")
+                })
+            }
+            _ => {}
+        }
+    }
+    if record.record_kind == "incident_packet"
+        || record
+            .payload
+            .get("status")
+            .and_then(Value::as_str)
+            .map(|status| status == "denied" || status == "blocked")
+            .unwrap_or(false)
+    {
+        json!({ "code": 2 })
+    } else {
+        json!({})
+    }
+}
+
+fn otel_jsonl_invalid(
+    path: &Path,
+    line: usize,
+    field: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "OTEL_JSONL_INVALID",
+        OTEL_EXPORT_CONNECTOR_ID,
+        file_source_of_truth(path),
+        format!("{}:{line}:{}", path.display(), field.into()),
+        message,
+        "regenerate the export and inspect the named OpenTelemetry JSONL field",
+    )
+}
+
+fn otel_source_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::evidence_integrity_for_connector(
+        "OTEL_SOURCE_SCHEMA_INVALID",
+        OTEL_EXPORT_CONNECTOR_ID,
+        source_of_truth(ledger_path),
+        format!("ledger_records[{}].{}", record.sequence, field_path.into()),
+        message,
+        "inspect the persisted ledger row and fix schema drift before exporting telemetry",
+    )
 }
 
 fn dashboard_api(args: DashboardApiArgs) -> BbxResult<Value> {

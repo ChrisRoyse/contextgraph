@@ -107,17 +107,31 @@ Design implication:
 
 ### OpenTelemetry
 
-Reference: <https://opentelemetry.io/docs/what-is-opentelemetry/>
+References:
+
+- <https://opentelemetry.io/docs/what-is-opentelemetry/>
+- <https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/>
+- <https://opentelemetry.io/docs/specs/otel/protocol/>
+- <https://opentelemetry.io/docs/concepts/signals/traces/>
+- <https://opentelemetry.io/docs/concepts/signals/logs/>
+- <https://opentelemetry.io/docs/concepts/signals/metrics/>
+- <https://opentelemetry.io/docs/specs/semconv/resource/>
 
 Design implication:
 
-- export traces, metrics, and logs to existing observability stacks (reserved
-  after Phase 16);
+- export traces, metrics, and logs to existing observability stacks through
+  OTLP JSONL files (Phase 23 shipped);
 - keep the BlackBoxFix ledger as the authoritative evidence source;
-- use semantic attributes for run, step, tool, verifier, connector, risk tier.
+- use resource attributes for stable service identity and custom
+  low-cardinality attributes for ledger/run/tool/verifier dimensions;
+- keep high-cardinality values such as record hashes as span/log attributes,
+  not metric dimensions.
 - Phase 15 package usage dimensions intentionally avoid per-event UUID-style
   dimensions and keep high-cardinality uniqueness in the idempotency
   identifier/source ref, not metric dimensions.
+- Phase 23 follows the same cardinality rule: metrics aggregate by record
+  kind, verifier status, and policy status; trace/log records carry detailed
+  record ids and hashes for forensic drilldown.
 
 ### Ticketing API Readback
 

@@ -33,6 +33,7 @@ The mandatory operator-side protocol lives in
 | Kubernetes Deployment snapshot files + ledger evidence rows (Phase 20) | physical kubectl-style JSON files and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | Terraform/cloud artifact files + ledger evidence rows (Phase 21) | physical Terraform plan/state JSON files, normalized cloud inventory JSON, cloud audit JSONL, and SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | Ticketing API artifact files + ledger evidence rows (Phase 22) | physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON files plus SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
+| OpenTelemetry export files (Phase 23) | verified SQLite `ledger_records` used as input plus physical `traces.jsonl`, `logs.jsonl`, `metrics.jsonl`, and `manifest.json` files read back directly with manifest hashes |
 
 ## Test Levels
 
@@ -132,6 +133,12 @@ physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON artifacts,
 runs all three ticket state verifiers, then reads SQLite directly to prove
 happy rows, missing-ticket incidents, wrong-state incidents, and invalid JSON
 blocked evidence are all persisted.
+Phase 23 adds `tests/blackbox_phase23_otel_export_fsv.rs`, which builds a
+real SQLite ledger with passed and failed command verifier evidence, exports
+OTLP JSONL traces/logs/metrics, reads the physical files and manifest directly,
+recomputes hashes, runs connector readback, proves export does not mutate
+`ledger_records`, and checks empty-ledger, existing-output, and tampered-ledger
+edges.
 
 ## Acceptance Criteria
 
