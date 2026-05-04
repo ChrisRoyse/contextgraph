@@ -4,6 +4,7 @@ const state = {
   activeTab: 'timeline',
   clientId: `client-${crypto.randomUUID()}`,
   activeRequestId: null,
+  latestProductPack: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -285,7 +286,7 @@ function renderArtifacts(snapshot) {
 function renderProductCategory(snapshot) {
   const fullPack = snapshot?.product_category_pack;
   const compactPack = snapshot?.chat_agent?.tool_result_summary?.product_category_pack;
-  const pack = fullPack || compactPack;
+  const pack = fullPack || compactPack || state.latestProductPack;
   if (!pack) {
     $('productCategory').innerHTML = `
       <article class="detail-card">
@@ -463,6 +464,16 @@ async function refreshHealth() {
   }
 }
 
+async function loadLatestCategory() {
+  try {
+    state.latestProductPack = await apiGet('/api/category/latest');
+    renderProductCategory(state.snapshot);
+  } catch (err) {
+    state.latestProductPack = null;
+    renderProductCategory(state.snapshot);
+  }
+}
+
 async function loadLatestRun() {
   state.activeRequestId = newRequestId('inspect');
   $('events').innerHTML = '';
@@ -520,8 +531,15 @@ function setupTabs() {
       document.querySelectorAll('.tab-panel').forEach((item) => item.classList.remove('active'));
       tab.classList.add('active');
       $(`panel-${tab.dataset.tab}`).classList.add('active');
+      state.activeTab = tab.dataset.tab;
+      if (tab.dataset.tab === 'product') loadLatestCategory();
     });
   });
+  const hashTab = location.hash.replace('#', '');
+  if (hashTab) {
+    const tab = document.querySelector(`.tab[data-tab="${CSS.escape(hashTab)}"]`);
+    if (tab) tab.click();
+  }
 }
 
 function setupEvents() {
@@ -539,6 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEvents();
   refreshHealth();
   renderSnapshot(null);
+  loadLatestCategory();
   $('refreshHealth').addEventListener('click', refreshHealth);
   $('loadLatest').addEventListener('click', loadLatestRun);
   $('buildCategory').addEventListener('click', buildCategoryPack);

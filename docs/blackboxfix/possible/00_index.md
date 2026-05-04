@@ -48,6 +48,11 @@ The prior capability report that this plan builds on is preserved under
 - `25_reward_compiler_current_state.md` - implemented reward compiler,
   reward-spec contract, persisted reward/loss output, research basis, and
   manual/automated FSV proof.
+- `26_verified_outcome_intelligence_product_category.md` - implemented
+  investor-facing product-category layer: model arena, verified outcome
+  leaderboard, failure injection studio, any-LLM connector contracts,
+  governance evidence map, signed attestations, reward dashboard, and
+  executive view.
 
 ## Core Demo Claim
 
@@ -104,3 +109,5 @@ See `20_agentops_research_demo_current_state.md` and
 intelligence/correlation model and latest measured values. See
 `25_reward_compiler_current_state.md` for the next layer: compiling verified
 scorecards into durable reward/loss samples for training and benchmark loops.
+See `26_verified_outcome_intelligence_product_category.md` for the product
+category layer now exposed in the Gemma frontend.
