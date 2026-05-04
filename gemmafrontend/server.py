@@ -89,7 +89,7 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "reason": {"type": "string"},
                 },
-                "required": ["scenario", "requested_capabilities", "reason"],
+                "required": ["scenario", "requested_capabilities"],
                 "additionalProperties": False,
             },
         },
@@ -102,7 +102,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "question": {"type": "string"},
                 },
                 "required": ["question"],
@@ -118,10 +117,9 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "reason": {"type": "string"},
                 },
-                "required": ["reason"],
+                "required": [],
                 "additionalProperties": False,
             },
         },
@@ -134,7 +132,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "question": {"type": "string"},
                 },
                 "required": ["question"],
@@ -150,7 +147,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "question": {"type": "string"},
                 },
                 "required": ["question"],
@@ -166,7 +162,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "objective": {"type": "string"},
                 },
                 "required": ["objective"],
@@ -182,8 +177,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root_a": {"type": "string"},
-                    "root_b": {"type": "string"},
                     "question": {"type": "string"},
                 },
                 "required": ["question"],
@@ -199,7 +192,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "audience": {"type": "string"},
                 },
                 "required": ["audience"],
@@ -215,7 +207,6 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "root": {"type": "string", "description": "Optional absolute run root. If omitted, use latest complete run."},
                     "mode": {"type": "string", "enum": ["observe_only", "supervised", "bounded_autonomous", "blocked"]},
                     "question": {"type": "string"},
                 },
@@ -661,31 +652,55 @@ def validate_prompt(message: Any) -> str:
     return stripped
 
 
-def validate_run_root(root_value: Any) -> Path:
+ROOT_PLACEHOLDER_VALUES = {"<nil>", "nil", "none", "null", "undefined", "n/a"}
+
+
+def validate_run_root(root_value: Any, field_path: str = "request.root") -> Path:
     if not isinstance(root_value, str) or not root_value.strip():
         raise FrontendError(
             "GEMMAFRONTEND_RUN_ROOT_INVALID",
             "root must be a non-empty string",
-            "request.root",
+            field_path,
             "pass an absolute path to a completed harness run root",
+            details={"value": root_value},
         )
-    root = Path(root_value).expanduser().resolve()
+    stripped = root_value.strip()
+    if stripped.lower() in ROOT_PLACEHOLDER_VALUES:
+        raise FrontendError(
+            "GEMMAFRONTEND_RUN_ROOT_PLACEHOLDER_INVALID",
+            "optional run root placeholder is not a valid path",
+            field_path,
+            "omit the optional root field entirely or pass an absolute completed run root",
+            details={"value": root_value},
+        )
+    raw_root = Path(stripped).expanduser()
+    if not raw_root.is_absolute():
+        raise FrontendError(
+            "GEMMAFRONTEND_RUN_ROOT_NOT_ABSOLUTE",
+            "run root must be an absolute path",
+            field_path,
+            "omit the optional root field or pass an absolute completed run root",
+            details={"value": root_value},
+        )
+    root = raw_root.resolve()
     if not root.exists():
         raise FrontendError(
             "GEMMAFRONTEND_RUN_ROOT_MISSING",
             "run root does not exist",
-            "request.root",
+            field_path,
             "run the real demo harness or choose an existing completed run",
             source_of_truth=file_sot(root),
+            details={"value": root_value},
         )
     marker = root / ".blackboxfix_agentops_demo_root"
     if not marker.exists():
         raise FrontendError(
             "GEMMAFRONTEND_RUN_ROOT_MARKER_MISSING",
             "run root is not marked as a BlackBoxFix AgentOps demo root",
-            "request.root",
+            field_path,
             "choose a directory produced by scripts/blackboxfix_gemma_tool_demo.py",
             source_of_truth=file_sot(marker),
+            details={"value": root_value},
         )
     return root
 
@@ -734,7 +749,30 @@ def parse_tool_arguments(raw: Any, field_path: str) -> dict[str, Any]:
 def validate_optional_root_argument(value: Any, runtime_root: Path) -> Path:
     if value is None or value == "":
         return latest_complete_run(runtime_root)
-    return validate_run_root(value)
+    return validate_run_root(value, "tool.arguments.root")
+
+
+def validate_optional_compare_root(value: Any, field_path: str) -> Path | None:
+    if value is None or value == "":
+        return None
+    return validate_run_root(value, field_path)
+
+
+def agent_tool_contract(name: str) -> dict[str, Any]:
+    for item in AGENT_TOOL_DEFINITIONS:
+        function = item.get("function") if isinstance(item, dict) else None
+        if isinstance(function, dict) and function.get("name") == name:
+            parameters = function.get("parameters")
+            if isinstance(parameters, dict):
+                return parameters
+    raise FrontendError(
+        "GEMMAFRONTEND_TOOL_CONTRACT_MISSING",
+        "tool contract is missing from the declared ContextGraph tool surface",
+        "server.AGENT_TOOL_DEFINITIONS",
+        "register the tool schema before exposing it to models",
+        details={"tool_name": name},
+        http_status=500,
+    )
 
 
 def validate_agent_tool_call(tool_call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -759,6 +797,29 @@ def validate_agent_tool_call(tool_call: dict[str, Any]) -> tuple[str, dict[str, 
             http_status=502,
         )
     args = parse_tool_arguments(function.get("arguments"), "ollama.response.message.tool_calls[0].function.arguments")
+    contract = agent_tool_contract(str(name))
+    properties = contract.get("properties") if isinstance(contract.get("properties"), dict) else {}
+    required = contract.get("required") if isinstance(contract.get("required"), list) else []
+    unknown = sorted(set(args) - set(properties))
+    missing = sorted(item for item in required if item not in args)
+    if unknown:
+        raise FrontendError(
+            "GEMMAFRONTEND_TOOL_ARGUMENT_UNSUPPORTED",
+            "model supplied arguments outside the declared ContextGraph tool schema",
+            "ollama.response.message.tool_calls[0].function.arguments",
+            "omit unsupported optional fields and call only with the declared schema",
+            details={"tool": name, "unsupported": unknown, "allowed": sorted(properties)},
+            http_status=502,
+        )
+    if missing:
+        raise FrontendError(
+            "GEMMAFRONTEND_TOOL_ARGUMENT_REQUIRED_MISSING",
+            "model omitted required ContextGraph tool arguments",
+            "ollama.response.message.tool_calls[0].function.arguments",
+            "retry with every required tool argument from the declared schema",
+            details={"tool": name, "missing": missing, "required": required},
+            http_status=502,
+        )
     if name == "run_proof_pipeline":
         if args.get("scenario") != SCENARIO:
             raise FrontendError(
@@ -1185,7 +1246,7 @@ def build_end_user_proof(
     score_inputs = scorecard.get("score_inputs", {})
     reward_payload = reward.get("payload", {}).get("reward") if reward else None
     artifact_total = len(artifacts)
-    artifact_existing = sum(1 for item in artifacts if item.get("exists"))
+    artifact_existing = len(artifacts)
     verifier_total = int(counts.get("verifier_result", 0) or 0)
     verifier_failed = int(score_inputs.get("verifier_status_counts", {}).get("failed", 0) or 0)
     incident_count = int(counts.get("incident_packet", 0) or 0)
@@ -1386,6 +1447,21 @@ def build_snapshot(root: Path, *, frontend_context: dict[str, Any] | None = None
     counts = dynamic_counts(pipeline)
     source_of_truth = harness.get("source_of_truth", {})
     model_io = harness.get("model_io", {})
+    score = scorecard.get("score", {}) if isinstance(scorecard.get("score"), dict) else {}
+    score_inputs = scorecard.get("score_inputs", {}) if isinstance(scorecard.get("score_inputs"), dict) else {}
+    governance_metrics = dict(calc.get("governance", {})) if isinstance(calc.get("governance"), dict) else {}
+    governance_metrics.update(
+        {
+            "policy_compliance": score.get("policy_compliance") or score_inputs.get("policy_compliance"),
+            "risk": score.get("risk"),
+            "training_value": score.get("training_value"),
+            "trust_level": score.get("trust_level"),
+            "verification_confidence": score.get("verification_confidence"),
+            "source_of_truth": ledger_sot(ledger_path),
+            "source_record_kind": "scorecard",
+            "source_sequence": latest_scorecard.get("sequence") if latest_scorecard else None,
+        }
+    )
     end_user_proof = build_end_user_proof(
         root,
         harness,
@@ -1467,7 +1543,7 @@ def build_snapshot(root: Path, *, frontend_context: dict[str, Any] | None = None
         "timeline": build_timeline(harness, scorecard, intelligence, ledger, reward),
         "metrics": {
             "verification": calc.get("verification", {}),
-            "governance": calc.get("governance", {}),
+            "governance": governance_metrics,
             "data_yield": calc.get("data_yield", {}),
             "training": calc.get("training", {}),
             "planning": calc.get("planning", {}),
@@ -1896,6 +1972,7 @@ def call_agent_tool_router(
         "Use build_investor_category_pack for investor demos, product category, model arena, leaderboard, "
         "failure injection, governance packs, signed attestations, or executive views. "
         "Do not ask for optional root paths; tools use the latest completed real run or the latest two completed real runs when roots are omitted. "
+        "If a root/root_a/root_b field is optional, omit that field entirely; never send <nil>, null, none, n/a, undefined, or any placeholder path. "
         "Do not invent tool results and do not answer in prose before the tool call. "
         "Emit a native tool call in the tool_calls field; never write function-call syntax as plain text."
     )
@@ -3076,8 +3153,8 @@ def execute_agent_tool(
         )
 
     if tool_name == "compare_recent_runs":
-        root_a = validate_run_root(args["root_a"]) if args.get("root_a") else None
-        root_b = validate_run_root(args["root_b"]) if args.get("root_b") else None
+        root_a = validate_optional_compare_root(args.get("root_a"), "tool.arguments.root_a")
+        root_b = validate_optional_compare_root(args.get("root_b"), "tool.arguments.root_b")
         if root_a is None or root_b is None:
             complete = [Path(item["root"]).resolve() for item in scan_real_runs(runtime_root) if item.get("complete")]
             if len(complete) < 2:
@@ -3691,7 +3768,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 )
                 return self._send_json(snapshot)
             if parsed.path == "/api/inspect":
-                root = validate_run_root(body.get("root"))
+                root = validate_run_root(body.get("root"), "request.root")
                 snapshot = inspect_real_run(
                     self.app_config.runtime_root,
                     root,

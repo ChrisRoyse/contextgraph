@@ -418,6 +418,63 @@ fn phase6_unverified_mutating_policy_is_denied_in_bounded_mode() {
 }
 
 #[test]
+fn phase6_contextgraph_agentops_demo_capability_is_registered_and_allowed_with_verifier() {
+    let temp = TempDir::new().expect("temp dir");
+    let ledger = temp.path().join("blackbox.sqlite");
+    init_ledger(&ledger);
+    let run_id = mcp_start_run(&ledger);
+    let ledger_str = ledger.to_str().expect("ledger path UTF-8");
+
+    let registry = stdout_json(&run_context_graph(&[
+        "blackbox",
+        "policy",
+        "registry",
+        "--ledger",
+        ledger_str,
+    ]));
+    let capabilities = registry["capabilities"].as_array().expect("capabilities array");
+    let demo_capability = capabilities
+        .iter()
+        .find(|item| item["capability_id"] == "blackboxfix.demo.full_agentops_dynamicjepa")
+        .expect("ContextGraph demo capability is registered");
+    assert_eq!(demo_capability["tool_name"], "run_dynamicjepa_blackboxfix_pipeline");
+    assert_eq!(demo_capability["mutating"], true);
+    assert_eq!(demo_capability["verifier_id"], "cmd_exit_zero_v1");
+    assert_eq!(demo_capability["source_kind"], "cmd_local_v1");
+
+    let before_rows = ledger_row_count(&ledger);
+    let decision = stdout_json(&run_context_graph(&[
+        "blackbox",
+        "policy",
+        "evaluate",
+        "--ledger",
+        ledger_str,
+        "--mode",
+        "bounded_autonomous",
+        "--tool",
+        "run_dynamicjepa_blackboxfix_pipeline",
+        "--capability",
+        "blackboxfix.demo.full_agentops_dynamicjepa",
+        "--run-id",
+        run_id.as_str(),
+        "--mutating",
+        "--verifier-id",
+        "cmd_exit_zero_v1",
+        "--source-scope",
+        "urn:contextgraph:dynamicjepa:counter_world_full_agentops",
+        "--tenant",
+        TENANT,
+        "--agent",
+        AGENT,
+    ]));
+    assert_eq!(decision["allowed"], true);
+    assert_eq!(decision["decision"], "allowed");
+    assert!(decision["error_code"].is_null());
+    assert_eq!(ledger_row_count(&ledger), before_rows + 1);
+    assert_eq!(policy_statuses(&ledger), vec![("allowed".into(), "".into())]);
+}
+
+#[test]
 fn phase6_invalid_mcp_arguments_fail_before_writing_rows() {
     let temp = TempDir::new().expect("temp dir");
     let ledger = temp.path().join("blackbox.sqlite");
