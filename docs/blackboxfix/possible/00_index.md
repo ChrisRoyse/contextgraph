@@ -38,6 +38,8 @@ at `--ledger PATH`, especially the append-only `ledger_records` table and
   how success is proven.
 - `10_current_boundaries.md` - what is intentionally not shipped yet or still
   constrained.
+- `11_hardening_review.md` - latest cross-phase hardening result and the API
+  contract issue that was closed.
 
 ## One-Screen Summary
 
@@ -67,5 +69,7 @@ BlackBoxFix can now answer:
   `crates/context-graph-cli/tests/blackbox_phase*_fsv.rs`
 - Phase 24 SDK FSV:
   `crates/context-graph-cli/tests/blackbox_phase24_sdk_ingest_fsv.rs`
+- Cross-phase API hardening FSV:
+  `crates/context-graph-cli/tests/blackbox_cross_phase_api_surface_hardening_fsv.rs`
 - Main planning index:
   `docs/blackboxfix/00_master_index.md`

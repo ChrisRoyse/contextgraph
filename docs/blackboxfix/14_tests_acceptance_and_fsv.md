@@ -109,6 +109,11 @@ Phase 17 adds `tests/blackbox_phase17_http_server_fsv.rs`, which starts the
 real HTTP server process, sends real authenticated HTTP requests, appends
 real `agent_run`, `agent_step`, `tool_call`, and `http_request_audit` rows,
 and reads those rows directly from `ledger_records`.
+Cross-phase hardening adds
+`tests/blackbox_cross_phase_api_surface_hardening_fsv.rs`, which verifies
+`blackbox api surface` only advertises routes served by the real HTTP router,
+marks command-only/future HTTP shapes as planned, then starts the server,
+checks real 200/401/404 HTTP outcomes, and reads SQLite audit rows directly.
 Phase 18 adds `tests/blackbox_phase18_first_wedge_demo_fsv.rs`, which builds
 the first-wedge demo from a real local Git repository, real scanner artifact
 files, live GitHub/GitHub Actions readbacks, physical SQLite evidence rows,

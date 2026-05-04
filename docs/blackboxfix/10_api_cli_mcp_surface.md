@@ -407,12 +407,17 @@ ledger, verifies the hash chains, and returns the total persisted
 
 ## HTTP API Surface (Phase 17 shipped server)
 
-`blackbox api surface [--ledger PATH]` returns the HTTP endpoint registry below
-as JSON, after verifying the ledger when `--ledger` is supplied. Phase 17 also
-ships `blackbox server serve`, an authenticated JSON server over one local
-ledger. The server refuses non-loopback binds unless the operator explicitly
-passes `--allow-remote-bind --tls-terminated-by NAME`; API keys are read only
-from an environment variable and are compared by hash in memory.
+`blackbox api surface [--ledger PATH]` returns the machine-readable API
+registry as JSON, after verifying the ledger when `--ledger` is supplied.
+The `endpoints` and `served_http_endpoints` arrays only contain routes actually
+served by `blackbox server serve`. Command-only or future HTTP shapes are
+reported separately in `planned_http_endpoints` with `implemented=false`, the
+CLI command equivalent, and `expected_http_status_until_implemented=404`.
+
+Phase 17 also ships `blackbox server serve`, an authenticated JSON server over
+one local ledger. The server refuses non-loopback binds unless the operator
+explicitly passes `--allow-remote-bind --tls-terminated-by NAME`; API keys are
+read only from an environment variable and are compared by hash in memory.
 
 Protected routes require:
 
@@ -447,13 +452,9 @@ schema errors, and 64 KiB body-limit failures are also audited. The source of
 truth is `sqlite:PATH#ledger_records`; return values are not considered proof
 without reading that table.
 
-Full registry endpoints:
+Planned HTTP endpoints are not advertised as served routes:
 
 ```text
-POST /v1/runs
-GET  /v1/runs/{run_id}
-POST /v1/runs/{run_id}/steps
-POST /v1/tool-calls
 POST /v1/tool-calls/{tool_call_id}/verify
 GET  /v1/tool-calls/{tool_call_id}/evidence
 POST /v1/replay
@@ -472,19 +473,15 @@ POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests
 POST /v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate
 POST /v1/commercial/tenants/{tenant_id}/pilot-packages
 POST /v1/risk/tenants/{tenant_id}/assessments
-GET  /v1/dashboard/summary
-GET  /v1/dashboard/runs
-GET  /v1/dashboard/runs/{run_id}/timeline
-GET  /v1/dashboard/evidence
-GET  /v1/dashboard/verifier-status
-GET  /v1/dashboard/errors
-GET  /v1/dashboard/exports
-GET  /v1/dashboard/pilot-packages
-GET  /v1/dashboard/risk-assessments
+POST /v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge
+POST /v1/fsv/tenants/{tenant_id}/certifications
+POST /v1/exports/opentelemetry
+POST /v1/sdk/events
 ```
 
-Write endpoints return the created ledger ids. They must not claim the action
-is correct unless verifier evidence exists.
+Write endpoints that are served return the created ledger ids. Planned HTTP
+endpoints must return 404 until they are implemented in the router; the CLI
+command equivalent remains the supported execution path.
 
 ## MCP Surface (Phase 6 shipped)
 

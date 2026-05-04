@@ -168,3 +168,13 @@ and persists the evidence.
 `blackbox api surface [--ledger PATH]` returns a machine-readable registry of
 the available HTTP/API/command surface, supported phase features, connectors,
 capabilities, and policy modes.
+
+The registry is now fail-closed about HTTP availability:
+
+- `endpoints` and `served_http_endpoints` contain only routes currently served
+  by `blackbox server serve`.
+- `planned_http_endpoints` contains future or command-only HTTP shapes with
+  `implemented=false`, the CLI command equivalent, and the expected 404 status
+  until the route is actually implemented.
+- The source of truth for served-route proof is the real HTTP router plus
+  SQLite `ledger_records` audit/readback, not the registry return value alone.
