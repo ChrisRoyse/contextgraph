@@ -35,6 +35,7 @@ The mandatory operator-side protocol lives in
 | Ticketing API artifact files + ledger evidence rows (Phase 22) | physical Jira REST, Linear GraphQL, and ServiceNow Table API JSON files plus SQLite `expected_delta`, `readback_snapshot`, `verifier_result`, `evidence_packet`, and `incident_packet` rows read directly |
 | OpenTelemetry export files (Phase 23) | verified SQLite `ledger_records` used as input plus physical `traces.jsonl`, `logs.jsonl`, `metrics.jsonl`, and `manifest.json` files read back directly with manifest hashes |
 | SDK CloudEvents ingestion files (Phase 24) | physical CloudEvents JSON object/batch files plus SQLite `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows read directly by `payload.sdk_event.source` and `payload.sdk_event.id` |
+| Reward compiler rows | physical SQLite scorecard/source rows and a real reward-spec JSON file read independently, then persisted as `reward_compilation` rows with reward/loss/training sample read back directly |
 
 ## Test Levels
 
@@ -151,6 +152,13 @@ reads `ledger_records` directly for `payload.sdk_event` metadata and redacted
 payload fields, proves batch ingest is atomic, and checks duplicate
 source/id, missing expected delta, empty batch, and invalid traceparent
 edges.
+Reward compiler coverage adds `tests/blackbox_reward_compiler_fsv.rs`, which
+uses a real SQLite ledger, real local Git verifier evidence, a real persisted
+scorecard, and a real reward-spec JSON file. It appends one
+`reward_compilation` row, reads the row directly from `ledger_records`, then
+proves empty specs, unknown features, and nullable score features fail closed
+without appending reward rows. It also rescans scorecards after a reward row
+exists to prove `reward_compilation` is excluded from future score inputs.
 
 ## Acceptance Criteria
 
@@ -290,6 +298,12 @@ Concretely, that means:
   correctness, risk, confidence, training value, score inputs, and readback
   hashes expected from the source rows. Missing run ids fail as
   `SCORECARD_RUN_NOT_FOUND` and do not create scorecard rows.
+- Reward compiler FSV compiles a deterministic reward from a persisted
+  scorecard and a physical JSON spec, opens SQLite to prove the stored
+  `reward_compilation` row contains `raw=4.985`, `loss=-4.985`,
+  `class=positive`, source refs, feature vector, and
+  `verified_outcome_reward_sample`, then proves three edge cases append no
+  reward row.
 - Phase 13 FSV writes real enterprise tenant config and SCIM directory rows,
   records real runs, then drives `blackbox privacy evaluate-retention` and
   `blackbox privacy request-erasure`. It opens the physical SQLite ledger to

@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 use uuid::Uuid;
 
-const LEDGER_SCHEMA_VERSION: i64 = 13;
+const LEDGER_SCHEMA_VERSION: i64 = 14;
 const REDACTION_POLICY_ID: &str = "redact_v1";
 const SQLITE_CONNECTOR_ID: &str = "sqlite_local_v1";
 const GIT_CONNECTOR_ID: &str = "git_local_v1";
@@ -3143,6 +3143,20 @@ fn connector_list() -> BbxResult<Value> {
                 "fail_closed": true
             },
             {
+                "connector_id": REWARD_CONNECTOR_ID,
+                "source_kind": "sqlite_ledger_reward_compilation",
+                "readback_specs": [
+                    "blackbox_reward_compilation_v1",
+                    "verified_outcome_reward_sample_v1"
+                ],
+                "feature_sources": [
+                    "scorecard.score",
+                    "scorecard.score_inputs",
+                    "scorecard.input_record_refs"
+                ],
+                "fail_closed": true
+            },
+            {
                 "connector_id": HTTP_SERVER_CONNECTOR_ID,
                 "source_kind": "authenticated_http_single_writer",
                 "readback_specs": [
@@ -5861,6 +5875,13 @@ const PLANNED_HTTP_ENDPOINTS: &[PlannedHttpEndpoint] = &[
     },
     PlannedHttpEndpoint {
         method: "POST",
+        path: "/v1/runs/{run_id}/reward-compilations",
+        ledger_record_kind: Some("reward_compilation"),
+        command_equivalent: "blackbox reward compile --ledger PATH --tenant TENANT --run-id RUN_ID --input reward-spec.json",
+        source_phase: "reward_compiler",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
         path: "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate",
         ledger_record_kind: Some("retention_decision"),
         command_equivalent: "blackbox privacy evaluate-retention --ledger PATH --tenant TENANT --run-id RUN_ID",
@@ -6475,23 +6496,20 @@ fn reward_compile(args: RewardCompileArgs) -> BbxResult<Value> {
     let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
     let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
     let scorecard_record = latest_reward_scorecard(&args.ledger, &inspection_before, &args.run_id)?;
-    let scorecard_ref = reward_record_ref_from_output(&args.ledger, "latest_scorecard", scorecard_record)?;
+    let scorecard_ref =
+        reward_record_ref_from_output(&args.ledger, "latest_scorecard", scorecard_record)?;
     let scorecard_id =
         reward_required_payload_str(&args.ledger, scorecard_record, "scorecard_id")?.to_string();
     let scorecard_payload = scorecard_record.payload.clone();
-    let scorecard_input_refs = reward_required_payload_array_value(
-        &args.ledger,
-        scorecard_record,
-        "input_record_refs",
-    )?;
+    let scorecard_input_refs =
+        reward_required_payload_array_value(&args.ledger, scorecard_record, "input_record_refs")?;
     let source_record_refs = json!({
         "latest_scorecard": scorecard_ref,
         "scorecard_input_record_refs": scorecard_input_refs,
     });
     let source_refs_sha256 = sha256_hex(&canonical_json_bytes(&source_record_refs)?);
     let feature_vector = reward_feature_vector(&args.ledger, &scorecard_payload)?;
-    let compiled_reward =
-        compile_reward_components(&args.ledger, &reward_spec, &feature_vector)?;
+    let compiled_reward = compile_reward_components(&args.ledger, &reward_spec, &feature_vector)?;
     let feature_vector_json = reward_feature_vector_json(&feature_vector);
     let episode_context = reward_episode_context(&args.ledger, &inspection_before, &args.run_id)?;
     let reward_compilation_id = prefixed_id("reward");
@@ -13234,6 +13252,7 @@ fn build_scorecard_payload(
             record.run_id.as_deref() == Some(run_id)
                 && record.record_kind != "scorecard"
                 && record.record_kind != "release_gate"
+                && record.record_kind != "reward_compilation"
         })
         .collect::<Vec<_>>();
     if input_records.is_empty() {
@@ -13605,6 +13624,1184 @@ fn readback_scorecard_append(
         "record_sha256": row.hash["record_sha256"].clone(),
         "score": row.payload["score"].clone(),
     }))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RewardNullBehavior {
+    Error,
+    Zero,
+}
+
+impl RewardNullBehavior {
+    fn parse(
+        ledger_path: &Path,
+        source_of_truth_hint: &str,
+        field_path: String,
+        value: Option<&str>,
+    ) -> BbxResult<Self> {
+        match value {
+            None => Ok(Self::Error),
+            Some("error") => Ok(Self::Error),
+            Some("zero") => Ok(Self::Zero),
+            Some(other) => Err(reward_invalid(
+                source_of_truth_hint,
+                "REWARD_SPEC_INVALID",
+                field_path,
+                format!("null_behavior must be error or zero, found {other:?}"),
+                "fix the reward specification; nullable features must have explicit, supported null handling",
+            )),
+        }
+        .map_err(|err| reward_error_with_ledger_hint(ledger_path, err))
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Zero => "zero",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RewardComponentSpec {
+    id: String,
+    feature: String,
+    weight: f64,
+    null_behavior: RewardNullBehavior,
+}
+
+#[derive(Debug, Clone)]
+struct RewardSpec {
+    path: PathBuf,
+    sha256: String,
+    reward_id: String,
+    objective: String,
+    bounds_min: f64,
+    bounds_max: f64,
+    components: Vec<RewardComponentSpec>,
+}
+
+#[derive(Debug, Clone)]
+struct RewardFeatureValue {
+    value: Option<f64>,
+    source: String,
+    meaning: String,
+}
+
+#[derive(Debug)]
+struct CompiledReward {
+    components: Value,
+    reward: Value,
+}
+
+fn read_reward_spec(ledger_path: &Path, input_path: &Path) -> BbxResult<RewardSpec> {
+    let source_hint = file_source_of_truth(input_path);
+    let input_text = fs::read_to_string(input_path)
+        .map_err(|err| BlackboxError::io(input_path, "read reward spec JSON", err))?;
+    if input_text.trim().is_empty() {
+        return Err(reward_invalid(
+            &source_hint,
+            "REWARD_SPEC_INVALID",
+            "$",
+            "reward spec file is empty",
+            "write a JSON reward specification with bounds and components before compiling",
+        ));
+    }
+    let value: Value = serde_json::from_str(&input_text).map_err(|err| {
+        reward_invalid(
+            &source_hint,
+            "REWARD_SPEC_INVALID",
+            "$",
+            format!("reward spec is not valid JSON: {err}"),
+            "write valid JSON and retry",
+        )
+    })?;
+    parse_reward_spec(ledger_path, input_path, &source_hint, &value)
+}
+
+fn parse_reward_spec(
+    ledger_path: &Path,
+    input_path: &Path,
+    source_hint: &str,
+    value: &Value,
+) -> BbxResult<RewardSpec> {
+    let root = reward_object(source_hint, value, "$")?;
+    reward_validate_keys(
+        source_hint,
+        root,
+        "$",
+        &[
+            "reward_spec_schema_version",
+            "reward_id",
+            "objective",
+            "bounds",
+            "components",
+        ],
+    )?;
+    let schema_version = reward_required_i64(source_hint, root, "$.reward_spec_schema_version")?;
+    if schema_version != REWARD_COMPILATION_SCHEMA_VERSION {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.reward_spec_schema_version",
+            format!(
+                "reward_spec_schema_version must be {}, found {}",
+                REWARD_COMPILATION_SCHEMA_VERSION, schema_version
+            ),
+            "regenerate the reward spec with the current schema version",
+        ));
+    }
+    let reward_id = reward_required_str(source_hint, root, "$.reward_id")?;
+    validate_reward_identifier(source_hint, "$.reward_id", &reward_id)?;
+    let objective = reward_required_str(source_hint, root, "$.objective")?;
+    if objective.len() > 1024 {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.objective",
+            "objective must be 1024 bytes or fewer",
+            "keep the objective concise and put longer rationale in documentation",
+        ));
+    }
+    let bounds_value = root.get("bounds").ok_or_else(|| {
+        reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.bounds",
+            "bounds object is required",
+            "add bounds.min and bounds.max to the reward spec",
+        )
+    })?;
+    let bounds = reward_object(source_hint, bounds_value, "$.bounds")?;
+    reward_validate_keys(source_hint, bounds, "$.bounds", &["min", "max"])?;
+    let bounds_min = reward_required_f64(source_hint, bounds, "$.bounds.min")?;
+    let bounds_max = reward_required_f64(source_hint, bounds, "$.bounds.max")?;
+    if bounds_min >= bounds_max {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.bounds",
+            format!("bounds.min must be less than bounds.max, found {bounds_min} >= {bounds_max}"),
+            "choose an ordered reward range such as -10 to 10",
+        ));
+    }
+    let components_value = root.get("components").ok_or_else(|| {
+        reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.components",
+            "components array is required",
+            "add at least one weighted component to the reward spec",
+        )
+    })?;
+    let components_array = reward_array(source_hint, components_value, "$.components")?;
+    if components_array.is_empty() {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.components",
+            "components array must not be empty",
+            "add at least one weighted component",
+        ));
+    }
+    if components_array.len() > 64 {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            "$.components",
+            format!(
+                "components array must contain at most 64 components, found {}",
+                components_array.len()
+            ),
+            "split large experiments into separate reward specs instead of overloading one compiler pass",
+        ));
+    }
+
+    let mut seen_ids = BTreeSet::new();
+    let mut components = Vec::new();
+    for (idx, component_value) in components_array.iter().enumerate() {
+        let component_path = format!("$.components[{idx}]");
+        let component = reward_object(source_hint, component_value, &component_path)?;
+        reward_validate_keys(
+            source_hint,
+            component,
+            &component_path,
+            &["id", "feature", "weight", "null_behavior"],
+        )?;
+        let id = reward_required_str(source_hint, component, &format!("{component_path}.id"))?;
+        validate_reward_identifier(source_hint, &format!("{component_path}.id"), &id)?;
+        if !seen_ids.insert(id.clone()) {
+            return Err(reward_invalid(
+                source_hint,
+                "REWARD_SPEC_INVALID",
+                format!("{component_path}.id"),
+                format!("duplicate component id {id:?}"),
+                "make each reward component id unique",
+            ));
+        }
+        let feature =
+            reward_required_str(source_hint, component, &format!("{component_path}.feature"))?;
+        if !reward_feature_is_known(&feature) {
+            return Err(reward_invalid(
+                source_hint,
+                "REWARD_FEATURE_UNKNOWN",
+                format!("{component_path}.feature"),
+                format!("unsupported reward feature {feature:?}"),
+                format!("choose one of: {}", reward_known_features().join(", ")),
+            ));
+        }
+        let weight =
+            reward_required_f64(source_hint, component, &format!("{component_path}.weight"))?;
+        let null_behavior_value = match component.get("null_behavior") {
+            Some(value) => Some(value.as_str().ok_or_else(|| {
+                reward_invalid(
+                    source_hint,
+                    "REWARD_SPEC_INVALID",
+                    format!("{component_path}.null_behavior"),
+                    "null_behavior must be a string when present",
+                    "set null_behavior to error or zero",
+                )
+            })?),
+            None => None,
+        };
+        let null_behavior = RewardNullBehavior::parse(
+            ledger_path,
+            source_hint,
+            format!("{component_path}.null_behavior"),
+            null_behavior_value,
+        )?;
+        components.push(RewardComponentSpec {
+            id,
+            feature,
+            weight,
+            null_behavior,
+        });
+    }
+
+    Ok(RewardSpec {
+        path: input_path.to_path_buf(),
+        sha256: sha256_file(input_path)?,
+        reward_id,
+        objective,
+        bounds_min,
+        bounds_max,
+        components,
+    })
+}
+
+fn latest_reward_scorecard<'a>(
+    ledger_path: &Path,
+    inspection: &'a LedgerInspection,
+    run_id: &str,
+) -> BbxResult<&'a LedgerRecordOutput> {
+    inspection
+        .records
+        .iter()
+        .rev()
+        .find(|record| {
+            record.record_kind == "scorecard" && record.run_id.as_deref() == Some(run_id)
+        })
+        .ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_SCORECARD_REQUIRED",
+                "ledger_records.scorecard",
+                format!("run_id {run_id} has no persisted scorecard row"),
+                "run `blackbox score run` for this run before compiling reward",
+            )
+        })
+}
+
+fn reward_feature_vector(
+    ledger_path: &Path,
+    scorecard_payload: &Value,
+) -> BbxResult<BTreeMap<String, RewardFeatureValue>> {
+    let mut features = BTreeMap::new();
+    let correctness =
+        reward_payload_optional_f64(ledger_path, scorecard_payload, "/score/correctness")?;
+    let verification_confidence = reward_payload_f64_01(
+        ledger_path,
+        scorecard_payload,
+        "/score/verification_confidence",
+    )?;
+    let risk = reward_payload_f64_01(ledger_path, scorecard_payload, "/score/risk")?;
+    let training_value =
+        reward_payload_f64_01(ledger_path, scorecard_payload, "/score/training_value")?;
+    let trust_level =
+        reward_payload_str(ledger_path, scorecard_payload, "/score/trust_level")?.to_string();
+    let policy_compliance = reward_payload_str(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/policy_compliance",
+    )?
+    .to_string();
+    let evidence_coverage_ratio = reward_payload_optional_f64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/evidence_coverage_ratio",
+    )?;
+    let readback_ratio = reward_payload_optional_f64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/readback_ratio",
+    )?;
+    let tool_calls_total = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/tool_calls_total",
+    )?;
+    let tool_calls_with_evidence = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/tool_calls_with_evidence",
+    )?;
+    let verifier_total = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/verifier_results_total",
+    )?;
+    let verifier_passed = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/verifier_status_counts/passed",
+    )?;
+    let verifier_failed = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/verifier_status_counts/failed",
+    )?;
+    let verifier_blocked = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/verifier_status_counts/blocked",
+    )?;
+    let incidents_total = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/incident_packets_total",
+    )?;
+    let policy_denied = reward_payload_i64(
+        ledger_path,
+        scorecard_payload,
+        "/score_inputs/policy_decision_counts/denied",
+    )?;
+
+    reward_insert_feature(
+        &mut features,
+        "correctness",
+        correctness,
+        "/score/correctness",
+        "1 when verifiers passed and every tool call has evidence; 0 when verifier failure occurred; null when unverified",
+    );
+    reward_insert_feature(
+        &mut features,
+        "verification_confidence",
+        Some(verification_confidence),
+        "/score/verification_confidence",
+        "weighted confidence from connector reliability, evidence coverage, readback, and evidence-hash proof",
+    );
+    reward_insert_feature(
+        &mut features,
+        "risk",
+        Some(risk),
+        "/score/risk",
+        "risk score in [0,1], where higher means more governance or outcome risk",
+    );
+    reward_insert_feature(
+        &mut features,
+        "training_value",
+        Some(training_value),
+        "/score/training_value",
+        "deterministic value of this real episode for eval/training reuse",
+    );
+    reward_insert_feature(
+        &mut features,
+        "evidence_coverage_ratio",
+        evidence_coverage_ratio,
+        "/score_inputs/evidence_coverage_ratio",
+        "ratio of tool calls with evidence packets; null when there were no tool calls",
+    );
+    reward_insert_feature(
+        &mut features,
+        "tool_evidence_coverage",
+        evidence_coverage_ratio,
+        "/score_inputs/evidence_coverage_ratio",
+        "alias for evidence coverage when policies want tool-specific wording",
+    );
+    reward_insert_feature(
+        &mut features,
+        "readback_ratio",
+        readback_ratio,
+        "/score_inputs/readback_ratio",
+        "ratio of verifier results that included non-blocked source-of-truth readback",
+    );
+    reward_insert_feature(
+        &mut features,
+        "verifier_pass_rate",
+        ratio_f64(verifier_passed, verifier_total),
+        "/score_inputs/verifier_status_counts.passed",
+        "passed verifier results divided by total verifier results",
+    );
+    reward_insert_feature(
+        &mut features,
+        "verifier_failure_rate",
+        ratio_f64(verifier_failed, verifier_total),
+        "/score_inputs/verifier_status_counts.failed",
+        "failed verifier results divided by total verifier results",
+    );
+    reward_insert_feature(
+        &mut features,
+        "verifier_blocked_rate",
+        ratio_f64(verifier_blocked, verifier_total),
+        "/score_inputs/verifier_status_counts.blocked",
+        "blocked verifier results divided by total verifier results",
+    );
+    reward_insert_feature(
+        &mut features,
+        "incident_present",
+        Some(if incidents_total > 0 { 1.0 } else { 0.0 }),
+        "/score_inputs/incident_packets_total",
+        "1 when any incident packet exists for the run",
+    );
+    reward_insert_feature(
+        &mut features,
+        "incident_count",
+        Some(incidents_total as f64),
+        "/score_inputs/incident_packets_total",
+        "count of incident packets for the run",
+    );
+    reward_insert_feature(
+        &mut features,
+        "policy_missing",
+        Some(if policy_compliance == "policy_missing" {
+            1.0
+        } else {
+            0.0
+        }),
+        "/score_inputs/policy_compliance",
+        "1 when the scorecard had no policy decision evidence",
+    );
+    reward_insert_feature(
+        &mut features,
+        "policy_denied",
+        Some(if policy_denied > 0 { 1.0 } else { 0.0 }),
+        "/score_inputs/policy_decision_counts.denied",
+        "1 when any policy decision denied the run",
+    );
+    reward_insert_feature(
+        &mut features,
+        "trust_verified",
+        Some(
+            if trust_level == "verified" || trust_level == "verified_with_policy" {
+                1.0
+            } else {
+                0.0
+            },
+        ),
+        "/score/trust_level",
+        "1 when the durable scorecard trust level is verified or verified_with_policy",
+    );
+    reward_insert_feature(
+        &mut features,
+        "trust_incident",
+        Some(if trust_level == "incident" { 1.0 } else { 0.0 }),
+        "/score/trust_level",
+        "1 when the durable scorecard trust level is incident",
+    );
+    reward_insert_feature(
+        &mut features,
+        "unverified_tool_call_rate",
+        ratio_f64(
+            tool_calls_total - tool_calls_with_evidence,
+            tool_calls_total,
+        ),
+        "/score_inputs.tool_calls_total",
+        "tool calls without evidence divided by total tool calls",
+    );
+    Ok(features)
+}
+
+fn compile_reward_components(
+    ledger_path: &Path,
+    spec: &RewardSpec,
+    features: &BTreeMap<String, RewardFeatureValue>,
+) -> BbxResult<CompiledReward> {
+    let mut raw_reward = 0.0_f64;
+    let mut component_outputs = Vec::new();
+    for component in &spec.components {
+        let feature = features.get(&component.feature).ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_FEATURE_UNKNOWN",
+                format!("reward_spec.components.{}.feature", component.id),
+                format!(
+                    "feature {} is not present in the compiler feature vector",
+                    component.feature
+                ),
+                "use a supported feature from the compiler's advertised feature list",
+            )
+        })?;
+        let (value, null_handled) = match feature.value {
+            Some(value) => (value, false),
+            None => match component.null_behavior {
+                RewardNullBehavior::Zero => (0.0, true),
+                RewardNullBehavior::Error => {
+                    return Err(reward_invalid(
+                        &source_of_truth(ledger_path),
+                        "REWARD_FEATURE_NULL",
+                        format!("reward_spec.components.{}.feature", component.id),
+                        format!(
+                            "feature {} is null because source {} had no measurable value",
+                            component.feature, feature.source
+                        ),
+                        "either produce the missing evidence before compiling or set null_behavior to zero intentionally",
+                    ));
+                }
+            },
+        };
+        let contribution = component.weight * value;
+        if !contribution.is_finite() {
+            return Err(reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_VALUE_INVALID",
+                format!("reward_spec.components.{}.weight", component.id),
+                format!(
+                    "component {} produced non-finite contribution from weight {} and value {}",
+                    component.id, component.weight, value
+                ),
+                "use finite numeric weights and source features",
+            ));
+        }
+        raw_reward += contribution;
+        component_outputs.push(json!({
+            "id": component.id,
+            "feature": component.feature,
+            "feature_source": feature.source,
+            "feature_meaning": feature.meaning,
+            "weight": component.weight,
+            "value": round_score(value),
+            "contribution": round_score(contribution),
+            "null_behavior": component.null_behavior.as_str(),
+            "null_handled_as_zero": null_handled,
+        }));
+    }
+    if !raw_reward.is_finite() {
+        return Err(reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_VALUE_INVALID",
+            "reward.raw",
+            "compiled raw reward was not finite",
+            "inspect component weights and feature values",
+        ));
+    }
+    let clipped_reward = raw_reward.clamp(spec.bounds_min, spec.bounds_max);
+    let normalized = (clipped_reward - spec.bounds_min) / (spec.bounds_max - spec.bounds_min);
+    let reward_class = if clipped_reward > 0.0 {
+        "positive"
+    } else if clipped_reward < 0.0 {
+        "negative"
+    } else {
+        "neutral"
+    };
+    Ok(CompiledReward {
+        components: Value::Array(component_outputs),
+        reward: json!({
+            "raw": round_score(raw_reward),
+            "clipped": round_score(clipped_reward),
+            "normalized_0_1": round_score(normalized),
+            "loss": round_score(-clipped_reward),
+            "class": reward_class,
+            "bounds": {
+                "min": spec.bounds_min,
+                "max": spec.bounds_max,
+            },
+        }),
+    })
+}
+
+fn readback_reward_compilation_append(
+    conn: &Connection,
+    ledger_path: &Path,
+    run_id: &str,
+    reward_compilation_id: &str,
+    sequence: i64,
+    expected_payload_sha256: &str,
+    expected_record_sha256: &str,
+    record_count_before: i64,
+) -> BbxResult<Value> {
+    let inspection_after = verify_ledger_integrity(conn, ledger_path)?;
+    if inspection_after.record_count != record_count_before + 1 {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "REWARD_READBACK_MISMATCH",
+            REWARD_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.count",
+            format!(
+                "reward compilation append expected row count {}, read back {}",
+                record_count_before + 1,
+                inspection_after.record_count
+            ),
+            "inspect the append-only ledger transaction and rerun reward compilation after fixing SQLite state",
+        ));
+    }
+    let row = inspection_after
+        .records
+        .iter()
+        .find(|record| record.sequence == sequence)
+        .ok_or_else(|| {
+            BlackboxError::evidence_integrity_for_connector(
+                "REWARD_READBACK_MISMATCH",
+                REWARD_CONNECTOR_ID,
+                source_of_truth(ledger_path),
+                "ledger_records.sequence",
+                format!("reward compilation sequence {sequence} was not readable after append"),
+                "inspect the append-only ledger transaction and rerun reward compilation after fixing SQLite state",
+            )
+        })?;
+    if row.record_kind != "reward_compilation"
+        || row.run_id.as_deref() != Some(run_id)
+        || row
+            .payload
+            .get("reward_compilation_id")
+            .and_then(Value::as_str)
+            != Some(reward_compilation_id)
+        || row.hash.get("payload_sha256").and_then(Value::as_str) != Some(expected_payload_sha256)
+        || row.hash.get("record_sha256").and_then(Value::as_str) != Some(expected_record_sha256)
+    {
+        return Err(BlackboxError::evidence_integrity_for_connector(
+            "REWARD_READBACK_MISMATCH",
+            REWARD_CONNECTOR_ID,
+            source_of_truth(ledger_path),
+            "ledger_records.reward_compilation",
+            "reward compilation row readback did not match the appended record identity or hashes",
+            "inspect the physical ledger row and rerun reward compilation after fixing SQLite state",
+        ));
+    }
+    Ok(json!({
+        "status": "passed",
+        "source_of_truth": source_of_truth(ledger_path),
+        "ledger_record_count_after_reward": inspection_after.record_count,
+        "ledger_tip_sha256_after_reward": inspection_after.ledger_tip_sha256,
+        "sequence": row.sequence,
+        "record_kind": row.record_kind,
+        "run_id": row.run_id,
+        "reward_compilation_id": row.payload["reward_compilation_id"].clone(),
+        "payload_sha256": row.hash["payload_sha256"].clone(),
+        "record_sha256": row.hash["record_sha256"].clone(),
+        "reward": row.payload["reward"].clone(),
+        "training_sample": row.payload["training_sample"].clone(),
+    }))
+}
+
+fn reward_episode_context(
+    ledger_path: &Path,
+    inspection: &LedgerInspection,
+    run_id: &str,
+) -> BbxResult<Value> {
+    let run_record = inspection
+        .records
+        .iter()
+        .find(|record| {
+            record.record_kind == "agent_run" && record.run_id.as_deref() == Some(run_id)
+        })
+        .ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_SCORECARD_REQUIRED",
+                "ledger_records.agent_run",
+                format!("run_id {run_id} has no agent_run row"),
+                "record the parent run before scoring and compiling reward",
+            )
+        })?;
+    let mut model_decisions = Vec::new();
+    let mut tool_calls = Vec::new();
+    let mut verifier_results = Vec::new();
+    for record in inspection
+        .records
+        .iter()
+        .filter(|record| record.run_id.as_deref() == Some(run_id))
+    {
+        match record.record_kind.as_str() {
+            "model_decision" => model_decisions.push(json!({
+                "ref": reward_record_ref_from_output(ledger_path, "model_decision", record)?,
+                "tool_choice": record.payload.get("tool_choice").cloned().unwrap_or(Value::Null),
+                "confidence": record.payload.get("confidence").cloned().unwrap_or(Value::Null),
+                "input_redacted": record.payload.get("input_redacted").cloned().unwrap_or(Value::Null),
+            })),
+            "tool_call" => tool_calls.push(json!({
+                "ref": reward_record_ref_from_output(ledger_path, "tool_call", record)?,
+                "tool_call_id": record.payload.get("tool_call_id").cloned().unwrap_or(Value::Null),
+                "tool_name": record.payload.get("tool_name").cloned().unwrap_or(Value::Null),
+                "capability_id": record.payload.get("capability_id").cloned().unwrap_or(Value::Null),
+                "status": record.payload.get("status").cloned().unwrap_or(Value::Null),
+                "input_redacted": record.payload.get("input_redacted").cloned().unwrap_or(Value::Null),
+            })),
+            "verifier_result" => verifier_results.push(json!({
+                "ref": reward_record_ref_from_output(ledger_path, "verifier_result", record)?,
+                "verifier_id": record.payload.get("verifier_id").cloned().unwrap_or(Value::Null),
+                "status": record.payload.get("status").cloned().unwrap_or(Value::Null),
+                "expected_persisted_delta": record.payload.get("expected_persisted_delta").cloned().unwrap_or(Value::Null),
+                "actual_readback": record.payload.get("actual_readback").cloned().unwrap_or(Value::Null),
+                "score": record.payload.get("score").cloned().unwrap_or(Value::Null),
+            })),
+            _ => {}
+        }
+    }
+    Ok(json!({
+        "agent_run": {
+            "ref": reward_record_ref_from_output(ledger_path, "agent_run", run_record)?,
+            "task": run_record.payload.get("task").cloned().unwrap_or(Value::Null),
+            "runtime": run_record.payload.get("runtime").cloned().unwrap_or(Value::Null),
+        },
+        "model_decisions": model_decisions,
+        "tool_calls": tool_calls,
+        "verifier_results": verifier_results,
+    }))
+}
+
+fn reward_insert_feature(
+    features: &mut BTreeMap<String, RewardFeatureValue>,
+    id: &str,
+    value: Option<f64>,
+    source: &str,
+    meaning: &str,
+) {
+    features.insert(
+        id.to_string(),
+        RewardFeatureValue {
+            value: value.map(round_score),
+            source: source.to_string(),
+            meaning: meaning.to_string(),
+        },
+    );
+}
+
+fn reward_feature_vector_json(features: &BTreeMap<String, RewardFeatureValue>) -> Value {
+    let mut out = Map::new();
+    for (id, feature) in features {
+        out.insert(
+            id.clone(),
+            json!({
+                "value": feature.value,
+                "source": feature.source,
+                "meaning": feature.meaning,
+            }),
+        );
+    }
+    Value::Object(out)
+}
+
+fn reward_payload_str<'a>(
+    ledger_path: &Path,
+    payload: &'a Value,
+    pointer: &'static str,
+) -> BbxResult<&'a str> {
+    payload
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_SCORECARD_SCHEMA_DRIFT",
+                pointer,
+                format!("scorecard payload is missing non-empty {pointer}"),
+                "inspect the physical scorecard row; reward compilation never guesses across malformed scorecards",
+            )
+        })
+}
+
+fn reward_payload_optional_f64(
+    ledger_path: &Path,
+    payload: &Value,
+    pointer: &'static str,
+) -> BbxResult<Option<f64>> {
+    let value = payload.pointer(pointer).ok_or_else(|| {
+        reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            pointer,
+            format!("scorecard payload is missing {pointer}"),
+            "inspect the physical scorecard row and rerun scoring after fixing ledger state",
+        )
+    })?;
+    if value.is_null() {
+        return Ok(None);
+    }
+    let number = value.as_f64().ok_or_else(|| {
+        reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            pointer,
+            format!("scorecard value {pointer} must be a finite number or null"),
+            "rerun scoring after fixing malformed ledger state",
+        )
+    })?;
+    if !number.is_finite() || !(0.0..=1.0).contains(&number) {
+        return Err(reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            pointer,
+            format!("scorecard value {pointer} must be in [0,1], found {number}"),
+            "rerun scoring after fixing malformed ledger state",
+        ));
+    }
+    Ok(Some(round_score(number)))
+}
+
+fn reward_payload_f64_01(
+    ledger_path: &Path,
+    payload: &Value,
+    pointer: &'static str,
+) -> BbxResult<f64> {
+    let number = reward_payload_optional_f64(ledger_path, payload, pointer)?.ok_or_else(|| {
+        reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            pointer,
+            format!("scorecard value {pointer} must not be null"),
+            "rerun scoring after the source evidence can produce a concrete value",
+        )
+    })?;
+    Ok(number)
+}
+
+fn reward_payload_i64(
+    ledger_path: &Path,
+    payload: &Value,
+    pointer: &'static str,
+) -> BbxResult<i64> {
+    let value = payload
+        .pointer(pointer)
+        .and_then(Value::as_i64)
+        .ok_or_else(|| {
+            reward_invalid(
+                &source_of_truth(ledger_path),
+                "REWARD_SCORECARD_SCHEMA_DRIFT",
+                pointer,
+                format!("scorecard value {pointer} must be an integer"),
+                "rerun scoring after fixing malformed ledger state",
+            )
+        })?;
+    if value < 0 {
+        return Err(reward_invalid(
+            &source_of_truth(ledger_path),
+            "REWARD_SCORECARD_SCHEMA_DRIFT",
+            pointer,
+            format!("scorecard count {pointer} must be non-negative, found {value}"),
+            "rerun scoring after fixing malformed ledger state",
+        ));
+    }
+    Ok(value)
+}
+
+fn reward_required_payload_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .payload
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            reward_scorecard_schema_error(
+                ledger_path,
+                record,
+                field,
+                format!(
+                    "{} payload is missing non-empty {field}",
+                    record.record_kind
+                ),
+            )
+        })
+}
+
+fn reward_required_payload_array_value(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<Value> {
+    let value = record.payload.get(field).ok_or_else(|| {
+        reward_scorecard_schema_error(
+            ledger_path,
+            record,
+            field,
+            format!("{} payload is missing {field}", record.record_kind),
+        )
+    })?;
+    if !value.is_array() {
+        return Err(reward_scorecard_schema_error(
+            ledger_path,
+            record,
+            field,
+            format!(
+                "{} payload field {field} must be an array",
+                record.record_kind
+            ),
+        ));
+    }
+    Ok(value.clone())
+}
+
+fn reward_record_ref_from_output(
+    ledger_path: &Path,
+    role: &str,
+    record: &LedgerRecordOutput,
+) -> BbxResult<Value> {
+    Ok(ledger_record_ref_json(
+        role,
+        record.sequence,
+        &record.record_id,
+        &record.record_kind,
+        reward_required_record_hash_str(ledger_path, record, "payload_sha256")?,
+        reward_required_record_hash_str(ledger_path, record, "record_sha256")?,
+    ))
+}
+
+fn reward_required_record_hash_str<'a>(
+    ledger_path: &Path,
+    record: &'a LedgerRecordOutput,
+    field: &'static str,
+) -> BbxResult<&'a str> {
+    record
+        .hash
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            reward_scorecard_schema_error(
+                ledger_path,
+                record,
+                format!("hash.{field}"),
+                format!("{} row is missing hash field {field}", record.record_kind),
+            )
+        })
+}
+
+fn reward_object<'a>(
+    source_hint: &str,
+    value: &'a Value,
+    field_path: impl Into<String>,
+) -> BbxResult<&'a Map<String, Value>> {
+    let field_path = field_path.into();
+    match value {
+        Value::Object(map) => Ok(map),
+        _ => Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path,
+            "value must be a JSON object",
+            "write the reward specification with the required object shape",
+        )),
+    }
+}
+
+fn reward_array<'a>(
+    source_hint: &str,
+    value: &'a Value,
+    field_path: impl Into<String>,
+) -> BbxResult<&'a Vec<Value>> {
+    let field_path = field_path.into();
+    match value {
+        Value::Array(items) => Ok(items),
+        _ => Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path,
+            "value must be a JSON array",
+            "write the reward specification with the required array shape",
+        )),
+    }
+}
+
+fn reward_validate_keys(
+    source_hint: &str,
+    object: &Map<String, Value>,
+    field_path: &str,
+    allowed: &[&str],
+) -> BbxResult<()> {
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(reward_invalid(
+                source_hint,
+                "REWARD_SPEC_INVALID",
+                format!("{field_path}.{key}"),
+                format!("unknown reward spec field {key:?}"),
+                format!(
+                    "remove the field or update the compiler; allowed fields here are {}",
+                    allowed.join(", ")
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn reward_required_str(
+    source_hint: &str,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<String> {
+    let key = field_path
+        .rsplit('.')
+        .next()
+        .unwrap_or(field_path)
+        .trim_start_matches('$');
+    object
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            reward_invalid(
+                source_hint,
+                "REWARD_SPEC_INVALID",
+                field_path.to_string(),
+                format!("{field_path} is required and must be a non-empty string"),
+                "fix the reward specification and retry",
+            )
+        })
+}
+
+fn reward_required_i64(
+    source_hint: &str,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<i64> {
+    let key = field_path
+        .rsplit('.')
+        .next()
+        .unwrap_or(field_path)
+        .trim_start_matches('$');
+    object.get(key).and_then(Value::as_i64).ok_or_else(|| {
+        reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path.to_string(),
+            format!("{field_path} is required and must be an integer"),
+            "fix the reward specification and retry",
+        )
+    })
+}
+
+fn reward_required_f64(
+    source_hint: &str,
+    object: &Map<String, Value>,
+    field_path: &str,
+) -> BbxResult<f64> {
+    let key = field_path
+        .rsplit('.')
+        .next()
+        .unwrap_or(field_path)
+        .trim_start_matches('$');
+    let value = object.get(key).and_then(Value::as_f64).ok_or_else(|| {
+        reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path.to_string(),
+            format!("{field_path} is required and must be a number"),
+            "fix the reward specification and retry",
+        )
+    })?;
+    if !value.is_finite() {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path.to_string(),
+            format!("{field_path} must be finite"),
+            "use finite numeric bounds and weights",
+        ));
+    }
+    Ok(value)
+}
+
+fn validate_reward_identifier(source_hint: &str, field_path: &str, value: &str) -> BbxResult<()> {
+    if value.len() > 128
+        || !value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
+    {
+        return Err(reward_invalid(
+            source_hint,
+            "REWARD_SPEC_INVALID",
+            field_path.to_string(),
+            format!("{field_path} contains unsupported identifier characters: {value:?}"),
+            "use ASCII letters, digits, underscore, dash, dot, or colon",
+        ));
+    }
+    Ok(())
+}
+
+fn reward_known_features() -> Vec<&'static str> {
+    vec![
+        "correctness",
+        "verification_confidence",
+        "risk",
+        "training_value",
+        "evidence_coverage_ratio",
+        "tool_evidence_coverage",
+        "readback_ratio",
+        "verifier_pass_rate",
+        "verifier_failure_rate",
+        "verifier_blocked_rate",
+        "incident_present",
+        "incident_count",
+        "policy_missing",
+        "policy_denied",
+        "trust_verified",
+        "trust_incident",
+        "unverified_tool_call_rate",
+    ]
+}
+
+fn reward_feature_is_known(feature: &str) -> bool {
+    reward_known_features().contains(&feature)
+}
+
+fn reward_scorecard_schema_error(
+    ledger_path: &Path,
+    record: &LedgerRecordOutput,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::Schema,
+        "REWARD_SCORECARD_SCHEMA_DRIFT",
+        message,
+        Some(source_of_truth(ledger_path)),
+        REWARD_CONNECTOR_ID,
+        Some(format!(
+            "ledger_records[{}].payload.{}",
+            record.sequence,
+            field_path.into()
+        )),
+        "inspect the physical ledger row; reward compilation never guesses across malformed scorecard payloads",
+    )
+}
+
+fn reward_invalid(
+    source_hint: &str,
+    error_code: &'static str,
+    field_path: impl Into<String>,
+    message: impl Into<String>,
+    remediation: impl Into<String>,
+) -> BlackboxError {
+    BlackboxError::new_with_connector(
+        ErrorKind::InvalidInput,
+        error_code,
+        message,
+        Some(source_hint.to_string()),
+        REWARD_CONNECTOR_ID,
+        Some(field_path.into()),
+        remediation,
+    )
+}
+
+fn reward_error_with_ledger_hint(_ledger_path: &Path, err: BlackboxError) -> BlackboxError {
+    err
 }
 
 fn scorecard_invalid(

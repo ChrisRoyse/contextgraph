@@ -13,7 +13,7 @@ implementation.
 | File integrity | `manifest.json.files[]` sha256 and byte counts matched against physical file bytes |
 
 Phase 7 did not bump `LEDGER_SCHEMA_VERSION`. The current live ledger schema
-is `LEDGER_SCHEMA_VERSION = 13` after Phase 24. Dashboard artifacts use
+is `LEDGER_SCHEMA_VERSION = 14` after the reward compiler. Dashboard artifacts use
 `dashboard_schema_version = 1`.
 
 ## Shipped Commands

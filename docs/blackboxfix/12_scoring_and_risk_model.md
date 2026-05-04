@@ -16,7 +16,10 @@ scorecard inputs so packaging cannot rewrite the score evidence it reports.
 Phase 16 risk assessments consume scorecards, release gates, packages, and
 incident/eval evidence as readiness inputs, but risk rows are also excluded
 from scorecard inputs so a risk review cannot rewrite the score evidence it
-evaluates.
+evaluates. The reward compiler consumes scorecards to produce durable
+`reward_compilation` rows; those rows are also excluded from future scorecard
+inputs so compiled rewards cannot feed back into the score evidence they were
+derived from.
 
 ## Score Dimensions
 
@@ -140,9 +143,54 @@ append-only ledger rows:
   remediation in the source evidence.
 - later `release_gate` governance rows are excluded from future scorecard
   inputs, so a gate decision cannot change the score evidence it consumes.
+- later `reward_compilation` rows are excluded from future scorecard inputs,
+  so a reward/loss sample cannot rewrite the score evidence it consumes.
 
 Scorecards use `score_rule_version = score_v1` and
 `scorecard_schema_version = 1`.
+
+## Reward Compiler
+
+`blackbox reward compile --ledger PATH --run-id RUN_ID --input SPEC_JSON`
+turns a persisted scorecard into a deterministic reward/loss training sample.
+It first verifies the physical SQLite hash chain, requires the latest
+`scorecard` row for the run, validates the reward spec strictly, compiles
+feature contributions, appends one `reward_compilation` row, and reads that row
+back from `ledger_records`.
+
+Available reward features are:
+
+- `correctness`
+- `verification_confidence`
+- `risk`
+- `training_value`
+- `evidence_coverage_ratio`
+- `tool_evidence_coverage`
+- `readback_ratio`
+- `verifier_pass_rate`
+- `verifier_failure_rate`
+- `verifier_blocked_rate`
+- `incident_present`
+- `incident_count`
+- `policy_missing`
+- `policy_denied`
+- `trust_verified`
+- `trust_incident`
+- `unverified_tool_call_rate`
+
+The compiler stores:
+
+- the reward spec file path, SHA-256, objective, bounds, and component count;
+- the latest scorecard row ref plus the scorecard's input ledger refs;
+- feature values with source pointers and meanings;
+- per-component weight/value/contribution;
+- `reward.raw`, `reward.clipped`, `reward.normalized_0_1`, and `reward.loss`;
+- a `verified_outcome_reward_sample` training sample with prompt/task context,
+  redacted tool inputs, verifier readbacks, and source-ref hash.
+
+This is intentionally closer to outcome-supervised reward compilation than
+preference-only reward modeling: the signal is computed from source-of-truth
+readbacks and ledger evidence, not from an LLM's explanation.
 
 ## Dashboard Metrics (Phase 7 + Phase 12)
 

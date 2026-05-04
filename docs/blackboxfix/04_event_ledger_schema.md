@@ -3,7 +3,7 @@
 The ledger is the durable record of agent behavior and verifier evidence. It
 must be append-only, schema-versioned, tenant-scoped, and hash-chained.
 
-## Phase 24 Physical Schema (shipped)
+## Current Physical Schema (shipped)
 
 **Source of truth**: a SQLite database file at `--ledger PATH` containing two
 tables. Defined in `crates/context-graph-cli/src/commands/blackbox.rs`,
@@ -15,7 +15,7 @@ function `initialize_schema`.
 CREATE TABLE ledger_records (
   sequence                    INTEGER PRIMARY KEY AUTOINCREMENT,
   record_id                   TEXT NOT NULL UNIQUE,
-  schema_version              INTEGER NOT NULL,   -- 13 in Phase 24
+  schema_version              INTEGER NOT NULL,   -- 14 after reward compiler
   record_kind                 TEXT NOT NULL,      -- see Record Families
   tenant_id                   TEXT NOT NULL,
   run_id                      TEXT,
@@ -50,7 +50,7 @@ Single-row-per-key configuration set on `blackbox init`:
 
 | Key | Initial value | Maintained by |
 |---|---|---|
-| `schema_version` | `13` | constant |
+| `schema_version` | `14` | constant |
 | `ledger_id` | random 16-byte hex | constant per ledger |
 | `created_at` | UTC RFC3339 of init | constant |
 | `redaction_policy_id` | `redact_v1` | constant |
@@ -127,6 +127,7 @@ are reserved for later phases and **must not be invented ad-hoc**:
 | 17 | `http_request_audit` | append-only authenticated HTTP request/response audit row for the Phase 17 single-writer server |
 | 18 | `first_wedge_demo` | append-only first-wedge buyer demo package row with required proof refs, demo manifest, and source-ledger readback |
 | 19 | `full_state_verification` | append-only certification row for executable FSV evidence, edge cases, artifact hashes, SQLite integrity, and package manifest readback |
+| Reward compiler | `reward_compilation` | append-only verified reward/loss training sample compiled from a persisted scorecard and its source ledger refs |
 
 Phase 24 adds no new `record_kind`. SDK CloudEvents are normalized into the
 existing `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows and
@@ -146,7 +147,7 @@ The physical columns reify this envelope. JSON-shape view:
 
 ```json
 {
-  "schema_version": 13,
+  "schema_version": 14,
   "record_id": "bbx_rec_<uuid_simple>",
   "record_kind": "tool_call",
   "tenant_id": "tenant_...",
@@ -247,7 +248,7 @@ Required proof categories:
   "source_ledger": {
     "path": "/tmp/bbx.sqlite",
     "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-    "ledger_schema_version": 13,
+    "ledger_schema_version": 14,
     "ledger_record_count_before_demo": 30,
     "ledger_tip_sha256_before_demo": "sha256:..."
   },
@@ -307,7 +308,7 @@ SQLite ledger and physical artifact files. It fails closed unless:
   "source_ledger": {
     "path": "/tmp/bbx.sqlite",
     "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-    "ledger_schema_version": 13,
+    "ledger_schema_version": 14,
     "ledger_record_count_before_certification": 2,
     "ledger_tip_sha256_before_certification": "sha256:..."
   },
@@ -833,6 +834,64 @@ hash before reporting success.
 }
 ```
 
+## Reward Compilation (shipped)
+
+`blackbox reward compile` appends one `reward_compilation` row after reading
+the physical ledger, requiring a prior persisted `scorecard`, compiling a
+strict JSON reward spec against scorecard features, and reading the appended
+row back by sequence, `reward_compilation_id`, `run_id`, `payload_sha256`, and
+`record_sha256`.
+
+Reward compilation is not a model judgment. It is a deterministic read model
+over the latest physical scorecard row for the run.
+
+```json
+{
+  "record_kind": "reward_compilation",
+  "reward_compilation_id": "reward_<uuid_simple>",
+  "run_id": "run_...",
+  "reward_compilation_schema_version": 1,
+  "reward_rule_version": "reward_compiler_v1",
+  "reward_spec": {
+    "reward_id": "verified_outcome_reward_v1",
+    "sha256": "sha256:...",
+    "bounds": { "min": -10.0, "max": 10.0 }
+  },
+  "feature_vector": {
+    "correctness": { "value": 1.0, "source": "/score/correctness" },
+    "risk": { "value": 0.58, "source": "/score/risk" },
+    "verification_confidence": {
+      "value": 0.9725,
+      "source": "/score/verification_confidence"
+    }
+  },
+  "reward": {
+    "raw": 4.985,
+    "clipped": 4.985,
+    "normalized_0_1": 0.7493,
+    "loss": -4.985,
+    "class": "positive"
+  },
+  "training_sample": {
+    "sample_kind": "verified_outcome_reward_sample",
+    "source_record_refs_sha256": "sha256:..."
+  }
+}
+```
+
+Strict fail-closed behavior:
+
+- no scorecard row for the run returns `REWARD_SCORECARD_REQUIRED`;
+- invalid or empty reward specs return `REWARD_SPEC_INVALID`;
+- unknown features return `REWARD_FEATURE_UNKNOWN`;
+- nullable source features return `REWARD_FEATURE_NULL` unless the spec
+  declares `null_behavior: "zero"`;
+- failed compilation appends no `reward_compilation` row.
+
+Future scorecards explicitly exclude `reward_compilation` rows from score
+inputs so compiled rewards cannot feed back into the score evidence they were
+derived from.
+
 ## Privacy Retention And Erasure Decisions (Phase 13, shipped)
 
 `blackbox privacy evaluate-retention` and `blackbox privacy request-erasure`
@@ -1056,7 +1115,7 @@ sequence, `risk_assessment_id`, `payload_sha256`, and `record_sha256`.
     "decisions_path": "/tmp/phase16-decisions.json"
   },
   "ledger_runtime": {
-    "ledger_schema_version": 13,
+    "ledger_schema_version": 14,
     "journal_mode": "wal",
     "synchronous": 2,
     "busy_timeout_ms": 5000

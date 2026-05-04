@@ -394,8 +394,8 @@ pagination `Link` header; invalid job status and `minimum_jobs=0` were
 blocked before source reads and therefore wrote no readback snapshots.
 
 No schema bump. Phase 9 reuses the existing Phase 2-4 evidence path and keeps
-the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase 24,
-fresh ledgers initialize at schema version 13.
+the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after the reward compiler,
+fresh ledgers initialize at schema version 14.
 
 ## Phase 10: Scanner Artifact Connector — DONE (2026-05-02)
 
@@ -470,8 +470,8 @@ Focused hardening manual FSV completed against
 `evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 10 reuses the existing Phase 2-4 evidence path and
-keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-19, fresh ledgers initialize at schema version 13.
+keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after the
+reward compiler, fresh ledgers initialize at schema version 14.
 
 ## Phase 11: GitHub Issue Evidence-Link Verification — DONE (2026-05-02)
 
@@ -540,8 +540,8 @@ focused counts `expected_delta=4`, `readback_snapshot=2`,
 `verifier_result=4`, `evidence_packet=4`, and `incident_packet=1`.
 
 No schema bump. Phase 11 reuses the existing Phase 2-4 evidence path and
-keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after Phase
-19, fresh ledgers initialize at schema version 13.
+keeps the then-live ledger schema at `LEDGER_SCHEMA_VERSION = 5`; after the
+reward compiler, fresh ledgers initialize at schema version 14.
 
 ## Phase 12: Deterministic Scorecards — DONE (2026-05-03)
 
@@ -1025,7 +1025,7 @@ physical SQLite ledger to prove expected/readback/verifier/evidence/incident
 rows exist.
 
 Phase 20 adds no new ledger record kind and does not bump the physical schema;
-current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Phase 21: Terraform And Cloud Artifact Verification — DONE (2026-05-03)
 
@@ -1076,7 +1076,7 @@ reads the physical SQLite ledger to prove expected/readback/verifier/evidence/
 incident rows exist.
 
 Phase 21 adds no new ledger record kind and does not bump the physical schema;
-current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Phase 22: Ticketing Artifact Verification — DONE (2026-05-03)
 
@@ -1124,7 +1124,7 @@ state, and invalid JSON edges, and reads the physical SQLite ledger to prove
 expected/readback/verifier/evidence/incident rows exist.
 
 Phase 22 adds no new ledger record kind and does not bump the physical schema;
-current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Phase 23: OpenTelemetry Evidence Export — DONE (2026-05-03)
 
@@ -1167,7 +1167,7 @@ counts did not change, and exercise empty-ledger, existing-output, and
 tampered-ledger edges.
 
 Phase 23 adds no new ledger record kind and does not bump the physical schema;
-current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Phase 24: Provider-Neutral SDK Ingestion — DONE (2026-05-03)
 
@@ -1211,7 +1211,7 @@ and redacted expected-delta fields, and exercise duplicate source/id, missing
 expected delta, empty batch, and invalid traceparent edges.
 
 Phase 24 adds no new ledger record kind and does not bump the physical schema;
-current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+current ledgers remain at `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Phase Sequencing Rules
 

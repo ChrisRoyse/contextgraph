@@ -126,6 +126,10 @@ blackbox enterprise export-audit
 blackbox score run             --ledger PATH --run-id RUN_ID
                                [--tenant TENANT] [--agent AGENT]
                                [--model MODEL]
+blackbox reward compile        --ledger PATH --run-id RUN_ID
+                               --input REWARD_SPEC_JSON
+                               [--tenant TENANT] [--agent AGENT]
+                               [--model MODEL]
 blackbox privacy evaluate-retention
                                --ledger PATH --tenant TENANT --run-id RUN_ID
                                --principal-id PRINCIPAL
@@ -265,7 +269,7 @@ Every success prints a JSON object on stdout:
   "command": "blackbox init",
   "ledger_path": "/tmp/bbx.sqlite",
   "source_of_truth": "sqlite:/tmp/bbx.sqlite#ledger_records",
-  "schema_version": 13,
+  "schema_version": 14,
   "redaction_policy_id": "redact_v1",
   "record_count": 0,
   "ledger_tip_sha256": ""
@@ -314,6 +318,16 @@ every file back and validates hashes before reporting success.
 evidence packet references, computing deterministic score dimensions, and then
 reading the appended `scorecard` row back by sequence, `scorecard_id`,
 `run_id`, `payload_sha256`, and `record_sha256`.
+
+`reward compile` writes one `reward_compilation` row after reading the
+physical `ledger_records` source of truth, requiring the latest persisted
+`scorecard` row for the run, validating a strict reward spec JSON file,
+compiling feature contributions into `reward`, `loss`, and a
+`verified_outcome_reward_sample`, and then reading the appended row back by
+sequence, `reward_compilation_id`, `run_id`, `payload_sha256`, and
+`record_sha256`. Empty specs, unknown features, missing scorecards, and
+nullable features without explicit null handling all fail closed and append no
+reward row.
 
 `privacy evaluate-retention` writes one `retention_decision` row after reading
 the physical ledger, verifying the parent run, persisting and checking an
@@ -468,6 +482,7 @@ POST /v1/enterprise/tenants/{tenant_id}/directory-sync
 POST /v1/enterprise/tenants/{tenant_id}/access/evaluate
 POST /v1/enterprise/tenants/{tenant_id}/audit-export
 POST /v1/runs/{run_id}/scorecard
+POST /v1/runs/{run_id}/reward-compilations
 POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate
 POST /v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests
 POST /v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate
@@ -592,7 +607,8 @@ OpenTelemetry path without adding ledger record kinds.
 ## Versioning
 
 - APIs are versioned by URL.
-- Ledger records include `schema_version` (= 13 in Phase 24).
+- Ledger records include `schema_version` (= 14 after the reward compiler
+  record family).
 - Phase 3 reused schema version 2 and added no new record kinds. Phase 4 bumped
   the schema to 3 for `evidence_packet` and `incident_packet`.
 - Phase 5 did not bump the ledger schema. It writes export artifacts outside
@@ -637,13 +653,17 @@ OpenTelemetry path without adding ledger record kinds.
   existing `agent_run`, `agent_step`, `model_decision`, and `tool_call` rows
   and persists `payload.sdk_event` metadata for source/id idempotency and
   physical readback.
+- The reward compiler bumps the ledger schema to 14 for the new
+  `reward_compilation` record kind with
+  `reward_compilation_schema_version = 1`.
 - Verifier specs include `verifier_id` with version suffix.
 - Connectors include `connector_id` with version suffix
   (`sqlite_local_v1`, `git_local_v1`, `fs_local_v1`, `cmd_local_v1`,
   `github_v1`, `gha_v1`, `enterprise_controls_v1`, `gitlab_ci_v1`,
   `scanner_artifact_v1`, `blackbox_scoring_v1`, `blackbox_privacy_v1`,
   `blackbox_release_gate_v1`, `blackbox_packaging_v1`,
-  `blackbox_risk_v1`, `blackbox_http_server_v1`, and
+  `blackbox_risk_v1`, `blackbox_reward_compiler_v1`,
+  `blackbox_http_server_v1`, and
   `blackbox_first_wedge_demo_v1`, `blackbox_fsv_protocol_v1`,
   `k8s_deployment_snapshot_v1`, `terraform_cloud_artifact_v1`,
   `ticketing_artifact_v1`, `blackbox_otel_export_v1`, and

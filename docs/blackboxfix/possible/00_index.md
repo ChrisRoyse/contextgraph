@@ -45,6 +45,9 @@ The prior capability report that this plan builds on is preserved under
   intelligence extraction, capture contract, and current gaps.
 - `24_latest_correlation_intelligence_report.md` - actual latest correlation
   report values generated from the local demo run.
+- `25_reward_compiler_current_state.md` - implemented reward compiler,
+  reward-spec contract, persisted reward/loss output, research basis, and
+  manual/automated FSV proof.
 
 ## Core Demo Claim
 
@@ -98,4 +101,6 @@ See `20_agentops_research_demo_current_state.md` and
 `22_agentops_demo_output_explainer.html` for a human-readable walkthrough and
 `23_correlation_intelligence_design.md` plus
 `24_latest_correlation_intelligence_report.md` for the
-intelligence/correlation model and latest measured values.
+intelligence/correlation model and latest measured values. See
+`25_reward_compiler_current_state.md` for the next layer: compiling verified
+scorecards into durable reward/loss samples for training and benchmark loops.

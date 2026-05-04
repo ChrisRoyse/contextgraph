@@ -29,8 +29,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `git_file_diff_matches_patch_v1`, `git_working_tree_clean_v1`,
     `cmd_exit_zero_v1`.
   - Phase 2 originally introduced schema v2 record kinds. The current shipped
-    ledger schema is `LEDGER_SCHEMA_VERSION = 13` after Phase 24; old ledgers are
-    wiped on init, never migrated in-place.
+    ledger schema is `LEDGER_SCHEMA_VERSION = 14` after the reward compiler;
+    old ledgers are wiped on init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase2_fsv.rs`
     (19/19 passing; run with
     `cargo test --package context-graph-cli --test blackbox_phase2_fsv`).
@@ -40,8 +40,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `github_branch_head_matches_commit_v1`,
     `github_check_suite_passed_v1`, `github_issue_state_changed_v1`,
     `gha_workflow_run_completed_v1`.
-  - Phase 3 added no new record kinds. Current ledgers run under schema v13
-    after Phase 24.
+  - Phase 3 added no new record kinds. Current ledgers run under schema v14
+    after the reward compiler.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase3_fsv.rs`
     (1 live integration test covering 5 happy verifiers + 15 edge checks; run
     with `cargo test --package context-graph-cli --test blackbox_phase3_fsv`).
@@ -49,7 +49,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Record kinds: `evidence_packet`, `incident_packet`.
   - Commands: `blackbox replay --ledger PATH --run-id RUN_ID` and
     `blackbox export evidence --ledger PATH --run-id RUN_ID --out FILE`.
-  - Ledger schema: `LEDGER_SCHEMA_VERSION = 13`; older ledgers are wiped on
+  - Ledger schema: `LEDGER_SCHEMA_VERSION = 14`; older ledgers are wiped on
     init, never migrated in-place.
   - FSV test suite: `crates/context-graph-cli/tests/blackbox_phase4_fsv.rs`
     (4/4 passing; run with
@@ -68,8 +68,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `blackbox policy evaluate`, `blackbox policy registry`, and
     `blackbox api surface`.
   - New record kinds originally added under schema v4: `policy_decision`,
-    `agent_step`, `model_decision`. Current ledgers run under schema v13 after
-    Phase 19.
+    `agent_step`, `model_decision`. Current ledgers run under schema v14 after
+    the reward compiler.
   - Gateway first workflow: `verified_git_apply_patch` applies a real Git patch
     and returns verifier evidence from `git_file_diff_matches_patch_v1`.
   - FSV test suite:
@@ -106,7 +106,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `gitlab_pipeline_jobs_completed_v1`.
   - Source of truth: GitLab REST API project/pipeline/jobs endpoints plus the
     local SQLite ledger evidence rows. Phase 9 added no schema bump; current
-    ledgers now run under `LEDGER_SCHEMA_VERSION = 13`.
+    ledgers now run under `LEDGER_SCHEMA_VERSION = 14`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase9_gitlab_ci_fsv.rs`
     (1 live integration test covering 2 happy verifiers + 9 edge checks; run
@@ -120,7 +120,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Source of truth: physical OSV JSON report files, Cargo lockfiles,
     CycloneDX JSON SBOM files, plus local SQLite ledger evidence rows. Phase
     10 added no schema bump; current ledgers now run under
-    `LEDGER_SCHEMA_VERSION = 13`.
+    `LEDGER_SCHEMA_VERSION = 14`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase10_scanner_fsv.rs`
     (1 local integration test covering 3 happy verifiers + 12 edge checks; run
@@ -132,7 +132,7 @@ read this file first, then `13_mvp_implementation_phases.md`, then
   - Source of truth: GitHub Issues REST API issue body and issue comments,
     plus local SQLite ledger evidence rows. Pull requests returned by the
     Issues endpoint are rejected as ticket evidence. Phase 11 added no schema
-    bump; current ledgers now run under `LEDGER_SCHEMA_VERSION = 13`.
+    bump; current ledgers now run under `LEDGER_SCHEMA_VERSION = 14`.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase11_github_issue_evidence_fsv.rs`
     (1 live integration test covering connector exposure, 1 happy verifier,
@@ -260,7 +260,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `kubectl get deployments.v1.apps --namespace <namespace> -o json`, plus
     local SQLite verifier/evidence rows.
   - Phase 20 adds no new ledger record kind and does not bump the physical
-    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+    schema; current ledgers now run at `LEDGER_SCHEMA_VERSION = 14` after the
+    reward compiler.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase20_k8s_deployment_fsv.rs`
     (1 integration test covering connector readback, happy image/replica/
@@ -277,7 +278,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     normalized cloud inventory JSON, normalized cloud audit JSONL, plus local
     SQLite verifier/evidence rows.
   - Phase 21 adds no new ledger record kind and does not bump the physical
-    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+    schema; current ledgers now run at `LEDGER_SCHEMA_VERSION = 14` after the
+    reward compiler.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase21_terraform_cloud_fsv.rs`
     (1 integration test covering connector readback, happy Terraform plan,
@@ -293,7 +295,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     GraphQL issue JSON artifacts, ServiceNow Table API record JSON artifacts,
     plus local SQLite verifier/evidence rows.
   - Phase 22 adds no new ledger record kind and does not bump the physical
-    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+    schema; current ledgers now run at `LEDGER_SCHEMA_VERSION = 14` after the
+    reward compiler.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase22_ticketing_fsv.rs`
     (1 integration test covering connector readback, happy Jira/Linear/
@@ -307,7 +310,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `metrics.jsonl`, and `manifest.json` files under the export directory,
     plus the verified SQLite ledger rows used as input.
   - Phase 23 adds no new ledger record kind and does not bump the physical
-    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+    schema; current ledgers now run at `LEDGER_SCHEMA_VERSION = 14` after the
+    reward compiler.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase23_otel_export_fsv.rs`
     (4 local integration tests covering happy OTLP JSONL export, connector
@@ -323,7 +327,8 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     `tool_call` rows in SQLite `ledger_records`, located by
     `payload.sdk_event.source` and `payload.sdk_event.id`.
   - Phase 24 adds no new ledger record kind and does not bump the physical
-    schema; current ledgers remain at `LEDGER_SCHEMA_VERSION = 13`.
+    schema; current ledgers now run at `LEDGER_SCHEMA_VERSION = 14` after the
+    reward compiler.
   - FSV test suite:
     `crates/context-graph-cli/tests/blackbox_phase24_sdk_ingest_fsv.rs`
     (4 local integration tests covering connector readback, happy SDK run/
@@ -331,6 +336,22 @@ read this file first, then `13_mvp_implementation_phases.md`, then
     enforcement, empty batches, invalid traceparent, atomic rollback, and
     direct SQLite/file proof; run with
     `cargo test --package context-graph-cli --test blackbox_phase24_sdk_ingest_fsv -- --nocapture`).
+- **Reward Compiler (Verified Outcome Reward/Loss Samples)**: COMPLETE and
+  verified.
+  - Connector: `blackbox_reward_compiler_v1`.
+  - Command:
+    `blackbox reward compile --ledger PATH --run-id RUN_ID --input REWARD_SPEC_JSON`.
+  - Record kind: `reward_compilation`.
+  - Source of truth: physical SQLite `ledger_records` and physical reward spec
+    file hash.
+  - The reward compiler bumps the logical ledger schema to
+    `LEDGER_SCHEMA_VERSION = 14` for durable reward/loss training samples.
+  - FSV test suite:
+    `crates/context-graph-cli/tests/blackbox_reward_compiler_fsv.rs`
+    (1 local integration test covering successful reward compilation, direct
+    SQLite readback, scorecard-rescore non-circularity, empty spec, unknown
+    feature, nullable feature, and no-write edge behavior; run with
+    `cargo test --package context-graph-cli --test blackbox_reward_compiler_fsv -- --nocapture`).
 
 ## Build And Test Quick Reference
 
