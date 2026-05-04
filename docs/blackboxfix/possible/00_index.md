@@ -35,6 +35,16 @@ The prior capability report that this plan builds on is preserved under
 - `18_buyer_demo_script.md` - live demo narrative and screen flow.
 - `19_demo_implementation_checklist.md` - implementation checklist, typed
   errors, and acceptance criteria.
+- `20_agentops_research_demo_current_state.md` - current implemented state of
+  the full Gemma-triggered DynamicJEPA + BlackBoxFix research demo.
+- `21_agentops_manual_fsv_log.md` - manual Full State Verification evidence
+  from the latest successful local run.
+- `22_agentops_demo_output_explainer.html` - self-contained visual explainer
+  for the latest demo outputs, what they mean, and how to present them.
+- `23_correlation_intelligence_design.md` - prompt/output correlation,
+  intelligence extraction, capture contract, and current gaps.
+- `24_latest_correlation_intelligence_report.md` - actual latest correlation
+  report values generated from the local demo run.
 
 ## Core Demo Claim
 
@@ -48,3 +58,44 @@ real broken deployment YAML file, then show BlackBoxFix independently proving
 the file hash, validation result, Git diff, ledger rows, evidence exports, and
 incident behavior for a deliberately bad claim.
 
+## Current Implemented Demo
+
+The implemented demo is broader than the original deployment-only wedge:
+
+```text
+scripts/blackboxfix_gemma_tool_demo.py
+```
+
+It uses local `gemma4:e4b` through Ollama native `/api/chat` tool calling to
+invoke one allowlisted high-level tool:
+
+```text
+run_dynamicjepa_blackboxfix_pipeline
+```
+
+That tool runs the real DynamicJEPA `counter_world` verification pipeline and
+BlackBoxFix proof layer. It now demonstrates:
+
+- data ingest into a physical RocksDB source of truth;
+- latent panel materialization;
+- trajectory and action-conditioned dataset compilation;
+- tiny CUDA training and model artifact registry;
+- prediction, planning, guard decisions, and surprise recording;
+- DynamicJEPA action-conditioned episode export;
+- W3C PROV-style artifact provenance;
+- BlackBoxFix SDK ingest, expected delta, readback verification, failed
+  verifier incident creation, scorecard, evidence/replay/episode/OTEL/dashboard
+  exports, and FSV certification.
+
+Latest successful manual run:
+
+```text
+/tmp/blackboxfix-agentops-demo-manual-03
+```
+
+See `20_agentops_research_demo_current_state.md` and
+`21_agentops_manual_fsv_log.md` for the exact source-of-truth readbacks. Open
+`22_agentops_demo_output_explainer.html` for a human-readable walkthrough and
+`23_correlation_intelligence_design.md` plus
+`24_latest_correlation_intelligence_report.md` for the
+intelligence/correlation model and latest measured values.

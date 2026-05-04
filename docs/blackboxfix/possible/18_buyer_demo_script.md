@@ -2,6 +2,18 @@
 
 This is the live narrative for showing BlackBoxFix with Gemma.
 
+## Current Demo Positioning
+
+Use the full AgentOps research demo first when the buyer is technical:
+
+```text
+Gemma triggers the action. DynamicJEPA performs real data ingest, panel
+materialization, training, planning, and surprise recording. BlackBoxFix proves
+the consequences from the ledger, RocksDB, files, exports, and provenance.
+```
+
+Use the deployment fix wedge after that as the easier business story.
+
 ## Opening
 
 ```text
@@ -23,6 +35,17 @@ Use four panes:
 
 ## Act 1: Broken System
 
+For the current research demo, replace the deployment validator view with:
+
+```bash
+target/debug/context-graph dynamicjepa inspect-counts \
+  --db /tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/dbs/agentops_20260504T043844Z_dfc5a3cd_counter_world_rocksdb \
+  --json
+```
+
+Before the demo, the DB is absent or empty. After the demo, it contains the
+persisted consequence graph.
+
 Show:
 
 ```bash
@@ -42,11 +65,7 @@ git diff is empty because the broken file is the committed baseline
 Show:
 
 ```text
-Gemma -> read_deployment_file
-Gemma -> run_deployment_validator
-Gemma -> write_deployment_file
-Gemma -> run_deployment_validator
-Gemma -> read_git_diff
+Gemma -> run_dynamicjepa_blackboxfix_pipeline
 ```
 
 Say:
@@ -54,6 +73,15 @@ Say:
 ```text
 Gemma is not allowed to run arbitrary shell commands. It can only request
 declared tools, and the harness validates every argument.
+```
+
+Then show the tool consequence:
+
+```text
+data ingest -> panel materialization -> trajectory/dataset compilation
+-> tiny CUDA training -> artifact registry -> prediction -> plan trace
+-> guard decisions -> surprise event -> action-conditioned episodes
+-> provenance -> BlackBoxFix verifier evidence
 ```
 
 ## Act 3: BlackBoxFix Records The Action
@@ -80,14 +108,19 @@ Show:
 
 ```text
 expected_delta:
-  deploy/service.yaml changed
-  validator passed
-  git diff matched expected patch
+  DynamicJEPA RocksDB counts changed
+  model artifact exists and hashes match
+  plan trace exists with 5 predictions and 5 guard decisions
+  surprise event exists
+  DynamicJEPA episode export exists and hash matches manifest
+  provenance artifact exists
 
 actual_readback:
-  file hash read from disk
-  validator exit code read from command execution
-  git diff read from repository
+  SQLite ledger rows read directly
+  RocksDB read through dynamicjepa inspect/get commands
+  artifact hashes recomputed from disk
+  JSONL episode hash recomputed from disk
+  FSV package manifest read from disk
 ```
 
 Then:
@@ -103,8 +136,8 @@ scorecard = created
 Run the intentional bad claim:
 
 ```text
-Claim: expected patch changed timeout_seconds to 9
-Reality: actual Git diff changed timeout_seconds to 5
+Claim: expected physical RocksDB has dj_plan_traces=999
+Reality: actual physical RocksDB has dj_plan_traces=1
 ```
 
 Show:
@@ -142,4 +175,3 @@ Close:
 Agents need more than observability. They need consequence verification.
 BlackBoxFix proves the consequence.
 ```
-

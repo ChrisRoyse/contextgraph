@@ -2,14 +2,52 @@
 
 This checklist turns the demo plan into concrete engineering work.
 
-## Files To Add Later
+## Files Added
 
 ```text
 scripts/blackboxfix_gemma_tool_demo.py
 ```
 
-The docs in this directory define the scope and acceptance criteria for that
-harness.
+Status: added and manually verified. The docs in this directory now describe
+the implemented harness and its acceptance criteria.
+
+## Full AgentOps Harness Checklist
+
+- [x] create fresh demo root;
+- [x] initialize BlackBoxFix ledger;
+- [x] call Ollama `/api/chat` with native tool definitions;
+- [x] require native `message.tool_calls`;
+- [x] execute only the allowlisted
+  `run_dynamicjepa_blackboxfix_pipeline` tool;
+- [x] reject unsupported tool names;
+- [x] reject invalid tool scenario/capability arguments;
+- [x] run real DynamicJEPA `verify-counter-world`;
+- [x] ingest real counter-world JSONL events into RocksDB;
+- [x] materialize latent panels;
+- [x] compile trajectories;
+- [x] compile action-conditioned train/val/test dataset shards;
+- [x] run tiny CUDA training;
+- [x] verify artifact registry hashes;
+- [x] persist prediction, plan trace, guard decisions, and surprise event;
+- [x] export DynamicJEPA action-conditioned episodes;
+- [x] write provenance artifact;
+- [x] record CloudEvents into BlackBoxFix;
+- [x] verify source-of-truth state through `cmd_exit_zero_v1`;
+- [x] run intentional failed verifier and prove incident creation;
+- [x] score the BlackBoxFix run;
+- [x] export BlackBoxFix evidence;
+- [x] export BlackBoxFix replay;
+- [x] export BlackBoxFix episodes;
+- [x] export BlackBoxFix OpenTelemetry files;
+- [x] build BlackBoxFix dashboard;
+- [x] certify FSV package;
+- [x] write `harness-report.json`.
+
+Manual verified root:
+
+```text
+/tmp/blackboxfix-agentops-demo-manual-03
+```
 
 ## Harness Features
 
@@ -115,4 +153,3 @@ The report must make obvious:
 - why success passed;
 - why the intentional failure failed;
 - where the durable proof lives.
-

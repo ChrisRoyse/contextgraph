@@ -9,6 +9,42 @@ Gemma fixes a broken deployment YAML health-check configuration. BlackBoxFix
 proves the exact file changed, validation passed, and Git diff matched the
 expected patch.
 
+Implementation note: the current shipped harness expands this from a deployment
+file wedge into a full AgentOps research demo. The original deployment scenario
+remains a good buyer-friendly follow-on, but the implemented proof now uses the
+real DynamicJEPA pipeline because it demonstrates more of the system:
+
+- data ingest into RocksDB;
+- panel materialization;
+- action-conditioned dataset export;
+- CUDA tiny training artifact provenance;
+- planning and guard decisions;
+- surprise recording;
+- BlackBoxFix verifier pass plus deliberate failed verifier incident;
+- FSV certification.
+
+Implemented command:
+
+```bash
+scripts/blackboxfix_gemma_tool_demo.py \
+  --root /tmp/blackboxfix-agentops-demo-manual-03 \
+  --model gemma4:e4b \
+  --blackbox-bin target/debug/context-graph
+```
+
+Latest proof summary:
+
+```text
+DynamicJEPA: raw_events=62, latent_panels=60, dataset_shards=3,
+training_runs=1, model_artifacts=1, predictions=6, guard_decisions=5,
+plan_traces=1, surprise_events=1, verification_runs=1.
+
+BlackBoxFix: agent_run=1, agent_step=1, model_decision=1, tool_call=1,
+expected_delta=2, readback_snapshot=2, verifier_result=2,
+evidence_packet=2, incident_packet=1, scorecard=1,
+full_state_verification=1.
+```
+
 Source of truth:
 
 - `repo/deploy/service.yaml`
@@ -198,4 +234,3 @@ Failure variant:
 
 - package is requested before minimum verified evidence exists. Packaging fails
   closed with typed proof requirements.
-

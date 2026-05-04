@@ -47,12 +47,60 @@ Sources:
 - OpenTelemetry GenAI conventions include `chat` and `execute_tool` semantics
   that map naturally to BlackBoxFix model/tool/evidence rows:
   <https://opentelemetry.io/docs/specs/semconv/gen-ai/>
+- W3C PROV provides the provenance model basis used by the demo provenance
+  artifact: <https://www.w3.org/TR/prov-dm/>
 
 Local proof:
 
 - `ollama show gemma4:e4b --modelfile` shows the normal local Gemma tag.
 - A direct `/api/chat` probe against `gemma4:e4b` returned a real
   `message.tool_calls` object for `read_deployment_file`.
+
+## Current Implementation
+
+Implemented harness:
+
+```text
+scripts/blackboxfix_gemma_tool_demo.py
+```
+
+The demo now uses the local Gemma model to call:
+
+```text
+run_dynamicjepa_blackboxfix_pipeline
+```
+
+The high-level tool is intentionally narrow. It does not expose arbitrary shell
+execution to the model. The harness validates the tool name, scenario, and
+requested capability list before any source-of-truth mutation.
+
+Implemented capabilities:
+
+- data ingest;
+- panel materialization;
+- action-conditioned training/eval dataset production;
+- tiny CUDA training and artifact registry;
+- prediction and planning;
+- guard decisions;
+- surprise recording;
+- artifact provenance;
+- DynamicJEPA episode export;
+- BlackBoxFix evidence, replay, scorecard, incident, OTEL, dashboard, and FSV
+  package generation.
+
+Latest verified run:
+
+```text
+root=/tmp/blackboxfix-agentops-demo-manual-03
+dynamic_run_id=agentops_20260504T043844Z_dfc5a3cd
+blackbox_run_id=run_ab2eb49499cb438cbd62654a2cef7e4e
+tool_call_id=tool_f1ac116a79194e1bb80a1f89ab19780d
+```
+
+Important operational rule: RocksDB readbacks must be serial in this local
+setup. Parallel `get-artifact`, `get-plan-trace`, and `get-surprise` reads can
+collide on the physical RocksDB `LOCK`. The harness and verifier script read
+RocksDB sequentially.
 
 ## Demo Architecture
 
@@ -85,6 +133,9 @@ It should:
 - export evidence, replay, episodes, OpenTelemetry, dashboard, scorecard, and
   FSV packages.
 
+Status: implemented as the full DynamicJEPA + BlackBoxFix AgentOps research
+demo.
+
 ### Phase B: First Five Examples
 
 Start with at least five scenarios from `14_demo_example_catalog.md`:
@@ -94,6 +145,12 @@ Start with at least five scenarios from `14_demo_example_catalog.md`:
 3. ticket evidence closure;
 4. Kubernetes deployment snapshot proof;
 5. Terraform plan guardrail.
+
+Status: examples remain catalogued. The implemented harness currently ships
+the full research-grade DynamicJEPA AgentOps demo, which covers the underlying
+platform capabilities needed for those examples: real source-of-truth ingest,
+materialization, training corpus export, planning, verifier evidence, incident
+creation, and provenance.
 
 ### Phase C: Failure Demo
 
@@ -160,4 +217,3 @@ incident_packet>=1
 error_code is non-empty
 actual_readback contradicts expected_persisted_delta
 ```
-

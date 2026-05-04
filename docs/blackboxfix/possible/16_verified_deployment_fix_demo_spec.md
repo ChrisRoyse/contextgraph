@@ -3,6 +3,29 @@
 This is the flagship demo: Gemma fixes a broken deployment artifact and
 BlackBoxFix proves what changed.
 
+## Current Status
+
+The deployment fix remains the simplest buyer-facing story, but the implemented
+local demo now proves a broader research-grade AgentOps flow in
+`scripts/blackboxfix_gemma_tool_demo.py`.
+
+Implemented source-of-truth systems:
+
+- BlackBoxFix SQLite ledger;
+- DynamicJEPA RocksDB;
+- CUDA tiny-training artifact files;
+- DynamicJEPA episode JSONL and manifest;
+- W3C PROV-style provenance JSON;
+- BlackBoxFix evidence, replay, OTEL, dashboard, scorecard, and FSV package
+  artifacts.
+
+The same expected-delta / actual-readback claim applies. Instead of only a
+deployment YAML file, the current expected delta includes the entire
+DynamicJEPA consequence set: ingested events, panels, dataset shards, training
+run, model artifact, predictions, plan trace, guard decisions, surprise event,
+episode export, provenance file, passed verifier, and deliberate failed
+verifier incident.
+
 ## Workspace
 
 ```text
@@ -152,4 +175,3 @@ The demo passes only when:
 - evidence export exists and reparses;
 - dashboard, episodes, OTEL, and FSV manifests exist and hash-check;
 - direct SQLite readback confirms the rows.
-

@@ -2,6 +2,127 @@
 
 This document defines manual and automated verification for the demo program.
 
+## Current Implemented Test Target
+
+The current harness is:
+
+```bash
+scripts/blackboxfix_gemma_tool_demo.py
+```
+
+Latest successful manual run:
+
+```text
+/tmp/blackboxfix-agentops-demo-manual-03
+```
+
+Source of truth:
+
+- BlackBoxFix ledger:
+  `/tmp/blackboxfix-agentops-demo-manual-03/blackbox/blackbox.sqlite`
+- DynamicJEPA RocksDB:
+  `/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/dbs/agentops_20260504T043844Z_dfc5a3cd_counter_world_rocksdb`
+- DynamicJEPA episodes:
+  `/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/exports/dynamicjepa-episodes.jsonl`
+- Provenance:
+  `/tmp/blackboxfix-agentops-demo-manual-03/provenance/artifact-provenance.json`
+- FSV package:
+  `/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/fsv-certification/manifest.json`
+
+Manual readback rule: perform DynamicJEPA RocksDB reads serially. Parallel
+RocksDB reads can collide on the local `LOCK` file.
+
+## Current Happy Path Command
+
+```bash
+scripts/blackboxfix_gemma_tool_demo.py \
+  --root /tmp/blackboxfix-agentops-demo-manual-03 \
+  --force \
+  --model gemma4:e4b \
+  --blackbox-bin target/debug/context-graph \
+  --timeout-seconds 300 \
+  --dynamic-timeout-seconds 900
+```
+
+## Current Happy Path Readbacks
+
+BlackBoxFix SQLite:
+
+```text
+agent_run=1
+agent_step=1
+model_decision=1
+tool_call=1
+expected_delta=2
+readback_snapshot=2
+verifier_result=2
+evidence_packet=2
+incident_packet=1
+scorecard=1
+full_state_verification=1
+```
+
+DynamicJEPA RocksDB:
+
+```text
+dj_raw_events=62
+dj_latent_panels=60
+dj_dataset_shards=3
+dj_training_runs=1
+dj_model_artifacts=1
+dj_predictions=6
+dj_guard_decisions=5
+dj_plan_traces=1
+dj_surprise_events=1
+dj_verification_runs=1
+dj_audit_log=316
+```
+
+Episode export:
+
+```text
+dynamicjepa-episodes.jsonl records=4
+plan_episode_count=1
+edge_case_episode_count=3
+sha256=sha256:0f8fbaa44f2b3707f34f38f5f234296ab02c12a8c66b63d41d95c236712c3de5
+```
+
+Provenance:
+
+```text
+format=blackboxfix_agentops_provenance_json_v1
+agents=3
+entities=6
+activities=3
+relations=3
+```
+
+## Current Edge Case Audit
+
+The latest run captured all three FSV-required categories:
+
+```text
+wrong_target_state:
+  trigger: BlackBoxFix verifier expected dj_plan_traces=999
+  error_code: CMD_EXIT_NON_ZERO
+  expected_delta == actual_delta:
+    expected_delta +1
+    readback_snapshot +1
+    verifier_result +1
+    evidence_packet +1
+    incident_packet +1
+
+missing_target_state:
+  trigger: require impossible Ollama model tag
+  error_code: DEMO_MODEL_NOT_FOUND
+  expected_delta == actual_delta == 0
+
+permission_or_schema_failure:
+  trigger: invalid Gemma tool scenario
+  error_code: DEMO_TOOL_ARGUMENTS_INVALID
+  expected_delta == actual_delta == 0
+```
+
 ## Source Of Truth
 
 For the flagship demo:
@@ -173,4 +294,3 @@ cargo test -p context-graph-cli --test blackbox_phase24_sdk_ingest_fsv -- --noca
 
 The demo harness should also run a real manual FSV path because mocked tests
 would not prove the product claim.
-

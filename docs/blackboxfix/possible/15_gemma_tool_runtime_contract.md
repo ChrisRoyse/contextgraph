@@ -26,7 +26,47 @@ model emits tool call
   -> BlackBoxFix verifies the durable state
 ```
 
+## Current Tool Contract
+
+The implemented full demo uses one high-level allowlisted tool:
+
+```text
+run_dynamicjepa_blackboxfix_pipeline
+```
+
+Arguments:
+
+```json
+{
+  "scenario": "counter_world_full_agentops",
+  "requested_capabilities": [
+    "data_ingest",
+    "panel_materialization",
+    "action_conditioned_training",
+    "planning",
+    "surprise_recording",
+    "artifact_provenance",
+    "blackboxfix_fsv"
+  ]
+}
+```
+
+The harness fails closed if:
+
+- Gemma emits no native `message.tool_calls`;
+- Gemma emits more than one tool call;
+- the tool name is not `run_dynamicjepa_blackboxfix_pipeline`;
+- the scenario differs from `counter_world_full_agentops`;
+- any required capability is missing.
+
+This is intentionally more robust than exposing arbitrary shell commands. The
+model can trigger the demo, but the harness owns validation, execution,
+source-of-truth reads, and BlackBoxFix proof production.
+
 ## Flagship Tool Set
+
+The deployment-specific tools below remain the planned buyer wedge. The
+implemented research demo currently uses the single high-level tool above.
 
 ### `read_deployment_file`
 
@@ -142,4 +182,3 @@ The harness should emit typed JSON errors for:
 
 Every error needs `error_code`, `field_path`, `source_of_truth`,
 `remediation`, and `details`.
-

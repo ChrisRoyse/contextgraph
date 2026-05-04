@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlackBoxFix + Gemma Demo Output Explainer</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18202a;
+      --muted: #5a6572;
+      --line: #d8dee6;
+      --panel: #f7f9fb;
+      --soft: #edf3f8;
+      --pass: #147a46;
+      --warn: #9a5b00;
+      --fail: #ad2430;
+      --blue: #1f6feb;
+      --teal: #087f8c;
+      --violet: #6f42c1;
+      --shadow: 0 12px 28px rgba(20, 32, 45, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #ffffff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+
+    header {
+      padding: 44px 48px 28px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 28px 60px;
+    }
+
+    h1, h2, h3 { margin: 0; line-height: 1.12; letter-spacing: 0; }
+    h1 { font-size: 34px; max-width: 900px; }
+    h2 { font-size: 23px; margin-top: 34px; }
+    h3 { font-size: 17px; margin-bottom: 8px; }
+    p { margin: 10px 0 0; color: var(--muted); max-width: 900px; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    pre {
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #101820;
+      color: #eff6ff;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .eyebrow {
+      color: var(--blue);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: var(--panel);
+    }
+    .metric .value {
+      display: block;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .metric .label { color: var(--muted); font-size: 13px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 26px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+    .pass { color: var(--pass); border-color: rgba(20,122,70,.28); background: rgba(20,122,70,.08); }
+    .fail { color: var(--fail); border-color: rgba(173,36,48,.28); background: rgba(173,36,48,.08); }
+    .warn { color: var(--warn); border-color: rgba(154,91,0,.28); background: rgba(154,91,0,.08); }
+    .info { color: var(--blue); border-color: rgba(31,111,235,.25); background: rgba(31,111,235,.07); }
+
+    .flow {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+    .flow svg { display: block; width: 100%; height: auto; }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 190px 1fr 64px;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    .bar {
+      height: 14px;
+      border-radius: 999px;
+      background: #e8edf3;
+      overflow: hidden;
+    }
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--blue), var(--teal));
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px;
+      min-height: 102px;
+    }
+    .step b { display: block; font-size: 13px; margin-bottom: 6px; }
+    .step span { display: block; color: var(--muted); font-size: 12px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+    }
+    th { color: var(--muted); font-weight: 700; background: var(--panel); }
+    td.path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: #344052; }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 12px;
+      background: #fff;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    .callout {
+      border-left: 4px solid var(--blue);
+      background: var(--soft);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-top: 18px;
+    }
+    .callout p { margin: 0; }
+    .small { font-size: 12px; color: var(--muted); }
+
+    @media (max-width: 900px) {
+      header { padding: 32px 24px 22px; }
+      main { padding: 22px 16px 48px; }
+      .cols-2, .cols-3, .cols-4 { grid-template-columns: 1fr; }
+      .timeline { grid-template-columns: 1fr; }
+      .bar-row { grid-template-columns: 1fr; gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">BlackBoxFix + Gemma AgentOps Demo</div>
+    <h1>What the demo produced, what each artifact means, and whether the system proved the outcome.</h1>
+    <p>
+      This page explains the actual manual run stored at
+      <code>/tmp/blackboxfix-agentops-demo-manual-03</code>. It translates the JSON,
+      SQLite ledger, RocksDB state, scorecard, evidence packets, incident packet, and training episodes into a human-readable story.
+    </p>
+  </header>
+
+  <main>
+    <section>
+      <h2>Plain-English Result</h2>
+      <div class="grid cols-3">
+        <div class="metric"><span class="value">Yes</span><span class="label">The demo harness completed successfully.</span></div>
+        <div class="metric"><span class="value">1 / 1</span><span class="label">Gemma emitted the expected native tool call.</span></div>
+        <div class="metric"><span class="value">100%</span><span class="label">Tool calls had source-of-truth evidence coverage.</span></div>
+      </div>
+      <div class="callout">
+        <p>
+          The system is operating as intended for this run. The important nuance is that the demo intentionally includes one bad verifier
+          to prove failure detection. That is why the scorecard says <b>trust_level=incident</b> and <b>correctness=0.0</b> for the total run:
+          BlackBoxFix refused to hide the failed readback and created an incident packet.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>What Happened</h2>
+      <div class="flow" aria-label="Demo flow diagram">
+        <svg viewBox="0 0 1160 260" role="img">
+          <defs>
+            <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 Z" fill="#5a6572"></path>
+            </marker>
+          </defs>
+          <rect width="1160" height="260" fill="#ffffff"></rect>
+          <g font-family="Inter, Arial, sans-serif">
+            <g transform="translate(28 50)">
+              <rect width="130" height="74" rx="8" fill="#edf3f8" stroke="#d8dee6"></rect>
+              <text x="65" y="28" text-anchor="middle" font-weight="800" font-size="15" fill="#18202a">Gemma</text>
+              <text x="65" y="51" text-anchor="middle" font-size="12" fill="#5a6572">native tool call</text>
+            </g>
+            <line x1="165" y1="87" x2="245" y2="87" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow)"></line>
+            <g transform="translate(252 50)">
+              <rect width="150" height="74" rx="8" fill="#fff8e8" stroke="#e3c989"></rect>
+              <text x="75" y="28" text-anchor="middle" font-weight="800" font-size="15" fill="#18202a">Harness</text>
+              <text x="75" y="51" text-anchor="middle" font-size="12" fill="#5a6572">validates arguments</text>
+            </g>
+            <line x1="410" y1="87" x2="492" y2="87" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow)"></line>
+            <g transform="translate(500 50)">
+              <rect width="160" height="74" rx="8" fill="#ebf8f1" stroke="#a8d9bd"></rect>
+              <text x="80" y="28" text-anchor="middle" font-weight="800" font-size="15" fill="#18202a">DynamicJEPA</text>
+              <text x="80" y="51" text-anchor="middle" font-size="12" fill="#5a6572">real RocksDB writes</text>
+            </g>
+            <line x1="670" y1="87" x2="752" y2="87" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow)"></line>
+            <g transform="translate(760 50)">
+              <rect width="150" height="74" rx="8" fill="#f0edfb" stroke="#c7b9ee"></rect>
+              <text x="75" y="28" text-anchor="middle" font-weight="800" font-size="15" fill="#18202a">BlackBoxFix</text>
+              <text x="75" y="51" text-anchor="middle" font-size="12" fill="#5a6572">ledger + verifier</text>
+            </g>
+            <line x1="918" y1="87" x2="998" y2="87" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow)"></line>
+            <g transform="translate(1005 50)">
+              <rect width="130" height="74" rx="8" fill="#fff0f1" stroke="#ebb4ba"></rect>
+              <text x="65" y="28" text-anchor="middle" font-weight="800" font-size="15" fill="#18202a">Evidence</text>
+              <text x="65" y="51" text-anchor="middle" font-size="12" fill="#5a6572">pass + incident</text>
+            </g>
+
+            <g transform="translate(92 166)">
+              <text x="0" y="0" font-weight="800" font-size="13" fill="#18202a">Core proof:</text>
+              <text x="88" y="0" font-size="13" fill="#5a6572">Gemma did not merely claim success. BlackBoxFix separately read SQLite, RocksDB, files, hashes, and command exits.</text>
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <div class="timeline">
+        <div class="step"><b>1. Prompt</b><span>User asks for the full AgentOps demo.</span></div>
+        <div class="step"><b>2. Tool Call</b><span>Gemma chooses <code>run_dynamicjepa_blackboxfix_pipeline</code>.</span></div>
+        <div class="step"><b>3. Validation</b><span>Harness allows only the approved scenario and required capabilities.</span></div>
+        <div class="step"><b>4. Mutation</b><span>DynamicJEPA writes real state to RocksDB and files.</span></div>
+        <div class="step"><b>5. Readback</b><span>Verifier reads durable state independently.</span></div>
+        <div class="step"><b>6. Evidence</b><span>BlackBoxFix records expected delta, actual readback, and verdicts.</span></div>
+        <div class="step"><b>7. Export</b><span>Dashboard, replay, scorecard, OTel, episodes, and FSV package are generated.</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Where The Outputs Are</h2>
+      <table>
+        <thead>
+          <tr><th>Output</th><th>Path</th><th>What it proves</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Master report</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/harness-report.json</td>
+            <td>End-to-end summary: model call, source-of-truth locations, artifacts, edge cases, and hashes.</td>
+          </tr>
+          <tr>
+            <td>BlackBox ledger</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/blackbox.sqlite</td>
+            <td>The durable audit ledger. This is the source of truth for agent run, tool call, expected delta, readback, verifier, evidence, incident, and scorecard records.</td>
+          </tr>
+          <tr>
+            <td>DynamicJEPA state</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/dbs/..._rocksdb</td>
+            <td>The durable system state changed by the pipeline: raw events, latent panels, datasets, training runs, artifacts, predictions, plan traces, guards, surprise events.</td>
+          </tr>
+          <tr>
+            <td>Evidence export</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/evidence.json</td>
+            <td>Human/compliance evidence packet with timeline, ledger integrity, verifier summary, and incident details.</td>
+          </tr>
+          <tr>
+            <td>Dashboard</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/dashboard/index.html</td>
+            <td>Generated static UI for the ledger, evidence, failures, and run timeline.</td>
+          </tr>
+          <tr>
+            <td>Training episodes</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/exports/dynamicjepa-episodes.jsonl</td>
+            <td>Verified operation data converted into training/eval episodes.</td>
+          </tr>
+          <tr>
+            <td>Provenance</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/provenance/artifact-provenance.json</td>
+            <td>W3C PROV-style artifact lineage: which activity/agent/entity produced the model artifact and evidence outputs.</td>
+          </tr>
+          <tr>
+            <td>FSV certification package</td>
+            <td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/fsv-certification/</td>
+            <td>Before/after state, edge cases, hashes, and certification manifest for Full State Verification.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Source-of-Truth Readback</h2>
+      <p>These are the durable records that were read after execution. This is the core value of BlackBoxFix.</p>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>BlackBoxFix Ledger Records</h3>
+          <div class="bar-row"><span>agent_run</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>agent_step</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>model_decision</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>tool_call</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>expected_delta</span><div class="bar"><span style="width:100%"></span></div><b>2</b></div>
+          <div class="bar-row"><span>readback_snapshot</span><div class="bar"><span style="width:100%"></span></div><b>2</b></div>
+          <div class="bar-row"><span>verifier_result</span><div class="bar"><span style="width:100%"></span></div><b>2</b></div>
+          <div class="bar-row"><span>evidence_packet</span><div class="bar"><span style="width:100%"></span></div><b>2</b></div>
+          <div class="bar-row"><span>incident_packet</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>full_state_verification</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>scorecard</span><div class="bar"><span style="width:50%"></span></div><b>1</b></div>
+        </div>
+
+        <div class="card">
+          <h3>DynamicJEPA RocksDB Records</h3>
+          <div class="bar-row"><span>raw events</span><div class="bar"><span style="width:51%"></span></div><b>62</b></div>
+          <div class="bar-row"><span>latent panels</span><div class="bar"><span style="width:50%"></span></div><b>60</b></div>
+          <div class="bar-row"><span>transitions</span><div class="bar"><span style="width:50%"></span></div><b>60</b></div>
+          <div class="bar-row"><span>instrument readings</span><div class="bar"><span style="width:100%"></span></div><b>120</b></div>
+          <div class="bar-row"><span>dataset shards</span><div class="bar"><span style="width:3%"></span></div><b>3</b></div>
+          <div class="bar-row"><span>training runs</span><div class="bar"><span style="width:1%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>model artifacts</span><div class="bar"><span style="width:1%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>predictions</span><div class="bar"><span style="width:5%"></span></div><b>6</b></div>
+          <div class="bar-row"><span>guard decisions</span><div class="bar"><span style="width:4%"></span></div><b>5</b></div>
+          <div class="bar-row"><span>plan traces</span><div class="bar"><span style="width:1%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>surprise events</span><div class="bar"><span style="width:1%"></span></div><b>1</b></div>
+          <div class="bar-row"><span>audit log</span><div class="bar"><span style="width:100%"></span></div><b>316</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>What The Capabilities Look Like In The Results</h2>
+      <div class="grid cols-3">
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Data Ingest</h3>
+          <p>62 raw events were ingested into RocksDB, producing normalized state and outcome records. This proves the pipeline operated on durable state, not just a model response.</p>
+        </div>
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Panel Materialization</h3>
+          <p>60 latent panels and 120 instrument readings were materialized. These are the state representations the planner and model use later.</p>
+        </div>
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Action-Conditioned Training</h3>
+          <p>The dataset split was train=41, val=12, test=6. One training run produced one model artifact with five files whose registry hashes matched recomputed file hashes.</p>
+        </div>
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Planning</h3>
+          <p>One plan trace was stored. It evaluated 5 candidate actions, generated 5 predictions, ran 5 guard decisions, and selected action <code>c135...</code>.</p>
+        </div>
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Surprise Recording</h3>
+          <p>One surprise event was persisted after comparing predicted and observed state. The readback recorded error_norm=4.989, cosine=0.574, threshold=0.85.</p>
+        </div>
+        <div class="card">
+          <span class="pill pass">Persisted</span>
+          <h3>Artifact Provenance</h3>
+          <p>The provenance file has its own SHA-256 and links the model artifact, pipeline activity, and exported evidence into an inspectable lineage graph.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Correlation Intelligence</h2>
+      <p>
+        The current run now has a generated correlation report at
+        <code>/tmp/blackboxfix-agentops-demo-manual-03/intelligence/correlation-intelligence.json</code>
+        and a readable Markdown version beside it. This is the layer that turns scattered evidence into operational intelligence.
+      </p>
+
+      <div class="flow" aria-label="Correlation graph diagram">
+        <svg viewBox="0 0 1160 300" role="img">
+          <defs>
+            <marker id="arrow2" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 Z" fill="#5a6572"></path>
+            </marker>
+          </defs>
+          <rect width="1160" height="300" fill="#ffffff"></rect>
+          <g font-family="Inter, Arial, sans-serif" font-size="12" fill="#5a6572">
+            <g transform="translate(28 40)">
+              <rect width="132" height="64" rx="8" fill="#edf3f8" stroke="#d8dee6"></rect>
+              <text x="66" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Prompt</text>
+              <text x="66" y="47" text-anchor="middle">sha256 identity</text>
+            </g>
+            <line x1="166" y1="72" x2="238" y2="72" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+            <g transform="translate(246 40)">
+              <rect width="144" height="64" rx="8" fill="#f8f0ff" stroke="#d4c3ed"></rect>
+              <text x="72" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Model Decision</text>
+              <text x="72" y="47" text-anchor="middle">Gemma choice</text>
+            </g>
+            <line x1="397" y1="72" x2="468" y2="72" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+            <g transform="translate(476 40)">
+              <rect width="132" height="64" rx="8" fill="#fff8e8" stroke="#e3c989"></rect>
+              <text x="66" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Tool Call</text>
+              <text x="66" y="47" text-anchor="middle">allowlisted args</text>
+            </g>
+            <line x1="615" y1="72" x2="687" y2="72" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+            <g transform="translate(695 40)">
+              <rect width="140" height="64" rx="8" fill="#ebf8f1" stroke="#a8d9bd"></rect>
+              <text x="70" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Durable State</text>
+              <text x="70" y="47" text-anchor="middle">RocksDB/files</text>
+            </g>
+            <line x1="842" y1="72" x2="914" y2="72" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+            <g transform="translate(922 40)">
+              <rect width="132" height="64" rx="8" fill="#eef7fb" stroke="#a9d3e1"></rect>
+              <text x="66" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Verifier</text>
+              <text x="66" y="47" text-anchor="middle">readback proof</text>
+            </g>
+
+            <line x1="988" y1="108" x2="988" y2="158" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+            <g transform="translate(822 166)">
+              <rect width="150" height="64" rx="8" fill="#fff0f1" stroke="#ebb4ba"></rect>
+              <text x="75" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Incident/Score</text>
+              <text x="75" y="47" text-anchor="middle">trust signal</text>
+            </g>
+            <g transform="translate(1000 166)">
+              <rect width="132" height="64" rx="8" fill="#f0edfb" stroke="#c7b9ee"></rect>
+              <text x="66" y="27" text-anchor="middle" font-weight="800" font-size="14" fill="#18202a">Episodes</text>
+              <text x="66" y="47" text-anchor="middle">training/evals</text>
+            </g>
+            <line x1="980" y1="198" x2="992" y2="198" stroke="#5a6572" stroke-width="2" marker-end="url(#arrow2)"></line>
+
+            <text x="32" y="272" font-weight="800" fill="#18202a">Join keys:</text>
+            <text x="112" y="272">run_id, trace_id, model_decision_id, tool_call_id, dynamic_run_id, plan_trace_id, artifact_id, evidence_packet_id, episode_id</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h3>What Data We Have</h3>
+          <p>Prompt identity, model decision, structured tool arguments, expected deltas, actual readbacks, verifier results, incidents, scores, episodes, provenance, OTel traces, RocksDB counts, and artifact hashes.</p>
+        </div>
+        <div class="card">
+          <h3>Prompt/Output Capture</h3>
+          <p>Store prompt/output hashes and redacted previews in the ledger. Store raw prompt/output only in an encrypted restricted object store with retention policy and object URI.</p>
+        </div>
+        <div class="card">
+          <h3>Useful Intelligence</h3>
+          <p>Failure rate by prompt template, tool rejection rate, incident rate, surprise by action, source-of-truth coverage, policy denial rate, artifact integrity, and training episode yield.</p>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Calculation</th><th>Current Value</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>source_of_truth_coverage</td><td>100%</td><td>The tool call has independent evidence.</td></tr>
+          <tr><td>readback_ratio</td><td>100%</td><td>Every verifier result has readback state.</td></tr>
+          <tr><td>artifact_hash_integrity</td><td>100%</td><td>Registry hashes matched recomputed artifact file hashes.</td></tr>
+          <tr><td>guard_allow_rate</td><td>100%</td><td>All 5 candidate actions passed the guard in this scenario.</td></tr>
+          <tr><td>selected_highest_utility_action</td><td>true</td><td>The selected plan action had the maximum utility score.</td></tr>
+          <tr><td>surprise_rate_per_plan</td><td>1.0</td><td>This run intentionally recorded one surprise for one plan.</td></tr>
+          <tr><td>training_episode_yield</td><td>4</td><td>One plan episode and three edge-case episodes were exported.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Verification Outcome</h2>
+      <div class="grid cols-4">
+        <div class="metric"><span class="value">1</span><span class="label">Verifier passed</span></div>
+        <div class="metric"><span class="value">1</span><span class="label">Verifier failed intentionally</span></div>
+        <div class="metric"><span class="value">2</span><span class="label">Evidence packets</span></div>
+        <div class="metric"><span class="value">1</span><span class="label">Incident packet</span></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Case</th><th>Expected</th><th>Actual</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill pass">Happy path</span></td>
+            <td>DynamicJEPA writes plan, predictions, guards, training artifact, episodes, provenance.</td>
+            <td>Readback found the records and hashes in RocksDB/files/SQLite.</td>
+            <td>The model-triggered action really persisted.</td>
+          </tr>
+          <tr>
+            <td><span class="pill fail">Wrong target state</span></td>
+            <td>The verifier was deliberately told to expect <code>dj_plan_traces=999</code>.</td>
+            <td>The durable state had <code>dj_plan_traces=1</code>. BlackBoxFix stored failed verifier + incident.</td>
+            <td>This proves BlackBoxFix catches false success claims.</td>
+          </tr>
+          <tr>
+            <td><span class="pill pass">Missing model</span></td>
+            <td>Require a nonexistent Ollama model tag.</td>
+            <td>Failed closed with <code>DEMO_MODEL_NOT_FOUND</code> and zero ledger mutation.</td>
+            <td>The harness does not continue when the model dependency is missing.</td>
+          </tr>
+          <tr>
+            <td><span class="pill pass">Bad tool args</span></td>
+            <td>Use a non-allowlisted scenario.</td>
+            <td>Failed closed with <code>DEMO_TOOL_ARGUMENTS_INVALID</code> and zero ledger mutation.</td>
+            <td>The model cannot invoke arbitrary scenarios through this harness.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Scorecard Interpretation</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Scorecard Values</h3>
+          <table>
+            <tbody>
+              <tr><th>trust_level</th><td><span class="pill fail">incident</span></td></tr>
+              <tr><th>correctness</th><td>0.0</td></tr>
+              <tr><th>risk</th><td>1.0</td></tr>
+              <tr><th>training_value</th><td>0.8</td></tr>
+              <tr><th>verification_confidence</th><td>0.9175</td></tr>
+              <tr><th>policy_compliance</th><td><span class="pill warn">policy_missing</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>What That Means</h3>
+          <p>
+            The scorecard is harsh because it includes the intentional bad verifier. That is valuable for a sales demo:
+            it shows the system does not average away a failure or mark the run clean when a source-of-truth check fails.
+          </p>
+          <p>
+            <b>policy_missing</b> means this run did not include an explicit policy approval/denial record. The verification layer worked,
+            but a buyer-facing governance demo should either add a policy-decision step or explain that this run focused on source-of-truth proof.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Actual Output Shapes</h2>
+      <details open>
+        <summary>Gemma tool call from harness-report.json</summary>
+        <pre>{
+  "model": {
+    "name": "gemma4:e4b",
+    "provider": "ollama",
+    "tool_call": {
+      "function": {
+        "name": "run_dynamicjepa_blackboxfix_pipeline",
+        "arguments": {
+          "scenario": "counter_world_full_agentops",
+          "requested_capabilities": [
+            "data_ingest",
+            "panel_materialization",
+            "action_conditioned_training",
+            "planning",
+            "surprise_recording",
+            "artifact_provenance",
+            "blackboxfix_fsv"
+          ]
+        }
+      },
+      "id": "call_sgbdbibr"
+    }
+  }
+}</pre>
+      </details>
+
+      <details>
+        <summary>Dashboard summary output</summary>
+        <pre>{
+  "runs_total": 1,
+  "tool_calls_total": 1,
+  "evidence_packets_total": 2,
+  "incident_packets_total": 1,
+  "verifier_statuses": {
+    "passed": 1,
+    "failed": 1,
+    "blocked": 0,
+    "unknown": 0
+  },
+  "source_of_truth_coverage": {
+    "coverage_ratio": 1.0,
+    "tool_calls_total": 1,
+    "tool_calls_with_evidence": 1,
+    "tool_calls_without_evidence": 0
+  },
+  "evidence_hash_verification": {
+    "checked_packets": 2,
+    "checked_record_refs": 10,
+    "status": "passed"
+  }
+}</pre>
+      </details>
+
+      <details>
+        <summary>DynamicJEPA episode manifest</summary>
+        <pre>{
+  "operation": "export_dynamicjepa_episodes",
+  "status": "ok",
+  "counts": {
+    "plan_episode_count": 1,
+    "edge_case_episode_count": 3,
+    "total_records": 4
+  },
+  "output": {
+    "path": "/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/exports/dynamicjepa-episodes.jsonl",
+    "readback": {
+      "line_count": 4,
+      "first_episode_id": "counter_world:plan:9fd9a36d-b1c6-457b-af0c-28343e1d51a5",
+      "last_episode_id": "counter_world:edge:2:max_panel",
+      "sha256": "sha256:0f8fbaa44f2b3707f34f38f5f234296ab02c12a8c66b63d41d95c236712c3de5"
+    }
+  }
+}</pre>
+      </details>
+
+      <details>
+        <summary>Scorecard output</summary>
+        <pre>{
+  "status": "ok",
+  "score": {
+    "correctness": 0.0,
+    "policy_compliance": "policy_missing",
+    "risk": 1.0,
+    "training_value": 0.8,
+    "trust_level": "incident",
+    "verification_confidence": 0.9175
+  },
+  "score_inputs": {
+    "evidence_coverage_ratio": 1.0,
+    "readback_ratio": 1.0,
+    "tool_calls_total": 1,
+    "tool_calls_with_evidence": 1,
+    "verifier_status_counts": {
+      "passed": 1,
+      "failed": 1,
+      "blocked": 0,
+      "unknown": 0
+    }
+  }
+}</pre>
+      </details>
+
+      <details>
+        <summary>Intentional failure incident packet</summary>
+        <pre>{
+  "trigger": "verifier_failed",
+  "severity": "high",
+  "error_code": "CMD_EXIT_NON_ZERO",
+  "field_path": "actual_readback.exit_code",
+  "error_message": "command exit code was non-zero",
+  "remediation": "inspect stdout/stderr and rerun only after the command exits zero",
+  "source_of_truth": [
+    "cmd:/tmp/blackboxfix-agentops-demo-manual-03#sha256:56e33ba6eff2aeeb51e6042a7ea511200269248a21828713ebfc31f202901593"
+  ]
+}</pre>
+      </details>
+    </section>
+
+    <section>
+      <h2>How To Explain The Value</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>The buyer story</h3>
+          <p>
+            Gemma can decide to use a tool. BlackBoxFix proves what happened after that tool touched real state.
+            It records the intent, the expected durable delta, the actual readback, the verifier result, and the incident if reality does not match expectation.
+          </p>
+        </div>
+        <div class="card">
+          <h3>The technical proof</h3>
+          <p>
+            The proof is not the model response. The proof is the separate readback from SQLite, RocksDB, file hashes, command exits,
+            artifact registry hashes, replay exports, and FSV certification artifacts.
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <p>
+          Best positioning line: <b>Gemma takes the action. BlackBoxFix proves whether the action actually persisted correctly.</b>
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Issues Or Gaps Shown By This Run</h2>
+      <table>
+        <thead><tr><th>Finding</th><th>Status</th><th>What to do before a polished buyer demo</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>The run has an incident.</td>
+            <td><span class="pill pass">Intentional</span></td>
+            <td>Keep it in the demo, but label it clearly as the failure case.</td>
+          </tr>
+          <tr>
+            <td>Scorecard says <code>policy_missing</code>.</td>
+            <td><span class="pill warn">Real gap in this demo path</span></td>
+            <td>Add an explicit policy decision record before the tool call, or explain this run tests verification rather than approval governance.</td>
+          </tr>
+          <tr>
+            <td>The scenario is <code>counter_world</code>, not a deployment repo.</td>
+            <td><span class="pill warn">Good for research, abstract for buyers</span></td>
+            <td>Use this as the research-grade proof, then add a second deployment-fix scenario for demos with SRE/platform buyers.</td>
+          </tr>
+          <tr>
+            <td>RocksDB manual reads must be serial.</td>
+            <td><span class="pill info">Operational note</span></td>
+            <td>The harness already reads serially. Avoid parallel manual inspection of the same RocksDB path because of the local DB lock.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Open These Next</h2>
+      <p>Start with these files when walking through the demo live:</p>
+      <table>
+        <thead><tr><th>Order</th><th>File</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="path">/tmp/blackboxfix-agentops-demo-manual-03/harness-report.json</td><td>Run summary and hashes.</td></tr>
+          <tr><td>2</td><td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/dashboard/index.html</td><td>Visual ledger dashboard.</td></tr>
+          <tr><td>3</td><td class="path">/tmp/blackboxfix-agentops-demo-manual-03/blackbox/exports/evidence.json</td><td>Evidence packet and incident details.</td></tr>
+          <tr><td>4</td><td class="path">/tmp/blackboxfix-agentops-demo-manual-03/dynamicjepa/exports/dynamicjepa-episodes.manifest.json</td><td>Training/eval export proof.</td></tr>
+          <tr><td>5</td><td class="path">/tmp/blackboxfix-agentops-demo-manual-03/provenance/artifact-provenance.json</td><td>Artifact lineage.</td></tr>
+        </tbody>
+      </table>
+      <p class="small">Generated from the manual run <code>run_ab2eb49499cb438cbd62654a2cef7e4e</code>.</p>
+    </section>
+  </main>
+</body>
+</html>
