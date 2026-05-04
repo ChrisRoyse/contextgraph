@@ -5604,6 +5604,331 @@ fn policy_modes_json() -> Value {
     ])
 }
 
+#[derive(Clone, Copy)]
+struct ServedHttpEndpoint {
+    method: &'static str,
+    path: &'static str,
+    route_id: &'static str,
+    ledger_record_kind: Option<&'static str>,
+    authenticated: bool,
+}
+
+const SERVED_HTTP_ENDPOINTS: &[ServedHttpEndpoint] = &[
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/health",
+        route_id: "GET /v1/health",
+        ledger_record_kind: None,
+        authenticated: false,
+    },
+    ServedHttpEndpoint {
+        method: "POST",
+        path: "/v1/runs",
+        route_id: "POST /v1/runs",
+        ledger_record_kind: Some("agent_run"),
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/runs/{run_id}",
+        route_id: "GET /v1/runs/{run_id}",
+        ledger_record_kind: Some("agent_run"),
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "POST",
+        path: "/v1/runs/{run_id}/steps",
+        route_id: "POST /v1/runs/{run_id}/steps",
+        ledger_record_kind: Some("agent_step"),
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "POST",
+        path: "/v1/tool-calls",
+        route_id: "POST /v1/tool-calls",
+        ledger_record_kind: Some("tool_call"),
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/summary",
+        route_id: "GET /v1/dashboard/summary",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/runs",
+        route_id: "GET /v1/dashboard/runs",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/runs/{run_id}/timeline",
+        route_id: "GET /v1/dashboard/runs/{run_id}/timeline",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/evidence",
+        route_id: "GET /v1/dashboard/evidence",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/verifier-status",
+        route_id: "GET /v1/dashboard/verifier-status",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/errors",
+        route_id: "GET /v1/dashboard/errors",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/exports",
+        route_id: "GET /v1/dashboard/exports",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/pilot-packages",
+        route_id: "GET /v1/dashboard/pilot-packages",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+    ServedHttpEndpoint {
+        method: "GET",
+        path: "/v1/dashboard/risk-assessments",
+        route_id: "GET /v1/dashboard/risk-assessments",
+        ledger_record_kind: None,
+        authenticated: true,
+    },
+];
+
+#[derive(Clone, Copy)]
+struct PlannedHttpEndpoint {
+    method: &'static str,
+    path: &'static str,
+    ledger_record_kind: Option<&'static str>,
+    command_equivalent: &'static str,
+    source_phase: &'static str,
+}
+
+const PLANNED_HTTP_ENDPOINTS: &[PlannedHttpEndpoint] = &[
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/tool-calls/{tool_call_id}/verify",
+        ledger_record_kind: Some("verifier_result"),
+        command_equivalent: "blackbox verify --ledger PATH --input verify-spec.json",
+        source_phase: "phase6",
+    },
+    PlannedHttpEndpoint {
+        method: "GET",
+        path: "/v1/tool-calls/{tool_call_id}/evidence",
+        ledger_record_kind: Some("evidence_packet"),
+        command_equivalent: "blackbox export evidence --ledger PATH --run-id RUN_ID --out DIR",
+        source_phase: "phase7",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/replay",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox replay --ledger PATH --run-id RUN_ID",
+        source_phase: "phase7",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/exports/episodes",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox export episodes --ledger PATH --out DIR",
+        source_phase: "phase8",
+    },
+    PlannedHttpEndpoint {
+        method: "GET",
+        path: "/v1/connectors",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox connector list",
+        source_phase: "phase5",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/connectors/{connector_id}/test",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox connector test --ledger PATH --connector CONNECTOR_ID",
+        source_phase: "phase5",
+    },
+    PlannedHttpEndpoint {
+        method: "GET",
+        path: "/v1/policies",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox policy registry",
+        source_phase: "phase9",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/policies/evaluate",
+        ledger_record_kind: Some("policy_decision"),
+        command_equivalent: "blackbox policy evaluate --ledger PATH --input policy-request.json",
+        source_phase: "phase9",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/enterprise/tenants/{tenant_id}/config",
+        ledger_record_kind: Some("enterprise_tenant_config"),
+        command_equivalent: "blackbox enterprise configure --ledger PATH --tenant TENANT --input config.json",
+        source_phase: "phase10",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/enterprise/tenants/{tenant_id}/directory-sync",
+        ledger_record_kind: Some("enterprise_directory_snapshot"),
+        command_equivalent: "blackbox enterprise sync-directory --ledger PATH --tenant TENANT --input directory.json",
+        source_phase: "phase10",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/enterprise/tenants/{tenant_id}/access/evaluate",
+        ledger_record_kind: Some("enterprise_access_decision"),
+        command_equivalent: "blackbox enterprise access-evaluate --ledger PATH --tenant TENANT --input access.json",
+        source_phase: "phase10",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/enterprise/tenants/{tenant_id}/audit-export",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox enterprise export-audit --ledger PATH --tenant TENANT --out DIR",
+        source_phase: "phase10",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/runs/{run_id}/scorecard",
+        ledger_record_kind: Some("scorecard"),
+        command_equivalent: "blackbox score run --ledger PATH --tenant TENANT --run-id RUN_ID",
+        source_phase: "phase12",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate",
+        ledger_record_kind: Some("retention_decision"),
+        command_equivalent: "blackbox privacy evaluate-retention --ledger PATH --tenant TENANT --run-id RUN_ID",
+        source_phase: "phase11",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests",
+        ledger_record_kind: Some("evidence_deletion"),
+        command_equivalent: "blackbox privacy request-erasure --ledger PATH --tenant TENANT --run-id RUN_ID",
+        source_phase: "phase11",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate",
+        ledger_record_kind: Some("release_gate"),
+        command_equivalent: "blackbox gate evaluate --ledger PATH --tenant TENANT --run-id RUN_ID --input gate.json",
+        source_phase: "phase14",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/commercial/tenants/{tenant_id}/pilot-packages",
+        ledger_record_kind: Some("pilot_package"),
+        command_equivalent: "blackbox package pilot-report --ledger PATH --tenant TENANT --out DIR",
+        source_phase: "phase15",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/risk/tenants/{tenant_id}/assessments",
+        ledger_record_kind: Some("risk_assessment"),
+        command_equivalent: "blackbox risk evaluate --ledger PATH --tenant TENANT --input risk.json",
+        source_phase: "phase16",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge",
+        ledger_record_kind: Some("first_wedge_demo"),
+        command_equivalent: "blackbox demo first-wedge --ledger PATH --tenant TENANT --run-id RUN_ID --out DIR",
+        source_phase: "phase18",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/fsv/tenants/{tenant_id}/certifications",
+        ledger_record_kind: Some("full_state_verification"),
+        command_equivalent: "blackbox fsv certify --ledger PATH --tenant TENANT --phase N --evidence evidence.json --out DIR",
+        source_phase: "phase19",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/exports/opentelemetry",
+        ledger_record_kind: None,
+        command_equivalent: "blackbox export otel --ledger PATH --out DIR",
+        source_phase: "phase23",
+    },
+    PlannedHttpEndpoint {
+        method: "POST",
+        path: "/v1/sdk/events",
+        ledger_record_kind: Some("agent_run|agent_step|model_decision|tool_call"),
+        command_equivalent: "blackbox sdk ingest --ledger PATH --input cloudevents.json",
+        source_phase: "phase24",
+    },
+];
+
+fn served_http_endpoints_json() -> Value {
+    Value::Array(
+        SERVED_HTTP_ENDPOINTS
+            .iter()
+            .map(|endpoint| {
+                json!({
+                    "method": endpoint.method,
+                    "path": endpoint.path,
+                    "route_id": endpoint.route_id,
+                    "ledger_record_kind": endpoint.ledger_record_kind,
+                    "implemented": true,
+                    "served_by": "blackbox server serve",
+                    "authenticated": endpoint.authenticated,
+                    "audited_when_authenticated_route": endpoint.authenticated,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn served_http_endpoint_labels_json() -> Value {
+    Value::Array(
+        SERVED_HTTP_ENDPOINTS
+            .iter()
+            .map(|endpoint| Value::String(endpoint.route_id.to_string()))
+            .collect(),
+    )
+}
+
+fn planned_http_endpoints_json() -> Value {
+    Value::Array(
+        PLANNED_HTTP_ENDPOINTS
+            .iter()
+            .map(|endpoint| {
+                json!({
+                    "method": endpoint.method,
+                    "path": endpoint.path,
+                    "ledger_record_kind": endpoint.ledger_record_kind,
+                    "implemented": false,
+                    "served_by": null,
+                    "source_phase": endpoint.source_phase,
+                    "command_equivalent": endpoint.command_equivalent,
+                    "expected_http_status_until_implemented": 404,
+                })
+            })
+            .collect(),
+    )
+}
+
 fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
     let ledger_source = if let Some(ledger) = args.ledger {
         let conn = open_initialized_ledger(&ledger)?;
@@ -5617,28 +5942,19 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
         "command": "blackbox api surface",
         "source_of_truth": ledger_source,
         "format": "blackbox_http_api_surface_json_v1",
+        "api_surface_policy": {
+            "endpoints_field_contains_only_routes_served_by_http_router": true,
+            "unserved_or_command_only_capabilities_are_explicitly_planned": true,
+            "planned_http_endpoints_expected_status_until_implemented": 404,
+            "source_of_truth_for_served_routes": "blackbox server serve router plus HTTP readback"
+        },
         "phase17_http_server": {
             "command": "blackbox server serve --ledger PATH --bind 127.0.0.1:7607",
             "connector": HTTP_SERVER_CONNECTOR_ID,
             "authentication": "Authorization: Bearer ${BLACKBOX_API_KEY}",
             "tenant_scope_header": "X-Blackbox-Tenant",
             "max_body_bytes": HTTP_MAX_BODY_BYTES,
-            "served_endpoints": [
-                "GET /v1/health",
-                "POST /v1/runs",
-                "GET /v1/runs/{run_id}",
-                "POST /v1/runs/{run_id}/steps",
-                "POST /v1/tool-calls",
-                "GET /v1/dashboard/summary",
-                "GET /v1/dashboard/runs",
-                "GET /v1/dashboard/runs/{run_id}/timeline",
-                "GET /v1/dashboard/evidence",
-                "GET /v1/dashboard/verifier-status",
-                "GET /v1/dashboard/errors",
-                "GET /v1/dashboard/exports",
-                "GET /v1/dashboard/pilot-packages",
-                "GET /v1/dashboard/risk-assessments"
-            ],
+            "served_endpoints": served_http_endpoint_labels_json(),
             "audit_record_kind": "http_request_audit",
             "fail_closed": true
         },
@@ -5740,43 +6056,9 @@ fn api_surface(args: ApiSurfaceArgs) -> BbxResult<Value> {
             "max_batch_events": SDK_MAX_BATCH_EVENTS,
             "fail_closed": true
         },
-        "endpoints": [
-            { "method": "POST", "path": "/v1/runs", "ledger_record_kind": "agent_run" },
-            { "method": "GET", "path": "/v1/runs/{run_id}", "ledger_record_kind": "agent_run" },
-            { "method": "POST", "path": "/v1/runs/{run_id}/steps", "ledger_record_kind": "agent_step" },
-            { "method": "POST", "path": "/v1/tool-calls", "ledger_record_kind": "tool_call" },
-            { "method": "POST", "path": "/v1/tool-calls/{tool_call_id}/verify", "ledger_record_kind": "verifier_result" },
-            { "method": "GET", "path": "/v1/tool-calls/{tool_call_id}/evidence", "ledger_record_kind": "evidence_packet" },
-            { "method": "POST", "path": "/v1/replay", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/exports/episodes", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/connectors", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/connectors/{connector_id}/test", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/policies", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/policies/evaluate", "ledger_record_kind": "policy_decision" },
-            { "method": "GET", "path": "/v1/dashboard/summary", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/runs", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/runs/{run_id}/timeline", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/evidence", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/verifier-status", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/errors", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/exports", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/pilot-packages", "ledger_record_kind": null },
-            { "method": "GET", "path": "/v1/dashboard/risk-assessments", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/config", "ledger_record_kind": "enterprise_tenant_config" },
-            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/directory-sync", "ledger_record_kind": "enterprise_directory_snapshot" },
-            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/access/evaluate", "ledger_record_kind": "enterprise_access_decision" },
-            { "method": "POST", "path": "/v1/enterprise/tenants/{tenant_id}/audit-export", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/runs/{run_id}/scorecard", "ledger_record_kind": "scorecard" },
-            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/retention/evaluate", "ledger_record_kind": "retention_decision" },
-            { "method": "POST", "path": "/v1/privacy/tenants/{tenant_id}/runs/{run_id}/erasure-requests", "ledger_record_kind": "evidence_deletion" },
-            { "method": "POST", "path": "/v1/gates/tenants/{tenant_id}/runs/{run_id}/evaluate", "ledger_record_kind": "release_gate" },
-            { "method": "POST", "path": "/v1/commercial/tenants/{tenant_id}/pilot-packages", "ledger_record_kind": "pilot_package" },
-            { "method": "POST", "path": "/v1/risk/tenants/{tenant_id}/assessments", "ledger_record_kind": "risk_assessment" },
-            { "method": "POST", "path": "/v1/demo/tenants/{tenant_id}/runs/{run_id}/first-wedge", "ledger_record_kind": "first_wedge_demo" },
-            { "method": "POST", "path": "/v1/fsv/tenants/{tenant_id}/certifications", "ledger_record_kind": "full_state_verification" },
-            { "method": "POST", "path": "/v1/exports/opentelemetry", "ledger_record_kind": null },
-            { "method": "POST", "path": "/v1/sdk/events", "ledger_record_kind": "agent_run|agent_step|model_decision|tool_call" }
-        ],
+        "endpoints": served_http_endpoints_json(),
+        "served_http_endpoints": served_http_endpoints_json(),
+        "planned_http_endpoints": planned_http_endpoints_json(),
         "policy_modes": policy_modes_json(),
         "capabilities": capability_registry_json(),
         "fail_closed": true,
