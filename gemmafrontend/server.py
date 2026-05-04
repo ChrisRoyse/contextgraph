@@ -245,6 +245,52 @@ AGENT_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
 ]
 
+
+def agent_tool_catalog() -> dict[str, Any]:
+    tools = []
+    for definition in AGENT_TOOL_DEFINITIONS:
+        function = definition.get("function") if isinstance(definition, dict) else None
+        if not isinstance(function, dict):
+            continue
+        parameters = function.get("parameters") if isinstance(function.get("parameters"), dict) else {}
+        properties = parameters.get("properties") if isinstance(parameters.get("properties"), dict) else {}
+        required = parameters.get("required") if isinstance(parameters.get("required"), list) else []
+        tool_properties = []
+        for name, schema in properties.items():
+            if not isinstance(schema, dict):
+                continue
+            items = schema.get("items") if isinstance(schema.get("items"), dict) else {}
+            tool_properties.append(
+                {
+                    "name": name,
+                    "type": schema.get("type"),
+                    "required": name in required,
+                    "description": schema.get("description"),
+                    "enum": schema.get("enum"),
+                    "items_enum": items.get("enum"),
+                }
+            )
+        tools.append(
+            {
+                "name": function.get("name"),
+                "description": function.get("description"),
+                "required": required,
+                "properties": tool_properties,
+            }
+        )
+    return {
+        "status": "ok",
+        "source_of_truth": "process:gemmafrontend.server.AGENT_TOOL_DEFINITIONS",
+        "tool_count": len(tools),
+        "contract": {
+            "action_boundary": "the model may request one tool; ContextGraph validates, executes, and verifies it",
+            "unsupported_tool_behavior": "fail_closed_with_typed_error",
+            "prompting_rule": "type your own request in natural language; these hints are not executable presets",
+        },
+        "tools": tools,
+    }
+
+
 EVENT_LOG: list[dict[str, Any]] = []
 EVENT_LOCK = threading.Lock()
 EVENT_QUEUES: list[dict[str, Any]] = []
@@ -1109,6 +1155,210 @@ def build_timeline(
     return timeline
 
 
+def proof_status(value: bool | None) -> str:
+    if value is True:
+        return "passed"
+    if value is False:
+        return "incident"
+    return "missing"
+
+
+def build_end_user_proof(
+    root: Path,
+    harness: dict[str, Any],
+    scorecard: dict[str, Any],
+    intelligence: dict[str, Any],
+    ledger: dict[str, Any],
+    reward: dict[str, Any] | None,
+    artifacts: list[dict[str, Any]],
+    source_of_truth: dict[str, Any],
+    model_io: dict[str, Any],
+) -> dict[str, Any]:
+    calc = intelligence.get("calculated_intelligence", {})
+    model = calc.get("model_behavior", {})
+    verification = calc.get("verification", {})
+    training = calc.get("training", {})
+    planning = calc.get("planning", {})
+    surprise = calc.get("surprise", {})
+    counts = ledger.get("run_counts", {})
+    score = scorecard.get("score", {})
+    score_inputs = scorecard.get("score_inputs", {})
+    reward_payload = reward.get("payload", {}).get("reward") if reward else None
+    artifact_total = len(artifacts)
+    artifact_existing = sum(1 for item in artifacts if item.get("exists"))
+    verifier_total = int(counts.get("verifier_result", 0) or 0)
+    verifier_failed = int(score_inputs.get("verifier_status_counts", {}).get("failed", 0) or 0)
+    incident_count = int(counts.get("incident_packet", 0) or 0)
+    readback_ratio = verification.get("readback_ratio")
+    sot_coverage = verification.get("source_of_truth_coverage")
+    evidence_hash_status = score_inputs.get("evidence_hash_verification", {}).get("status")
+    selected_tool = model.get("tool_name") or harness.get("model", {}).get("tool_call", {}).get("function", {}).get("name")
+    policy_compliance = score.get("policy_compliance") or score_inputs.get("policy_compliance")
+    trust_level = score.get("trust_level")
+    clean_success = (
+        trust_level in {"verified", "verified_with_policy"}
+        and incident_count == 0
+        and verifier_failed == 0
+    )
+    incident_demo = incident_count > 0
+    status = "verified" if clean_success else ("incident_caught" if incident_demo else "incomplete")
+    if clean_success:
+        headline = "The model action was verified against durable source-of-truth state."
+        plain_result = "Every verifier passed and no incident packet exists for this run."
+    elif incident_demo:
+        headline = "ContextGraph caught a real mismatch and preserved the proof."
+        plain_result = (
+            "This run contains at least one failed verifier row and at least one incident packet. "
+            "That means the system did not merely trust the model's answer; it compared expected state with readback state and recorded the mismatch."
+        )
+    else:
+        headline = "The run has not reached a clean verified state yet."
+        plain_result = "Some proof inputs are missing, blocked, or not yet compiled."
+
+    proof_cards = [
+        {
+            "label": "Model action",
+            "value": selected_tool or "n/a",
+            "status": proof_status(bool(selected_tool) if selected_tool else None),
+            "meaning": "The selected model had to choose a declared ContextGraph tool instead of only producing prose.",
+            "source": "ollama native tool call + harness-report.json",
+        },
+        {
+            "label": "SQLite ledger rows",
+            "value": ledger.get("record_count"),
+            "status": proof_status((ledger.get("record_count") or 0) > 0),
+            "meaning": "The BlackBoxFix ledger is a physical SQLite table read separately by the frontend.",
+            "source": ledger.get("source_of_truth"),
+        },
+        {
+            "label": "Source-of-truth coverage",
+            "value": sot_coverage,
+            "format": "ratio",
+            "status": proof_status(sot_coverage == 1),
+            "meaning": "Actions were checked against durable files, command output, SQLite, RocksDB, or artifact hashes.",
+            "source": "scorecard.score_inputs + correlation intelligence",
+        },
+        {
+            "label": "Verifier readback",
+            "value": readback_ratio,
+            "format": "ratio",
+            "status": proof_status(readback_ratio == 1),
+            "meaning": "Verifier rows contain actual readback evidence, not just return values.",
+            "source": ledger.get("source_of_truth"),
+        },
+        {
+            "label": "Incident detection",
+            "value": incident_count,
+            "status": "incident" if incident_count else "passed",
+            "meaning": "A nonzero value shows the system caught and persisted a mismatch packet.",
+            "source": ledger.get("source_of_truth"),
+        },
+        {
+            "label": "Training signal",
+            "value": training.get("dataset_rows_total"),
+            "status": proof_status((training.get("dataset_rows_total") or 0) > 0),
+            "meaning": "Verified work was converted into action-conditioned training/eval material.",
+            "source": source_of_truth.get("dynamicjepa_episodes"),
+        },
+        {
+            "label": "Reward",
+            "value": reward_payload.get("raw") if isinstance(reward_payload, dict) else None,
+            "status": proof_status(isinstance(reward_payload, dict)),
+            "meaning": "The reward compiler converts verified outcome features into a trainable scalar.",
+            "source": ledger.get("source_of_truth"),
+        },
+        {
+            "label": "Artifact hashes",
+            "value": f"{artifact_existing}/{artifact_total}",
+            "status": proof_status(artifact_total > 0 and artifact_existing == artifact_total),
+            "meaning": "Expected output files were read back from disk and hashed.",
+            "source": str(root),
+        },
+    ]
+
+    self_verify_steps = [
+        {
+            "title": "Read the ledger",
+            "what_to_check": "Open the SQLite ledger and count ledger_records. The UI count should match the physical table.",
+            "source_of_truth": ledger.get("source_of_truth"),
+        },
+        {
+            "title": "Inspect the run artifacts",
+            "what_to_check": "The listed files must exist on disk with the displayed byte counts and SHA-256 hashes.",
+            "source_of_truth": file_sot(root),
+        },
+        {
+            "title": "Check the DynamicJEPA state",
+            "what_to_check": "The pipeline result and RocksDB path show state, panel, planning, surprise, and training outputs.",
+            "source_of_truth": source_of_truth.get("dynamicjepa_rocksdb"),
+        },
+        {
+            "title": "Check verifier evidence",
+            "what_to_check": "Verifier rows contain expected deltas and actual readback data; failed verifier rows create incidents.",
+            "source_of_truth": ledger.get("source_of_truth"),
+        },
+    ]
+
+    questions = [
+        {
+            "question": "Did the model really trigger an action?",
+            "answer": f"Yes. The model selected `{selected_tool}` and ContextGraph executed only after validating that tool call."
+            if selected_tool
+            else "No selected tool was found in the current snapshot.",
+        },
+        {
+            "question": "Where is reality checked?",
+            "answer": "In the source-of-truth readbacks: SQLite ledger rows, DynamicJEPA RocksDB/files, command verifier output, provenance files, and hashed artifacts.",
+        },
+        {
+            "question": "What did the system catch?",
+            "answer": (
+                f"It caught {incident_count} incident packet(s) from {verifier_failed} failed verifier row(s)."
+                if incident_count
+                else "No incident packet is present in this run."
+            ),
+        },
+        {
+            "question": "What can this become for training?",
+            "answer": (
+                f"It produced reward={reward_payload.get('raw')} and loss={reward_payload.get('loss')} from verified scorecard features."
+                if isinstance(reward_payload, dict)
+                else "Reward has not been compiled for this snapshot."
+            ),
+        },
+    ]
+
+    return {
+        "status": status,
+        "headline": headline,
+        "plain_result": plain_result,
+        "honesty_note": (
+            "An incident state is not a hidden failure. It is the product proving that it can detect and preserve evidence of a mismatch."
+            if incident_demo
+            else "Clean verified status requires source-of-truth readbacks, verifier pass evidence, and no incident packets."
+        ),
+        "model": harness.get("model", {}).get("name"),
+        "operator_prompt_sha256": model_io.get("operator_request_sha256") or model.get("prompt_sha256"),
+        "run_id": harness.get("blackbox_run_id"),
+        "source_root": str(root),
+        "trust_level": trust_level,
+        "policy_compliance": policy_compliance,
+        "verifier_total": verifier_total,
+        "verifier_failed": verifier_failed,
+        "evidence_hash_verification": evidence_hash_status,
+        "planning": {
+            "selected_highest_utility_action": planning.get("selected_highest_utility_action"),
+        },
+        "surprise": {
+            "events": surprise.get("surprise_events"),
+            "latest_kind": surprise.get("latest_kind"),
+        },
+        "proof_cards": proof_cards,
+        "self_verify_steps": self_verify_steps,
+        "questions": questions,
+    }
+
+
 def build_snapshot(root: Path, *, frontend_context: dict[str, Any] | None = None) -> dict[str, Any]:
     harness = load_json(root / "harness-report.json", "harness_report")
     pipeline = load_json(root / "dynamicjepa/pipeline-result.json", "dynamicjepa.pipeline_result")
@@ -1136,6 +1386,17 @@ def build_snapshot(root: Path, *, frontend_context: dict[str, Any] | None = None
     counts = dynamic_counts(pipeline)
     source_of_truth = harness.get("source_of_truth", {})
     model_io = harness.get("model_io", {})
+    end_user_proof = build_end_user_proof(
+        root,
+        harness,
+        scorecard,
+        intelligence,
+        ledger,
+        reward,
+        artifacts,
+        source_of_truth,
+        model_io,
+    )
     tool_contract = model_io.get("tool_contract") if isinstance(model_io.get("tool_contract"), dict) else {}
     actual_model_message = (
         model_io.get("actual_model_message")
@@ -1202,6 +1463,7 @@ def build_snapshot(root: Path, *, frontend_context: dict[str, Any] | None = None
                 {"from": "Evidence", "to": "Reward", "label": "scorecard -> reward/loss"},
             ],
         },
+        "end_user_proof": end_user_proof,
         "timeline": build_timeline(harness, scorecard, intelligence, ledger, reward),
         "metrics": {
             "verification": calc.get("verification", {}),
@@ -1267,7 +1529,6 @@ def persist_snapshot(runtime_root: Path, snapshot: dict[str, Any], mode: str) ->
     run_id = f"frontend_{time.time_ns()}_{hashlib.sha256((mode + snapshot['source_root']).encode()).hexdigest()[:8]}"
     out_dir = runtime_root / "frontend-runs" / run_id
     snapshot_path = out_dir / "system-snapshot.json"
-    write_json(snapshot_path, snapshot)
     entry = {
         "frontend_run_id": run_id,
         "created_at": now_rfc3339(),
@@ -1278,8 +1539,9 @@ def persist_snapshot(runtime_root: Path, snapshot: dict[str, Any], mode: str) ->
         "status": snapshot["status"],
         "source_of_truth": file_sot(snapshot_path),
     }
-    append_index(runtime_root, entry)
     snapshot["frontend_persistence"] = entry
+    write_json(snapshot_path, snapshot)
+    append_index(runtime_root, entry)
     return snapshot
 
 
@@ -3364,6 +3626,8 @@ class AppHandler(BaseHTTPRequestHandler):
                 return self._serve_static((STATIC_ROOT / rel).resolve())
             if parsed.path == "/api/health":
                 return self._send_json(health(self.app_config.runtime_root, self.app_config.model, self.app_config.ollama_url))
+            if parsed.path == "/api/tools":
+                return self._send_json(agent_tool_catalog())
             if parsed.path == "/api/runs":
                 return self._send_json({"status": "ok", "runs": scan_real_runs(self.app_config.runtime_root)})
             if parsed.path == "/api/category/latest":

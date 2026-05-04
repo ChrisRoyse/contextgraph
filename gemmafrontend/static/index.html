@@ -26,17 +26,17 @@
           </article>
         </div>
 
-        <div class="prompt-palette" aria-label="demo prompts">
-          <button class="prompt-chip" data-prompt="Run the full ContextGraph proof pipeline. Use scenario counter_world_full_agentops and the exact capability ids: data_ingest, panel_materialization, action_conditioned_training, planning, surprise_recording, artifact_provenance, blackboxfix_fsv.">Run proof</button>
-          <button class="prompt-chip" data-prompt="Inspect the latest real run and tell me exactly what the physical evidence proves.">Inspect evidence</button>
-          <button class="prompt-chip" data-prompt="Explain the latest scorecard: trust, risk, correctness, verification confidence, and source-of-truth coverage.">Explain scorecard</button>
-          <button class="prompt-chip" data-prompt="Why did the latest run have an incident? Read the verifier and incident rows and explain the mismatch.">Analyze incident</button>
-          <button class="prompt-chip" data-prompt="Use the ContextGraph tool suggest_reward_improvements to improve the latest run reward. Objective: increase verified outcome reward by fixing incidents, risk, and missing policy.">Improve reward</button>
-          <button class="prompt-chip" data-prompt="Compare the two latest real runs and tell me which one is safer based on incidents, risk, verification confidence, and reward.">Compare runs</button>
-          <button class="prompt-chip" data-prompt="Export a buyer evidence report for the latest run and summarize what the report proves.">Buyer report</button>
-          <button class="prompt-chip" data-prompt="Can the proof pipeline action be approved under bounded autonomous policy? Evaluate the policy and read back the decision row.">Policy gate</button>
-          <button class="prompt-chip" data-prompt="Build the investor product category pack. Show the model arena, verified outcome leaderboard, failure injection studio, governance evidence map, connector contracts, signed attestation, reward dashboard, and executive view. Audience: AI infrastructure investors.">Investor pack</button>
-        </div>
+        <section class="tool-guide" aria-label="agent tool hints">
+          <div class="tool-guide-header">
+            <div>
+              <p class="eyebrow">Agent tool surface</p>
+              <h2>Prompt Hints</h2>
+            </div>
+            <button type="button" id="refreshTools">Refresh Tools</button>
+          </div>
+          <p class="tool-guide-copy">These are the tools the selected model can request. They are hints, not preset prompts. Type your own request in the composer and see which tool the model chooses.</p>
+          <div id="toolGuideList" class="tool-guide-list"></div>
+        </section>
 
         <form id="chatForm" class="composer">
           <textarea id="prompt" name="prompt" rows="3" maxlength="4096" placeholder="Ask the selected model to run, inspect, compare, explain, export, or evaluate policy..."></textarea>
@@ -48,7 +48,6 @@
               </select>
             </label>
             <button type="button" id="loadLatest">Load Latest Real Run</button>
-            <button type="button" id="buildCategory">Build Investor Pack</button>
             <button type="submit" id="runLive">Run Live With Model</button>
           </div>
         </form>
@@ -71,6 +70,7 @@
           <div class="flow-node">Evidence</div>
         </section>
 
+        <section class="reality-proof" id="realityProof" aria-label="plain-language proof"></section>
         <section class="metric-grid" id="metricGrid"></section>
         <section id="toolSurface" class="tool-surface"></section>
 

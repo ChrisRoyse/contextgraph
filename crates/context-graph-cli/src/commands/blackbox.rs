@@ -110,6 +110,9 @@ const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 const VERIFIED_GIT_APPLY_PATCH_TOOL: &str = "verified_git_apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_CAPABILITY: &str = "local.git.apply_patch";
 const VERIFIED_GIT_APPLY_PATCH_VERIFIER: &str = "git_file_diff_matches_patch_v1";
+const CONTEXTGRAPH_AGENTOPS_DEMO_TOOL: &str = "run_dynamicjepa_blackboxfix_pipeline";
+const CONTEXTGRAPH_AGENTOPS_DEMO_CAPABILITY: &str = "blackboxfix.demo.full_agentops_dynamicjepa";
+const CONTEXTGRAPH_AGENTOPS_DEMO_VERIFIER: &str = "cmd_exit_zero_v1";
 const SDK_MAX_BATCH_EVENTS: usize = 128;
 const SDK_EVENT_AGENT_RUN: &str = "dev.contextgraph.blackbox.agent_run.v1";
 const SDK_EVENT_AGENT_STEP: &str = "dev.contextgraph.blackbox.agent_step.v1";
@@ -5623,6 +5626,14 @@ fn capability_registry() -> &'static [CapabilityDefinition] {
             verifier_id: VERIFIED_GIT_APPLY_PATCH_VERIFIER,
             risk_tier: "medium",
             source_kind: GIT_CONNECTOR_ID,
+        },
+        CapabilityDefinition {
+            capability_id: CONTEXTGRAPH_AGENTOPS_DEMO_CAPABILITY,
+            tool_name: CONTEXTGRAPH_AGENTOPS_DEMO_TOOL,
+            mutating: true,
+            verifier_id: CONTEXTGRAPH_AGENTOPS_DEMO_VERIFIER,
+            risk_tier: "high",
+            source_kind: CMD_CONNECTOR_ID,
         },
     ]
 }

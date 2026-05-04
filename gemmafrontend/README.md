@@ -23,6 +23,14 @@ Then open:
 http://127.0.0.1:8787
 ```
 
+The UI has a model selector populated from Ollama `/api/tags`. Current local
+benchmark models are `gemma4:e4b`, `qwen3:8b`, and `mistral-nemo:12b`.
+
+The left pane intentionally does not contain preset agent prompts. It shows a
+non-clickable prompt-hint guide sourced from `/api/tools`, which is generated
+from the same backend tool definitions sent to the model. Type your own prompt
+in the composer to test whether the selected model chooses the correct tool.
+
 Runtime snapshots are written outside the repo by default:
 
 ```text
@@ -42,6 +50,9 @@ Set `GEMMAFRONTEND_RUNTIME_ROOT` or pass `--runtime-root` to change that.
 - `Load Latest Real Run`: scans `/tmp/blackboxfix-agentops-demo*`, loads the
   frontend live-run directory, loads the newest completed run, and verifies
   physical files plus `blackbox.sqlite#ledger_records`.
+- `GET /api/tools`: returns the current tool contract for the hint panel. This
+  is read-only and exists so the UI can show the real available tool surface
+  without maintaining separate prompt presets.
 
 The inspect mode is not mock data. It reads completed real run artifacts and
 persists a frontend system snapshot proving what was read.

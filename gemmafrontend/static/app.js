@@ -6,6 +6,7 @@ const state = {
   activeRequestId: null,
   latestProductPack: null,
   selectedModel: '',
+  tools: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -29,6 +30,14 @@ function shortHash(value) {
   const text = String(value);
   if (text.length <= 22) return text;
   return `${text.slice(0, 14)}...${text.slice(-6)}`;
+}
+
+function displayProofValue(item) {
+  if (!item) return 'n/a';
+  const value = item.value;
+  if (item.format === 'ratio') return formatPct(value);
+  if (value === null || value === undefined || value === '') return 'n/a';
+  return String(value);
 }
 
 function addChat(role, html) {
@@ -154,8 +163,128 @@ function renderModelOptions(value) {
   state.selectedModel = next;
 }
 
+function renderToolGuide(payload) {
+  state.tools = payload;
+  const target = $('toolGuideList');
+  if (!target) return;
+  const tools = Array.isArray(payload?.tools) ? payload.tools : [];
+  if (!tools.length) {
+    target.innerHTML = '<article class="tool-hint"><h3>No tools loaded</h3><p>Refresh tools after the server is ready.</p></article>';
+    return;
+  }
+  target.innerHTML = tools.map((tool) => {
+    const required = Array.isArray(tool.required) && tool.required.length ? tool.required.join(', ') : 'none';
+    const fields = Array.isArray(tool.properties) ? tool.properties : [];
+    const fieldHtml = fields.map((field) => {
+      const enums = Array.isArray(field.enum) ? field.enum : field.items_enum;
+      return `
+        <li>
+          <code>${escapeHtml(field.name)}</code>
+          <span>${escapeHtml(field.type || 'value')}${field.required ? ' required' : ' optional'}</span>
+          ${field.description ? `<p>${escapeHtml(field.description)}</p>` : ''}
+          ${Array.isArray(enums) ? `<p class="enum-hint">Allowed: ${escapeHtml(enums.join(', '))}</p>` : ''}
+        </li>
+      `;
+    }).join('');
+    return `
+      <details class="tool-hint">
+        <summary>
+          <strong>${escapeHtml(tool.name)}</strong>
+          <span>${escapeHtml(tool.description || '')}</span>
+        </summary>
+        <p><strong>Required fields:</strong> ${escapeHtml(required)}</p>
+        <ul>${fieldHtml}</ul>
+      </details>
+    `;
+  }).join('');
+}
+
+async function loadToolGuide() {
+  try {
+    const payload = await apiGet('/api/tools');
+    renderToolGuide(payload);
+  } catch (err) {
+    renderToolGuide({
+      tools: [
+        {
+          name: err.error_code || 'TOOLS_UNAVAILABLE',
+          description: err.message || String(err),
+          required: [],
+          properties: [],
+        },
+      ],
+    });
+  }
+}
+
 function metricCard(label, value, meaning) {
   return `<article class="metric"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div><div class="meaning">${escapeHtml(meaning)}</div></article>`;
+}
+
+function renderRealityProof(snapshot) {
+  const target = $('realityProof');
+  if (!target) return;
+  if (!snapshot) {
+    target.innerHTML = `
+      <div class="proof-header">
+        <div>
+          <p class="eyebrow">Reality proof</p>
+          <h3>No verified action loaded yet</h3>
+          <p>Run a model request or load a completed run to see the plain-language proof layer.</p>
+        </div>
+        <span class="proof-state missing">waiting</span>
+      </div>
+    `;
+    return;
+  }
+  const proof = snapshot.end_user_proof || {};
+  const cards = Array.isArray(proof.proof_cards) ? proof.proof_cards : [];
+  const questions = Array.isArray(proof.questions) ? proof.questions : [];
+  const verifySteps = Array.isArray(proof.self_verify_steps) ? proof.self_verify_steps : [];
+  target.innerHTML = `
+    <div class="proof-header">
+      <div>
+        <p class="eyebrow">Reality proof</p>
+        <h3>${escapeHtml(proof.headline || 'Verified run loaded')}</h3>
+        <p>${escapeHtml(proof.plain_result || '')}</p>
+      </div>
+      <span class="proof-state ${escapeHtml(proof.status || 'missing')}">${escapeHtml((proof.status || 'unknown').replaceAll('_', ' '))}</span>
+    </div>
+    <div class="proof-grid">
+      ${cards.map((item) => `
+        <article class="proof-card ${escapeHtml(item.status || 'missing')}">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(displayProofValue(item))}</strong>
+          <p>${escapeHtml(item.meaning || '')}</p>
+          <code>${escapeHtml(shortHash(item.source))}</code>
+        </article>
+      `).join('')}
+    </div>
+    <div class="proof-explainer">
+      <div>
+        <h3>What this means</h3>
+        <p>${escapeHtml(proof.honesty_note || '')}</p>
+        <dl>
+          ${questions.map((item) => `
+            <dt>${escapeHtml(item.question)}</dt>
+            <dd>${escapeHtml(item.answer)}</dd>
+          `).join('')}
+        </dl>
+      </div>
+      <div>
+        <h3>How to verify it yourself</h3>
+        <ol>
+          ${verifySteps.map((item) => `
+            <li>
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.what_to_check)}</span>
+              <code>${escapeHtml(shortHash(item.source_of_truth))}</code>
+            </li>
+          `).join('')}
+        </ol>
+      </div>
+    </div>
+  `;
 }
 
 function renderMetricGrid(snapshot) {
@@ -469,6 +598,7 @@ function renderRaw(snapshot) {
 
 function renderSnapshot(snapshot) {
   state.snapshot = snapshot;
+  renderRealityProof(snapshot);
   renderMetricGrid(snapshot);
   renderToolSurface(snapshot);
   renderTimeline(snapshot);
@@ -555,12 +685,6 @@ async function runLive(event) {
   await submitPrompt($('prompt').value.trim());
 }
 
-async function buildCategoryPack() {
-  const prompt = 'Build the investor product category pack. Show the model arena, verified outcome leaderboard, failure injection studio, governance evidence map, connector contracts, signed attestation, reward dashboard, and executive view. Audience: AI infrastructure investors. Max runs: 8.';
-  $('prompt').value = prompt;
-  await submitPrompt(prompt);
-}
-
 function setupTabs() {
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -596,16 +720,11 @@ document.addEventListener('DOMContentLoaded', () => {
   renderSnapshot(null);
   loadLatestCategory();
   $('refreshHealth').addEventListener('click', refreshHealth);
+  $('refreshTools').addEventListener('click', loadToolGuide);
   $('loadLatest').addEventListener('click', loadLatestRun);
-  $('buildCategory').addEventListener('click', buildCategoryPack);
   $('chatForm').addEventListener('submit', runLive);
   $('modelSelect').addEventListener('change', () => {
     state.selectedModel = selectedModel();
   });
-  document.querySelectorAll('.prompt-chip').forEach((button) => {
-    button.addEventListener('click', () => {
-      $('prompt').value = button.dataset.prompt || '';
-      $('prompt').focus();
-    });
-  });
+  loadToolGuide();
 });
