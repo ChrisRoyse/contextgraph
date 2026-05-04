@@ -20,7 +20,8 @@ instead of trusting apply/rollout command return values.
   existing `expected_delta`, `readback_snapshot`, `verifier_result`,
   `evidence_packet`, and `incident_packet`
 - Schema:
-  no table-shape change; current `LEDGER_SCHEMA_VERSION = 13`
+  no table-shape change; current `LEDGER_SCHEMA_VERSION = 14` after reward
+  compiler
 
 ## Source Of Truth
 

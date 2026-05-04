@@ -12,7 +12,8 @@ checklist into executable product state.
 - Record kind:
   `full_state_verification`
 - Schema:
-  `LEDGER_SCHEMA_VERSION = 13`
+  Phase 19 shipped `LEDGER_SCHEMA_VERSION = 13`; current ledgers run under
+  `LEDGER_SCHEMA_VERSION = 14` after the reward compiler.
 
 ## Source Of Truth
 

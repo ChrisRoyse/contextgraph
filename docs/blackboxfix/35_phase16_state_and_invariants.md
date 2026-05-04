@@ -25,9 +25,9 @@ Ledger record kind:
 
 Phase 16 bumps the logical ledger schema to `LEDGER_SCHEMA_VERSION = 10`. The
 physical SQLite table shape is unchanged, but old schema-version ledgers are
-wiped on `blackbox init`; there is no migration shim. Phase 18 later bumps the
-current live schema to `LEDGER_SCHEMA_VERSION = 13` for executable FSV certification
-rows.
+wiped on `blackbox init`; there is no migration shim. The reward compiler later
+bumps the current live schema to `LEDGER_SCHEMA_VERSION = 14` for
+reward_compilation rows.
 
 ## Source Of Truth
 

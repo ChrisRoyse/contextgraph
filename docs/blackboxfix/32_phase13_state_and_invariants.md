@@ -34,8 +34,8 @@ physical SQLite table shape is unchanged, but old schema-version ledgers are
 wiped on `blackbox init`; there is no migration shim. Phase 14 later bumps the
 live schema to `LEDGER_SCHEMA_VERSION = 8` for release-gate rows, Phase 15
 later bumped the live schema to `LEDGER_SCHEMA_VERSION = 9` for pilot-package
-rows, and Phase 17 later bumps the current live schema to
-`LEDGER_SCHEMA_VERSION = 13` for executable FSV certification rows.
+rows, and the reward compiler later bumps the current live schema to
+`LEDGER_SCHEMA_VERSION = 14` for `reward_compilation` rows.
 
 ## Source Of Truth
 

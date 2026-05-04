@@ -131,21 +131,21 @@ The durable `reward_compilation` row includes:
 Latest manual FSV run:
 
 ```text
-/tmp/blackbox-reward-compiler-manual-EJOYc8
+/tmp/blackbox-reward-compiler-manual-v14-v0uVpm
 ```
 
 Source of truth:
 
 ```text
-sqlite:/tmp/blackbox-reward-compiler-manual-EJOYc8/blackbox.sqlite#ledger_records
+sqlite:/tmp/blackbox-reward-compiler-manual-v14-v0uVpm/blackbox.sqlite#ledger_records
 ```
 
 Happy path physical readback:
 
 ```text
-sequence  record_kind         reward_compilation_id                    raw_reward  loss    reward_class
---------  ------------------  ---------------------------------------  ----------  ------  ------------
-9         reward_compilation  reward_0793a30bbdca4c1997391ad8aa075d88  4.985       -4.985  positive
+sequence  schema_version  record_kind         payload_schema  reward_compilation_id                    raw_reward  loss    reward_class
+--------  --------------  ------------------  --------------  ---------------------------------------  ----------  ------  ------------
+9         14              reward_compilation  14              reward_d03372c37b92449f94813e17ebd35ea1  4.985       -4.985  positive
 ```
 
 Feature proof read from the stored row:
@@ -171,6 +171,7 @@ Feature proof read from the stored row:
       "source": "/score_inputs/policy_compliance"
     }
   },
+  "source_record_refs_sha256": "sha256:61ffde780e9335b5a7784aac36caf113ba07dd6ed1e92baf9b04c39b469ee230",
   "training_sample_kind": "verified_outcome_reward_sample"
 }
 ```
