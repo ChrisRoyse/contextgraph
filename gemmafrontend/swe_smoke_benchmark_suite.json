@@ -1,0 +1,40 @@
+{
+  "suite_id": "contextgraph_swe_lite_smoke_v1",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "split": "test",
+  "purpose": "Small verified-reality benchmark seed for local model refinement loops.",
+  "limits": {
+    "max_models_per_batch": 1,
+    "max_workers": 1,
+    "max_attempts_per_model_task_run": 1,
+    "official_timeout_seconds": 900,
+    "expand_only_after_manual_review": true
+  },
+  "selected_instances": [
+    {
+      "instance_id": "psf__requests-2317",
+      "repo": "psf/requests",
+      "why_selected": "Already verified as a useful hard failure: Qwen patch applies but official Docker SWE-bench remains unresolved.",
+      "expected_signal": "Patch may apply, but FAIL_TO_PASS includes test_requests.py::TestTimeout::test_encoded_methods, giving a concrete failure target for the next prompt.",
+      "fail_to_pass_count": 8,
+      "baseline_status": "official_unresolved"
+    },
+    {
+      "instance_id": "django__django-12908",
+      "repo": "django/django",
+      "why_selected": "Small different-repository task with 2 FAIL_TO_PASS tests, 25 PASS_TO_PASS tests, short gold patch, and short test patch.",
+      "expected_signal": "Tests whether the same evidence loop can guide a model outside Requests without broad corpus cost.",
+      "fail_to_pass_count": 2,
+      "baseline_status": "not_yet_run"
+    }
+  ],
+  "promotion_rules": {
+    "add_more_instances_only_when": [
+      "official Docker readback is persisted into BlackBoxFix for every selected instance",
+      "failure evidence from official logs is compacted into the next model prompt",
+      "at least one task shows reward improvement across attempts",
+      "disk and Docker cache remain manually inspected after each run"
+    ],
+    "do_not_claim_success_until": "the official SWE-bench report places the instance id in resolved_ids"
+  }
+}
