@@ -5,6 +5,7 @@ const state = {
   clientId: `client-${crypto.randomUUID()}`,
   activeRequestId: null,
   latestProductPack: null,
+  selectedModel: '',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -45,8 +46,8 @@ function renderAgentTruth(snapshot) {
     const result = agent.tool_result_summary || {};
     const final = agent.final_model_response || {};
     return `
-      <p><strong>What Gemma actually did</strong></p>
-      <p>Gemma selected <code>${escapeHtml(selected.name)}</code> from the ContextGraph tool surface. ContextGraph validated the arguments, executed the tool, read durable state, then sent the verified tool result back to Gemma for the explanation below.</p>
+      <p><strong>What the model actually did</strong></p>
+      <p>The selected model chose <code>${escapeHtml(selected.name)}</code> from the ContextGraph tool surface. ContextGraph validated the arguments, executed the tool, read durable state, then sent the verified tool result back to the model for the explanation below.</p>
       <div class="truth-grid">
         <div><span>Operator prompt hash</span><code>${escapeHtml(shortHash(agent.operator_prompt_sha256))}</code></div>
         <div><span>Tool call id</span><code>${escapeHtml(selected.tool_call_id || 'n/a')}</code></div>
@@ -54,7 +55,7 @@ function renderAgentTruth(snapshot) {
         <div><span>Evidence source</span><code>${escapeHtml(shortHash(result.source_of_truth || agent.source_of_truth))}</code></div>
       </div>
       <details class="truth-details">
-        <summary>Show the exact arguments Gemma requested</summary>
+        <summary>Show the exact arguments the model requested</summary>
         <pre>${escapeHtml(JSON.stringify(selected.arguments || {}, null, 2))}</pre>
       </details>
       <details class="truth-details">
@@ -73,8 +74,8 @@ function renderAgentTruth(snapshot) {
   const fn = firstCall.function || {};
   const args = typeof fn.arguments === 'string' ? fn.arguments : JSON.stringify(fn.arguments || {}, null, 2);
   return `
-    <p><strong>What Gemma actually did</strong></p>
-    <p>Gemma produced a native tool call. ContextGraph executed the tool only after validating the allowlisted name, scenario, and required capabilities.</p>
+    <p><strong>What the model actually did</strong></p>
+    <p>The selected model produced a native tool call. ContextGraph executed the tool only after validating the allowlisted name, scenario, and required capabilities.</p>
     <div class="truth-grid">
       <div><span>Operator prompt hash</span><code>${escapeHtml(shortHash(interaction.operator_prompt_sha256))}</code></div>
       <div><span>Tool call id</span><code>${escapeHtml(firstCall.id || 'n/a')}</code></div>
@@ -82,10 +83,10 @@ function renderAgentTruth(snapshot) {
       <div><span>Execution boundary</span><code>${escapeHtml(contract.mode || 'n/a')}</code></div>
     </div>
     <details class="truth-details">
-      <summary>Show the exact tool arguments Gemma requested</summary>
+      <summary>Show the exact tool arguments the model requested</summary>
       <pre>${escapeHtml(args)}</pre>
     </details>
-    <p class="truth-note">${escapeHtml(contract.executor || 'ContextGraph executes the tool; Gemma only requests it.')}</p>
+    <p class="truth-note">${escapeHtml(contract.executor || 'ContextGraph executes the tool; the model only requests it.')}</p>
   `;
 }
 
@@ -117,6 +118,40 @@ function renderHealth(value) {
   const ollama = value.ollama || {};
   el.className = `health ${value.status === 'ok' && ollama.status === 'ok' ? 'ok' : 'blocked'}`;
   el.textContent = value.status === 'ok' && ollama.status === 'ok' ? 'ready' : 'blocked';
+  renderModelOptions(value);
+}
+
+function modelLabel(item) {
+  const parts = [item.name];
+  if (item.parameter_size) parts.push(item.parameter_size);
+  if (item.quantization_level) parts.push(item.quantization_level);
+  return parts.join(' · ');
+}
+
+function selectedModel() {
+  return $('modelSelect')?.value || state.selectedModel || state.health?.model || '';
+}
+
+function renderModelOptions(value) {
+  const select = $('modelSelect');
+  if (!select) return;
+  const models = Array.isArray(value.ollama?.models) ? value.ollama.models : [];
+  const previous = select.value || state.selectedModel || value.model || '';
+  if (!models.length) {
+    select.innerHTML = '<option value="">no Ollama models found</option>';
+    select.disabled = true;
+    state.selectedModel = '';
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = models.map((item) => {
+    const name = item.name || '';
+    return `<option value="${escapeHtml(name)}">${escapeHtml(modelLabel(item))}</option>`;
+  }).join('');
+  const names = models.map((item) => item.name);
+  const next = names.includes(previous) ? previous : (names.includes(value.model) ? value.model : names[0]);
+  select.value = next;
+  state.selectedModel = next;
 }
 
 function metricCard(label, value, meaning) {
@@ -125,7 +160,7 @@ function metricCard(label, value, meaning) {
 
 function renderMetricGrid(snapshot) {
   if (!snapshot) {
-    $('metricGrid').innerHTML = metricCard('Source of truth', 'waiting', 'Load a real run or start a live Gemma run.');
+    $('metricGrid').innerHTML = metricCard('Source of truth', 'waiting', 'Load a real run or start a live model run.');
     return;
   }
   const metrics = snapshot.metrics || {};
@@ -167,14 +202,14 @@ function renderTimeline(snapshot) {
 function renderToolSurface(snapshot) {
   const agent = snapshot?.chat_agent;
   if (!agent) {
-    $('toolSurface').innerHTML = '<article class="tool-surface-card"><h3>Tool Surface</h3><p>Ask Gemma a ContextGraph question to see which tool it chooses.</p></article>';
+    $('toolSurface').innerHTML = '<article class="tool-surface-card"><h3>Tool Surface</h3><p>Ask the selected model a ContextGraph question to see which tool it chooses.</p></article>';
     return;
   }
   const selected = agent.selected_tool || {};
   const tools = agent.available_tool_names || [];
   $('toolSurface').innerHTML = `
     <article class="tool-surface-card">
-      <h3>Gemma Tool Choice</h3>
+      <h3>Model Tool Choice</h3>
       <p><strong>${escapeHtml(selected.name || 'n/a')}</strong></p>
       <p>${escapeHtml(agent.tool_contract?.executor || '')}</p>
       <div class="tool-pill-row">${tools.map((name) => `<span class="tool-pill ${name === selected.name ? 'selected' : ''}">${escapeHtml(name)}</span>`).join('')}</div>
@@ -291,7 +326,7 @@ function renderProductCategory(snapshot) {
     $('productCategory').innerHTML = `
       <article class="detail-card">
         <h3>Product Category Pack</h3>
-        <p>Ask Gemma to build the investor product category pack. ContextGraph will aggregate real completed runs, write category artifacts, sign the manifest, and prove tamper detection.</p>
+        <p>Ask the selected model to build the investor product category pack. ContextGraph will aggregate real completed runs, write category artifacts, sign the manifest, and prove tamper detection.</p>
       </article>
     `;
     return;
@@ -498,10 +533,12 @@ async function loadLatestRun() {
 async function submitPrompt(prompt) {
   state.activeRequestId = newRequestId('chat');
   $('events').innerHTML = '';
-  addChat('user', `<p>${escapeHtml(prompt || '(empty prompt)')}</p>`);
+  const model = selectedModel();
+  addChat('user', `<p>${escapeHtml(prompt || '(empty prompt)')}</p><p class="chat-model">Model: <code>${escapeHtml(model || 'default')}</code></p>`);
   try {
     const snapshot = await apiPost('/api/chat', {
       message: prompt,
+      model,
       compile_reward: true,
       client_id: state.clientId,
       request_id: state.activeRequestId,
@@ -562,6 +599,9 @@ document.addEventListener('DOMContentLoaded', () => {
   $('loadLatest').addEventListener('click', loadLatestRun);
   $('buildCategory').addEventListener('click', buildCategoryPack);
   $('chatForm').addEventListener('submit', runLive);
+  $('modelSelect').addEventListener('change', () => {
+    state.selectedModel = selectedModel();
+  });
   document.querySelectorAll('.prompt-chip').forEach((button) => {
     button.addEventListener('click', () => {
       $('prompt').value = button.dataset.prompt || '';

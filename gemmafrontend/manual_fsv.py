@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual FSV for the Gemma frontend.
+"""Manual FSV for the ContextGraph model frontend.
 
 This test uses a completed real BlackBoxFix/Gemma run root. It does not create
 mock data and does not call the expensive live Gemma path.

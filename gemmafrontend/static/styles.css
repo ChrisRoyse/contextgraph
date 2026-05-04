@@ -30,7 +30,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -261,13 +262,42 @@ textarea {
 
 .composer-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .composer-actions button,
 .telemetry-header button {
   padding: 8px 12px;
+}
+
+.model-picker {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 240px);
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.model-picker select {
+  min-height: 34px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.chat-model {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 #buildCategory {
@@ -757,6 +787,16 @@ th {
     flex: 0 0 100%;
     min-width: 0;
     text-align: left;
+  }
+
+  .composer-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .model-picker {
+    grid-template-columns: 1fr;
+    margin-right: 0;
   }
 
   .telemetry-pane {

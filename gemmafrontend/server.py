@@ -1457,7 +1457,7 @@ def ensure_live_preflight(runtime_root: Path, model: str, ollama_url: str) -> No
     if usage.free < MIN_FREE_BYTES_FOR_LIVE_RUN:
         raise FrontendError(
             "GEMMAFRONTEND_DISK_SPACE_LOW",
-            "not enough free disk space for a live Gemma + DynamicJEPA run",
+            "not enough free disk space for a live model + DynamicJEPA run",
             "runtime_root.free_bytes",
             "free disk space before starting a live run",
             source_of_truth=file_sot(runtime_root),
@@ -1469,7 +1469,7 @@ def ensure_live_preflight(runtime_root: Path, model: str, ollama_url: str) -> No
     if model not in models:
         raise FrontendError(
             "GEMMAFRONTEND_OLLAMA_MODEL_MISSING",
-            "configured Gemma model is not present in Ollama",
+            "configured model is not present in Ollama",
             "ollama.models",
             "pull/load the exact model tag before running the live demo",
             source_of_truth=f"{ollama_url.rstrip('/')}/api/tags",
@@ -1531,9 +1531,9 @@ def run_live_demo(
     publish(
         "gemma",
         (
-            "executing prevalidated Gemma tool call through the proof harness"
+            "executing prevalidated model tool call through the proof harness"
             if prevalidated_tool_call is not None
-            else "calling Ollama/Gemma and requiring one native tool call"
+            else "calling Ollama and requiring one native tool call"
         ),
         details={"model": model, "prevalidated": prevalidated_tool_call is not None},
         client_id=client_id,
@@ -1606,7 +1606,7 @@ def ensure_agent_preflight(runtime_root: Path, model: str, ollama_url: str) -> N
     if model not in models:
         raise FrontendError(
             "GEMMAFRONTEND_OLLAMA_MODEL_MISSING",
-            "configured Gemma model is not present in Ollama",
+            "configured model is not present in Ollama",
             "ollama.models",
             "pull/load the exact model tag before running the agent demo",
             source_of_truth=f"{ollama_url.rstrip('/')}/api/tags",
@@ -1638,8 +1638,8 @@ def call_agent_tool_router(
         "Emit a native tool call in the tool_calls field; never write function-call syntax as plain text."
     )
     publish(
-        "gemma",
-        "asking Gemma to choose one ContextGraph tool",
+        "model",
+        "asking selected model to choose one ContextGraph tool",
         details={"model": model, "available_tools": AGENT_TOOL_NAMES, "prompt_sha256": sha256_bytes(prompt.encode())},
         client_id=client_id,
         request_id=request_id,
@@ -1671,7 +1671,7 @@ def call_agent_tool_router(
     if not isinstance(tool_calls, list) or not tool_calls:
         raise FrontendError(
             "GEMMAFRONTEND_MODEL_TOOL_CALL_MISSING",
-            "Gemma did not emit a native ContextGraph tool call",
+            "selected model did not emit a native ContextGraph tool call",
             "ollama.response.message.tool_calls",
             "ask a ContextGraph evidence question or use a model/runtime with native tool-calling support",
             source_of_truth=f"{ollama_url.rstrip('/')}/api/chat",
@@ -1681,7 +1681,7 @@ def call_agent_tool_router(
     if len(tool_calls) != 1:
         raise FrontendError(
             "GEMMAFRONTEND_MODEL_TOOL_CALL_COUNT_INVALID",
-            "Gemma emitted more than one tool call; this UI executes one audited action per turn",
+            "selected model emitted more than one tool call; this UI executes one audited action per turn",
             "ollama.response.message.tool_calls",
             "ask a narrower question so one source-of-truth action is verified at a time",
             details={"tool_call_count": len(tool_calls), "tool_calls": tool_calls},
@@ -1725,12 +1725,12 @@ def call_agent_tool_router(
             "mode": "multi_tool_contextgraph_gateway",
             "available_tool_names": AGENT_TOOL_NAMES,
             "unsupported_tool_behavior": "fail_closed_with_typed_error",
-            "executor": "Gemma selects exactly one tool; ContextGraph validates arguments, executes the tool, and verifies source-of-truth evidence.",
+            "executor": "the selected model chooses exactly one tool; ContextGraph validates arguments, executes the tool, and verifies source-of-truth evidence.",
         },
     }
     publish(
         "gateway",
-        "Gemma selected a ContextGraph tool",
+        "selected model chose a ContextGraph tool",
         details={"tool_name": tool_name, "arguments": args},
         client_id=client_id,
         request_id=request_id,
@@ -3078,8 +3078,8 @@ def call_gemma_final_response(
         "options": {"temperature": 0},
     }
     publish(
-        "gemma",
-        "asking Gemma to explain verified tool result",
+        "model",
+        "asking selected model to explain verified tool result",
         details={"tool_name": router["selected_tool"]["name"]},
         client_id=client_id,
         request_id=request_id,
@@ -3099,7 +3099,7 @@ def call_gemma_final_response(
     if message.get("tool_calls"):
         raise FrontendError(
             "GEMMAFRONTEND_FINAL_RESPONSE_TOOL_CALL_UNEXPECTED",
-            "Gemma attempted another tool call instead of explaining the verified result",
+            "selected model attempted another tool call instead of explaining the verified result",
             "ollama.final_response.message.tool_calls",
             "rerun with a narrower prompt or strengthen the final-response system instruction",
             details={"response": response},
@@ -3109,7 +3109,7 @@ def call_gemma_final_response(
     if not isinstance(content, str) or not content.strip():
         raise FrontendError(
             "GEMMAFRONTEND_FINAL_RESPONSE_EMPTY",
-            "Gemma final response was empty after tool execution",
+            "selected model final response was empty after tool execution",
             "ollama.final_response.message.content",
             "inspect the local model output and retry",
             details={"response": response},
@@ -3156,8 +3156,8 @@ def attach_agent_trace(
     }
     interaction = snapshot.setdefault("model_interaction", {})
     interaction["truth_statement"] = (
-        "Gemma selected one ContextGraph tool, ContextGraph validated and executed it, "
-        "then Gemma explained the result from verified tool evidence."
+        "The selected model chose one ContextGraph tool, ContextGraph validated and executed it, "
+        "then the model explained the result from verified tool evidence."
     )
     interaction["gateway_tool_router"] = {
         "available_tool_names": AGENT_TOOL_NAMES,
@@ -3167,11 +3167,11 @@ def attach_agent_trace(
     snapshot.setdefault("timeline", []).insert(
         0,
         {
-            "stage": "Gemma",
+            "stage": "Model",
             "status": "passed",
             "title": "Selected one ContextGraph tool",
             "value": router["selected_tool"]["name"],
-            "meaning": "Gemma chose from the exposed tool surface; ContextGraph validated the name and arguments before execution.",
+            "meaning": "The selected model chose from the exposed tool surface; ContextGraph validated the name and arguments before execution.",
             "evidence": {
                 "operator_prompt_sha256": router["operator_prompt_sha256"],
                 "tool_call_id": router["selected_tool"].get("tool_call_id"),
@@ -3281,10 +3281,22 @@ def health(runtime_root: Path, model: str, ollama_url: str) -> dict[str, Any]:
     try:
         tags = http_json(f"{ollama_url.rstrip('/')}/api/tags", timeout=2.5)
         models = [item.get("name") for item in tags.get("models", []) if isinstance(item, dict)]
+        model_rows = [
+            {
+                "name": item.get("name"),
+                "size": item.get("size"),
+                "modified_at": item.get("modified_at"),
+                "parameter_size": (item.get("details") or {}).get("parameter_size") if isinstance(item.get("details"), dict) else None,
+                "quantization_level": (item.get("details") or {}).get("quantization_level") if isinstance(item.get("details"), dict) else None,
+            }
+            for item in tags.get("models", [])
+            if isinstance(item, dict)
+        ]
         checks["ollama"] = {
             "status": "ok",
             "model_present": model in models,
             "model_count": len(models),
+            "models": model_rows,
             "source_of_truth": f"{ollama_url.rstrip('/')}/api/tags",
         }
     except FrontendError as err:
@@ -3509,7 +3521,7 @@ def main() -> int:
     args = parse_args()
     args.runtime_root = args.runtime_root.resolve()
     args.runtime_root.mkdir(parents=True, exist_ok=True)
-    publish("server", "Gemma frontend server starting", details={"runtime_root": str(args.runtime_root), "model": args.model})
+    publish("server", "ContextGraph model frontend server starting", details={"runtime_root": str(args.runtime_root), "model": args.model})
     server = ThreadingHTTPServer((args.host, args.port), AppHandler)
     server.app_config = args  # type: ignore[attr-defined]
     print(json.dumps({"status": "ok", "url": f"http://{args.host}:{args.port}", "runtime_root": str(args.runtime_root)}, sort_keys=True), flush=True)

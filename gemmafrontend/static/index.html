@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ContextGraph Gemma Evidence Console</title>
+    <title>ContextGraph Model Evidence Console</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <main class="shell">
-      <section class="chat-pane" aria-label="Gemma chat">
+      <section class="chat-pane" aria-label="model chat">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Gemma -> ContextGraph -> Evidence</p>
+            <p class="eyebrow">Model -> ContextGraph -> Evidence</p>
             <h1>Evidence Console</h1>
           </div>
           <div class="health" id="health">checking</div>
@@ -21,7 +21,7 @@
           <article class="message assistant">
             <div class="bubble">
               <strong>ContextGraph</strong>
-              <p>Ask Gemma what to do. Gemma must choose one ContextGraph tool, ContextGraph validates and executes it, then the right pane shows the verified source-of-truth evidence.</p>
+              <p>Ask the selected model what to do. The model must choose one ContextGraph tool, ContextGraph validates and executes it, then the right pane shows the verified source-of-truth evidence.</p>
             </div>
           </article>
         </div>
@@ -39,11 +39,17 @@
         </div>
 
         <form id="chatForm" class="composer">
-          <textarea id="prompt" name="prompt" rows="3" maxlength="4096" placeholder="Ask Gemma to run, inspect, compare, explain, export, or evaluate policy..."></textarea>
+          <textarea id="prompt" name="prompt" rows="3" maxlength="4096" placeholder="Ask the selected model to run, inspect, compare, explain, export, or evaluate policy..."></textarea>
           <div class="composer-actions">
+            <label class="model-picker" for="modelSelect">
+              <span>Model</span>
+              <select id="modelSelect" name="model">
+                <option value="">loading models</option>
+              </select>
+            </label>
             <button type="button" id="loadLatest">Load Latest Real Run</button>
             <button type="button" id="buildCategory">Build Investor Pack</button>
-            <button type="submit" id="runLive">Run Live With Gemma</button>
+            <button type="submit" id="runLive">Run Live With Model</button>
           </div>
         </form>
       </section>
@@ -58,7 +64,7 @@
         </header>
 
         <section class="system-map" id="systemMap">
-          <div class="flow-node">Gemma</div>
+          <div class="flow-node">Model</div>
           <div class="flow-connector"><span>native tool call</span></div>
           <div class="flow-node wide">ContextGraph</div>
           <div class="flow-connector"><span>state + verification</span></div>

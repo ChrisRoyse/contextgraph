@@ -53,6 +53,9 @@ The prior capability report that this plan builds on is preserved under
   leaderboard, failure injection studio, any-LLM connector contracts,
   governance evidence map, signed attestations, reward dashboard, and
   executive view.
+- `27_multi_model_verified_reality_benchmark.md` - implemented three-model
+  verified reality benchmark across `gemma4:e4b`, `qwen3:8b`, and
+  `mistral-nemo:12b`, including full-state readbacks and edge-case audit.
 
 ## Core Demo Claim
 
@@ -110,4 +113,6 @@ intelligence/correlation model and latest measured values. See
 `25_reward_compiler_current_state.md` for the next layer: compiling verified
 scorecards into durable reward/loss samples for training and benchmark loops.
 See `26_verified_outcome_intelligence_product_category.md` for the product
-category layer now exposed in the Gemma frontend.
+category layer now exposed in the model frontend. See
+`27_multi_model_verified_reality_benchmark.md` for the first three-model
+benchmark run against durable source-of-truth evidence.
