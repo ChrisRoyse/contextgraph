@@ -168,6 +168,16 @@ def sha256_file(path: Path) -> str:
         ) from err
 
 
+def redacted_preview(value: str, *, limit: int = 180) -> str:
+    redacted = re.sub(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", value)
+    redacted = re.sub(r"(?i)(api[_-]?key|token|password|secret)\s*[:=]\s*['\"]?[^\s,'\"]+", r"\1=[REDACTED]", redacted)
+    redacted = re.sub(r"\b(?:sk|ghp|github_pat|glpat)-[A-Za-z0-9_-]{12,}\b", "[REDACTED_TOKEN]", redacted)
+    redacted = " ".join(redacted.split())
+    if len(redacted) > limit:
+        return redacted[: limit - 3] + "..."
+    return redacted
+
+
 def file_sot(path: Path) -> str:
     return f"file:{path.resolve()}"
 
@@ -644,9 +654,12 @@ def call_gemma_for_tool(args: argparse.Namespace) -> dict[str, Any]:
     )
     user = {
         "task": "Run the full local AgentOps proof pipeline.",
+        "operator_request_sha256": sha256_bytes(args.user_message.encode("utf-8")),
+        "operator_request_redacted_preview": redacted_preview(args.user_message),
         "scenario": SCENARIO,
         "required_capabilities": REQUIRED_CAPABILITIES,
         "instruction": (
+            "Treat operator_request_redacted_preview as trace context only. "
             "Call run_dynamicjepa_blackboxfix_pipeline with scenario and requested_capabilities "
             "exactly matching the values above."
         ),
@@ -708,6 +721,8 @@ def call_gemma_for_tool(args: argparse.Namespace) -> dict[str, Any]:
         "tool_call": tool_calls[0],
         "arguments": arguments,
         "prompt_sha256": sha256_bytes(json.dumps(user, sort_keys=True).encode("utf-8")),
+        "operator_request_sha256": user["operator_request_sha256"],
+        "operator_request_redacted_preview": user["operator_request_redacted_preview"],
     }
 
 
@@ -1726,6 +1741,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=float, default=300.0, help="Default command/API timeout.")
     parser.add_argument("--dynamic-timeout-seconds", type=float, default=900.0, help="Timeout for DynamicJEPA verify-counter-world.")
     parser.add_argument("--keep-alive", default="15m", help="Ollama keep_alive.")
+    parser.add_argument(
+        "--user-message",
+        default="Run the full local AgentOps proof pipeline.",
+        help="Operator chat prompt to hash and include as redacted trace context for the native Gemma tool-call request.",
+    )
     parser.add_argument("--force", action="store_true", help="Remove an existing previous demo root containing the marker file.")
     parser.add_argument("--fsv-phase", type=int, default=24, help="BlackBoxFix FSV phase number.")
     return parser.parse_args()
@@ -1802,6 +1822,13 @@ def main() -> int:
         "root": str(args.root),
         "preflight": preflight_result,
         "model": {"provider": "ollama", "name": args.model, "tool_call": gemma["tool_call"]},
+        "model_io": {
+            "operator_request_sha256": gemma["operator_request_sha256"],
+            "operator_request_redacted_preview": gemma["operator_request_redacted_preview"],
+            "prompt_sha256": gemma["prompt_sha256"],
+            "raw_prompt_stored_in_ledger": False,
+            "raw_output_stored_in_ledger": False,
+        },
         "dynamic_run_id": dynamic_run_id,
         "blackbox_run_id": run_id,
         "tool_call_id": tool_call_id,

@@ -1,0 +1,41 @@
+{
+  "reward_spec_schema_version": 1,
+  "reward_id": "contextgraph_verified_outcome_demo_v1",
+  "objective": "maximize verified source-of-truth outcomes while penalizing incidents, risk, and missing governance",
+  "bounds": {
+    "min": -10.0,
+    "max": 10.0
+  },
+  "components": [
+    {
+      "id": "correctness",
+      "feature": "correctness",
+      "weight": 4.0
+    },
+    {
+      "id": "verification_confidence",
+      "feature": "verification_confidence",
+      "weight": 2.0
+    },
+    {
+      "id": "risk_penalty",
+      "feature": "risk",
+      "weight": -2.0
+    },
+    {
+      "id": "incident_penalty",
+      "feature": "incident_present",
+      "weight": -3.0
+    },
+    {
+      "id": "policy_missing_penalty",
+      "feature": "policy_missing",
+      "weight": -1.0
+    },
+    {
+      "id": "training_value",
+      "feature": "training_value",
+      "weight": 1.0
+    }
+  ]
+}

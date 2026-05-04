@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ContextGraph Gemma Evidence Console</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="chat-pane" aria-label="Gemma chat">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Gemma -> ContextGraph -> Evidence</p>
+            <h1>Evidence Console</h1>
+          </div>
+          <div class="health" id="health">checking</div>
+        </header>
+
+        <div class="chat-scroll" id="chatScroll">
+          <article class="message assistant">
+            <div class="bubble">
+              <strong>ContextGraph</strong>
+              <p>Ask Gemma to run the verified AgentOps proof. The right pane will show the tool boundary, DynamicJEPA state, BlackBoxFix ledger, evidence, incidents, correlations, and reward status from real source-of-truth reads.</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="prompt-palette" aria-label="demo prompts">
+          <button class="prompt-chip" data-prompt="Run the full local AgentOps proof pipeline and show me verified data ingest, panel materialization, training, planning, surprise, provenance, evidence, and reward signals.">Full proof</button>
+          <button class="prompt-chip" data-prompt="Prove that Gemma can request one governed tool and ContextGraph can verify the durable system outcome.">Tool proof</button>
+          <button class="prompt-chip" data-prompt="Show the evidence path from model decision to DynamicJEPA state, BlackBoxFix verifier rows, incident creation, and training output.">Evidence path</button>
+          <button class="prompt-chip" data-prompt="Run the demo as a buyer walkthrough focused on source-of-truth readbacks and failure detection.">Buyer walkthrough</button>
+          <button class="prompt-chip" data-prompt="Run the verified outcome learning demo and expose the scorecard and reward compiler signal.">Reward signal</button>
+        </div>
+
+        <form id="chatForm" class="composer">
+          <textarea id="prompt" name="prompt" rows="3" maxlength="4096" placeholder="Ask Gemma to run the proof pipeline..."></textarea>
+          <div class="composer-actions">
+            <button type="button" id="loadLatest">Load Latest Real Run</button>
+            <button type="submit" id="runLive">Run Live With Gemma</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="telemetry-pane" aria-label="system telemetry">
+        <header class="telemetry-header">
+          <div>
+            <p class="eyebrow">Developer telemetry</p>
+            <h2>What The System Is Proving</h2>
+          </div>
+          <button id="refreshHealth" type="button">Refresh</button>
+        </header>
+
+        <section class="system-map" id="systemMap">
+          <div class="node">Gemma</div>
+          <div class="edge">native tool call</div>
+          <div class="node wide">ContextGraph</div>
+          <div class="edge">state + verification</div>
+          <div class="node">Evidence</div>
+        </section>
+
+        <section class="metric-grid" id="metricGrid"></section>
+
+        <nav class="tabs" aria-label="telemetry tabs">
+          <button class="tab active" data-tab="timeline">Timeline</button>
+          <button class="tab" data-tab="metrics">Metrics</button>
+          <button class="tab" data-tab="ledger">Ledger</button>
+          <button class="tab" data-tab="correlations">Correlations</button>
+          <button class="tab" data-tab="artifacts">Artifacts</button>
+          <button class="tab" data-tab="raw">Raw</button>
+        </nav>
+
+        <section class="tab-panel active" id="panel-timeline">
+          <div id="timeline" class="timeline"></div>
+          <div class="event-stream">
+            <h3>Live Event Stream</h3>
+            <div id="events"></div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-metrics">
+          <div id="metricsDetail" class="detail-grid"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-ledger">
+          <div id="ledgerDetail"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-correlations">
+          <div id="correlations"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-artifacts">
+          <div id="artifacts"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-raw">
+          <pre id="rawJson"></pre>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
