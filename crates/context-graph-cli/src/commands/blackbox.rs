@@ -59,6 +59,7 @@ const PRIVACY_CONNECTOR_ID: &str = "blackbox_privacy_v1";
 const RELEASE_GATE_CONNECTOR_ID: &str = "blackbox_release_gate_v1";
 const PACKAGING_CONNECTOR_ID: &str = "blackbox_packaging_v1";
 const RISK_CONNECTOR_ID: &str = "blackbox_risk_v1";
+const REWARD_CONNECTOR_ID: &str = "blackbox_reward_compiler_v1";
 const HTTP_SERVER_CONNECTOR_ID: &str = "blackbox_http_server_v1";
 const FIRST_WEDGE_DEMO_CONNECTOR_ID: &str = "blackbox_first_wedge_demo_v1";
 const FSV_PROTOCOL_CONNECTOR_ID: &str = "blackbox_fsv_protocol_v1";
@@ -77,6 +78,7 @@ const PRIVACY_SCHEMA_VERSION: i64 = 1;
 const RELEASE_GATE_SCHEMA_VERSION: i64 = 1;
 const PILOT_PACKAGE_SCHEMA_VERSION: i64 = 1;
 const RISK_ASSESSMENT_SCHEMA_VERSION: i64 = 1;
+const REWARD_COMPILATION_SCHEMA_VERSION: i64 = 1;
 const HTTP_REQUEST_AUDIT_SCHEMA_VERSION: i64 = 1;
 const FIRST_WEDGE_DEMO_SCHEMA_VERSION: i64 = 1;
 const FULL_STATE_VERIFICATION_SCHEMA_VERSION: i64 = 1;
@@ -94,6 +96,7 @@ const SCORE_RULE_VERSION: &str = "score_v1";
 const RELEASE_GATE_RULE_VERSION: &str = "release_gate_v1";
 const PILOT_PACKAGE_RULE_VERSION: &str = "pilot_package_v1";
 const RISK_ASSESSMENT_RULE_VERSION: &str = "risk_register_v1";
+const REWARD_RULE_VERSION: &str = "reward_compiler_v1";
 const FIRST_WEDGE_DEMO_RULE_VERSION: &str = "first_wedge_demo_v1";
 const FSV_PROTOCOL_RULE_VERSION: &str = "full_state_verification_v1";
 const REQUIRED_RISK_DECISION_IDS: [&str; 5] = [
@@ -209,6 +212,11 @@ pub enum BlackboxCommands {
     Risk {
         #[command(subcommand)]
         action: RiskCommands,
+    },
+    /// Compile verified reward/loss samples from persisted scorecards and evidence.
+    Reward {
+        #[command(subcommand)]
+        action: RewardCommands,
     },
     /// Build and persist the Phase 18 first-wedge buyer demo proof package.
     Demo {
@@ -872,6 +880,12 @@ pub enum RiskCommands {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum RewardCommands {
+    /// Compile a deterministic reward/loss sample for one scored run.
+    Compile(RewardCompileArgs),
+}
+
+#[derive(Subcommand, Debug)]
 pub enum DemoCommands {
     /// Build the vulnerability-remediation first-wedge demo package from verified ledger evidence.
     #[command(name = "first-wedge")]
@@ -903,6 +917,33 @@ pub struct ScoreRunArgs {
     pub agent: String,
 
     /// Optional model identifier.
+    #[arg(long)]
+    pub model: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RewardCompileArgs {
+    /// SQLite ledger database path.
+    #[arg(long, env = "BLACKBOX_LEDGER")]
+    pub ledger: PathBuf,
+
+    /// Existing run id that already has a persisted scorecard.
+    #[arg(long)]
+    pub run_id: String,
+
+    /// JSON reward specification file.
+    #[arg(long)]
+    pub input: PathBuf,
+
+    /// Tenant identifier for local mode.
+    #[arg(long, default_value = "tenant_local")]
+    pub tenant: String,
+
+    /// Reward compiler actor identifier.
+    #[arg(long, default_value = "blackbox_reward_compiler")]
+    pub agent: String,
+
+    /// Optional model identifier for model-initiated compilation.
     #[arg(long)]
     pub model: Option<String>,
 }
@@ -1646,6 +1687,9 @@ async fn run_blackbox_command(command: BlackboxCommands) -> BbxResult<Value> {
         },
         BlackboxCommands::Risk { action } => match action {
             RiskCommands::Evaluate(args) => risk_evaluate(args),
+        },
+        BlackboxCommands::Reward { action } => match action {
+            RewardCommands::Compile(args) => reward_compile(args),
         },
         BlackboxCommands::Demo { action } => match action {
             DemoCommands::FirstWedge(args) => demo_first_wedge(args),
@@ -6415,6 +6459,142 @@ fn score_run(args: ScoreRunArgs) -> BbxResult<Value> {
         "record_sha256": append.record_sha256,
         "score": scorecard_payload["score"].clone(),
         "score_inputs": scorecard_payload["score_inputs"].clone(),
+        "readback": readback,
+    }))
+}
+
+fn reward_compile(args: RewardCompileArgs) -> BbxResult<Value> {
+    validate_ledger_path(&args.ledger)?;
+    require_non_empty_for_ledger(&args.ledger, "--run-id", &args.run_id)?;
+    require_non_empty_for_ledger(&args.ledger, "--tenant", &args.tenant)?;
+    require_non_empty_for_ledger(&args.ledger, "--agent", &args.agent)?;
+
+    let reward_spec = read_reward_spec(&args.ledger, &args.input)?;
+    let mut conn = open_initialized_ledger(&args.ledger)?;
+    ensure_score_run_exists_for_tenant(&conn, &args.ledger, &args.run_id, &args.tenant)?;
+    let inspection_before = verify_ledger_integrity(&conn, &args.ledger)?;
+    let ledger_id = get_metadata(&conn, &args.ledger, "ledger_id")?.unwrap_or_default();
+    let scorecard_record = latest_reward_scorecard(&args.ledger, &inspection_before, &args.run_id)?;
+    let scorecard_ref = reward_record_ref_from_output(&args.ledger, "latest_scorecard", scorecard_record)?;
+    let scorecard_id =
+        reward_required_payload_str(&args.ledger, scorecard_record, "scorecard_id")?.to_string();
+    let scorecard_payload = scorecard_record.payload.clone();
+    let scorecard_input_refs = reward_required_payload_array_value(
+        &args.ledger,
+        scorecard_record,
+        "input_record_refs",
+    )?;
+    let source_record_refs = json!({
+        "latest_scorecard": scorecard_ref,
+        "scorecard_input_record_refs": scorecard_input_refs,
+    });
+    let source_refs_sha256 = sha256_hex(&canonical_json_bytes(&source_record_refs)?);
+    let feature_vector = reward_feature_vector(&args.ledger, &scorecard_payload)?;
+    let compiled_reward =
+        compile_reward_components(&args.ledger, &reward_spec, &feature_vector)?;
+    let feature_vector_json = reward_feature_vector_json(&feature_vector);
+    let episode_context = reward_episode_context(&args.ledger, &inspection_before, &args.run_id)?;
+    let reward_compilation_id = prefixed_id("reward");
+    let record_id = prefixed_id("bbx_rec");
+    let reward_payload = json!({
+        "record_kind": "reward_compilation",
+        "reward_compilation_id": reward_compilation_id,
+        "run_id": args.run_id,
+        "reward_compilation_schema_version": REWARD_COMPILATION_SCHEMA_VERSION,
+        "reward_rule_version": REWARD_RULE_VERSION,
+        "compiled_at": Utc::now().to_rfc3339(),
+        "source_of_truth": source_of_truth(&args.ledger),
+        "source_ledger": {
+            "path": args.ledger,
+            "source_of_truth": source_of_truth(&args.ledger),
+            "ledger_id": ledger_id,
+            "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+            "ledger_record_count_before_reward": inspection_before.record_count,
+            "ledger_tip_sha256_before_reward": inspection_before.ledger_tip_sha256,
+        },
+        "reward_spec": {
+            "path": args.input,
+            "source_of_truth": file_source_of_truth(&reward_spec.path),
+            "sha256": reward_spec.sha256,
+            "reward_id": reward_spec.reward_id,
+            "objective": reward_spec.objective,
+            "bounds": {
+                "min": reward_spec.bounds_min,
+                "max": reward_spec.bounds_max,
+            },
+            "components_total": reward_spec.components.len(),
+        },
+        "source_record_refs": source_record_refs,
+        "source_record_refs_sha256": source_refs_sha256,
+        "scorecard": {
+            "scorecard_id": scorecard_id,
+            "score": scorecard_payload["score"].clone(),
+            "score_inputs": scorecard_payload["score_inputs"].clone(),
+        },
+        "episode_context": episode_context,
+        "feature_vector": feature_vector_json,
+        "components": compiled_reward.components,
+        "reward": compiled_reward.reward,
+        "training_sample": {
+            "sample_schema_version": 1,
+            "sample_kind": "verified_outcome_reward_sample",
+            "reward_id": reward_spec.reward_id,
+            "run_id": args.run_id,
+            "source_record_refs_sha256": source_refs_sha256,
+            "feature_vector": feature_vector_json,
+            "reward": compiled_reward.reward,
+            "episode_context": episode_context,
+        },
+        "compiler_notes": [
+            "reward is compiled only after physical SQLite hash-chain verification",
+            "feature values come from a persisted scorecard and its source ledger refs",
+            "nullable features require an explicit null_behavior in the reward spec",
+            "the compiler persists reward and loss together for downstream optimization"
+        ],
+    });
+    let append = append_record(
+        &mut conn,
+        &args.ledger,
+        NewRecord {
+            record_id: record_id.clone(),
+            record_kind: "reward_compilation".to_string(),
+            tenant_id: args.tenant.clone(),
+            run_id: Some(args.run_id.clone()),
+            step_id: None,
+            actor: actor_json(&args.agent, args.model.as_deref()),
+            payload: reward_payload.clone(),
+            redaction: RedactionReport::empty(),
+        },
+    )?;
+    let readback = readback_reward_compilation_append(
+        &conn,
+        &args.ledger,
+        &args.run_id,
+        &reward_compilation_id,
+        append.sequence,
+        &append.payload_sha256,
+        &append.record_sha256,
+        inspection_before.record_count,
+    )?;
+
+    Ok(json!({
+        "status": "ok",
+        "command": "blackbox reward compile",
+        "connector": REWARD_CONNECTOR_ID,
+        "source_of_truth": source_of_truth(&args.ledger),
+        "record_id": record_id,
+        "record_kind": "reward_compilation",
+        "reward_compilation_id": reward_compilation_id,
+        "run_id": args.run_id,
+        "reward_rule_version": REWARD_RULE_VERSION,
+        "reward_compilation_schema_version": REWARD_COMPILATION_SCHEMA_VERSION,
+        "ledger_sequence": append.sequence,
+        "payload_sha256": append.payload_sha256,
+        "record_sha256": append.record_sha256,
+        "reward": reward_payload["reward"].clone(),
+        "feature_vector": reward_payload["feature_vector"].clone(),
+        "components": reward_payload["components"].clone(),
+        "training_sample": reward_payload["training_sample"].clone(),
         "readback": readback,
     }))
 }
