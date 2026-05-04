@@ -32,6 +32,12 @@ DATASET_NAME = "princeton-nlp/SWE-bench_Lite"
 DEFAULT_MODELS = ["gemma4:e4b", "qwen3:8b", "mistral-nemo:12b"]
 DEFAULT_RUNTIME_ROOT = Path("/tmp/contextgraph-swe-lite-refinement")
 DEFAULT_CONTEXT_GRAPH_BIN = Path("target/debug/context-graph")
+DEFAULT_OFFICIAL_EVAL_SCRIPT = Path(__file__).resolve().with_name("swe_lite_official_eval.py")
+DEFAULT_SWEBENCH_PYTHON = Path("/home/cabdru/.cache/contextgraph-swebench/venv/bin/python")
+DEFAULT_DOCKER_CLI_DIR = Path("/mnt/wsl/docker-desktop/cli-tools/usr/bin")
+DEFAULT_DOCKER_SOCKET = Path("/mnt/wsl/docker-desktop-bind-mounts/Ubuntu-24.04/docker.sock")
+DEFAULT_DOCKER_WINDOWS_BIN = Path("/mnt/c/Program Files/Docker/Docker/resources/bin")
+REPO_ROOT = Path(__file__).resolve().parent.parent
 MAX_FAILURE_TEXT_CHARS = 6000
 MAX_REPO_CONTEXT_CHARS = 24000
 TEXT_CONTEXT_EXTENSIONS = {
@@ -259,6 +265,10 @@ def require_context_graph(path: Path) -> Path:
     return resolved
 
 
+def resolve_repo_path(path: Path) -> Path:
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
 def request_json(
     url: str,
     body: dict[str, Any],
@@ -403,6 +413,20 @@ def truncate(text: str, limit: int = MAX_FAILURE_TEXT_CHARS) -> str:
     return text[:limit] + f"\n... truncated {len(text) - limit} chars ..."
 
 
+def unique_strings(values: list[str], *, limit: int | None = None) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value).strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            output.append(normalized)
+        if limit is not None and len(output) >= limit:
+            break
+    return output
+
+
 def problem_terms(task: dict[str, Any]) -> list[str]:
     text = task.get("problem_statement") or ""
     terms: list[str] = []
@@ -418,15 +442,7 @@ def problem_terms(task: dict[str, Any]) -> list[str]:
         token_lower = token.lower()
         if token_lower not in LOW_SIGNAL_TERMS:
             terms.append(token)
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for term in terms:
-        normalized = term.strip()
-        key = normalized.lower()
-        if normalized and key not in seen:
-            seen.add(key)
-            deduped.append(normalized)
-    return deduped[:80]
+    return unique_strings(terms, limit=80)
 
 
 def term_weight(term: str) -> int:
@@ -511,6 +527,28 @@ def parse_failed_hunks(validation: dict[str, Any] | None) -> list[dict[str, Any]
     return hunks
 
 
+def terms_from_official_evidence(official_evidence: dict[str, Any] | None) -> list[str]:
+    if not official_evidence:
+        return []
+    terms: list[str] = []
+    tests = []
+    tests.extend(official_evidence.get("failed_fail_to_pass") or [])
+    tests.extend(official_evidence.get("failed_pass_to_pass") or [])
+    tests.extend(official_evidence.get("failed_fail_to_fail") or [])
+    tests.extend(official_evidence.get("failed_pass_to_fail") or [])
+    for test in tests:
+        value = str(test)
+        terms.append(value)
+        terms.extend(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b", value))
+        for path_token in re.findall(r"\b[\w./-]+\.(?:py|pyi)\b", value):
+            terms.append(path_token)
+    excerpt = str(official_evidence.get("test_output_excerpt") or "")
+    for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{3,}\b", excerpt):
+        if token.lower() not in LOW_SIGNAL_TERMS:
+            terms.append(token)
+    return unique_strings(terms, limit=80)
+
+
 def line_window(lines: list[str], center: int, radius: int) -> tuple[int, int, list[str]]:
     start = max(1, center - radius)
     end = min(len(lines), center + radius)
@@ -523,10 +561,12 @@ def collect_repository_context(
     repo_dir: Path,
     *,
     validation: dict[str, Any] | None,
+    official_evidence: dict[str, Any] | None = None,
     max_files: int,
     window_radius: int,
 ) -> dict[str, Any]:
-    terms = problem_terms(task)
+    official_terms = terms_from_official_evidence(official_evidence)
+    terms = unique_strings(problem_terms(task) + official_terms, limit=140)
     failed_hunks = parse_failed_hunks(validation)
     path_hits: dict[str, dict[str, Any]] = {}
 
@@ -551,6 +591,23 @@ def collect_repository_context(
                 reason="problem_statement_path",
                 term=rel,
             )
+
+    for path_token in official_terms:
+        if not re.search(r"\.(?:py|pyi|cfg|ini|toml|yaml|yml|rst|md|txt)$", path_token):
+            continue
+        candidates = [path_token.lstrip("./")]
+        if "/" not in path_token:
+            candidates.extend(str(path.relative_to(repo_dir)) for path in repo_dir.rglob(path_token) if path.is_file())
+        for rel in unique_strings(candidates, limit=12):
+            if (repo_dir / rel).exists():
+                add_context_hit(
+                    path_hits,
+                    rel,
+                    line_no=1,
+                    score=120,
+                    reason="official_failed_test_path",
+                    term=rel,
+                )
 
     for path in repo_text_files(repo_dir):
         rel = str(path.relative_to(repo_dir))
@@ -622,6 +679,7 @@ def collect_repository_context(
         "base_commit": task["base_commit"],
         "source_of_truth": git_sot(repo_dir, task["base_commit"]),
         "terms": terms[:30],
+        "official_evidence_terms": official_terms[:30],
         "failed_hunks": failed_hunks,
         "files": files,
     }
@@ -667,6 +725,8 @@ def build_initial_prompt(task: dict[str, Any], *, include_hints: bool, repo_cont
         - "patch": a unified git diff patch that applies to the base repository.
         - "notes": one short sentence explaining the intended fix.
 
+        Success means the official SWE-bench Docker report puts this instance id in resolved_ids.
+        Local patch application or model confidence is not success.
         The patch should be minimal. Do not include repeated no-op hunks. Do not include markdown outside the JSON object.
         Do not include tests from the hidden test patch.
         """
@@ -703,10 +763,100 @@ def build_refinement_prompt(task: dict[str, Any], validation: dict[str, Any], re
         Produce a new patch that addresses the verified failure. Respond with exactly one JSON object:
         {{"patch": "<unified git diff>", "notes": "<short explanation>"}}
 
+        Success means the official SWE-bench Docker report puts this instance id in resolved_ids.
+        Local patch application or model confidence is not success.
         The patch should be minimal. Do not repeat the same patch if the failure evidence shows it did not apply or did not pass tests.
         Do not include repeated no-op hunks.
         """
     ).strip()
+
+
+def build_official_refinement_prompt(
+    task: dict[str, Any],
+    official_evidence: dict[str, Any],
+    repo_context: dict[str, Any],
+    *,
+    previous_patch_hashes: list[str],
+) -> str:
+    evidence = {
+        "official_status": official_evidence.get("official_status"),
+        "resolved": official_evidence.get("resolved"),
+        "errored": official_evidence.get("errored"),
+        "patch_successfully_applied": official_evidence.get("patch_successfully_applied"),
+        "failed_fail_to_pass": official_evidence.get("failed_fail_to_pass"),
+        "failed_pass_to_pass": official_evidence.get("failed_pass_to_pass"),
+        "test_output_excerpt": official_evidence.get("test_output_excerpt"),
+        "previous_patch_sha256": official_evidence.get("previous_patch_sha256"),
+        "reward": official_evidence.get("reward"),
+        "score": official_evidence.get("score"),
+        "source_of_truth": official_evidence.get("source_of_truth"),
+    }
+    repo_context_block = repository_context_text(repo_context)
+    no_repeat = "\n".join(f"- {value}" for value in previous_patch_hashes) or "- none"
+    previous_patch = official_evidence.get("previous_patch_preview") or ""
+    return textwrap.dedent(
+        f"""
+        Continue the same SWE-bench Lite repair task. Your previous attempt was evaluated by the official Docker SWE-bench harness.
+
+        Repository: {task['repo']}
+        Base commit: {task['base_commit']}
+        Instance id: {task['instance_id']}
+
+        Success condition:
+        The official SWE-bench Docker report must put {task['instance_id']} in resolved_ids.
+        Local patch application, local pytest, or model confidence is not success.
+
+        Problem statement:
+        {task['problem_statement']}
+
+        Verified official failure evidence from ContextGraph:
+        {json.dumps(evidence, indent=2, sort_keys=True)[:MAX_FAILURE_TEXT_CHARS]}
+
+        Previous patch preview:
+        {truncate(str(previous_patch), 4000)}
+
+        Patch hashes already tried. Do not repeat an unchanged patch:
+        {no_repeat}
+
+        Repository context re-read from the base checkout after the official failure:
+        {repo_context_block}
+
+        Produce a new patch that addresses the official failure. Respond with exactly one JSON object:
+        {{"patch": "<unified git diff>", "notes": "<short explanation>"}}
+
+        The patch should be minimal. Do not include markdown outside the JSON object.
+        Do not edit tests. Do not include repeated no-op hunks. Do not repeat an unchanged patch.
+        """
+    ).strip()
+
+
+def write_prompt_manifest(
+    attempt_dir: Path,
+    *,
+    attempt: int,
+    prompt_path: Path,
+    prompt_kind: str,
+    prompt_template_id: str,
+    included_evidence: list[dict[str, Any]],
+    excluded_evidence: list[dict[str, Any]],
+    no_repeat_patch_sha256: list[str],
+) -> dict[str, Any]:
+    manifest_path = attempt_dir / "prompt-manifest.json"
+    payload = {
+        "status": "ok",
+        "attempt": attempt,
+        "prompt_kind": prompt_kind,
+        "prompt_template_id": prompt_template_id,
+        "prompt_path": str(prompt_path),
+        "prompt_sha256": sha256_file(prompt_path),
+        "included_evidence": included_evidence,
+        "excluded_evidence": excluded_evidence,
+        "no_repeat_patch_sha256": no_repeat_patch_sha256,
+        "source_of_truth": file_sot(manifest_path),
+    }
+    write_json(manifest_path, payload)
+    payload["sha256"] = sha256_file(manifest_path)
+    return payload
 
 
 def parse_model_patch(response_text: str) -> tuple[str | None, dict[str, Any]]:
@@ -1222,7 +1372,7 @@ def score_and_reward(bin_path: Path, ledger: Path, run_id: str, model: str, cwd:
         ["blackbox", "score", "run", "--ledger", str(ledger), "--run-id", run_id, "--model", model],
         cwd=cwd,
     )
-    reward_spec = Path.cwd() / "gemmafrontend" / "reward_spec.verified_outcome.json"
+    reward_spec = REPO_ROOT / "gemmafrontend" / "reward_spec.verified_outcome.json"
     reward = run_blackbox(
         bin_path,
         ["blackbox", "reward", "compile", "--ledger", str(ledger), "--run-id", run_id, "--input", str(reward_spec), "--model", model],
@@ -1237,6 +1387,316 @@ def attempt_status_for_tool(validation: dict[str, Any]) -> str:
     if validation.get("status") == "blocked":
         return "blocked"
     return "failed"
+
+
+def safe_id(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")[:160]
+
+
+def reward_payload(score_reward: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not score_reward:
+        return None
+    reward = score_reward.get("reward")
+    if not isinstance(reward, dict):
+        return None
+    value = reward.get("reward")
+    return value if isinstance(value, dict) else None
+
+
+def score_payload(score_reward: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not score_reward:
+        return None
+    score = score_reward.get("score")
+    if not isinstance(score, dict):
+        return None
+    value = score.get("score")
+    return value if isinstance(value, dict) else None
+
+
+def extract_test_output_excerpt(path: Path | None) -> str | None:
+    if path is None or not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8", errors="replace")
+    interesting = []
+    for line in text.splitlines():
+        if re.search(r"\b(FAILED|ERROR|Traceback|AssertionError|assert |E\s+|FAILURES)\b", line):
+            interesting.append(line)
+    tail = "\n".join(text.splitlines()[-80:])
+    parts = []
+    if interesting:
+        parts.append("\n".join(interesting[-80:]))
+    parts.append(tail)
+    return truncate("\n\n".join(parts), 6000)
+
+
+def instance_payload(instance_report: dict[str, Any], instance_id: str) -> dict[str, Any]:
+    value = instance_report.get(instance_id)
+    if isinstance(value, dict):
+        return value
+    return instance_report
+
+
+def tests_status_list(payload: dict[str, Any], group: str, status: str) -> list[str]:
+    tests_status = payload.get("tests_status")
+    if not isinstance(tests_status, dict):
+        return []
+    group_value = tests_status.get(group)
+    if not isinstance(group_value, dict):
+        return []
+    values = group_value.get(status) or []
+    return [str(item) for item in values]
+
+
+def write_task_loop_summary(
+    task_root: Path,
+    *,
+    status: str,
+    terminal_reason: str,
+    model: str,
+    task: dict[str, Any],
+    attempts: list[dict[str, Any]],
+    ledger: Path,
+    blackbox_run_id: str,
+) -> None:
+    summary = {
+        "status": status,
+        "terminal_reason": terminal_reason,
+        "model": model,
+        "task": {
+            "instance_id": task["instance_id"],
+            "repo": task["repo"],
+            "base_commit": task["base_commit"],
+        },
+        "attempts_total": len(attempts),
+        "attempts": attempts,
+        "ledger": {
+            "path": str(ledger),
+            "sha256": sha256_file(ledger) if ledger.exists() else None,
+            "source_of_truth": sqlite_sot(ledger),
+            "physical_counts": ledger_counts(ledger) if ledger.exists() else {},
+        },
+        "blackbox_run_id": blackbox_run_id,
+        "source_of_truth": {
+            "task_manifest": file_sot(task_root / "task-manifest.json"),
+            "ledger": sqlite_sot(ledger),
+            "loop_summary": file_sot(task_root / "loop-summary.json"),
+        },
+    }
+    write_json(task_root / "loop-summary.json", summary)
+
+
+def write_attempt_prediction(
+    *,
+    attempt_dir: Path,
+    task: dict[str, Any],
+    model: str,
+    patch: str,
+) -> Path:
+    prediction = {
+        "instance_id": task["instance_id"],
+        "model_name_or_path": model,
+        "model_patch": patch,
+    }
+    path = attempt_dir / "official-prediction.jsonl"
+    write_text_checked(path, json.dumps(prediction, sort_keys=True) + "\n")
+    return path
+
+
+def parse_summary_path(stdout: str) -> Path | None:
+    for line in stdout.splitlines():
+        if line.startswith("SWE_OFFICIAL_EVAL_SUMMARY="):
+            return Path(line.split("=", 1)[1].strip())
+    return None
+
+
+def parse_error_path(stdout: str) -> Path | None:
+    for line in stdout.splitlines():
+        if line.startswith("SWE_OFFICIAL_EVAL_ERROR="):
+            return Path(line.split("=", 1)[1].strip())
+    return None
+
+
+def run_official_eval_for_attempt(
+    *,
+    run_root: Path,
+    attempt_dir: Path,
+    task: dict[str, Any],
+    model: str,
+    patch: str,
+    context_graph_bin: Path,
+    official_eval_script: Path,
+    swebench_python: Path,
+    docker_cli_dir: Path,
+    docker_socket: Path,
+    docker_windows_bin: Path,
+    max_workers: int,
+    timeout: int,
+    cache_level: str,
+) -> dict[str, Any]:
+    official_eval_script = resolve_repo_path(official_eval_script)
+    if not official_eval_script.exists():
+        raise RefinementError(
+            "SWE_REFINEMENT_OFFICIAL_EVAL_SCRIPT_MISSING",
+            "official SWE-bench eval bridge script does not exist",
+            "official_eval_script",
+            "restore gemmafrontend/swe_lite_official_eval.py before enabling official per-attempt evaluation",
+            source_of_truth=file_sot(official_eval_script),
+        )
+    predictions_path = write_attempt_prediction(attempt_dir=attempt_dir, task=task, model=model, patch=patch)
+    run_id = safe_id(f"{run_root.name}_{model}_{task['instance_id']}_attempt_{attempt_dir.name[-3:]}")
+    command = [
+        sys.executable,
+        str(official_eval_script),
+        "--run-root",
+        str(run_root),
+        "--predictions-path",
+        str(predictions_path),
+        "--swebench-python",
+        str(swebench_python),
+        "--context-graph-bin",
+        str(context_graph_bin),
+        "--docker-cli-dir",
+        str(docker_cli_dir),
+        "--docker-socket",
+        str(docker_socket),
+        "--docker-windows-bin",
+        str(docker_windows_bin),
+        "--instance-id",
+        task["instance_id"],
+        "--run-id",
+        run_id,
+        "--max-workers",
+        str(max_workers),
+        "--timeout",
+        str(timeout),
+        "--cache-level",
+        cache_level,
+    ]
+    result = run_cmd(command, cwd=REPO_ROOT, timeout=max(float(timeout) + 2400.0, 3600.0))
+    command_path = attempt_dir / "official-eval-command.json"
+    write_json(
+        command_path,
+        {
+            "status": "ok" if result.exit_code == 0 else "error",
+            "process": result.to_json(),
+            "predictions_path": str(predictions_path),
+            "predictions_sha256": sha256_file(predictions_path),
+            "source_of_truth": file_sot(command_path),
+        },
+    )
+    if result.exit_code != 0:
+        error_path = parse_error_path(result.stdout)
+        error_payload = None
+        if error_path and error_path.exists():
+            error_payload = json.loads(error_path.read_text(encoding="utf-8"))
+        raise RefinementError(
+            "SWE_REFINEMENT_OFFICIAL_EVAL_FAILED",
+            "official SWE-bench eval bridge failed during per-attempt evaluation",
+            "official_eval_each_attempt",
+            "inspect official-eval-command.json and the typed official-eval-error.json before retrying",
+            details={"process": result.to_json(), "official_error": error_payload},
+            source_of_truth=file_sot(command_path),
+        )
+    summary_path = parse_summary_path(result.stdout)
+    if summary_path is None or not summary_path.exists():
+        raise RefinementError(
+            "SWE_REFINEMENT_OFFICIAL_SUMMARY_MISSING",
+            "official eval bridge completed but did not print a readable summary path",
+            "official_eval.stdout",
+            "inspect official-eval-command.json and the official eval output directory",
+            details={"process": result.to_json()},
+            source_of_truth=file_sot(command_path),
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["summary_path"] = str(summary_path)
+    summary["summary_sha256"] = sha256_file(summary_path)
+    return summary
+
+
+def build_official_evidence(
+    *,
+    attempt_dir: Path,
+    task: dict[str, Any],
+    model: str,
+    patch: str,
+    official_summary: dict[str, Any],
+) -> dict[str, Any]:
+    instance_id = task["instance_id"]
+    ledger_ingests = [
+        item
+        for item in official_summary.get("ledger_ingests", [])
+        if item.get("instance_id") == instance_id and item.get("model") == model
+    ]
+    if len(ledger_ingests) != 1:
+        raise RefinementError(
+            "SWE_REFINEMENT_OFFICIAL_LEDGER_INGEST_NOT_UNIQUE",
+            "official eval summary did not contain exactly one ledger ingest for this model/task",
+            "official_summary.ledger_ingests",
+            "inspect the official eval summary before using it as prompt feedback",
+            details={"model": model, "instance_id": instance_id, "ledger_ingests": official_summary.get("ledger_ingests")},
+            source_of_truth=file_sot(Path(str(official_summary.get("summary_path", "")))),
+        )
+    ingest = ledger_ingests[0]
+    readback_path = Path(str(ingest["readback_path"]))
+    readback = json.loads(readback_path.read_text(encoding="utf-8"))
+    final_report_path = Path(str(official_summary["official_report"]["path"]))
+    final_report = json.loads(final_report_path.read_text(encoding="utf-8"))
+    logs = readback.get("logs") or {}
+    instance_report_path = Path(logs["instance_report"]["path"]) if logs.get("instance_report", {}).get("path") else None
+    test_output_path = Path(logs["test_output"]["path"]) if logs.get("test_output", {}).get("path") else None
+    if instance_report_path is None or not instance_report_path.exists():
+        raise RefinementError(
+            "SWE_REFINEMENT_OFFICIAL_INSTANCE_REPORT_MISSING",
+            "official eval readback did not include a physical instance report",
+            "official_readback.logs.instance_report.path",
+            "inspect the official eval output directory before using this attempt as feedback",
+            details={"readback_path": str(readback_path), "logs": logs},
+            source_of_truth=file_sot(readback_path),
+        )
+    instance_report = json.loads(instance_report_path.read_text(encoding="utf-8"))
+    instance = instance_payload(instance_report, instance_id)
+    official_status = "passed" if instance_id in set(final_report.get("resolved_ids") or []) else "failed"
+    evidence = {
+        "evidence_kind": "official_swe_result_for_reprompt",
+        "attempt": int(attempt_dir.name.rsplit("-", 1)[-1]),
+        "model": model,
+        "instance_id": instance_id,
+        "official_status": official_status,
+        "resolved": instance_id in set(final_report.get("resolved_ids") or []),
+        "unresolved": instance_id in set(final_report.get("unresolved_ids") or []),
+        "errored": instance_id in set(final_report.get("error_ids") or []),
+        "patch_exists": bool(instance.get("patch_exists")),
+        "patch_successfully_applied": bool(instance.get("patch_successfully_applied")),
+        "failed_fail_to_pass": tests_status_list(instance, "FAIL_TO_PASS", "failure"),
+        "passed_fail_to_pass": tests_status_list(instance, "FAIL_TO_PASS", "success"),
+        "failed_pass_to_pass": tests_status_list(instance, "PASS_TO_PASS", "failure"),
+        "passed_pass_to_pass_count": len(tests_status_list(instance, "PASS_TO_PASS", "success")),
+        "previous_patch_sha256": sha256_text(patch),
+        "previous_patch_preview": truncate(patch, 4000),
+        "test_output_excerpt": extract_test_output_excerpt(test_output_path),
+        "score": score_payload(ingest.get("score_reward")),
+        "reward": reward_payload(ingest.get("score_reward")),
+        "source_of_truth": {
+            "official_summary": file_sot(Path(str(official_summary["summary_path"]))),
+            "official_report": file_sot(final_report_path),
+            "official_readback": file_sot(readback_path),
+            "instance_report": file_sot(instance_report_path),
+            "test_output": file_sot(test_output_path) if test_output_path else None,
+            "ledger": ingest.get("ledger", {}).get("source_of_truth"),
+        },
+        "sha256": {
+            "official_summary": official_summary.get("summary_sha256"),
+            "official_report": sha256_file(final_report_path),
+            "official_readback": sha256_file(readback_path),
+            "instance_report": sha256_file(instance_report_path),
+            "test_output": sha256_file(test_output_path) if test_output_path and test_output_path.exists() else None,
+        },
+    }
+    path = attempt_dir / ("official-success-evidence.json" if evidence["resolved"] else "official-failure-evidence.json")
+    write_json(path, evidence)
+    evidence["evidence_path"] = str(path)
+    evidence["evidence_sha256"] = sha256_file(path)
+    return evidence
 
 
 def run_model_task_loop(
@@ -1254,6 +1714,15 @@ def run_model_task_loop(
     pytest_timeout: float,
     max_context_files: int,
     context_window_radius: int,
+    official_eval_each_attempt: bool,
+    official_eval_script: Path,
+    swebench_python: Path,
+    docker_cli_dir: Path,
+    docker_socket: Path,
+    docker_windows_bin: Path,
+    official_max_workers: int,
+    official_timeout: int,
+    official_cache_level: str,
 ) -> dict[str, Any]:
     safe_model = model.replace(":", "-").replace("/", "-")
     task_root = run_root / "tasks" / task["instance_id"] / safe_model
@@ -1289,8 +1758,26 @@ def run_model_task_loop(
     write_json(task_root / "repository-context-initial.json", prompt_context)
     prompt = build_initial_prompt(task, include_hints=include_hints, repo_context=prompt_context)
     attempts = []
+    prompt_kind = "initial"
+    prompt_template_id = "swe_repair_initial_v1"
+    included_evidence: list[dict[str, Any]] = [
+        {"kind": "task_manifest", "source_of_truth": file_sot(task_root / "task-manifest.json")},
+        {"kind": "repository_context", "source_of_truth": file_sot(task_root / "repository-context-initial.json")},
+    ]
+    excluded_evidence: list[dict[str, Any]] = []
+    previous_patch_hashes: list[str] = []
     solved = False
     terminal_reason = "attempt_budget_exhausted"
+    write_task_loop_summary(
+        task_root,
+        status="running",
+        terminal_reason=terminal_reason,
+        model=model,
+        task=task,
+        attempts=attempts,
+        ledger=ledger,
+        blackbox_run_id=blackbox_run_id,
+    )
     for attempt_index in range(1, max_attempts + 1):
         attempt_dir = task_root / "attempts" / f"attempt-{attempt_index:03d}"
         attempt_dir.mkdir(parents=True, exist_ok=False)
@@ -1298,6 +1785,16 @@ def run_model_task_loop(
         write_json(repo_context_path, prompt_context)
         prompt_path = attempt_dir / "prompt.txt"
         write_text_checked(prompt_path, prompt)
+        prompt_manifest = write_prompt_manifest(
+            attempt_dir,
+            attempt=attempt_index,
+            prompt_path=prompt_path,
+            prompt_kind=prompt_kind,
+            prompt_template_id=prompt_template_id,
+            included_evidence=included_evidence,
+            excluded_evidence=excluded_evidence,
+            no_repeat_patch_sha256=previous_patch_hashes,
+        )
         model_started = time.perf_counter()
         generation_error = None
         try:
@@ -1332,15 +1829,22 @@ def run_model_task_loop(
             patch, parse_status = parse_model_patch(response_text)
         if patch:
             write_text_checked(attempt_dir / "candidate.patch", patch)
+        patch_sha256 = sha256_text(patch) if patch else None
+        repeated_patch = bool(patch_sha256 and patch_sha256 in set(previous_patch_hashes))
+        if patch_sha256:
+            previous_patch_hashes.append(patch_sha256)
 
         decision_input = {
             "attempt": attempt_index,
             "prompt_sha256": sha256_file(prompt_path),
+            "prompt_manifest_sha256": prompt_manifest["sha256"],
             "repository_context_sha256": sha256_file(repo_context_path),
             "repository_context_source_of_truth": prompt_context["source_of_truth"],
             "response_sha256": sha256_file(response_path),
             "parse_status": parse_status,
             "model_metadata": model_metadata,
+            "candidate_patch_sha256": patch_sha256,
+            "repeated_patch": repeated_patch,
             "task": {
                 "instance_id": task["instance_id"],
                 "repo": task["repo"],
@@ -1392,68 +1896,170 @@ def run_model_task_loop(
             task_root,
         )
         score_reward = score_and_reward(context_graph_bin, ledger, blackbox_run_id, model, task_root)
+        official_summary = None
+        official_evidence = None
+        if official_eval_each_attempt and patch:
+            write_task_loop_summary(
+                task_root,
+                status="running",
+                terminal_reason=f"official_eval_attempt_{attempt_index:03d}",
+                model=model,
+                task=task,
+                attempts=attempts,
+                ledger=ledger,
+                blackbox_run_id=blackbox_run_id,
+            )
+            official_summary = run_official_eval_for_attempt(
+                run_root=run_root,
+                attempt_dir=attempt_dir,
+                task=task,
+                model=model,
+                patch=patch,
+                context_graph_bin=context_graph_bin,
+                official_eval_script=official_eval_script,
+                swebench_python=swebench_python,
+                docker_cli_dir=docker_cli_dir,
+                docker_socket=docker_socket,
+                docker_windows_bin=docker_windows_bin,
+                max_workers=official_max_workers,
+                timeout=official_timeout,
+                cache_level=official_cache_level,
+            )
+            official_evidence = build_official_evidence(
+                attempt_dir=attempt_dir,
+                task=task,
+                model=model,
+                patch=patch,
+                official_summary=official_summary,
+            )
         attempt_summary = {
             "attempt": attempt_index,
             "status": validation["status"],
             "error_code": validation.get("error_code"),
             "model_elapsed_ms": model_elapsed_ms,
             "prompt_path": str(prompt_path),
+            "prompt_manifest_path": str(attempt_dir / "prompt-manifest.json"),
+            "prompt_manifest_sha256": prompt_manifest["sha256"],
             "repository_context_path": str(repo_context_path),
             "repository_context_sha256": sha256_file(repo_context_path),
             "response_path": str(response_path),
             "validation_path": str(attempt_dir / "validation.json"),
             "validation_sha256": sha256_file(attempt_dir / "validation.json"),
             "parse_status": parse_status,
+            "candidate_patch_sha256": patch_sha256,
+            "repeated_patch": repeated_patch,
             "model_decision_record": model_decision,
             "tool_call_record": tool_call,
             "blackbox_verifier": verifier,
             "score_reward": score_reward,
+            "official_eval": {
+                "enabled": official_eval_each_attempt,
+                "ran": official_summary is not None,
+                "summary_path": official_summary.get("summary_path") if official_summary else None,
+                "summary_sha256": official_summary.get("summary_sha256") if official_summary else None,
+                "evidence_path": official_evidence.get("evidence_path") if official_evidence else None,
+                "evidence_sha256": official_evidence.get("evidence_sha256") if official_evidence else None,
+                "resolved": official_evidence.get("resolved") if official_evidence else None,
+                "official_status": official_evidence.get("official_status") if official_evidence else None,
+            },
             "ledger_counts": ledger_counts(ledger),
         }
         write_json(attempt_dir / "attempt-summary.json", attempt_summary)
         attempts.append(attempt_summary)
-        if validation["status"] == "passed":
+        write_task_loop_summary(
+            task_root,
+            status="running",
+            terminal_reason=terminal_reason,
+            model=model,
+            task=task,
+            attempts=attempts,
+            ledger=ledger,
+            blackbox_run_id=blackbox_run_id,
+        )
+        if official_eval_each_attempt and official_evidence:
+            if official_evidence["resolved"]:
+                solved = True
+                terminal_reason = "official_resolved"
+                break
+        elif validation["status"] == "passed":
             solved = True
-            terminal_reason = "verified_solution_found"
+            terminal_reason = "local_verified_solution_found"
             break
-        if validation["status"] == "blocked":
+        if validation["status"] == "blocked" and not official_evidence:
             terminal_reason = f"blocked:{validation.get('error_code')}"
             break
         reset_workspace(repo_dir, task["base_commit"], timeout=git_timeout)
-        prompt_context = collect_repository_context(
-            task,
-            repo_dir,
-            validation=validation,
-            max_files=max_context_files,
-            window_radius=context_window_radius,
-        )
-        prompt = build_refinement_prompt(task, validation, prompt_context)
+        if official_evidence:
+            prompt_context = collect_repository_context(
+                task,
+                repo_dir,
+                validation=validation,
+                official_evidence=official_evidence,
+                max_files=max_context_files,
+                window_radius=context_window_radius,
+            )
+            prompt = build_official_refinement_prompt(
+                task,
+                official_evidence,
+                prompt_context,
+                previous_patch_hashes=previous_patch_hashes,
+            )
+            prompt_kind = "official_failure_refinement"
+            prompt_template_id = "swe_repair_official_failure_v1"
+            included_evidence = [
+                {
+                    "kind": "official_swe_failure",
+                    "source_of_truth": file_sot(Path(str(official_evidence["evidence_path"]))),
+                    "failed_fail_to_pass": official_evidence.get("failed_fail_to_pass"),
+                },
+                {
+                    "kind": "repository_context",
+                    "source_of_truth": prompt_context["source_of_truth"],
+                },
+            ]
+            excluded_evidence = [
+                {
+                    "kind": "full_test_output",
+                    "reason": "compact excerpt included instead of full log",
+                }
+            ]
+        else:
+            prompt_context = collect_repository_context(
+                task,
+                repo_dir,
+                validation=validation,
+                max_files=max_context_files,
+                window_radius=context_window_radius,
+            )
+            prompt = build_refinement_prompt(task, validation, prompt_context)
+            prompt_kind = "local_failure_refinement"
+            prompt_template_id = "swe_repair_local_failure_v1"
+            included_evidence = [
+                {
+                    "kind": "local_validation_failure",
+                    "source_of_truth": validation["source_of_truth"],
+                    "error_code": validation.get("error_code"),
+                },
+                {
+                    "kind": "repository_context",
+                    "source_of_truth": prompt_context["source_of_truth"],
+                },
+            ]
+            excluded_evidence = []
 
-    summary = {
-        "status": "solved" if solved else "unsolved",
-        "terminal_reason": terminal_reason,
-        "model": model,
-        "task": {
-            "instance_id": task["instance_id"],
-            "repo": task["repo"],
-            "base_commit": task["base_commit"],
-        },
-        "attempts_total": len(attempts),
-        "attempts": attempts,
-        "ledger": {
-            "path": str(ledger),
-            "sha256": sha256_file(ledger),
-            "source_of_truth": sqlite_sot(ledger),
-            "physical_counts": ledger_counts(ledger),
-        },
-        "blackbox_run_id": blackbox_run_id,
-        "source_of_truth": {
-            "task_manifest": file_sot(task_root / "task-manifest.json"),
-            "workspace": git_sot(repo_dir, task["base_commit"]),
-            "ledger": sqlite_sot(ledger),
-            "initial_repository_context": file_sot(task_root / "repository-context-initial.json"),
-        },
-    }
+    write_task_loop_summary(
+        task_root,
+        status="solved" if solved else "unsolved",
+        terminal_reason=terminal_reason,
+        model=model,
+        task=task,
+        attempts=attempts,
+        ledger=ledger,
+        blackbox_run_id=blackbox_run_id,
+    )
+    summary = json.loads((task_root / "loop-summary.json").read_text(encoding="utf-8"))
+    summary["source_of_truth"]["workspace"] = git_sot(repo_dir, task["base_commit"])
+    summary["source_of_truth"]["initial_repository_context"] = file_sot(task_root / "repository-context-initial.json")
     write_json(task_root / "loop-summary.json", summary)
     return summary
 
