@@ -716,6 +716,7 @@ def call_gemma_for_tool(args: argparse.Namespace) -> dict[str, Any]:
         )
     arguments = parse_tool_arguments(function.get("arguments"))
     validate_tool_arguments(arguments)
+    model_content = message.get("content") if isinstance(message.get("content"), str) else ""
     return {
         "ollama_response": response,
         "tool_call": tool_calls[0],
@@ -723,7 +724,110 @@ def call_gemma_for_tool(args: argparse.Namespace) -> dict[str, Any]:
         "prompt_sha256": sha256_bytes(json.dumps(user, sort_keys=True).encode("utf-8")),
         "operator_request_sha256": user["operator_request_sha256"],
         "operator_request_redacted_preview": user["operator_request_redacted_preview"],
+        "system_message_redacted_preview": redacted_preview(system),
+        "tool_prompt_redacted_preview": redacted_preview(json.dumps(user, sort_keys=True), limit=320),
+        "actual_model_message": {
+            "role": message.get("role"),
+            "content_redacted_preview": redacted_preview(model_content),
+            "tool_call_count": len(tool_calls),
+            "tool_calls": tool_calls,
+        },
+        "tool_contract": {
+            "mode": "single_allowlisted_mutating_tool",
+            "available_tool_names": ["run_dynamicjepa_blackboxfix_pipeline"],
+            "required_scenario": SCENARIO,
+            "required_capabilities": REQUIRED_CAPABILITIES,
+            "unsupported_tool_behavior": "fail_closed",
+            "executor": "ContextGraph harness executes the tool after validation; Gemma only requests it.",
+        },
     }
+
+
+def load_prevalidated_gemma_tool_call(args: argparse.Namespace) -> dict[str, Any]:
+    path = args.prevalidated_tool_call.resolve()
+    if not path.exists() or not path.is_file():
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_MISSING",
+            "prevalidated Gemma tool-call file is missing",
+            "prevalidated_tool_call",
+            "run the ContextGraph tool router first and pass the persisted tool-call artifact",
+            source_of_truth=f"file:{path}",
+            details={"path": str(path)},
+        )
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as err:
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_READ_FAILED",
+            f"failed to read prevalidated Gemma tool-call file: {err}",
+            "prevalidated_tool_call",
+            "fix filesystem permissions and retry",
+            source_of_truth=f"file:{path}",
+        ) from err
+    except json.JSONDecodeError as err:
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_JSON_INVALID",
+            f"prevalidated Gemma tool-call file is invalid JSON: {err}",
+            "prevalidated_tool_call",
+            "fix the ContextGraph router artifact writer and retry",
+            source_of_truth=f"file:{path}",
+        ) from err
+    if not isinstance(value, dict):
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_SHAPE_INVALID",
+            "prevalidated Gemma tool-call artifact must be a JSON object",
+            "prevalidated_tool_call",
+            "persist the full prevalidated tool-call object",
+            source_of_truth=f"file:{path}",
+            details={"type": type(value).__name__},
+        )
+    tool_call = value.get("tool_call")
+    if not isinstance(tool_call, dict):
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_MISSING_FIELD",
+            "prevalidated artifact does not contain tool_call",
+            "prevalidated_tool_call.tool_call",
+            "persist the normalized native tool call before executing the harness",
+            source_of_truth=f"file:{path}",
+        )
+    function = tool_call.get("function")
+    if not isinstance(function, dict) or function.get("name") != "run_dynamicjepa_blackboxfix_pipeline":
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_UNSUPPORTED",
+            "prevalidated tool call is outside the harness allowlist",
+            "prevalidated_tool_call.tool_call.function.name",
+            "route only the proof-pipeline request to this harness",
+            source_of_truth=f"file:{path}",
+            details={"tool_call": tool_call},
+        )
+    arguments = parse_tool_arguments(function.get("arguments"))
+    validate_tool_arguments(arguments)
+    value["arguments"] = arguments
+    required_fields = [
+        "prompt_sha256",
+        "operator_request_sha256",
+        "operator_request_redacted_preview",
+        "system_message_redacted_preview",
+        "tool_prompt_redacted_preview",
+        "actual_model_message",
+        "tool_contract",
+    ]
+    missing = [field for field in required_fields if field not in value]
+    if missing:
+        raise DemoError(
+            "DEMO_PREVALIDATED_TOOL_CALL_FIELD_MISSING",
+            "prevalidated tool-call artifact is missing required trace fields",
+            "prevalidated_tool_call",
+            "include hashes, redacted previews, actual model message, and tool contract",
+            source_of_truth=f"file:{path}",
+            details={"missing": missing},
+        )
+    value["prevalidated_source_of_truth"] = {
+        "path": str(path),
+        "source_of_truth": f"file:{path}",
+        "sha256": sha256_file(path),
+    }
+    return value
 
 
 def sanitize_run_id(value: str) -> str:
@@ -1746,6 +1850,14 @@ def parse_args() -> argparse.Namespace:
         default="Run the full local AgentOps proof pipeline.",
         help="Operator chat prompt to hash and include as redacted trace context for the native Gemma tool-call request.",
     )
+    parser.add_argument(
+        "--prevalidated-tool-call",
+        type=Path,
+        help=(
+            "ContextGraph router artifact containing an already validated Gemma tool call. "
+            "When set, this harness does not call Gemma again."
+        ),
+    )
     parser.add_argument("--force", action="store_true", help="Remove an existing previous demo root containing the marker file.")
     parser.add_argument("--fsv-phase", type=int, default=24, help="BlackBoxFix FSV phase number.")
     return parser.parse_args()
@@ -1763,7 +1875,7 @@ def main() -> int:
 
     setup_root(args)
     preflight_result = preflight(args)
-    gemma = call_gemma_for_tool(args)
+    gemma = load_prevalidated_gemma_tool_call(args) if args.prevalidated_tool_call else call_gemma_for_tool(args)
 
     run_blackbox(args, ["init", "--ledger", str(args.ledger)])
     pre_ledger = ledger_state(args.ledger)
@@ -1826,6 +1938,11 @@ def main() -> int:
             "operator_request_sha256": gemma["operator_request_sha256"],
             "operator_request_redacted_preview": gemma["operator_request_redacted_preview"],
             "prompt_sha256": gemma["prompt_sha256"],
+            "system_message_redacted_preview": gemma["system_message_redacted_preview"],
+            "tool_prompt_redacted_preview": gemma["tool_prompt_redacted_preview"],
+            "actual_model_message": gemma["actual_model_message"],
+            "tool_contract": gemma["tool_contract"],
+            "prevalidated_source_of_truth": gemma.get("prevalidated_source_of_truth"),
             "raw_prompt_stored_in_ledger": False,
             "raw_output_stored_in_ledger": False,
         },
