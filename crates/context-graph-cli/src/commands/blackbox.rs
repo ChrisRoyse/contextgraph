@@ -10215,6 +10215,7 @@ fn fsv_certify(args: FsvCertifyArgs) -> BbxResult<Value> {
 
     let manifest_sha256 = sha256_file(&manifest_path)?;
     let payload = json!({
+        "record_kind": "full_state_verification",
         "full_state_verification_schema_version": FULL_STATE_VERIFICATION_SCHEMA_VERSION,
         "full_state_verification_rule_version": FSV_PROTOCOL_RULE_VERSION,
         "full_state_verification_id": certification_id,

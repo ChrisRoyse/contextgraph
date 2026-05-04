@@ -40,6 +40,8 @@ at `--ledger PATH`, especially the append-only `ledger_records` table and
   constrained.
 - `11_hardening_review.md` - latest cross-phase hardening result and the API
   contract issue that was closed.
+- `12_gemma_runtime_harness.md` - local Gemma/Ollama runtime harness that
+  records, verifies, scores, exports, and FSV-certifies a real model action.
 
 ## One-Screen Summary
 
