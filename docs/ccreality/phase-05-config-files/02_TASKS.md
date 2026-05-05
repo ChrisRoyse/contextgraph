@@ -1,5 +1,7 @@
 # Phase 5 — Tasks
 
+Current state as of 2026-05-05: all Phase 5 file tasks are complete and verified, including the later strict loader/schema FSV. Use this task list only for audit/replay. The authoritative completion evidence is in [README.md](README.md), [04_VERIFICATION.md](04_VERIFICATION.md), and [06_HANDOFF.md](06_HANDOFF.md).
+
 ## Task 5.1 — Confirm config directory exists
 
 ```bash

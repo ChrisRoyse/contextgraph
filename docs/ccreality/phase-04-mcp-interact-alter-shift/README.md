@@ -1,7 +1,7 @@
 # Phase 4 — MCP INTERACT + ALTER + Shift Log
 
 **Estimated duration:** 3–5 hours.
-**Status:** in progress.
+**Status:** complete.
 **Depends on:** Phase 3 (foundation) + Phase 5 (recommendation schema).
 **Unblocks:** Phase 6.
 **New code:** ~2,500–4,000 lines under `crates/context-graph-mcp/src/handlers/tools/reality_loop/`.
@@ -31,13 +31,18 @@ Implements the **write half** of the cgreality MCP surface. Three sub-families:
 
 Every alter call follows the **mutate → fsync → re-read → diff → log shift → return** discipline.
 
-## Current State
+## Completion Record
 
-- Working-tree module files exist for `alter`, `interact`, `shift_log`, `optimizer`, `lock`, and `schema_validator`.
+- Completed on 2026-05-05 on branch `ccreality-cutover`.
+- Module files exist for `alter`, `interact`, `shift_log`, `optimizer`, `lock`, and `schema_validator`.
 - `cargo build -p context-graph-mcp --quiet` passes.
 - `cargo test -p context-graph-mcp --lib reality_loop --quiet` passes.
-- A bounded MCP `tools/list` probe read back 173 total tools and 32 cgreality reality/alter/shift/memory tools.
-- Phase 4 is not complete yet: `/tmp/ccreality-phase-progress.log` does not contain `phase-04: PASS`, and the full [04_VERIFICATION.md](04_VERIFICATION.md) block still needs to be run end-to-end.
+- `cargo test -p context-graph-mcp --lib handlers::tests::mcp_protocol_e2e_test::test_e2e_tools_list_all_tools --quiet` passes.
+- A bounded MCP `tools/list` probe read back 173 total tools and the expected cgreality reality/alter/shift/memory tools.
+- Manual FSV log: `/tmp/ccreality-fsv-1777999742.log`.
+- Ledger hardening FSV log: `/tmp/ccreality-phase4-ledger-fsv-1778000024.log`.
+- Ledger source of truth: `/tmp/cgreality-phase04-ledger-fsv-1778000024/ledger.sqlite` with `agent_run|1` and `tool_call|2`.
+- Shift-log source of truth: `/tmp/cgreality-phase04-ledger-fsv-1778000024/cgreality-shift-log/phase4-ledger-fsv-1778000024.jsonl`, containing `reality_run_smoke`, `harness_apply_line_window_edit`, `optimizer_record_decision`, and `optimizer_record_recommendation`.
 
 ## AI-verifiable end-state
 

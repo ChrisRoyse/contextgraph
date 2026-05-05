@@ -16,6 +16,8 @@
 
 This is the read half of the MCP surface. Phase 4 adds INTERACT and ALTER (the write half).
 
+Current state: Phase 4 has since added and verified the write half. This Phase 3 README remains the audit record for the read-side foundation.
+
 ## Completion Record
 
 - `cargo build -p context-graph-mcp` passes.

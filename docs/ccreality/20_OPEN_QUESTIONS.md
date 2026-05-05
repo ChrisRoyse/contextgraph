@@ -19,19 +19,19 @@ Original recommendation was **A**. Phase 1 implemented that recommendation.
 
 ## Q2 — Does `context-graph-mcp` already exist as a binary, or do we need to scaffold it?
 
-The audit shows `crates/context-graph-mcp/src/main.rs` exists and the handlers tree is populated. So adding a `--mode reality-loop` flag is additive, not a new binary.
+**Status:** resolved in Phase 3.
 
-Confirm during stage 3: read `crates/context-graph-mcp/src/main.rs` and `crates/context-graph-mcp/src/lib.rs` and decide whether to add a CLI subcommand or a mode flag. The `.mcp.json` in [06_SETTINGS_JSON_SPEC](06_SETTINGS_JSON_SPEC.md) currently passes `--mode reality-loop`; that's a placeholder until we know the binary's actual flag surface.
+**Decision:** `crates/context-graph-mcp/src/main.rs` already existed. Phase 3 added an additive `--mode reality-loop` flag to the existing binary; no new MCP binary was scaffolded. The lightweight stdio path keeps stdout JSON-RPC-only and routes logs to stderr.
 
 ## Q3 — How does the MCP server get the Claude Code session_id?
+
+**Status:** resolved in Phase 4.
 
 `reality_shift_log` and `reality_shift_compare_to_my_view` need a `session_id` to scope the log. Two options:
 - **A.** Caller (Claude Code) passes it as a tool argument. Claude knows its own session_id from the SessionStart hook input that we re-inject.
 - **B.** MCP server reads it from the JSON-RPC envelope (some MCP transports include caller identity in metadata).
 
-Recommendation: **A**. Reliable across MCP server implementations. The SessionStart hook can put the session_id into the additionalContext text so the agent knows what to pass.
-
-Decide during stage 3.
+**Decision:** Option A, with an environment fallback. Tool callers pass `session_id` or `_session_id`; if omitted, the MCP helper reads `CLAUDE_SESSION_ID`; otherwise it uses `cgreality-stdio-session`. Phase 6 hooks should inject the active Claude Code session id so the agent passes it explicitly.
 
 ## Q4 — What's the right behavior when two engine attempts run concurrently against different SWE instances?
 
@@ -44,7 +44,7 @@ Options:
 - **B.** Per-process active root: `~/.cache/cgreality/active_runtime_root.<pid>` and SessionStart looks for the most recent one tied to a live process.
 - **C.** Per-operator: `~/.cache/cgreality/active_runtime_root.<USER>`. Simple if operators don't share accounts.
 
-Recommendation: **A** for now (single-operator default), with a `--no-update-active-root` flag on `reality-loop attempt` for the rare case the operator wants to run a side experiment without disturbing their main session's reality drip. Revisit if multi-operator becomes a real use case.
+Decision for current cutover: **A** for now (single-operator default). Phase 2/4 FSV additionally verified that failed smoke paths do not publish a new active runtime root. The `--no-update-active-root` side-experiment flag remains deferred until multi-run operator workflows become real.
 
 ## Q5 — Do we need an `MCP elicitation` for risky alter operations?
 
@@ -88,12 +88,9 @@ Decision: document this as expected behavior. Don't add transactional guarantees
 
 ## Q10 — JSON Schema validation library in Rust?
 
-The `optimizer_record_recommendation` tool validates input against `config/ccreality_recommendation_schema.json`. Options:
-- `jsonschema` crate (mature, draft-2020-12 support).
-- `valico` (older).
-- Hand-written validation (avoid; the schema has 20+ fields with constraints).
+**Status:** resolved in Phase 4/5.
 
-Recommendation: `jsonschema` crate. Add to `crates/context-graph-mcp/Cargo.toml` during stage 3.
+**Decision:** use the `jsonschema` crate with Draft 2020-12. `RecommendationValidator::load()` reads `CGREALITY_RECOMMENDATION_SCHEMA`, compiles the schema, and returns `CCREALITY_RECOMMENDATION_SCHEMA_INVALID` with per-error details when payload validation fails. Phase 5 FSV verified both a valid recommendation write and a 26-file maxItems rejection with no artifact or ledger mutation.
 
 ## Q11 — Should we also expose Claude Code itself as an MCP server (`claude mcp serve`)?
 
@@ -124,3 +121,15 @@ Decision: ccreality is one **subsystem** of BlackBoxFix's broader telemetry/rewa
 E.g.: take attempt-3, replay just the validation + reward computation against a candidate harness change, without re-running Gemma. This would let the operator A/B-test reward feature changes cheaply.
 
 The `reality-loop replay` subcommand from [05_REALITY_ENGINE_RESPONSIBILITY](05_REALITY_ENGINE_RESPONSIBILITY.md) is the seed of this. Defer fleshing out until there's a real reward-feature change to test.
+
+## Current open items after Phase 5
+
+The remaining open implementation questions are deferred intentionally:
+
+- Q6 cost accumulator schema/rotation.
+- Q8 unattended `claude.ai` login versus `ANTHROPIC_API_KEY` policy.
+- Q11 future `claude mcp serve` exposure.
+- Q14 30-day production-data relationship between ccreality and broader BlackBoxFix concepts.
+- Q15 replay-based fitness testing for reward-feature changes.
+
+Phases 6–8 should not resolve these unless the hook/scaffolding implementation directly needs them.

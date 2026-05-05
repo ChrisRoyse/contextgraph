@@ -1,5 +1,7 @@
 # Phase 6 — Verification
 
+Current snapshot as of 2026-05-05: this verification passes. `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`.
+
 ```bash
 set -euo pipefail
 cd /home/cabdru/contextgraph

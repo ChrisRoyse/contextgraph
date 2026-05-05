@@ -45,7 +45,7 @@ All three must succeed.
 - Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-02: PASS`.
 - Handoff smoke runtime root: `/tmp/cgreality-phase02-ready`.
 - Active-root readback after final successful smoke: `~/.cache/cgreality/active_runtime_root=/tmp/cgreality-phase02-ready`; `~/.cache/cgreality/active_target_instance=cgreality-smoke-phase02-ready`.
-- Source changes are verified in the working tree and not yet committed: `crates/context-graph-cli/src/bin/reality-loop.rs` and `crates/context-graph-cli/Cargo.toml`.
+- Source changes are committed on `ccreality-cutover`: `crates/context-graph-cli/src/bin/reality-loop.rs` and `crates/context-graph-cli/Cargo.toml`.
 
 ## Files
 

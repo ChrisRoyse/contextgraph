@@ -4,6 +4,20 @@ Beyond smoke (single-run verification of the wiring), FSV exercises the loop aga
 
 FSV is the project's existing pattern (see `docs/MEMORY_REVIEW_2026_02_24.md` and prior audit reports under `docs/HIDDEN_BROKENNESS_AUDIT_*.md`). For ccreality, FSV covers six categories:
 
+## Current Incremental FSV Evidence
+
+As of 2026-05-05, the project has passed incremental manual FSV for the implemented cutover phases. This does not replace Phase 10's full A–F suite; it records the source-of-truth evidence already produced while completing Phases 2–5.
+
+| Scope | Status | Source of truth |
+|-------|--------|-----------------|
+| Phase 2 engine subcommands | PASS | `/tmp/ccreality-fsv-1777999742.log`; runtime root `/tmp/cgreality-phase02-fsv-1777999742`; active-root files read back under `~/.cache/cgreality/`. |
+| Phase 3 MCP analyze | PASS | `/tmp/ccreality-fsv-1777999742.log`; `tools/list` count 173, expected analyze tools present, live artifact readbacks tied to `file:` source-of-truth paths. |
+| Phase 4 MCP interact/alter/shift | PASS | `/tmp/ccreality-fsv-1777999742.log`; governed edit, harness transition, shift-log, malformed recommendation rejection, SQL-injection rejection, and drift comparison readbacks. |
+| Phase 4 ledger append hardening | PASS | `/tmp/ccreality-phase4-ledger-fsv-1778000024.log`; SQLite ledger `/tmp/cgreality-phase04-ledger-fsv-1778000024/ledger.sqlite` contains `agent_run|1` and `tool_call|2`. |
+| Phase 5 strict config/schema | PASS | `/tmp/ccreality-phase5-fsv-1778001835.log`; policy/schema/sample file readbacks, real MCP recommendation write, shift-log append, ledger row, and four fail-closed edge cases. |
+
+Phase 10 still must build the automated `scripts/cc/tests/fsv.sh` suite and produce `docs/ccreality/FSV_RESULTS_<date>.md`.
+
 ## A. Reality artifact integrity (engine side)
 
 | FSV ID | Scenario | Pass criterion |

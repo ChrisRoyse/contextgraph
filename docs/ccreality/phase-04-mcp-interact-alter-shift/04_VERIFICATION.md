@@ -1,5 +1,16 @@
 # Phase 4 — Verification
 
+## Current Completion Record
+
+Phase 4 has been completed and manually FSV'd on 2026-05-05. The canonical verification block below remains the repeatable gate for reruns. Existing source-of-truth evidence:
+
+- `/tmp/ccreality-fsv-1777999742.log`
+- `/tmp/ccreality-phase4-ledger-fsv-1778000024.log`
+- `/tmp/cgreality-phase04-ledger-fsv-1778000024/ledger.sqlite`
+- `/tmp/cgreality-phase04-ledger-fsv-1778000024/cgreality-shift-log/phase4-ledger-fsv-1778000024.jsonl`
+
+The ledger FSV read back `agent_run|1` and `tool_call|2`, including `optimizer_record_decision` and `optimizer_record_recommendation`.
+
 ## Prerequisites
 
 - Phase 3 verification passes.

@@ -20,7 +20,7 @@ In scope, new files under `crates/context-graph-mcp/src/handlers/tools/reality_l
 
 Updated:
 - `mod.rs` — register the four new modules.
-- `Cargo.toml` — add `jsonschema`, `fs2` (for file locking), `uuid`.
+- `Cargo.toml` — add `jsonschema`, `fs2` (for file locking), `uuid`, and `regex` (for the strict CCReality path-pattern compiler used by Phase 5's governed-paths policy).
 
 Out of scope:
 - Hooks (Phase 6).

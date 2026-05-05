@@ -15,7 +15,11 @@ As of 2026-05-05:
 | 2 — Reality-engine subcommands | Complete | `/tmp/phase-02-verify.log` ends with `Phase 2 verification: ALL PASS`; `/tmp/cgreality-phase02-ready` is the successful handoff smoke runtime root. |
 | 5 — Config files | Complete | `/tmp/phase-05-verify.log` ends with `Phase 5 verification: ALL PASS`; config files and sample recommendation validate. |
 | 3 — MCP `reality_loop` ANALYZE module | Complete | `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `tools/list` over `--mode reality-loop` read back the 11 Phase 3 analyze tools and live analyze calls read smoke artifacts. |
-| 4 — MCP INTERACT/ALTER/SHIFT tools | In progress | Working-tree modules exist and compile; `cargo test -p context-graph-mcp --lib reality_loop --quiet` passes; bounded `tools/list` read back 173 total tools and 32 cgreality reality/alter/shift/memory tools. No `phase-04: PASS` row has been recorded yet. |
+| 4 — MCP INTERACT/ALTER/SHIFT tools | Complete | `cargo build -p context-graph-mcp --quiet` and `cargo test -p context-graph-mcp --lib reality_loop --quiet` pass; `/tmp/ccreality-phase4-ledger-fsv-1778000024.log` proves real harness edit, shift log, optimizer decision/recommendation artifacts, and SQLite ledger rows. |
+| 6 — Hook scripts | Pending, WIP present | Preconditions are satisfied by completed Phases 0–5. Local WIP exists for the MCP-backed `context-graph-cli ccreality record-harness-transition` support command and `scripts/cc/` hooks, but the scripts are not executable and two tests are missing. Next action is finishing the WIP and running real-runtime hook tests. |
+| 7 — Claude scaffolding | Pending | Blocked on Phase 6 hook scripts. |
+| 8 — CLAUDE.md addendum | Pending | Blocked on Phase 7 scaffolding. |
+| 9–12 — Smoke, FSV, docs cleanup, first production | Pending | Blocked on Phases 6–8. |
 
 ## Stage 0 — Branch + safety net
 
@@ -120,10 +124,10 @@ Add a `--mode reality-loop` flag to the existing `context-graph-mcp` binary that
 
 Logging: route `tracing` to stderr only.
 
-Pre: stage 2 complete.
+Pre: stage 2 complete and the config files from Stage 4 / Phase 5 are present. Current ordering correction: the config-file stage was executed before this MCP stage so the path-policy loader could fail closed without fallback files.
 Post: `cargo build -p context-graph-mcp` succeeds. Manual MCP-protocol smoke (using a simple client) lists every tool name in the spec.
 
-Current completion record: `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` contains `phase-03: PASS`.
+Current completion record: `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` contains `phase-03: PASS`. Phase 4 later completed the INTERACT/ALTER/SHIFT modules in this same `reality_loop` module tree.
 
 Verification:
 ```bash
@@ -138,22 +142,24 @@ Write:
 - `config/ccreality_governed_paths.json` with the allow/deny lists from [03_MCP_REALITY_TOOLS_SPEC](03_MCP_REALITY_TOOLS_SPEC.md) "Path policy file".
 - `config/ccreality_recommendation_schema.json` with the schema from [13_STRUCTURED_OUTPUT_SCHEMA](13_STRUCTURED_OUTPUT_SCHEMA.md).
 
-Pre: stage 3 module compiles.
-Post: both files committed. `harness_open_window` against an allowed path succeeds; against `.env` returns `HARNESS_PATH_DENIED`.
+Pre: stage 1 complete. This was executed before Phase 3/4 consumption so path policy and schema loaders could fail closed without fallback files.
+Post: both files committed. `harness_open_window` against an allowed path succeeds; against `.env` returns `CCREALITY_HARNESS_PATH_DENIED`. Phase 5 FSV at `/tmp/ccreality-phase5-fsv-1778001835.log` additionally verifies strict policy shape, the documented `tests/oracle_**` deny rule, unsupported-version rejection, schema maxItems rejection, real recommendation artifact write, shift-log append, and BlackBox ledger append.
 
-## Stage 5 — `.claude/` scaffolding
+## Stage 5 — Hooks + `.claude/` scaffolding
+
+Current state: **in progress but unverified**. This runbook stage maps to Phases 6, 7, and 8 in [21_IMPLEMENTATION_PLAN.md](21_IMPLEMENTATION_PLAN.md). Local WIP exists for `scripts/cc/_common.sh`, all six `scripts/cc/hook_*.sh` files, `_common_helpers.sh`, and four hook tests. The files are not executable, `test_pre_compact.sh` and `test_stop.sh` are absent, and Phase 6 verification has not passed. Do not wire `.claude/settings.json` until the hook scripts pass their real-runtime unit tests.
 
 Drop in:
+- `scripts/cc/_common.sh`, `hook_session_start.sh`, `hook_user_prompt_submit.sh`, `hook_pre_tool_use_edit.sh`, `hook_post_tool_use_edit.sh`, `hook_pre_compact.sh`, `hook_stop.sh` — bodies from [07_HOOKS_SPEC](07_HOOKS_SPEC.md). All `chmod +x`.
 - `.claude/settings.json` — replaces the empty file with the contents from [06_SETTINGS_JSON_SPEC](06_SETTINGS_JSON_SPEC.md).
 - `.mcp.json` — new file with the `cgreality` server entry.
 - `.claude/loop.md` — body from [11_LOOP_PROMPT](11_LOOP_PROMPT.md).
 - `.claude/agents/cc-reality-{diagnostician,harness-editor,reward-analyst,source-of-truth-readback,swe-failure-triage}.md` — bodies from [08_SUBAGENTS_SPEC](08_SUBAGENTS_SPEC.md).
 - `.claude/skills/ccreality-{iterate,smoke,trigger-check,readback}/SKILL.md` — bodies from [09_SKILLS_SPEC](09_SKILLS_SPEC.md).
-- `scripts/cc/_common.sh`, `hook_session_start.sh`, `hook_user_prompt_submit.sh`, `hook_pre_tool_use_edit.sh`, `hook_post_tool_use_edit.sh`, `hook_pre_compact.sh`, `hook_stop.sh` — bodies from [07_HOOKS_SPEC](07_HOOKS_SPEC.md). All `chmod +x`.
 
 Update `CLAUDE.md` per [10_CLAUDE_MD_PROJECT_MEMORY](10_CLAUDE_MD_PROJECT_MEMORY.md) — append the addendum block.
 
-Pre: stage 4 done.
+Pre: stages 0–4 done.
 Post: `claude` started in the project sees the cgreality MCP server (run `claude` then `/mcp` then verify `cgreality` appears as connected).
 
 Verification:

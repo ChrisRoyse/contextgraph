@@ -1,0 +1,630 @@
+//! ccreality hook support commands.
+//!
+//! These commands are intentionally thin: they call the ccreality MCP surface
+//! and return the MCP readback. They do not direct-write reality-loop artifacts.
+
+use clap::{Args, Subcommand, ValueEnum};
+use serde_json::{json, Value};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::UNIX_EPOCH;
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
+use tokio::time::{timeout, Duration};
+
+type CCResult<T> = std::result::Result<T, Value>;
+
+#[derive(Subcommand, Debug)]
+pub enum CCRealityCommands {
+    /// Record a post-edit harness transition through the cgreality MCP tool.
+    #[command(name = "record-harness-transition")]
+    RecordHarnessTransition(RecordHarnessTransitionArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct RecordHarnessTransitionArgs {
+    /// Runtime run id. When omitted, the active runtime root is inspected.
+    #[arg(long)]
+    pub run_id: Option<String>,
+
+    /// Attempt number. When omitted, the active runtime root is inspected.
+    #[arg(long)]
+    pub attempt: Option<u64>,
+
+    /// Claude Code session id.
+    #[arg(long)]
+    pub session_id: Option<String>,
+
+    /// Claude Code tool use id.
+    #[arg(long)]
+    pub tool_use_id: Option<String>,
+
+    /// Claude Code tool name.
+    #[arg(long)]
+    pub tool_name: Option<String>,
+
+    /// Repo-relative file path that changed.
+    #[arg(long)]
+    pub file_path: String,
+
+    /// SHA recorded by the PreToolUse hook.
+    #[arg(long)]
+    pub before_sha256: String,
+
+    /// SHA observed by the PostToolUse hook.
+    #[arg(long)]
+    pub after_sha256: String,
+
+    /// Lines added by the edit.
+    #[arg(long, default_value_t = 0)]
+    pub lines_added: u64,
+
+    /// Lines removed by the edit.
+    #[arg(long, default_value_t = 0)]
+    pub lines_removed: u64,
+
+    /// Git diff stat after the edit.
+    #[arg(long, default_value = "")]
+    pub git_diff_stat: String,
+
+    /// Cargo check status string.
+    #[arg(long, default_value = "")]
+    pub cargo_status: String,
+
+    /// Tail of cargo stderr when cargo check fails.
+    #[arg(long, default_value = "")]
+    pub cargo_stderr_tail: String,
+
+    /// Timeout for the MCP subprocess call.
+    #[arg(long, default_value_t = 20)]
+    pub timeout_seconds: u64,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value_t = CCRealityOutputFormat::JsonCompact)]
+    pub format: CCRealityOutputFormat,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum CCRealityOutputFormat {
+    Json,
+    #[default]
+    JsonCompact,
+}
+
+pub async fn handle_ccreality_command(cmd: CCRealityCommands) -> i32 {
+    let result = match cmd {
+        CCRealityCommands::RecordHarnessTransition(args) => record_harness_transition(args).await,
+    };
+
+    match result {
+        Ok(value) => match serde_json::to_string(&value) {
+            Ok(line) => {
+                println!("{line}");
+                0
+            }
+            Err(e) => {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string(&ccreality_error(
+                        "CCREALITY_CLI_JSON_SERIALIZE_FAILED",
+                        format!("failed to serialize ccreality CLI output: {e}"),
+                        "cli.stdout",
+                        "inspect the returned JSON value",
+                        json!({}),
+                        None,
+                    ))
+                    .unwrap_or_else(|_| "{\"status\":\"error\"}".to_string())
+                );
+                1
+            }
+        },
+        Err(error) => {
+            eprintln!(
+                "{}",
+                serde_json::to_string(&error)
+                    .unwrap_or_else(|_| "{\"status\":\"error\"}".to_string())
+            );
+            1
+        }
+    }
+}
+
+async fn record_harness_transition(args: RecordHarnessTransitionArgs) -> CCResult<Value> {
+    let root = project_root()?;
+    let (run_id, attempt) = match (args.run_id.clone(), args.attempt) {
+        (Some(run_id), Some(attempt)) => (run_id, attempt),
+        (None, None) => latest_active_attempt()?,
+        _ => {
+            return Err(ccreality_error(
+                "CCREALITY_CLI_RUN_ATTEMPT_PAIR_INCOMPLETE",
+                "run_id and attempt must be supplied together, or both omitted for active-runtime discovery",
+                "arguments.run_id",
+                "supply both --run-id and --attempt or omit both",
+                json!({"run_id_supplied": args.run_id.is_some(), "attempt_supplied": args.attempt.is_some()}),
+                None,
+            ));
+        }
+    };
+
+    let cargo_check = if args.cargo_status.is_empty() {
+        Value::Null
+    } else {
+        json!({
+            "status": args.cargo_status,
+            "stderr_tail": args.cargo_stderr_tail,
+            "command": "cargo check -p context-graph-cli --bin reality-loop"
+        })
+    };
+
+    let payload = json!({
+        "run_id": run_id,
+        "attempt": attempt,
+        "session_id": args.session_id.unwrap_or_else(|| "cgreality-hook-session-unknown".to_string()),
+        "tool_use_id": args.tool_use_id.unwrap_or_else(|| "cgreality-tool-use-unknown".to_string()),
+        "tool_name": args.tool_name.unwrap_or_else(|| "EditOrWrite".to_string()),
+        "file_path": args.file_path,
+        "before_sha256": args.before_sha256,
+        "after_sha256": args.after_sha256,
+        "lines_added": args.lines_added,
+        "lines_removed": args.lines_removed,
+        "git_diff_stat": args.git_diff_stat,
+        "cargo_check": cargo_check,
+        "recorded_by": "context-graph-cli ccreality record-harness-transition"
+    });
+
+    call_mcp_tool(
+        &root,
+        "optimizer_record_harness_transition",
+        payload,
+        args.timeout_seconds,
+    )
+    .await
+}
+
+async fn call_mcp_tool(
+    root: &Path,
+    tool_name: &str,
+    arguments: Value,
+    timeout_seconds: u64,
+) -> CCResult<Value> {
+    let mcp_bin = mcp_binary(root)?;
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments
+        }
+    });
+
+    let mut child = Command::new(&mcp_bin)
+        .arg("--mode")
+        .arg("reality-loop")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| {
+            ccreality_error(
+                "CCREALITY_CLI_MCP_SPAWN_FAILED",
+                format!("failed to spawn context-graph-mcp: {e}"),
+                "mcp.spawn",
+                "run cargo build -p context-graph-mcp --bin context-graph-mcp",
+                json!({"mcp_bin": mcp_bin.display().to_string()}),
+                Some(file_sot(&mcp_bin)),
+            )
+        })?;
+
+    let Some(mut stdin) = child.stdin.take() else {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_MCP_STDIN_UNAVAILABLE",
+            "context-graph-mcp child stdin was unavailable",
+            "mcp.stdin",
+            "inspect tokio process setup",
+            json!({"mcp_bin": mcp_bin.display().to_string()}),
+            Some(file_sot(&mcp_bin)),
+        ));
+    };
+
+    stdin
+        .write_all(request.to_string().as_bytes())
+        .await
+        .map_err(|e| {
+            ccreality_error(
+                "CCREALITY_CLI_MCP_STDIN_WRITE_FAILED",
+                format!("failed to write MCP JSON-RPC request: {e}"),
+                "mcp.stdin",
+                "inspect the MCP subprocess lifecycle",
+                json!({"tool_name": tool_name}),
+                Some(file_sot(&mcp_bin)),
+            )
+        })?;
+    drop(stdin);
+
+    let output = timeout(
+        Duration::from_secs(timeout_seconds),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_TIMEOUT",
+            "context-graph-mcp did not return before timeout",
+            "mcp.timeout",
+            "inspect MCP startup and runtime-root state",
+            json!({"timeout_seconds": timeout_seconds, "tool_name": tool_name}),
+            Some(file_sot(&mcp_bin)),
+        )
+    })?
+    .map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_WAIT_FAILED",
+            format!("failed waiting for context-graph-mcp: {e}"),
+            "mcp.wait",
+            "inspect MCP subprocess state",
+            json!({"tool_name": tool_name}),
+            Some(file_sot(&mcp_bin)),
+        )
+    })?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !output.status.success() {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_MCP_EXIT_FAILED",
+            "context-graph-mcp exited unsuccessfully",
+            "mcp.exit_status",
+            "inspect MCP stderr and the JSON-RPC request payload",
+            json!({"exit_code": output.status.code(), "stdout": stdout, "stderr": stderr}),
+            Some(file_sot(&mcp_bin)),
+        ));
+    }
+
+    let rpc: Value = serde_json::from_str(&stdout).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_STDOUT_JSON_INVALID",
+            format!("context-graph-mcp stdout was not JSON: {e}"),
+            "mcp.stdout",
+            "run the MCP request manually and inspect stdout/stderr",
+            json!({"stdout": stdout, "stderr": stderr}),
+            Some(file_sot(&mcp_bin)),
+        )
+    })?;
+
+    if let Some(error) = rpc.get("error") {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_MCP_JSONRPC_ERROR",
+            "context-graph-mcp returned a JSON-RPC error",
+            "mcp.response.error",
+            "inspect the tool arguments and MCP stderr",
+            json!({"error": error, "stderr": stderr}),
+            Some(file_sot(&mcp_bin)),
+        ));
+    }
+
+    let text = rpc
+        .pointer("/result/content/0/text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            ccreality_error(
+                "CCREALITY_CLI_MCP_TEXT_MISSING",
+                "MCP response did not contain result.content[0].text",
+                "mcp.response.result.content",
+                "inspect the MCP handler response shape",
+                json!({"response": rpc, "stderr": stderr}),
+                Some(file_sot(&mcp_bin)),
+            )
+        })?;
+
+    let value: Value = serde_json::from_str(text).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_MCP_TEXT_JSON_INVALID",
+            format!("MCP text payload was not JSON: {e}"),
+            "mcp.response.result.content[0].text",
+            "inspect the MCP handler text payload",
+            json!({"text": text, "stderr": stderr}),
+            Some(file_sot(&mcp_bin)),
+        )
+    })?;
+
+    if rpc.pointer("/result/isError").and_then(Value::as_bool) == Some(true)
+        || value.get("status").and_then(Value::as_str) == Some("error")
+    {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_MCP_TOOL_ERROR",
+            "MCP tool returned an error payload",
+            "mcp.tool_result",
+            "inspect the tool error_code, field_path, and remediation",
+            json!({"tool_error": value, "stderr": stderr}),
+            Some(file_sot(&mcp_bin)),
+        ));
+    }
+
+    Ok(value)
+}
+
+fn latest_active_attempt() -> CCResult<(String, u64)> {
+    let runtime_root_file = cache_file("active_runtime_root")?;
+    let target_file = cache_file("active_target_instance")?;
+    let runtime_root =
+        read_trimmed_path(&runtime_root_file, "CCREALITY_CLI_ACTIVE_ROOT_READ_FAILED")?;
+    let target = read_trimmed_string(&target_file, "CCREALITY_CLI_ACTIVE_TARGET_READ_FAILED")?;
+
+    if !runtime_root.is_dir() {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_ACTIVE_ROOT_MISSING",
+            "active runtime root does not exist on disk",
+            "active_runtime_root",
+            "run reality-loop smoke or attempt before recording a transition",
+            json!({"runtime_root": runtime_root.display().to_string()}),
+            Some(file_sot(&runtime_root_file)),
+        ));
+    }
+
+    let run_id = latest_run_id(&runtime_root)?;
+    let run_dir = runtime_root.join(&run_id);
+    let mut attempts = Vec::new();
+    collect_attempt_dirs(&run_dir, &target, &mut attempts)?;
+    attempts.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let Some((attempt, _path)) = attempts.into_iter().last() else {
+        return Err(ccreality_error(
+            "CCREALITY_CLI_ATTEMPT_DIR_MISSING",
+            "no attempt directory was found for the active target",
+            "active_runtime_root.attempts",
+            "run reality-loop smoke or attempt before recording a transition",
+            json!({"runtime_root": runtime_root.display().to_string(), "run_id": run_id, "target": target}),
+            Some(file_sot(&runtime_root)),
+        ));
+    };
+    Ok((run_id, attempt))
+}
+
+fn latest_run_id(runtime_root: &Path) -> CCResult<String> {
+    let mut candidates = Vec::<(u64, String)>::new();
+    for entry in fs::read_dir(runtime_root).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_RUNTIME_ROOT_READ_FAILED",
+            format!("failed to read runtime root: {e}"),
+            "runtime_root.read_dir",
+            "inspect active runtime root permissions",
+            json!({"runtime_root": runtime_root.display().to_string()}),
+            Some(file_sot(runtime_root)),
+        )
+    })? {
+        let entry = entry.map_err(|e| {
+            ccreality_error(
+                "CCREALITY_CLI_RUNTIME_ROOT_ENTRY_FAILED",
+                format!("failed to read runtime root entry: {e}"),
+                "runtime_root.entry",
+                "inspect active runtime root permissions",
+                json!({"runtime_root": runtime_root.display().to_string()}),
+                Some(file_sot(runtime_root)),
+            )
+        })?;
+        let metadata = entry.metadata().map_err(|e| {
+            ccreality_error(
+                "CCREALITY_CLI_RUNTIME_ROOT_METADATA_FAILED",
+                format!("failed to read runtime root entry metadata: {e}"),
+                "runtime_root.entry.metadata",
+                "inspect active runtime root permissions",
+                json!({"path": entry.path().display().to_string()}),
+                Some(file_sot(&entry.path())),
+            )
+        })?;
+        if !metadata.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if matches!(
+            name.as_str(),
+            "failures" | "workspaces" | "cgreality-shift-log"
+        ) {
+            continue;
+        }
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        candidates.push((modified, name));
+    }
+    candidates.sort();
+    candidates
+        .into_iter()
+        .last()
+        .map(|(_, name)| name)
+        .ok_or_else(|| {
+            ccreality_error(
+                "CCREALITY_CLI_RUN_DIR_MISSING",
+                "no run directory was found under the active runtime root",
+                "runtime_root.runs",
+                "run reality-loop smoke or attempt before recording a transition",
+                json!({"runtime_root": runtime_root.display().to_string()}),
+                Some(file_sot(runtime_root)),
+            )
+        })
+}
+
+fn collect_attempt_dirs(root: &Path, target: &str, out: &mut Vec<(u64, PathBuf)>) -> CCResult<()> {
+    if !root.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(root).map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_ATTEMPT_WALK_READ_FAILED",
+            format!("failed to walk attempt tree: {e}"),
+            "attempt_tree.read_dir",
+            "inspect runtime artifact permissions",
+            json!({"path": root.display().to_string()}),
+            Some(file_sot(root)),
+        )
+    })? {
+        let entry = entry.map_err(|e| {
+            ccreality_error(
+                "CCREALITY_CLI_ATTEMPT_WALK_ENTRY_FAILED",
+                format!("failed to read attempt tree entry: {e}"),
+                "attempt_tree.entry",
+                "inspect runtime artifact permissions",
+                json!({"path": root.display().to_string()}),
+                Some(file_sot(root)),
+            )
+        })?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(num) = parse_attempt_name(&name) {
+            if path.display().to_string().contains(target) {
+                out.push((num, path));
+            }
+        } else {
+            collect_attempt_dirs(&path, target, out)?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_attempt_name(name: &str) -> Option<u64> {
+    name.strip_prefix("attempt-")
+        .or_else(|| name.strip_prefix("smoke-attempt-"))
+        .and_then(|suffix| suffix.parse::<u64>().ok())
+}
+
+fn project_root() -> CCResult<PathBuf> {
+    if let Ok(root) = env::var("CONTEXTGRAPH_ROOT") {
+        let root = PathBuf::from(root);
+        if root.join("Cargo.toml").is_file() {
+            return Ok(root);
+        }
+        return Err(ccreality_error(
+            "CCREALITY_CLI_PROJECT_ROOT_INVALID",
+            "CONTEXTGRAPH_ROOT does not point at a ContextGraph checkout",
+            "env.CONTEXTGRAPH_ROOT",
+            "set CONTEXTGRAPH_ROOT to /home/cabdru/contextgraph",
+            json!({"CONTEXTGRAPH_ROOT": root.display().to_string()}),
+            Some(file_sot(&root)),
+        ));
+    }
+
+    let cwd = env::current_dir().map_err(|e| {
+        ccreality_error(
+            "CCREALITY_CLI_CURRENT_DIR_FAILED",
+            format!("failed to read current working directory: {e}"),
+            "process.cwd",
+            "run the command from the ContextGraph checkout",
+            json!({}),
+            None,
+        )
+    })?;
+    for ancestor in cwd.ancestors() {
+        if ancestor.join("Cargo.toml").is_file()
+            && ancestor
+                .join("config/ccreality_governed_paths.json")
+                .is_file()
+        {
+            return Ok(ancestor.to_path_buf());
+        }
+    }
+    Err(ccreality_error(
+        "CCREALITY_CLI_PROJECT_ROOT_NOT_FOUND",
+        "could not locate the ContextGraph project root",
+        "process.cwd",
+        "run from /home/cabdru/contextgraph or set CONTEXTGRAPH_ROOT",
+        json!({"cwd": cwd.display().to_string()}),
+        None,
+    ))
+}
+
+fn mcp_binary(root: &Path) -> CCResult<PathBuf> {
+    let path = env::var("CGREALITY_MCP_BIN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| root.join("target/debug/context-graph-mcp"));
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(ccreality_error(
+            "CCREALITY_CLI_MCP_BINARY_MISSING",
+            "context-graph-mcp binary is missing",
+            "mcp.binary",
+            "run cargo build -p context-graph-mcp --bin context-graph-mcp",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(&path)),
+        ))
+    }
+}
+
+fn cache_file(name: &str) -> CCResult<PathBuf> {
+    if let Ok(cache_dir) = env::var("CGREALITY_CACHE_DIR") {
+        return Ok(PathBuf::from(cache_dir).join(name));
+    }
+    let home = dirs::home_dir().ok_or_else(|| {
+        ccreality_error(
+            "CCREALITY_CLI_HOME_DIR_MISSING",
+            "could not determine home directory",
+            "dirs.home_dir",
+            "set CGREALITY_CACHE_DIR explicitly",
+            json!({}),
+            None,
+        )
+    })?;
+    Ok(home.join(".cache/cgreality").join(name))
+}
+
+fn read_trimmed_path(path: &Path, error_code: &'static str) -> CCResult<PathBuf> {
+    Ok(PathBuf::from(read_trimmed_string(path, error_code)?))
+}
+
+fn read_trimmed_string(path: &Path, error_code: &'static str) -> CCResult<String> {
+    let raw = fs::read_to_string(path).map_err(|e| {
+        ccreality_error(
+            error_code,
+            format!("failed to read cgreality cache file: {e}"),
+            "cgreality.cache_file",
+            "run reality-loop smoke or attempt before recording a transition",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(path)),
+        )
+    })?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        Err(ccreality_error(
+            "CCREALITY_CLI_CACHE_FILE_EMPTY",
+            "cgreality cache file is empty",
+            "cgreality.cache_file",
+            "run reality-loop smoke or attempt before recording a transition",
+            json!({"path": path.display().to_string()}),
+            Some(file_sot(path)),
+        ))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+fn ccreality_error(
+    error_code: impl Into<String>,
+    message: impl Into<String>,
+    field_path: impl Into<String>,
+    remediation: impl Into<String>,
+    details: Value,
+    source_of_truth: Option<String>,
+) -> Value {
+    json!({
+        "status": "error",
+        "error_code": error_code.into(),
+        "message": message.into(),
+        "field_path": field_path.into(),
+        "remediation": remediation.into(),
+        "details": details,
+        "source_of_truth": source_of_truth
+    })
+}
+
+fn file_sot(path: &Path) -> String {
+    format!("file:{}", path.display())
+}

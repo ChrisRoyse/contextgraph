@@ -72,17 +72,12 @@ See [04_VERIFICATION.md](04_VERIFICATION.md). Three clauses:
 4. Hook scripts must never read or write files outside the project tree without explicit cause. They may read `~/.cache/cgreality/*` and write `~/.cache/cgreality/last_session_marker`.
 5. Hook scripts must be idempotent.
 
-## Optional CLI subcommand
+## Required CLI subcommand
 
-The PostToolUse hook records a harness-transition record. Two implementation choices:
+The PostToolUse hook records a harness-transition record through the Phase 4 MCP-backed path.
 
-**Option A — direct write:** the bash hook writes the JSON itself (using jq). Simpler. Doesn't append to BlackBox ledger; doesn't append to shift log.
-
-**Option B — CLI wrapper:** the bash hook calls `context-graph-cli ccreality record-harness-transition --tool-use-id ... --file ...` which:
+The bash hook calls `context-graph-cli ccreality record-harness-transition --tool-use-id ... --file ...` which:
 - Writes the harness-transitions/round-NN.json artifact.
-- Appends to BlackBox ledger.
-- Appends to shift log (if needed).
+- Appends the Phase 4 shift-log entry.
 
-Option B is cleaner. Option A is faster to implement. Recommended: Option B, but only if the implementation budget allows. Option A is acceptable for Phase 6 with a follow-up to upgrade later.
-
-This phase implements **Option A** by default (simpler bash), with an explicit comment in the hook script pointing at the future Option B upgrade.
+Direct bash JSON writes are rejected for this phase. They would create a hidden alternate persistence path and skip the MCP/shift-log readback contract. If the CLI wrapper fails, the hook must report the exact command, exit code, stderr tail, and source-of-truth path inspected rather than falling back to a direct file write.

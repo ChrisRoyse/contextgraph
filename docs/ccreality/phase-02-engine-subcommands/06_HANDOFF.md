@@ -25,4 +25,4 @@ If any script (CI YAML, dev shell, dashboard, etc.) invoked the binary as `reali
 
 → [phase-03-mcp-foundation-analyze/](../phase-03-mcp-foundation-analyze/README.md)
 
-Phase 5 and Phase 3 are now complete. Proceed to [phase-04-mcp-interact-alter-shift/](../phase-04-mcp-interact-alter-shift/README.md).
+Phase 5, Phase 3, and Phase 4 are now complete. The current next phase is [phase-06-hooks/](../phase-06-hooks/README.md).

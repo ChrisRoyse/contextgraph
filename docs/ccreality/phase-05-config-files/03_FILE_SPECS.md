@@ -6,7 +6,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "ccreality governed paths policy",
-  "description": "Allow/deny lists consumed by the cgreality MCP server's harness_* tools and by the .claude/ hook scripts. Globs use Unix shell-style patterns. Deny always wins over allow.",
+  "description": "Allowed and denied repo-relative paths for CC Reality harness mutation tools.",
   "version": 1,
   "allow": [
     "crates/context-graph-cli/src/bin/reality-loop.rs",
@@ -91,9 +91,9 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
     "git diff --stat -- crates/context-graph-cli/src/bin/reality-loop.rs"
   ],
   "source_of_truth_readbacks": [
-    "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/attempt-summary.json",
-    "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/reality-signal-packet.json",
-    "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/harness-transitions/round-04.json"
+    "file:/tmp/.../attempt-3/attempt-summary.json",
+    "file:/tmp/.../attempt-3/reality-signal-packet.json",
+    "file:/tmp/.../attempt-3/harness-transitions/round-04.json"
   ],
   "next_gemma_prompt_delta": "Use the new open_test_file tool before drafting any patch that touches a file under tests/.",
   "expected_reward_signal_delta": "Tool grounding signal should rise from 0.42 to ~0.7 on next attempt; patch_signals.repeated_patch should drop to false.",
@@ -104,9 +104,9 @@ The skeleton (must be `additionalProperties: false`, all top-level fields requir
   "memories_created": [],
   "memories_boosted": [],
   "harness_transitions_minted": [
-    "file:/tmp/contextgraph-rust-reality-loop/run-2026-05-05-1234/django__django-12345/attempt-3/harness-transitions/round-04.json"
+    "file:/tmp/.../attempt-3/harness-transitions/round-04.json"
   ],
-  "shift_log_excerpt": ["01J9XYZABCDEFGHIJKLM"],
+  "shift_log_excerpt": ["01J9XYZ..."],
   "diagnosis_summary": {
     "failure_class": "tool_grounding_failure",
     "root_cause_hypothesis": "Gemma was attempting blind test edits because no governed tool exposed the test file structure.",

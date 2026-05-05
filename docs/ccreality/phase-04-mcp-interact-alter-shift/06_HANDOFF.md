@@ -22,13 +22,19 @@ A Claude Code session running `claude --mode default` (no .claude/settings.json 
 
 ## Verification record
 
-No completion record exists yet. After Phase 4 verification passes, append to `/tmp/ccreality-phase-progress.log`:
-```
-phase-04: PASS, <ISO date>, MCP tool count=<N>
-```
+- Completed on 2026-05-05.
+- `cargo build -p context-graph-mcp --quiet` passes.
+- `cargo test -p context-graph-mcp --lib reality_loop --quiet` passes.
+- `cargo test -p context-graph-mcp --lib handlers::tests::mcp_protocol_e2e_test::test_e2e_tools_list_all_tools --quiet` passes.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-04: PASS`.
+- Manual FSV source of truth: `/tmp/ccreality-fsv-1777999742.log`.
+- Ledger FSV source of truth: `/tmp/ccreality-phase4-ledger-fsv-1778000024.log`.
+- Physical ledger readback: `/tmp/cgreality-phase04-ledger-fsv-1778000024/ledger.sqlite` contains `agent_run|1` and `tool_call|2`; the tool-call rows are `optimizer_record_decision` and `optimizer_record_recommendation`.
+- Physical shift-log readback: `/tmp/cgreality-phase04-ledger-fsv-1778000024/cgreality-shift-log/phase4-ledger-fsv-1778000024.jsonl` contains 4 shift records.
+- Edge cases manually verified with before/after source-of-truth reads: denied `.env` path, stale edit SHA, rejected SQL injection WHERE clause.
 
 ## Next phase
 
 → [phase-06-hooks/](../phase-06-hooks/README.md)
 
-Phase 5 is already complete, so Phase 6 is the next phase after Phase 4 records a PASS. Do not proceed to hooks while Phase 4 lacks a completed source-of-truth verification record, because the hooks depend on `optimizer_record_harness_transition`, shift-log readback, path policy, and schema validation.
+Phase 5 is already complete, and Phase 4 now has the completed source-of-truth verification record listed above. Phase 6 may start. Do not bypass the Phase 4 MCP tools from hooks; the hooks depend on `optimizer_record_harness_transition`, shift-log readback, path policy, and schema validation.

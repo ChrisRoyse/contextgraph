@@ -1,5 +1,16 @@
 # Phase 5 — Verification
 
+## Current Completion Record
+
+Phase 5 has been completed and manually FSV'd on 2026-05-05. The canonical verification block below remains the repeatable file-level gate. Additional FSV evidence:
+
+- `/tmp/ccreality-phase5-fsv-1778001835.log`
+- `/tmp/cgreality-phase05-fsv-1778001835/ledger.sqlite`
+- `/tmp/cgreality-phase05-fsv-1778001835/cgreality-shift-log/phase05-fsv-1778001835.jsonl`
+- `/tmp/cgreality-phase05-fsv-1778001835/.../claude-code-optimizer/recommendation-turn-01.json`
+
+The FSV verified the real files from disk, then ran MCP happy path and edge cases. The final SQLite readback showed `agent_run|1` and `tool_call|1`; the fail-closed edge cases left the recommendation file list, ledger counts, and probe SHA unchanged.
+
 ## Canonical end-state block
 
 ```bash

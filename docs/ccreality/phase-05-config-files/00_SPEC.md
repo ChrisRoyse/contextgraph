@@ -12,7 +12,9 @@
 - `config/ccreality_recommendation_schema.json` — NEW.
 - `docs/ccreality/phase-05-config-files/sample_recommendation.json` — NEW (used by verification).
 
-Out of scope: any other file. (The MCP server's loader code is in Phase 3/4; the schema-validator implementation is in Phase 4. This phase only produces the data.)
+Original scope: only these data files. The MCP server loader code lives in Phase 3/4, and the schema-validator implementation lives in Phase 4.
+
+Current implementation note: Phase 5 hardening later touched the loader tests and path-pattern compiler because the documented governed-paths policy includes `tests/oracle_**`, which cannot be preserved by weakening the policy. The final project state keeps the documented data contract and updates the loader to support it fail-closed.
 
 ## Deliverables
 

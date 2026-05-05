@@ -137,6 +137,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::blackbox::BlackboxCommands,
     },
+    /// ccreality hook support commands.
+    Ccreality {
+        #[command(subcommand)]
+        action: commands::ccreality::CCRealityCommands,
+    },
 }
 
 /// `context-graph-cli export <sub>` targets.
@@ -208,6 +213,9 @@ pub async fn main() {
         },
         Commands::BackfillE14(args) => commands::backfill_e14::run(args).await,
         Commands::Blackbox { action } => commands::blackbox::handle_blackbox_command(action).await,
+        Commands::Ccreality { action } => {
+            commands::ccreality::handle_ccreality_command(action).await
+        }
     };
 
     std::process::exit(exit_code);

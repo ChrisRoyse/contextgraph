@@ -391,7 +391,7 @@ Every alter tool follows the **mutate → fsync → re-read → diff → log shi
 
 **Hard policy:**
 - Path must be project-relative and inside the allowlisted project subtree.
-- Path is denied if it matches `^.env$`, `swebench/eval/**`, `crates/context-graph-benchmark/datasets/swe_bench_*`, `tests/oracle_**`, `crates/*/src/reward_specs/**`.
+- Path is denied if it matches any rule in `config/ccreality_governed_paths.json`; deny wins over allow. Current deny coverage includes `.env`, nested `.env.*`, `swebench/**`, `tests/oracle_**`, SWE-bench datasets, reward specs, verifiers, key material, credentials, `/etc/**`, and `/root/**`.
 - Window cap: 400 lines.
 
 This is the analyze-half of the editing pair. Claude must always call this before `harness_apply_line_window_edit`.
@@ -597,31 +597,51 @@ The artifact is written under `<run>/<task>/attempt-N/claude-code-optimizer/reco
 
 ```json
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ccreality governed paths policy",
+  "description": "Allowed and denied repo-relative paths for CC Reality harness mutation tools.",
+  "version": 1,
   "allow": [
     "crates/context-graph-cli/src/bin/reality-loop.rs",
+    "crates/context-graph-cli/src/governed_edit.rs",
+    "crates/context-graph-cli/src/lib.rs",
     "crates/context-graph-cli/src/**",
     "crates/context-graph-mcp/src/handlers/tools/reality_loop/**",
+    "crates/context-graph-mcp/src/handlers/tools/reality_loop/*.rs",
     "scripts/cc/**",
+    "scripts/cc/tests/**",
     ".claude/loop.md",
     ".claude/agents/cc-reality-*.md",
     ".claude/skills/ccreality-*/**",
+    ".claude/skills/ccreality-*/SKILL.md",
     "docs/ccreality/**",
-    "docs/reality/**"
+    "docs/ccreality/phase-*/**",
+    "docs/reality/**",
+    "config/ccreality_governed_paths.json",
+    "config/ccreality_recommendation_schema.json"
   ],
   "deny": [
     ".env",
     ".env.*",
     "**/.env",
+    "**/.env.*",
     "swebench/**",
     "tests/oracle_**",
+    "tests/oracle_**/**",
     "crates/context-graph-benchmark/datasets/swe_bench_*",
+    "crates/context-graph-benchmark/datasets/swe_bench_*/**",
     "crates/*/src/reward_specs/**",
-    "crates/*/src/verifiers/**"
+    "crates/*/src/verifiers/**",
+    "**/*.pem",
+    "**/*.key",
+    "**/credentials.json",
+    "/etc/**",
+    "/root/**"
   ]
 }
 ```
 
-The MCP server reads this on startup. Claude Code cannot edit it via the MCP surface because the file path is in the deny list (self-protection). Operator must hand-edit if the policy needs changing.
+The MCP server reads this from `$CGREALITY_GOVERNED_PATHS` and fails closed if the env var is missing, the file is malformed, the version is unsupported, or a path matches a deny rule. The current implementation compiles this CCReality path-pattern dialect directly so documented rules such as `tests/oracle_**` remain intact instead of being weakened to fit a library glob dialect.
 
 ## Error model
 

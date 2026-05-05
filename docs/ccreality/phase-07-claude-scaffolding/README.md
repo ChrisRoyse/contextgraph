@@ -5,6 +5,8 @@
 **Depends on:** Phase 4 (MCP server) + Phase 5 (config files) + Phase 6 (hook scripts).
 **Unblocks:** Phase 8.
 
+Current readiness as of 2026-05-05: Phase 6 has passed verification. Phase 7 can wire `.claude/settings.json` to the executable `scripts/cc/hook_*.sh` scripts.
+
 ## What this phase does
 
 Drops 11+ files into `.claude/` and creates `.mcp.json` so Claude Code:

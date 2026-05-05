@@ -2,6 +2,10 @@
 
 Before letting the loop touch real SWE-bench attempts, smoke must pass end-to-end. The smoke is designed to verify every layer **without** burning Docker time or Gemma inference.
 
+## Current State
+
+As of 2026-05-05, Phases 0–5 are complete and manually FSV'd. Engine smoke, MCP tools/list, governed edit, shift-log append, recommendation schema validation, and BlackBox ledger append have already been verified in the Phase 2–5 logs. The remaining smoke layers that have not yet been implemented end-to-end are the Claude Code hook/scaffolding layers from Phases 6–8.
+
 ## Smoke layers (verify in order)
 
 ### Layer 0 — environment
@@ -16,7 +20,7 @@ ls "$HOME/.cache/cgreality/" 2>/dev/null || mkdir -p "$HOME/.cache/cgreality/"
 ```bash
 cd /home/cabdru/contextgraph
 cargo build -p context-graph-cli --bin reality-loop
-./target/debug/context-graph-cli reality-loop smoke --runtime-root /tmp/cgreality-smoke --label first-light
+./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-smoke --label first-light
 ```
 
 Expected: exit 0, `/tmp/cgreality-smoke/run-…/smoke-attempt-1/` written with `attempt-summary.json`, `reality-signal-packet.json`, `problem-reality-packet.json`. The active runtime root file `~/.cache/cgreality/active_runtime_root` is updated.
@@ -131,7 +135,7 @@ which claude jq sha256sum
 
 echo "== Layer 1 =="
 cargo build -p context-graph-cli --bin reality-loop
-./target/debug/context-graph-cli reality-loop smoke --runtime-root "$SMOKE_ROOT" --label ci-smoke
+./target/debug/reality-loop smoke --runtime-root "$SMOKE_ROOT" --label ci-smoke
 
 echo "== Layer 2 =="
 cargo build -p context-graph-mcp

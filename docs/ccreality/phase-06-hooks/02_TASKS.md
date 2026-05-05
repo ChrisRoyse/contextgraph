@@ -2,6 +2,16 @@
 
 Eight ordered tasks. Each script's full body lives in [03_FILE_SPECS.md](03_FILE_SPECS.md) (which itself references [../07_HOOKS_SPEC.md](../07_HOOKS_SPEC.md) verbatim — that doc IS the canonical bash).
 
+## Current task snapshot
+
+As of 2026-05-05, this phase is complete:
+
+- Task 6.1 directory structure exists.
+- Tasks 6.2 and 6.3 have executable files under `scripts/cc/`.
+- Task 6.4 has executable `_common_helpers.sh`.
+- Task 6.5 has all six tests present: `test_session_start.sh`, `test_user_prompt_submit.sh`, `test_pre_tool_use_edit.sh`, `test_post_tool_use_edit.sh`, `test_pre_compact.sh`, and `test_stop.sh`.
+- Tasks 6.6 through 6.8 passed. `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`.
+
 ## Task 6.1 — Create the directory structure
 
 ```bash

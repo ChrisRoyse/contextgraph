@@ -1,5 +1,7 @@
 # Phase 6 — Handoff
 
+Current status as of 2026-05-05: Phase 6 is complete. [04_VERIFICATION.md](04_VERIFICATION.md) passed and `/tmp/ccreality-phase-progress.log` records `phase-06: PASS`.
+
 ## What's true after Phase 6
 
 - 6 hook scripts exist under `scripts/cc/` and pass their unit tests.

@@ -1,6 +1,6 @@
 # ccreality — Claude Code as the Outer Reality-Loop Optimizer
 
-**Status:** cutover in progress — Phases 0, 1, 2, 3, and 5 complete; Phase 4 is in progress
+**Status:** cutover in progress — Phases 0 through 6 are implemented and manually FSV'd; Phase 7 is the next implementation phase
 **Date:** 2026-05-05
 **Author:** Claude (this session) for Chris Royse
 **Supersedes:** `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` (kept for historical context),
@@ -77,12 +77,15 @@ Completed so far:
 - **Phase 5 verification:** `/tmp/phase-05-verify.log` ends with `Phase 5 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-05: PASS`.
 - **Phase 3 — MCP foundation + analyze:** `context-graph-mcp --mode reality-loop` builds, lists the 11 ANALYZE `reality_*` tools, and reads the active smoke runtime artifacts through MCP calls.
 - **Phase 3 verification:** `/tmp/phase-03-verify.log` ends with `Phase 3 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-03: PASS`.
-
-In progress:
-- **Phase 4 — MCP interact + alter + shift:** the current working tree contains `alter.rs`, `interact.rs`, `shift_log.rs`, `optimizer.rs`, `lock.rs`, and `schema_validator.rs`; `cargo build -p context-graph-mcp --quiet` and `cargo test -p context-graph-mcp --lib reality_loop --quiet` pass; a bounded `tools/list` probe read back 173 total tools and 32 cgreality reality/alter/shift/memory tools. Phase 4 is not complete until [phase-04-mcp-interact-alter-shift/04_VERIFICATION.md](phase-04-mcp-interact-alter-shift/04_VERIFICATION.md) passes and `/tmp/ccreality-phase-progress.log` contains `phase-04: PASS`.
+- **Phase 4 — MCP interact + alter + shift:** `alter.rs`, `interact.rs`, `shift_log.rs`, `optimizer.rs`, `lock.rs`, and `schema_validator.rs` are implemented. The MCP server shells out to `reality-loop`, enforces governed path policy, applies governed edits, appends shift-log records, writes harness transitions, and records optimizer decisions/recommendations into the real BlackBox SQLite ledger.
+- **Phase 4 verification and FSV:** `cargo build -p context-graph-mcp --quiet`, `cargo test -p context-graph-mcp --lib reality_loop --quiet`, and the MCP tools-list probe pass. Manual FSV logs are `/tmp/ccreality-fsv-1777999742.log` and `/tmp/ccreality-phase4-ledger-fsv-1778000024.log`; the latter read back `agent_run|1` and `tool_call|2` from `/tmp/cgreality-phase04-ledger-fsv-1778000024/ledger.sqlite`.
+- **Phase 5 hardening:** the governed-paths policy now uses the exact documented allow/deny contract, including `tests/oracle_**`; `path_policy.rs` compiles the CCReality path-pattern dialect directly and fails closed on missing env, unsupported policy version, malformed policy shape, and denied paths. The recommendation schema is strict Draft 2020-12 and validates the real sample recommendation.
+- **Phase 5 full-state verification:** `/tmp/ccreality-phase5-fsv-1778001835.log` records the source-of-truth readbacks for `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, `docs/ccreality/phase-05-config-files/sample_recommendation.json`, a real MCP-driven harness transition, a real optimizer recommendation artifact, shift-log entries, and a BlackBox SQLite ledger row.
+- **Phase 6 — Hooks:** `scripts/cc/_common.sh`, all six `scripts/cc/hook_*.sh` scripts, and all six `scripts/cc/tests/hooks/test_*.sh` tests are implemented and executable. The PostToolUse hook records harness transitions through `context-graph-cli ccreality record-harness-transition`, which calls the Phase 4 MCP tool instead of direct-writing artifacts.
+- **Phase 6 verification and FSV:** the canonical Phase 6 verification passed; `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`. Manual FSV log `/tmp/ccreality-phase6-fsv-1778003099.log` read back a real pre-edit state file, harness-transition artifact, shift-log row, hook log, recommendation artifact, and four edge-case outcomes.
 
 Still pending:
-- **Phase 6–8:** add hooks, Claude scaffolding, and `CLAUDE.md` runtime addendum.
+- **Phase 7–8:** add Claude scaffolding and `CLAUDE.md` runtime addendum.
 - **Phase 9–12:** smoke, full FSV, docs cleanup, first production attempt, and final cutover commit.
 
 See [19_MIGRATION_RUNBOOK](19_MIGRATION_RUNBOOK.md) for the execution sequence.

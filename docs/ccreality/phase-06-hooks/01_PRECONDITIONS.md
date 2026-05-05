@@ -10,6 +10,12 @@
    ls "$(cat ~/.cache/cgreality/active_runtime_root)" 2>/dev/null
    ```
 
+Current readback as of 2026-05-05: these preconditions are satisfied by the Phase 2/3/4/5 verification and FSV logs listed in [../21_IMPLEMENTATION_PLAN.md](../21_IMPLEMENTATION_PLAN.md). If local `/tmp` artifacts have been deleted, regenerate a smoke root with `./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-phase06-ready --label phase06-ready` before running hook tests.
+
+The `context-graph-cli ccreality record-harness-transition` support command is implemented and calls the Phase 4 MCP tool instead of direct-writing artifacts.
+
+The Phase 6 hook files and tests under `scripts/cc/` are implemented, executable, and verified. `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`.
+
 ## Required tools
 
 - `bash` 4+

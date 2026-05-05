@@ -51,6 +51,11 @@ Plus a `sample_recommendation.json` artifact in this folder used by the verifica
 - Progress log source of truth: `/tmp/ccreality-phase-progress.log`, containing `phase-05: PASS`.
 - Source-of-truth files: `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, and `docs/ccreality/phase-05-config-files/sample_recommendation.json`.
 - Schema validation used Python `jsonschema` Draft 2020-12; the sample recommendation validates, and an intentionally incomplete payload is rejected.
+- Hardened implementation FSV log: `/tmp/ccreality-phase5-fsv-1778001835.log`.
+- Runtime FSV source of truth: `/tmp/cgreality-phase05-fsv-1778001835`.
+- Physical ledger source of truth: `/tmp/cgreality-phase05-fsv-1778001835/ledger.sqlite`, with `agent_run|1` and `tool_call|1` after a real `optimizer_record_recommendation`.
+- Root cause resolved during hardening: standard glob semantics could not express the documented `tests/oracle_**` policy rule without weakening the policy. The current `path_policy.rs` compiles the documented CCReality path-pattern dialect directly and fails closed on missing env, unsupported version, malformed policy, and denied paths.
+- Edge cases manually verified with before/after source-of-truth reads: embedded globstar deny rule, missing `CGREALITY_GOVERNED_PATHS`, unsupported policy version, and recommendation schema maxItems rejection.
 
 ## Reference docs
 

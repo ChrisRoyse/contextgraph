@@ -1,9 +1,17 @@
 # Phase 6 — Hooks
 
 **Estimated duration:** 1–2 hours.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 4 (MCP write tools must exist; the PostToolUse hook calls `optimizer_record_harness_transition` indirectly via the `context-graph-cli ccreality record-harness-transition` subcommand).
 **Unblocks:** Phase 7.
+
+## Current Readiness
+
+As of 2026-05-05, Phases 0–5 are complete. Phase 4 provides the MCP write tools, shift-log readback, path-policy enforcement, recommendation schema validation, and optimizer BlackBox ledger appends that the hooks depend on. Phase 5 provides the strict governed-paths policy and recommendation schema files.
+
+Phase 6 is implemented. The thin `context-graph-cli ccreality record-harness-transition` support command exists under `crates/context-graph-cli/src/commands/ccreality/`; it is intentionally MCP-backed and does not direct-write harness-transition artifacts.
+
+`scripts/cc/_common.sh`, all six `scripts/cc/hook_*.sh` scripts, `_common_helpers.sh`, and all six hook tests under `scripts/cc/tests/hooks/` exist and are executable. The full verification in [04_VERIFICATION.md](04_VERIFICATION.md) passed, and `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`.
 
 ## What this phase does
 
@@ -18,7 +26,7 @@ The six hooks:
 5. `hook_pre_compact.sh` — PreCompact; re-injects runtime root + last shift summary.
 6. `hook_stop.sh` — Stop; **blocks** until the optimizer recommendation is recorded.
 
-Plus a thin `context-graph-cli ccreality record-harness-transition` CLI subcommand used by hook 4 (or the hook can write the JSON directly — design choice).
+Plus a thin `context-graph-cli ccreality record-harness-transition` CLI subcommand used by hook 4. Direct JSON writes are not allowed for harness transitions because they bypass the Phase 4 MCP/shift-log source-of-truth path.
 
 ## AI-verifiable end-state
 
