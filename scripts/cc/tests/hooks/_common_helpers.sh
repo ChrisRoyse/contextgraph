@@ -27,7 +27,7 @@ assert_jq() {
     return 1
   fi
   if [ "${actual}" != "${expected}" ]; then
-    echo "FAIL [${label}]: ${expr} expected '${expected}', got '${actual}'" >&2
+    echo "FAIL [${label}]: ${expr} expected '${expected}', got '${actual}'. input=${input}" >&2
     return 1
   fi
 }

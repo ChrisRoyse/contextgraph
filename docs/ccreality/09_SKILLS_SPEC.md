@@ -65,7 +65,7 @@ Confirm each returns a non-empty payload with `source_of_truth` pointing to a re
 
 Step 3 — Verify alter tools (no-op edit). Call `mcp__cgreality__harness_open_window` on a benign file like `docs/ccreality/00_INDEX.md` lines 1–5. Receive the SHA. Do NOT actually edit; just confirm the open call works.
 
-Step 4 — Verify command tool. Call `mcp__cgreality__harness_run_command` with `command: "cargo --version"`. Confirm exit_code 0 and the artifact path is returned.
+Step 4 — Verify command tool. Call `mcp__cgreality__harness_run_command` with `command: "git status --short"`. Confirm `status: "ok"`, `process.exit_code: 0`, and the artifact path is returned. Do not use commands outside the governed allowlist.
 
 Step 5 — Verify state. Call `mcp__cgreality__harness_verify_state` with `scope: "reality_loop_only"`. Confirm rustfmt/cargo check/cargo test all pass.
 

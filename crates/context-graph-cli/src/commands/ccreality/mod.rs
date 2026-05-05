@@ -419,10 +419,7 @@ fn latest_run_id(runtime_root: &Path) -> CCResult<String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if matches!(
-            name.as_str(),
-            "failures" | "workspaces" | "cgreality-shift-log"
-        ) {
+        if is_runtime_metadata_dir(&name) {
             continue;
         }
         let modified = metadata
@@ -448,6 +445,17 @@ fn latest_run_id(runtime_root: &Path) -> CCResult<String> {
                 Some(file_sot(runtime_root)),
             )
         })
+}
+
+fn is_runtime_metadata_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "failures"
+            | "workspaces"
+            | "cgreality-shift-log"
+            | "cgreality-hook-state"
+            | "claude-code-optimizer"
+    )
 }
 
 fn collect_attempt_dirs(root: &Path, target: &str, out: &mut Vec<(u64, PathBuf)>) -> CCResult<()> {
@@ -627,4 +635,51 @@ fn ccreality_error(
 
 fn file_sot(path: &Path) -> String {
     format!("file:{}", path.display())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn temp_root(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "cgreality-cli-{label}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn latest_run_id_ignores_hook_state_metadata_dir() {
+        let root = temp_root("latest-run");
+        fs::create_dir_all(root.join("smoke-older")).expect("create smoke run");
+
+        // Ensure metadata has a newer filesystem timestamp than the run dir.
+        thread::sleep(Duration::from_millis(1100));
+        fs::create_dir_all(root.join("cgreality-hook-state")).expect("create hook state");
+
+        let run_id = latest_run_id(&root).expect("latest run id");
+        assert_eq!(run_id, "smoke-older");
+
+        fs::remove_dir_all(root).expect("cleanup temp root");
+    }
+
+    #[test]
+    fn runtime_metadata_dir_names_are_excluded() {
+        for name in [
+            "failures",
+            "workspaces",
+            "cgreality-shift-log",
+            "cgreality-hook-state",
+            "claude-code-optimizer",
+        ] {
+            assert!(is_runtime_metadata_dir(name), "{name} should be metadata");
+        }
+        assert!(!is_runtime_metadata_dir("smoke-1778012709"));
+    }
 }

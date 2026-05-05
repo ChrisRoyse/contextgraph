@@ -12,7 +12,7 @@ If a phase didn't pass, do not proceed; go fix that phase first.
 
 ## Task 9.2 — Write `scripts/cc/tests/smoke.sh`
 
-Use the body from [../17_SMOKE_TEST_PLAN.md](../17_SMOKE_TEST_PLAN.md) §"Smoke replay script". Adapt to current paths.
+Implement the deterministic harness in `scripts/cc/tests/smoke.sh`. It must run direct MCP JSON-RPC calls, invoke hooks with real stdin, inspect returned `file:` source-of-truth artifacts, inspect the BlackBox SQLite `ledger_records` table, simulate drift on a restored tracked fixture, verify deny enforcement without attempting a real `.env` edit, reject malformed recommendations, and write `docs/ccreality/SMOKE_RESULTS_<date>.md`.
 
 Make executable:
 ```bash
@@ -57,42 +57,7 @@ The recommendation schema isn't being validated. Check `RecommendationValidator:
 
 ## Task 9.4 — Record results
 
-After the smoke passes:
-```bash
-DATE=$(date -u +%Y-%m-%d)
-cat > docs/ccreality/SMOKE_RESULTS_${DATE}.md <<EOF
-# Smoke Results — $DATE
-
-Run-id: smoke-$(date +%s)
-Operator: <name>
-Branch: $(git branch --show-current)
-HEAD: $(git rev-parse HEAD)
-
-## Layers
-
-| Layer | Result | Notes |
-|-------|--------|-------|
-| 0 — Environment | PASS | |
-| 1 — Engine | PASS | reality-loop.rs lines: $(wc -l < crates/context-graph-cli/src/bin/reality-loop.rs) |
-| 2 — MCP starts | PASS | |
-| 3 — Claude Code MCP load | PASS | |
-| 4 — Hooks fire | PASS | |
-| 5 — /ccreality-smoke | PASS | |
-| 6 — Drift detection | PASS | |
-| 7 — Deny enforcement | PASS | |
-| 8 — Schema validation | PASS | |
-
-## Artifacts retained
-
-\`\`\`
-$(find /tmp/cgreality-smoke-* -type f 2>/dev/null | head -20)
-\`\`\`
-
-## Issues observed
-
-(none, or list)
-EOF
-```
+The script auto-generates `docs/ccreality/SMOKE_RESULTS_<date>.md` from the actual run stamp, runtime root, layer results, edge-case before/after state, source-of-truth reads, and ledger rows. Do not hand-write a smoke result that was not produced by the harness.
 
 ## Task 9.5 — Verify
 

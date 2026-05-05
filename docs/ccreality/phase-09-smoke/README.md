@@ -1,7 +1,7 @@
 # Phase 9 — Smoke
 
 **Estimated duration:** 1–2 hours.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phases 0–8.
 **Unblocks:** Phase 10.
 
@@ -16,7 +16,7 @@ bash /home/cabdru/contextgraph/scripts/cc/tests/smoke.sh
 echo "exit=$?"
 ```
 
-Expected: `exit=0`. The script's last line should be `Smoke pass.`.
+Expected: `exit=0`. The script's last line should be `Smoke pass.`. Latest verified source of truth: `/tmp/cgreality-smoke-1778013189/smoke-report.json` and [../SMOKE_RESULTS_2026-05-05.md](../SMOKE_RESULTS_2026-05-05.md).
 
 ## Files
 

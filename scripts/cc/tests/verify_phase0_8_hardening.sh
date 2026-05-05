@@ -436,20 +436,42 @@ printf 'FSV SOURCE OF TRUTH ledger=%s\n' "${FSV_LEDGER}"
 printf 'FSV BEFORE ledger rows=%s\n' "$(ledger_count "${FSV_LEDGER}")"
 sqlite3 "${FSV_LEDGER}" 'select record_kind || "|" || count(*) from ledger_records group by record_kind order by record_kind;'
 
+FSV_SESSION="phase0-8-fsv-${RUN_STAMP}"
+TRANSITION_RES="$(mcp_call_text optimizer_record_harness_transition "$(jq -nc --arg run_id "${FSV_RUN_ID}" --arg session "${FSV_SESSION}" '{
+  run_id: $run_id,
+  attempt: 1,
+  claude_session_id: $session,
+  action: "phase0_8_hardening_fsv_readback",
+  outcome: "recorded",
+  before: {
+    phase0_8_gate: "not_yet_recorded"
+  },
+  after: {
+    phase0_8_gate: "recording_recommendation"
+  }
+}')")"
+if ! jq -e '.transition_path' <<<"${TRANSITION_RES}" >/dev/null; then
+  printf 'optimizer_record_harness_transition failed: %s\n' "${TRANSITION_RES}" >&2
+  exit 1
+fi
+TRANSITION_PATH="$(jq -r '.transition_path' <<<"${TRANSITION_RES}" | source_file_from_uri)"
+test -s "${TRANSITION_PATH}"
+printf 'FSV AFTER transition_path=%s\n' "${TRANSITION_PATH}"
+
 GOOD_REC="${AUDIT_ROOT}/fsv-good-recommendation.json"
 NOW_UNIX="$(date +%s)"
-REPORT_TMP="${REPORT}.tmp"
 jq -nc \
-  --arg session "phase0-8-fsv-${RUN_STAMP}" \
+  --arg session "${FSV_SESSION}" \
   --arg run_id "${FSV_RUN_ID}" \
   --arg summary_sot "file:${FSV_ATTEMPT_DIR}/attempt-summary.json" \
   --arg signal_sot "file:${FSV_ATTEMPT_DIR}/reality-signal-packet.json" \
+  --arg transition_sot "file:${TRANSITION_PATH}" \
   --arg config_sot "file:${ROOT}/config/ccreality_governed_paths.json" \
   --argjson created_at "${NOW_UNIX}" '{
     schema_version: 1,
     record_kind: "ccreality_optimizer_recommendation",
     claude_session_id: $session,
-    claude_model: "claude-haiku-manual-fsv",
+    claude_model: "haiku",
     run_id: $run_id,
     attempt: 1,
     turn_number: 1,
@@ -467,6 +489,7 @@ jq -nc \
     source_of_truth_readbacks: [
       $summary_sot,
       $signal_sot,
+      $transition_sot,
       $config_sot
     ],
     next_gemma_prompt_delta: "No inner Gemma prompt delta; this recommendation records outer-loop hardening state only.",
@@ -474,7 +497,9 @@ jq -nc \
     remaining_risks: [],
     memories_created: [],
     memories_boosted: [],
-    harness_transitions_minted: [],
+    harness_transitions_minted: [
+      $transition_sot
+    ],
     shift_log_excerpt: [
       "phase0-8-hardening-fsv"
     ],
@@ -484,6 +509,10 @@ jq -nc \
   }' >"${GOOD_REC}"
 
 GOOD_RES="$(mcp_call_text optimizer_record_recommendation "$(cat "${GOOD_REC}")")"
+if ! jq -e '.recommendation_path' <<<"${GOOD_RES}" >/dev/null; then
+  printf 'optimizer_record_recommendation failed: %s\n' "${GOOD_RES}" >&2
+  exit 1
+fi
 REC_PATH="$(jq -r '.recommendation_path' <<<"${GOOD_RES}" | source_file_from_uri)"
 test -s "${REC_PATH}"
 jq -e '.record_kind == "ccreality_optimizer_recommendation" and .run_id == "'"${FSV_RUN_ID}"'" and .turn_number == 1' "${REC_PATH}" >/dev/null
@@ -561,6 +590,7 @@ printf 'EDGE hook_allow_state AFTER hook_log_lines=%s state_exists=yes state_pat
 jq -c '{record_kind, rel_path, before_sha256, source_of_truth}' "${STATE_PATH}"
 
 LEDGER_COUNTS_JSON="$(sqlite3 -json "${FSV_LEDGER}" 'select record_kind, count(*) as count from ledger_records group by record_kind order by record_kind;')"
+REPORT_TMP="${REPORT}.tmp"
 jq -nc \
   --arg status "ok" \
   --arg audit_root "${AUDIT_ROOT}" \
