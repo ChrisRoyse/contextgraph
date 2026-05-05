@@ -168,6 +168,30 @@ The compiler manifest includes:
 
 Non-applicable quality checks are stored as `null`, not `false`. For example, an initial prompt cannot include an official failed test before any official attempt exists, so `failed_test_included` is `null` for `swe_repair_initial_v2`.
 
+## Continuous Reinjection
+
+When the SWE loop runs with `--run-until-resolved`, every non-successful candidate becomes reinjection material.
+
+Candidate failures that continue the loop:
+
+- model returned malformed JSON;
+- model returned JSON without a patch;
+- candidate patch did not apply;
+- candidate patch repeated a previous patch hash;
+- local FAIL_TO_PASS tests failed;
+- official SWE-bench evaluation ran and did not put the instance id in `resolved_ids`.
+
+Failures that stop the loop:
+
+- model runtime could not produce a response;
+- official Docker/SWE-bench bridge failed;
+- source-of-truth artifacts are missing or unreadable;
+- BlackBoxFix ledger write/readback fails;
+- prompt compiler quality fails;
+- reward/evidence compilation fails.
+
+The distinction matters: a bad candidate is data; a broken verifier or runtime is not success and must not be optimized around.
+
 ## Reinjection Quality Score
 
 Score every prompt:

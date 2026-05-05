@@ -46,6 +46,9 @@ DEFAULT_AGENT_TOOL_ROUNDS = 2
 MAX_AGENT_TOOL_CALLS_PER_ROUND = 4
 MAX_AGENT_TOOL_FILE_CHARS = 12000
 MAX_AGENT_TOOL_SEARCH_RESULTS = 40
+DEFAULT_GPU_INDEX = 0
+DEFAULT_GPU_MIN_FREE_MB = 8192
+DEFAULT_OLLAMA_KEEP_ALIVE = "30m"
 TEXT_CONTEXT_EXTENSIONS = {
     ".cfg",
     ".ini",
@@ -324,6 +327,135 @@ def request_json(
             source_of_truth=url,
         )
     return value
+
+
+def read_gpu_vram_state(*, gpu_index: int) -> dict[str, Any]:
+    command = [
+        "nvidia-smi",
+        "--query-gpu=index,name,uuid,memory.total,memory.used,memory.free,driver_version",
+        "--format=csv,noheader,nounits",
+    ]
+    result = run_cmd(command, cwd=REPO_ROOT, timeout=30)
+    source_of_truth = "nvidia-smi:--query-gpu=index,name,uuid,memory.total,memory.used,memory.free,driver_version"
+    if result.exit_code != 0:
+        raise RefinementError(
+            "SWE_REFINEMENT_GPU_VRAM_READ_FAILED",
+            "nvidia-smi failed while reading GPU VRAM state",
+            "gpu_vram.nvidia_smi",
+            "fix NVIDIA driver/WSL GPU visibility before running the reality loop",
+            details={"process": result.to_json()},
+            source_of_truth=source_of_truth,
+        )
+    rows = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 7:
+            raise RefinementError(
+                "SWE_REFINEMENT_GPU_VRAM_PARSE_FAILED",
+                "nvidia-smi returned an unexpected GPU query row",
+                "gpu_vram.nvidia_smi.stdout",
+                "inspect nvidia-smi output and update the parser before continuing",
+                details={"line": line, "stdout": result.stdout},
+                source_of_truth=source_of_truth,
+            )
+        try:
+            rows.append(
+                {
+                    "index": int(parts[0]),
+                    "name": parts[1],
+                    "uuid": parts[2],
+                    "memory_total_mb": int(parts[3]),
+                    "memory_used_mb": int(parts[4]),
+                    "memory_free_mb": int(parts[5]),
+                    "driver_version": parts[6],
+                }
+            )
+        except ValueError as err:
+            raise RefinementError(
+                "SWE_REFINEMENT_GPU_VRAM_PARSE_FAILED",
+                "nvidia-smi GPU memory values were not integers",
+                "gpu_vram.nvidia_smi.stdout",
+                "inspect nvidia-smi output and update the parser before continuing",
+                details={"line": line},
+                source_of_truth=source_of_truth,
+            ) from err
+    for row in rows:
+        if row["index"] == gpu_index:
+            apps = run_cmd(
+                ["nvidia-smi", "--query-compute-apps=pid,process_name,used_memory", "--format=csv,noheader,nounits"],
+                cwd=REPO_ROOT,
+                timeout=30,
+            )
+            if apps.exit_code != 0:
+                raise RefinementError(
+                    "SWE_REFINEMENT_GPU_PROCESS_READ_FAILED",
+                    "nvidia-smi failed while reading GPU compute processes",
+                    "gpu_vram.processes",
+                    "inspect NVIDIA driver process accounting before continuing",
+                    details={"process": apps.to_json()},
+                    source_of_truth="nvidia-smi:--query-compute-apps=pid,process_name,used_memory",
+                )
+            row["compute_processes_raw"] = apps.stdout.strip()
+            row["source_of_truth"] = source_of_truth
+            row["read_at_unix"] = time.time()
+            return row
+    raise RefinementError(
+        "SWE_REFINEMENT_GPU_INDEX_MISSING",
+        "configured GPU index was not present in nvidia-smi output",
+        "gpu_index",
+        "choose an available --gpu-index before running the reality loop",
+        details={"gpu_index": gpu_index, "available": rows},
+        source_of_truth=source_of_truth,
+    )
+
+
+def assert_gpu_vram_budget(
+    *,
+    state: dict[str, Any],
+    min_free_mb: int,
+    max_used_mb: int | None,
+    phase: str,
+    model: str,
+) -> None:
+    if int(state["memory_free_mb"]) < min_free_mb:
+        raise RefinementError(
+            "SWE_REFINEMENT_GPU_VRAM_BUDGET_EXCEEDED",
+            "free GPU VRAM is below the configured reserve",
+            "gpu_vram.memory_free_mb",
+            "unload other models/processes or lower context/model pressure before continuing",
+            details={
+                "phase": phase,
+                "model": model,
+                "min_free_mb": min_free_mb,
+                "state": state,
+            },
+            source_of_truth=state.get("source_of_truth"),
+        )
+    if max_used_mb is not None and int(state["memory_used_mb"]) > max_used_mb:
+        raise RefinementError(
+            "SWE_REFINEMENT_GPU_VRAM_BUDGET_EXCEEDED",
+            "used GPU VRAM is above the configured maximum",
+            "gpu_vram.memory_used_mb",
+            "unload other models/processes or increase the configured budget only if the GPU can safely support it",
+            details={
+                "phase": phase,
+                "model": model,
+                "max_used_mb": max_used_mb,
+                "state": state,
+            },
+            source_of_truth=state.get("source_of_truth"),
+        )
+
+
+def gpu_budget_config(*, gpu_index: int, min_free_mb: int, max_used_mb: int | None) -> dict[str, Any]:
+    return {
+        "source": "nvidia-smi",
+        "gpu_index": gpu_index,
+        "min_free_mb": min_free_mb,
+        "max_used_mb": max_used_mb,
+    }
 
 
 def swe_list_field(item: dict[str, Any], field: str) -> list[str]:
@@ -1044,15 +1176,34 @@ def ollama_chat(
     model: str,
     messages: list[dict[str, str]],
     timeout: float,
+    gpu_budget: dict[str, Any],
+    ollama_keep_alive: str,
 ) -> dict[str, Any]:
+    gpu_before = read_gpu_vram_state(gpu_index=int(gpu_budget["gpu_index"]))
+    assert_gpu_vram_budget(
+        state=gpu_before,
+        min_free_mb=int(gpu_budget["min_free_mb"]),
+        max_used_mb=gpu_budget.get("max_used_mb"),
+        phase="before_ollama_chat",
+        model=model,
+    )
     body = {
         "model": model,
         "messages": messages,
         "stream": False,
         "think": False,
+        "keep_alive": ollama_keep_alive,
         "options": {"temperature": 0, "num_predict": 4096},
     }
     response = request_json(f"{ollama_url.rstrip('/')}/api/chat", body, timeout=timeout)
+    gpu_after = read_gpu_vram_state(gpu_index=int(gpu_budget["gpu_index"]))
+    assert_gpu_vram_budget(
+        state=gpu_after,
+        min_free_mb=int(gpu_budget["min_free_mb"]),
+        max_used_mb=gpu_budget.get("max_used_mb"),
+        phase="after_ollama_chat",
+        model=model,
+    )
     message = response.get("message")
     if not isinstance(message, dict) or not isinstance(message.get("content"), str):
         raise RefinementError(
@@ -1075,6 +1226,12 @@ def ollama_chat(
             "load_duration": response.get("load_duration"),
             "prompt_eval_count": response.get("prompt_eval_count"),
             "eval_count": response.get("eval_count"),
+            "gpu_vram": {
+                "budget": gpu_budget,
+                "before_request": gpu_before,
+                "after_response": gpu_after,
+                "ollama_keep_alive": ollama_keep_alive,
+            },
         },
     }
 
@@ -1085,6 +1242,8 @@ def ollama_generate_patch(
     model: str,
     prompt: str,
     timeout: float,
+    gpu_budget: dict[str, Any],
+    ollama_keep_alive: str,
 ) -> dict[str, Any]:
     return ollama_chat(
         ollama_url=ollama_url,
@@ -1100,6 +1259,8 @@ def ollama_generate_patch(
             {"role": "user", "content": prompt},
         ],
         timeout=timeout,
+        gpu_budget=gpu_budget,
+        ollama_keep_alive=ollama_keep_alive,
     )
 
 
@@ -1421,6 +1582,8 @@ def run_model_tool_rounds(
     included_evidence: list[dict[str, Any]],
     attempt_dir: Path,
     max_rounds: int,
+    gpu_budget: dict[str, Any],
+    ollama_keep_alive: str,
 ) -> dict[str, Any]:
     tool_dir = attempt_dir / "agent-tools"
     transcript_path = tool_dir / "agent-tool-transcript.json"
@@ -1432,7 +1595,14 @@ def run_model_tool_rounds(
         "source_of_truth": file_sot(transcript_path),
     }
     if max_rounds <= 0:
-        response = ollama_generate_patch(ollama_url=ollama_url, model=model, prompt=prompt, timeout=timeout)
+        response = ollama_generate_patch(
+            ollama_url=ollama_url,
+            model=model,
+            prompt=prompt,
+            timeout=timeout,
+            gpu_budget=gpu_budget,
+            ollama_keep_alive=ollama_keep_alive,
+        )
         transcript["status"] = "disabled"
         write_json(transcript_path, transcript)
         response["tool_transcript"] = {
@@ -1469,7 +1639,14 @@ def run_model_tool_rounds(
     for round_index in range(1, max_rounds + 1):
         round_dir = tool_dir / f"round-{round_index:03d}"
         round_dir.mkdir(parents=True, exist_ok=False)
-        response = ollama_chat(ollama_url=ollama_url, model=model, messages=messages, timeout=timeout)
+        response = ollama_chat(
+            ollama_url=ollama_url,
+            model=model,
+            messages=messages,
+            timeout=timeout,
+            gpu_budget=gpu_budget,
+            ollama_keep_alive=ollama_keep_alive,
+        )
         request_path = round_dir / "model-tool-request.txt"
         write_text_checked(request_path, response["content"])
         patch, patch_parse = parse_model_patch(response["content"])
@@ -2377,7 +2554,8 @@ def run_official_eval_for_attempt(
             source_of_truth=file_sot(official_eval_script),
         )
     predictions_path = write_attempt_prediction(attempt_dir=attempt_dir, task=task, model=model, patch=patch)
-    run_id = safe_id(f"{run_root.name}_{model}_{task['instance_id']}_attempt_{attempt_dir.name[-3:]}")
+    attempt_suffix = attempt_dir.name.rsplit("-", 1)[-1]
+    run_id = safe_id(f"{run_root.name}_{model}_{task['instance_id']}_attempt_{attempt_suffix}")
     command = [
         sys.executable,
         str(official_eval_script),
@@ -2589,8 +2767,11 @@ def run_model_task_loop(
     context_graph_bin: Path,
     ollama_url: str,
     max_attempts: int,
+    run_until_resolved: bool,
     include_hints: bool,
     model_timeout: float,
+    gpu_budget: dict[str, Any],
+    ollama_keep_alive: str,
     git_timeout: float,
     pytest_timeout: float,
     max_context_files: int,
@@ -2639,6 +2820,8 @@ def run_model_task_loop(
             "task_ledger": str(ledger),
             "repo": task["repo"],
             "base_commit": task["base_commit"],
+            "gpu_budget": gpu_budget,
+            "ollama_keep_alive": ollama_keep_alive,
         },
         source_of_truth_refs={
             "task_ledger": sqlite_sot(ledger),
@@ -2712,7 +2895,7 @@ def run_model_task_loop(
     prompt_compiler = prompt_compiler_manifest(compiled_prompt)
     previous_patch_hashes: list[str] = []
     solved = False
-    terminal_reason = "attempt_budget_exhausted"
+    terminal_reason = "running_until_official_resolved" if run_until_resolved else "attempt_budget_exhausted"
     write_task_loop_summary(
         task_root,
         status="running",
@@ -2723,7 +2906,8 @@ def run_model_task_loop(
         ledger=ledger,
         blackbox_run_id=blackbox_run_id,
     )
-    for attempt_index in range(1, max_attempts + 1):
+    attempt_index = 1
+    while run_until_resolved or attempt_index <= max_attempts:
         attempt_branch_id = attempt_reality_branch_id(loop_id, model, task["instance_id"], attempt_index)
         attempt_dir = task_root / "attempts" / f"attempt-{attempt_index:03d}"
         attempt_dir.mkdir(parents=True, exist_ok=False)
@@ -2747,6 +2931,8 @@ def run_model_task_loop(
                 "prompt_kind": prompt_kind,
                 "prompt_template_id": prompt_template_id,
                 "previous_patch_hashes": previous_patch_hashes,
+                "run_until_resolved": run_until_resolved,
+                "max_attempts": None if run_until_resolved else max_attempts,
             },
             source_of_truth_refs={
                 "attempt_dir": file_sot(attempt_dir),
@@ -2799,6 +2985,7 @@ def run_model_task_loop(
         )
         model_started = time.perf_counter()
         generation_error = None
+        generation_exception: RefinementError | None = None
         try:
             if agent_tool_rounds > 0:
                 model_response = run_model_tool_rounds(
@@ -2811,6 +2998,8 @@ def run_model_task_loop(
                     included_evidence=included_evidence,
                     attempt_dir=attempt_dir,
                     max_rounds=agent_tool_rounds,
+                    gpu_budget=gpu_budget,
+                    ollama_keep_alive=ollama_keep_alive,
                 )
             else:
                 model_response = ollama_generate_patch(
@@ -2818,12 +3007,15 @@ def run_model_task_loop(
                     model=model,
                     prompt=prompt,
                     timeout=model_timeout,
+                    gpu_budget=gpu_budget,
+                    ollama_keep_alive=ollama_keep_alive,
                 )
             response_text = model_response["content"]
             response_sha256 = model_response["content_sha256"]
             model_metadata = model_response["metadata"]
         except RefinementError as err:
             generation_error = err.to_json()
+            generation_exception = err
             response_text = json.dumps(generation_error, indent=2, sort_keys=True)
             response_sha256 = sha256_text(response_text)
             model_metadata = {"model": model, "generation_error": generation_error}
@@ -2846,7 +3038,7 @@ def run_model_task_loop(
             write_text_checked(attempt_dir / "candidate.patch", patch)
         patch_sha256 = sha256_text(patch) if patch else None
         repeated_patch = bool(patch_sha256 and patch_sha256 in set(previous_patch_hashes))
-        if patch_sha256:
+        if patch_sha256 and patch_sha256 not in previous_patch_hashes:
             previous_patch_hashes.append(patch_sha256)
         append_reality_event(
             run_root=run_root,
@@ -2877,6 +3069,8 @@ def run_model_task_loop(
                 "agent_tool_transcript": model_response.get("tool_transcript", {}).get("source_of_truth") if not generation_error and model_response.get("tool_transcript") else None,
             },
         )
+        if generation_exception is not None:
+            raise generation_exception
 
         decision_input = {
             "attempt": attempt_index,
@@ -3205,9 +3399,6 @@ def run_model_task_loop(
             solved = True
             terminal_reason = "local_verified_solution_found"
             break
-        if validation["status"] == "blocked" and not official_evidence:
-            terminal_reason = f"blocked:{validation.get('error_code')}"
-            break
         reset_workspace(repo_dir, task["base_commit"], timeout=git_timeout)
         if official_evidence:
             prompt_context = collect_repository_context(
@@ -3355,6 +3546,7 @@ def run_model_task_loop(
                 },
             )
         parent_branch_id = attempt_branch_id
+        attempt_index += 1
 
     write_task_loop_summary(
         task_root,
@@ -3890,9 +4082,11 @@ def write_root_loop_summary(
     models: list[str],
     tasks: list[dict[str, Any]],
     max_attempts: int,
+    run_until_resolved: bool,
     include_hints: bool,
     official_eval: dict[str, Any],
     agent_tools: dict[str, Any] | None,
+    gpu_runtime: dict[str, Any],
     results: list[dict[str, Any]],
     reality_ledger: Path | None = None,
     reality_run_id: str | None = None,
@@ -3910,9 +4104,12 @@ def write_root_loop_summary(
         "models": models,
         "tasks": tasks,
         "max_attempts": max_attempts,
+        "run_until_resolved": run_until_resolved,
+        "attempt_limit": "until_official_resolved" if run_until_resolved else str(max_attempts),
         "include_hints": include_hints,
         "official_eval": official_eval,
         "agent_tools": agent_tools,
+        "gpu_runtime": gpu_runtime,
         "reality_loop": {
             "run_id": reality_run_id,
             "ledger": {
@@ -3955,6 +4152,11 @@ def main() -> int:
     parser.add_argument("--repo-filter", action="append", dest="repo_filter", default=None)
     parser.add_argument("--max-tasks", type=int, default=1)
     parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument(
+        "--run-until-resolved",
+        action="store_true",
+        help="ignore --max-attempts and continue each selected model/task loop until official SWE-bench resolved_ids proves success",
+    )
     parser.add_argument("--runtime-root", type=Path, default=DEFAULT_RUNTIME_ROOT)
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     parser.add_argument("--context-graph-bin", type=Path, default=DEFAULT_CONTEXT_GRAPH_BIN)
@@ -3974,6 +4176,10 @@ def main() -> int:
     parser.add_argument("--official-timeout", type=int, default=900)
     parser.add_argument("--official-cache-level", default="env")
     parser.add_argument("--agent-tool-rounds", type=int, default=DEFAULT_AGENT_TOOL_ROUNDS)
+    parser.add_argument("--gpu-index", type=int, default=DEFAULT_GPU_INDEX)
+    parser.add_argument("--gpu-min-free-mb", type=int, default=DEFAULT_GPU_MIN_FREE_MB)
+    parser.add_argument("--gpu-max-used-mb", type=int, default=None)
+    parser.add_argument("--ollama-keep-alive", default=DEFAULT_OLLAMA_KEEP_ALIVE)
     args = parser.parse_args()
 
     if args.max_attempts < 1:
@@ -3988,6 +4194,14 @@ def main() -> int:
         raise SystemExit("--official-timeout must be at least 1")
     if args.agent_tool_rounds < 0:
         raise SystemExit("--agent-tool-rounds must be at least 0")
+    if args.gpu_index < 0:
+        raise SystemExit("--gpu-index must be at least 0")
+    if args.gpu_min_free_mb < 0:
+        raise SystemExit("--gpu-min-free-mb must be at least 0")
+    if args.gpu_max_used_mb is not None and args.gpu_max_used_mb < 1:
+        raise SystemExit("--gpu-max-used-mb must be positive when provided")
+    if args.run_until_resolved and not args.official_eval_each_attempt:
+        raise SystemExit("--run-until-resolved requires --official-eval-each-attempt so success is proven by official resolved_ids")
     models = args.models or DEFAULT_MODELS
     loop_id = f"swe_lite_refine_{now_ns()}_{hashlib.sha256('|'.join(models).encode()).hexdigest()[:8]}"
     run_root = args.runtime_root / loop_id
@@ -4014,6 +4228,24 @@ def main() -> int:
             "max_rounds": args.agent_tool_rounds,
             "surface": agent_tool_surface(),
         }
+        gpu_budget = gpu_budget_config(
+            gpu_index=args.gpu_index,
+            min_free_mb=args.gpu_min_free_mb,
+            max_used_mb=args.gpu_max_used_mb,
+        )
+        gpu_initial = read_gpu_vram_state(gpu_index=args.gpu_index)
+        assert_gpu_vram_budget(
+            state=gpu_initial,
+            min_free_mb=args.gpu_min_free_mb,
+            max_used_mb=args.gpu_max_used_mb,
+            phase="loop_start",
+            model=",".join(models),
+        )
+        gpu_runtime = {
+            "budget": gpu_budget,
+            "initial_state": gpu_initial,
+            "ollama_keep_alive": args.ollama_keep_alive,
+        }
         tasks = load_swe_lite_tasks(
             instance_ids=args.instance_ids or [],
             repo_filter=args.repo_filter or [],
@@ -4030,9 +4262,12 @@ def main() -> int:
                 "selected_tasks": selected,
                 "models": models,
                 "max_attempts": args.max_attempts,
+                "run_until_resolved": args.run_until_resolved,
+                "attempt_limit": "until_official_resolved" if args.run_until_resolved else str(args.max_attempts),
                 "include_hints": args.include_hints,
                 "official_eval": official_eval,
                 "agent_tools": agent_tools,
+                "gpu_runtime": gpu_runtime,
             },
         )
         init_blackbox(context_graph_bin, reality_ledger, run_root)
@@ -4060,8 +4295,10 @@ def main() -> int:
                 "models": models,
                 "tasks": selected,
                 "max_attempts": args.max_attempts,
+                "run_until_resolved": args.run_until_resolved,
                 "official_eval_each_attempt": args.official_eval_each_attempt,
                 "agent_tool_rounds": args.agent_tool_rounds,
+                "gpu_runtime": gpu_runtime,
             },
             source_of_truth_refs={
                 "selection": file_sot(run_root / "selection.json"),
@@ -4076,9 +4313,11 @@ def main() -> int:
             models=models,
             tasks=selected,
             max_attempts=args.max_attempts,
+            run_until_resolved=args.run_until_resolved,
             include_hints=args.include_hints,
             official_eval=official_eval,
             agent_tools=agent_tools,
+            gpu_runtime=gpu_runtime,
             results=results,
             reality_ledger=reality_ledger,
             reality_run_id=reality_run_id,
@@ -4115,8 +4354,11 @@ def main() -> int:
                     context_graph_bin=context_graph_bin,
                     ollama_url=args.ollama_url,
                     max_attempts=args.max_attempts,
+                    run_until_resolved=args.run_until_resolved,
                     include_hints=args.include_hints,
                     model_timeout=args.model_timeout,
+                    gpu_budget=gpu_budget,
+                    ollama_keep_alive=args.ollama_keep_alive,
                     git_timeout=args.git_timeout,
                     pytest_timeout=args.pytest_timeout,
                     max_context_files=args.max_context_files,
@@ -4144,9 +4386,11 @@ def main() -> int:
                     models=models,
                     tasks=selected,
                     max_attempts=args.max_attempts,
+                    run_until_resolved=args.run_until_resolved,
                     include_hints=args.include_hints,
                     official_eval=official_eval,
                     agent_tools=agent_tools,
+                    gpu_runtime=gpu_runtime,
                     results=results,
                     reality_ledger=reality_ledger,
                     reality_run_id=reality_run_id,
@@ -4192,9 +4436,11 @@ def main() -> int:
             models=models,
             tasks=selected,
             max_attempts=args.max_attempts,
+            run_until_resolved=args.run_until_resolved,
             include_hints=args.include_hints,
             official_eval=official_eval,
             agent_tools=agent_tools,
+            gpu_runtime=gpu_runtime,
             results=results,
             reality_ledger=reality_ledger,
             reality_run_id=reality_run_id,
@@ -4210,9 +4456,11 @@ def main() -> int:
             models=models,
             tasks=selected,
             max_attempts=args.max_attempts,
+            run_until_resolved=args.run_until_resolved,
             include_hints=args.include_hints,
             official_eval=official_eval,
             agent_tools=agent_tools,
+            gpu_runtime=gpu_runtime,
             results=results,
             reality_ledger=reality_ledger,
             reality_run_id=reality_run_id,
@@ -4260,9 +4508,11 @@ def main() -> int:
             models=models,
             tasks=selected,
             max_attempts=args.max_attempts,
+            run_until_resolved=args.run_until_resolved,
             include_hints=args.include_hints,
             official_eval=official_eval,
             agent_tools=agent_tools,
+            gpu_runtime=gpu_runtime,
             results=results,
             reality_ledger=reality_ledger,
             reality_run_id=reality_run_id,

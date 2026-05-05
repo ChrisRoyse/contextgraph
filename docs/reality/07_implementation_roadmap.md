@@ -100,6 +100,29 @@ Observed durable outputs:
 
 This does not claim the model solved the SWE-bench instance. It proves the loop read official durable failure evidence, recorded it, scored it, and compiled the next prompt from that evidence.
 
+## Continuous Reality Loop Mode
+
+Implemented in `gemmafrontend/swe_lite_refinement_loop.py`:
+
+```bash
+python3 gemmafrontend/swe_lite_refinement_loop.py \
+  --model qwen3:8b \
+  --instance-id psf__requests-2317 \
+  --official-eval-each-attempt \
+  --run-until-resolved
+```
+
+Behavior:
+
+- `--run-until-resolved` ignores the attempt budget for each selected model/task pair.
+- The loop stops only when the official SWE-bench Docker report places the instance id in `resolved_ids`.
+- `--run-until-resolved` requires `--official-eval-each-attempt`; local validation alone cannot terminate the loop as success.
+- Model/candidate failures are not terminal. Malformed JSON, missing patch fields, patch apply failures, repeated patches, and failed tests become source-of-truth evidence for the next prompt.
+- Infrastructure failures still fail closed. Ollama timeout/HTTP/JSON errors, official harness errors, missing Docker/SWE-bench artifacts, ledger errors, and compiler quality failures abort with typed errors.
+- Attempt directory names and official run ids now preserve the full attempt number, including attempts above `999`.
+
+The root cause fixed here was that the loop used a finite `for attempt in range(1, max_attempts + 1)` structure and could break on local blocked candidate state before reinjecting evidence. Continuous mode now uses a reality-driven `while` condition and treats candidate failure as feedback.
+
 ## Phase 3: Add Experiment State
 
 Create a durable experiment registry:

@@ -93,6 +93,20 @@ Latest verified Phase 2 smoke output:
 
 That run proves the compiler generated a second-attempt official-failure prompt candidate from durable SWE-bench/BlackBoxFix evidence. The instance remained unresolved, which is the correct reality signal for optimization: the loop recorded the failure, generated reward/incidents, and produced the next prompt candidate instead of claiming success.
 
+## Continuous Reality Loop
+
+The loop can now run until official source-of-truth success:
+
+```bash
+python3 gemmafrontend/swe_lite_refinement_loop.py \
+  --model qwen3:8b \
+  --instance-id psf__requests-2317 \
+  --official-eval-each-attempt \
+  --run-until-resolved
+```
+
+This mode requires official SWE-bench evaluation and stops only when the official report places the instance id in `resolved_ids`. Candidate failures become next-prompt evidence. Infrastructure, model-runtime, ledger, compiler, or official-harness failures still fail closed with typed errors.
+
 ## Research Sources
 
 - Ralph Loop docs and repository: https://ralphloop.sh/ and https://github.com/pageai-pro/ralph-loop

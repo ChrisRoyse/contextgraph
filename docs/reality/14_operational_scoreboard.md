@@ -153,6 +153,26 @@ Generate:
 
 Each file must be read back and hash checked after writing.
 
+## Continuous Mode Fields
+
+The root summary now records:
+
+- `run_until_resolved`;
+- `attempt_limit`;
+- `official_eval.enabled_each_attempt`;
+- root `reality_loop.ledger.physical_counts`;
+- root `reality_loop.event_log`;
+- per-task `terminal_reason`.
+
+For `--run-until-resolved`, `attempt_limit` is `until_official_resolved`. A run is not fully successful until every selected model/task result is solved by source-of-truth readback.
+
+Interpretation:
+
+- `status=solved` on every selected task/model pair means the selected suite is complete.
+- `terminal_reason=official_resolved` means the official SWE-bench `resolved_ids` contained the instance id.
+- any `root_loop_failed` event means infrastructure/source-of-truth failure, not model failure.
+- candidate failures should appear as future prompt evidence, not as loop termination.
+
 ## Current Scoreboard Source Of Truth
 
 The Phase 1 smoke run produced the current shape here:
