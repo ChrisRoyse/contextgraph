@@ -192,6 +192,44 @@ Failures that stop the loop:
 
 The distinction matters: a bad candidate is data; a broken verifier or runtime is not success and must not be optimized around.
 
+## Rust Reinjection State
+
+The Rust loop records the following fields into each attempt summary so the next prompt can be built from verified failure evidence:
+
+- `status`;
+- `error_code`;
+- `message`;
+- `remediation`;
+- `prompt_sha256`;
+- `response_sha256`;
+- `patch_sha256`;
+- `repeated_patch`;
+- `validation_path`;
+- `official_evidence_path`;
+- `resolved`.
+
+For malformed model output, the source of truth is:
+
+```text
+<attempt_root>/model-parse-report.json
+```
+
+For a patch that fails to apply, the source of truth is:
+
+```text
+<attempt_root>/candidate.patch
+<attempt_root>/validation.json
+```
+
+For a patch that modifies tests or harness files, the source of truth is:
+
+```text
+<attempt_root>/actual-applied.patch
+<attempt_root>/validation.json
+```
+
+The current Rust prompt directly embeds the previous attempt summary. The next improvement is to replace that inline summary with the deterministic prompt compiler manifest so Rust and Python produce identical prompt artifacts.
+
 ## Reinjection Quality Score
 
 Score every prompt:

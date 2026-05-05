@@ -34,6 +34,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `12_prompt_reinjection_protocol.md` | How verified failures become the next model prompt without polluting it with noise or lies. |
 | `13_path_to_100_percent_swe.md` | Strategy for pushing all three local models toward 100% on the selected SWE suite. |
 | `14_operational_scoreboard.md` | The scoreboard that tells whether the meta-loop is actually improving the inner loop. |
+| `15_rust_reality_loop_port.md` | Current Rust-owned reality loop implementation, validation evidence, and remaining gaps. |
 
 ## Current Project Mapping
 
@@ -42,6 +43,7 @@ The loop does not advance because an agent says it is done. It advances only whe
 | Local Gemma/Qwen/Mistral frontend and tool harness | `gemmafrontend/` |
 | Verified reward compiler spec | `gemmafrontend/reward_spec.verified_outcome.json` |
 | SWE-bench local refinement loop | `gemmafrontend/swe_lite_refinement_loop.py` |
+| Rust-owned SWE reality loop | `target/debug/reality-loop` from `crates/context-graph-cli/src/bin/reality-loop.rs` |
 | Official SWE-bench Docker readback bridge | `gemmafrontend/swe_lite_official_eval.py` |
 | Governed SWE agent tool gateway | `gemmafrontend/swe_lite_refinement_loop.py --agent-tool-rounds` |
 | Deterministic reality prompt compiler | `gemmafrontend/reality_prompt_compiler.py` |
@@ -95,7 +97,7 @@ That run proves the compiler generated a second-attempt official-failure prompt 
 
 ## Continuous Reality Loop
 
-The loop can now run until official source-of-truth success:
+The legacy Python loop can run until official source-of-truth success:
 
 ```bash
 python3 gemmafrontend/swe_lite_refinement_loop.py \
@@ -106,6 +108,28 @@ python3 gemmafrontend/swe_lite_refinement_loop.py \
 ```
 
 This mode requires official SWE-bench evaluation and stops only when the official report places the instance id in `resolved_ids`. Candidate failures become next-prompt evidence. Infrastructure, model-runtime, ledger, compiler, or official-harness failures still fail closed with typed errors.
+
+The Rust port now owns the same core loop for Gemma-first smoke testing:
+
+```bash
+cargo build -p context-graph-cli --bin reality-loop
+target/debug/reality-loop \
+  --model gemma4:e4b \
+  --task-manifest /tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777940680618314859_801dcad0/tasks/psf__requests-2317/qwen3-8b/task-manifest.json \
+  --runtime-root /tmp/contextgraph-rust-reality-loop \
+  --official-eval-each-attempt \
+  --run-until-resolved
+```
+
+The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; the reality loop does not implement its control flow in Python.
+
+Latest Rust smoke output:
+
+```text
+/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
+```
+
+That run used real Gemma/Ollama output and real `psf/requests` source. It intentionally does not claim success: attempt 1 produced a corrupt patch, attempt 2 violated the raw JSON contract, and BlackBoxFix persisted two verifier failures, two incident packets, and two reward compilations.
 
 ## Research Sources
 

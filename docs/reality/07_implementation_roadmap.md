@@ -123,6 +123,39 @@ Behavior:
 
 The root cause fixed here was that the loop used a finite `for attempt in range(1, max_attempts + 1)` structure and could break on local blocked candidate state before reinjecting evidence. Continuous mode now uses a reality-driven `while` condition and treats candidate failure as feedback.
 
+## Rust Port Current Implementation Status
+
+Implemented in `crates/context-graph-cli/src/bin/reality-loop.rs`:
+
+- Rust-owned SWE task loop for one local model at a time, starting with `gemma4:e4b`;
+- real SWE-bench Lite task manifest input;
+- real git clone/reset/clean workspace control;
+- real Ollama/Gemma model calls;
+- VRAM budget readbacks through `nvidia-smi`;
+- prompt, request, response, parse report, validation, event, and summary artifacts with read-after-write verification;
+- BlackBoxFix ledger/evidence/incident/score/reward integration;
+- hard rejection of `--run-until-resolved` unless official SWE-bench readback is enabled;
+- hard rejection of benchmark test or harness mutations;
+- failure artifacts for startup/configuration errors.
+
+Latest Rust smoke:
+
+```text
+/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
+```
+
+Observed result:
+
+```text
+status=unsolved
+attempts_total=2
+attempt_1_error=RUST_REALITY_PATCH_APPLY_FAILED
+attempt_2_error=RUST_REALITY_MODEL_RESPONSE_JSON_INVALID
+ledger: model_decision=2, tool_call=2, verifier_result=2, incident_packet=2, reward_compilation=2
+```
+
+The Rust port is intentionally stricter than the Python loop. It does not repair malformed model output by heuristic extraction. If the model violates the response contract, that violation becomes typed evidence for the next attempt.
+
 ## Phase 3: Add Experiment State
 
 Create a durable experiment registry:

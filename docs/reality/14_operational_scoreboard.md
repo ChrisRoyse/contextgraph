@@ -196,3 +196,26 @@ The important observed values were:
 - root reality ledger rows: `agent_run=1`, `agent_step=16`;
 - task ledger rows include `tool_call=2`, `verifier_result=2`, `incident_packet=2`, `reward_compilation=2`;
 - prompt-candidate branch exists for attempt 2.
+
+## Current Rust Scoreboard Source Of Truth
+
+The latest Rust-owned Gemma smoke produced:
+
+```text
+/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/
+```
+
+Observed values from `reality-loop-summary.json` and the BlackBoxFix SQLite ledger:
+
+- model: `gemma4:e4b`;
+- instance: `psf__requests-2317`;
+- status: `unsolved`;
+- attempts: `2`;
+- attempt 1 failure: `RUST_REALITY_PATCH_APPLY_FAILED`;
+- attempt 2 failure: `RUST_REALITY_MODEL_RESPONSE_JSON_INVALID`;
+- ledger rows: `agent_run=1`, `model_decision=2`, `tool_call=2`, `verifier_result=2`, `evidence_packet=2`, `incident_packet=2`, `scorecard=2`, `reward_compilation=2`;
+- GPU budget current readback: `nvidia-smi:query-gpu+query-compute-apps`;
+- summary source of truth: `file:/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/reality-loop-summary.json`;
+- ledger source of truth: `sqlite:/tmp/contextgraph-rust-reality-loop-smoke-v4/rust_reality_1777959982988939074_e525987d/tasks/psf__requests-2317/gemma4-e4b/blackbox.sqlite#ledger_records`.
+
+This row should be treated as a real failed benchmark attempt, not a demo success. Its value is that it proves the loop catches invalid patch generation and carries failure evidence forward.
