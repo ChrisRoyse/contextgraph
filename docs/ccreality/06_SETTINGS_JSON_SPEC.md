@@ -12,7 +12,7 @@
 
 ```json
 {
-  "$schema": "https://code.claude.com/schemas/settings.json",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "model": "opus",
   "defaultMode": "acceptEdits",
   "enableAllProjectMcpServers": true,
@@ -27,17 +27,22 @@
       "WebSearch",
       "TodoWrite",
       "Task",
+      "Agent",
       "Edit(crates/context-graph-cli/src/**)",
       "Edit(crates/context-graph-mcp/src/handlers/tools/reality_loop/**)",
       "Edit(scripts/cc/**)",
+      "Edit(.claude/settings.json)",
       "Edit(.claude/loop.md)",
       "Edit(.claude/agents/cc-reality-*.md)",
       "Edit(.claude/skills/ccreality-*/**)",
+      "Edit(.mcp.json)",
       "Edit(docs/ccreality/**)",
       "Edit(docs/reality/**)",
       "Write(scripts/cc/**)",
+      "Write(.claude/settings.json)",
       "Write(.claude/agents/cc-reality-*.md)",
       "Write(.claude/skills/ccreality-*/**)",
+      "Write(.mcp.json)",
       "Write(docs/ccreality/**)",
       "Write(docs/reality/**)",
       "Bash(cargo fmt *)",
@@ -60,18 +65,29 @@
       "Bash(head *)",
       "Bash(tail *)",
       "Bash(sha256sum *)",
-      "mcp__cgreality__.*"
+      "mcp__cgreality__*"
     ],
     "deny": [
-      "Read(/home/cabdru/contextgraph/.env)",
-      "Edit(/home/cabdru/contextgraph/.env)",
-      "Edit(/home/cabdru/contextgraph/.env.*)",
-      "Write(/home/cabdru/contextgraph/.env)",
-      "Edit(/home/cabdru/contextgraph/swebench/**)",
-      "Edit(/home/cabdru/contextgraph/tests/oracle_**)",
-      "Edit(/home/cabdru/contextgraph/crates/context-graph-benchmark/datasets/swe_bench_*)",
-      "Edit(/home/cabdru/contextgraph/crates/*/src/reward_specs/**)",
-      "Edit(/home/cabdru/contextgraph/crates/*/src/verifiers/**)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(//home/cabdru/contextgraph/.env)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(//home/cabdru/contextgraph/.env)",
+      "Edit(//home/cabdru/contextgraph/.env.*)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Write(//home/cabdru/contextgraph/.env)",
+      "Edit(swebench/**)",
+      "Edit(//home/cabdru/contextgraph/swebench/**)",
+      "Edit(tests/oracle_**)",
+      "Edit(//home/cabdru/contextgraph/tests/oracle_**)",
+      "Edit(crates/context-graph-benchmark/datasets/swe_bench_*)",
+      "Edit(//home/cabdru/contextgraph/crates/context-graph-benchmark/datasets/swe_bench_*)",
+      "Edit(crates/*/src/reward_specs/**)",
+      "Edit(//home/cabdru/contextgraph/crates/*/src/reward_specs/**)",
+      "Edit(crates/*/src/verifiers/**)",
+      "Edit(//home/cabdru/contextgraph/crates/*/src/verifiers/**)",
       "Bash(git push *)",
       "Bash(git push --force *)",
       "Bash(git reset --hard *)",
@@ -175,7 +191,7 @@
 
 - The `Edit(...)` and `Write(...)` allow rules pin Claude to the project subtree. `defaultMode: "acceptEdits"` lets allowed edits proceed without prompting.
 - The `Bash(cargo fmt *)` shape uses Claude Code's prefix matching — the **space before** `*` matters per Claude Code permission docs (it differentiates `cargo fmt` prefix from `cargofmt` substring).
-- `mcp__cgreality__.*` is a regex (Claude Code uses regex when the matcher contains non-alphanumerics). It allows every tool in the `cgreality` server. Per the MCP spec doc, all reality access is consolidated under one server, so this rule covers every analyze/interact/alter call.
+- `mcp__cgreality__*` is Claude Code's supported MCP wildcard form for every tool in the `cgreality` server. Per the MCP spec doc, all reality access is consolidated under one server, so this rule covers every analyze/interact/alter call.
 - The deny block is the **deterministic** reality-boundary enforcement. Hooks layer additional context-aware enforcement on top, but the deny block is unbypassable per Claude Code permission precedence.
 
 ### Why `model: opus` as default
@@ -202,13 +218,13 @@ Loads the `cgreality` server defined in `.mcp.json` automatically. Without this,
   "mcpServers": {
     "cgreality": {
       "type": "stdio",
-      "command": "${CONTEXTGRAPH_ROOT}/target/debug/context-graph-mcp",
+      "command": "/home/cabdru/contextgraph/target/debug/context-graph-mcp",
       "args": ["--mode", "reality-loop"],
       "env": {
-        "CONTEXTGRAPH_ROOT": "${CONTEXTGRAPH_ROOT}",
-        "CGREALITY_RUNTIME_ROOT_HINT": "${HOME}/.cache/cgreality/active_runtime_root",
-        "CGREALITY_GOVERNED_PATHS": "${CGREALITY_GOVERNED_PATHS}",
-        "CGREALITY_RECOMMENDATION_SCHEMA": "${CGREALITY_RECOMMENDATION_SCHEMA}",
+        "CONTEXTGRAPH_ROOT": "/home/cabdru/contextgraph",
+        "CGREALITY_RUNTIME_ROOT_HINT": "/home/cabdru/.cache/cgreality/active_runtime_root",
+        "CGREALITY_GOVERNED_PATHS": "/home/cabdru/contextgraph/config/ccreality_governed_paths.json",
+        "CGREALITY_RECOMMENDATION_SCHEMA": "/home/cabdru/contextgraph/config/ccreality_recommendation_schema.json",
         "RUST_LOG": "cgreality=info,context_graph_mcp=info"
       }
     }
@@ -216,7 +232,7 @@ Loads the `cgreality` server defined in `.mcp.json` automatically. Without this,
 }
 ```
 
-`${...}` expansion is supported by Claude Code's MCP config loader. The `CONTEXTGRAPH_ROOT` env var is exported by `.claude/settings.json`.
+The project file uses literal paths so the MCP server fails closed on missing binaries or config files instead of depending on shell environment expansion. Operator-local MCP servers belong outside the committed root `.mcp.json`.
 
 ## Operator-local overrides (`.claude/settings.local.json`)
 

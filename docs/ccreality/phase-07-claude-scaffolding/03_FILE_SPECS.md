@@ -50,6 +50,7 @@ Must be valid JSON. Common pitfalls:
 - Unquoted keys — JSON requires double quotes.
 - Single-quoted strings — JSON requires double quotes.
 - Missing `]` or `}` brackets after copy-paste.
+- Wrong `$schema` URL — use `https://json.schemastore.org/claude-code-settings.json`. Runtime probing showed the stale `https://code.claude.com/schemas/settings.json` value can leave MCP permission rules unapplied in Claude Code 2.1.128.
 
 Run `jq -e . .claude/settings.json` after writing to validate.
 
@@ -66,7 +67,7 @@ If Claude Code's MCP loader doesn't expand env vars, replace `${CONTEXTGRAPH_ROO
 Per Claude Code's permission rule syntax:
 - `Bash(cargo *)` — prefix match (NOTE the space before `*`).
 - `Bash(cargo*)` — substring; matches `cargox`, `cargo-make` etc.
-- `mcp__cgreality__.*` — regex (Claude Code uses regex when matcher contains non-alphanumeric).
+- `mcp__cgreality__*` — Claude Code MCP wildcard syntax for every tool exposed by the `cgreality` server.
 - Deny always wins over allow at any settings level.
 
 The settings.json in [../06_SETTINGS_JSON_SPEC.md](../06_SETTINGS_JSON_SPEC.md) uses these patterns correctly. Don't modify them.

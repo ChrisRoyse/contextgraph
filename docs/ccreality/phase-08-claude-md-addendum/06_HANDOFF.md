@@ -3,7 +3,9 @@
 ## What's true after Phase 8
 
 - `CLAUDE.md` ends with the ccreality role addendum.
-- Every new Claude Code session in this project loads the addendum as project memory at startup (auto-discovery).
+- Repo-root `CLAUDE.md` is no longer ignored, while nested `CLAUDE.md` and `CLAUDE.local.md` files remain ignored.
+- `config/ccreality_governed_paths.json` allows root `CLAUDE.md` and `.gitignore`, so future governed harness edits can maintain the project-memory contract without widening private-file access.
+- Every new Claude Code session in this project loads the addendum as project memory at startup through CLAUDE.md discovery.
 - The role contract, the reality-shift principle, the always-do/never-do rules, the cost policy, and the artifact layout are all available to the agent without it having to read separate docs.
 
 ## Manual sanity check
@@ -26,6 +28,11 @@ If Claude Code says it doesn't see the addendum, either:
 ```bash
 echo "phase-08: PASS, $(date -u +%FT%TZ)" >> /tmp/ccreality-phase-progress.log
 ```
+
+Actual verification records from this implementation:
+
+- Canonical verification: `phase-08: PASS, 2026-05-05T19:05:34Z`.
+- Manual FSV: `/tmp/ccreality-phase8-fsv-1778007923.log`.
 
 ## Next phase
 

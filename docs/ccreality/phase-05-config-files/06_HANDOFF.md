@@ -18,7 +18,7 @@
 - Hardened FSV log: `/tmp/ccreality-phase5-fsv-1778001835.log`.
 - Runtime source of truth: `/tmp/cgreality-phase05-fsv-1778001835`.
 - Physical file readbacks verified:
-  - `config/ccreality_governed_paths.json` has `version: 1`, 17 allow rules, 16 deny rules, and includes `tests/oracle_**`.
+  - `config/ccreality_governed_paths.json` has `version: 1`, 21 allow rules, 16 deny rules, and includes `tests/oracle_**`, `.gitignore`, and `CLAUDE.md`.
   - `config/ccreality_recommendation_schema.json` is Draft 2020-12, has `additionalProperties: false`, and has 21 required top-level fields.
   - `docs/ccreality/phase-05-config-files/sample_recommendation.json` validates against the schema.
 - Physical MCP/ledger readbacks verified:

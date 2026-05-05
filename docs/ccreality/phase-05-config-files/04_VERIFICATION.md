@@ -28,6 +28,8 @@ jq -e '.deny | length > 0' config/ccreality_governed_paths.json >/dev/null
 jq -e '.deny | any(. == ".env")' config/ccreality_governed_paths.json >/dev/null
 jq -e '.deny | any(. | startswith("swebench/"))' config/ccreality_governed_paths.json >/dev/null
 jq -e '.allow | any(. | startswith("crates/context-graph-cli/"))' config/ccreality_governed_paths.json >/dev/null
+jq -e '.allow | any(. == ".gitignore")' config/ccreality_governed_paths.json >/dev/null
+jq -e '.allow | any(. == "CLAUDE.md")' config/ccreality_governed_paths.json >/dev/null
 echo "  pass"
 
 echo "=== 5.V3 Recommendation schema has expected shape ==="

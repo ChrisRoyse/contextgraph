@@ -6,8 +6,10 @@ cd /home/cabdru/contextgraph
 
 echo "=== 7.V1 .claude/settings.json valid JSON with expected keys ==="
 jq -e . .claude/settings.json >/dev/null
+jq -e '."$schema" == "https://json.schemastore.org/claude-code-settings.json"' .claude/settings.json >/dev/null
 jq -e '.model' .claude/settings.json >/dev/null
 jq -e '.permissions.allow | type == "array"' .claude/settings.json >/dev/null
+jq -e '.permissions.allow | any(. == "mcp__cgreality__*")' .claude/settings.json >/dev/null
 jq -e '.permissions.deny | type == "array"' .claude/settings.json >/dev/null
 jq -e '.hooks.SessionStart | type == "array"' .claude/settings.json >/dev/null
 jq -e '.hooks.UserPromptSubmit | type == "array"' .claude/settings.json >/dev/null
@@ -86,6 +88,20 @@ echo "  pass"
 echo "=== 7.V8 Path policy includes new files ==="
 jq -e '.allow | any(. == ".claude/settings.json")' config/ccreality_governed_paths.json >/dev/null
 jq -e '.allow | any(. == ".mcp.json")' config/ccreality_governed_paths.json >/dev/null
+jq -e '.allow | any(. == ".gitignore")' config/ccreality_governed_paths.json >/dev/null
+jq -e '.allow | any(. == "CLAUDE.md")' config/ccreality_governed_paths.json >/dev/null
+echo "  pass"
+
+echo "=== 7.V9 Claude Code loads cgreality and settings allow its MCP tools ==="
+command -v claude >/dev/null 2>&1
+claude mcp list | grep -q '^cgreality: .* - ✓ Connected$'
+CGREALITY_CACHE_DIR=/tmp/ccreality-phase7-claude-smoke-cache \
+  claude --print 'Call mcp__cgreality__reality_latest_root exactly once. Return only compact JSON with active_run_id, runtime_root, and source_of_truth.' \
+    --model haiku \
+    --output-format json \
+    --max-budget-usd 0.30 \
+    --no-session-persistence \
+  | jq -e '.permission_denials | length == 0' >/dev/null
 echo "  pass"
 
 echo

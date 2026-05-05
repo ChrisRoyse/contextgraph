@@ -249,7 +249,7 @@ All of these already exist in `context-graph-mcp`. The `cgreality` MCP server re
 
 - `search_graph` — multi-space search across 13 embedders
 - `search_by_embedder` — single-embedder search
-- `get_neighbors` — k-NN by edge type and direction
+- `get_memory_neighbors` / `get_unified_neighbors` — k-NN by edge type and direction
 - `traverse_graph` — BFS/DFS with filter
 - `get_audit_trail` — audit log per memory
 - `get_provenance_chain` — full provenance ancestry

@@ -15,19 +15,7 @@ If the addendum is already present, STOP — Phase 8 is already done.
 
 ## Task 8.2 — Append the addendum block
 
-Open [../10_CLAUDE_MD_PROJECT_MEMORY.md](../10_CLAUDE_MD_PROJECT_MEMORY.md), find the section "## Append-only block (drop in verbatim)". Copy the block between the triple-backticks (the entire markdown block starting with `---` and ending with `---`) into a temp file:
-
-```bash
-cat > /tmp/ccreality-addendum.md <<'EOF'
-<paste the verbatim block here>
-EOF
-```
-
-Then append:
-```bash
-cat /tmp/ccreality-addendum.md >> /home/cabdru/contextgraph/CLAUDE.md
-rm /tmp/ccreality-addendum.md
-```
+Open [../10_CLAUDE_MD_PROJECT_MEMORY.md](../10_CLAUDE_MD_PROJECT_MEMORY.md), find the section "## Append-only block (drop in verbatim)", and append the block from the first `---` through the closing `---` to `/home/cabdru/contextgraph/CLAUDE.md`.
 
 Verify:
 ```bash
@@ -35,6 +23,27 @@ grep -q "ccreality — Outer Reality-Loop Optimizer Role" /home/cabdru/contextgr
 echo "exit=$?"
 ```
 Expected: `exit=0`.
+
+Verify the root project memory file is not ignored:
+
+```bash
+! git check-ignore -q CLAUDE.md
+git check-ignore -q CLAUDE.local.md
+```
+
+Expected: root `CLAUDE.md` is trackable, while local/private overrides stay ignored.
+
+Also verify the appended block matches the source block:
+
+```bash
+SRC_START=$(grep -n '^---$' docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md | head -1 | cut -d: -f1)
+SRC_END=$(grep -n '^---$' docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md | tail -1 | cut -d: -f1)
+sed -n "${SRC_START},${SRC_END}p" docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md > /tmp/phase8-source-addendum.md
+CLAUDE_START=$(grep -n "^## ccreality — Outer Reality-Loop Optimizer Role$" CLAUDE.md | cut -d: -f1)
+CLAUDE_START=$((CLAUDE_START-2))
+tail -n +"$CLAUDE_START" CLAUDE.md > /tmp/phase8-claude-addendum.md
+diff -u /tmp/phase8-source-addendum.md /tmp/phase8-claude-addendum.md
+```
 
 ## Task 8.3 — Verify
 

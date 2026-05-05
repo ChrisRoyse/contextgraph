@@ -7629,7 +7629,12 @@ mod tests {
         })];
         let (patch, compilation) =
             compile_structured_edits(&repo, &tool_dir, &edits, 30).expect("compile edits");
-        let patch = patch.expect("patch");
+        let patch = patch.unwrap_or_else(|| {
+            panic!(
+                "structured edit compilation did not produce a patch: {}",
+                serde_json::to_string_pretty(&compilation).unwrap()
+            )
+        });
         let candidate_patch = tool_dir.join("candidate.patch");
         let result = json!({
             "status": "ok",
@@ -7715,7 +7720,11 @@ mod tests {
         })];
         let (patch, compilation) =
             compile_line_window_edits(&repo, &tool_dir, &edits, 30).expect("compile line edits");
-        assert!(patch.is_some());
+        assert!(
+            patch.is_some(),
+            "line-window edit compilation did not produce a patch: {}",
+            serde_json::to_string_pretty(&compilation).unwrap()
+        );
         let candidate_patch = tool_dir.join("candidate.patch");
         let result = json!({
             "status": "ok",

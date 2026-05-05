@@ -15,7 +15,7 @@ Read-only failure-diagnosis specialist. Always called first when a turn opens.
 ---
 name: cc-reality-diagnostician
 description: Use PROACTIVELY at the start of every ccreality optimization turn. Reads the latest attempt artifacts via mcp__cgreality__ tools, classifies the failure mode, identifies the most likely root cause, and returns a structured diagnosis. Read-only.
-tools: Read, Grep, Glob, mcp__cgreality__reality_latest_root, mcp__cgreality__reality_attempt_summary, mcp__cgreality__reality_official_report, mcp__cgreality__reality_problem_packet, mcp__cgreality__reality_signal, mcp__cgreality__reality_failure, mcp__cgreality__reality_trigger_decision, mcp__cgreality__reality_harness_transitions, mcp__cgreality__reality_compare_attempts, mcp__cgreality__reality_audit_trail, mcp__cgreality__search_graph, mcp__cgreality__get_neighbors, mcp__cgreality__get_audit_trail
+tools: Read, Grep, Glob, mcp__cgreality__reality_latest_root, mcp__cgreality__reality_attempt_summary, mcp__cgreality__reality_official_report, mcp__cgreality__reality_problem_packet, mcp__cgreality__reality_signal, mcp__cgreality__reality_failure, mcp__cgreality__reality_trigger_decision, mcp__cgreality__reality_harness_transitions, mcp__cgreality__reality_compare_attempts, mcp__cgreality__reality_audit_trail, mcp__cgreality__search_graph, mcp__cgreality__get_memory_neighbors, mcp__cgreality__get_audit_trail
 model: sonnet
 ---
 
@@ -238,4 +238,4 @@ Only the main session OR `cc-reality-harness-editor` writes harness source. Crit
 - File: `.claude/agents/cc-reality-<name>.md`
 - Frontmatter `name`: `cc-reality-<name>` (matches file).
 - Description starts with "Use [PROACTIVELY|AFTER|WHEN] ..." for the auto-invoke heuristic.
-- `tools:` is comma-separated. Listing `mcp__cgreality__*` tools individually (not `mcp__cgreality__.*` regex), per Claude Code subagent docs.
+- `tools:` is comma-separated. Listing `mcp__cgreality__*` tools individually (not a regex), per Claude Code subagent docs.

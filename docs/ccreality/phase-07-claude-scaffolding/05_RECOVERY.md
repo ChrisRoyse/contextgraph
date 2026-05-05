@@ -11,6 +11,26 @@
 2. Re-copy from [../06_SETTINGS_JSON_SPEC.md](../06_SETTINGS_JSON_SPEC.md).
 3. Use a JSON formatter to normalize: `jq . .claude/settings.json > /tmp/s.json && mv /tmp/s.json .claude/settings.json`.
 
+## Failure: MCP permission rules are ignored
+
+**Symptom:** `claude --print` can see `mcp__cgreality__reality_latest_root`, but returns a permission denial even though `.claude/settings.json` contains `mcp__cgreality__*`.
+
+**Cause:** The settings file likely has the stale `$schema` value `https://code.claude.com/schemas/settings.json`. Runtime probing on Claude Code 2.1.128 showed that this value can leave MCP permission rules unapplied.
+
+**Fix:**
+1. Set `"$schema": "https://json.schemastore.org/claude-code-settings.json"` in `.claude/settings.json`.
+2. Confirm the MCP rule uses the documented wildcard: `"mcp__cgreality__*"`.
+3. Re-run:
+   ```bash
+   CGREALITY_CACHE_DIR=/tmp/ccreality-phase7-claude-smoke-cache \
+     claude --print 'Call mcp__cgreality__reality_latest_root exactly once. Return only compact JSON.' \
+       --model haiku \
+       --output-format json \
+       --max-budget-usd 0.30 \
+       --no-session-persistence \
+     | jq -e '.permission_denials | length == 0'
+   ```
+
 ## Failure: .mcp.json env-var expansion not working
 
 **Symptom:** Claude Code logs `command not found: ${CONTEXTGRAPH_ROOT}/target/debug/context-graph-mcp`.

@@ -1,11 +1,11 @@
 # Phase 7 — Claude Code Scaffolding
 
 **Estimated duration:** 1–2 hours.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 4 (MCP server) + Phase 5 (config files) + Phase 6 (hook scripts).
 **Unblocks:** Phase 8.
 
-Current readiness as of 2026-05-05: Phase 6 has passed verification. Phase 7 can wire `.claude/settings.json` to the executable `scripts/cc/hook_*.sh` scripts.
+Current readiness as of 2026-05-05: Phase 7 has passed canonical verification plus manual Full State Verification. Phase 8 can append the project-memory addendum.
 
 ## What this phase does
 
@@ -58,6 +58,9 @@ jq -e '.mcpServers.cgreality.command' .mcp.json >/dev/null
 
 # settings.json has the hooks block pointing at scripts/cc/
 jq -e '.hooks.SessionStart[0].hooks[0].command | contains("scripts/cc/hook_session_start.sh")' .claude/settings.json >/dev/null
+
+# Claude Code loads cgreality and project settings allow its MCP tools
+claude mcp list | grep -q '^cgreality: .* - ✓ Connected$'
 ```
 
 ## Files

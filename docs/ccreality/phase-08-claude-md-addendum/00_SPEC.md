@@ -7,6 +7,7 @@ Append the ccreality role addendum (from [../10_CLAUDE_MD_PROJECT_MEMORY.md](../
 ## Scope
 
 - `/home/cabdru/contextgraph/CLAUDE.md` — append-only modification at the bottom.
+- `/home/cabdru/contextgraph/.gitignore` — allow the repo-root `CLAUDE.md` to be versioned while keeping nested/local CLAUDE memory files ignored.
 
 Out of scope: any other content modification to CLAUDE.md.
 
@@ -16,6 +17,7 @@ After Phase 8:
 - `CLAUDE.md` is unchanged in its existing content (V3 swarm rules, build/test, security, etc.).
 - A new section appears at the bottom, fenced with `---` markers, titled "ccreality — Outer Reality-Loop Optimizer Role".
 - The new section is exactly the verbatim block from [../10_CLAUDE_MD_PROJECT_MEMORY.md](../10_CLAUDE_MD_PROJECT_MEMORY.md) §"Append-only block (drop in verbatim)".
+- `git check-ignore -q CLAUDE.md` returns non-zero, so the project memory contract can be committed.
 
 ## AI-verifiable end-state
 

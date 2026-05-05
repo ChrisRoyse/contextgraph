@@ -7,14 +7,15 @@
 - `.claude/loop.md` is in place for the `/loop` skill default prompt.
 - 5 subagent files under `.claude/agents/cc-reality-*.md`.
 - 4 skill `SKILL.md` files under `.claude/skills/ccreality-*/`.
-- `config/ccreality_governed_paths.json` allow list now includes `.claude/settings.json` and `.mcp.json`.
-- Opening Claude Code in this project loads everything: MCP server connects, hooks fire, subagents are discoverable, skills are typeable.
+- `config/ccreality_governed_paths.json` allow list now includes `.claude/settings.json`, `.mcp.json`, `.gitignore`, and `CLAUDE.md`.
+- Opening Claude Code in this project loads everything: MCP server connects, project settings allow `mcp__cgreality__*`, hooks fire, subagents are discoverable, skills are typeable.
+- Root-cause hardening is recorded in the source specs: `.mcp.json` is no longer ignored at the repo root, `.claude/settings.json` uses the official SchemaStore schema URL, MCP permissions use Claude Code's `mcp__cgreality__*` wildcard, and the diagnostician references the real `get_memory_neighbors` tool.
 
 ## What's still missing
 
 - The CLAUDE.md addendum (Phase 8) — the project-memory contract that tells Claude Code how to behave.
 - The smoke harness (Phase 9) — the end-to-end test.
-- FSV (Phase 10).
+- FSV harness automation (Phase 10). Phase 7 itself has a manual FSV log at `/tmp/ccreality-phase7-fsv-1778005930.log`.
 - First production attempt + commit (Phase 12).
 
 Without Phase 8's addendum, Claude Code knows the tools and hooks exist but doesn't have the role-defining "you are the outer optimizer" prompt loaded into project memory. It will still work for explicit `/ccreality-iterate` invocations, but won't have the rules-of-engagement automatically applied.
@@ -41,6 +42,11 @@ If any of these fail, Phase 7 is incomplete; do not proceed to Phase 8.
 ```bash
 echo "phase-07: PASS, $(date -u +%FT%TZ)" >> /tmp/ccreality-phase-progress.log
 ```
+
+Actual verification records from this implementation:
+
+- Canonical verification: `phase-07: PASS, 2026-05-05T18:32:42Z`.
+- Manual FSV: `/tmp/ccreality-phase7-fsv-1778005930.log`.
 
 ## Next phase
 

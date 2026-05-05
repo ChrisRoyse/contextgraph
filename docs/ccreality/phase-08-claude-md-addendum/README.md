@@ -1,7 +1,7 @@
 # Phase 8 — CLAUDE.md Addendum
 
 **Estimated duration:** 5 minutes.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phases 0–7.
 **Unblocks:** Phase 9.
 
@@ -16,6 +16,16 @@ cd /home/cabdru/contextgraph
 grep -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md
 grep -q "Reality-shift principle" CLAUDE.md
 grep -q "mcp__cgreality__optimizer_record_recommendation" CLAUDE.md
+! git check-ignore -q CLAUDE.md
+CGREALITY_CACHE_DIR=/tmp/ccreality-phase8-claude-smoke-cache \
+  claude --print "From your loaded project memory, return exactly the heading line of the ccreality section and the next two non-empty lines. Do not use tools. Return only those three lines." \
+    --model haiku \
+    --output-format json \
+    --max-budget-usd 0.25 \
+    --no-session-persistence \
+    --tools "" \
+  | jq -r '.result' \
+  | grep -q "CLAUDE.md project-memory discovery"
 ```
 
 All three must succeed.

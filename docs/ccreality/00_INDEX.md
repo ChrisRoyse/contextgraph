@@ -1,6 +1,6 @@
 # ccreality — Claude Code as the Outer Reality-Loop Optimizer
 
-**Status:** cutover in progress — Phases 0 through 6 are implemented and manually FSV'd; Phase 7 is the next implementation phase
+**Status:** cutover in progress — Phases 0 through 8 are implemented and manually FSV'd; Phase 9 is the next implementation phase
 **Date:** 2026-05-05
 **Author:** Claude (this session) for Chris Royse
 **Supersedes:** `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` (kept for historical context),
@@ -83,9 +83,12 @@ Completed so far:
 - **Phase 5 full-state verification:** `/tmp/ccreality-phase5-fsv-1778001835.log` records the source-of-truth readbacks for `config/ccreality_governed_paths.json`, `config/ccreality_recommendation_schema.json`, `docs/ccreality/phase-05-config-files/sample_recommendation.json`, a real MCP-driven harness transition, a real optimizer recommendation artifact, shift-log entries, and a BlackBox SQLite ledger row.
 - **Phase 6 — Hooks:** `scripts/cc/_common.sh`, all six `scripts/cc/hook_*.sh` scripts, and all six `scripts/cc/tests/hooks/test_*.sh` tests are implemented and executable. The PostToolUse hook records harness transitions through `context-graph-cli ccreality record-harness-transition`, which calls the Phase 4 MCP tool instead of direct-writing artifacts.
 - **Phase 6 verification and FSV:** the canonical Phase 6 verification passed; `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`. Manual FSV log `/tmp/ccreality-phase6-fsv-1778003099.log` read back a real pre-edit state file, harness-transition artifact, shift-log row, hook log, recommendation artifact, and four edge-case outcomes.
+- **Phase 7 — Claude scaffolding:** `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, five `cc-reality-*` agent files, and four `ccreality-*` skill files are implemented. The root `.mcp.json` is trackable and contains the healthy `cgreality` project MCP server; nested `.mcp.json` files remain ignored.
+- **Phase 7 verification and FSV:** the canonical Phase 7 verification passed, including `claude mcp list` and a real `mcp__cgreality__reality_latest_root` call through `claude --print`. Manual FSV log `/tmp/ccreality-phase7-fsv-1778005930.log` read back settings, MCP config, governed paths, hook executables, agent/skill frontmatter, direct MCP tools/list, Claude Code MCP health, and four edge-case outcomes.
+- **Phase 8 — CLAUDE.md addendum:** `CLAUDE.md` ends with the ccreality outer optimizer role contract, and the source block in `docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md` matches the appended block byte-for-byte.
+- **Phase 8 verification and FSV:** the canonical Phase 8 verification passed, including a real `claude --print` project-memory smoke with tools disabled. Manual FSV log `/tmp/ccreality-phase8-fsv-1778007923.log` read back the project-memory file, source addendum spec, gitignore trackability, loaded Claude Code memory, and five edge-case outcomes.
 
 Still pending:
-- **Phase 7–8:** add Claude scaffolding and `CLAUDE.md` runtime addendum.
 - **Phase 9–12:** smoke, full FSV, docs cleanup, first production attempt, and final cutover commit.
 
 See [19_MIGRATION_RUNBOOK](19_MIGRATION_RUNBOOK.md) for the execution sequence.

@@ -18,6 +18,8 @@
     ".claude/skills/ccreality-*/**",
     ".claude/skills/ccreality-*/SKILL.md",
     ".mcp.json",
+    ".gitignore",
+    "CLAUDE.md",
     "docs/ccreality/**",
     "docs/ccreality/phase-*/**",
     "docs/reality/**",

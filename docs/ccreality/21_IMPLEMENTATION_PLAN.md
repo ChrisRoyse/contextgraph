@@ -15,8 +15,8 @@ Each phase has its own subfolder under `docs/ccreality/phase-NN-shortname/` with
 | 4 | Complete | MCP interact + alter + shift | `harness_apply_line_window_edit` round-trip succeeds, writes a harness transition + shift log entry, and optimizer recommendation appends to the real BlackBox ledger | [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) |
 | 5 | Complete | Config files | Strict governed path policy and recommendation schema validate from disk; valid/invalid MCP calls prove fail-closed behavior | [phase-05-config-files/](phase-05-config-files/) |
 | 6 | Complete | Hooks | All 6 `scripts/cc/hook_*.sh` scripts pass their bash unit tests under `scripts/cc/tests/hooks/` | [phase-06-hooks/](phase-06-hooks/) |
-| 7 | Pending | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
-| 8 | Pending | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
+| 7 | Complete | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
+| 8 | Complete | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
 | 9 | Pending | Smoke | `bash scripts/cc/tests/smoke.sh` exits 0 with all 8 layers PASS | [phase-09-smoke/](phase-09-smoke/) |
 | 10 | Pending | FSV | `bash scripts/cc/tests/fsv.sh` exits 0; `docs/ccreality/FSV_RESULTS_*.md` created with all A–E PASS | [phase-10-fsv/](phase-10-fsv/) |
 | 11 | Pending | Docs cleanup | `! test -f docs/reality/20_openai_outer_optimizer.md && grep -q ccreality docs/reality/00_index.md` | [phase-11-docs-cleanup/](phase-11-docs-cleanup/) |
@@ -52,7 +52,11 @@ As of 2026-05-05:
 - Phase 6 support command: `crates/context-graph-cli/src/commands/ccreality/` plus `commands::ccreality` wiring in `crates/context-graph-cli/src/main.rs` and `commands/mod.rs`; `context-graph-cli ccreality record-harness-transition` records through the Phase 4 MCP tool rather than a direct bash JSON write.
 - Phase 6 hook source of truth: `scripts/cc/_common.sh`, all six executable `scripts/cc/hook_*.sh` files, `_common_helpers.sh`, all six executable hook tests under `scripts/cc/tests/hooks/`, and `scripts/cc/tests/hooks/fixtures/post_tool_use_target.txt`.
 - Phase 6 verification and FSV: canonical verification passed; `/tmp/ccreality-phase-progress.log` contains `phase-06: PASS`; manual FSV log `/tmp/ccreality-phase6-fsv-1778003099.log` read back the pre-edit state, harness-transition artifact, shift-log row, hook log, recommendation artifact, and four edge-case outcomes.
-- Next phase to execute: [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/README.md).
+- Phase 7 — Claude scaffolding: `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, five `cc-reality-*` agent files, and four `ccreality-*` skill files are implemented. The repo-root `.mcp.json` is now unignored while nested `.mcp.json` files remain ignored; the project MCP config contains only the healthy `cgreality` server.
+- Phase 7 verification and FSV: canonical verification passed, including `claude mcp list` and a real `mcp__cgreality__reality_latest_root` call through `claude --print`; `/tmp/ccreality-phase-progress.log` contains `phase-07: PASS`; manual FSV log `/tmp/ccreality-phase7-fsv-1778005930.log` read back settings, MCP config, governed paths, hook executables, agent/skill frontmatter, MCP tools/list, Claude Code MCP health, and four edge-case outcomes.
+- Phase 8 — CLAUDE.md addendum: `CLAUDE.md` now ends with the ccreality outer optimizer role contract. The source block in `docs/ccreality/10_CLAUDE_MD_PROJECT_MEMORY.md` matches the appended block byte-for-byte.
+- Phase 8 verification and FSV: canonical verification passed, including a real `claude --print` project-memory smoke with tools disabled; `/tmp/ccreality-phase-progress.log` contains `phase-08: PASS`; manual FSV log `/tmp/ccreality-phase8-fsv-1778007923.log` read back the project-memory file, source addendum spec, gitignore trackability, loaded Claude Code memory, and five edge-case outcomes.
+- Next phase to execute: [phase-09-smoke/](phase-09-smoke/README.md).
 
 ## Dependency DAG
 

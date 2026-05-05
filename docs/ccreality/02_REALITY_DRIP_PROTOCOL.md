@@ -42,7 +42,7 @@ At any moment in the turn, Claude can call `mcp__cgreality__reality_*` to pull a
 - `reality_shift_log {session_id, limit?, since_shift_id?}` — every alter call this session made, with deltas
 - `reality_shift_compare_to_my_view {session_id, files}` — drift detection (file SHA on disk vs session's last-known SHA)
 
-Memory tools are reused unchanged: `search_graph`, `get_neighbors`, `traverse_graph`, `search_by_embedder`, `get_audit_trail`, `get_provenance_chain`, `get_memory_fingerprint`, `extract_entities`. They are exposed under the `cgreality` MCP server with the same schemas.
+Memory tools are reused unchanged: `search_graph`, `get_memory_neighbors`, `get_unified_neighbors`, `traverse_graph`, `search_by_embedder`, `get_audit_trail`, `get_provenance_chain`, `get_memory_fingerprint`, `extract_entities`. They are exposed under the `cgreality` MCP server with the same schemas.
 
 ## Phrasing rule (avoid prompt-injection defense)
 

@@ -21,7 +21,9 @@ Replace the empty `{}` with the full content from [../06_SETTINGS_JSON_SPEC.md](
 Verify:
 ```bash
 jq -e . .claude/settings.json >/dev/null
+jq -e '."$schema" == "https://json.schemastore.org/claude-code-settings.json"' .claude/settings.json
 jq -e '.permissions.allow | type == "array"' .claude/settings.json
+jq -e '.permissions.allow | any(. == "mcp__cgreality__*")' .claude/settings.json
 jq -e '.hooks.SessionStart' .claude/settings.json
 jq -e '.env.CONTEXTGRAPH_ROOT' .claude/settings.json
 ```
@@ -97,9 +99,14 @@ done
 ```bash
 cd /home/cabdru/contextgraph
 command -v claude >/dev/null 2>&1 || { echo "claude CLI is required for Phase 7 smoke wiring"; exit 1; }
-claude --print "List all MCP servers loaded and the count of tools each provides. Return just JSON of {server: tool_count}." --output-format json \
-  | jq -r '.result' \
-  | jq -e 'has("cgreality")'
+claude mcp list | grep -q '^cgreality: .* - ✓ Connected$'
+
+claude --print "Call mcp__cgreality__reality_latest_root exactly once. Return only compact JSON with active_run_id, runtime_root, and source_of_truth." \
+  --model haiku \
+  --output-format json \
+  --max-budget-usd 0.30 \
+  --no-session-persistence \
+  | jq -e '.permission_denials | length == 0'
 ```
 
 If `claude` is not installed or cannot see `cgreality`, Phase 7 is blocked. Record the exact missing dependency or MCP configuration failure; do not skip the check.

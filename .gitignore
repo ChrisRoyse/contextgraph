@@ -23,7 +23,11 @@ shakespear/
 .hive-mind/
 .serena/
 .swarm/
-CLAUDE.md
+# Root CLAUDE.md is committed project memory; nested/local/private notes stay ignored.
+**/CLAUDE.md
+!/CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.local.md
 claude-flow
 
 # Coordination/memory state (ephemeral)

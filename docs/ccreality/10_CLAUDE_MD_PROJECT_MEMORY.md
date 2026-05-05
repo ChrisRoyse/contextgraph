@@ -11,7 +11,7 @@ We append a new section dedicated to the ccreality outer-loop role. Place this a
 
 ## ccreality — Outer Reality-Loop Optimizer Role
 
-**Loaded by:** every Claude Code session in this project, via auto-memory discovery.
+**Loaded by:** every Claude Code session in this project, via CLAUDE.md project-memory discovery.
 **Authoritative spec:** `docs/ccreality/`. This block is the runtime contract; the docs are the design rationale.
 
 ### What you (Claude Code) are when running in this project
