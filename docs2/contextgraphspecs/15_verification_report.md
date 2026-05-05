@@ -11,7 +11,7 @@
 - `crates/context-graph-cli/src/commands/export_dynamicjepa.rs` — DynamicJEPA episode/bundle schema versions
 - `crates/context-graph-cli/src/bin/reality-loop.rs` — Rust reality loop binary (see [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md))
 - `Makefile` — build/test/lint targets
-- `scripts/**/*.py`, `gemmafrontend/**/*.py` — Python FSV / reality-loop harnesses
+- `scripts/**/*.py`, `gemmafrontend/**/*.py` — Python FSV / evidence-console harnesses
 
 Cross-references: [10_cli_reference.md](10_cli_reference.md), [14_test_suite.md](14_test_suite.md), [08_mcp_tools_reference.md](08_mcp_tools_reference.md), [09_storage_layer.md](09_storage_layer.md), [22_reality_loop_subsystem.md](22_reality_loop_subsystem.md).
 
@@ -30,7 +30,7 @@ Cross-references: [10_cli_reference.md](10_cli_reference.md), [14_test_suite.md]
 | `#[test]` / `#[tokio::test]` attributes | 5,437 | grep |
 | FSV-tagged test files (`*_fsv.rs`) | 46 | filename grep |
 | Python scripts under `scripts/` | 126 (32 in `scripts/v4_2/`) | filesystem |
-| Python harness scripts under `gemmafrontend/` | 6 + 1 FSV (`server.py`, `swe_lite_refinement_loop.py`, `swe_lite_official_eval.py`, `reality_prompt_compiler.py`, `model_benchmark.py`, `model_prompt_matrix.py` + `manual_fsv.py`) | filesystem |
+| Python harness scripts under `gemmafrontend/` | 3 + 1 FSV (`server.py`, `model_benchmark.py`, `model_prompt_matrix.py` + `manual_fsv.py`) | filesystem |
 | Benchmark binaries declared | 44 `[[bin]]` + 2 `[[bench]]` | `crates/context-graph-benchmark/Cargo.toml` |
 | MCP tools (`llm` feature on) | 145 | `tools/definitions/mod.rs:135` |
 | MCP tools (`llm` feature off) | 141 | `tools/definitions/mod.rs:137` |
@@ -46,7 +46,7 @@ Cross-references: [10_cli_reference.md](10_cli_reference.md), [14_test_suite.md]
 | `LEARNING_EVENT_VERSION` | 1 | `core/learning/mod.rs:18` |
 | Reality-loop measurement contract schema | `contextgraph_reality_measurement_contract_v1` | `bin/reality-loop.rs:750` |
 | Reality-loop summary schema | `contextgraph_rust_reality_loop_summary_v1` | `bin/reality-loop.rs:1926` |
-| Reality event log schema version | 1 | `gemmafrontend/swe_lite_refinement_loop.py:2423` |
+| Reality event log schema version | 1 | `bin/reality-loop.rs` |
 
 ## 2. Crate Inventory
 
@@ -159,8 +159,7 @@ Source: enumerated `pub const` in the listed files.
 | Reality-loop default model | `gemma4:e4b` | `bin/reality-loop.rs:14` (`DEFAULT_MODEL`) |
 | Reality-loop default Docker host | `unix:///var/run/docker.sock` | `bin/reality-loop.rs:18` (`DEFAULT_OFFICIAL_DOCKER_HOST`) |
 | Reality-loop dataset constant | `"princeton-nlp/SWE-bench_Lite"` | `bin/reality-loop.rs:20` (`DATASET_NAME`) |
-| Prompt compiler version | `"reality_prompt_compiler_v1"` | `gemmafrontend/reality_prompt_compiler.py:20` |
-| Prompt compiler `MAX_REPO_CONTEXT_CHARS` | 24,000 | `reality_prompt_compiler.py:22` |
+| Prompt compiler owner | Rust `reality-loop` prompt contract | `bin/reality-loop.rs` |
 | Reward spec schema version | 1 | `gemmafrontend/reward_spec.verified_outcome.json` |
 
 ## 7. MCP Tool Composition
@@ -230,7 +229,7 @@ Source: `crates/context-graph-mcp/src/tools/definitions/mod.rs` `test_submodule_
 6. `E11_ENTITY_ENABLED` was `false` in earlier docs; current source has it `true` (`weights/mod.rs:48`).
 7. `LEDGER_SCHEMA_VERSION = 14` in current source. Earlier docs referenced v7/v8; the BlackBoxFix Phase 13–24 expansion bumped through v14 in the source-of-truth file.
 8. `tests/chaos/mod.rs` is a redirect-only stub; the actual chaos tests previously lived in a `context-graph-graph` crate that is no longer present in the workspace (workspace is now 11 crates). Effective coverage of the chaos suite is currently zero — flagged for follow-up.
-9. The Rust reality loop binary (`reality-loop.rs`) and the older Python loop (`gemmafrontend/swe_lite_refinement_loop.py`) both write into BlackBoxFix at the same `LEDGER_SCHEMA_VERSION = 14`; the Rust loop is the canonical entry per commit cc8e6c33, but both are still present.
+9. The old Python SWE-bench loop, Python official-eval bridge, and Python prompt compiler were deleted. The Rust `reality-loop` binary is now the only ContextGraph SWE-bench refinement implementation.
 
 ## 11. Build Hygiene Tooling
 

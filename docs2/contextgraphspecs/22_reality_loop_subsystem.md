@@ -307,53 +307,8 @@ cargo run --release --bin reality-loop -- \
 
 The loop exits with stdout `RUST_REALITY_LOOP_SUMMARY=<summary-source-of-truth>` on success or stderr `RUST_REALITY_LOOP_ERROR_SOURCE_OF_TRUTH=<failure-artifact-path>` on failure; both line prefixes are stable for shell consumers.
 
-### Python `swe_lite_refinement_loop.py`
-| Flag | Default | Notes |
-| --- | --- | --- |
-| `--model` | `gemma4:e4b`, `qwen3:8b`, `mistral-nemo:12b` | repeatable; defaults to all three |
-| `--instance-id` | unset | repeatable; filters task selection |
-| `--repo-filter` | unset | repeatable substring filter |
-| `--max-tasks` | 1 | dataset row cap |
-| `--max-attempts` | 3 | per (model, task) loop |
-| `--run-until-resolved` | off | requires `--official-eval-each-attempt` |
-| `--runtime-root` | `/tmp/contextgraph-swe-lite-refinement` | |
-| `--ollama-url` | `http://127.0.0.1:11434` | |
-| `--context-graph-bin` | `target/debug/context-graph` | |
-| `--include-hints` | off | injects `hints_text` into prompt |
-| `--model-timeout` | 300 s | |
-| `--git-timeout` | 600 s | |
-| `--pytest-timeout` | 600 s | |
-| `--max-context-files` | 5 | repo context budget |
-| `--context-window-radius` | 24 | lines around each hit |
-| `--official-eval-each-attempt` | off | |
-| `--official-eval-script` | `gemmafrontend/swe_lite_official_eval.py` | |
-| `--swebench-python` | `/home/cabdru/.cache/contextgraph-swebench/venv/bin/python` | |
-| `--docker-cli-dir` | `/mnt/wsl/docker-desktop/cli-tools/usr/bin` | |
-| `--docker-socket` | `/mnt/wsl/docker-desktop-bind-mounts/Ubuntu-24.04/docker.sock` | |
-| `--docker-windows-bin` | `/mnt/c/Program Files/Docker/Docker/resources/bin` | |
-| `--official-max-workers` | 1 | |
-| `--official-timeout` | 900 s | |
-| `--official-cache-level` | `env` | |
-| `--agent-tool-rounds` | 2 | governed read-only tool turns per attempt |
-| `--gpu-index` | 0 | |
-| `--gpu-min-free-mb` | 8192 | |
-| `--gpu-max-used-mb` | unset | |
-| `--ollama-keep-alive` | `30m` | |
+The previous Python SWE-bench loop and its Python official-eval wrapper were deleted. Operator workflows must use the Rust `reality-loop` command above.
 
-### Python `swe_lite_official_eval.py`
-| Flag | Default |
-| --- | --- |
-| `--run-root` | (required) |
-| `--predictions-path` | unset (rebuilt from loop summary) |
-| `--swebench-python` | shared default |
-| `--context-graph-bin` | shared default |
-| `--docker-cli-dir`, `--docker-socket`, `--docker-windows-bin` | WSL Docker Desktop defaults |
-| `--instance-id` | repeatable filter |
-| `--run-id` | optional reuse |
-| `--max-workers` | 1 |
-| `--timeout` | 900 s |
-| `--cache-level` | `env` |
-| `--clean` | off |
 
 ### Python `model_benchmark.py`
 Multi-model verified-outcome benchmark. Operator passes `--base-url` and one or more `--model`; the script POSTs each through `gemmafrontend/server.py`, reads the persisted snapshot back, and validates the BlackBoxFix ledger (`schema_version=14`) directly via SQLite (`direct_ledger_counts`, line 79).

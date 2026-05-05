@@ -315,12 +315,10 @@ Located under `scripts/` (78 entries) and `gemmafrontend/` (7 Python files). The
 | `scripts/restart_pipeline_services.sh`, `vram_watchdog.py` | Runtime ops |
 | `scripts/blackboxfix_*.py` | BlackBoxFix demos and intelligence reports |
 | `gemmafrontend/server.py` (3,879 LOC) | Python evidence console; HTTP `:8787`; loads tools from backend; selects local Ollama models (gemma4:e4b, qwen3:8b, mistral-nemo:12b); persists frontend snapshots under `/tmp/gemmafrontend-runs/frontend-runs/*/system-snapshot.json` |
-| `gemmafrontend/swe_lite_refinement_loop.py` (4,560 LOC) | Python SWE-bench Lite refinement loop (predecessor of Rust `reality-loop`) |
-| `gemmafrontend/swe_lite_official_eval.py` (682 LOC) | Wrapper around official SWE-bench Docker evaluator |
 | `gemmafrontend/manual_fsv.py` (382 LOC) | Manual FSV starter for the gemma frontend server, ledger, snapshot, product-category pack, signed attestation, tamper detection |
 | `gemmafrontend/model_benchmark.py` (248 LOC) | Multi-model benchmark runner across local Ollama models |
 | `gemmafrontend/model_prompt_matrix.py` (497 LOC) | Prompt × model evidence matrix |
-| `gemmafrontend/reality_prompt_compiler.py` (540 LOC) | Deterministic prompt compiler used by reality runs |
+| `crates/context-graph-cli/src/bin/reality-loop.rs` | Rust-only SWE-bench Lite refinement loop and prompt compiler |
 
 ## 15. Build Configuration
 Source: `Cargo.toml` (root), `rust-toolchain.toml`, per-crate `[features]`.

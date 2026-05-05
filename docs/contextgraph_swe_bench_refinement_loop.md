@@ -10,15 +10,7 @@ Canonical binary:
 crates/context-graph-cli/src/bin/reality-loop.rs
 ```
 
-Deleted legacy Python entry points:
-
-```text
-gemmafrontend/swe_lite_refinement_loop.py
-gemmafrontend/swe_lite_official_eval.py
-gemmafrontend/reality_prompt_compiler.py
-```
-
-Do not run or recreate the old Python refinement loop. The only supported SWE-bench loop path is `reality-loop`.
+The old Python refinement-loop entry points were deleted. Do not run or recreate them. The only supported SWE-bench loop path is `reality-loop`.
 
 ## Goal
 

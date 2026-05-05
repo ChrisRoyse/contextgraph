@@ -47,7 +47,7 @@ Verified current behavior:
 
 Rust-only status:
 
-- the previous Python refinement loop, Python official-eval bridge, and Python prompt compiler were removed;
+- the previous Python implementation of the refinement loop, evaluator bridge, and prompt compiler was removed;
 - the Rust loop is the only supported ContextGraph SWE-bench refinement path;
 - the official SWE-bench harness is still an external Python/Docker evaluator because that is how SWE-bench is distributed;
 - the Rust loop must keep compacting official per-instance report/test-output reality into the next prompt.
