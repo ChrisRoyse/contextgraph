@@ -20,6 +20,8 @@ Gemma
 
 The outer meta-loop optimizes this harness, but Gemma's actual repair loop is the harness.
 
+Current implementation detail: each governed tool call now emits a `harness-transition.json` artifact. That artifact is the measured reality-loop step. It records before-state, action, observation, outcome, DynamicJEPA projection, Learning-as-UTL signal, constellation tags, and BlackBoxFix boundary refs. The BlackBoxFix verifier checks that the request, result, and transition files all exist and contain the expected record kinds.
+
 SWE-agent's Agent-Computer Interface research is directly relevant to Gemma. Its file viewer and editor are integrated: the agent sees line-numbered source windows, edits bounded ranges, and immediately receives observation/error feedback. This is a better interface for local models than asking for raw diffs.
 
 Gemma 4 supports function calling, but Google is explicit that the model does not execute code. The application must parse, validate, execute, and return tool results. That matches ContextGraph's architecture: Gemma requests tools; ContextGraph validates and executes; BlackBoxFix verifies durable state.
@@ -118,6 +120,18 @@ The latest smoke produced:
 ```
 
 That means the loop can now tell Gemma: you successfully read problem reality and navigated the repo, but you still need source-window grounding and a patch submission.
+
+The reality-signal packet also records `harness_reality`, which is derived by reading every `harness-transition.json` file from the attempt transcript. The summary includes:
+
+- transition coverage: executed tool calls with verified transition rows;
+- utility delta sum across tool transitions;
+- useful, neutral, and harmful transition counts;
+- correction-required count;
+- DynamicJEPA projection counts for state/action/outcome rows and surprise candidates;
+- Learning projection counts for learning-event candidates;
+- Constellation selectors by tool family.
+
+This is the concrete point where the coding-agent harness becomes the inner reality loop: the model does not only receive tool output, it receives measured consequences of its own tool-use behavior.
 
 ## Full State Verification
 

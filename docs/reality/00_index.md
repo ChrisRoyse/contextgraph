@@ -38,6 +38,8 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `16_measurement_contract.md` | Runtime contract that prevents measurement-spec and boundary failures from becoming false success claims. |
 | `17_problem_and_signal_reality_packets.md` | Current implementation of problem-reality capture, per-attempt signal packets, blindspot tracking, and FSV evidence. |
 | `18_gemma_coding_agent_harness.md` | Current Gemma coding-agent harness, optimized Ollama settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
+| `19_harness_transition_reality.md` | Current implementation of the harness-as-reality-loop transition contract: every governed tool call becomes a verified state/action/observation/outcome row. |
+| `20_openai_outer_optimizer.md` | Current implementation of the OpenAI/Codex-grade outer optimizer and one-attempt smoke contract before long continuous loops. |
 
 ## Current Project Mapping
 
@@ -128,7 +130,9 @@ Gemma coding-agent mode is now explicit. In this architecture, the governed codi
 - Ollama request options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `num_ctx=32768`, `num_predict=4096`.
 - Default tool-round budget is `8` so Gemma has enough turns to inspect, navigate, open a source window, and submit a patch.
 - `apply_line_window_edit` is the preferred edit tool because it replaces line ranges from an `open_file_window` readback and requires the observed file SHA-256.
-- Reality-signal packets now include `tool_reward_signals`, which score intermediate coding-agent behaviors before official SWE success exists.
+- Every governed tool call now writes `harness-transition.json`, reads it back, and has BlackBoxFix verify it with the request/result artifacts.
+- Reality-signal packets now include `harness_reality` and `tool_reward_signals`, which score intermediate coding-agent behaviors before official SWE success exists.
+- `--smoke-test --max-attempts 1 --openai-optimizer-each-attempt` is the required short path for validating the Gemma inner loop plus OpenAI outer optimizer before a long `--run-until-resolved` execution.
 
 Latest reality-signal FSV output:
 

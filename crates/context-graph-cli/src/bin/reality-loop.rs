@@ -19,6 +19,9 @@ const DEFAULT_OLLAMA_NUM_CTX: u64 = 32768;
 const DEFAULT_OLLAMA_NUM_PREDICT: u64 = 4096;
 const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
 const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
+const DEFAULT_OPENAI_OPTIMIZER_MODEL: &str = "gpt-5.5";
+const DEFAULT_OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
+const DEFAULT_OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
@@ -41,6 +44,8 @@ struct Args {
     max_attempts: u64,
     #[arg(long)]
     run_until_resolved: bool,
+    #[arg(long)]
+    smoke_test: bool,
     #[arg(long)]
     official_eval_each_attempt: bool,
     #[arg(
@@ -82,6 +87,22 @@ struct Args {
     agent_tool_rounds: u64,
     #[arg(long, default_value_t = 300)]
     targeted_test_timeout: u64,
+    #[arg(long)]
+    openai_optimizer_each_attempt: bool,
+    #[arg(long, default_value = DEFAULT_OPENAI_OPTIMIZER_MODEL)]
+    openai_optimizer_model: String,
+    #[arg(long, default_value = DEFAULT_OPENAI_RESPONSES_URL)]
+    openai_responses_url: String,
+    #[arg(long, default_value = DEFAULT_OPENAI_API_KEY_ENV)]
+    openai_api_key_env: String,
+    #[arg(long, default_value_t = 3)]
+    openai_optimizer_tool_rounds: u64,
+    #[arg(long, default_value_t = 4096)]
+    openai_optimizer_max_output_tokens: u64,
+    #[arg(long, default_value = "high")]
+    openai_optimizer_reasoning_effort: String,
+    #[arg(long, default_value_t = 300)]
+    openai_optimizer_timeout: u64,
     #[arg(long, default_value_t = 0)]
     sleep_between_attempts_ms: u64,
 }
@@ -181,6 +202,8 @@ struct AttemptRecord {
     official_reality: Option<Value>,
     reality_signal_packet_path: String,
     reality_signal_compact: Value,
+    openai_optimizer_recommendation_path: Option<String>,
+    openai_optimizer_recommendation_compact: Option<Value>,
     agent_tool_transcript_path: Option<String>,
     patch_preview: Option<String>,
 }
@@ -244,6 +267,36 @@ async fn run(args: Args) -> Result<Value> {
             "official_eval_each_attempt",
             "enable official SWE-bench readback so success is resolved_ids, not model text",
             json!({ "run_until_resolved": true }),
+            None,
+        ));
+    }
+    if args.smoke_test && args.run_until_resolved {
+        return Err(RealityError::new(
+            "RUST_REALITY_SMOKE_RUN_UNTIL_RESOLVED_INVALID",
+            "--smoke-test cannot be combined with --run-until-resolved",
+            "smoke_test",
+            "run a one-attempt smoke first, then launch the continuous loop separately",
+            json!({"smoke_test": true, "run_until_resolved": true}),
+            None,
+        ));
+    }
+    if args.smoke_test && args.max_attempts != 1 {
+        return Err(RealityError::new(
+            "RUST_REALITY_SMOKE_MAX_ATTEMPTS_INVALID",
+            "--smoke-test requires --max-attempts 1",
+            "max_attempts",
+            "keep smoke testing bounded to one attempt so failures are fast and inspectable",
+            json!({"smoke_test": true, "max_attempts": args.max_attempts}),
+            None,
+        ));
+    }
+    if args.smoke_test && !args.openai_optimizer_each_attempt {
+        return Err(RealityError::new(
+            "RUST_REALITY_SMOKE_OPENAI_OPTIMIZER_REQUIRED",
+            "--smoke-test requires --openai-optimizer-each-attempt",
+            "openai_optimizer_each_attempt",
+            "the smoke test must verify the Gemma inner loop and OpenAI outer optimizer together",
+            json!({"smoke_test": true}),
             None,
         ));
     }
@@ -357,6 +410,7 @@ async fn run(args: Args) -> Result<Value> {
             "status": "running",
             "loop_id": loop_id,
             "model": args.model,
+            "smoke_test": args.smoke_test,
             "task": task,
             "gpu_initial": gpu_initial,
             "source_of_truth": {
@@ -706,6 +760,48 @@ async fn run(args: Args) -> Result<Value> {
             &reality_signal_packet_path,
             &args.model,
         )?;
+        let openai_optimizer_recommendation = if args.openai_optimizer_each_attempt {
+            let recommendation = run_openai_loop_optimizer(
+                &client,
+                &args,
+                &task,
+                attempt,
+                &run_root,
+                &task_root,
+                &attempt_dir,
+                &problem_reality_path,
+                &reality_signal_packet_path,
+                &validation_path,
+                agent_tool_transcript_path.as_deref(),
+                &ledger,
+                &ledger_counts_now,
+            )
+            .await?;
+            append_event(
+                &reality_events,
+                json!({
+                    "event_type": "openai_loop_optimizer_completed",
+                    "status": recommendation.get("status"),
+                    "attempt": attempt,
+                    "optimizer": recommendation.get("optimizer"),
+                    "recommendation": recommendation.pointer("/source_of_truth/final_recommendation"),
+                    "source_of_truth": recommendation.pointer("/source_of_truth/final_recommendation")
+                }),
+            )?;
+            Some(recommendation)
+        } else {
+            None
+        };
+        let openai_optimizer_recommendation_path = openai_optimizer_recommendation
+            .as_ref()
+            .and_then(|value| {
+                value
+                    .pointer("/source_of_truth/final_recommendation")
+                    .and_then(Value::as_str)
+            })
+            .map(|path| path.strip_prefix("file:").unwrap_or(path).to_string());
+        let openai_optimizer_recommendation_compact =
+            openai_optimizer_recommendation.as_ref().map(compact_openai_loop_optimizer);
 
         let attempt_record = AttemptRecord {
             attempt,
@@ -727,6 +823,8 @@ async fn run(args: Args) -> Result<Value> {
             official_reality,
             reality_signal_packet_path: path_str(&reality_signal_packet_path).to_string(),
             reality_signal_compact,
+            openai_optimizer_recommendation_path,
+            openai_optimizer_recommendation_compact,
             agent_tool_transcript_path,
             patch_preview: patch.as_ref().map(|text| truncate_chars(text, 1600)),
         };
@@ -737,6 +835,7 @@ async fn run(args: Args) -> Result<Value> {
                 "model_response": model_response,
                 "blackbox_verifier": verifier,
                 "reality_signal_verifier": reality_signal_verifier,
+                "openai_loop_optimizer": openai_optimizer_recommendation,
                 "score": score,
                 "reward": reward,
                 "ledger_counts": ledger_counts(&ledger)?,
@@ -1594,11 +1693,32 @@ Do not modify tests, fixtures, or benchmark harness files.";
                     &result_path,
                 ));
             }
+            let harness_transition_path = tool_dir.join("harness-transition.json");
+            let harness_transition = build_harness_transition(
+                ctx,
+                attempt,
+                round,
+                index,
+                executed_tool_calls,
+                submitted_candidate_patch.is_some(),
+                &call_id,
+                &name,
+                tool_request_protocol,
+                &arguments,
+                &requested_path,
+                &response_path,
+                &result_path,
+                &result_readback,
+                &harness_transition_path,
+            )?;
+            write_json_checked(&harness_transition_path, &harness_transition)?;
+            let harness_transition_readback: Value = read_json(&harness_transition_path)?;
             let ledger_evidence = record_agent_tool_boundary(
                 ctx,
                 &name,
                 &requested_path,
                 &result_path,
+                &harness_transition_path,
                 result_status,
                 &tool_dir,
             )?;
@@ -1616,6 +1736,9 @@ Do not modify tests, fixtures, or benchmark harness files.";
                 "arguments_sha256": sha256_text(&serde_json::to_string(&arguments).unwrap()),
                 "requested": file_sot(&requested_path),
                 "result": file_sot(&result_path),
+                "harness_transition": file_sot(&harness_transition_path),
+                "harness_transition_sha256": sha256_file(&harness_transition_path)?,
+                "harness_transition_status": harness_transition_readback.get("outcome").and_then(|value| value.get("label")),
                 "status": result_readback.get("status"),
                 "error_code": result_readback.get("error_code"),
                 "blackbox_ledger_evidence": ledger_evidence
@@ -1828,6 +1951,940 @@ async fn post_ollama_chat(
         ));
     }
     Ok(value)
+}
+
+async fn run_openai_loop_optimizer(
+    client: &reqwest::Client,
+    args: &Args,
+    task: &TaskManifest,
+    attempt: u64,
+    run_root: &Path,
+    task_root: &Path,
+    attempt_dir: &Path,
+    problem_reality_path: &Path,
+    reality_signal_packet_path: &Path,
+    validation_path: &Path,
+    agent_tool_transcript_path: Option<&str>,
+    ledger: &Path,
+    ledger_counts: &BTreeMap<String, i64>,
+) -> Result<Value> {
+    let optimizer_dir = attempt_dir.join("openai-loop-optimizer");
+    create_dir_checked(&optimizer_dir)?;
+    let (api_key, api_key_metadata) = load_required_secret(&args.openai_api_key_env)?;
+    let problem_reality: Value = read_json(problem_reality_path)?;
+    let reality_signal_packet: Value = read_json(reality_signal_packet_path)?;
+    let validation: Value = read_json(validation_path)?;
+    let optimizer_input = json!({
+        "record_kind": "contextgraph_openai_loop_optimizer_input",
+        "schema_version": 1,
+        "outer_optimizer": {
+            "model": args.openai_optimizer_model,
+            "api": "openai_responses_api",
+            "api_key": api_key_metadata
+        },
+        "inner_actor": {
+            "model": args.model,
+            "role": "Gemma attempts the SWE-bench repair through governed ContextGraph tools"
+        },
+        "task": {
+            "instance_id": task.instance_id,
+            "repo": task.repo,
+            "base_commit": task.base_commit,
+            "fail_to_pass": task.fail_to_pass,
+            "pass_to_pass_count": task.pass_to_pass_count,
+            "source_of_truth": task.source_of_truth
+        },
+        "attempt": attempt,
+        "problem_reality": compact_problem_reality_packet(&problem_reality),
+        "reality_signal_packet": compact_reality_signal_packet(&reality_signal_packet),
+        "validation": validation,
+        "ledger_counts": ledger_counts,
+        "source_of_truth": {
+            "run_root": file_sot(run_root),
+            "problem_reality": file_sot(problem_reality_path),
+            "reality_signal_packet": file_sot(reality_signal_packet_path),
+            "validation": file_sot(validation_path),
+            "agent_tool_transcript": agent_tool_transcript_path,
+            "ledger": sqlite_sot(ledger)
+        }
+    });
+    let optimizer_input_path = optimizer_dir.join("optimizer-input.json");
+    write_json_checked(&optimizer_input_path, &optimizer_input)?;
+
+    let mut input_items = vec![json!({
+        "role": "user",
+        "content": format!(
+            "You are the outer ContextGraph loop optimizer. Gemma is the inner SWE-bench actor. \
+You must inspect verified reality and propose how to improve the loop, prompts, tools, reward signals, and measurement coverage. \
+Do not claim SWE success. Do not propose changing tests, the official evaluator, reward spec trust boundary, or BlackBoxFix ledger integrity. \
+Use the provided function tools if you need full artifacts or source context. \
+Optimizer input JSON:\n{}",
+            serde_json::to_string_pretty(&optimizer_input).unwrap()
+        )
+    })];
+    let tools = openai_optimizer_tool_specs();
+    let mut tool_events = Vec::new();
+    for round in 1..=args.openai_optimizer_tool_rounds {
+        let request_path = optimizer_dir.join(format!("openai-tool-round-{round:02}-request.json"));
+        let response_path =
+            optimizer_dir.join(format!("openai-tool-round-{round:02}-response.json"));
+        let body = openai_response_request_body(
+            args,
+            &input_items,
+            Some(&tools),
+            Some(json!("auto")),
+            None,
+        );
+        write_json_checked(&request_path, &body)?;
+        let response =
+            post_openai_response(client, args, &api_key, &body, &request_path, &response_path)
+                .await?;
+        if let Some(output) = response.get("output").and_then(Value::as_array) {
+            input_items.extend(output.iter().cloned());
+        }
+        let calls = openai_function_calls(&response)?;
+        if calls.is_empty() {
+            tool_events.push(json!({
+                "round": round,
+                "status": "no_tool_call",
+                "request": file_sot(&request_path),
+                "response": file_sot(&response_path)
+            }));
+            break;
+        }
+        let mut round_calls = Vec::new();
+        for (index, call) in calls.iter().enumerate() {
+            let tool_dir = optimizer_dir.join(format!(
+                "tool-round-{round:02}-{index:02}-{}",
+                safe_id(&call.name)
+            ));
+            create_dir_checked(&tool_dir)?;
+            let call_path = tool_dir.join("requested-openai-optimizer-tool.json");
+            write_json_checked(&call_path, call)?;
+            let result = execute_openai_optimizer_tool(
+                &call.name,
+                &call.arguments,
+                task_root,
+                attempt_dir,
+                problem_reality_path,
+                reality_signal_packet_path,
+                validation_path,
+                agent_tool_transcript_path,
+            )?;
+            let result_path = tool_dir.join("openai-optimizer-tool-result.json");
+            write_json_checked(&result_path, &result)?;
+            let result_readback: Value = read_json(&result_path)?;
+            input_items.push(json!({
+                "type": "function_call_output",
+                "call_id": call.call_id,
+                "output": serde_json::to_string(&result_readback).unwrap()
+            }));
+            round_calls.push(json!({
+                "call_id": call.call_id,
+                "name": call.name,
+                "arguments_sha256": sha256_text(&serde_json::to_string(&call.arguments).unwrap()),
+                "request": file_sot(&call_path),
+                "result": file_sot(&result_path),
+                "status": result_readback.get("status"),
+                "source_of_truth": file_sot(&result_path)
+            }));
+        }
+        tool_events.push(json!({
+            "round": round,
+            "status": "tool_outputs_appended",
+            "request": file_sot(&request_path),
+            "response": file_sot(&response_path),
+            "tool_calls": round_calls
+        }));
+    }
+
+    input_items.push(json!({
+        "role": "user",
+        "content": "Now produce the final optimizer recommendation as JSON matching the schema. The recommendation must be actionable for the next Gemma attempt and for improving the ContextGraph reality-loop harness."
+    }));
+    let final_request_path = optimizer_dir.join("openai-final-request.json");
+    let final_response_path = optimizer_dir.join("openai-final-response.json");
+    let final_body = openai_response_request_body(
+        args,
+        &input_items,
+        None,
+        Some(json!("none")),
+        Some(openai_optimizer_json_schema()),
+    );
+    write_json_checked(&final_request_path, &final_body)?;
+    let final_response = post_openai_response(
+        client,
+        args,
+        &api_key,
+        &final_body,
+        &final_request_path,
+        &final_response_path,
+    )
+    .await?;
+    let output_text = openai_output_text(&final_response).ok_or_else(|| {
+        RealityError::new(
+            "RUST_REALITY_OPENAI_OPTIMIZER_OUTPUT_MISSING",
+            "OpenAI loop optimizer response did not include output_text",
+            "openai.response.output_text",
+            "inspect final OpenAI response before continuing",
+            json!({"response": file_sot(&final_response_path)}),
+            Some(file_sot(&final_response_path)),
+        )
+    })?;
+    let recommendation_payload: Value = serde_json::from_str(&output_text).map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_OPENAI_OPTIMIZER_JSON_INVALID",
+            "OpenAI loop optimizer final output was not valid JSON",
+            "openai.response.output_text",
+            "inspect structured output schema and final response",
+            json!({
+                "error": err.to_string(),
+                "output_preview": truncate_chars(&output_text, 4000),
+                "response": file_sot(&final_response_path)
+            }),
+            Some(file_sot(&final_response_path)),
+        )
+    })?;
+    validate_openai_optimizer_recommendation(&recommendation_payload, &final_response_path)?;
+    let recommendation_path = optimizer_dir.join("openai-loop-optimizer-recommendation.json");
+    let envelope = json!({
+        "record_kind": "contextgraph_openai_loop_optimizer_run",
+        "schema_version": 1,
+        "status": "ok",
+        "attempt": attempt,
+        "optimizer": {
+            "provider": "openai",
+            "api": "responses",
+            "model": args.openai_optimizer_model,
+            "reasoning_effort": args.openai_optimizer_reasoning_effort,
+            "tool_round_budget": args.openai_optimizer_tool_rounds,
+            "api_key": api_key_metadata
+        },
+        "tool_events": tool_events,
+        "recommendation": recommendation_payload,
+        "source_of_truth": {
+            "optimizer_input": file_sot(&optimizer_input_path),
+            "final_request": file_sot(&final_request_path),
+            "final_response": file_sot(&final_response_path),
+            "final_recommendation": file_sot(&recommendation_path),
+            "ledger": sqlite_sot(ledger)
+        }
+    });
+    write_json_checked(&recommendation_path, &envelope)?;
+    let readback: Value = read_json(&recommendation_path)?;
+    if readback != envelope {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_OPTIMIZER_READBACK_MISMATCH",
+            "OpenAI loop optimizer recommendation readback did not match the written artifact",
+            "openai_optimizer.recommendation.readback",
+            "inspect filesystem durability before using optimizer guidance",
+            json!({"expected": envelope, "actual": readback}),
+            Some(file_sot(&recommendation_path)),
+        ));
+    }
+    Ok(readback)
+}
+
+fn openai_response_request_body(
+    args: &Args,
+    input_items: &[Value],
+    tools: Option<&Value>,
+    tool_choice: Option<Value>,
+    text_format: Option<Value>,
+) -> Value {
+    let mut body = json!({
+        "model": args.openai_optimizer_model,
+        "instructions": "You optimize ContextGraph's outer reality loop. You are not the SWE actor; Gemma is. You may propose changes, prompt directives, reward-signal additions, and measurement checks only from verified source-of-truth evidence. Never suggest editing benchmark tests, hiding failures, weakening verifiers, changing the official oracle, or treating local validation as SWE success.",
+        "input": input_items,
+        "reasoning": {"effort": args.openai_optimizer_reasoning_effort},
+        "max_output_tokens": args.openai_optimizer_max_output_tokens,
+        "parallel_tool_calls": false,
+        "store": false
+    });
+    if let Some(tools) = tools {
+        body["tools"] = tools.clone();
+    }
+    if let Some(tool_choice) = tool_choice {
+        body["tool_choice"] = tool_choice;
+    }
+    if let Some(text_format) = text_format {
+        body["text"] = json!({"format": text_format});
+    }
+    body
+}
+
+async fn post_openai_response(
+    client: &reqwest::Client,
+    args: &Args,
+    api_key: &str,
+    body: &Value,
+    request_path: &Path,
+    response_path: &Path,
+) -> Result<Value> {
+    let response = client
+        .post(&args.openai_responses_url)
+        .bearer_auth(api_key)
+        .json(body)
+        .timeout(Duration::from_secs(args.openai_optimizer_timeout))
+        .send()
+        .await
+        .map_err(|err| {
+            RealityError::new(
+                "RUST_REALITY_OPENAI_REQUEST_FAILED",
+                "OpenAI Responses API request failed",
+                "openai.request",
+                "inspect network connectivity, API key, model access, and request body",
+                json!({"url": args.openai_responses_url, "error": err.to_string(), "request": file_sot(request_path)}),
+                Some(file_sot(request_path)),
+            )
+        })?;
+    let status = response.status();
+    let text = response.text().await.map_err(|err| {
+        RealityError::new(
+            "RUST_REALITY_OPENAI_RESPONSE_READ_FAILED",
+            "failed to read OpenAI Responses API body",
+            "openai.response",
+            "inspect network/API response",
+            json!({"error": err.to_string(), "request": file_sot(request_path)}),
+            Some(file_sot(request_path)),
+        )
+    })?;
+    let value: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+        json!({
+            "status": "non_json_response",
+            "body": truncate_chars(&text, 12000)
+        })
+    });
+    write_json_checked(response_path, &value)?;
+    if !status.is_success() {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_ERROR",
+            "OpenAI Responses API returned an error",
+            "openai.response.status",
+            "inspect OpenAI response body, model id, key permissions, and rate limits",
+            json!({
+                "http_status": status.as_u16(),
+                "response": file_sot(response_path),
+                "request": file_sot(request_path)
+            }),
+            Some(file_sot(response_path)),
+        ));
+    }
+    Ok(value)
+}
+
+#[derive(Debug)]
+struct OpenAiFunctionCall {
+    call_id: String,
+    name: String,
+    arguments: Value,
+}
+
+fn openai_function_calls(response: &Value) -> Result<Vec<OpenAiFunctionCall>> {
+    let mut calls = Vec::new();
+    if let Some(output) = response.get("output").and_then(Value::as_array) {
+        for item in output {
+            if item.get("type").and_then(Value::as_str) != Some("function_call") {
+                continue;
+            }
+            let call_id = item
+                .get("call_id")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| {
+                    RealityError::new(
+                        "RUST_REALITY_OPENAI_FUNCTION_CALL_ID_MISSING",
+                        "OpenAI function call was missing call_id",
+                        "openai.output[].call_id",
+                        "inspect OpenAI function-call response format",
+                        json!({"item": item}),
+                        None,
+                    )
+                })?
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| {
+                    RealityError::new(
+                        "RUST_REALITY_OPENAI_FUNCTION_NAME_MISSING",
+                        "OpenAI function call was missing name",
+                        "openai.output[].name",
+                        "inspect OpenAI function-call response format",
+                        json!({"item": item}),
+                        None,
+                    )
+                })?
+                .to_string();
+            let arguments = item
+                .get("arguments")
+                .and_then(Value::as_str)
+                .map(|text| serde_json::from_str::<Value>(text))
+                .transpose()
+                .map_err(|err| {
+                    RealityError::new(
+                        "RUST_REALITY_OPENAI_FUNCTION_ARGUMENTS_INVALID",
+                        "OpenAI function call arguments were not valid JSON",
+                        "openai.output[].arguments",
+                        "inspect OpenAI function-call argument formatting",
+                        json!({"item": item, "error": err.to_string()}),
+                        None,
+                    )
+                })?
+                .unwrap_or_else(|| json!({}));
+            calls.push(OpenAiFunctionCall {
+                call_id,
+                name,
+                arguments,
+            });
+        }
+    }
+    Ok(calls)
+}
+
+fn openai_output_text(response: &Value) -> Option<String> {
+    if let Some(text) = response.get("output_text").and_then(Value::as_str) {
+        return Some(text.to_string());
+    }
+    let mut out = String::new();
+    if let Some(items) = response.get("output").and_then(Value::as_array) {
+        for item in items {
+            if item.get("type").and_then(Value::as_str) != Some("message") {
+                continue;
+            }
+            if let Some(content) = item.get("content").and_then(Value::as_array) {
+                for part in content {
+                    if part.get("type").and_then(Value::as_str) == Some("output_text") {
+                        if let Some(text) = part.get("text").and_then(Value::as_str) {
+                            out.push_str(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn openai_optimizer_tool_specs() -> Value {
+    json!([
+        {
+            "type": "function",
+            "name": "read_problem_reality_packet",
+            "description": "Read the current run's problem-reality packet from disk, either compact or full.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "detail": {"type": "string", "enum": ["compact", "full"]}
+                },
+                "required": ["detail"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "read_reality_signal_packet",
+            "description": "Read the current attempt reality-signal packet from disk, either compact or full.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "detail": {"type": "string", "enum": ["compact", "full"]}
+                },
+                "required": ["detail"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "read_validation_result",
+            "description": "Read the current attempt validation artifact from disk.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "read_agent_tool_transcript",
+            "description": "Read the Gemma agent tool transcript for the current attempt.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "detail": {"type": "string", "enum": ["compact", "full"]}
+                },
+                "required": ["detail"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "read_harness_transition",
+            "description": "Read one harness-transition.json artifact referenced by the attempt transcript.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_of_truth": {"type": "string"}
+                },
+                "required": ["source_of_truth"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "read_project_docs",
+            "description": "Read relevant ContextGraph subsystem docs for DynamicJEPA, Learning, Constellation, Teleological, or current reality-loop docs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc": {
+                        "type": "string",
+                        "enum": ["dynamicjepa", "learning", "constellation", "teleological", "reality_loop", "gemma_harness", "harness_transition"]
+                    }
+                },
+                "required": ["doc"],
+                "additionalProperties": false
+            },
+            "strict": true
+        },
+        {
+            "type": "function",
+            "name": "inspect_reality_loop_source",
+            "description": "Run a bounded literal ripgrep over the Rust reality-loop source and reality docs.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            },
+            "strict": true
+        }
+    ])
+}
+
+fn execute_openai_optimizer_tool(
+    name: &str,
+    arguments: &Value,
+    _task_root: &Path,
+    attempt_dir: &Path,
+    problem_reality_path: &Path,
+    reality_signal_packet_path: &Path,
+    validation_path: &Path,
+    agent_tool_transcript_path: Option<&str>,
+) -> Result<Value> {
+    match name {
+        "read_problem_reality_packet" => {
+            let detail = arguments
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("compact");
+            let packet: Value = read_json(problem_reality_path)?;
+            let payload = match detail {
+                "compact" => compact_problem_reality_packet(&packet),
+                "full" => packet,
+                _ => {
+                    return Ok(openai_optimizer_tool_blocked(
+                        name,
+                        "RUST_REALITY_OPENAI_TOOL_DETAIL_INVALID",
+                        "arguments.detail",
+                        "detail must be compact or full",
+                        json!({"detail": detail}),
+                    ));
+                }
+            };
+            Ok(openai_optimizer_tool_ok(name, payload))
+        }
+        "read_reality_signal_packet" => {
+            let detail = arguments
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("compact");
+            let packet: Value = read_json(reality_signal_packet_path)?;
+            let payload = match detail {
+                "compact" => compact_reality_signal_packet(&packet),
+                "full" => packet,
+                _ => {
+                    return Ok(openai_optimizer_tool_blocked(
+                        name,
+                        "RUST_REALITY_OPENAI_TOOL_DETAIL_INVALID",
+                        "arguments.detail",
+                        "detail must be compact or full",
+                        json!({"detail": detail}),
+                    ));
+                }
+            };
+            Ok(openai_optimizer_tool_ok(name, payload))
+        }
+        "read_validation_result" => {
+            let validation: Value = read_json(validation_path)?;
+            Ok(openai_optimizer_tool_ok(
+                name,
+                json!({
+                    "validation": validation,
+                    "sha256": sha256_file(validation_path)?,
+                    "source_of_truth": file_sot(validation_path)
+                }),
+            ))
+        }
+        "read_agent_tool_transcript" => {
+            let detail = arguments
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("compact");
+            let Some(transcript_sot) = agent_tool_transcript_path else {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_TOOL_TRANSCRIPT_MISSING",
+                    "agent_tool_transcript_path",
+                    "current attempt has no Gemma agent tool transcript",
+                    json!({"attempt_dir": file_sot(attempt_dir)}),
+                ));
+            };
+            let path = file_sot_to_path(
+                transcript_sot,
+                "RUST_REALITY_OPENAI_TOOL_TRANSCRIPT_SOT_INVALID",
+                "agent_tool_transcript_path",
+            )?;
+            let transcript: Value = read_json(&path)?;
+            let payload = match detail {
+                "full" => transcript,
+                "compact" => json!({
+                    "record_kind": transcript.get("record_kind"),
+                    "attempt": transcript.get("attempt"),
+                    "model": transcript.get("model"),
+                    "executed_tool_calls": transcript.get("executed_tool_calls"),
+                    "status": transcript.get("status"),
+                    "error_code": transcript.get("error_code"),
+                    "entries": transcript.get("entries").and_then(Value::as_array).map(|entries| {
+                        entries.iter().map(|entry| json!({
+                            "round": entry.get("round"),
+                            "status": entry.get("status"),
+                            "tool_results": entry.get("tool_results")
+                        })).collect::<Vec<_>>()
+                    }),
+                    "source_of_truth": file_sot(&path)
+                }),
+                _ => {
+                    return Ok(openai_optimizer_tool_blocked(
+                        name,
+                        "RUST_REALITY_OPENAI_TOOL_DETAIL_INVALID",
+                        "arguments.detail",
+                        "detail must be compact or full",
+                        json!({"detail": detail}),
+                    ));
+                }
+            };
+            Ok(openai_optimizer_tool_ok(name, payload))
+        }
+        "read_harness_transition" => {
+            let sot = required_openai_tool_str(arguments, "source_of_truth")?;
+            let path = file_sot_to_path(&sot, "RUST_REALITY_OPENAI_TOOL_SOT_INVALID", "arguments.source_of_truth")?;
+            let allowed_root = attempt_dir.canonicalize().map_err(|err| {
+                fs_error(
+                    "RUST_REALITY_OPENAI_TOOL_ATTEMPT_CANONICALIZE_FAILED",
+                    attempt_dir,
+                    err,
+                )
+            })?;
+            let canonical = path.canonicalize().map_err(|err| {
+                fs_error(
+                    "RUST_REALITY_OPENAI_TOOL_TRANSITION_CANONICALIZE_FAILED",
+                    &path,
+                    err,
+                )
+            })?;
+            if !canonical.starts_with(&allowed_root) {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_TOOL_TRANSITION_OUT_OF_SCOPE",
+                    "arguments.source_of_truth",
+                    "harness transition source must live under the current attempt directory",
+                    json!({"source_of_truth": sot, "attempt_dir": file_sot(attempt_dir)}),
+                ));
+            }
+            let transition: Value = read_json(&canonical)?;
+            if transition.get("record_kind").and_then(Value::as_str)
+                != Some("contextgraph_harness_transition")
+            {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_TOOL_TRANSITION_KIND_INVALID",
+                    "harness_transition.record_kind",
+                    "requested artifact is not a harness transition record",
+                    json!({"source_of_truth": file_sot(&canonical), "record_kind": transition.get("record_kind")}),
+                ));
+            }
+            Ok(openai_optimizer_tool_ok(name, transition))
+        }
+        "read_project_docs" => {
+            let doc = required_openai_tool_str(arguments, "doc")?;
+            let path = match doc.as_str() {
+                "dynamicjepa" => "docs2/contextgraphspecs/21_dynamicjepa_subsystem.md",
+                "learning" => "docs2/contextgraphspecs/20_learning_subsystem.md",
+                "constellation" => "docs2/contextgraphspecs/17_constellation_subsystem.md",
+                "teleological" => "docs2/contextgraphspecs/13_teleological_subsystem.md",
+                "reality_loop" => "docs/reality/17_problem_and_signal_reality_packets.md",
+                "gemma_harness" => "docs/reality/18_gemma_coding_agent_harness.md",
+                "harness_transition" => "docs/reality/19_harness_transition_reality.md",
+                _ => {
+                    return Ok(openai_optimizer_tool_blocked(
+                        name,
+                        "RUST_REALITY_OPENAI_TOOL_DOC_UNKNOWN",
+                        "arguments.doc",
+                        "doc must be one of the declared optimizer docs",
+                        json!({"doc": doc}),
+                    ));
+                }
+            };
+            let full_path = resolve_path(Path::new(path))?;
+            let text = fs::read_to_string(&full_path)
+                .map_err(|err| fs_error("RUST_REALITY_OPENAI_TOOL_DOC_READ_FAILED", &full_path, err))?;
+            Ok(openai_optimizer_tool_ok(
+                name,
+                json!({
+                    "doc": doc,
+                    "path": path,
+                    "text": truncate_chars(&text, 24000),
+                    "sha256": sha256_file(&full_path)?,
+                    "source_of_truth": file_sot(&full_path)
+                }),
+            ))
+        }
+        "inspect_reality_loop_source" => {
+            let query = required_openai_tool_str(arguments, "query")?;
+            if query.trim().is_empty() {
+                return Ok(openai_optimizer_tool_blocked(
+                    name,
+                    "RUST_REALITY_OPENAI_TOOL_QUERY_EMPTY",
+                    "arguments.query",
+                    "query must be non-empty",
+                    json!({}),
+                ));
+            }
+            let project_root = std::env::current_dir().map_err(|err| {
+                RealityError::new(
+                    "RUST_REALITY_OPENAI_TOOL_CWD_FAILED",
+                    "failed to read current project directory for source inspection",
+                    "process.cwd",
+                    "run the reality loop from the ContextGraph repository root",
+                    json!({"error": err.to_string()}),
+                    None,
+                )
+            })?;
+            let result = run_cmd(
+                &vec![
+                    "rg".to_string(),
+                    "-n".to_string(),
+                    "--fixed-strings".to_string(),
+                    "--".to_string(),
+                    query.clone(),
+                    "crates/context-graph-cli/src/bin/reality-loop.rs".to_string(),
+                    "docs/reality".to_string(),
+                ],
+                &project_root,
+                120,
+            )?;
+            Ok(openai_optimizer_tool_ok(
+                name,
+                json!({
+                    "query": query,
+                    "exit_code": result.exit_code,
+                    "stdout": truncate_chars(&result.stdout, 24000),
+                    "stderr": truncate_chars(&result.stderr, 4000),
+                    "source_of_truth": format!("rg:{}#{}", path_str(&project_root), query)
+                }),
+            ))
+        }
+        _ => Ok(openai_optimizer_tool_blocked(
+            name,
+            "RUST_REALITY_OPENAI_TOOL_UNKNOWN",
+            "openai.function_call.name",
+            "OpenAI optimizer requested a tool that is not registered in the outer optimizer gateway",
+            json!({"requested_tool": name}),
+        )),
+    }
+}
+
+fn openai_optimizer_tool_ok(name: &str, payload: Value) -> Value {
+    json!({
+        "record_kind": "contextgraph_openai_optimizer_tool_result",
+        "status": "ok",
+        "tool_name": name,
+        "payload": payload
+    })
+}
+
+fn openai_optimizer_tool_blocked(
+    name: &str,
+    error_code: &str,
+    field_path: &str,
+    message: &str,
+    details: Value,
+) -> Value {
+    json!({
+        "record_kind": "contextgraph_openai_optimizer_tool_result",
+        "status": "blocked",
+        "tool_name": name,
+        "error_code": error_code,
+        "field_path": field_path,
+        "message": message,
+        "details": details
+    })
+}
+
+fn required_openai_tool_str(arguments: &Value, field: &str) -> Result<String> {
+    arguments
+        .get(field)
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_OPENAI_TOOL_ARGUMENT_MISSING",
+                "required OpenAI optimizer tool argument is missing",
+                format!("arguments.{field}"),
+                "inspect OpenAI optimizer tool-call arguments",
+                json!({"field": field, "arguments": arguments}),
+                None,
+            )
+        })
+}
+
+fn openai_optimizer_json_schema() -> Value {
+    json!({
+        "type": "json_schema",
+        "name": "contextgraph_loop_optimizer_recommendation",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "record_kind": {"type": "string"},
+                "schema_version": {"type": "integer"},
+                "status": {"type": "string", "enum": ["ok"]},
+                "optimizer_scope": {"type": "string"},
+                "summary": {"type": "string"},
+                "observed_loop_failures": {"type": "array", "items": {"type": "string"}},
+                "recommended_next_prompt_directives": {"type": "array", "items": {"type": "string"}},
+                "recommended_harness_changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "change_id": {"type": "string"},
+                            "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "target": {"type": "string"},
+                            "rationale": {"type": "string"},
+                            "expected_reality_delta": {"type": "string"},
+                            "required_fsv": {"type": "string"}
+                        },
+                        "required": ["change_id", "priority", "target", "rationale", "expected_reality_delta", "required_fsv"],
+                        "additionalProperties": false
+                    }
+                },
+                "recommended_reward_signal_changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "signal": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "source_of_truth_check": {"type": "string"}
+                        },
+                        "required": ["signal", "reason", "source_of_truth_check"],
+                        "additionalProperties": false
+                    }
+                },
+                "gemma_capability_gaps": {"type": "array", "items": {"type": "string"}},
+                "measurement_blindspots": {"type": "array", "items": {"type": "string"}},
+                "source_of_truth_checks": {"type": "array", "items": {"type": "string"}},
+                "do_not_change": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": [
+                "record_kind",
+                "schema_version",
+                "status",
+                "optimizer_scope",
+                "summary",
+                "observed_loop_failures",
+                "recommended_next_prompt_directives",
+                "recommended_harness_changes",
+                "recommended_reward_signal_changes",
+                "gemma_capability_gaps",
+                "measurement_blindspots",
+                "source_of_truth_checks",
+                "do_not_change"
+            ],
+            "additionalProperties": false
+        },
+        "strict": true
+    })
+}
+
+fn validate_openai_optimizer_recommendation(value: &Value, response_path: &Path) -> Result<()> {
+    if value.get("record_kind").and_then(Value::as_str)
+        != Some("contextgraph_loop_optimizer_recommendation")
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_OPENAI_OPTIMIZER_RECORD_KIND_INVALID",
+            "OpenAI loop optimizer recommendation had the wrong record_kind",
+            "openai_optimizer.record_kind",
+            "inspect final structured output prompt/schema",
+            json!({"record_kind": value.get("record_kind")}),
+            Some(file_sot(response_path)),
+        ));
+    }
+    for field in [
+        "observed_loop_failures",
+        "recommended_next_prompt_directives",
+        "recommended_harness_changes",
+        "recommended_reward_signal_changes",
+        "gemma_capability_gaps",
+        "measurement_blindspots",
+        "source_of_truth_checks",
+        "do_not_change",
+    ] {
+        if !value.get(field).is_some_and(Value::is_array) {
+            return Err(RealityError::new(
+                "RUST_REALITY_OPENAI_OPTIMIZER_FIELD_INVALID",
+                "OpenAI loop optimizer recommendation was missing a required array field",
+                format!("openai_optimizer.{field}"),
+                "inspect final structured output prompt/schema",
+                json!({"field": field, "recommendation": value}),
+                Some(file_sot(response_path)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn compact_openai_loop_optimizer(value: &Value) -> Value {
+    json!({
+        "record_kind": "contextgraph_openai_loop_optimizer_compact",
+        "status": value.get("status"),
+        "optimizer": value.get("optimizer"),
+        "recommendation": {
+            "summary": value.pointer("/recommendation/summary"),
+            "observed_loop_failures": value.pointer("/recommendation/observed_loop_failures"),
+            "recommended_next_prompt_directives": value.pointer("/recommendation/recommended_next_prompt_directives"),
+            "recommended_harness_changes": value.pointer("/recommendation/recommended_harness_changes"),
+            "recommended_reward_signal_changes": value.pointer("/recommendation/recommended_reward_signal_changes"),
+            "measurement_blindspots": value.pointer("/recommendation/measurement_blindspots"),
+            "source_of_truth_checks": value.pointer("/recommendation/source_of_truth_checks")
+        },
+        "source_of_truth": value.get("source_of_truth")
+    })
 }
 
 fn agent_tool_names() -> Vec<&'static str> {
@@ -2245,11 +3302,316 @@ fn execute_agent_tool_call(
     }))
 }
 
+fn build_harness_transition(
+    ctx: &AgentToolContext<'_>,
+    attempt: u64,
+    round: u64,
+    index: usize,
+    executed_tool_calls_before: u64,
+    submitted_patch_after_tool: bool,
+    tool_call_id: &str,
+    tool_name: &str,
+    tool_request_protocol: &str,
+    arguments: &Value,
+    requested_path: &Path,
+    response_path: &Path,
+    result_path: &Path,
+    result_readback: &Value,
+    transition_path: &Path,
+) -> Result<Value> {
+    let repo_head = run_required(
+        &["git", "rev-parse", "HEAD"],
+        ctx.repo_dir,
+        ctx.args.git_timeout,
+        "RUST_REALITY_HARNESS_TRANSITION_HEAD_READ_FAILED",
+        "harness_transition.before_state.repo_head",
+    )?
+    .stdout
+    .trim()
+    .to_string();
+    let repo_status = run_required(
+        &["git", "status", "--porcelain"],
+        ctx.repo_dir,
+        ctx.args.git_timeout,
+        "RUST_REALITY_HARNESS_TRANSITION_STATUS_READ_FAILED",
+        "harness_transition.before_state.repo_status",
+    )?
+    .stdout;
+    let result_status = result_readback
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("failed");
+    let error_code = result_readback
+        .get("error_code")
+        .or_else(|| result_readback.pointer("/result/error_code"))
+        .and_then(Value::as_str);
+    let mut observed_paths = BTreeSet::new();
+    collect_tool_result_paths(result_readback, &mut observed_paths);
+    let patch_sha256 = result_readback
+        .pointer("/result/patch_sha256")
+        .or_else(|| result_readback.get("patch_sha256"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let candidate_patch_sot = result_readback
+        .pointer("/result/compilation/source_of_truth/candidate_patch")
+        .or_else(|| result_readback.pointer("/compilation/source_of_truth/candidate_patch"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let applied_edits = result_readback
+        .pointer("/result/compilation/applied_edits")
+        .or_else(|| result_readback.pointer("/compilation/applied_edits"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let changed_files = applied_edits
+        .iter()
+        .filter_map(|edit| edit.get("path").and_then(Value::as_str))
+        .map(ToOwned::to_owned)
+        .collect::<BTreeSet<_>>();
+    let outcome = harness_transition_outcome(
+        tool_name,
+        result_status,
+        error_code,
+        submitted_patch_after_tool,
+        !observed_paths.is_empty(),
+    );
+    let transition_basis = json!({
+        "attempt": attempt,
+        "round": round,
+        "index": index,
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "arguments_sha256": sha256_text(&serde_json::to_string(arguments).unwrap()),
+        "result_sha256": sha256_file(result_path)?,
+        "repo_head": repo_head,
+        "result_status": result_status,
+        "error_code": error_code
+    });
+    let transition_id = sha256_text(&serde_json::to_string(&transition_basis).unwrap());
+    let action_id = sha256_text(&format!(
+        "{}:{}",
+        tool_name,
+        serde_json::to_string(arguments).unwrap()
+    ));
+    let before_state_id = sha256_text(&format!(
+        "{}:{}:{}:{}",
+        ctx.task.instance_id, attempt, executed_tool_calls_before, repo_head
+    ));
+    let outcome_id = sha256_text(&format!(
+        "{}:{}:{}",
+        result_status,
+        error_code.unwrap_or("none"),
+        sha256_file(result_path)?
+    ));
+    Ok(json!({
+        "record_kind": "contextgraph_harness_transition",
+        "schema_version": 1,
+        "transition_id": transition_id,
+        "attempt": attempt,
+        "round": round,
+        "index": index,
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "tool_request_protocol": tool_request_protocol,
+        "before_state": {
+            "state_id": before_state_id,
+            "repo_head": repo_head,
+            "repo_status_porcelain": repo_status,
+            "executed_tool_calls_before": executed_tool_calls_before,
+            "submitted_patch_after_tool": submitted_patch_after_tool,
+            "source_of_truth": {
+                "repo_head": format!("git:{}#HEAD", path_str(ctx.repo_dir)),
+                "repo_status": format!("git:{}#status", path_str(ctx.repo_dir)),
+                "ollama_response": file_sot(response_path)
+            }
+        },
+        "action": {
+            "action_id": action_id,
+            "arguments_sha256": sha256_text(&serde_json::to_string(arguments).unwrap()),
+            "requested": file_sot(requested_path),
+            "requested_sha256": sha256_file(requested_path)?,
+            "protocol": tool_request_protocol
+        },
+        "observation": {
+            "outcome_id": outcome_id,
+            "result": file_sot(result_path),
+            "result_sha256": sha256_file(result_path)?,
+            "status": result_status,
+            "error_code": error_code,
+            "observed_paths": observed_paths.into_iter().collect::<Vec<_>>(),
+            "changed_files": changed_files.into_iter().collect::<Vec<_>>(),
+            "candidate_patch": candidate_patch_sot,
+            "patch_sha256": patch_sha256,
+            "source_of_truth": file_sot(result_path)
+        },
+        "outcome": outcome,
+        "dynamicjepa_mapping": {
+            "domain_pack_id": "contextgraph_swe_reality_loop_v1",
+            "state_id": before_state_id,
+            "action_id": action_id,
+            "outcome_id": outcome_id,
+            "transition_id": transition_id,
+            "latent_panel_hint": {
+                "tool_family": harness_tool_family(tool_name),
+                "repo_head": repo_head,
+                "attempt": attempt,
+                "round": round
+            },
+            "surprise_kind": if result_status == "ok" { Value::Null } else { json!("UnexpectedOutcome") }
+        },
+        "learning_signal": harness_learning_signal(tool_name, result_status, error_code, submitted_patch_after_tool, executed_tool_calls_before),
+        "constellation_signal": {
+            "selector_tags": harness_constellation_tags(tool_name, result_status, error_code),
+            "tool_family": harness_tool_family(tool_name),
+            "can_cluster_as_success_pattern": result_status == "ok",
+            "can_cluster_as_failure_pattern": result_status != "ok"
+        },
+        "blackboxfix_boundary": {
+            "requested": file_sot(requested_path),
+            "result": file_sot(result_path),
+            "transition": file_sot(transition_path)
+        },
+        "source_of_truth": file_sot(transition_path)
+    }))
+}
+
+fn harness_transition_outcome(
+    tool_name: &str,
+    result_status: &str,
+    error_code: Option<&str>,
+    submitted_patch_after_tool: bool,
+    observed_any_path: bool,
+) -> Value {
+    let (label, utility_delta, correction_required, reuse_observed) = if result_status != "ok" {
+        ("Harmful", -0.35, true, false)
+    } else if matches!(
+        tool_name,
+        "apply_line_window_edit" | "apply_structured_edit"
+    ) {
+        if submitted_patch_after_tool {
+            ("Useful", 0.7, false, true)
+        } else {
+            ("Harmful", -0.4, true, false)
+        }
+    } else if observed_any_path
+        || matches!(
+            tool_name,
+            "read_problem_reality"
+                | "read_official_failure_reality"
+                | "compare_attempts"
+                | "retrieve_similar_verified_episodes"
+                | "synthesize_helper_tool"
+        )
+    {
+        ("Useful", 0.25, false, true)
+    } else {
+        ("Neutral", 0.05, false, false)
+    };
+    json!({
+        "label": label,
+        "utility_delta": utility_delta,
+        "correction_required": correction_required,
+        "reuse_observed": reuse_observed,
+        "error_code": error_code
+    })
+}
+
+fn harness_learning_signal(
+    tool_name: &str,
+    result_status: &str,
+    error_code: Option<&str>,
+    submitted_patch_after_tool: bool,
+    executed_tool_calls_before: u64,
+) -> Value {
+    let success = result_status == "ok";
+    let edit_tool = matches!(
+        tool_name,
+        "apply_line_window_edit" | "apply_structured_edit"
+    );
+    let exploration = matches!(
+        tool_name,
+        "read_problem_reality"
+            | "read_official_failure_reality"
+            | "list_files"
+            | "inspect_symbol"
+            | "search_repo"
+            | "open_file_window"
+            | "compare_attempts"
+            | "retrieve_similar_verified_episodes"
+            | "synthesize_helper_tool"
+    );
+    let delta_e_scalar = if edit_tool && submitted_patch_after_tool {
+        0.7
+    } else if success && exploration {
+        0.25
+    } else if success {
+        0.1
+    } else {
+        -0.35
+    };
+    let surprise_score = if success { 0.0 } else { 1.0 };
+    let coherence_delta = if success { 0.15 } else { -0.25 };
+    let consolidation_readiness = ((executed_tool_calls_before + 1) as f64 / 8.0).min(1.0);
+    let transfer_score = if tool_name == "retrieve_similar_verified_episodes" && success {
+        0.5
+    } else {
+        0.0
+    };
+    json!({
+        "delta_e_scalar": delta_e_scalar,
+        "surprise_score": surprise_score,
+        "coherence_delta": coherence_delta,
+        "consolidation_readiness": consolidation_readiness,
+        "transfer_score": transfer_score,
+        "productive_surprise": !success && error_code.is_some(),
+        "signal_families": {
+            "delta_e": delta_e_scalar,
+            "surprise": surprise_score,
+            "coherence": coherence_delta,
+            "consolidation": consolidation_readiness,
+            "transfer": transfer_score
+        }
+    })
+}
+
+fn harness_tool_family(tool_name: &str) -> &'static str {
+    match tool_name {
+        "read_problem_reality" | "read_official_failure_reality" | "compare_attempts" => {
+            "reality_readback"
+        }
+        "list_files" | "inspect_symbol" | "search_repo" | "open_file_window" => {
+            "repository_navigation"
+        }
+        "apply_line_window_edit" | "apply_structured_edit" => "workspace_mutation",
+        "run_targeted_test" | "run_official_swe_eval" => "verification",
+        "retrieve_similar_verified_episodes" => "memory_retrieval",
+        "synthesize_helper_tool" => "deterministic_analysis",
+        _ => "unknown_tool_family",
+    }
+}
+
+fn harness_constellation_tags(
+    tool_name: &str,
+    result_status: &str,
+    error_code: Option<&str>,
+) -> Vec<String> {
+    let mut tags = vec![
+        format!("tool_family:{}", harness_tool_family(tool_name)),
+        format!("tool:{tool_name}"),
+        format!("status:{result_status}"),
+    ];
+    if let Some(error_code) = error_code {
+        tags.push(format!("error_code:{error_code}"));
+    }
+    tags
+}
+
 fn record_agent_tool_boundary(
     ctx: &AgentToolContext<'_>,
     tool_name: &str,
     requested_path: &Path,
     result_path: &Path,
+    transition_path: &Path,
     status: &str,
     tool_dir: &Path,
 ) -> Result<Value> {
@@ -2298,6 +3660,9 @@ fn record_agent_tool_boundary(
     let rel_result = result_path
         .strip_prefix(ctx.task_root)
         .unwrap_or(result_path);
+    let rel_transition = transition_path
+        .strip_prefix(ctx.task_root)
+        .unwrap_or(transition_path);
     let verifier_spec = json!({
         "verifier_id": "cmd_exit_zero_v1",
         "run_id": ctx.run_id,
@@ -2307,14 +3672,16 @@ fn record_agent_tool_boundary(
             "command": [
                 "bash",
                 "-c",
-                "test -s \"$1\" && test -s \"$2\" && grep -q '\"record_kind\": \"contextgraph_agent_tool_result\"' \"$2\"",
+                "test -s \"$1\" && test -s \"$2\" && test -s \"$3\" && grep -q '\"record_kind\": \"contextgraph_agent_tool_result\"' \"$2\" && grep -q '\"record_kind\": \"contextgraph_harness_transition\"' \"$3\"",
                 "verify-agent-tool-artifacts",
                 path_str(rel_requested),
-                path_str(rel_result)
+                path_str(rel_result),
+                path_str(rel_transition)
             ],
             "artifacts": [
                 path_str(rel_requested),
-                path_str(rel_result)
+                path_str(rel_result),
+                path_str(rel_transition)
             ]
         }
     });
@@ -4772,6 +6139,7 @@ fn build_reality_signal_packet(
     };
     let changed_files = changed_files_from_validation(validation);
     let tool_grounding = extract_tool_grounding(agent_tool_transcript_path, &changed_files)?;
+    let harness_reality = extract_harness_transition_reality(agent_tool_transcript_path)?;
     let tool_reward_signals = derive_tool_reward_signals(
         &tool_grounding,
         patch.is_some(),
@@ -4835,6 +6203,7 @@ fn build_reality_signal_packet(
             }
         },
         "tool_grounding": tool_grounding,
+        "harness_reality": harness_reality,
         "tool_reward_signals": tool_reward_signals,
         "score_reality": {
             "score": score,
@@ -4856,6 +6225,7 @@ fn build_reality_signal_packet(
                 "official_test_progress",
                 "patch_signals.changed_files",
                 "tool_grounding.changed_files_seen_by_tools",
+                "harness_reality.transition_reward_signals",
                 "tool_reward_signals",
                 "score_reality.reward"
             ],
@@ -4887,6 +6257,7 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
             "patch_stats": packet.pointer("/patch_signals/patch_stats")
         },
         "tool_grounding": packet.get("tool_grounding"),
+        "harness_reality": packet.get("harness_reality"),
         "tool_reward_signals": packet.get("tool_reward_signals"),
         "score_reality": {
             "reward": packet.pointer("/score_reality/reward/reward"),
@@ -5191,6 +6562,167 @@ fn extract_tool_grounding(
     }))
 }
 
+fn extract_harness_transition_reality(transcript_path: Option<&str>) -> Result<Value> {
+    let Some(path) = transcript_path else {
+        return Ok(json!({
+            "status": "missing",
+            "transitions_total": 0,
+            "source_of_truth": null
+        }));
+    };
+    let transcript_path = PathBuf::from(path.strip_prefix("file:").unwrap_or(path));
+    let transcript: Value = read_json(&transcript_path)?;
+    let mut transitions_total = 0_u64;
+    let mut correction_required_total = 0_u64;
+    let mut utility_delta_sum = 0.0_f64;
+    let mut by_tool: BTreeMap<String, u64> = BTreeMap::new();
+    let mut by_outcome: BTreeMap<String, u64> = BTreeMap::new();
+    let mut by_tool_family: BTreeMap<String, u64> = BTreeMap::new();
+    let mut transition_refs = Vec::new();
+    if let Some(entries) = transcript.get("entries").and_then(Value::as_array) {
+        for entry in entries {
+            if let Some(results) = entry.get("tool_results").and_then(Value::as_array) {
+                for result in results {
+                    let transition_sot =
+                        result
+                            .get("harness_transition")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| {
+                                RealityError::new(
+                                    "RUST_REALITY_HARNESS_TRANSITION_REF_MISSING",
+                                    "tool transcript entry was missing a harness transition source of truth",
+                                    "agent_tool_transcript.entries[].tool_results[].harness_transition",
+                                    "rerun with current Rust reality-loop so every tool call emits a transition artifact",
+                                    json!({"tool_result": result, "transcript": file_sot(&transcript_path)}),
+                                    Some(file_sot(&transcript_path)),
+                                )
+                            })?;
+                    let transition_path = PathBuf::from(
+                        transition_sot
+                            .strip_prefix("file:")
+                            .unwrap_or(transition_sot),
+                    );
+                    let transition: Value = read_json(&transition_path)?;
+                    if transition.get("record_kind").and_then(Value::as_str)
+                        != Some("contextgraph_harness_transition")
+                    {
+                        return Err(RealityError::new(
+                            "RUST_REALITY_HARNESS_TRANSITION_KIND_INVALID",
+                            "harness transition artifact had the wrong record_kind",
+                            "harness_transition.record_kind",
+                            "inspect transition artifact provenance and rerun the attempt",
+                            json!({
+                                "transition": file_sot(&transition_path),
+                                "record_kind": transition.get("record_kind")
+                            }),
+                            Some(file_sot(&transition_path)),
+                        ));
+                    }
+                    transitions_total += 1;
+                    let tool = transition
+                        .get("tool_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                        .to_string();
+                    *by_tool.entry(tool).or_insert(0) += 1;
+                    let outcome = transition
+                        .pointer("/outcome/label")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    *by_outcome.entry(outcome).or_insert(0) += 1;
+                    let tool_family = transition
+                        .pointer("/constellation_signal/tool_family")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown_tool_family")
+                        .to_string();
+                    *by_tool_family.entry(tool_family).or_insert(0) += 1;
+                    utility_delta_sum += transition
+                        .pointer("/outcome/utility_delta")
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.0);
+                    if transition
+                        .pointer("/outcome/correction_required")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        correction_required_total += 1;
+                    }
+                    transition_refs.push(json!({
+                        "transition_id": transition.get("transition_id"),
+                        "tool_name": transition.get("tool_name"),
+                        "outcome": transition.get("outcome"),
+                        "source_of_truth": file_sot(&transition_path),
+                        "sha256": sha256_file(&transition_path)?
+                    }));
+                }
+            }
+        }
+    }
+    let executed = transcript
+        .get("executed_tool_calls")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if transitions_total != executed {
+        return Err(RealityError::new(
+            "RUST_REALITY_HARNESS_TRANSITION_COUNT_MISMATCH",
+            "harness transition count did not equal executed tool-call count",
+            "agent_tool_transcript.executed_tool_calls",
+            "inspect missing transition artifacts before using this attempt as training reality",
+            json!({
+                "executed_tool_calls": executed,
+                "transitions_total": transitions_total,
+                "transcript": file_sot(&transcript_path)
+            }),
+            Some(file_sot(&transcript_path)),
+        ));
+    }
+    let useful_transition_count = by_outcome.get("Useful").copied().unwrap_or(0);
+    let harmful_transition_count = by_outcome.get("Harmful").copied().unwrap_or(0);
+    let neutral_transition_count = by_outcome.get("Neutral").copied().unwrap_or(0);
+    let transition_coverage = if executed == 0 {
+        1.0
+    } else {
+        transitions_total as f64 / executed as f64
+    };
+    let tool_family_selectors = by_tool_family.clone();
+    Ok(json!({
+        "record_kind": "contextgraph_harness_reality_summary",
+        "status": transcript.get("status"),
+        "transitions_total": transitions_total,
+        "coverage": transition_coverage,
+        "by_tool": by_tool,
+        "by_outcome": by_outcome,
+        "by_tool_family": by_tool_family,
+        "transition_reward_signals": {
+            "utility_delta_sum": utility_delta_sum,
+            "correction_required_total": correction_required_total,
+            "useful_transition_count": useful_transition_count,
+            "harmful_transition_count": harmful_transition_count,
+            "neutral_transition_count": neutral_transition_count,
+            "transition_coverage": transition_coverage
+        },
+        "dynamicjepa_projection": {
+            "state_action_outcome_rows": transitions_total,
+            "surprise_candidates": harmful_transition_count,
+            "planning_feedback_rows": transitions_total,
+            "source": "contextgraph_harness_transition.dynamicjepa_mapping"
+        },
+        "learning_projection": {
+            "learning_event_candidates": transitions_total,
+            "correction_required_total": correction_required_total,
+            "source": "contextgraph_harness_transition.learning_signal"
+        },
+        "constellation_projection": {
+            "candidate_cluster_rows": transitions_total,
+            "selectors": tool_family_selectors,
+            "source": "contextgraph_harness_transition.constellation_signal"
+        },
+        "transitions": transition_refs,
+        "source_of_truth": file_sot(&transcript_path)
+    }))
+}
+
 fn collect_tool_result_paths(value: &Value, out: &mut BTreeSet<String>) {
     if let Some(path) = value
         .pointer("/result/payload/path")
@@ -5353,6 +6885,11 @@ fn compile_prompt(
         .last()
         .map(|item| serde_json::to_string_pretty(&item.reality_signal_compact).unwrap())
         .unwrap_or_else(|| "null".to_string());
+    let previous_openai_optimizer = attempts
+        .last()
+        .and_then(|item| item.openai_optimizer_recommendation_compact.as_ref())
+        .map(|item| serde_json::to_string_pretty(item).unwrap())
+        .unwrap_or_else(|| "null".to_string());
     let problem_reality =
         serde_json::to_string_pretty(&compact_problem_reality_packet(problem_reality)).unwrap();
     format!(
@@ -5364,6 +6901,7 @@ Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
 Problem reality packet:\n{}\n\n\
 Previous attempt summary:\n{}\n\n\
 Previous reality signal packet for reinjection:\n{}\n\n\
+Outer OpenAI loop-optimizer guidance for this attempt:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
 - Final candidate submission is tool-mediated. Call apply_structured_edit; do not return a hand-written JSON final answer or prose.\n\
@@ -5381,6 +6919,7 @@ Tool phase instruction: call governed ContextGraph tools to inspect real source,
         problem_reality,
         previous_attempt,
         previous_reality_signal,
+        previous_openai_optimizer,
         serde_json::to_string(previous_patch_hashes).unwrap(),
         serde_json::to_string_pretty(repo_context).unwrap()
     )
@@ -5404,8 +6943,10 @@ fn write_summary(
         "schema": "contextgraph_rust_reality_loop_summary_v1",
         "model": args.model,
         "task": task,
+        "smoke_test": args.smoke_test,
         "run_until_resolved": args.run_until_resolved,
         "official_eval_each_attempt": args.official_eval_each_attempt,
+        "openai_optimizer_each_attempt": args.openai_optimizer_each_attempt,
         "attempts_total": attempts.len(),
         "attempts": attempts,
         "gpu_budget": {
@@ -5770,6 +7311,84 @@ fn resolve_path(path: &Path) -> Result<PathBuf> {
             .join(path)
     };
     Ok(resolved)
+}
+
+fn load_required_secret(env_name: &str) -> Result<(String, Value)> {
+    if !env_name
+        .chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+    {
+        return Err(RealityError::new(
+            "RUST_REALITY_SECRET_ENV_NAME_INVALID",
+            "secret environment variable name is invalid",
+            "openai_api_key_env",
+            "use an uppercase environment variable name such as OPENAI_API_KEY",
+            json!({"env_name": env_name}),
+            None,
+        ));
+    }
+    if let Ok(value) = std::env::var(env_name) {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok((
+                trimmed.clone(),
+                json!({
+                    "env_name": env_name,
+                    "loaded_from": "process_env",
+                    "sha256": sha256_text(&trimmed),
+                    "redacted": true
+                }),
+            ));
+        }
+    }
+    let env_path = resolve_path(Path::new(".env"))?;
+    require_file(
+        &env_path,
+        ".env",
+        "RUST_REALITY_SECRET_ENV_FILE_MISSING",
+    )?;
+    let text = fs::read_to_string(&env_path)
+        .map_err(|err| fs_error("RUST_REALITY_SECRET_ENV_FILE_READ_FAILED", &env_path, err))?;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if key.trim() == env_name {
+            let secret = value.trim().trim_matches('"').trim_matches('\'').to_string();
+            if secret.is_empty() {
+                return Err(RealityError::new(
+                    "RUST_REALITY_SECRET_EMPTY",
+                    "secret value in .env was empty",
+                    format!(".env.{env_name}"),
+                    "set a non-empty API key value in .env",
+                    json!({"env_name": env_name, "source_of_truth": file_sot(&env_path)}),
+                    Some(file_sot(&env_path)),
+                ));
+            }
+            return Ok((
+                secret.clone(),
+                json!({
+                    "env_name": env_name,
+                    "loaded_from": ".env",
+                    "sha256": sha256_text(&secret),
+                    "redacted": true,
+                    "source_of_truth": file_sot(&env_path)
+                }),
+            ));
+        }
+    }
+    Err(RealityError::new(
+        "RUST_REALITY_SECRET_MISSING",
+        "required API key was not found in process environment or .env",
+        env_name,
+        "add the API key to .env or export it in the process environment",
+        json!({"env_name": env_name, "env_file": file_sot(&env_path)}),
+        Some(file_sot(&env_path)),
+    ))
 }
 
 fn sha256_text(text: &str) -> String {
