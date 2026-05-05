@@ -11,6 +11,16 @@
 - The engine binary still works exactly as before for Gemma + SWE-bench paths; only the outer optimizer is gone.
 - No commit has been made yet (atomicity rule — single commit at end of cutover).
 
+## Completion Record
+
+- Completed on 2026-05-05 on `ccreality-cutover`.
+- `reality-loop.rs` line count is 7,145.
+- Canonical verification source of truth: `/tmp/phase-01-verify.log`.
+- Progress log source of truth: `/tmp/ccreality-phase-progress.log`.
+- Manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.
+- Manual FSV happy path edited a real temp git repo file from `alpha\nbeta\n` to `alpha\ngamma\n`, then read back the diff artifact and file SHA.
+- Manual FSV edge cases verified: empty edit list fails with `RUST_REALITY_GOVERNED_PROJECT_EDIT_EMPTY`; traversal path fails with `RUST_REALITY_GOVERNED_PROJECT_PATH_INVALID`; shell-metachar command fails with `RUST_REALITY_GOVERNED_COMMAND_DENIED` and does not create the marker file.
+
 ## What's now MISSING from the system
 
 - The outer optimizer is gone but no replacement is wired up yet. **Running a real attempt will succeed but no one will react to its failure.** This is intentional — Phase 12 wires the new optimizer (Claude Code via MCP) into a working state.

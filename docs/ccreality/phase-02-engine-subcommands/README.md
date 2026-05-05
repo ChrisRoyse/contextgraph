@@ -1,8 +1,8 @@
 # Phase 2 — Engine Subcommands
 
 **Estimated duration:** 30–45 minutes.
-**Status:** pending.
-**Depends on:** Phase 1.
+**Status:** next.
+**Depends on:** Phase 1 (complete).
 **Unblocks:** Phase 5 (which creates config files referenced by the subcommands).
 
 ## What this phase does
@@ -52,7 +52,7 @@ All three must succeed.
 - [04_VERIFICATION.md](04_VERIFICATION.md) — verification block.
 - [06_HANDOFF.md](06_HANDOFF.md) — what's true after.
 
-(No PRECONDITIONS doc; the only precondition is "Phase 1 done" which is implicit. No RECOVERY doc; failures are simple cargo errors with obvious fixes.)
+(No PRECONDITIONS doc; the precondition is the completed Phase 1 state recorded in `../phase-01-excision/06_HANDOFF.md`. No RECOVERY doc; failures are simple cargo errors with obvious fixes.)
 
 ## Reference docs
 

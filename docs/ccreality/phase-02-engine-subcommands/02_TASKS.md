@@ -107,7 +107,7 @@ async fn main() {
 }
 ```
 
-Define `dispatch_attempt`, `dispatch_smoke`, `dispatch_replay`, `dispatch_verify` as small wrappers — `dispatch_attempt` calls the existing `run()` (post-Phase-1) with the AttemptArgs. The other three call new functions stubbed in Task 2.5.
+Define `dispatch_attempt`, `dispatch_smoke`, `dispatch_replay`, `dispatch_verify` as small wrappers. Each wrapper must compute the command's failure-artifact runtime root from explicit command arguments before invoking the command logic. If a runtime root cannot be identified, return a structured error and exit 1; do not write failure artifacts to any alternate location. `dispatch_attempt` calls the existing `run()` (post-Phase-1) with the AttemptArgs. The other three call the new file-backed functions implemented in Task 2.5.
 
 Build:
 ```bash
@@ -122,7 +122,7 @@ Add three new top-level async functions (full bodies in [03_FILE_SPECS.md](03_FI
 - `run_replay(args: ReplayArgs) -> Result<Value>` — reads the named `attempt-summary.json`, calls `build_reality_signal_packet` (existing function) with synthetic args sufficient to re-emit the packet, writes back to disk. Used to test reality-signal builder changes against historical attempts.
 - `run_verify(args: VerifyArgs) -> Result<Value>` — walks every JSON file under `<runtime>/<task>/attempt-N/`, recomputes SHA-256 of each, compares against any sha recorded in adjacent `*.sha256` files (or just reports current SHAs).
 
-For Phase 2, `run_replay` and `run_verify` can be minimal — produce a JSON output and exit 0. The smoke implementation needs to be functional because Phase 9 depends on it.
+For Phase 2, `run_replay` and `run_verify` are intentionally narrow but must be real file-backed implementations: read their source-of-truth files, write or enumerate real artifacts, and error with structured diagnostics when required data is missing. The smoke implementation needs to be functional because Phase 9 depends on it.
 
 ## Task 2.6 — Add active-root writer
 

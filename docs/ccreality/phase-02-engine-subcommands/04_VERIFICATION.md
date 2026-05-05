@@ -62,8 +62,10 @@ JSON_COUNT=$(jq -r '.json_artifact_count' /tmp/phase02-verify.json)
 echo "  pass; verify reported $JSON_COUNT artifacts"
 
 echo "=== 2.V9 Force-fail returns non-zero ==="
-./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-phase02-fail --label fail-test --force-fail >/tmp/phase02-fail.json 2>/tmp/phase02-fail.err
-[ $? -ne 0 ] || { echo "  expected non-zero"; exit 1; }
+if ./target/debug/reality-loop smoke --runtime-root /tmp/cgreality-phase02-fail --label fail-test --force-fail >/tmp/phase02-fail.json 2>/tmp/phase02-fail.err; then
+  echo "  expected non-zero"
+  exit 1
+fi
 grep -q "RUST_REALITY_SMOKE_FORCED_FAIL" /tmp/phase02-fail.err
 echo "  pass"
 

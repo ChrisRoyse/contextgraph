@@ -5,7 +5,7 @@
 - `crates/context-graph-mcp/src/handlers/tools/reality_loop/` exists with 5 module files.
 - `cargo build -p context-graph-mcp` succeeds.
 - `--mode reality-loop` registers 11 read-only `reality_*` tools.
-- `path_policy` loads from `$CGREALITY_GOVERNED_PATHS` or falls back to a conservative deny list.
+- `path_policy` loads from `$CGREALITY_GOVERNED_PATHS` and fails closed if the policy file is missing or malformed.
 - The MCP server's stdout is JSON-RPC only; logging goes to stderr.
 - Memory/graph/causal tools (existing) are still available; the new mode adds tools without removing any.
 - A smoke attempt's artifacts can be queried end-to-end via the MCP tools.

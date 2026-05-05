@@ -104,12 +104,12 @@ DELETE in entirety:
 - `openai_optimizer_tool_ok` (4231)
 - `openai_optimizer_tool_blocked` (4240)
 - `optimizer_project_root` (4258)
-- `project_file_window` (4278) — **MOVE**. Excellent helper. Lifted into a shared module `crates/context-graph-shared/src/governed_edit.rs` (or inline into the new MCP `harness_open_window` tool). Currently used only by the OpenAI optimizer tool path; will be re-used by `harness_open_window` MCP tool. Action: extract first, then delete from `reality-loop.rs`.
-- `project_apply_line_window_edits` (4336) — **MOVE** for same reason; will be re-used by `harness_apply_line_window_edit` MCP tool.
-- `run_openai_project_command` (4550) — **MOVE** for same reason; re-used by `harness_run_command` MCP tool.
-- `verify_openai_project_state` (4665) — **MOVE** for same reason; re-used by `harness_verify_state` MCP tool.
+- `project_file_window` (4278) — **MOVED in Phase 1** to `crates/context-graph-cli/src/governed_edit.rs`. Re-used by the future `harness_open_window` MCP tool.
+- `project_apply_line_window_edits` (4336) — **MOVED in Phase 1** to `crates/context-graph-cli/src/governed_edit.rs`; re-used by `harness_apply_line_window_edit` MCP tool.
+- `run_openai_project_command` (4550) — **MOVED/RENAMED in Phase 1** to `run_governed_command`; re-used by `harness_run_command` MCP tool.
+- `verify_openai_project_state` (4665) — **MOVED/RENAMED in Phase 1** to `verify_project_state`; re-used by `harness_verify_state` MCP tool.
 - `build_openai_self_reality_packet` (4708) — DELETE. Self-reality packet was a workaround for DeepSeek being unable to inspect its own actions; Claude Code's built-in transcript + MCP callbacks make this unnecessary.
-- `validate_optimizer_project_path` (4802) — **MOVE**. Path-policy enforcement; reused by every MCP `harness_*` tool. Replace with a config-file-driven version that reads `config/ccreality_governed_paths.json`.
+- `validate_optimizer_project_path` (4802) — **MOVED/RENAMED in Phase 1** to `validate_governed_path`. Path-policy enforcement is reused by every MCP `harness_*` tool and now reads a `CGREALITY_GOVERNED_PATHS` policy JSON path.
 - `required_openai_tool_str` (4862) — DELETE.
 - `openai_optimizer_json_schema` (4880) — DELETE. Schema lives in `docs/ccreality/13_STRUCTURED_OUTPUT_SCHEMA.md` and as a JSON file `config/ccreality_recommendation_schema.json` consumed by `optimizer_record_recommendation`.
 - `validate_openai_optimizer_recommendation` (4949) — DELETE. Validation moves into `optimizer_record_recommendation` MCP tool, using the same JSON Schema file.

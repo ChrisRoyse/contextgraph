@@ -1,6 +1,6 @@
 # ccreality — Claude Code as the Outer Reality-Loop Optimizer
 
-**Status:** planning, not yet implemented
+**Status:** cutover in progress — Phases 0 and 1 complete; Phase 2 is next
 **Date:** 2026-05-05
 **Author:** Claude (this session) for Chris Royse
 **Supersedes:** `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md` (kept for historical context),
@@ -63,17 +63,19 @@ This is the architecture the user described:
 
 ## Status of this work
 
-Done in this session:
-- Audit of `reality-loop.rs` (10,873 lines) for DeepSeek/OpenAI excision targets — see [04_EXCISION_PLAN](04_EXCISION_PLAN.md).
-- Web research on Claude Code Agent SDK, headless mode, hooks, MCP, subagents, skills, `/loop`, settings, structured outputs.
-- This planning package.
+Current branch: `ccreality-cutover`.
 
-Pending (next sessions):
-- Apply excision plan to `reality-loop.rs`.
-- Refactor remaining code into a clean reality-engine CLI (`reality-loop attempt|smoke|replay`).
-- Implement `context-graph-mcp --mode reality-loop` exposing the analyze/interact/alter tool families.
-- Drop `.claude/loop.md`, `.claude/agents/cc-reality-*`, `.claude/skills/ccreality-*`, `.claude/settings.json` updates, hook scripts under `scripts/cc/`.
-- Run smoke per [17_SMOKE_TEST_PLAN](17_SMOKE_TEST_PLAN.md).
-- FSV per [18_FSV_PLAN](18_FSV_PLAN.md).
+Completed so far:
+- **Phase 0 — Foundation:** branch `ccreality-cutover` created from base SHA `411443fdcbd8db4005cfe46d44f64f7698c2f11b`; rollback source of truth written to `/tmp/ccreality-cutover-base.sha`.
+- **Phase 1 — Excision:** `crates/context-graph-cli/src/bin/reality-loop.rs` contains no `deepseek|openai|gpt-5|chatgpt` text and is 7,145 lines; `crates/context-graph-cli/src/governed_edit.rs` exists and is exported from the `context_graph_cli` library target.
+- **Phase 1 verification:** `/tmp/phase-01-verify.log` ends with `Phase 1 verification: ALL PASS`; `/tmp/ccreality-phase-progress.log` has `phase-01: PASS`.
+- **Phase 1 manual FSV artifacts:** `/tmp/ccreality-phase1-fsv-output/observations.json` records a real governed edit (`alpha/beta` → `alpha/gamma`), diff readback, command readback, and three edge-case failures.
+
+Still pending:
+- **Phase 2:** refactor remaining engine into explicit `reality-loop attempt|smoke|replay|verify` subcommands and write active runtime-root files.
+- **Phase 3/4:** implement `context-graph-mcp --mode reality-loop` with analyze/interact/alter tools, using `context_graph_cli::governed_edit` for harness operations.
+- **Phase 5:** add governed path and recommendation schema config files.
+- **Phase 6–8:** add hooks, Claude scaffolding, and `CLAUDE.md` runtime addendum.
+- **Phase 9–12:** smoke, full FSV, docs cleanup, first production attempt, and final cutover commit.
 
 See [19_MIGRATION_RUNBOOK](19_MIGRATION_RUNBOOK.md) for the execution sequence.

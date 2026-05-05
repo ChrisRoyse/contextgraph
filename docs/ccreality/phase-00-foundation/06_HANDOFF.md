@@ -7,6 +7,13 @@
 - Working tree is unchanged from before Phase 0 (no source files modified).
 - The pre-Phase-0 planning docs in `docs/ccreality/*` are still present and uncommitted (or committed; either is fine — they were created in a prior session).
 
+## Completion Record
+
+- Completed on 2026-05-05.
+- Base SHA: `411443fdcbd8db4005cfe46d44f64f7698c2f11b`.
+- Source of truth: `.git/refs/heads/ccreality-cutover` and `/tmp/ccreality-cutover-base.sha`.
+- Phase 0 FSV tested empty, malformed, and mismatched SHA-file states; each failed verification before restore, and the final restored verification returned exit 0.
+
 ## Rollback recipe (when needed)
 
 If you need to abort the entire cutover at any later point:

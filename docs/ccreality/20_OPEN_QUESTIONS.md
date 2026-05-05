@@ -4,6 +4,10 @@ Things this plan deliberately leaves unresolved. Each is a real architectural ch
 
 ## Q1 — Where does the lifted governed-edit module live?
 
+**Status:** resolved in Phase 1.
+
+**Decision:** Option A. The module lives at `crates/context-graph-cli/src/governed_edit.rs`, is exported by `crates/context-graph-cli/src/lib.rs` as `pub mod governed_edit;`, and `crates/context-graph-cli/Cargo.toml` now declares the `context_graph_cli` library target.
+
 The excision plan calls for lifting `project_file_window`, `project_apply_line_window_edits`, `run_openai_project_command`, `verify_openai_project_state`, `validate_optimizer_project_path` out of `reality-loop.rs`.
 
 Options:
@@ -11,9 +15,7 @@ Options:
 - **B.** New shared crate `crates/context-graph-shared/`. Cleaner separation but adds a workspace member.
 - **C.** Inline into `crates/context-graph-mcp/src/handlers/tools/reality_loop/governed_edit.rs` and let the engine continue to use it via the same path. Doesn't introduce a new shared crate but tightly couples engine and MCP through the MCP crate.
 
-Recommendation: **A**. The engine never needs `harness_open_window` (Gemma's inner loop has its own line-window edit tool); the MCP server can depend on `context-graph-cli` as a library if the binary is split into a `lib.rs` + `bin/reality-loop.rs` pair (which it already is for some crates).
-
-Decide during stage 1.
+Original recommendation was **A**. Phase 1 implemented that recommendation.
 
 ## Q2 — Does `context-graph-mcp` already exist as a binary, or do we need to scaffold it?
 

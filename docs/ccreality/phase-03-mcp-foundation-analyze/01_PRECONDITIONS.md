@@ -4,7 +4,7 @@
 
 1. **Phase 1 complete.** `cargo test -p context-graph-cli --bin reality-loop` passes; `governed_edit.rs` exists.
 2. **Phase 2 complete.** `./target/debug/reality-loop smoke` produces artifacts; `~/.cache/cgreality/active_runtime_root` is written.
-3. **Phase 5 complete (recommended).** `config/ccreality_governed_paths.json` exists. If Phase 5 is not yet done, the `path_policy.rs` loader will fall back to a hard-coded conservative deny list — the build still succeeds, but operational behavior is wrong until Phase 5 lands. Recommended order: do Phase 5 before Phase 3.
+3. **Phase 5 complete.** `config/ccreality_governed_paths.json` exists. The Phase 1 `governed_edit` module fails closed when `CGREALITY_GOVERNED_PATHS` is missing, so Phase 3 must not introduce hard-coded path-policy fallbacks. Do Phase 5 before Phase 3.
 4. **The existing `context-graph-mcp` binary builds and runs.** Verify:
    ```bash
    cargo build -p context-graph-mcp --quiet

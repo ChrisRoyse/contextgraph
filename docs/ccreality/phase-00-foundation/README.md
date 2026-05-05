@@ -1,7 +1,7 @@
 # Phase 0 — Foundation
 
 **Estimated duration:** 5 minutes.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** none.
 **Unblocks:** Phase 1 (Excision).
 
@@ -18,6 +18,13 @@ git rev-parse --quiet --verify ccreality-cutover \
 ```
 
 Exit 0 = phase complete.
+
+## Completion Record
+
+- Completed on branch `ccreality-cutover`.
+- Base SHA: `411443fdcbd8db4005cfe46d44f64f7698c2f11b`.
+- Rollback source of truth: `/tmp/ccreality-cutover-base.sha`.
+- Final Phase 0 verification returned exit 0 immediately after branch creation.
 
 ## Files
 

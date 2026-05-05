@@ -6,21 +6,33 @@ Each phase has its own subfolder under `docs/ccreality/phase-NN-shortname/` with
 
 ## Phase summary
 
-| # | Phase | End-state command (must succeed) | Folder |
-|---|-------|----------------------------------|--------|
-| 0 | Foundation | `git rev-parse ccreality-cutover && test -s /tmp/ccreality-cutover-base.sha` | [phase-00-foundation/](phase-00-foundation/) |
-| 1 | Excision | `! rg -nq "deepseek\|openai\|gpt-5\|chatgpt" crates/context-graph-cli/src/bin/reality-loop.rs && cargo build -p context-graph-cli --bin reality-loop && cargo test -p context-graph-cli --bin reality-loop` | [phase-01-excision/](phase-01-excision/) |
-| 2 | Engine subcommands | `./target/debug/context-graph-cli reality-loop --help \| grep -E "attempt\|smoke\|replay\|verify"` | [phase-02-engine-subcommands/](phase-02-engine-subcommands/) |
-| 3 | MCP foundation + analyze | MCP `tools/list` returns ≥10 `mcp__cgreality__reality_*` tools; each analyze tool returns a payload with `source_of_truth` field | [phase-03-mcp-foundation-analyze/](phase-03-mcp-foundation-analyze/) |
-| 4 | MCP interact + alter + shift | `harness_apply_line_window_edit` round-trip succeeds and writes shift_log entry; `reality_shift_compare_to_my_view` detects external drift | [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) |
-| 5 | Config files | `jq -e . config/ccreality_governed_paths.json && jq -e . config/ccreality_recommendation_schema.json` | [phase-05-config-files/](phase-05-config-files/) |
-| 6 | Hooks | All 6 `scripts/cc/hook_*.sh` scripts pass their bash unit tests under `scripts/cc/tests/hooks/` | [phase-06-hooks/](phase-06-hooks/) |
-| 7 | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
-| 8 | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
-| 9 | Smoke | `bash scripts/cc/tests/smoke.sh` exits 0 with all 8 layers PASS | [phase-09-smoke/](phase-09-smoke/) |
-| 10 | FSV | `bash scripts/cc/tests/fsv.sh` exits 0; `docs/ccreality/FSV_RESULTS_*.md` created with all A–E PASS | [phase-10-fsv/](phase-10-fsv/) |
-| 11 | Docs cleanup | `! test -f docs/reality/20_openai_outer_optimizer.md && grep -q ccreality docs/reality/00_index.md` | [phase-11-docs-cleanup/](phase-11-docs-cleanup/) |
-| 12 | First production attempt | One real SWE-bench instance attempt produced + one valid recommendation artifact + commit on branch | [phase-12-first-production/](phase-12-first-production/) |
+| # | Status | Phase | End-state command (must succeed) | Folder |
+|---|--------|-------|----------------------------------|--------|
+| 0 | Complete | Foundation | `git rev-parse ccreality-cutover && test -s /tmp/ccreality-cutover-base.sha` | [phase-00-foundation/](phase-00-foundation/) |
+| 1 | Complete | Excision | `! rg -nq "deepseek\|openai\|gpt-5\|chatgpt" crates/context-graph-cli/src/bin/reality-loop.rs && cargo build -p context-graph-cli --bin reality-loop && cargo test -p context-graph-cli --bin reality-loop && cargo test -p context-graph-cli --lib governed_edit` | [phase-01-excision/](phase-01-excision/) |
+| 2 | Next | Engine subcommands | `./target/debug/reality-loop --help \| grep -E "attempt\|smoke\|replay\|verify"` | [phase-02-engine-subcommands/](phase-02-engine-subcommands/) |
+| 3 | Pending | MCP foundation + analyze | MCP `tools/list` returns ≥10 `mcp__cgreality__reality_*` tools; each analyze tool returns a payload with `source_of_truth` field | [phase-03-mcp-foundation-analyze/](phase-03-mcp-foundation-analyze/) |
+| 4 | Pending | MCP interact + alter + shift | `harness_apply_line_window_edit` round-trip succeeds and writes shift_log entry; `reality_shift_compare_to_my_view` detects external drift | [phase-04-mcp-interact-alter-shift/](phase-04-mcp-interact-alter-shift/) |
+| 5 | Pending | Config files | `jq -e . config/ccreality_governed_paths.json && jq -e . config/ccreality_recommendation_schema.json` | [phase-05-config-files/](phase-05-config-files/) |
+| 6 | Pending | Hooks | All 6 `scripts/cc/hook_*.sh` scripts pass their bash unit tests under `scripts/cc/tests/hooks/` | [phase-06-hooks/](phase-06-hooks/) |
+| 7 | Pending | Claude scaffolding | `.claude/settings.json`, `.mcp.json`, `.claude/loop.md`, 5 agent files, 4 skill `SKILL.md` files all exist with valid frontmatter | [phase-07-claude-scaffolding/](phase-07-claude-scaffolding/) |
+| 8 | Pending | CLAUDE.md addendum | `rg -q "ccreality — Outer Reality-Loop Optimizer Role" CLAUDE.md` | [phase-08-claude-md-addendum/](phase-08-claude-md-addendum/) |
+| 9 | Pending | Smoke | `bash scripts/cc/tests/smoke.sh` exits 0 with all 8 layers PASS | [phase-09-smoke/](phase-09-smoke/) |
+| 10 | Pending | FSV | `bash scripts/cc/tests/fsv.sh` exits 0; `docs/ccreality/FSV_RESULTS_*.md` created with all A–E PASS | [phase-10-fsv/](phase-10-fsv/) |
+| 11 | Pending | Docs cleanup | `! test -f docs/reality/20_openai_outer_optimizer.md && grep -q ccreality docs/reality/00_index.md` | [phase-11-docs-cleanup/](phase-11-docs-cleanup/) |
+| 12 | Pending | First production attempt | One real SWE-bench instance attempt produced + one valid recommendation artifact + commit on branch | [phase-12-first-production/](phase-12-first-production/) |
+
+## Current State
+
+As of 2026-05-05:
+
+- Branch: `ccreality-cutover`.
+- Phase 0 base SHA: `411443fdcbd8db4005cfe46d44f64f7698c2f11b`, recorded in `/tmp/ccreality-cutover-base.sha`.
+- Phase 1 verification log: `/tmp/phase-01-verify.log`.
+- Phase 1 progress log row: `/tmp/ccreality-phase-progress.log`.
+- Phase 1 manual FSV source of truth: `/tmp/ccreality-phase1-fsv-output/observations.json`.
+- Current source changes awaiting the final Phase 12 commit: `[lib]` in `crates/context-graph-cli/Cargo.toml`, `pub mod governed_edit` in `crates/context-graph-cli/src/lib.rs`, and new `crates/context-graph-cli/src/governed_edit.rs`.
+- Next phase to execute: [phase-02-engine-subcommands/](phase-02-engine-subcommands/).
 
 ## Dependency DAG
 

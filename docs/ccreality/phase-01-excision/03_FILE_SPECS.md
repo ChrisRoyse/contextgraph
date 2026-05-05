@@ -65,8 +65,8 @@ pub type Result<T> = std::result::Result<T, GovernedEditError>;
 pub fn project_root() -> Result<PathBuf> { unimplemented!() }
 
 /// Validate a project-relative path against the governed-paths policy.
-/// Reads the policy from $CGREALITY_GOVERNED_PATHS or falls back to a hard-coded
-/// conservative deny list (.env, swebench/, oracle, reward_specs, verifiers).
+/// Reads the policy from $CGREALITY_GOVERNED_PATHS and fails closed if the
+/// variable, file, or JSON policy is missing.
 pub fn validate_governed_path(path: &str) -> Result<String> { unimplemented!() }
 
 /// Open a window of a project file. Returns SHA-256 + window text + total line count.

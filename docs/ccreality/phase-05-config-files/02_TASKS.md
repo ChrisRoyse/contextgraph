@@ -68,7 +68,7 @@ cargo run --quiet --manifest-path crates/context-graph-mcp/Cargo.toml --example 
 ```
 (Only works if such an example exists; can be added in Phase 4.)
 
-The fallback: trust the schema in `13_STRUCTURED_OUTPUT_SCHEMA.md` (we wrote it carefully). Phase 4's verification will catch any actual issues when the MCP server tries to use it.
+If neither `python3 + jsonschema` nor a Rust validator is available, stop and install a validator before proceeding. Do not mark Phase 5 complete without schema validation; Phase 4 depends on this file as a hard contract.
 
 ## Task 5.6 — Validate the sample passes the schema
 

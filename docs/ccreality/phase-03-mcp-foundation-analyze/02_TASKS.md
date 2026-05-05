@@ -62,7 +62,7 @@ Expected: 0.
 
 Per [03_FILE_SPECS.md](03_FILE_SPECS.md) §"path_policy.rs". Include:
 - `GovernedPathsPolicy { allow: Vec<glob::Pattern>, deny: Vec<glob::Pattern> }`
-- `pub fn load() -> Result<Self>` — reads `$CGREALITY_GOVERNED_PATHS` (env var) or falls back to `~/.config/cgreality/governed_paths.json` or `<project_root>/config/ccreality_governed_paths.json` or a hard-coded conservative deny list.
+- `pub fn load() -> Result<Self>` — reads `$CGREALITY_GOVERNED_PATHS` (env var) and fails with a structured error if the variable is unset, the file is missing, or the JSON is invalid. Do not add fallback policy locations or hard-coded allow/deny lists.
 - `pub fn is_allowed(&self, path: &str) -> PolicyVerdict` — returns Allow / DenyExplicit / NoMatch (caller decides default).
 - Globs use the `glob` crate (add to Cargo.toml if missing).
 
@@ -73,7 +73,11 @@ mod tests {
     use super::*;
     #[test]
     fn deny_dotenv_and_swebench() {
-        let p = GovernedPathsPolicy::default_conservative();
+        let policy_json = serde_json::json!({
+            "allow": ["Cargo.toml", "crates/**", "docs/ccreality/**"],
+            "deny": [".env", ".env.*", "swebench/**", "tests/oracle_**"]
+        });
+        let p = GovernedPathsPolicy::from_json(policy_json).expect("valid policy");
         assert!(matches!(p.is_allowed(".env"), PolicyVerdict::DenyExplicit(_)));
         assert!(matches!(p.is_allowed("swebench/eval/runner.py"), PolicyVerdict::DenyExplicit(_)));
         assert!(matches!(p.is_allowed("crates/context-graph-cli/src/bin/reality-loop.rs"), PolicyVerdict::Allow));

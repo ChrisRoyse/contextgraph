@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod error;
+pub mod governed_edit;
 pub mod mcp_client;
 pub mod mcp_helpers;
 

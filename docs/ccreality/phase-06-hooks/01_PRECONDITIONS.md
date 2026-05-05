@@ -3,7 +3,7 @@
 ## Required state
 
 1. **Phases 0, 1, 2 complete.** The engine binary exists and supports subcommands.
-2. **Phases 3, 4 complete.** The MCP server is built; tools/list returns the expected tools. The PostToolUse hook needs `mcp__cgreality__optimizer_record_harness_transition` (Phase 4) OR direct file-write fallback.
+2. **Phases 3, 4 complete.** The MCP server is built; tools/list returns the expected tools. The PostToolUse hook must call `mcp__cgreality__optimizer_record_harness_transition` from Phase 4; do not add a direct file-write substitute.
 3. **Phase 5 complete.** `config/ccreality_governed_paths.json` exists. The PreToolUse hook reads this directly to make a path-policy decision before the Claude Code permission system fires.
 4. **A smoke runtime root exists** for testing:
    ```bash

@@ -75,15 +75,15 @@ struct VerifyArgs {
 async fn main() {
     let top = TopArgs::parse();
     let exit_code = match top.cmd {
-        Cmd::Attempt(args) => dispatch(run(args)).await,
-        Cmd::Smoke(args)   => dispatch(run_smoke(args)).await,
-        Cmd::Replay(args)  => dispatch(run_replay(args)).await,
-        Cmd::Verify(args)  => dispatch(run_verify(args)).await,
+        Cmd::Attempt(args) => dispatch_attempt(args).await,
+        Cmd::Smoke(args)   => dispatch_smoke(args).await,
+        Cmd::Replay(args)  => dispatch_replay(args).await,
+        Cmd::Verify(args)  => dispatch_verify(args).await,
     };
     std::process::exit(exit_code);
 }
 
-async fn dispatch<F>(future: F) -> i32
+async fn dispatch<F>(future: F, failure_runtime_root: &Path) -> i32
 where
     F: std::future::Future<Output = Result<Value>>,
 {
@@ -96,8 +96,19 @@ where
             0
         }
         Err(err) => {
-            // Persist failure artifact (existing helper).
-            let _ = write_failure_artifact_for_command(&err);
+            // Persist failure artifact beside the command's runtime state; never redirect to a fallback path.
+            if let Err(write_err) = write_failure_artifact_for_command(failure_runtime_root, &err) {
+                let failure_write = json!({
+                    "status": "error",
+                    "error_code": "RUST_REALITY_FAILURE_ARTIFACT_WRITE_FAILED",
+                    "message": write_err,
+                    "original_error_code": err.error_code,
+                    "source_of_truth": file_sot(failure_runtime_root)
+                });
+                if let Ok(serialized) = serde_json::to_string_pretty(&failure_write) {
+                    eprintln!("{}", serialized);
+                }
+            }
             // Emit error JSON on stderr.
             if let Ok(serialized) = serde_json::to_string_pretty(&err) {
                 eprintln!("{}", serialized);
@@ -108,16 +119,63 @@ where
 }
 ```
 
-`write_failure_artifact_for_command` is a thin wrapper over the existing `write_failure_artifact` that uses a runtime root inferred from the error if possible; otherwise falls back to `~/.cache/cgreality/failures/`. Implementation:
+The command-specific dispatch wrappers compute the failure runtime root from their explicit arguments before running command logic. If that root cannot be identified, the wrapper returns a structured startup error and exits 1; it must not invent a fallback location.
 
 ```rust
-fn write_failure_artifact_for_command(err: &RealityError) -> std::result::Result<PathBuf, String> {
-    // For Phase 2, simplest: write to ~/.cache/cgreality/failures/
-    let cache = dirs::home_dir()
-        .ok_or_else(|| "HOME unset".to_string())?
-        .join(".cache/cgreality/failures");
-    fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
-    let path = cache.join(format!("failure-{}-{}.json", unix_secs_for_logging(), safe_id(&err.error_code)));
+async fn dispatch_attempt(args: AttemptArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run(args), &failure_runtime_root).await
+}
+
+async fn dispatch_smoke(args: SmokeArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_smoke(args), &failure_runtime_root).await
+}
+
+async fn dispatch_replay(args: ReplayArgs) -> i32 {
+    let failure_runtime_root = match args
+        .output_dir
+        .clone()
+        .or_else(|| args.attempt_summary_path.parent().map(Path::to_path_buf))
+    {
+        Some(path) => path,
+        None => {
+            return emit_startup_error(RealityError::new(
+                "RUST_REALITY_REPLAY_FAILURE_ROOT_MISSING",
+                "replay could not identify a runtime root for failure artifacts",
+                "replay.output_dir",
+                "pass --output-dir explicitly",
+                json!({ "attempt_summary_path": path_str(&args.attempt_summary_path) }),
+                None,
+            ));
+        }
+    };
+    dispatch(run_replay(args), &failure_runtime_root).await
+}
+
+async fn dispatch_verify(args: VerifyArgs) -> i32 {
+    let failure_runtime_root = args.runtime_root.clone();
+    dispatch(run_verify(args), &failure_runtime_root).await
+}
+
+fn emit_startup_error(err: RealityError) -> i32 {
+    if let Ok(serialized) = serde_json::to_string_pretty(&err) {
+        eprintln!("{}", serialized);
+    }
+    1
+}
+```
+
+`write_failure_artifact_for_command` is a thin wrapper over the existing `write_failure_artifact` that writes to the runtime root supplied by the command. If the supplied path is empty or cannot be created, it returns an error that is emitted to stderr with the original error code. Implementation sketch:
+
+```rust
+fn write_failure_artifact_for_command(runtime_root: &Path, err: &RealityError) -> std::result::Result<PathBuf, String> {
+    if runtime_root.as_os_str().is_empty() {
+        return Err("runtime_root required for failure artifact".to_string());
+    }
+    let failures = runtime_root.join("failures");
+    fs::create_dir_all(&failures).map_err(|e| e.to_string())?;
+    let path = failures.join(format!("failure-{}-{}.json", unix_secs_for_logging(), safe_id(&err.error_code)));
     let body = json!({
         "record_kind": "rust_reality_loop_failure",
         "created_at_unix": unix_secs_for_logging(),
@@ -209,17 +267,27 @@ async fn run_smoke(args: SmokeArgs) -> Result<Value> {
 }
 ```
 
-## `run_replay` body (minimal, full implementation in Phase 4 if needed)
+## `run_replay` body (file-backed replay envelope)
 
 ```rust
 async fn run_replay(args: ReplayArgs) -> Result<Value> {
     let summary_path = resolve_path(&args.attempt_summary_path)?;
     require_file(&summary_path, "attempt_summary_path", "RUST_REALITY_REPLAY_SUMMARY_MISSING")?;
     let summary: Value = read_json(&summary_path)?;
-    let out_dir = args.output_dir.as_deref().unwrap_or_else(|| summary_path.parent().expect("attempt-summary has parent"));
+    let out_dir = if let Some(out_dir) = args.output_dir.as_deref() {
+        out_dir
+    } else {
+        summary_path.parent().ok_or_else(|| RealityError::new(
+            "RUST_REALITY_REPLAY_OUTPUT_DIR_MISSING",
+            "attempt-summary path has no parent directory for replay output",
+            "replay.attempt_summary_path",
+            "pass --output-dir explicitly",
+            json!({ "attempt_summary_path": path_str(&summary_path) }),
+            Some(file_sot(&summary_path))))?
+    };
     let out_path = out_dir.join(format!("reality-signal-packet.{}.json", args.label));
 
-    // Phase 2 stub: just round-trip the existing reality-signal-packet to demonstrate the path.
+    // Phase 2 contract: read the existing signal packet and write a replay envelope as a real artifact.
     let signal_path_str = summary.pointer("/reality_signal_packet_path")
         .and_then(Value::as_str)
         .ok_or_else(|| RealityError::new(
@@ -256,7 +324,9 @@ async fn run_verify(args: VerifyArgs) -> Result<Value> {
     let mut entries = Vec::new();
     for path in &json_files {
         let sha = sha256_file(path)?;
-        let size = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let size = fs::metadata(path)
+            .map_err(|e| fs_error("RUST_REALITY_VERIFY_METADATA_FAILED", path, e))?
+            .len();
         entries.push(json!({
             "path": path_str(path),
             "sha256": sha,

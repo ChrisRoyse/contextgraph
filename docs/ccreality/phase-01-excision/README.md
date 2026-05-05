@@ -1,7 +1,7 @@
 # Phase 1 — Excision (DeepSeek/OpenAI Removal + Governed-Edit Module Lift)
 
 **Estimated duration:** 1–2 hours.
-**Status:** pending.
+**Status:** complete.
 **Depends on:** Phase 0.
 **Unblocks:** Phase 2.
 **Lines of code touched:** ~3,400 deleted, ~1,000 moved.
@@ -40,6 +40,16 @@ LC=$(wc -l < crates/context-graph-cli/src/bin/reality-loop.rs)
 ```
 
 All four blocks must exit 0.
+
+## Completion Record
+
+- Completed on 2026-05-05 on branch `ccreality-cutover`.
+- `reality-loop.rs` line count: 7,145.
+- New governed-edit module: `crates/context-graph-cli/src/governed_edit.rs`.
+- Library export: `crates/context-graph-cli/src/lib.rs` contains `pub mod governed_edit;`.
+- Manifest export: `crates/context-graph-cli/Cargo.toml` contains `[lib] name = "context_graph_cli"`.
+- Verification log: `/tmp/phase-01-verify.log`.
+- Manual FSV artifacts: `/tmp/ccreality-phase1-fsv-output/observations.json`.
 
 ## Files
 

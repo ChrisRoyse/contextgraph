@@ -85,7 +85,7 @@ Earlier draft (in `docs2/CLAUDE_CODE_REALITY_LOOP_GUIDE.md`) had ContextGraph sp
 1. **Reality must be queryable, not just delivered.** A spawned subprocess gets one prompt then dies. With MCP, Claude Code can ask follow-ups: "show me attempt 3 of run X", "diff the harness-transition rounds 4 vs 5", "search memory for similar past failures". Mid-session reality access is what makes the optimizer better than DeepSeek's one-shot tool loop.
 2. **Mutation must close the loop.** When Claude Code edits the harness via MCP, the same MCP server reads it back, runs `cargo check`, writes a `harness-transition` record, and ContextGraph immediately knows what changed. No fragile JSON parsing of stdout, no race between Rust spawn and Claude's edit.
 
-The fallback path (`claude -p` invoked by ContextGraph for unattended overnight runs) is still supported — see [14_TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md) — but its job is just to start a Claude Code session that then uses MCP for everything substantive.
+The headless invocation path (`claude -p` invoked by an external watcher for unattended overnight runs) is still supported — see [14_TRIGGER_AND_INVOCATION_POLICY](14_TRIGGER_AND_INVOCATION_POLICY.md) — but its job is just to start a Claude Code session that then uses MCP for everything substantive.
 
 ## Why this is bigger than swapping models
 

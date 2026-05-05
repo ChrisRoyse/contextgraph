@@ -4,6 +4,16 @@ Step-by-step plan to apply the ccreality design. Each step has explicit pre/post
 
 Pre-production rule (per project memory): no backwards-compat shims. Wipe DeepSeek/OpenAI cleanly.
 
+## Execution status
+
+As of 2026-05-05:
+
+| Stage | Status | Evidence |
+|-------|--------|----------|
+| 0 — Branch + safety net | Complete | `ccreality-cutover` exists; `/tmp/ccreality-cutover-base.sha` contains `411443fdcbd8db4005cfe46d44f64f7698c2f11b`. |
+| 1 — Excision | Complete | `/tmp/phase-01-verify.log` ends with `Phase 1 verification: ALL PASS`; `/tmp/ccreality-phase1-fsv-output/observations.json` contains manual FSV readback. |
+| 2 — Reality-engine subcommands | Next | Start at [phase-02-engine-subcommands/](phase-02-engine-subcommands/). |
+
 ## Stage 0 — Branch + safety net
 
 ```bash
@@ -15,6 +25,8 @@ git rev-parse HEAD > /tmp/ccreality-cutover-base.sha
 
 Pre: clean working tree (or known-acceptable diff documented).
 Post: branch created, base SHA captured for rollback.
+
+Current completion record: branch `ccreality-cutover` was created from `411443fdcbd8db4005cfe46d44f64f7698c2f11b`.
 
 ## Stage 1 — Excise DeepSeek/OpenAI from `reality-loop.rs`
 
@@ -36,6 +48,8 @@ Apply [04_EXCISION_PLAN](04_EXCISION_PLAN.md) in the order specified there:
 
 Pre: branch from stage 0.
 Post: `reality-loop.rs` is ~7,500 lines; cargo check + cargo test pass; no deepseek/openai/gpt-5 substrings remain (`rg -n "deepseek\|openai\|gpt-5" crates/context-graph-cli/src/bin/reality-loop.rs` returns nothing).
+
+Current completion record: `reality-loop.rs` is 7,145 lines; `crates/context-graph-cli/src/governed_edit.rs` exists; `cargo build -p context-graph-cli --bin reality-loop`, `cargo test -p context-graph-cli --bin reality-loop -- --skip ignored`, and `cargo test -p context-graph-cli --lib governed_edit` pass.
 
 Verification:
 ```bash
