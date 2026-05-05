@@ -19,7 +19,6 @@ shakespear/
 .cargo/
 
 # Claude/AI tooling directories and files
-.claude/
 .claude-flow/
 .hive-mind/
 .serena/
