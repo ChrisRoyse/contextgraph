@@ -116,6 +116,58 @@ For every prompt, persist:
 }
 ```
 
+## Current Compiler Artifact
+
+Phase 2 implements the prompt contract through `gemmafrontend/reality_prompt_compiler.py`.
+
+The compiler writes:
+
+```text
+prompt.txt
+prompt-compiler-output.json
+prompt-quality.json
+```
+
+The refinement loop also embeds the compiler manifest in:
+
+```text
+<attempt_root>/prompt-manifest.json
+<task_root>/prompt-candidates/attempt-NNN/prompt-manifest.json
+```
+
+Current template ids:
+
+- `swe_repair_initial_v2`;
+- `swe_repair_local_failure_v2`;
+- `swe_repair_official_failure_v2`.
+
+The compiler manifest includes:
+
+```json
+{
+  "compiler_version": "reality_prompt_compiler_v1",
+  "prompt_template_id": "swe_repair_official_failure_v2",
+  "prompt_sha256": "sha256:...",
+  "input_refs": {
+    "task": "file:<task-manifest>",
+    "repository_context": "file:<repository-context>",
+    "official_failure_evidence": "file:<official-failure-evidence>",
+    "previous_patch_sha": "sha256:...",
+    "previous_prompt_sha": "sha256:...",
+    "previous_output_sha": "sha256:..."
+  },
+  "included_evidence": [],
+  "excluded_evidence": [],
+  "no_repeat_patch_sha256": ["sha256:..."],
+  "quality": {
+    "status": "passed",
+    "score": 1.0
+  }
+}
+```
+
+Non-applicable quality checks are stored as `null`, not `false`. For example, an initial prompt cannot include an official failed test before any official attempt exists, so `failed_test_included` is `null` for `swe_repair_initial_v2`.
+
 ## Reinjection Quality Score
 
 Score every prompt:

@@ -49,6 +49,35 @@ inner-loop run results -> diagnose loop bottleneck
 
 It is system-facing. It improves the machinery around the model.
 
+## Multiple Realities
+
+Multiple realities are possible and useful when they are represented as explicit branches, not as untracked speculative text.
+
+In the current implementation:
+
+```text
+root reality
+  -> model/task reality
+    -> attempt reality
+      -> prompt-candidate reality
+```
+
+Each branch has:
+
+- `reality_branch_id`;
+- `parent_reality_branch_id`;
+- `promotion_status`;
+- source-of-truth refs;
+- SHA-256 evidence where applicable.
+
+The registry is persisted at:
+
+```text
+<run_root>/reality-scoreboard/reality-branches.json
+```
+
+This lets the system explore many candidate next prompts, tools, context selectors, or repair strategies while keeping only verified branches eligible for promotion. A branch is not "true" because the model prefers it. It becomes promotable only when the official source of truth and BlackBoxFix ledger prove the outcome.
+
 ## What The Outer Loop Is Optimizing
 
 The outer loop optimizes:
@@ -124,3 +153,17 @@ model fails -> official reality proves why
 ```
 
 The learning signal is reality, not confidence.
+
+## Tool Boundary For The Inner Loop
+
+The model is not given arbitrary shell or browser control by default. It receives a governed tool surface:
+
+- `list_files`;
+- `read_file`;
+- `search_repo`;
+- `inspect_repository_context`;
+- `read_failure_evidence`.
+
+Every tool call is validated, executed as read-only, written to disk, read back, and referenced by SHA. Mutating actions remain constrained to final patch submission and are verified by local patch application plus official SWE-bench Docker evaluation.
+
+Browser/MCP/web tools can be added later, but only as registered ContextGraph tools with schemas, policy, source-of-truth readback, and ledger evidence. They should not bypass the reality loop.

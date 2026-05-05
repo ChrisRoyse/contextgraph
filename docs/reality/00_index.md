@@ -43,10 +43,55 @@ The loop does not advance because an agent says it is done. It advances only whe
 | Verified reward compiler spec | `gemmafrontend/reward_spec.verified_outcome.json` |
 | SWE-bench local refinement loop | `gemmafrontend/swe_lite_refinement_loop.py` |
 | Official SWE-bench Docker readback bridge | `gemmafrontend/swe_lite_official_eval.py` |
+| Governed SWE agent tool gateway | `gemmafrontend/swe_lite_refinement_loop.py --agent-tool-rounds` |
+| Deterministic reality prompt compiler | `gemmafrontend/reality_prompt_compiler.py` |
 | Smoke benchmark suite definition | `gemmafrontend/swe_smoke_benchmark_suite.json` |
 | Current SWE-bench status doc | `docs/contextgraph_swe_bench_refinement_loop.md` |
 | BlackBoxFix ledger/evidence CLI | `target/debug/context-graph blackbox ...` |
 | DynamicJEPA state/action/surprise machinery | existing ContextGraph/DynamicJEPA modules and generated run artifacts |
+
+## Phase 1 Implementation Snapshot
+
+The first working reality loop now persists:
+
+- root reality ledger: `<run_root>/reality-loop.sqlite`;
+- root event stream: `<run_root>/reality-events.jsonl`;
+- branch registry: `<run_root>/reality-scoreboard/reality-branches.json`;
+- attempt tool transcript: `<attempt_root>/agent-tools/agent-tool-transcript.json`;
+- official failure evidence: `<attempt_root>/official-failure-evidence.json`;
+- next prompt candidate: `<task_root>/prompt-candidates/attempt-NNN/`.
+
+The current model-facing tools are read-only and governed: `list_files`, `read_file`, `search_repo`, `inspect_repository_context`, and `read_failure_evidence`. Patch mutation still enters only through the verified patch/evaluator path.
+
+## Phase 2 Implementation Snapshot
+
+Phase 2 adds a first-class prompt compiler so prompt reinjection is a deterministic artifact, not scattered string assembly inside the loop.
+
+Current source-of-truth artifacts:
+
+- compiler implementation: `gemmafrontend/reality_prompt_compiler.py`;
+- loop integration: `gemmafrontend/swe_lite_refinement_loop.py`;
+- initial prompt manifest: `<attempt_root>/prompt-manifest.json`;
+- refinement prompt candidate: `<task_root>/prompt-candidates/attempt-NNN/`;
+- compiler readback files: `prompt.txt`, `prompt-compiler-output.json`, and `prompt-quality.json`;
+- task BlackBoxFix ledger: `<task_root>/blackbox.sqlite`;
+- root reality ledger: `<run_root>/reality-loop.sqlite`.
+
+The compiler currently emits these deterministic prompt templates:
+
+- `swe_repair_initial_v2`;
+- `swe_repair_local_failure_v2`;
+- `swe_repair_official_failure_v2`.
+
+The compiler fails closed with typed errors when required source-of-truth inputs are missing, an unknown prompt kind is requested, or hidden solution/gold patch content leaks into the prompt.
+
+Latest verified Phase 2 smoke output:
+
+```text
+/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777939166629468299_801dcad0/
+```
+
+That run proves the compiler generated a second-attempt official-failure prompt candidate from durable SWE-bench/BlackBoxFix evidence. The instance remained unresolved, which is the correct reality signal for optimization: the loop recorded the failure, generated reward/incidents, and produced the next prompt candidate instead of claiming success.
 
 ## Research Sources
 

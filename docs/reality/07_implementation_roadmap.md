@@ -52,6 +52,54 @@ Outputs:
 
 The prompt compiler should be deterministic for the same inputs.
 
+## Phase 2 Current Implementation Status
+
+Implemented:
+
+- `gemmafrontend/reality_prompt_compiler.py`;
+- initial prompt compilation in `gemmafrontend/swe_lite_refinement_loop.py`;
+- official failure prompt candidate compilation after SWE-bench Docker readback;
+- local failure prompt candidate compilation after local patch/test readback;
+- deterministic prompt templates: `swe_repair_initial_v2`, `swe_repair_local_failure_v2`, and `swe_repair_official_failure_v2`;
+- compiler manifest persistence in both `<attempt_root>/prompt-manifest.json` and `<task_root>/prompt-candidates/attempt-NNN/prompt-manifest.json`;
+- compiler quality gates with explicit `null` for non-applicable checks;
+- source-of-truth refs for task manifest, repo context, official failure evidence, local attempt summary, previous prompt SHA, previous output SHA, and previous patch SHA;
+- CLI mode that writes and reads back `prompt.txt`, `prompt-compiler-output.json`, and `prompt-quality.json`.
+
+Root cause fixed:
+
+Prompt construction used to be spread across separate helper functions. That made prompt versions, evidence inclusion, previous-output hashes, and quality scores difficult to audit or optimize. Phase 2 centralizes prompt generation into a deterministic compiler whose outputs are durable artifacts with quality checks and source-of-truth references.
+
+Fail-closed behavior:
+
+| Case | Error Code | Field |
+|---|---|---|
+| Missing task or repo context source of truth | `PROMPT_COMPILER_REPO_CONTEXT_SOURCE_MISSING` | `repo_context.source_of_truth` |
+| Unknown prompt kind | `PROMPT_COMPILER_KIND_UNKNOWN` | `prompt_kind` |
+| Hidden solution/gold patch leakage | `PROMPT_COMPILER_QUALITY_FAILED` | `prompt_quality` |
+| Missing required task fields | `PROMPT_COMPILER_TASK_FIELD_MISSING` | `task.<field>` |
+
+Latest verified Phase 2 smoke:
+
+```text
+/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777939166629468299_801dcad0/
+```
+
+Observed durable outputs:
+
+- official run result: `unsolved:attempt_budget_exhausted`;
+- official attempt count: `1`;
+- official resolved attempts: `0`;
+- root reality ledger counts: `agent_run=1`, `agent_step=16`;
+- task BlackBoxFix ledger counts: `agent_run=1`, `model_decision=1`, `tool_call=2`, `verifier_result=2`, `evidence_packet=2`, `incident_packet=2`, `reward_compilation=2`, `scorecard=2`;
+- second-attempt prompt candidate: `<run_root>/tasks/psf__requests-2317/qwen3-8b/prompt-candidates/attempt-002/`;
+- second-attempt template: `swe_repair_official_failure_v2`;
+- compiler version: `reality_prompt_compiler_v1`;
+- prompt quality: `status=passed`, `score=1.0`;
+- previous prompt SHA and previous output SHA persisted in compiler `input_refs`.
+
+This does not claim the model solved the SWE-bench instance. It proves the loop read official durable failure evidence, recorded it, scored it, and compiled the next prompt from that evidence.
+
 ## Phase 3: Add Experiment State
 
 Create a durable experiment registry:
@@ -206,3 +254,36 @@ Success for this smoke is not solving the instance. Success is proving:
 - attempt 2 prompt includes that evidence;
 - BlackBoxFix ledger contains both official verifier rows;
 - the final summary reports official reality, not local model claims.
+
+## Phase 1 Current Implementation Status
+
+Implemented in `gemmafrontend/swe_lite_refinement_loop.py`:
+
+- official per-attempt SWE-bench evaluation with `--official-eval-each-attempt`;
+- governed model tool gateway with `--agent-tool-rounds`;
+- read-only tools: `list_files`, `read_file`, `search_repo`, `inspect_repository_context`, `read_failure_evidence`;
+- mutating patch application only through the ContextGraph/BlackBoxFix verification path;
+- root/meta reality ledger at `<run_root>/reality-loop.sqlite`;
+- append-only root event stream at `<run_root>/reality-events.jsonl`;
+- live root state at `<run_root>/reality-state.json`;
+- prompt candidate artifacts at `<task_root>/prompt-candidates/attempt-NNN/`;
+- multiple-reality branch registry at `<run_root>/reality-scoreboard/reality-branches.json`;
+- operational scoreboard with agent tool counts and tool transcript refs.
+
+The current root cause fixed in Phase 1 was an official SWE-bench edge case: if the candidate patch fails before the official harness emits an instance `report.json`, the loop must not crash. It now persists an `official-failure-evidence.json` with:
+
+- `official_error_code`;
+- missing official artifacts;
+- official report SHA;
+- official readback SHA;
+- run-instance log SHA;
+- patch diff SHA;
+- source-of-truth refs for every physical artifact that exists.
+
+Latest verified smoke output:
+
+```text
+/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777937357771207798_801dcad0/
+```
+
+That run proves a local model used the governed `search_repo` tool, submitted a patch, failed official Docker evaluation with `SWE_OFFICIAL_PATCH_APPLY_FAILED`, recorded the failure in BlackBoxFix, and compiled the next prompt candidate from durable official evidence.

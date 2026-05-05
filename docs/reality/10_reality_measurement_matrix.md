@@ -44,6 +44,8 @@ If we cannot observe it, we cannot optimize it. If we cannot verify it from dura
 | Prompt | prompt SHA, prompt template id, included evidence refs | prompt manifest |
 | Output | output SHA, parse status, patch hash | model response artifact |
 | Tool/action | selected tool, arguments, schema validation | ContextGraph tool record |
+| Agent tool transcript | read-only tool requests, outputs, file hashes, branch refs | `attempts/attempt-NNN/agent-tools/agent-tool-transcript.json` |
+| Tool source readback | file search/read results and evidence previews | per-tool result JSON files with SHA-256 |
 | Repetition | whether patch hash was seen before | attempt registry |
 | Cross-model comparison | same task, same attempt budget, same prompt compiler version | experiment registry |
 
@@ -57,6 +59,7 @@ If we cannot observe it, we cannot optimize it. If we cannot verify it from dura
 | FAIL_TO_PASS | success/failure tests | official instance report |
 | PASS_TO_PASS | regression tests | official instance report |
 | Test output | assertion excerpts and traceback | official `test_output.txt` |
+| Early evaluator failure | patch-apply failure, missing instance report, missing test output | official readback + run-instance log |
 
 ## BlackBoxFix Measurements
 
@@ -130,6 +133,8 @@ To make the 100% target possible, every attempt must capture:
 9. reward/loss with components;
 10. next prompt evidence manifest;
 11. repeated patch/failure history;
-12. champion state.
+12. champion state;
+13. tool transcript and tool result hashes;
+14. branch lineage for attempt and prompt-candidate realities.
 
 Without these, the loop cannot know what reality changed, what failed, or what to improve next.

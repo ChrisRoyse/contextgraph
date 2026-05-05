@@ -24,6 +24,10 @@ One row per attempt.
 | `reward` | Verified reward. |
 | `loss` | Negative reward. |
 | `incident_count` | BlackBoxFix incidents. |
+| `agent_tool_rounds_total` | Governed tool rounds before final patch. |
+| `agent_tool_result_count` | Physical tool-result files produced. |
+| `agent_tool_names_used` | Registered tools the model actually used. |
+| `agent_tool_transcript_sha256` | Hash of the durable tool transcript. |
 | `prompt_template_id` | Prompt compiler version. |
 | `source_of_truth_refs` | Report, ledger, and prompt manifest refs. |
 
@@ -73,6 +77,8 @@ For each suite:
 - reward improvement per attempt;
 - repeated patch rate;
 - incident rate;
+- agent tool result count;
+- tool names used;
 - source-of-truth coverage;
 - prompt compiler quality score;
 - wall-clock cost per verified attempt.
@@ -140,8 +146,33 @@ Generate:
   attempt-scoreboard.jsonl
   model-task-scoreboard.json
   artifact-scoreboard.json
+  reality-branches.json
   reality-scoreboard.md
   source-of-truth-manifest.json
 ```
 
 Each file must be read back and hash checked after writing.
+
+## Current Scoreboard Source Of Truth
+
+The Phase 1 smoke run produced the current shape here:
+
+```text
+/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777937558604930525_801dcad0/reality-scoreboard/
+```
+
+The latest official tool-enabled smoke run produced the complete official evidence here:
+
+```text
+/tmp/contextgraph-swe-lite-refinement/swe_lite_refine_1777937357771207798_801dcad0/
+```
+
+The important observed values were:
+
+- agent tool used: `search_repo`;
+- official attempts: `1`;
+- official resolved attempts: `0`;
+- official error: `SWE_OFFICIAL_PATCH_APPLY_FAILED`;
+- root reality ledger rows: `agent_run=1`, `agent_step=16`;
+- task ledger rows include `tool_call=2`, `verifier_result=2`, `incident_packet=2`, `reward_compilation=2`;
+- prompt-candidate branch exists for attempt 2.
