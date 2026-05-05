@@ -15,6 +15,10 @@ const DEFAULT_MODEL: &str = "gemma4:e4b";
 const DEFAULT_OLLAMA_URL: &str = "http://127.0.0.1:11434";
 const DEFAULT_GPU_MIN_FREE_MB: u64 = 8192;
 const DEFAULT_OLLAMA_KEEP_ALIVE: &str = "30m";
+const DEFAULT_OLLAMA_NUM_CTX: u64 = 32768;
+const DEFAULT_OLLAMA_NUM_PREDICT: u64 = 4096;
+const DEFAULT_OLLAMA_TEMPERATURE: f64 = 0.0;
+const DEFAULT_OLLAMA_TOP_P: f64 = 0.9;
 const DEFAULT_OFFICIAL_DOCKER_HOST: &str = "unix:///var/run/docker.sock";
 const DEFAULT_OFFICIAL_DOCKER_CONFIG: &str = "/home/cabdru/.cache/contextgraph-docker-config";
 const DATASET_NAME: &str = "princeton-nlp/SWE-bench_Lite";
@@ -62,11 +66,19 @@ struct Args {
     gpu_max_used_mb: Option<u64>,
     #[arg(long, default_value = DEFAULT_OLLAMA_KEEP_ALIVE)]
     ollama_keep_alive: String,
+    #[arg(long, default_value_t = DEFAULT_OLLAMA_NUM_CTX)]
+    ollama_num_ctx: u64,
+    #[arg(long, default_value_t = DEFAULT_OLLAMA_NUM_PREDICT)]
+    ollama_num_predict: u64,
+    #[arg(long, default_value_t = DEFAULT_OLLAMA_TEMPERATURE)]
+    ollama_temperature: f64,
+    #[arg(long, default_value_t = DEFAULT_OLLAMA_TOP_P)]
+    ollama_top_p: f64,
     #[arg(long, default_value_t = 300)]
     model_timeout: u64,
     #[arg(long, default_value_t = 600)]
     git_timeout: u64,
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 8)]
     agent_tool_rounds: u64,
     #[arg(long, default_value_t = 300)]
     targeted_test_timeout: u64,
@@ -454,7 +466,30 @@ async fn run(args: Args) -> Result<Value> {
             .to_string();
         let response_path = attempt_dir.join("model-response.txt");
         write_text_checked(&response_path, &response_text)?;
-        let (mut patch, mut parse_report) = parse_patch_report(&response_text);
+        let (mut patch, mut parse_report) = if model_response.get("status").and_then(Value::as_str)
+            == Some("blocked")
+        {
+            (
+                None,
+                json!({
+                    "status": "failed",
+                    "error_code": model_response.get("error_code").and_then(Value::as_str).unwrap_or("RUST_REALITY_MODEL_STEP_BLOCKED"),
+                    "field_path": model_response.get("field_path").and_then(Value::as_str).unwrap_or("model_response"),
+                    "message": model_response.get("message_text").and_then(Value::as_str).unwrap_or("model step was blocked before final patch generation"),
+                    "remediation": model_response.get("remediation").and_then(Value::as_str).unwrap_or("reinject the blocked-step evidence and require the model to satisfy the governed tool contract"),
+                    "details": {
+                        "blocked_model_response": model_response
+                    },
+                    "source_of_truth": model_response.get("source_of_truth")
+                }),
+            )
+        } else if let Some((submitted_patch, submitted_report)) =
+            patch_from_tool_submission(&model_response)?
+        {
+            (Some(submitted_patch), submitted_report)
+        } else {
+            parse_patch_report(&response_text)
+        };
         if patch.is_none() {
             if let Some(edits) = parse_report
                 .get("structured_edits")
@@ -1050,7 +1085,9 @@ fn build_problem_reality_packet(
                 "Which production file implements that behavior?",
                 "Which exact source span controls the failing behavior?",
                 "What minimal production edit changes that behavior without editing tests?",
-                "Which validation readback will prove the edit affected the intended reality?"
+                "Which validation readback will prove the edit affected the intended reality?",
+                "Which evidence would falsify the proposed root cause?",
+                "Which existing behavior must remain unchanged?"
             ],
             "required_tools_before_edit": [
                 "read_problem_reality",
@@ -1073,6 +1110,16 @@ fn build_problem_reality_packet(
                 "dynamic coverage is unknown until targeted or official tests run",
                 "problem-statement ambiguity is represented as non-claim instead of hidden success",
                 "test oracle narrowness is visible through FAIL_TO_PASS/PASS_TO_PASS metadata"
+            ],
+            "additional_reality_signals_to_reduce_before_confidence": [
+                "pre-patch failing-test stdout/stderr and stack location",
+                "dynamic coverage or execution trace for touched source spans",
+                "dependency and runtime environment versions used by local reproduction and official Docker evaluation",
+                "minimal counterexample that distinguishes the bug from neighboring behavior",
+                "negative invariants that prove the patch did not only satisfy the metric while breaking intent",
+                "flakiness and retry reality for nondeterministic failures",
+                "performance, memory, security, and public-API side effects when the task surface implies them",
+                "similar verified episodes and failed patch patterns from ContextGraph memory"
             ]
         },
         "source_of_truth": {
@@ -1250,7 +1297,11 @@ fn write_failure_artifact(args: &Args, err: &RealityError) -> std::result::Resul
         "gpu_index": args.gpu_index,
             "gpu_min_free_mb": args.gpu_min_free_mb,
             "gpu_max_used_mb": args.gpu_max_used_mb,
-            "ollama_keep_alive": args.ollama_keep_alive
+            "ollama_keep_alive": args.ollama_keep_alive,
+            "ollama_num_ctx": args.ollama_num_ctx,
+            "ollama_num_predict": args.ollama_num_predict,
+            "ollama_temperature": args.ollama_temperature,
+            "ollama_top_p": args.ollama_top_p
         },
         "error": err,
         "source_of_truth": file_sot(&path)
@@ -1279,12 +1330,34 @@ fn run_cmd_env(
     envs: &[(String, String)],
 ) -> Result<ProcessResult> {
     let started = Instant::now();
+    let output_dir = std::env::temp_dir().join(format!(
+        "contextgraph-run-cmd-{}-{}",
+        std::process::id(),
+        unix_ns()?
+    ));
+    create_dir_checked(&output_dir)?;
+    let stdout_path = output_dir.join("stdout");
+    let stderr_path = output_dir.join("stderr");
+    let stdout_file = fs::File::create(&stdout_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_PROCESS_STDOUT_FILE_CREATE_FAILED",
+            &stdout_path,
+            err,
+        )
+    })?;
+    let stderr_file = fs::File::create(&stderr_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_PROCESS_STDERR_FILE_CREATE_FAILED",
+            &stderr_path,
+            err,
+        )
+    })?;
     let mut process = Command::new(&command[0]);
     process
         .args(&command[1..])
         .current_dir(cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file));
     for (key, value) in envs {
         process.env(key, value);
     }
@@ -1310,38 +1383,55 @@ fn run_cmd_env(
                 None,
             )
         })? {
-            let output = child.wait_with_output().map_err(|err| {
+            let status = child.wait().map_err(|err| {
                 RealityError::new(
-                    "RUST_REALITY_PROCESS_OUTPUT_FAILED",
-                    "failed to collect child process output",
-                    "process.output",
+                    "RUST_REALITY_PROCESS_WAIT_FAILED",
+                    "failed while finalizing child process wait",
+                    "process.wait",
                     "inspect process state",
                     json!({ "command": command, "error": err.to_string() }),
                     None,
                 )
             })?;
+            let stdout = read_process_output(&stdout_path)?;
+            let stderr = read_process_output(&stderr_path)?;
+            let _ = fs::remove_dir_all(&output_dir);
             return Ok(ProcessResult {
                 command: command.to_vec(),
                 cwd: path_str(cwd).to_string(),
-                exit_code: output.status.code().unwrap_or(128),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                exit_code: status.code().unwrap_or(128),
+                stdout,
+                stderr,
                 elapsed_ms: started.elapsed().as_millis(),
             });
         }
         if Instant::now() > deadline {
             let _ = child.kill();
+            let _ = child.wait();
+            let stdout = read_process_output(&stdout_path).unwrap_or_default();
+            let stderr = read_process_output(&stderr_path).unwrap_or_default();
+            let _ = fs::remove_dir_all(&output_dir);
             return Ok(ProcessResult {
                 command: command.to_vec(),
                 cwd: path_str(cwd).to_string(),
                 exit_code: 124,
-                stdout: String::new(),
-                stderr: format!("TIMEOUT after {timeout_secs}s"),
+                stdout,
+                stderr: if stderr.is_empty() {
+                    format!("TIMEOUT after {timeout_secs}s")
+                } else {
+                    format!("{stderr}\nTIMEOUT after {timeout_secs}s")
+                },
                 elapsed_ms: started.elapsed().as_millis(),
             });
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn read_process_output(path: &Path) -> Result<String> {
+    let bytes = fs::read(path)
+        .map_err(|err| fs_error("RUST_REALITY_PROCESS_OUTPUT_READ_FAILED", path, err))?;
+    Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
 fn blackbox(bin: &Path, args: &[&str], cwd: &Path) -> Result<Value> {
@@ -1386,15 +1476,16 @@ async fn ollama_chat_json(
         "before_ollama_chat",
         &args.model,
     )?;
-    let system_prompt = "You are a software repair model inside ContextGraph's Rust reality loop. \
-You must call at least one governed tool before proposing a patch. \
+    let system_prompt = "You are a model that can do function calling with the following functions. \
+You are a software repair model inside ContextGraph's Rust reality loop. \
+You must call governed tools to inspect reality and must submit the candidate patch with apply_line_window_edit or apply_structured_edit. \
 On attempt 1, start by calling read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool so your edit is grounded in real task and repository state. \
 On later attempts, call read_official_failure_reality or compare_attempts before revising a failed patch. \
 The application executes tools; you do not execute code yourself. \
-After tool use, you must return one raw JSON object only, with no markdown fences and no prose. \
-Prefer structured edits over raw diffs: {\"edits\":[{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}],\"notes\":\"brief\"}. \
-ContextGraph compiles structured edits into a git diff and verifies them against the real repository. \
-You may return {\"patch\":\"<complete unified git diff>\",\"notes\":\"brief\"} only if you can produce a syntactically valid diff. \
+Prefer apply_line_window_edit after open_file_window because it replaces line ranges from a file hash you observed. \
+Use apply_structured_edit only when you can provide an exact unique find span copied from real source windows. \
+ContextGraph compiles that tool call into a git diff and verifies it against the real repository. \
+Do not try to finish with prose, raw JSON, or a hand-written patch in assistant content. \
 Do not modify tests, fixtures, or benchmark harness files.";
     let mut messages = vec![
         json!({"role": "system", "content": system_prompt}),
@@ -1405,6 +1496,8 @@ Do not modify tests, fixtures, or benchmark harness files.";
     create_dir_checked(&tools_root)?;
     let mut transcript_entries = Vec::new();
     let mut executed_tool_calls = 0_u64;
+    let mut submitted_candidate_patch: Option<Value> = None;
+    let mut failed_candidate_submission: Option<Value> = None;
 
     for round in 1..=args.agent_tool_rounds {
         let request_path = tools_root.join(format!("tool-round-{round:02}-request.json"));
@@ -1415,7 +1508,12 @@ Do not modify tests, fixtures, or benchmark harness files.";
             "think": false,
             "tools": tools,
             "keep_alive": args.ollama_keep_alive,
-            "options": {"temperature": 0, "num_predict": 2048}
+            "options": {
+                "temperature": args.ollama_temperature,
+                "top_p": args.ollama_top_p,
+                "num_ctx": args.ollama_num_ctx,
+                "num_predict": args.ollama_num_predict
+            }
         });
         write_json_checked(&request_path, &body)?;
         let response = post_ollama_chat(client, args, &body, &request_path).await?;
@@ -1448,7 +1546,7 @@ Do not modify tests, fixtures, or benchmark harness files.";
             messages.push(response["message"].clone());
             messages.push(json!({
                 "role": "user",
-                "content": "ContextGraph did not receive a native tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. Do not return final patch JSON in this tool phase."
+                "content": "ContextGraph did not receive a governed tool call. You must call exactly one governed tool now. For attempt 1, use read_problem_reality, search_repo, inspect_symbol, open_file_window, or synthesize_helper_tool. When ready to submit the fix, prefer apply_line_window_edit with line numbers and observed_sha256 from open_file_window, or use apply_structured_edit with a unique exact find span. Do not return final JSON or prose."
             }));
             continue;
         }
@@ -1483,6 +1581,19 @@ Do not modify tests, fixtures, or benchmark harness files.";
                 .get("status")
                 .and_then(Value::as_str)
                 .unwrap_or("failed");
+            if (name == "apply_structured_edit" || name == "apply_line_window_edit")
+                && result_status == "ok"
+            {
+                submitted_candidate_patch = Some(materialize_tool_candidate_submission(
+                    &result_readback,
+                    &tool_dir,
+                )?);
+            } else if name == "apply_structured_edit" || name == "apply_line_window_edit" {
+                failed_candidate_submission = Some(compact_failed_candidate_submission(
+                    &result_readback,
+                    &result_path,
+                ));
+            }
             let ledger_evidence = record_agent_tool_boundary(
                 ctx,
                 &name,
@@ -1535,38 +1646,40 @@ Do not modify tests, fixtures, or benchmark harness files.";
             "source_of_truth": file_sot(&transcript_path)
         });
         write_json_checked(&transcript_path, &transcript)?;
-        return Err(RealityError::new(
-            "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
-            "model did not call any governed ContextGraph tool before trying to answer",
-            "ollama.message.tool_calls",
-            "use a tool-capable local model and prompt it to call search_repo, inspect_symbol, open_file_window, or read_official_failure_reality before returning edits",
-            json!({
+        let gpu_after = read_gpu_vram_state(args.gpu_index)?;
+        assert_gpu_budget(
+            &gpu_after,
+            args.gpu_min_free_mb,
+            args.gpu_max_used_mb,
+            "after_blocked_tool_phase",
+            &args.model,
+        )?;
+        let blocked = json!({
+            "record_kind": "contextgraph_model_step_blocked",
+            "status": "blocked",
+            "error_code": "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING",
+            "field_path": "ollama.message.tool_calls",
+            "message_text": "model did not call any governed ContextGraph tool before trying to answer",
+            "remediation": "reinject this blocked-step reality and require read_problem_reality, search_repo, inspect_symbol, open_file_window, or read_official_failure_reality before submitting edits",
+            "message": {"role": "assistant", "content": ""},
+            "details": {
                 "attempt": attempt,
                 "model": args.model,
                 "tool_round_budget": args.agent_tool_rounds,
-                "transcript": file_sot(&transcript_path),
                 "tools": agent_tool_names()
-            }),
-            Some(file_sot(&transcript_path)),
-        ));
+            },
+            "contextgraph_runtime": {
+                "attempt": attempt,
+                "gpu_before": gpu_before,
+                "gpu_after": gpu_after,
+                "agent_tool_transcript": file_sot(&transcript_path)
+            },
+            "source_of_truth": file_sot(&transcript_path)
+        });
+        write_json_checked(&attempt_dir.join("ollama-response.json"), &blocked)?;
+        return Ok(blocked);
     }
 
-    messages.push(json!({
-        "role": "user",
-        "content": "Using only the verified task, repository context, and tool-result reality above, return exactly one raw JSON object with notes plus either edits or patch. No markdown and no prose."
-    }));
-    let final_body = json!({
-        "model": args.model,
-        "messages": messages,
-        "stream": false,
-        "think": false,
-        "format": final_action_schema(),
-        "keep_alive": args.ollama_keep_alive,
-        "options": {"temperature": 0, "num_predict": 4096}
-    });
-    let final_request_path = attempt_dir.join("ollama-request.json");
-    write_json_checked(&final_request_path, &final_body)?;
-    let mut enriched = post_ollama_chat(client, args, &final_body, &final_request_path).await?;
     let gpu_after = read_gpu_vram_state(args.gpu_index)?;
     assert_gpu_budget(
         &gpu_after,
@@ -1575,6 +1688,66 @@ Do not modify tests, fixtures, or benchmark harness files.";
         "after_ollama_chat",
         &args.model,
     )?;
+    let Some(submitted_candidate_patch) = submitted_candidate_patch else {
+        let attempted_edit = failed_candidate_submission.is_some();
+        let error_code = if attempted_edit {
+            "RUST_REALITY_FINAL_EDIT_TOOL_FAILED"
+        } else {
+            "RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED"
+        };
+        let message = if attempted_edit {
+            "model called a final edit tool but it did not produce a candidate patch"
+        } else {
+            "model used governed tools but never submitted a candidate patch through apply_line_window_edit or apply_structured_edit"
+        };
+        let remediation = if attempted_edit {
+            "reinject the failed final edit result, open the exact source window, and submit a line-window edit or unique find/replace edit"
+        } else {
+            "call apply_line_window_edit with observed_sha256 from open_file_window, or apply_structured_edit with exact find/replace edits copied from opened source windows"
+        };
+        let transcript = json!({
+            "record_kind": "contextgraph_agent_tool_transcript",
+            "attempt": attempt,
+            "model": args.model,
+            "tool_round_budget": args.agent_tool_rounds,
+            "tools": agent_tool_names(),
+            "entries": transcript_entries,
+            "executed_tool_calls": executed_tool_calls,
+            "status": "blocked",
+            "error_code": error_code,
+            "message": message,
+            "remediation": remediation,
+            "failed_candidate_submission": failed_candidate_submission,
+            "source_of_truth": file_sot(&transcript_path)
+        });
+        write_json_checked(&transcript_path, &transcript)?;
+        let blocked = json!({
+            "record_kind": "contextgraph_model_step_blocked",
+            "status": "blocked",
+            "error_code": error_code,
+            "field_path": "agent_tools.final_edit_submission",
+            "message_text": message,
+            "remediation": remediation,
+            "message": {"role": "assistant", "content": ""},
+            "details": {
+                "attempt": attempt,
+                "model": args.model,
+                "tool_round_budget": args.agent_tool_rounds,
+                "executed_tool_calls": executed_tool_calls,
+                "tools": agent_tool_names(),
+                "failed_candidate_submission": failed_candidate_submission
+            },
+            "contextgraph_runtime": {
+                "attempt": attempt,
+                "gpu_before": gpu_before,
+                "gpu_after": gpu_after,
+                "agent_tool_transcript": file_sot(&transcript_path)
+            },
+            "source_of_truth": file_sot(&transcript_path)
+        });
+        write_json_checked(&attempt_dir.join("ollama-response.json"), &blocked)?;
+        return Ok(blocked);
+    };
     let transcript = json!({
         "record_kind": "contextgraph_agent_tool_transcript",
         "attempt": attempt,
@@ -1583,16 +1756,28 @@ Do not modify tests, fixtures, or benchmark harness files.";
         "tools": agent_tool_names(),
         "entries": transcript_entries,
         "executed_tool_calls": executed_tool_calls,
+        "final_action_mode": "tool_mediated_apply_structured_edit",
+        "submitted_candidate_patch": submitted_candidate_patch,
         "status": "ok",
         "source_of_truth": file_sot(&tools_root.join("agent-tool-transcript.json"))
     });
     write_json_checked(&transcript_path, &transcript)?;
-    enriched["contextgraph_runtime"] = json!({
-        "attempt": attempt,
-        "gpu_before": gpu_before,
-        "gpu_after": gpu_after,
-        "request_source_of_truth": file_sot(&final_request_path),
-        "agent_tool_transcript": file_sot(&transcript_path)
+    let enriched = json!({
+        "model": args.model,
+        "created_at_unix": unix_secs()?,
+        "done": true,
+        "message": {
+            "role": "assistant",
+            "content": ""
+        },
+        "contextgraph_runtime": {
+            "attempt": attempt,
+            "gpu_before": gpu_before,
+            "gpu_after": gpu_after,
+            "final_action_mode": "tool_mediated_apply_structured_edit",
+            "submitted_candidate_patch": submitted_candidate_patch,
+            "agent_tool_transcript": file_sot(&transcript_path)
+        }
     });
     write_json_checked(&attempt_dir.join("ollama-response.json"), &enriched)?;
     Ok(enriched)
@@ -1645,38 +1830,15 @@ async fn post_ollama_chat(
     Ok(value)
 }
 
-fn final_action_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["notes"],
-        "properties": {
-            "patch": {"type": "string"},
-            "edits": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["path", "find", "replace"],
-                    "properties": {
-                        "path": {"type": "string"},
-                        "find": {"type": "string"},
-                        "replace": {"type": "string"}
-                    }
-                }
-            },
-            "notes": {"type": "string"}
-        }
-    })
-}
-
 fn agent_tool_names() -> Vec<&'static str> {
     vec![
         "read_problem_reality",
         "read_official_failure_reality",
+        "list_files",
         "inspect_symbol",
         "search_repo",
         "open_file_window",
+        "apply_line_window_edit",
         "apply_structured_edit",
         "run_targeted_test",
         "run_official_swe_eval",
@@ -1712,6 +1874,21 @@ fn agent_tool_specs() -> Value {
                     "additionalProperties": false,
                     "properties": {
                         "attempt": {"type": "integer", "description": "Optional prior attempt number to inspect. Defaults to latest attempt with official evidence."}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_files",
+                "description": "List real repository files by optional substring filter. Use this to navigate the checkout before opening source windows.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "query": {"type": "string", "description": "Optional substring that repo-relative paths must contain."},
+                        "max_results": {"type": "integer", "minimum": 1, "maximum": 200}
                     }
                 }
             }
@@ -1769,7 +1946,7 @@ fn agent_tool_specs() -> Value {
             "type": "function",
             "function": {
                 "name": "apply_structured_edit",
-                "description": "Compile exact find/replace edits against the real checkout, generate a candidate patch preview, then reset the workspace. The final response still must include edits or patch.",
+                "description": "Submit exact find/replace edits as the candidate patch. Use this when the find span is copied from a real source window and matches exactly once. ContextGraph compiles it against the real checkout, verifies the patch artifact, then resets the workspace. A successful call is the final patch submission for this attempt.",
                 "parameters": {
                     "type": "object",
                     "additionalProperties": false,
@@ -1785,6 +1962,35 @@ fn agent_tool_specs() -> Value {
                                     "path": {"type": "string"},
                                     "find": {"type": "string"},
                                     "replace": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "apply_line_window_edit",
+                "description": "Preferred final patch submission tool for Gemma coding-agent mode. Replace line ranges from a file returned by open_file_window. You must pass the file sha256 observed from open_file_window so ContextGraph can prove the edit targets the same durable source reality you inspected.",
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["edits"],
+                    "properties": {
+                        "edits": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["path", "start_line", "end_line", "replace", "observed_sha256"],
+                                "properties": {
+                                    "path": {"type": "string"},
+                                    "start_line": {"type": "integer", "minimum": 1},
+                                    "end_line": {"type": "integer", "minimum": 1},
+                                    "replace": {"type": "string"},
+                                    "observed_sha256": {"type": "string", "description": "The sha256 returned by open_file_window for this file."}
                                 }
                             }
                         }
@@ -1998,9 +2204,11 @@ fn execute_agent_tool_call(
     let result = match name {
         "read_problem_reality" => tool_read_problem_reality(ctx, arguments),
         "read_official_failure_reality" => tool_read_official_failure_reality(ctx, arguments),
+        "list_files" => tool_list_files(ctx, arguments),
         "inspect_symbol" => tool_inspect_symbol(ctx, arguments),
         "search_repo" => tool_search_repo(ctx, arguments),
         "open_file_window" => tool_open_file_window(ctx, arguments),
+        "apply_line_window_edit" => tool_apply_line_window_edit(ctx, arguments, tool_dir),
         "apply_structured_edit" => tool_apply_structured_edit(ctx, arguments, tool_dir),
         "run_targeted_test" => tool_run_targeted_test(ctx, arguments),
         "run_official_swe_eval" => tool_run_official_swe_eval(ctx, arguments),
@@ -2217,6 +2425,47 @@ fn tool_read_official_failure_reality(
     ))
 }
 
+fn tool_list_files(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
+    let query = arguments
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let max_results = bounded_tool_u64(arguments, "max_results", 120, 1, 200) as usize;
+    let result = run_required(
+        &["git", "ls-files"],
+        ctx.repo_dir,
+        120,
+        "RUST_REALITY_TOOL_LIST_FILES_FAILED",
+        "list_files.git_ls_files",
+    )?;
+    let mut files = Vec::new();
+    for path in result.stdout.lines() {
+        if !query.is_empty() && !path.contains(&query) {
+            continue;
+        }
+        if is_forbidden_benchmark_mutation(path) {
+            continue;
+        }
+        files.push(path.to_string());
+        if files.len() >= max_results {
+            break;
+        }
+    }
+    Ok(tool_ok(
+        "list_files",
+        "listed real tracked production files in the checked-out repository",
+        json!({
+            "query": query,
+            "files": files,
+            "returned": files.len(),
+            "max_results": max_results,
+            "source_of_truth": format!("git:{}#ls-files", path_str(ctx.repo_dir))
+        }),
+    ))
+}
+
 fn tool_inspect_symbol(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
     let symbol = required_tool_str(arguments, "symbol")?;
     if !symbol
@@ -2355,6 +2604,7 @@ fn tool_apply_structured_edit(
     let status = if patch.is_some() { "ok" } else { "failed" };
     Ok(json!({
         "status": status,
+        "tool_name": "apply_structured_edit",
         "action": "compiled structured edits against real checkout, generated patch preview, then reset workspace to base commit",
         "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
         "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
@@ -2364,6 +2614,159 @@ fn tool_apply_structured_edit(
             "source_of_truth": format!("git:{}#HEAD", path_str(ctx.repo_dir))
         }
     }))
+}
+
+fn tool_apply_line_window_edit(
+    ctx: &AgentToolContext<'_>,
+    arguments: &Value,
+    tool_dir: &Path,
+) -> Result<Value> {
+    let Some(edits) = arguments.get("edits").and_then(Value::as_array) else {
+        return Ok(tool_blocked(
+            "apply_line_window_edit",
+            "RUST_REALITY_TOOL_LINE_EDITS_MISSING",
+            "arguments.edits",
+            "line-window edit tool requires an edits array",
+            "provide line edits using path, start_line, end_line, replace, and observed_sha256 from open_file_window",
+            json!({"arguments": arguments}),
+            None,
+        ));
+    };
+    let (patch, compilation) =
+        compile_line_window_edits(ctx.repo_dir, tool_dir, edits, ctx.args.git_timeout)?;
+    reset_workspace(ctx.repo_dir, &ctx.task.base_commit, ctx.args.git_timeout)?;
+    let status = if patch.is_some() { "ok" } else { "failed" };
+    Ok(json!({
+        "status": status,
+        "tool_name": "apply_line_window_edit",
+        "action": "compiled line-window edits against real checkout, generated patch preview, then reset workspace to base commit",
+        "patch_preview": patch.as_ref().map(|text| truncate_chars(text, 4000)),
+        "patch_sha256": patch.as_ref().map(|text| sha256_text(text)),
+        "compilation": compilation,
+        "workspace_after": {
+            "head": ctx.task.base_commit,
+            "source_of_truth": format!("git:{}#HEAD", path_str(ctx.repo_dir))
+        }
+    }))
+}
+
+fn materialize_tool_candidate_submission(result: &Value, tool_dir: &Path) -> Result<Value> {
+    let candidate_sot = result
+        .pointer("/compilation/source_of_truth/candidate_patch")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_TOOL_SUBMITTED_PATCH_SOT_MISSING",
+                "apply_structured_edit returned ok without a candidate patch source of truth",
+                "apply_structured_edit.compilation.source_of_truth.candidate_patch",
+                "inspect the tool result and structured edit compiler output",
+                json!({"result": result}),
+                None,
+            )
+        })?;
+    let candidate_path = file_sot_to_path(
+        candidate_sot,
+        "RUST_REALITY_TOOL_SUBMITTED_PATCH_SOT_INVALID",
+        "apply_structured_edit.compilation.source_of_truth.candidate_patch",
+    )?;
+    let candidate_path = resolve_path(&candidate_path)?;
+    let tool_dir = resolve_path(tool_dir)?;
+    if !candidate_path.starts_with(&tool_dir) {
+        return Err(RealityError::new(
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_PATH_OUTSIDE_TOOL_DIR",
+            "apply_structured_edit candidate patch was outside the governed tool artifact directory",
+            "apply_structured_edit.compilation.source_of_truth.candidate_patch",
+            "reject the tool result and inspect path provenance",
+            json!({
+                "candidate_patch_path": path_str(&candidate_path),
+                "tool_dir": path_str(&tool_dir)
+            }),
+            Some(candidate_sot.to_string()),
+        ));
+    }
+    require_file(
+        &candidate_path,
+        "apply_structured_edit.candidate_patch",
+        "RUST_REALITY_TOOL_SUBMITTED_PATCH_MISSING",
+    )?;
+    let patch_text = fs::read_to_string(&candidate_path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_READ_FAILED",
+            &candidate_path,
+            err,
+        )
+    })?;
+    if patch_text.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_EMPTY",
+            "apply_structured_edit candidate patch was empty after source-of-truth readback",
+            "apply_structured_edit.candidate_patch",
+            "submit edits that produce a non-empty production-source diff",
+            json!({"candidate_patch_path": path_str(&candidate_path)}),
+            Some(file_sot(&candidate_path)),
+        ));
+    }
+    let actual_sha = sha256_file(&candidate_path)?;
+    let expected_sha = result
+        .get("patch_sha256")
+        .or_else(|| result.pointer("/compilation/candidate_patch_sha256"))
+        .and_then(Value::as_str);
+    if let Some(expected_sha) = expected_sha {
+        if expected_sha != actual_sha {
+            return Err(RealityError::new(
+                "RUST_REALITY_TOOL_SUBMITTED_PATCH_SHA_MISMATCH",
+                "apply_structured_edit patch hash did not match file readback",
+                "apply_structured_edit.patch_sha256",
+                "reject the submitted patch and inspect artifact integrity",
+                json!({
+                    "expected": expected_sha,
+                    "actual": actual_sha,
+                    "candidate_patch": file_sot(&candidate_path)
+                }),
+                Some(file_sot(&candidate_path)),
+            ));
+        }
+    }
+    Ok(json!({
+        "record_kind": "contextgraph_tool_submitted_candidate_patch",
+        "status": "ok",
+        "tool_name": result.get("tool_name").and_then(Value::as_str).unwrap_or("apply_structured_edit"),
+        "candidate_patch_path": path_str(&candidate_path),
+        "candidate_patch": file_sot(&candidate_path),
+        "patch_sha256": actual_sha,
+        "patch_stats": patch_line_stats(&patch_text),
+        "structured_edits": result.pointer("/compilation/source_of_truth/structured_edits"),
+        "compilation": {
+            "status": result.pointer("/compilation/status"),
+            "message": result.pointer("/compilation/message"),
+            "applied_edits": result.pointer("/compilation/applied_edits")
+        },
+        "source_of_truth": {
+            "candidate_patch": file_sot(&candidate_path),
+            "tool_artifact_dir": file_sot(&tool_dir)
+        }
+    }))
+}
+
+fn compact_failed_candidate_submission(result: &Value, result_path: &Path) -> Value {
+    let compilation = result
+        .get("result")
+        .and_then(|value| value.get("compilation"));
+    json!({
+        "record_kind": "contextgraph_failed_candidate_patch_submission",
+        "tool_name": result
+            .get("tool_name")
+            .or_else(|| result.get("result").and_then(|value| value.get("tool_name")))
+            .and_then(Value::as_str)
+            .unwrap_or("apply_structured_edit"),
+        "status": result.get("status"),
+        "error_code": result.get("error_code").or_else(|| compilation.and_then(|value| value.get("error_code"))),
+        "field_path": compilation.and_then(|value| value.get("field_path")),
+        "message": compilation.and_then(|value| value.get("message")),
+        "remediation": compilation.and_then(|value| value.get("remediation")),
+        "details": compilation.and_then(|value| value.get("details")),
+        "source_of_truth": file_sot(result_path)
+    })
 }
 
 fn tool_run_targeted_test(ctx: &AgentToolContext<'_>, arguments: &Value) -> Result<Value> {
@@ -2436,7 +2839,7 @@ fn tool_run_official_swe_eval(ctx: &AgentToolContext<'_>, arguments: &Value) -> 
         "RUST_REALITY_TOOL_OFFICIAL_EVAL_REQUIRES_CANDIDATE_PATCH",
         "candidate.patch",
         "official SWE-bench evaluation cannot run before the model has produced a candidate patch",
-        "return final edits or patch; the Rust loop will run official SWE-bench evaluation after validation passes",
+        "call apply_structured_edit with exact find/replace edits; the Rust loop will run official SWE-bench evaluation after validation passes",
         json!({"requested_attempt": requested_attempt, "attempts_total": ctx.attempts.len()}),
         Some(format!("file:{}#attempts", path_str(ctx.attempt_dir))),
     ))
@@ -2736,6 +3139,86 @@ fn tail_chars(value: &str, limit: usize) -> String {
     }
 }
 
+fn patch_from_tool_submission(model_response: &Value) -> Result<Option<(String, Value)>> {
+    let Some(submission) = model_response
+        .pointer("/contextgraph_runtime/submitted_candidate_patch")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(None);
+    };
+    let path = submission
+        .get("candidate_patch_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .or_else(|| {
+            submission
+                .get("candidate_patch")
+                .and_then(Value::as_str)
+                .and_then(|sot| file_sot_to_path(sot, "", "").ok())
+        })
+        .ok_or_else(|| {
+            RealityError::new(
+                "RUST_REALITY_TOOL_SUBMITTED_PATCH_PATH_MISSING",
+                "tool-mediated model response did not include a candidate patch path",
+                "contextgraph_runtime.submitted_candidate_patch.candidate_patch_path",
+                "inspect apply_structured_edit result materialization",
+                json!({"submitted_candidate_patch": submission}),
+                None,
+            )
+        })?;
+    require_file(
+        &path,
+        "contextgraph_runtime.submitted_candidate_patch.candidate_patch_path",
+        "RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_MISSING",
+    )?;
+    let patch = fs::read_to_string(&path).map_err(|err| {
+        fs_error(
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_FAILED",
+            &path,
+            err,
+        )
+    })?;
+    if patch.trim().is_empty() {
+        return Err(RealityError::new(
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_EMPTY",
+            "tool-mediated candidate patch file was empty on final readback",
+            "contextgraph_runtime.submitted_candidate_patch.candidate_patch_path",
+            "submit exact edits that produce a non-empty diff",
+            json!({"candidate_patch_path": path_str(&path)}),
+            Some(file_sot(&path)),
+        ));
+    }
+    let actual_sha = sha256_file(&path)?;
+    if let Some(expected_sha) = submission.get("patch_sha256").and_then(Value::as_str) {
+        if expected_sha != actual_sha {
+            return Err(RealityError::new(
+                "RUST_REALITY_TOOL_SUBMITTED_PATCH_FINAL_SHA_MISMATCH",
+                "tool-mediated candidate patch hash changed before final readback",
+                "contextgraph_runtime.submitted_candidate_patch.patch_sha256",
+                "reject the candidate patch and inspect artifact integrity",
+                json!({
+                    "expected": expected_sha,
+                    "actual": actual_sha,
+                    "candidate_patch": file_sot(&path)
+                }),
+                Some(file_sot(&path)),
+            ));
+        }
+    }
+    Ok(Some((
+        patch,
+        json!({
+            "status": "passed",
+            "error_code": null,
+            "field_path": "agent_tools.apply_structured_edit",
+            "message": "candidate patch was submitted through the governed apply_structured_edit tool and read back from its durable artifact",
+            "final_action_mode": "tool_mediated_apply_structured_edit",
+            "tool_submitted_candidate_patch": submission,
+            "source_of_truth": file_sot(&path)
+        }),
+    )))
+}
+
 fn parse_patch_report(response_text: &str) -> (Option<String>, Value) {
     let candidates = json_candidates(response_text);
     let mut parse_errors = Vec::new();
@@ -2965,6 +3448,248 @@ fn compile_structured_edits(
             }
         }),
     ))
+}
+
+fn compile_line_window_edits(
+    repo_dir: &Path,
+    attempt_dir: &Path,
+    edits: &[Value],
+    timeout: u64,
+) -> Result<(Option<String>, Value)> {
+    let edits_path = attempt_dir.join("line-window-edits.json");
+    write_json_checked(&edits_path, &edits)?;
+    let mut applied = Vec::new();
+
+    for (index, edit) in edits.iter().enumerate() {
+        let field_prefix = format!("model_response.line_edits[{index}]");
+        let path = match edit.get("path").and_then(Value::as_str) {
+            Some(value) if !value.trim().is_empty() => value.trim(),
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_PATH_MISSING",
+                    &format!("{field_prefix}.path"),
+                    "line-window edit path is missing",
+                    "return a relative production-source path from open_file_window",
+                    json!({"edit": edit}),
+                    &edits_path,
+                ));
+            }
+        };
+        if path.starts_with('/')
+            || path.contains('\\')
+            || Path::new(path)
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_PATH_INVALID",
+                &format!("{field_prefix}.path"),
+                "line-window edit path must be a relative repository path",
+                "return a normal repo-relative path without absolute roots, parent traversal, or backslashes",
+                json!({"path": path}),
+                &edits_path,
+            ));
+        }
+        if is_forbidden_benchmark_mutation(path) {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_FORBIDDEN_PATH",
+                &format!("{field_prefix}.path"),
+                "line-window edit targets tests, fixtures, or benchmark harness files",
+                "repair production source only; do not change tests, fixtures, or evaluation harnesses",
+                json!({"path": path}),
+                &edits_path,
+            ));
+        }
+        let start_line = match edit.get("start_line").and_then(Value::as_u64) {
+            Some(value) if value >= 1 => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_START_MISSING",
+                    &format!("{field_prefix}.start_line"),
+                    "line-window edit start_line is missing or invalid",
+                    "use the line numbers returned by open_file_window",
+                    json!({"edit": edit}),
+                    &edits_path,
+                ));
+            }
+        };
+        let end_line = match edit.get("end_line").and_then(Value::as_u64) {
+            Some(value) if value >= start_line => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_END_INVALID",
+                    &format!("{field_prefix}.end_line"),
+                    "line-window edit end_line is missing or before start_line",
+                    "use the inclusive line range returned by open_file_window",
+                    json!({"edit": edit}),
+                    &edits_path,
+                ));
+            }
+        };
+        if end_line - start_line > 240 {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_RANGE_TOO_LARGE",
+                &format!("{field_prefix}.end_line"),
+                "line-window edit range is too large",
+                "open a smaller source window and replace at most 241 lines at a time",
+                json!({"path": path, "start_line": start_line, "end_line": end_line}),
+                &edits_path,
+            ));
+        }
+        let observed_sha256 = match edit.get("observed_sha256").and_then(Value::as_str) {
+            Some(value) if value.starts_with("sha256:") => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISSING",
+                    &format!("{field_prefix}.observed_sha256"),
+                    "line-window edit must include observed_sha256 from open_file_window",
+                    "call open_file_window for this file and copy its sha256 into observed_sha256",
+                    json!({"path": path}),
+                    &edits_path,
+                ));
+            }
+        };
+        let replace = match edit.get("replace").and_then(Value::as_str) {
+            Some(value) => value,
+            _ => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_REPLACE_MISSING",
+                    &format!("{field_prefix}.replace"),
+                    "line-window edit replace text is missing",
+                    "return the exact replacement source text for the requested line range",
+                    json!({"path": path, "start_line": start_line, "end_line": end_line}),
+                    &edits_path,
+                ));
+            }
+        };
+        let target = repo_dir.join(path);
+        if !target.exists() || !target.is_file() {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_TARGET_MISSING",
+                &format!("{field_prefix}.path"),
+                "line-window edit target file does not exist",
+                "choose a real production-source file from open_file_window or list_files",
+                json!({"path": path, "source_of_truth": file_sot(&target)}),
+                &edits_path,
+            ));
+        }
+        let before = match fs::read_to_string(&target) {
+            Ok(value) => value,
+            Err(err) => {
+                return Ok(structured_edit_failure(
+                    "RUST_REALITY_LINE_EDIT_TARGET_READ_FAILED",
+                    &format!("{field_prefix}.path"),
+                    "line-window edit target could not be read as UTF-8 text",
+                    "choose a text source file and avoid binary/generated artifacts",
+                    json!({"path": path, "error": err.to_string()}),
+                    &edits_path,
+                ));
+            }
+        };
+        let actual_sha256 = sha256_file(&target)?;
+        if actual_sha256 != observed_sha256 {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISMATCH",
+                &format!("{field_prefix}.observed_sha256"),
+                "line-window edit observed_sha256 does not match current file readback",
+                "reopen the file window and submit an edit against the current source reality",
+                json!({
+                    "path": path,
+                    "expected": observed_sha256,
+                    "actual": actual_sha256,
+                    "source_of_truth": file_sot(&target)
+                }),
+                &edits_path,
+            ));
+        }
+        let spans = line_spans(&before);
+        if spans.is_empty() || end_line as usize > spans.len() {
+            return Ok(structured_edit_failure(
+                "RUST_REALITY_LINE_EDIT_RANGE_OUT_OF_BOUNDS",
+                &format!("{field_prefix}.end_line"),
+                "line-window edit range is outside current file bounds",
+                "reopen the file window and use a valid inclusive range",
+                json!({
+                    "path": path,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "total_lines": spans.len(),
+                    "source_of_truth": file_sot(&target)
+                }),
+                &edits_path,
+            ));
+        }
+        let byte_start = spans[(start_line - 1) as usize].0;
+        let byte_end = spans[(end_line - 1) as usize].1;
+        let old_span = &before[byte_start..byte_end];
+        let mut after = String::with_capacity(before.len() + replace.len());
+        after.push_str(&before[..byte_start]);
+        after.push_str(replace);
+        after.push_str(&before[byte_end..]);
+        write_text_checked(&target, &after)?;
+        applied.push(json!({
+            "index": index,
+            "path": path,
+            "start_line": start_line,
+            "end_line": end_line,
+            "before_sha256": sha256_text(&before),
+            "after_sha256": sha256_text(&after),
+            "observed_sha256": observed_sha256,
+            "old_span_sha256": sha256_text(old_span),
+            "replace_sha256": sha256_text(replace),
+            "source_of_truth": file_sot(&target)
+        }));
+    }
+
+    let diff = run_required(
+        &["git", "diff", "--no-ext-diff", "--binary"],
+        repo_dir,
+        timeout,
+        "RUST_REALITY_LINE_EDIT_GIT_DIFF_FAILED",
+        "line_window_edits.git_diff",
+    )?;
+    if diff.stdout.trim().is_empty() {
+        return Ok(structured_edit_failure(
+            "RUST_REALITY_LINE_EDIT_EMPTY_DIFF",
+            "model_response.line_edits",
+            "line-window edits produced no repository diff",
+            "change production source so the official oracle has a candidate patch to evaluate",
+            json!({"applied_edits": applied}),
+            &edits_path,
+        ));
+    }
+    let patch_path = attempt_dir.join("candidate.patch");
+    write_text_checked(&patch_path, &diff.stdout)?;
+    Ok((
+        Some(diff.stdout),
+        json!({
+            "status": "passed",
+            "error_code": null,
+            "field_path": "model_response.line_edits",
+            "message": "Rust compiled line-window edits into a git diff from the real checkout",
+            "applied_edits": applied,
+            "candidate_patch_sha256": sha256_file(&patch_path)?,
+            "source_of_truth": {
+                "line_window_edits": file_sot(&edits_path),
+                "candidate_patch": file_sot(&patch_path),
+                "workspace_diff": format!("git:{}#diff", path_str(repo_dir))
+            }
+        }),
+    ))
+}
+
+fn line_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut start = 0;
+    for segment in text.split_inclusive('\n') {
+        let end = start + segment.len();
+        spans.push((start, end));
+        start = end;
+    }
+    if start < text.len() {
+        spans.push((start, text.len()));
+    }
+    spans
 }
 
 fn structured_edit_failure(
@@ -4047,6 +4772,13 @@ fn build_reality_signal_packet(
     };
     let changed_files = changed_files_from_validation(validation);
     let tool_grounding = extract_tool_grounding(agent_tool_transcript_path, &changed_files)?;
+    let tool_reward_signals = derive_tool_reward_signals(
+        &tool_grounding,
+        patch.is_some(),
+        repeated_patch,
+        validation,
+        official_evidence_path.is_some(),
+    );
     let failure_digest = build_failure_digest(validation, official_evidence.as_ref());
     let patch_stats = patch.map(patch_line_stats).unwrap_or_else(|| {
         json!({
@@ -4097,12 +4829,13 @@ fn build_reality_signal_packet(
             "patch_stats": patch_stats,
             "patch_preview": patch.map(|text| truncate_chars(text, 3000)),
             "source_of_truth": {
-                "candidate_patch": file_sot(&attempt_dir.join("candidate.patch")),
-                "actual_applied_patch": file_sot(&attempt_dir.join("actual-applied.patch")),
-                "static_checks": file_sot(&attempt_dir.join("static-checks.json"))
+                "candidate_patch": optional_file_sot(&attempt_dir.join("candidate.patch")),
+                "actual_applied_patch": optional_file_sot(&attempt_dir.join("actual-applied.patch")),
+                "static_checks": optional_file_sot(&attempt_dir.join("static-checks.json"))
             }
         },
         "tool_grounding": tool_grounding,
+        "tool_reward_signals": tool_reward_signals,
         "score_reality": {
             "score": score,
             "reward": reward_signal,
@@ -4123,10 +4856,11 @@ fn build_reality_signal_packet(
                 "official_test_progress",
                 "patch_signals.changed_files",
                 "tool_grounding.changed_files_seen_by_tools",
+                "tool_reward_signals",
                 "score_reality.reward"
             ],
             "do_not_repeat_patch_sha256": patch_sha,
-            "required_next_tool": if official_evidence_path.is_some() { "read_official_failure_reality or compare_attempts" } else { "read_problem_reality plus search/open_file_window" },
+            "required_next_tool": required_next_tool_for_validation(validation, official_evidence_path.is_some()),
             "optimization_target": "increase official FAIL_TO_PASS success without PASS_TO_PASS regression, while keeping source/test boundary intact"
         },
         "source_of_truth": {
@@ -4153,6 +4887,7 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
             "patch_stats": packet.pointer("/patch_signals/patch_stats")
         },
         "tool_grounding": packet.get("tool_grounding"),
+        "tool_reward_signals": packet.get("tool_reward_signals"),
         "score_reality": {
             "reward": packet.pointer("/score_reality/reward/reward"),
             "score": packet.pointer("/score_reality/score/score"),
@@ -4160,6 +4895,101 @@ fn compact_reality_signal_packet(packet: &Value) -> Value {
         },
         "reinjection_directive": packet.get("reinjection_directive"),
         "source_of_truth": packet.get("source_of_truth")
+    })
+}
+
+fn required_next_tool_for_validation(
+    validation: &Value,
+    has_official_evidence: bool,
+) -> &'static str {
+    match validation.get("error_code").and_then(Value::as_str) {
+        Some("RUST_REALITY_FINAL_EDIT_TOOL_FAILED") => {
+            "open_file_window for the exact source span, then apply_line_window_edit with observed_sha256 or apply_structured_edit with a unique find block"
+        }
+        Some("RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED") => {
+            "apply_line_window_edit with observed_sha256 from open_file_window, or apply_structured_edit with exact find/replace edits copied from opened source windows"
+        }
+        _ if has_official_evidence => "read_official_failure_reality or compare_attempts",
+        _ => "read_problem_reality plus search/open_file_window",
+    }
+}
+
+fn derive_tool_reward_signals(
+    tool_grounding: &Value,
+    submitted_patch: bool,
+    repeated_patch: bool,
+    validation: &Value,
+    official_eval_ran: bool,
+) -> Value {
+    let tools = tool_grounding
+        .get("tools_used")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let used = |name: &str| tools.iter().any(|item| item.as_str() == Some(name));
+    let changed_files_read = tool_grounding
+        .get("changed_files_read_before_edit")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let validation_passed = validation.get("status").and_then(Value::as_str) == Some("passed");
+    let mut score = 0.0_f64;
+    if used("read_problem_reality") {
+        score += 1.0;
+    }
+    if used("search_repo") || used("inspect_symbol") || used("list_files") {
+        score += 1.0;
+    }
+    if used("open_file_window") {
+        score += 1.0;
+    }
+    if used("apply_line_window_edit") {
+        score += 1.5;
+    } else if used("apply_structured_edit") {
+        score += 1.0;
+    }
+    if submitted_patch {
+        score += 2.0;
+    }
+    if changed_files_read {
+        score += 1.0;
+    }
+    if official_eval_ran {
+        score += 1.0;
+    }
+    if validation_passed {
+        score += 1.0;
+    }
+    if repeated_patch {
+        score -= 2.0;
+    }
+    json!({
+        "record_kind": "contextgraph_tool_use_reward_signals",
+        "objective": "reward coding-agent behaviors that increase verified SWE repair odds before final official success exists",
+        "features": {
+            "used_problem_reality": used("read_problem_reality"),
+            "used_navigation_or_search": used("search_repo") || used("inspect_symbol") || used("list_files"),
+            "opened_source_window": used("open_file_window"),
+            "used_preferred_line_window_edit": used("apply_line_window_edit"),
+            "used_structured_find_replace_edit": used("apply_structured_edit"),
+            "submitted_patch_artifact": submitted_patch,
+            "changed_files_read_before_edit": changed_files_read,
+            "used_targeted_test": used("run_targeted_test"),
+            "official_eval_ran": official_eval_ran,
+            "validation_passed": validation_passed,
+            "repeated_patch": repeated_patch
+        },
+        "score_unbounded": score,
+        "recommended_reward_components": {
+            "problem_reality_read": if used("read_problem_reality") { 1.0 } else { 0.0 },
+            "repo_navigation": if used("search_repo") || used("inspect_symbol") || used("list_files") { 1.0 } else { 0.0 },
+            "source_window_grounding": if used("open_file_window") { 1.0 } else { 0.0 },
+            "preferred_edit_interface": if used("apply_line_window_edit") { 1.5 } else { 0.0 },
+            "patch_artifact_submitted": if submitted_patch { 2.0 } else { 0.0 },
+            "changed_files_read_before_edit": if changed_files_read { 1.0 } else { 0.0 },
+            "official_eval_readback": if official_eval_ran { 1.0 } else { 0.0 },
+            "repeated_patch_penalty": if repeated_patch { -2.0 } else { 0.0 }
+        },
+        "source_of_truth": tool_grounding.get("source_of_truth")
     })
 }
 
@@ -4207,6 +5037,9 @@ fn classify_failure(validation_error: &str, official_tail: &str) -> (String, Opt
     .map(|value| (*value).to_string());
     let class = match validation_error {
         "RUST_REALITY_MODEL_RESPONSE_JSON_INVALID" => "model_contract_json_invalid",
+        "RUST_REALITY_AGENT_TOOL_REQUIRED_BUT_MISSING" => "model_tool_contract_missing",
+        "RUST_REALITY_FINAL_EDIT_TOOL_REQUIRED" => "model_final_edit_tool_missing",
+        "RUST_REALITY_FINAL_EDIT_TOOL_FAILED" => "structured_edit_tool_failed",
         "RUST_REALITY_MODEL_ACTION_MISSING" => "model_action_missing",
         "RUST_REALITY_PATCH_REPEATED" => "repeated_patch",
         "RUST_REALITY_PATCH_APPLY_FAILED" => "patch_apply_failed",
@@ -4378,6 +5211,7 @@ fn collect_tool_result_paths(value: &Value, out: &mut BTreeSet<String>) {
     if let Some(files) = value
         .pointer("/result/payload/repository_context/files")
         .or_else(|| value.pointer("/result/payload/selected_context_files"))
+        .or_else(|| value.pointer("/result/payload/files"))
         .and_then(Value::as_array)
     {
         for item in files {
@@ -4386,6 +5220,17 @@ fn collect_tool_result_paths(value: &Value, out: &mut BTreeSet<String>) {
                 .and_then(Value::as_str)
                 .or_else(|| item.as_str())
             {
+                out.insert(path.to_string());
+            }
+        }
+    }
+    if let Some(edits) = value
+        .pointer("/result/compilation/applied_edits")
+        .or_else(|| value.pointer("/result/payload/compilation/applied_edits"))
+        .and_then(Value::as_array)
+    {
+        for item in edits {
+            if let Some(path) = item.get("path").and_then(Value::as_str) {
                 out.insert(path.to_string());
             }
         }
@@ -4513,7 +5358,7 @@ fn compile_prompt(
     format!(
         "You are repairing a real SWE-bench Lite task through ContextGraph's Rust reality loop.\n\
 Success means the official SWE-bench report places instance_id in resolved_ids.\n\
-Do not claim success. Prefer exact structured edits: {{\"edits\":[{{\"path\":\"relative/source/file.py\",\"find\":\"exact old text\",\"replace\":\"exact new text\"}}],\"notes\":\"<brief>\"}}. Use {{\"patch\":\"<unified git diff>\",\"notes\":\"<brief>\"}} only if you can produce a complete valid diff.\n\n\
+Do not claim success. Inspect reality with governed tools, then submit the candidate patch by calling apply_structured_edit with exact find/replace edits copied from real source windows.\n\n\
 Task:\ninstance_id: {}\nrepo: {}\nbase_commit: {}\nFAIL_TO_PASS: {}\n\n\
 Problem statement:\n<<<PROBLEM\n{}\nPROBLEM\n\n\
 Problem reality packet:\n{}\n\n\
@@ -4521,14 +5366,13 @@ Previous attempt summary:\n{}\n\n\
 Previous reality signal packet for reinjection:\n{}\n\n\
 Do not repeat these patch hashes:\n{}\n\n\
 Hard validation rules:\n\
-- The final action must be one raw JSON object with notes plus either edits or patch.\n\
-- Prefer edits. Each edit path must be repo-relative production source; find must match exactly one source span; replace is the desired source span.\n\
+- Final candidate submission is tool-mediated. Call apply_structured_edit; do not return a hand-written JSON final answer or prose.\n\
+- Each edit path must be repo-relative production source; find must match exactly one source span; replace is the desired source span.\n\
 - ContextGraph applies edits to the real checkout, generates candidate.patch with git diff, resets to base, then applies/evaluates the generated patch.\n\
-- If you use patch instead, it must apply to the exact base commit with git apply and be a complete unified diff with correct ---/+++ headers and @@ hunks.\n\
-- The patch or edits must modify production source, not tests, fixtures, or benchmark harness files.\n\
+- The edit must modify production source, not tests, fixtures, or benchmark harness files.\n\
 - Do not edit tests to make the benchmark pass.\n\n\
 Repository context JSON:\n{}\n\n\
-Tool phase instruction: before any final action, call at least one governed ContextGraph tool to inspect real source, problem reality, failure reality, or prior verified attempts. If the previous reality signal says a changed file was not read by tools, read that file before editing again.\n",
+Tool phase instruction: call governed ContextGraph tools to inspect real source, problem reality, failure reality, or prior verified attempts. If the previous reality signal says a changed file was not read by tools, read that file before editing again. When ready, call apply_structured_edit as the final candidate submission for this attempt.\n",
         task.instance_id,
         task.repo,
         task.base_commit,
@@ -5019,6 +5863,54 @@ fn file_sot(path: &Path) -> String {
     format!("file:{}", path_str(path))
 }
 
+fn optional_file_sot(path: &Path) -> Value {
+    if path.exists() {
+        json!({"exists": true, "source_of_truth": file_sot(path)})
+    } else {
+        json!({"exists": false, "path": path_str(path)})
+    }
+}
+
+fn file_sot_to_path(sot: &str, code: &str, field_path: &str) -> Result<PathBuf> {
+    let Some(path) = sot.strip_prefix("file:") else {
+        return Err(RealityError::new(
+            if code.is_empty() {
+                "RUST_REALITY_FILE_SOT_INVALID"
+            } else {
+                code
+            },
+            "source-of-truth pointer was not a file: URI",
+            if field_path.is_empty() {
+                "source_of_truth"
+            } else {
+                field_path
+            },
+            "use file:/absolute/path for filesystem source-of-truth pointers",
+            json!({"source_of_truth": sot}),
+            Some(sot.to_string()),
+        ));
+    };
+    if path.trim().is_empty() {
+        return Err(RealityError::new(
+            if code.is_empty() {
+                "RUST_REALITY_FILE_SOT_EMPTY"
+            } else {
+                code
+            },
+            "source-of-truth file path was empty",
+            if field_path.is_empty() {
+                "source_of_truth"
+            } else {
+                field_path
+            },
+            "provide a non-empty file:/absolute/path pointer",
+            json!({"source_of_truth": sot}),
+            Some(sot.to_string()),
+        ));
+    }
+    Ok(PathBuf::from(path))
+}
+
 fn sqlite_sot(path: &Path) -> String {
     format!("sqlite:{}#ledger_records", path_str(path))
 }
@@ -5047,5 +5939,336 @@ fn truncate_chars(value: &str, limit: usize) -> String {
         let mut out = value.chars().take(limit).collect::<String>();
         out.push_str("\n...[truncated]");
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn init_real_git_repo() -> (TempDir, PathBuf) {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        create_dir_checked(&repo).expect("repo dir");
+        run_required(
+            &["git", "init"],
+            &repo,
+            30,
+            "TEST_GIT_INIT_FAILED",
+            "test.git.init",
+        )
+        .expect("git init");
+        run_required(
+            &[
+                "git",
+                "config",
+                "user.email",
+                "reality-loop@example.invalid",
+            ],
+            &repo,
+            30,
+            "TEST_GIT_CONFIG_EMAIL_FAILED",
+            "test.git.config.email",
+        )
+        .expect("git config email");
+        run_required(
+            &["git", "config", "user.name", "Reality Loop FSV"],
+            &repo,
+            30,
+            "TEST_GIT_CONFIG_NAME_FAILED",
+            "test.git.config.name",
+        )
+        .expect("git config name");
+        write_text_checked(
+            &repo.join("src/example.py"),
+            "def bump(x):\n    return x + 1\n",
+        )
+        .expect("source write");
+        run_required(
+            &["git", "add", "src/example.py"],
+            &repo,
+            30,
+            "TEST_GIT_ADD_FAILED",
+            "test.git.add",
+        )
+        .expect("git add");
+        run_required(
+            &["git", "commit", "-m", "base"],
+            &repo,
+            30,
+            "TEST_GIT_COMMIT_FAILED",
+            "test.git.commit",
+        )
+        .expect("git commit");
+        (temp, repo)
+    }
+
+    #[test]
+    fn tool_mediated_final_edit_submission_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_structured_edit");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let before = fs::read_to_string(repo.join("src/example.py")).expect("before read");
+        eprintln!(
+            "BEFORE source_of_truth={} data={:?}",
+            file_sot(&repo.join("src/example.py")),
+            before
+        );
+
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "find": "def bump(x):\n    return x + 1\n",
+            "replace": "def bump(x):\n    return x + 2\n"
+        })];
+        let (patch, compilation) =
+            compile_structured_edits(&repo, &tool_dir, &edits, 30).expect("compile edits");
+        let patch = patch.expect("patch");
+        let candidate_patch = tool_dir.join("candidate.patch");
+        let result = json!({
+            "status": "ok",
+            "tool_name": "apply_structured_edit",
+            "patch_sha256": sha256_file(&candidate_patch).expect("patch sha"),
+            "compilation": compilation
+        });
+        let submission =
+            materialize_tool_candidate_submission(&result, &tool_dir).expect("submission");
+        let model_response = json!({
+            "contextgraph_runtime": {
+                "submitted_candidate_patch": submission
+            }
+        });
+        let (readback_patch, parse_report) = patch_from_tool_submission(&model_response)
+            .expect("patch extraction")
+            .expect("submitted patch");
+        assert_eq!(patch, readback_patch);
+        assert_eq!(parse_report["status"], "passed");
+        assert_eq!(
+            parse_report["final_action_mode"],
+            "tool_mediated_apply_structured_edit"
+        );
+
+        run_required(
+            &["git", "reset", "--hard", "HEAD"],
+            &repo,
+            30,
+            "TEST_GIT_RESET_FAILED",
+            "test.git.reset",
+        )
+        .expect("reset");
+        run_required(
+            &["git", "apply", "--check", path_str(&candidate_patch)],
+            &repo,
+            30,
+            "TEST_GIT_APPLY_CHECK_FAILED",
+            "test.git.apply_check",
+        )
+        .expect("git apply check");
+        run_required(
+            &["git", "apply", path_str(&candidate_patch)],
+            &repo,
+            30,
+            "TEST_GIT_APPLY_FAILED",
+            "test.git.apply",
+        )
+        .expect("git apply");
+        let after = fs::read_to_string(repo.join("src/example.py")).expect("after read");
+        eprintln!(
+            "AFTER source_of_truth={} data={:?}",
+            file_sot(&repo.join("src/example.py")),
+            after
+        );
+        assert_eq!(after, "def bump(x):\n    return x + 2\n");
+    }
+
+    #[test]
+    fn line_window_edit_submission_fsv() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_line_window_edit");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let source = repo.join("src/example.py");
+        let before = fs::read_to_string(&source).expect("before read");
+        let observed_sha256 = sha256_file(&source).expect("source sha");
+        eprintln!(
+            "BEFORE line_window source_of_truth={} sha256={} data={:?}",
+            file_sot(&source),
+            observed_sha256,
+            before
+        );
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "start_line": 2,
+            "end_line": 2,
+            "replace": "    return x + 3\n",
+            "observed_sha256": observed_sha256
+        })];
+        let (patch, compilation) =
+            compile_line_window_edits(&repo, &tool_dir, &edits, 30).expect("compile line edits");
+        assert!(patch.is_some());
+        let candidate_patch = tool_dir.join("candidate.patch");
+        let result = json!({
+            "status": "ok",
+            "tool_name": "apply_line_window_edit",
+            "patch_sha256": sha256_file(&candidate_patch).expect("patch sha"),
+            "compilation": compilation
+        });
+        let submission =
+            materialize_tool_candidate_submission(&result, &tool_dir).expect("submission");
+        assert_eq!(submission["tool_name"], "apply_line_window_edit");
+        run_required(
+            &["git", "reset", "--hard", "HEAD"],
+            &repo,
+            30,
+            "TEST_GIT_RESET_FAILED",
+            "test.git.reset",
+        )
+        .expect("reset");
+        run_required(
+            &["git", "apply", path_str(&candidate_patch)],
+            &repo,
+            30,
+            "TEST_GIT_APPLY_FAILED",
+            "test.git.apply",
+        )
+        .expect("git apply");
+        let after = fs::read_to_string(&source).expect("after read");
+        eprintln!(
+            "AFTER line_window source_of_truth={} data={:?}",
+            file_sot(&source),
+            after
+        );
+        assert_eq!(after, "def bump(x):\n    return x + 3\n");
+    }
+
+    #[test]
+    fn line_window_edit_rejects_stale_observed_sha256() {
+        let (_temp, repo) = init_real_git_repo();
+        let tool_dir = repo
+            .parent()
+            .expect("repo parent")
+            .join("attempt-000001")
+            .join("agent-tools")
+            .join("round-01-00-apply_line_window_edit");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let source = repo.join("src/example.py");
+        let actual_sha256 = sha256_file(&source).expect("source sha");
+        let edits = vec![json!({
+            "path": "src/example.py",
+            "start_line": 2,
+            "end_line": 2,
+            "replace": "    return x + 3\n",
+            "observed_sha256": "sha256:stale"
+        })];
+        eprintln!(
+            "BEFORE stale_line_window source_of_truth={} actual_sha256={}",
+            file_sot(&source),
+            actual_sha256
+        );
+        let (patch, compilation) =
+            compile_line_window_edits(&repo, &tool_dir, &edits, 30).expect("compile line edits");
+        eprintln!(
+            "AFTER stale_line_window compilation={}",
+            serde_json::to_string_pretty(&compilation).unwrap()
+        );
+        assert!(patch.is_none());
+        assert_eq!(
+            compilation["error_code"],
+            "RUST_REALITY_LINE_EDIT_OBSERVED_SHA_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn tool_submission_rejects_missing_patch_source_of_truth() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let tool_dir = temp.path().join("tool");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let before = json!({"tool_result": {"status": "ok"}});
+        eprintln!("BEFORE missing_sot={}", before);
+        let err = materialize_tool_candidate_submission(&before["tool_result"], &tool_dir)
+            .expect_err("missing SOT should fail");
+        eprintln!(
+            "AFTER error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_SOT_MISSING"
+        );
+    }
+
+    #[test]
+    fn tool_submission_rejects_patch_hash_mismatch() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let tool_dir = temp.path().join("tool");
+        create_dir_checked(&tool_dir).expect("tool dir");
+        let patch_path = tool_dir.join("candidate.patch");
+        write_text_checked(
+            &patch_path,
+            "diff --git a/src/example.py b/src/example.py\n--- a/src/example.py\n+++ b/src/example.py\n@@ -1,2 +1,2 @@\n def bump(x):\n-    return x + 1\n+    return x + 2\n",
+        )
+        .expect("patch write");
+        let result = json!({
+            "status": "ok",
+            "patch_sha256": "sha256:not-the-real-hash",
+            "compilation": {
+                "source_of_truth": {
+                    "candidate_patch": file_sot(&patch_path)
+                }
+            }
+        });
+        eprintln!(
+            "BEFORE hash_check expected={} actual={}",
+            result["patch_sha256"],
+            sha256_file(&patch_path).unwrap()
+        );
+        let err =
+            materialize_tool_candidate_submission(&result, &tool_dir).expect_err("hash mismatch");
+        eprintln!(
+            "AFTER error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_SHA_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn final_submission_rejects_empty_patch_readback() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let patch_path = temp.path().join("candidate.patch");
+        write_text_checked(&patch_path, "").expect("empty patch write");
+        let model_response = json!({
+            "contextgraph_runtime": {
+                "submitted_candidate_patch": {
+                    "candidate_patch_path": path_str(&patch_path),
+                    "patch_sha256": sha256_file(&patch_path).unwrap()
+                }
+            }
+        });
+        eprintln!(
+            "BEFORE empty_patch source_of_truth={} sha256={}",
+            file_sot(&patch_path),
+            sha256_file(&patch_path).unwrap()
+        );
+        let err = patch_from_tool_submission(&model_response).expect_err("empty patch should fail");
+        eprintln!(
+            "AFTER error={}",
+            serde_json::to_string_pretty(&err).unwrap()
+        );
+        assert_eq!(
+            err.error_code,
+            "RUST_REALITY_TOOL_SUBMITTED_PATCH_READBACK_EMPTY"
+        );
     }
 }

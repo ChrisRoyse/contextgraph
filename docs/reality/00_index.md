@@ -36,6 +36,8 @@ The loop does not advance because an agent says it is done. It advances only whe
 | `14_operational_scoreboard.md` | The scoreboard that tells whether the meta-loop is actually improving the inner loop. |
 | `15_rust_reality_loop_port.md` | Current Rust-owned reality loop implementation, validation evidence, and remaining gaps. |
 | `16_measurement_contract.md` | Runtime contract that prevents measurement-spec and boundary failures from becoming false success claims. |
+| `17_problem_and_signal_reality_packets.md` | Current implementation of problem-reality capture, per-attempt signal packets, blindspot tracking, and FSV evidence. |
+| `18_gemma_coding_agent_harness.md` | Current Gemma coding-agent harness, optimized Ollama settings, governed tool surface, line-window edit interface, tool-use reward signals, and FSV evidence. |
 
 ## Current Project Mapping
 
@@ -63,7 +65,7 @@ The first working reality loop now persists:
 - official failure evidence: `<attempt_root>/official-failure-evidence.json`;
 - next prompt candidate: `<task_root>/prompt-candidates/attempt-NNN/`.
 
-The current model-facing tools are read-only and governed: `list_files`, `read_file`, `search_repo`, `inspect_repository_context`, and `read_failure_evidence`. Patch mutation still enters only through the verified patch/evaluator path.
+The current model-facing tool surface is governed by ContextGraph. Early Phase 1 tools were read-only, and the current Rust loop adds `apply_structured_edit` as the only model-facing candidate patch submission path. Patch mutation still enters only through ContextGraph's verified patch/evaluator path.
 
 ## Phase 2 Implementation Snapshot
 
@@ -113,6 +115,28 @@ This mode requires official SWE-bench evaluation and stops only when the officia
 The Rust binary uses Rust-owned orchestration, typed failure artifacts, JSON readback checks, SQLite ledger readbacks, GPU VRAM budget checks through `nvidia-smi`, a runtime `measurement-contract.json`, and BlackBoxFix reward/evidence compilation. The official SWE-bench evaluator remains an external Python/Docker verifier because SWE-bench itself is distributed that way; ContextGraph no longer owns a Python implementation of the refinement loop.
 
 The Rust loop now fails closed if official SWE-bench readback is disabled. Local patch validation can produce useful failure evidence, but it cannot become a SWE success claim.
+
+Current hardening adds two first-class model-facing reality packets:
+
+- `<run_root>/problem-reality-packet.json` captures the durable reality of the SWE problem before attempt 1: dataset, instance id, base commit, FAIL_TO_PASS/PASS_TO_PASS oracle, problem terms, candidate production files, source/test boundary, and root-cause discovery protocol.
+- `<attempt_root>/reality-signal-packet.json` captures each attempt's verified outcome: validation result, official test progress when available, failure class, patch statistics, tool grounding, BlackBoxFix score/reward, ledger counts, and reinjection directive for the next prompt.
+
+The final candidate-patch handoff is now tool-mediated. The model must call `apply_line_window_edit` or `apply_structured_edit`; ContextGraph compiles the edit into a patch artifact, reads the patch file and SHA-256 back from disk, and then validates that artifact. The old second-step raw JSON final answer contract has been removed from the live path.
+
+Gemma coding-agent mode is now explicit. In this architecture, the governed coding-agent harness is the inner reality loop itself: it is the sensor/actuator layer where Gemma reads problem reality, navigates source, submits edits, receives verified failures, and gets reward-facing signals for the next attempt.
+
+- Ollama request options are persisted in each tool-round request: `temperature=0`, `top_p=0.9`, `num_ctx=32768`, `num_predict=4096`.
+- Default tool-round budget is `8` so Gemma has enough turns to inspect, navigate, open a source window, and submit a patch.
+- `apply_line_window_edit` is the preferred edit tool because it replaces line ranges from an `open_file_window` readback and requires the observed file SHA-256.
+- Reality-signal packets now include `tool_reward_signals`, which score intermediate coding-agent behaviors before official SWE success exists.
+
+Latest reality-signal FSV output:
+
+```text
+/tmp/contextgraph-tool-mediated-fsv-10/rust_reality_1777970781993552749_69ff234d/
+```
+
+That run used the real `scikit-learn__scikit-learn-25638` SWE-bench Lite task and real Gemma/Ollama output. Gemma inspected reality through governed tools but did not submit a candidate patch through `apply_structured_edit`. The loop persisted and read back the problem packet, tool transcript, failed validation, reality-signal packet, reward compilation, BlackBoxFix ledger rows, and final summary instead of claiming success.
 
 Latest Rust smoke output:
 
